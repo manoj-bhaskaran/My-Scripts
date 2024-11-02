@@ -1,3 +1,5 @@
+# Crops black blocks on the left and right from an image - image file name is provided as an argument
+
 import sys
 from PIL import Image
 import os
