@@ -1,0 +1,1 @@
+Get-ChildItem "C:\users\Manoj\Documents\FIFA 07\elib" -Force | Get-Random | Select-Object -Expand FullName | Invoke-Item
