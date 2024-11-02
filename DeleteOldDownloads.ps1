@@ -1,3 +1,5 @@
+#Deletes old download files from the Downloads folder
+
 $FolderPath = "C:\Users\manoj\Downloads"
 $Days = 14
 $CurrentDate = Get-Date
