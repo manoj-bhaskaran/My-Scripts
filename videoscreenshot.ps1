@@ -64,7 +64,7 @@ Stop-Process -Name "vlc" -Force
 
 # Call python script to crop images
 # Set the path to the Python script
-$scriptPath = "C:\Users\manoj\Documents\scripts\crop_black.py"
+$scriptPath = "C:\Users\manoj\Documents\scripts\crop_colours.py"
 
 # Run the Python script
 python $scriptPath $savePath
