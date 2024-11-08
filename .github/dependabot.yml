@@ -1,0 +1,6 @@
+version: 2
+updates:
+  - package-ecosystem: "pip" # For Python dependencies
+    directory: "/"            # Assuming your requirements.txt is in the root
+    schedule:
+      interval: "weekly"
