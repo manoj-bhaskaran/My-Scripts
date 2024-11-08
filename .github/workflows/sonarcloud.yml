@@ -53,4 +53,5 @@ jobs:
                         -Dsonar.sources=. \
                         -Dsonar.python.version=3.13 \
                         -Dsonar.language=ps \
-                        -Dsonar.inclusions="**/*.bat"
+                        -Dsonar.inclusions="**/*.bat" \
+                        -Dsonar.host.url=https://sonarcloud.io
