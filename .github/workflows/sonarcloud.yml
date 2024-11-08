@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
 
       - name: Cache SonarCloud packages
-        uses: actions/cache@v4
+        uses: actions/cache@v2
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar-${{ hashFiles('**/requirements.txt') }} # Use requirements.txt for cache key
@@ -27,15 +27,21 @@ jobs:
         run: |
           # Download SonarScanner
           wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.6.2.2472-linux.zip
+          # Unzip SonarScanner
           unzip sonar-scanner-cli-4.6.2.2472-linux.zip -d sonar-scanner
-          # Set the path for the current job
-          echo "${{ github.workspace }}/sonar-scanner/bin" >> $GITHUB_PATH
+          # Set the PATH for the current job
+          echo "${{ github.workspace }}/sonar-scanner/sonar-scanner-4.6.2.2472-linux/bin" >> $GITHUB_PATH
+          # Verify installation
+          ls -l "${{ github.workspace }}/sonar-scanner/sonar-scanner-4.6.2.2472-linux/bin"
 
       - name: SonarCloud Scan
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed for GitHub integration
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Your SonarCloud token
         run: |
+          # Verify that sonar-scanner is available
+          which sonar-scanner
+          # Run SonarCloud scan
           sonar-scanner -Dsonar.projectKey=manoj-bhaskaran_My-Scripts \
                         -Dsonar.organization=manoj-bhaskaran \
                         -Dsonar.sources=. \
