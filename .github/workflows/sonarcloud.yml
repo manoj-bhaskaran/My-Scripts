@@ -27,6 +27,7 @@ jobs:
         uses: actions/setup-java@v2
         with:
           java-version: '17'  # Specify Java version 17
+          distribution: 'temurin'
 
       - name: Install SonarScanner
         run: |
