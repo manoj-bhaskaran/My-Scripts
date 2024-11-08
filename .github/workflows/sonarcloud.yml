@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Cache SonarCloud packages
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar-${{ hashFiles('**/requirements.txt') }} # Use requirements.txt for cache key
@@ -25,9 +25,11 @@ jobs:
 
       - name: Install SonarScanner
         run: |
+          # Download SonarScanner
           wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.6.2.2472-linux.zip
           unzip sonar-scanner-cli-4.6.2.2472-linux.zip -d sonar-scanner
-          echo "$(pwd)/sonar-scanner/bin" >> $GITHUB_PATH  # Set the PATH for the current job
+          # Set the path for the current job
+          echo "${{ github.workspace }}/sonar-scanner/bin" >> $GITHUB_PATH
 
       - name: SonarCloud Scan
         env:
