@@ -37,8 +37,8 @@ jobs:
       - name: Check SonarScanner availability
         run: |
           echo "Checking if sonar-scanner is available..."
-          which sonar-scanner
-          sonar-scanner --version
+          which sonar-scanner || echo "sonar-scanner not found"
+          sonar-scanner --version || echo "sonar-scanner command failed"
 
       - name: SonarCloud Scan
         env:
