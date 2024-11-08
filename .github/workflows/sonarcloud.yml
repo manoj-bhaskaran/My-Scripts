@@ -51,6 +51,6 @@ jobs:
           sonar-scanner -Dsonar.projectKey=manoj-bhaskaran_My-Scripts \
                         -Dsonar.organization=manoj-bhaskaran \
                         -Dsonar.sources=. \
-                        -Dsonar.python.version=3.13 \ # Specify your Python version if needed
-                        -Dsonar.language=ps           # Specify PowerShell as an additional language
-                        -Dsonar.inclusions="**/*.bat" # Include batch files in the analysis scope
+                        -Dsonar.python.version=3.13 \ 
+                        -Dsonar.language=ps           
+                        -Dsonar.inclusions="**/*.bat" 
