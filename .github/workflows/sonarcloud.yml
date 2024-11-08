@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
 
       - name: Cache SonarCloud packages
-        uses: actions/cache@v4
+        uses: actions/cache@v2
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar-${{ hashFiles('**/requirements.txt') }}
@@ -26,8 +26,8 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v2
         with:
-          java-version: '17'  # Specify Java version 17
-          distribution: 'temurin'
+          java-version: '17'               # Specify Java version 17
+          distribution: 'temurin'          # Use Temurin as the distribution
 
       - name: Install SonarScanner
         run: |
@@ -41,6 +41,10 @@ jobs:
           ls -l "${{ github.workspace }}/sonar-scanner/sonar-scanner-4.6.2.2472-linux/bin"
           # Print the PATH to verify
           echo $PATH
+
+      - name: Check Java Version
+        run: |
+          java -version
 
       - name: Check SonarScanner availability
         run: |
