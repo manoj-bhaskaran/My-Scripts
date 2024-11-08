@@ -26,9 +26,9 @@ jobs:
       - name: Install SonarScanner
         run: |
           # Download SonarScanner
-          wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.6.2.2472-linux.zip
+          wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.6.2.2472-linux.zip
           # Unzip SonarScanner
-          unzip sonar-scanner-cli-4.6.2.2472-linux.zip -d sonar-scanner
+          unzip -q sonar-scanner-cli-4.6.2.2472-linux.zip -d sonar-scanner
           # Set the PATH for the current job
           echo "${{ github.workspace }}/sonar-scanner/sonar-scanner-4.6.2.2472-linux/bin" >> $GITHUB_PATH
           # Verify installation
