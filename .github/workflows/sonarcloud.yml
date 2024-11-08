@@ -34,13 +34,17 @@ jobs:
           # Verify installation
           ls -l "${{ github.workspace }}/sonar-scanner/sonar-scanner-4.6.2.2472-linux/bin"
 
+      - name: Check SonarScanner availability
+        run: |
+          echo "Checking if sonar-scanner is available..."
+          which sonar-scanner
+          sonar-scanner --version
+
       - name: SonarCloud Scan
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed for GitHub integration
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Your SonarCloud token
         run: |
-          # Verify that sonar-scanner is available
-          which sonar-scanner
           # Run SonarCloud scan
           sonar-scanner -Dsonar.projectKey=manoj-bhaskaran_My-Scripts \
                         -Dsonar.organization=manoj-bhaskaran \
