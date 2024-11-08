@@ -44,6 +44,7 @@ jobs:
 
       - name: Check Java Version
         run: |
+          echo "Checking Java version..."
           java -version
 
       - name: Check SonarScanner availability
@@ -59,6 +60,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Your SonarCloud token
         run: |
           # Run SonarCloud scan
+          echo "Running SonarCloud scan..."
           sonar-scanner -Dsonar.projectKey=manoj-bhaskaran_My-Scripts \
                         -Dsonar.organization=manoj-bhaskaran \
                         -Dsonar.sources=. \
