@@ -22,7 +22,7 @@ jobs:
           key: ${{ runner.os }}-sonar-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-sonar-
-
+      
       - name: Install SonarScanner
         run: |
           # Download SonarScanner
