@@ -27,8 +27,7 @@ jobs:
         run: |
           wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.6.2.2472-linux.zip
           unzip sonar-scanner-cli-4.6.2.2472-linux.zip -d sonar-scanner
-          export PATH=$PATH:$(pwd)/sonar-scanner/bin
-          echo "PATH=$PATH" >> $GITHUB_ENV
+          echo "$(pwd)/sonar-scanner/bin" >> $GITHUB_PATH  # Set the PATH for the current job
 
       - name: SonarCloud Scan
         env:
@@ -41,4 +40,3 @@ jobs:
                         -Dsonar.python.version=3.13 \ # Specify your Python version if needed
                         -Dsonar.language=ps           # Specify PowerShell as an additional language
                         -Dsonar.inclusions="**/*.bat" # Include batch files in the analysis scope
-                        
