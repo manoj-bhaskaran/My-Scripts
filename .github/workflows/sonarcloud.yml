@@ -19,7 +19,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.sonar/cache
-          key: ${{ runner.os }}-sonar-${{ hashFiles('**/requirements.txt') }} # Use requirements.txt for cache key
+          key: ${{ runner.os }}-sonar-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-sonar-
 
@@ -33,6 +33,8 @@ jobs:
           echo "${{ github.workspace }}/sonar-scanner/sonar-scanner-4.6.2.2472-linux/bin" >> $GITHUB_PATH
           # Verify installation
           ls -l "${{ github.workspace }}/sonar-scanner/sonar-scanner-4.6.2.2472-linux/bin"
+          # Print the PATH to verify
+          echo $PATH
 
       - name: Check SonarScanner availability
         run: |
