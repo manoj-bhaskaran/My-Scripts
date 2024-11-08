@@ -54,6 +54,7 @@ jobs:
 
       - name: SonarCloud Scan
         env:
+          JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.13-11/x64  # Explicitly set JAVA_HOME
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed for GitHub integration
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Your SonarCloud token
         run: |
