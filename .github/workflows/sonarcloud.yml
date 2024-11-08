@@ -59,8 +59,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed for GitHub integration
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Your SonarCloud token
         run: |
+          # Print JAVA_HOME to verify it's set correctly
+          echo "JAVA_HOME is set to: $JAVA_HOME"
           # Run SonarCloud scan
-          echo "Running SonarCloud scan..."
           sonar-scanner -Dsonar.projectKey=manoj-bhaskaran_My-Scripts \
                         -Dsonar.organization=manoj-bhaskaran \
                         -Dsonar.sources=. \
