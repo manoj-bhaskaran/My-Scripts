@@ -12,8 +12,8 @@ New-Item -ItemType Directory -Force -Path $savePath
 Get-ChildItem -Path $savePath -Filter *.png -File | Remove-Item -Force
 Write-Output "Cleared existing screenshots from $savePath"
 
-# Get all video files in the source folder
-$videoFiles = Get-ChildItem -Path $sourceFolderPath -Filter *.mp4, *.avi, *.mkv
+# Get all video files in the source folder with multiple extensions
+$videoFiles = Get-ChildItem -Path $sourceFolderPath -Recurse -Include *.mp4, *.avi, *.mkv
 
 foreach ($video in $videoFiles) {
     Write-Output "Processing video: $($video.Name)"
