@@ -8,6 +8,32 @@ $sourceFolderPath = "C:\Users\manoj\Downloads"
 $savePath = "C:\Users\manoj\OneDrive\Desktop\Screenshots"
 New-Item -ItemType Directory -Force -Path $savePath
 
+# Load required .NET assemblies for GDI+
+Add-Type -AssemblyName System.Drawing
+
+# Function to capture the screen using GDI+
+function Capture-ScreenWithGDIPlus {
+    param (
+        [string]$filePath  # File path where the screenshot will be saved
+    )
+
+    # Hardcoded resolution values (1920x1080)
+    $screenWidth = 1920
+    $screenHeight = 1080
+
+    # Create a bitmap with hardcoded resolution
+    $bitmap = New-Object System.Drawing.Bitmap $screenWidth, $screenHeight
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+
+    # Capture the screen with hardcoded resolution
+    $graphics.CopyFromScreen(0, 0, 0, 0, [System.Drawing.Size]::new($screenWidth, $screenHeight))
+    $bitmap.Save($filePath, [System.Drawing.Imaging.ImageFormat]::Png)
+
+    # Clean up resources
+    $graphics.Dispose()
+    $bitmap.Dispose()
+}
+
 # Clear existing screenshots once before starting video processing
 Get-ChildItem -Path $savePath -Filter *.png -File | Remove-Item -Force
 Write-Output "Cleared existing screenshots from $savePath"
