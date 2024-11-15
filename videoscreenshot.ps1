@@ -1,33 +1,25 @@
-# Path to the video file you want to play
-$videoPath = "C:\Users\manoj\OneDrive\Desktop\New folder (2)\eaa40b8b667e430d910f6ff4122e21fa.mp4"
+# Configurable delays (in milliseconds)
+$initialDelay = 200          # Time to wait for VLC to open
+$screenshotInterval = 500    # Interval between screenshots
+$vlcPollingInterval = 500    # Interval for checking VLC process status
 
-# Path where screenshots will be saved
+# Define the source folder and screenshot path
+$sourceFolderPath = "C:\Users\manoj\Downloads"
 $savePath = "C:\Users\manoj\OneDrive\Desktop\Screenshots"
 New-Item -ItemType Directory -Force -Path $savePath
 
-# Clear out any existing PNG files from the Screenshots folder
-Get-ChildItem -Path $savePath -Filter *.png -File | Remove-Item -Force
-
-# Configurable delays
-$initialDelay = 200  # Milliseconds to wait until VLC opens
-$screenshotInterval = 250  # Milliseconds between screenshots
-
-# Start VLC Media Player with the video in fullscreen and without the control bar
-$vlcProcess = Start-Process -FilePath "vlc.exe" -ArgumentList "`"$videoPath`"", "--fullscreen", "--no-video-title-show", "--qt-minimal-view", "--no-qt-privacy-ask", "--video-on-top", "--play-and-exit" -PassThru
-Start-Sleep -Milliseconds $initialDelay  # Wait for VLC to open
-
 # Load required .NET assemblies for GDI+
 Add-Type -AssemblyName System.Drawing
-
-# Hardcoded resolution values (1920x1080)
-$screenWidth = 1920
-$screenHeight = 1080
 
 # Function to capture the screen using GDI+
 function Capture-ScreenWithGDIPlus {
     param (
         [string]$filePath  # File path where the screenshot will be saved
     )
+
+    # Hardcoded resolution values (1920x1080)
+    $screenWidth = 1920
+    $screenHeight = 1080
 
     # Create a bitmap with hardcoded resolution
     $bitmap = New-Object System.Drawing.Bitmap $screenWidth, $screenHeight
@@ -42,24 +34,42 @@ function Capture-ScreenWithGDIPlus {
     $bitmap.Dispose()
 }
 
-# Start capturing screenshots, tracking time to stop after video duration
-$elapsedTime = 0
+# Clear existing screenshots once before starting video processing
+Get-ChildItem -Path $savePath -Filter *.png -File | Remove-Item -Force
+Write-Output "Cleared existing screenshots from $savePath"
 
-while ($vlcProcess.HasExited -eq $false) {
-    $file = "$savePath\Screenshot_$($elapsedTime).png"
-    Capture-ScreenWithGDIPlus -filePath $file
-    Write-Output "Screenshot saved to $file"
+# Get all video files in the source folder with multiple extensions
+$videoFiles = Get-ChildItem -Path $sourceFolderPath -Recurse -Include *.mp4, *.avi, *.mkv
+
+foreach ($video in $videoFiles) {
+    Write-Output "Processing video: $($video.Name)"
     
-    # Wait for the configured interval between screenshots
-    Start-Sleep -Milliseconds $screenshotInterval
-    $elapsedTime++
+    # Start VLC for the current video
+    $vlcProcess = Start-Process -FilePath "vlc.exe" -ArgumentList "`"$($video.FullName)`"", "--fullscreen", "--no-video-title-show", "--qt-minimal-view", "--no-qt-privacy-ask", "--video-on-top", "--play-and-exit" -PassThru
+    Start-Sleep -Milliseconds $initialDelay  # Allow VLC to start
+    
+    # Capture screenshots until VLC exits
+    while ($vlcProcess.HasExited -eq $false) {
+        $file = "$savePath\Screenshot_$((Get-Date).ToString('yyyyMMddHHmmss')).png"
+        Capture-ScreenWithGDIPlus -filePath $file
+        Write-Output "Screenshot saved: $file"
+        Start-Sleep -Milliseconds $screenshotInterval  # Interval between screenshots
+    }
+    
+    # Wait for VLC to fully exit before proceeding to the next video
+    while (-not $vlcProcess.HasExited) {
+        Start-Sleep -Milliseconds $vlcPollingInterval  # Poll VLC process state
+    }
+
+    Write-Output "Finished processing video: $($video.Name)"
 }
 
-# Call python script to crop images
-# Set the path to the Python script
-$scriptPath = "C:\Users\manoj\Documents\scripts\crop_colours.py"
+Write-Output "All videos processed successfully!"
 
-# Run the Python script
-python $scriptPath $savePath
+# Call the Python script to crop images
+$pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
+Write-Output "Calling Python cropping script: $pythonScriptPath"
+python $pythonScriptPath $savePath
 
-Write-Output "Image cropping completed."
+Write-Output "Cropping completed!"
+Write-Output "All videos processed successfully!"
