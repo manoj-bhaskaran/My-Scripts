@@ -12,7 +12,7 @@ New-Item -ItemType Directory -Force -Path $savePath
 Add-Type -AssemblyName System.Drawing
 
 # Function to capture the screen using GDI+
-function Capture-ScreenWithGDIPlus {
+function Get-ScreenWithGDIPlus {
     param (
         [string]$filePath  # File path where the screenshot will be saved
     )
@@ -50,8 +50,8 @@ foreach ($video in $videoFiles) {
     
     # Capture screenshots until VLC exits
     while ($vlcProcess.HasExited -eq $false) {
-        $file = "$savePath\Screenshot_$((Get-Date).ToString('yyyyMMddHHmmss')).png"
-        Capture-ScreenWithGDIPlus -filePath $file
+        $file = "$savePath\Screenshot_$((Get-Date).ToString('yyyyMMddHHmmssfff')).png"
+        Get-ScreenWithGDIPlus -filePath $file
         Write-Output "Screenshot saved: $file"
         Start-Sleep -Milliseconds $screenshotInterval  # Interval between screenshots
     }
