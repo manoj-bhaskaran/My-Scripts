@@ -65,3 +65,11 @@ foreach ($video in $videoFiles) {
 }
 
 Write-Output "All videos processed successfully!"
+
+# Call the Python script to crop images
+$pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
+Write-Output "Calling Python cropping script: $pythonScriptPath"
+python $pythonScriptPath $savePath
+
+Write-Output "Cropping completed!"
+Write-Output "All videos processed successfully!"
