@@ -35,7 +35,7 @@ function Get-ScreenWithGDIPlus {
 }
 
 # Clear existing screenshots once before starting video processing
-Get-ChildItem -Path $savePath -Filter *.png -File | Remove-Item -Force
+Get-ChildItem -Path $savePath -Recurse -File | Remove-Item -Force
 Write-Output "Cleared existing screenshots from $savePath"
 
 # Get all video files in the source folder with multiple extensions
@@ -71,5 +71,4 @@ $pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
 Write-Output "Calling Python cropping script: $pythonScriptPath"
 python $pythonScriptPath $savePath
 
-Write-Output "Cropping completed!"
 Write-Output "All videos processed successfully!"
