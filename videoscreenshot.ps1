@@ -8,15 +8,12 @@ New-Item -ItemType Directory -Force -Path $savePath
 # Clear out any existing PNG files from the Screenshots folder
 Get-ChildItem -Path $savePath -Filter *.png -File | Remove-Item -Force
 
-# Duration of the video in seconds (set this based on your video length)
-$videoDuration = 13  # Adjust this to the actual video length in seconds
-
 # Configurable delays
 $initialDelay = 200  # Milliseconds to wait until VLC opens
 $screenshotInterval = 250  # Milliseconds between screenshots
 
 # Start VLC Media Player with the video in fullscreen and without the control bar
-$vlcProcess = Start-Process -FilePath "vlc.exe" -ArgumentList "`"$videoPath`"", "--fullscreen", "--no-video-title-show", "--qt-minimal-view", "--no-qt-privacy-ask", "--video-on-top" -PassThru
+$vlcProcess = Start-Process -FilePath "vlc.exe" -ArgumentList "`"$videoPath`"", "--fullscreen", "--no-video-title-show", "--qt-minimal-view", "--no-qt-privacy-ask", "--video-on-top", "--play-and-exit" -PassThru
 Start-Sleep -Milliseconds $initialDelay  # Wait for VLC to open
 
 # Load required .NET assemblies for GDI+
@@ -46,21 +43,17 @@ function Capture-ScreenWithGDIPlus {
 }
 
 # Start capturing screenshots, tracking time to stop after video duration
-$startTime = Get-Date
 $elapsedTime = 0
 
-while ($elapsedTime -lt $videoDuration) {
+while ($vlcProcess.HasExited -eq $false) {
     $file = "$savePath\Screenshot_$($elapsedTime).png"
     Capture-ScreenWithGDIPlus -filePath $file
     Write-Output "Screenshot saved to $file"
     
     # Wait for the configured interval between screenshots
     Start-Sleep -Milliseconds $screenshotInterval
-    $elapsedTime = (New-TimeSpan -Start $startTime -End (Get-Date)).TotalSeconds
+    $elapsedTime++
 }
-
-# Close VLC after capturing screenshots
-Stop-Process -Name "vlc" -Force
 
 # Call python script to crop images
 # Set the path to the Python script
