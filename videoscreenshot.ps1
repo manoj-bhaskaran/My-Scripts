@@ -13,7 +13,7 @@ $initialDelay = 200  # Milliseconds to wait until VLC opens
 $screenshotInterval = 250  # Milliseconds between screenshots
 
 # Start VLC Media Player with the video in fullscreen and without the control bar
-$vlcProcess = Start-Process -FilePath "vlc.exe" -ArgumentList "`"$videoPath`"", "--fullscreen", "--no-video-title-show", "--qt-minimal-view", "--no-qt-privacy-ask", "--video-on-top" -PassThru
+$vlcProcess = Start-Process -FilePath "vlc.exe" -ArgumentList "`"$videoPath`"", "--fullscreen", "--no-video-title-show", "--qt-minimal-view", "--no-qt-privacy-ask", "--video-on-top", "--play-and-exit" -PassThru
 Start-Sleep -Milliseconds $initialDelay  # Wait for VLC to open
 
 # Load required .NET assemblies for GDI+
