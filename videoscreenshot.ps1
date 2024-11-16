@@ -66,9 +66,9 @@ Add-Type -AssemblyName System.Windows.Forms
 function Get-ScreenWithGDIPlus {
     param ([string]$filePath)
 
-    # Fetch screen resolution dynamically
-    $screenWidth = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width
-    $screenHeight = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height
+    # Screen resolution is hardcoded
+    $screenWidth = 1920
+    $screenHeight = 1080
 
     # Create a bitmap with the current screen resolution
     $bitmap = New-Object System.Drawing.Bitmap $screenWidth, $screenHeight
