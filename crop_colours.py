@@ -4,10 +4,11 @@ from the left and right sides. It saves the cropped images in a subfolder
 named 'Cropped Images'.
 
 Usage:
-    python crop_colours.py <folder_path>
+    python crop_colours.py <folder_path> [croppingProgressInterval]
 
 Arguments:
     folder_path: The path to the folder containing the images to be processed.
+    croppingProgressInterval: Optional. Specifies how often to print progress messages. Default is 10.
 """
 
 import sys
@@ -16,6 +17,7 @@ from PIL import Image
 
 # Get the folder path from the command line argument
 folder_path = sys.argv[1]
+croppingProgressInterval = int(sys.argv[2]) if len(sys.argv) > 2 else 10  # Default interval: 10
 
 BLACK_THRESHOLD = 50
 WHITE_THRESHOLD = 205  # New threshold for white color
@@ -77,12 +79,26 @@ def crop_black_and_white_sides(image):
 cropped_folder = os.path.join(folder_path, "Cropped Images")
 os.makedirs(cropped_folder, exist_ok=True)
 
+# List all images in the folder
+image_files = [f for f in os.listdir(folder_path) if f.endswith('.png') or f.endswith('.jpg')]
+
+# Track progress
+total_files = len(image_files)
+cropped_count = 0
+
 for filename in os.listdir(folder_path):
     if filename.endswith('.png') or filename.endswith('.jpg'):  # Updated to include .jpg files
         image_path = os.path.join(folder_path, filename)
         input_image = Image.open(image_path)
         cropped = crop_black_and_white_sides(input_image)
         cropped.save(os.path.join(cropped_folder, f"{filename}"))
+        cropped_count += 1
+
         print(f"Cropped and saved {filename} in 'Cropped Images' folder")
 
-print("Cropping complete!")
+        # Print progress message after every `croppingProgressInterval` images
+        if cropped_count % croppingProgressInterval == 0:
+            print(f"Cropped {cropped_count} out of {total_files} videos so far")
+
+# Final completion message
+print(f"Cropping complete! Processed {cropped_count} images in total.")
