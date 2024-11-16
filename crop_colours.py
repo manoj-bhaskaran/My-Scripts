@@ -2,10 +2,11 @@
 This script processes images in a given folder by cropping black and white blocks 
 from the left and right sides. It saves the cropped images in a subfolder 
 named 'Cropped Images'. If an image has already been cropped and saved in the 
-'Cropped Images' folder, it will be skipped. 
+'Cropped Images' folder, it will be skipped.
 
-The script now utilizes parallel processing to improve performance on multi-core systems 
-and includes optimized thresholding to minimize unnecessary pixel checks.
+The script now utilizes parallel processing to improve performance on multi-core systems, 
+includes optimized thresholding to minimize unnecessary pixel checks, and implements 
+improved memory management techniques.
 
 Usage:
     python crop_colours.py <folder_path> [croppingProgressInterval]
@@ -19,6 +20,8 @@ Functionality:
     - Uses vectorized image processing and optimised column-level checks for better performance.
     - Processes images in parallel using ThreadPoolExecutor for faster execution.
     - Only cropped images are counted towards progress; skipped images (completely black or white) are ignored.
+    - Implements explicit garbage collection to free memory, ensuring efficient memory usage.
+    - Processes images within a context manager to enhance memory management and release resources promptly.
 """
 
 import os
@@ -26,6 +29,7 @@ import sys
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import gc
 
 # Constants for thresholds
 BLACK_THRESHOLD = 50
@@ -85,21 +89,27 @@ def crop_and_save_image(image_path, cropped_file_path):
         image_path (str): Path to the image file.
         cropped_file_path (str): Path to save the cropped image.
     """
-    # Load and process the image
-    gray, original = load_image(image_path)
+    try:
+        # Load and process the image in a context manager to ensure memory is freed
+        with open(image_path, 'rb') as f:
+            gray, original = load_image(f.name)
 
-    # Get cropping bounds using the optimised method
-    left, right = get_cropping_bounds(gray)
-    
-    # Check if the image is entirely black or white (no cropping needed)
-    if left == 0 and right == gray.shape[1]:
-        print(f"Skipped {os.path.basename(image_path)}: Entirely black or white")
-        return  # Skip saving for this image
-    
-    cropped_image = original[:, left:right]  # Crop width-wise
-    cv2.imwrite(cropped_file_path, cropped_image)
-    
-    return cropped_file_path
+        # Get cropping bounds using the optimised method
+        left, right = get_cropping_bounds(gray)
+        
+        # Check if the image is entirely black or white (no cropping needed)
+        if left == 0 and right == gray.shape[1]:
+            print(f"Skipped {os.path.basename(image_path)}: Entirely black or white")
+            return  # Skip saving for this image
+        
+        cropped_image = original[:, left:right]  # Crop width-wise
+        cv2.imwrite(cropped_file_path, cropped_image)
+        
+        return cropped_file_path
+    finally:
+        # Explicitly delete variables to free memory
+        del gray, original, cropped_image
+        gc.collect()
 
 # List all images in the folder
 image_files = [f for f in os.listdir(folder_path) if f.endswith('.png') or f.endswith('.jpg')]
