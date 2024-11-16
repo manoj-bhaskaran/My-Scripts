@@ -4,7 +4,8 @@ from the left and right sides. It saves the cropped images in a subfolder
 named 'Cropped Images'. If an image has already been cropped and saved in the 
 'Cropped Images' folder, it will be skipped. 
 
-The script now utilizes parallel processing to improve performance on multi-core systems.
+The script now utilizes parallel processing to improve performance on multi-core systems 
+and includes optimized thresholding to minimize unnecessary pixel checks.
 
 Usage:
     python crop_colours.py <folder_path> [croppingProgressInterval]
@@ -15,8 +16,9 @@ Arguments:
 
 Functionality:
     - Skips images that have already been cropped and saved in the 'Cropped Images' folder.
-    - Uses vectorized image processing for better performance.
+    - Uses vectorized image processing and optimised column-level checks for better performance.
     - Processes images in parallel using ThreadPoolExecutor for faster execution.
+    - Only cropped images are counted towards progress; skipped images (completely black or white) are ignored.
 """
 
 import os
@@ -51,34 +53,28 @@ def load_image(image_path):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return gray, image  # Return both grayscale and original
 
-def get_non_black_white_mask(gray_image):
+def get_cropping_bounds(gray_image):
     """
-    Get a binary mask for pixels that are neither black nor white.
+    Get the cropping bounds using optimised column-level reduction.
 
     Args:
         gray_image (np.ndarray): Grayscale image array.
 
     Returns:
-        np.ndarray: Binary mask where 1 indicates non-black-and-white pixels.
-    """
-    _, black_mask = cv2.threshold(gray_image, BLACK_THRESHOLD, 255, cv2.THRESH_BINARY_INV)
-    _, white_mask = cv2.threshold(gray_image, WHITE_THRESHOLD, 255, cv2.THRESH_BINARY)
-    non_black_white_mask = cv2.bitwise_or(black_mask, white_mask)  # Combine black and white masks
-    return non_black_white_mask
-
-def get_cropping_bounds(mask):
-    """
-    Get the cropping bounds from the binary mask.
-
-    Args:
-        mask (np.ndarray): Binary mask where 1 indicates non-black-and-white pixels.
-
-    Returns:
         tuple: Left and right cropping bounds (left, right).
     """
-    column_sums = np.any(mask == 0, axis=0)  # Check if any row in a column contains 0
-    left_bound = np.argmax(column_sums)  # First non-zero column
-    right_bound = mask.shape[1] - np.argmax(column_sums[::-1])  # Last non-zero column
+    # Identify columns that contain pixels not within the black or white threshold
+    valid_columns = np.any(
+        (gray_image > BLACK_THRESHOLD) & (gray_image < WHITE_THRESHOLD),
+        axis=0  # Reduce across rows for each column
+    )
+
+    # Find the first and last valid column
+    if not np.any(valid_columns):  # Early exit if all columns are black/white
+        return 0, gray_image.shape[1]  # No cropping needed
+    left_bound = np.argmax(valid_columns)
+    right_bound = gray_image.shape[1] - np.argmax(valid_columns[::-1])
+    
     return left_bound, right_bound
 
 def crop_and_save_image(image_path, cropped_file_path):
@@ -91,10 +87,15 @@ def crop_and_save_image(image_path, cropped_file_path):
     """
     # Load and process the image
     gray, original = load_image(image_path)
-    non_black_white_mask = get_non_black_white_mask(gray)
-    bounds = get_cropping_bounds(non_black_white_mask)
+
+    # Get cropping bounds using the optimised method
+    left, right = get_cropping_bounds(gray)
     
-    left, right = bounds
+    # Check if the image is entirely black or white (no cropping needed)
+    if left == 0 and right == gray.shape[1]:
+        print(f"Skipped {os.path.basename(image_path)}: Entirely black or white")
+        return  # Skip saving for this image
+    
     cropped_image = original[:, left:right]  # Crop width-wise
     cv2.imwrite(cropped_file_path, cropped_image)
     
@@ -106,7 +107,6 @@ image_files = [f for f in os.listdir(folder_path) if f.endswith('.png') or f.end
 # Track progress
 total_files = len(image_files)
 cropped_count = 0
-considered_count = 0
 
 # Process images in parallel using ThreadPoolExecutor
 with ThreadPoolExecutor() as executor:
