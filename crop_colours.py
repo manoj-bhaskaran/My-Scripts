@@ -1,7 +1,8 @@
 """
 This script processes images in a given folder by cropping black and white blocks 
 from the left and right sides. It saves the cropped images in a subfolder 
-named 'Cropped Images'.
+named 'Cropped Images'. If an image has already been cropped and saved in the 
+'Cropped Images' folder, it will be skipped.
 
 Usage:
     python crop_colours.py <folder_path> [croppingProgressInterval]
@@ -9,6 +10,9 @@ Usage:
 Arguments:
     folder_path: The path to the folder containing the images to be processed.
     croppingProgressInterval: Optional. Specifies how often to print progress messages. Default is 10.
+
+Functionality:
+    - Skips images that have already been cropped and saved in the 'Cropped Images' folder.
 """
 
 import sys
@@ -85,20 +89,30 @@ image_files = [f for f in os.listdir(folder_path) if f.endswith('.png') or f.end
 # Track progress
 total_files = len(image_files)
 cropped_count = 0
+considered_count = 0
 
-for filename in os.listdir(folder_path):
+for filename in image_files:
     if filename.endswith('.png') or filename.endswith('.jpg'):  # Updated to include .jpg files
+        considered_count += 1
+        cropped_file_path = os.path.join(cropped_folder, filename)
+
+        # Check if the cropped file already exists
+        if os.path.exists(cropped_file_path):
+            print(f"Skipping {filename} as it has already been cropped.")
+            continue
+        
         image_path = os.path.join(folder_path, filename)
         input_image = Image.open(image_path)
         cropped = crop_black_and_white_sides(input_image)
-        cropped.save(os.path.join(cropped_folder, f"{filename}"))
+        cropped.save(cropped_file_path)
         cropped_count += 1
 
         print(f"Cropped and saved {filename} in 'Cropped Images' folder")
 
         # Print progress message after every `croppingProgressInterval` images
         if cropped_count % croppingProgressInterval == 0:
-            print(f"Cropped {cropped_count} out of {total_files} videos so far")
+            print(f"Cropped {cropped_count} out of {considered_count} images so far")
 
 # Final completion message
-print(f"Cropping complete! Processed {cropped_count} images in total.")
+print(f"Cropping complete! Processed {cropped_count} images in total out of {considered_count} considered.")
+
