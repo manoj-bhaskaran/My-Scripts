@@ -219,6 +219,7 @@ try {
 
         $currentRunCount++
         Write-Message "Finished processing video: $($video.Name)"
+        Write-Message "Completed video $currentRunCount/$($videoFiles.Count)"
 
         # Stop if video limit is reached
         if ($currentRunCount -eq $videoLimit) {
