@@ -1,6 +1,7 @@
 # Configurable delays (in milliseconds)
 $initialDelay = 200          # Time to wait for VLC to open
 $screenshotInterval = 500    # Interval between screenshots
+$timeLimitInMinutes = 10     # Maximum time limit for processing videos
 
 # Define paths
 $sourceFolderPath = "C:\Users\manoj\Downloads"
@@ -84,6 +85,7 @@ function Get-ScreenWithGDIPlus {
 }
 
 $currentRunCount = 0
+$startTime = Get-Date # Record the start time
 
 # Get all video files in the source folder
 $allVideoFiles = Get-ChildItem -Path $sourceFolderPath -Recurse -Include *.mp4, *.avi, *.mkv
@@ -130,6 +132,13 @@ try {
         # Stop if video limit is reached
         if ($currentRunCount -eq $videoLimit) {
             Write-Message "Video limit of $videoLimit reached. Proceeding to cropping step."
+            break
+        }
+
+        # Check if the time limit has been reached
+        $elapsedTime = (Get-Date) - $startTime
+        if ($elapsedTime.TotalMinutes -ge $timeLimitInMinutes) {
+            Write-Message "Time limit of $timeLimitInMinutes minutes reached. Proceeding to cropping step."
             break
         }
     }
