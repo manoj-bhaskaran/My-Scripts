@@ -2,3 +2,4 @@ requests
 numpy
 pandas
 pillow
+opencv-python
