@@ -2,7 +2,9 @@
 This script processes images in a given folder by cropping black and white blocks 
 from the left and right sides. It saves the cropped images in a subfolder 
 named 'Cropped Images'. If an image has already been cropped and saved in the 
-'Cropped Images' folder, it will be skipped.
+'Cropped Images' folder, it will be skipped. 
+
+The script now utilizes parallel processing to improve performance on multi-core systems.
 
 Usage:
     python crop_colours.py <folder_path> [croppingProgressInterval]
@@ -14,12 +16,14 @@ Arguments:
 Functionality:
     - Skips images that have already been cropped and saved in the 'Cropped Images' folder.
     - Uses vectorized image processing for better performance.
+    - Processes images in parallel using ThreadPoolExecutor for faster execution.
 """
 
 import os
 import sys
 import cv2
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Constants for thresholds
 BLACK_THRESHOLD = 50
@@ -77,18 +81,24 @@ def get_cropping_bounds(mask):
     right_bound = mask.shape[1] - np.argmax(column_sums[::-1])  # Last non-zero column
     return left_bound, right_bound
 
-def crop_and_save_image(original_image, bounds, output_path):
+def crop_and_save_image(image_path, cropped_file_path):
     """
     Crop the image based on bounds and save the result.
 
     Args:
-        original_image (np.ndarray): The original image in BGR format.
-        bounds (tuple): Cropping bounds (left, right).
-        output_path (str): Path to save the cropped image.
+        image_path (str): Path to the image file.
+        cropped_file_path (str): Path to save the cropped image.
     """
+    # Load and process the image
+    gray, original = load_image(image_path)
+    non_black_white_mask = get_non_black_white_mask(gray)
+    bounds = get_cropping_bounds(non_black_white_mask)
+    
     left, right = bounds
-    cropped_image = original_image[:, left:right]  # Crop width-wise
-    cv2.imwrite(output_path, cropped_image)
+    cropped_image = original[:, left:right]  # Crop width-wise
+    cv2.imwrite(cropped_file_path, cropped_image)
+    
+    return cropped_file_path
 
 # List all images in the folder
 image_files = [f for f in os.listdir(folder_path) if f.endswith('.png') or f.endswith('.jpg')]
@@ -98,29 +108,26 @@ total_files = len(image_files)
 cropped_count = 0
 considered_count = 0
 
-# Process each image
-for filename in image_files:
-    considered_count += 1
-    cropped_file_path = os.path.join(cropped_folder, filename)
+# Process images in parallel using ThreadPoolExecutor
+with ThreadPoolExecutor() as executor:
+    future_to_image = {
+        executor.submit(crop_and_save_image, os.path.join(folder_path, filename), os.path.join(cropped_folder, filename)): filename 
+        for filename in image_files 
+        if not os.path.exists(os.path.join(cropped_folder, filename))
+    }
 
-    # Check if the cropped file already exists
-    if os.path.exists(cropped_file_path):
-        print(f"Skipping {filename} as it has already been cropped.")
-        continue
-
-    # Load and process the image
-    image_path = os.path.join(folder_path, filename)
-    gray, original = load_image(image_path)
-    non_black_white_mask = get_non_black_white_mask(gray)
-    bounds = get_cropping_bounds(non_black_white_mask)
-    crop_and_save_image(original, bounds, cropped_file_path)
-
-    cropped_count += 1
-    print(f"Cropped and saved {filename} in 'Cropped Images' folder")
-
-    # Print progress message after every `croppingProgressInterval` images
-    if cropped_count % croppingProgressInterval == 0:
-        print(f"Cropped {cropped_count} out of {considered_count} images so far")
+    for future in as_completed(future_to_image):
+        filename = future_to_image[future]
+        try:
+            cropped_file_path = future.result()
+            cropped_count += 1
+            print(f"Cropped and saved {filename} in 'Cropped Images' folder")
+            
+            # Print progress message after every `croppingProgressInterval` images
+            if cropped_count % croppingProgressInterval == 0:
+                print(f"Cropped {cropped_count} images so far")
+        except Exception as exc:
+            print(f"{filename} generated an exception: {exc}")
 
 # Final completion message
-print(f"Cropping complete! Processed {cropped_count} images in total out of {considered_count} considered.")
+print(f"Cropping complete! Processed {cropped_count} images in total.")
