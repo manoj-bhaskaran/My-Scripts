@@ -59,6 +59,7 @@ $screenshotInterval = 500    # Interval between screenshots (milliseconds)
 $timeLimitInMinutes = 10     # Maximum time limit for processing videos (default value in minutes)
 $videoLimit = 5              # Maximum number of videos to process in a single run (default value)
 
+
 # Define paths
 $sourceFolderPath = "C:\Users\manoj\Downloads"
 $savePath = "C:\Users\manoj\OneDrive\Desktop\Screenshots"
