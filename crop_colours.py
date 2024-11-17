@@ -9,11 +9,12 @@ includes optimized thresholding to minimize unnecessary pixel checks, and implem
 improved memory management techniques.
 
 Usage:
-    python crop_colours.py <folder_path> [croppingProgressInterval]
+    python crop_colours.py --folder_path <folder_path> [--resume_file <resume_file>] [--cropping_progress <cropping_progress>]
 
 Arguments:
     folder_path: The path to the folder containing the images to be processed.
-    croppingProgressInterval: Optional. Specifies how often to print progress messages. Default is 10.
+    resume_file: Optional. Specifies the file name to resume cropping from. Default is None.
+    cropping_progress: Optional. Specifies how often to print progress messages. Default is 10.
 
 Functionality:
     - Skips images that have already been cropped and saved in the 'Cropped Images' folder.
@@ -25,8 +26,8 @@ Functionality:
 """
 
 import os
-import sys
 import cv2
+import argparse
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import gc
@@ -35,9 +36,18 @@ import gc
 BLACK_THRESHOLD = 50
 WHITE_THRESHOLD = 205  # New threshold for white color
 
-# Get the folder path from the command line argument
-folder_path = sys.argv[1]
-croppingProgressInterval = int(sys.argv[2]) if len(sys.argv) > 2 else 10  # Default interval: 10
+# Set up argument parser
+parser = argparse.ArgumentParser(description='Process and crop images.')
+parser.add_argument('--folder_path', type=str, required=True, help='Path to the folder containing the images to be processed.')
+parser.add_argument('--resume_file', type=str, default=None, help='Optional. File name to resume cropping from. Default is None.')
+parser.add_argument('--cropping_progress', type=int, default=10, help='Optional. Specifies how often to print progress messages. Default is 10.')
+
+args = parser.parse_args()
+
+# Get arguments
+folder_path = args.folder_path
+resume_file = args.resume_file
+croppingProgressInterval = args.cropping_progress
 
 # Define the cropped images folder
 cropped_folder = os.path.join(folder_path, "Cropped Images")
@@ -114,6 +124,9 @@ def crop_and_save_image(image_path, cropped_file_path):
 # List all images in the folder
 image_files = [f for f in os.listdir(folder_path) if f.endswith('.png') or f.endswith('.jpg')]
 
+# Initialize flag to skip files until resume_file is found
+resume = True if resume_file else False
+
 # Track progress
 total_files = len(image_files)
 cropped_count = 0
@@ -128,6 +141,14 @@ with ThreadPoolExecutor() as executor:
 
     for future in as_completed(future_to_image):
         filename = future_to_image[future]
+
+        # Skip files until resume_file is found
+        if resume:
+            if filename == resume_file:
+                resume = False  # Resume processing after this file
+            else:
+                continue  # Skip this file
+
         try:
             cropped_file_path = future.result()
             cropped_count += 1

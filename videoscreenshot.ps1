@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-This PowerShell script processes video files from a specified source folder, takes screenshots at regular intervals, and then crops the screenshots using a Python script. It also supports a cropping-only mode to skip video processing and screenshot capturing, and directly crop the images.
+This PowerShell script processes video files from a specified source folder, takes screenshots at regular intervals, and then crops the screenshots using a Python script. It also supports a cropping-only mode to skip video processing and screenshot capturing, and directly crop the images. In cropping-only mode, it can resume processing from a specified file name.
 
 .DESCRIPTION
-The script allows for configurable parameters, such as the maximum number of videos to process in a single run and the time limit for processing videos. Additionally, it supports command-line parameters to override these default values and handles interrupts gracefully. The script can also be run in a cropping-only mode, skipping video processing and screenshot capturing if the screenshots have already been taken.
+The script allows for configurable parameters, such as the maximum number of videos to process in a single run and the time limit for processing videos. Additionally, it supports command-line parameters to override these default values and handles interrupts gracefully. The script can also be run in a cropping-only mode, skipping video processing and screenshot capturing if the screenshots have already been taken. When running in cropping-only mode, it can resume processing from a specified file name.
 
 .PARAMETER TimeLimit
 Maximum time in minutes for processing videos in a single run. Overrides the default value of $timeLimitInMinutes.
@@ -13,6 +13,9 @@ Maximum number of videos to process in a single run. Overrides the default value
 
 .PARAMETER CropOnly
 Runs the script in cropping-only mode, skipping video processing and screenshot capturing, and directly calling the Python cropping script.
+
+.PARAMETER ResumeFile
+Specifies the file name to resume cropping from in cropping-only mode. The script will skip files until it reaches this file name.
 
 .EXAMPLES
 To run the script with the default values:
@@ -24,6 +27,9 @@ To specify a time limit of 15 minutes and a video limit of 10:
 To run the script in cropping-only mode:
 .\videoscreenshot.ps1 -CropOnly
 
+To run the script in cropping-only mode and resume cropping from a specific file:
+.\videoscreenshot.ps1 -CropOnly -ResumeFile "Screenshot_20231116180000.png"
+
 .NOTES
 Script Workflow:
 1. Initialization:
@@ -31,6 +37,7 @@ Script Workflow:
    - Source folder, save path, cropped images path, log file path, and Python script path are defined.
    - Command-line parameters are parsed to override default values, if provided.
    - The -CropOnly parameter is parsed to determine if the script should skip video processing.
+   - The -ResumeFile parameter is parsed to specify the file name to resume from in cropping-only mode.
 
 2. Prerequisite Checks:
    - The script checks if the source folder exists.
@@ -52,17 +59,17 @@ Script Workflow:
 6. Cropping Mode (if -CropOnly is provided):
    - The script skips video processing and screenshot capturing.
    - The Python cropping script is called to crop the screenshots from the specified directory.
+   - If the -ResumeFile parameter is provided, the script resumes cropping from the specified file, skipping files until it reaches this file name.
 
 7. Error Handling and Cleanup:
    - Any errors during processing are logged.
    - VLC processes are terminated if still running after an error or interrupt.
 
 8. Python Script Execution:
-   - The Python script is called to crop the screenshots. If in cropping-only mode, it only processes the existing screenshots.
+   - The Python script is called to crop the screenshots. If in cropping-only mode, it only processes the existing screenshots. If the -ResumeFile parameter is provided, it resumes cropping from the specified file.
 
 9. Completion:
    - The script logs the completion of processing and deletes the log file if all videos are processed.
-
 #>
 
 # Configurable parameters
@@ -89,7 +96,8 @@ function Write-Message {
 param (
     [int]$TimeLimit = $timeLimitInMinutes,
     [int]$VideoLimit = $videoLimit,
-    [switch]$CropOnly
+    [switch]$CropOnly,
+    [string]$ResumeFile
 )
 
 # Override default values with command-line arguments, if provided
@@ -268,7 +276,11 @@ if (-not $CropOnly) {
 # Call the Python script to crop images
 try {
     Write-Message "Calling Python cropping script: $pythonScriptPath"
-    $pythonOutput = python $pythonScriptPath $savePath 2>&1
+    if ($ResumeFile) {
+        $pythonOutput = python $pythonScriptPath --folder_path "$savePath" --resume_file "$ResumeFile" 2>&1
+    } else {
+        $pythonOutput = python $pythonScriptPath --folder_path "$savePath" 2>&1
+    }
     Write-Message "Python script output: $pythonOutput"
 
     if ($LastExitCode -ne 0) {
