@@ -73,6 +73,11 @@ param (
     [switch]$Verbose
 )
 
+# Set the verbose preference if verbose switch is used
+if ($Verbose) {
+    $VerbosePreference = 'Continue'
+}
+
 # Check if source folder exists
 if (-not (Test-Path $sourceFolder)) {
     Write-Error "Source folder '$sourceFolder' does not exist."
@@ -106,16 +111,12 @@ function Set-ACL {
         Set-Acl -Path $path -AclObject $acl
         $global:currentItem++
         Show-Progress -current $global:currentItem -total $global:totalItems -activity "Applying ACL" -status "$global:currentItem of $($global:totalItems) processed"
-        if ($Verbose.IsPresent) {
-            Write-Verbose "Applied ACL to: $path"
-        }
+        Write-Verbose "Applied ACL to: $path"
     }
     catch {
         if (-not $SkipErrors) { throw $_ }
         Write-Warning "Failed to apply ACL to: $path"
-        if ($Verbose.IsPresent) {
-            Write-Verbose "Error details: $_"
-        }
+        Write-Verbose "Error details: $_"
     }
 }
 
