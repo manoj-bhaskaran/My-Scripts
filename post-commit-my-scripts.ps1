@@ -18,7 +18,7 @@ if (Test-Path $gitignorePath) {
 }
 
 # Function to check if a file matches any ignored patterns
-function Is-Ignored {
+function Test-Ignored {
     param (
         [string]$fileName
     )
@@ -41,10 +41,10 @@ function Is-Ignored {
 # Copy only files modified in the latest commit, excluding .gitignore and ignored files
 $modifiedFiles | ForEach-Object {
     $sourceFilePath = Join-Path -Path $repoPath -ChildPath $_
-    $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $_
 
     # Only copy if the source file exists and is not in .gitignore
-    if (Test-Path $sourceFilePath -and -not (Is-Ignored $_)) {
+    if (Test-Path $sourceFilePath -and !(Test-Ignored $_)) {
+        # Directly copy the file to the destination folder
         Copy-Item -Path $sourceFilePath -Destination $destinationFolder -Force
     }
 }
@@ -54,8 +54,8 @@ $deletedFiles | ForEach-Object {
     $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $_
 
     # Only move to Recycle Bin if the file exists in the destination and is not ignored
-    if (Test-Path $destinationFilePath -and -not (Is-Ignored $_)) {
-        # Move file to the Recycle Bin
+    if (Test-Path $destinationFilePath -and -not (Test-Ignored $_)) {
+        # Move file to Recycle Bin
         Remove-Item -Path $destinationFilePath -Recurse -Confirm:$false -ErrorAction SilentlyContinue
     }
 }
