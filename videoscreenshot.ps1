@@ -49,7 +49,7 @@ Script Workflow:
    - The log file is checked to determine if it is a fresh start. If so, existing screenshots are cleared (unless in cropping-only mode).
 
 4. Interrupt Handling:
-   - A signal handler is added to detect interrupt signals (e.g., Ctrl+C) to stop processing new videos and proceed to the cropping step.
+   - Interrupt handling logic has been removed for simplicity.
 
 5. Video Processing:
    - All video files in the source folder are listed.
@@ -85,7 +85,6 @@ $initialDelay = 200          # Time to wait for VLC to open (milliseconds)
 $screenshotInterval = 500    # Interval between screenshots (milliseconds)
 $timeLimitInMinutes = 10     # Maximum time limit for processing videos (default value in minutes)
 $videoLimit = 5              # Maximum number of videos to process in a single run (default value)
-
 
 # Define paths
 $sourceFolderPath = "C:\Users\manoj\Downloads"
@@ -148,14 +147,6 @@ if ($freshStart -and -not $CropOnly) {
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 
-# Add a signal handler to detect Ctrl+C
-$script:interrupted = $false
-[Console]::CancelKeyPress += {
-    $script:interrupted = $true
-    $_.Cancel = $true
-    Write-Message "Interrupt signal received. Stopping new video processing..."
-}
-
 # Function to capture the screen using GDI+
 function Get-ScreenWithGDIPlus {
     param ([string]$filePath)
@@ -199,12 +190,6 @@ if (-not $CropOnly) {
             Write-Message "Processing video: $($video.Name)"
             Write-Message "Processing video $($currentRunCount + 1) of $($videoFiles.Count)"
 
-            # Check for interrupt signal
-            if ($script:interrupted) {
-                Write-Message "Processing interrupted. Proceeding to cropping step."
-                break
-            }
-
             # Start VLC for the current video
             $vlcProcess = Start-Process -FilePath "vlc.exe" -ArgumentList "`"$($video.FullName)`"", "--fullscreen", "--no-video-title-show", "--qt-minimal-view", "--no-qt-privacy-ask", "--video-on-top", "--play-and-exit" -PassThru
 
@@ -226,12 +211,6 @@ if (-not $CropOnly) {
                 $elapsedTime = (Get-Date) - $startTime
                 if ($elapsedTime.TotalMinutes -ge $timeLimitInMinutes) {
                     Write-Message "Time limit of $timeLimitInMinutes minutes reached. Proceeding to cropping step."
-                    break
-                }
-
-                # Check for interrupt signal
-                if ($script:interrupted) {
-                    Write-Message "Processing interrupted. Proceeding to cropping step."
                     break
                 }
             }
