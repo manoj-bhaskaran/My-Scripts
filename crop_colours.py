@@ -1,6 +1,6 @@
 """
 This script processes images in a given folder by cropping black and white blocks 
-from the left and right sides. It saves the cropped images in a subfolder 
+from the left, right, top, and bottom sides. It saves the cropped images in a subfolder 
 named 'Cropped Images'. If an image has already been cropped and saved in the 
 'Cropped Images' folder, it will be skipped.
 
@@ -18,7 +18,7 @@ Arguments:
 
 Functionality:
     - Skips images that have already been cropped and saved in the 'Cropped Images' folder.
-    - Uses vectorized image processing and optimised column-level checks for better performance.
+    - Uses vectorized image processing and optimized column-level and row-level checks for better performance.
     - Processes images in parallel using ThreadPoolExecutor for faster execution.
     - Only cropped images are counted towards progress; skipped images (completely black or white) are ignored.
     - Implements explicit garbage collection to free memory, ensuring efficient memory usage.
@@ -69,27 +69,33 @@ def load_image(image_path):
 
 def get_cropping_bounds(gray_image):
     """
-    Get the cropping bounds using optimised column-level reduction.
+    Get the cropping bounds using optimised column-level and row-level reduction.
 
     Args:
         gray_image (np.ndarray): Grayscale image array.
 
     Returns:
-        tuple: Left and right cropping bounds (left, right).
+        tuple: Left, right, top, and bottom cropping bounds (left, right, top, bottom).
     """
-    # Identify columns that contain pixels not within the black or white threshold
+    # Identify columns and rows that contain pixels not within the black or white threshold
     valid_columns = np.any(
         (gray_image > BLACK_THRESHOLD) & (gray_image < WHITE_THRESHOLD),
         axis=0  # Reduce across rows for each column
     )
+    valid_rows = np.any(
+        (gray_image > BLACK_THRESHOLD) & (gray_image < WHITE_THRESHOLD),
+        axis=1  # Reduce across columns for each row
+    )
 
     # Find the first and last valid column
-    if not np.any(valid_columns):  # Early exit if all columns are black/white
-        return 0, gray_image.shape[1]  # No cropping needed
+    if not np.any(valid_columns) or not np.any(valid_rows):  # Early exit if all columns/rows are black/white
+        return 0, gray_image.shape[1], 0, gray_image.shape[0]  # No cropping needed
     left_bound = np.argmax(valid_columns)
     right_bound = gray_image.shape[1] - np.argmax(valid_columns[::-1])
+    top_bound = np.argmax(valid_rows)
+    bottom_bound = gray_image.shape[0] - np.argmax(valid_rows[::-1])
     
-    return left_bound, right_bound
+    return left_bound, right_bound, top_bound, bottom_bound
 
 def crop_and_save_image(image_path, cropped_file_path):
     """
@@ -105,14 +111,14 @@ def crop_and_save_image(image_path, cropped_file_path):
             gray, original = load_image(f.name)
 
         # Get cropping bounds using the optimised method
-        left, right = get_cropping_bounds(gray)
+        left, right, top, bottom = get_cropping_bounds(gray)
         
         # Check if the image is entirely black or white (no cropping needed)
-        if left == 0 and right == gray.shape[1]:
+        if left == 0 and right == gray.shape[1] and top == 0 and bottom == gray.shape[0]:
             print(f"Skipped {os.path.basename(image_path)}: Entirely black or white")
             return  # Skip saving for this image
         
-        cropped_image = original[:, left:right]  # Crop width-wise
+        cropped_image = original[top:bottom, left:right]  # Crop width-wise and height-wise
         cv2.imwrite(cropped_file_path, cropped_image)
         
         return cropped_file_path
