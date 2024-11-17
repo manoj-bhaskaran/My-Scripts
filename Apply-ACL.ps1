@@ -1,12 +1,13 @@
 <#
 .SYNOPSIS
     This script applies Access Control Lists (ACLs) from a source folder to a target folder and its subfolders.
-    It can be configured to apply ACLs to files, folders, or both, with the option to skip errors and track progress.
+    It can be configured to apply ACLs to files, folders, or both, with the option to skip errors, track progress, and display detailed messages.
 
 .DESCRIPTION
     The script retrieves the ACL from the source folder and applies it to the target folder and its subdirectories.
     You can choose to apply the ACL only to folders or to both folders and files. Additionally, errors can be skipped,
-    and a progress bar is provided to track the application of ACLs.
+    and a progress bar is provided to track the application of ACLs. Verbose mode can be enabled to display detailed messages,
+    including error messages.
 
 .PARAMETER sourceFolder
     The full path to the source folder from which the ACL settings will be copied. This is a mandatory parameter.
@@ -26,6 +27,10 @@
     If not specified, ACLs will be applied to both folders and files.
     Example: `-FoldersOnly`
 
+.PARAMETER Verbose
+    A switch that, if provided, will enable verbose mode to display detailed messages, including error messages.
+    Example: `-Verbose`
+
 .EXAMPLE
     .\Set-ACL.ps1 -sourceFolder "C:\Path\To\Source\Folder" -targetFolder "D:\Path\To\Target\Folder"
     This will apply the ACL from the source folder to both the folders and files in the target folder.
@@ -38,6 +43,10 @@
     .\Set-ACL.ps1 -sourceFolder "C:\Path\To\Source\Folder" -targetFolder "D:\Path\To\Target\Folder" -FoldersOnly
     This will apply the ACL only to the folders in the target folder, skipping files.
 
+.EXAMPLE
+    .\Set-ACL.ps1 -sourceFolder "C:\Path\To\Source\Folder" -targetFolder "D:\Path\To\Target\Folder" -Verbose
+    This will apply the ACL from the source folder to both folders and files in the target folder with verbose messages.
+
 .NOTES
     The script uses the `Get-Acl` cmdlet to retrieve the ACL from the source folder and the `Set-Acl` cmdlet to apply it to the target folder.
     The script processes both directories and files in the target folder, applying the ACL recursively.
@@ -45,6 +54,7 @@
     If `$SkipErrors` is provided, missing files or folders will not halt the execution.
     If `$SkipErrors` is not provided, errors will throw and the script will stop.
     If `$FoldersOnly` is provided, ACLs will be applied only to directories.
+    If `$Verbose` is provided, detailed messages, including error messages, will be displayed.
 
 #>
 
@@ -58,7 +68,9 @@ param (
 
     [switch]$SkipErrors,
 
-    [switch]$FoldersOnly
+    [switch]$FoldersOnly,
+
+    [switch]$Verbose
 )
 
 # Check if source folder exists
@@ -94,10 +106,16 @@ function Set-ACL {
         Apply-ACL -Path $path -AclObject $acl
         $global:currentItem++
         Show-Progress -current $global:currentItem -total $global:totalItems -activity "Applying ACL" -status "$global:currentItem of $($global:totalItems) processed"
+        if ($Verbose) {
+            Write-Verbose "Applied ACL to: $path"
+        }
     }
     catch {
         if (-not $SkipErrors) { throw $_ }
         Write-Warning "Failed to apply ACL to: $path"
+        if ($Verbose) {
+            Write-Verbose "Error details: $_"
+        }
     }
 }
 
