@@ -49,7 +49,7 @@ Script Workflow:
    - The log file is checked to determine if it is a fresh start. If so, existing screenshots are cleared (unless in cropping-only mode).
 
 4. Interrupt Handling:
-   - A signal handler is added to detect interrupt signals (e.g., Ctrl+C) to stop processing new videos and proceed to the cropping step.
+   - A signal handler is added to detect interrupt signals (e.g., Ctrl+C) using `Register-ObjectEvent`. When an interrupt signal is detected, the script stops processing new videos and proceeds to the cropping step.
 
 5. Video Processing:
    - All video files in the source folder are listed.
@@ -150,11 +150,13 @@ Add-Type -AssemblyName System.Windows.Forms
 
 # Add a signal handler to detect Ctrl+C
 $script:interrupted = $false
-[Console]::CancelKeyPress += {
+
+$handler = {
     $script:interrupted = $true
-    $_.Cancel = $true
     Write-Message "Interrupt signal received. Stopping new video processing..."
 }
+
+$null = Register-ObjectEvent -InputObject $host.ui.RawUI -EventName "CancelKeyPress" -Action $handler
 
 # Function to capture the screen using GDI+
 function Get-ScreenWithGDIPlus {
