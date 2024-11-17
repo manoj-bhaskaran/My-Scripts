@@ -106,14 +106,14 @@ function Set-ACL {
         Apply-ACL -Path $path -AclObject $acl
         $global:currentItem++
         Show-Progress -current $global:currentItem -total $global:totalItems -activity "Applying ACL" -status "$global:currentItem of $($global:totalItems) processed"
-        if ($PSCmdlet.MyInvocation.BoundParameters["Verbose"]) {
+        if ($Verbose.IsPresent) {
             Write-Verbose "Applied ACL to: $path"
         }
     }
     catch {
         if (-not $SkipErrors) { throw $_ }
         Write-Warning "Failed to apply ACL to: $path"
-        if ($PSCmdlet.MyInvocation.BoundParameters["Verbose"]) {
+        if ($Verbose.IsPresent) {
             Write-Verbose "Error details: $_"
         }
     }
