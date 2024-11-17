@@ -103,17 +103,17 @@ function Set-ACL {
     )
 
     try {
-        Apply-ACL -Path $path -AclObject $acl
+        Set-Acl -Path $path -AclObject $acl
         $global:currentItem++
         Show-Progress -current $global:currentItem -total $global:totalItems -activity "Applying ACL" -status "$global:currentItem of $($global:totalItems) processed"
-        if ($Verbose.IsPresent) {
+        if ($Verbose) {
             Write-Verbose "Applied ACL to: $path"
         }
     }
     catch {
         if (-not $SkipErrors) { throw $_ }
         Write-Warning "Failed to apply ACL to: $path"
-        if ($Verbose.IsPresent) {
+        if ($Verbose) {
             Write-Verbose "Error details: $_"
         }
     }
