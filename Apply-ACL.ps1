@@ -58,21 +58,24 @@ try {
 }
 
 # Prepare target items
-Write-Verbose "Gathering target items from the target folder: '$targetFolder'"
+Write-Verbose "Gathering target items from: $targetFolder"
 try {
+    # Always include the target folder itself
+    $targetItems = @($targetFolder)
+
     if ($FoldersOnly) {
-        Write-Verbose "FoldersOnly switch is enabled. Only directories will be included."
-        $targetItems = Get-ChildItem -Path $targetFolder -Recurse -Directory
-        Write-Verbose "Total directories found in target folder: $($targetItems.Count)"
+        # If only folders, add directories from the target folder recursively
+        $targetItems += Get-ChildItem -Path $targetFolder -Recurse -Directory
+        Write-Verbose "Found $($targetItems.Count) directories in target folder, including the target folder."
     } else {
-        Write-Verbose "Both folders and files will be included as the FoldersOnly switch is not enabled."
+        # If both files and folders, add directories and files
         $directories = Get-ChildItem -Path $targetFolder -Recurse -Directory
         $files = Get-ChildItem -Path $targetFolder -Recurse -File
-        $targetItems = $directories + $files
-        Write-Verbose "Directories found: $($directories.Count), Files found: $($files.Count), Total items: $($targetItems.Count)"
+        $targetItems += $directories + $files
+        Write-Verbose "Found $($directories.Count) directories and $($files.Count) files in target folder, including the target folder."
     }
 } catch {
-    Write-Error "Error occurred while retrieving items from the target folder: '$targetFolder'. Exception: $_"
+    Write-Error "Failed to retrieve items from target folder: $targetFolder"
     exit 1
 }
 
@@ -90,18 +93,21 @@ function Set-ACL {
         # Retrieve current ACL
         $currentAcl = Get-Acl -Path $path
         Write-Verbose "Retrieved current ACL for '$path'. Verifying inherited permissions."
-
-        # Skip if the ACL has only inherited rules
-        if ($currentAcl.Access | Where-Object { $_.IsInherited } | Measure-Object | Select-Object -ExpandProperty Count -eq $currentAcl.Access.Count) {
+    
+        # Count the inherited rules
+        $inheritedCount = ($currentAcl.Access | Where-Object { $_.IsInherited }).Count
+    
+        # Skip if all permissions are inherited
+        if ($inheritedCount -eq $currentAcl.Access.Count) {
             Write-Verbose "Item '$path' contains only inherited permissions. Skipping ACL update."
             return
         }
-
+    
         # Apply the source ACL
         Write-Verbose "Applying ACL to '$path' using source folder ACL."
         Set-Acl -Path $path -AclObject $acl
         Write-Verbose "Successfully applied ACL to '$path'."
-
+    
         # Update progress
         $global:currentItem++
         Show-Progress -current $global:currentItem -total $global:totalItems -activity "Applying ACL" -status "Processed $global:currentItem of $($global:totalItems)"
@@ -111,7 +117,7 @@ function Set-ACL {
         }
         Write-Warning "Failed to apply ACL to '$path'. Skipping. Error: $_"
     }
-}
+}    
 
 # Function to display progress
 function Show-Progress {
