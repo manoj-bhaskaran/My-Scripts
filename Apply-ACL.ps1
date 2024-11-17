@@ -102,7 +102,7 @@ function Set-ACL {
         if (-not $SkipErrors) {
             throw $_
         }
-        Write-Warning "Failed to apply ACL to: $path"
+        Write-Warning "Failed to apply ACL to: $path : $_"
     }
 }
 
