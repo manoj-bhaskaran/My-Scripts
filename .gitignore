@@ -2,4 +2,4 @@
 .idea/.name
 .idea/vcs.xml
 .idea/workspace.xml
-/.venv
+venv
