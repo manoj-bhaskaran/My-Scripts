@@ -72,6 +72,14 @@ Script Workflow:
    - The script logs the completion of processing and deletes the log file if all videos are processed.
 #>
 
+# Parse command-line arguments
+param (
+    [int]$TimeLimit,
+    [int]$VideoLimit,
+    [switch]$CropOnly,
+    [string]$ResumeFile
+)
+
 # Configurable parameters
 $initialDelay = 200          # Time to wait for VLC to open (milliseconds)
 $screenshotInterval = 500    # Interval between screenshots (milliseconds)
@@ -85,25 +93,16 @@ $savePath = "C:\Users\manoj\OneDrive\Desktop\Screenshots"
 $logFilePath = "$savePath\processed_videos.log"  # Path to the log file
 $pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
 
+# Override default values with command-line arguments, if provided
+$timeLimitInMinutes = if ($TimeLimit) { $TimeLimit } else { $timeLimitInMinutes }
+$videoLimit = if ($VideoLimit) { $VideoLimit } else { $videoLimit }
+
 # Helper function to log messages with timestamps
 function Write-Message {
     param ([string]$message)
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Write-Output "[$timestamp] $message"
 }
-
-# Parse command-line arguments
-# Parse command-line arguments
-param (
-    [int]$TimeLimit,
-    [int]$VideoLimit,
-    [switch]$CropOnly,
-    [string]$ResumeFile
-)
-
-# Override default values with command-line arguments, if provided
-$timeLimitInMinutes = if ($TimeLimit) { $TimeLimit } else { $timeLimitInMinutes }
-$videoLimit = if ($VideoLimit) { $VideoLimit } else { $videoLimit }
 
 if (-not (Test-Path -Path $sourceFolderPath)) {
     Write-Message "Error: Source folder does not exist. Please check the path: $sourceFolderPath"
