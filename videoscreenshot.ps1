@@ -6,16 +6,16 @@ This PowerShell script processes video files from a specified source folder, tak
 The script allows for configurable parameters, such as the maximum number of videos to process in a single run and the time limit for processing videos. Additionally, it supports command-line parameters to override these default values and handles interrupts gracefully. The script can also be run in a cropping-only mode, skipping video processing and screenshot capturing if the screenshots have already been taken. When running in cropping-only mode, it can resume processing from a specified file name.
 
 .PARAMETER TimeLimit
-Maximum time in minutes for processing videos in a single run. Overrides the default value of $timeLimitInMinutes.
+Optional. Specifies the maximum time in minutes for processing videos in a single run. Defaults to $timeLimitInMinutes (10 minutes) if not provided. This parameter is ignored in cropping-only mode.
 
 .PARAMETER VideoLimit
-Maximum number of videos to process in a single run. Overrides the default value of $videoLimit.
+Optional. Specifies the maximum number of videos to process in a single run. Defaults to $videoLimit (5 videos) if not provided. This parameter is ignored in cropping-only mode.
 
 .PARAMETER CropOnly
-Runs the script in cropping-only mode, skipping video processing and screenshot capturing, and directly calling the Python cropping script.
+Activates cropping-only mode, skipping video processing and screenshot capturing. Any settings for -TimeLimit and -VideoLimit are ignored in this mode.
 
 .PARAMETER ResumeFile
-Specifies the file name to resume cropping from in cropping-only mode. The script will skip files until it reaches this file name.
+Works in cropping-only mode to specify the file name from which to resume cropping. This parameter is ignored if cropping-only mode (-CropOnly) is not specified.
 
 .EXAMPLES
 To run the script with the default values:
@@ -24,7 +24,7 @@ To run the script with the default values:
 To specify a time limit of 15 minutes and a video limit of 10:
 .\videoscreenshot.ps1 -TimeLimit 15 -VideoLimit 10
 
-To run the script in cropping-only mode:
+To run the script in cropping-only mode, ignoring video-related parameters:
 .\videoscreenshot.ps1 -CropOnly
 
 To run the script in cropping-only mode and resume cropping from a specific file:
@@ -93,16 +93,17 @@ function Write-Message {
 }
 
 # Parse command-line arguments
+# Parse command-line arguments
 param (
-    [int]$TimeLimit = $timeLimitInMinutes,
-    [int]$VideoLimit = $videoLimit,
+    [int]$TimeLimit,
+    [int]$VideoLimit,
     [switch]$CropOnly,
     [string]$ResumeFile
 )
 
 # Override default values with command-line arguments, if provided
-$timeLimitInMinutes = $TimeLimit
-$videoLimit = $VideoLimit
+$timeLimitInMinutes = if ($TimeLimit) { $TimeLimit } else { $timeLimitInMinutes }
+$videoLimit = if ($VideoLimit) { $VideoLimit } else { $videoLimit }
 
 if (-not (Test-Path -Path $sourceFolderPath)) {
     Write-Message "Error: Source folder does not exist. Please check the path: $sourceFolderPath"
