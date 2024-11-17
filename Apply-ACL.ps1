@@ -39,70 +39,77 @@ param (
 )
 
 # Check if the source folder exists
-Write-Verbose "Checking if source folder exists: $sourceFolder"
+Write-Verbose "Starting the script execution..."
+Write-Verbose "Checking if the source folder exists at path: '$sourceFolder'"
 if (-not (Test-Path $sourceFolder)) {
-    Write-Error "Source folder '$sourceFolder' does not exist."
+    Write-Error "The source folder '$sourceFolder' does not exist. Please provide a valid path and try again."
     exit 1
 }
-Write-Verbose "Source folder exists: $sourceFolder"
+Write-Verbose "Source folder verification complete. Source folder exists: '$sourceFolder'"
 
 # Retrieve ACL from the source folder
-Write-Verbose "Retrieving ACL from source folder..."
+Write-Verbose "Attempting to retrieve ACL from the source folder: '$sourceFolder'"
 try {
     $acl = Get-Acl $sourceFolder
-    Write-Verbose "ACL retrieved successfully from: $sourceFolder"
+    Write-Verbose "Successfully retrieved ACL from the source folder. ACL details: $($acl.Access | Format-Table | Out-String)"
 } catch {
-    Write-Error "Failed to retrieve ACL from source folder: $sourceFolder"
+    Write-Error "Failed to retrieve ACL from the source folder: '$sourceFolder'. Exception: $_"
     exit 1
 }
 
 # Prepare target items
-Write-Verbose "Gathering target items from: $targetFolder"
+Write-Verbose "Gathering target items from the target folder: '$targetFolder'"
 try {
     if ($FoldersOnly) {
+        Write-Verbose "FoldersOnly switch is enabled. Only directories will be included."
         $targetItems = Get-ChildItem -Path $targetFolder -Recurse -Directory
-        Write-Verbose "Found $($targetItems.Count) directories in target folder."
+        Write-Verbose "Total directories found in target folder: $($targetItems.Count)"
     } else {
+        Write-Verbose "Both folders and files will be included as the FoldersOnly switch is not enabled."
         $directories = Get-ChildItem -Path $targetFolder -Recurse -Directory
         $files = Get-ChildItem -Path $targetFolder -Recurse -File
         $targetItems = $directories + $files
-        Write-Verbose "Found $($directories.Count) directories and $($files.Count) files in target folder."
+        Write-Verbose "Directories found: $($directories.Count), Files found: $($files.Count), Total items: $($targetItems.Count)"
     }
 } catch {
-    Write-Error "Failed to retrieve items from target folder: $targetFolder"
+    Write-Error "Error occurred while retrieving items from the target folder: '$targetFolder'. Exception: $_"
     exit 1
 }
 
 $totalItems = $targetItems.Count
 $currentItem = 0
+Write-Verbose "Preparation complete. Total items to process: $totalItems"
 
 # Function to apply ACL to a path
 function Set-ACL {
     param (
         [string]$path
     )
+    Write-Verbose "Processing item: '$path'"
     try {
-        # Get the current ACL of the target
+        # Retrieve current ACL
         $currentAcl = Get-Acl -Path $path
+        Write-Verbose "Retrieved current ACL for '$path'. Verifying inherited permissions."
 
         # Skip if the ACL has only inherited rules
         if ($currentAcl.Access | Where-Object { $_.IsInherited } | Measure-Object | Select-Object -ExpandProperty Count -eq $currentAcl.Access.Count) {
-            Write-Verbose "Skipping $path as it only has inherited permissions."
+            Write-Verbose "Item '$path' contains only inherited permissions. Skipping ACL update."
             return
         }
 
         # Apply the source ACL
+        Write-Verbose "Applying ACL to '$path' using source folder ACL."
         Set-Acl -Path $path -AclObject $acl
-        Write-Verbose "Applied ACL to: $path"
+        Write-Verbose "Successfully applied ACL to '$path'."
 
         # Update progress
         $global:currentItem++
-        Show-Progress -current $global:currentItem -total $global:totalItems -activity "Applying ACL" -status "$global:currentItem of $($global:totalItems) processed"
+        Show-Progress -current $global:currentItem -total $global:totalItems -activity "Applying ACL" -status "Processed $global:currentItem of $($global:totalItems)"
     } catch {
         if (-not $SkipErrors) {
             throw $_
         }
-        Write-Warning "Failed to apply ACL to: $path : $_"
+        Write-Warning "Failed to apply ACL to '$path'. Skipping. Error: $_"
     }
 }
 
@@ -113,11 +120,11 @@ function Show-Progress {
 }
 
 # Apply ACLs to target items
-Write-Verbose "Starting ACL application..."
+Write-Verbose "Starting the ACL application process."
 foreach ($item in $targetItems) {
     Set-ACL -path $item.FullName
 }
 
 # Complete progress
 Write-Progress -PercentComplete 100 -Activity "Applying ACL Completed" -Status "All items processed"
-Write-Host "ACL application process completed."
+Write-Host "ACL application process completed successfully for $($targetItems.Count) items."
