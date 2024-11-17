@@ -26,7 +26,6 @@ Functionality:
 """
 
 import os
-import builtins
 import cv2
 import argparse
 import numpy as np
@@ -36,12 +35,6 @@ import gc
 # Constants for thresholds
 BLACK_THRESHOLD = 50
 WHITE_THRESHOLD = 205  # New threshold for white color
-
-# Override the default print function
-original_print = builtins.print
-def print(*args, **kwargs):
-    kwargs.setdefault('flush', True)  # Set flush=True by default
-    original_print(*args, **kwargs)
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Process and crop images.')
