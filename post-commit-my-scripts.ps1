@@ -43,7 +43,7 @@ $modifiedFiles | ForEach-Object {
     $sourceFilePath = Join-Path -Path $repoPath -ChildPath $_
 
     # Only copy if the source file exists and is not in .gitignore
-    if (Test-Path $sourceFilePath -and !(Test-Ignored $_)) {
+    if ((Test-Path $sourceFilePath) -and !(Test-Ignored $_)) {
         # Directly copy the file to the destination folder
         Copy-Item -Path $sourceFilePath -Destination $destinationFolder -Force
     }
