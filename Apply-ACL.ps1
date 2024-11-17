@@ -99,16 +99,14 @@ function Set-ACL {
             return
         }
 
-        # Retrieve current ACL
-        $currentAcl = Get-Acl -Path $path
-        Write-Verbose "Retrieved current ACL for '$path'. Verifying inherited permissions."
+        Write-Verbose "Verifying inherited permissions for '$path'."
 
-        # Count the inherited rules
-        $inheritedCount = ($currentAcl.Access | Where-Object { $_.IsInherited }).Count
+        # Check if the source folder has only inherited permissions
+        $sourceInheritedCount = ($acl.Access | Where-Object { $_.IsInherited }).Count
 
-        # Skip if all permissions are inherited
-        if ($inheritedCount -eq $currentAcl.Access.Count) {
-            Write-Verbose "Item '$path' contains only inherited permissions. Skipping ACL update."
+        # Skip if all permissions are inherited from the source folder
+        if ($sourceInheritedCount -eq $acl.Access.Count) {
+            Write-Verbose "Source folder ACL contains only inherited permissions. Skipping ACL update."
             return
         }
 
