@@ -20,6 +20,4 @@ function Send-FileToCloudConvert {
     Write-Host "Result from CloudConvert:" $result
 }
 
-# Example usage
-$FilePath = "path\to\image.jpg"  # Replace with the file path to be uploaded
-Send-FileToCloudConvert -FileName $FilePath
+Send-FileToCloudConvert -FileName $FileName
