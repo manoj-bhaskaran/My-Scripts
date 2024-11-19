@@ -52,15 +52,15 @@ def upload_file(file_name):
             logging.error(f"Error creating upload task: {response.status_code} - {response.text}")
             response.raise_for_status()  # This will raise an exception if the status code is not 201
         else:
-            # If successful, parse the JSON response and log the details
+            # If successful, log the result
             try:
                 result = response.json()  # Parse the JSON response
-                logging.info(f"File uploaded successfully. Result: {json.dumps(result, indent=2)}")
+                if logging.getLogger().level == logging.DEBUG:
+                    logging.debug(f"Full response: {json.dumps(result, indent=2)}")
+                logging.info(f"File uploaded successfully. Status: {response.status_code}")
             except ValueError:
                 logging.error("Failed to parse the response JSON.")
                 logging.error(f"Response body: {response.text}")
-
-        logging.debug(f"API response: {response.status_code} - {response.text}")
 
         # Extract the upload URL and parameters
         try:
