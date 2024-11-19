@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import requests
+import urllib.parse 
 
 # Set up logging
 def setup_logging(debug=False):
@@ -25,6 +26,8 @@ def upload_file(file_name):
     
     try:
         api_key = authenticate()
+
+        encoded_file_name = urllib.parse.quote(file_name)
 
         # Step 1: Create an upload task
         url = "https://api.cloudconvert.com/v2/jobs"
@@ -56,7 +59,7 @@ def upload_file(file_name):
             parameters = upload_task["result"]["form"]["parameters"]
 
             # Replace the ${filename} placeholder in the URL with the actual file name
-            parameters["key"] = parameters["key"].replace("${filename}", file_name)
+            parameters["key"] = parameters["key"].replace("${filename}", encoded_file_name)
 
             logging.debug(f"Upload URL: {upload_url}")
             logging.debug(f"Upload parameters: {parameters}")
@@ -70,16 +73,16 @@ def upload_file(file_name):
             raise
 
         # Step 2: Upload the file
-        logging.debug(f"Attempting to upload file: {file_name}")
-        with open(file_name, "rb") as file:
+        logging.debug(f"Attempting to upload file: {encoded_file_name}")
+        with open(endoded_file_name, "rb") as file:
             files = {"file": file}
             # Modify the URL and pass parameters as a POST form
             upload_response = requests.post(upload_url, data=parameters, files=files)
 
             upload_response.raise_for_status()  # Will raise an error for HTTP error responses
 
-        logging.info(f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}")
-        return f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
+        logging.info(f"File '{encoded_file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}")
+        return f"File '{encoded_file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
 
     except requests.exceptions.RequestException as e:
         logging.error(f"Error during file upload: {e}")
