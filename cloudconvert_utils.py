@@ -20,7 +20,6 @@ def authenticate():
     logging.debug(f"API key successfully retrieved: {api_key[:4]}...")  # Log only the first few characters for security
     return api_key
 
-# Function to upload a file to CloudConvert
 def upload_file(file_name):
     logging.debug(f"Starting file upload process for file: {file_name}")
     
@@ -54,12 +53,16 @@ def upload_file(file_name):
         
         # Extract the upload URL
         try:
-            upload_task = response.json()["data"]["tasks"]["upload_task"]
+            # Access the first task in the 'tasks' list
+            upload_task = response.json()["data"]["tasks"][0]  # Corrected to access the first task
             upload_url = upload_task["result"]["form"]["url"]
             logging.debug(f"Upload URL received: {upload_url}")
         except KeyError as e:
             logging.error(f"KeyError: Unable to find expected keys in the API response. Missing key: {e}")
             logging.error(f"Full response: {response.json()}")
+            raise
+        except IndexError as e:
+            logging.error(f"IndexError: Unable to access the first task in the tasks list. Response: {response.json()}")
             raise
 
         # Step 2: Upload the file
