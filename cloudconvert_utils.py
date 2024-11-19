@@ -74,7 +74,7 @@ def upload_file(file_name):
 
         # Step 2: Upload the file
         logging.debug(f"Attempting to upload file: {encoded_file_name}")
-        with open(endoded_file_name, "rb") as file:
+        with open(encoded_file_name, "rb") as file:
             files = {"file": file}
             # Modify the URL and pass parameters as a POST form
             upload_response = requests.post(upload_url, data=parameters, files=files)
