@@ -36,27 +36,31 @@ def upload_file(file_name):
             }
         }
         headers = {
-            "Authorization": f"Bearer {api_key}",  # Bearer token for authentication
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
 
         logging.debug("Making API request to create an upload task.")
         response = requests.post(url, json=payload, headers=headers)
 
-        # Check if the response was successful
         if response.status_code != 200:
             logging.error(f"Error creating upload task: {response.status_code} - {response.text}")
             response.raise_for_status()
 
-        # Log the full response for debugging
         logging.debug(f"API response: {response.status_code} - {response.text}")
-        
-        # Extract the upload URL
+
+        # Extract the upload URL and parameters
         try:
-            # Access the first task in the 'tasks' list
-            upload_task = response.json()["data"]["tasks"][0]  # Corrected to access the first task
+            upload_task = response.json()["data"]["tasks"][0]  # Access the first task in the list
             upload_url = upload_task["result"]["form"]["url"]
-            logging.debug(f"Upload URL received: {upload_url}")
+            parameters = upload_task["result"]["form"]["parameters"]
+
+            # Replace the ${filename} placeholder in the URL with the actual file name
+            parameters["key"] = parameters["key"].replace("${filename}", file_name)
+
+            logging.debug(f"Upload URL: {upload_url}")
+            logging.debug(f"Upload parameters: {parameters}")
+
         except KeyError as e:
             logging.error(f"KeyError: Unable to find expected keys in the API response. Missing key: {e}")
             logging.error(f"Full response: {response.json()}")
@@ -69,7 +73,9 @@ def upload_file(file_name):
         logging.debug(f"Attempting to upload file: {file_name}")
         with open(file_name, "rb") as file:
             files = {"file": file}
-            upload_response = requests.post(upload_url, files=files)
+            # Modify the URL and pass parameters as a POST form
+            upload_response = requests.post(upload_url, data=parameters, files=files)
+
             upload_response.raise_for_status()  # Will raise an error for HTTP error responses
 
         logging.info(f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}")
