@@ -1,59 +1,36 @@
 <#
 .SYNOPSIS
     This script applies Access Control Lists (ACLs) from a source folder to a target folder and its subfolders.
-    It can be configured to apply ACLs to files, folders, or both, with the option to skip errors and track progress.
 
 .DESCRIPTION
     The script retrieves the ACL from the source folder and applies it to the target folder and its subdirectories.
-    You can choose to apply the ACL only to folders or to both folders and files. Additionally, errors can be skipped,
-    and a progress bar is provided to track the application of ACLs.
+    You can choose to apply the ACL only to folders or to both folders and files. Errors can be skipped, and a progress bar is provided to track progress.
 
 .PARAMETER sourceFolder
-    The full path to the source folder from which the ACL settings will be copied. This is a mandatory parameter.
-    Example: "C:\Path\To\Source\Folder"
+    The full path to the source folder from which the ACL settings will be copied.
 
 .PARAMETER targetFolder
-    The full path to the target folder where the ACL settings will be applied. This is a mandatory parameter.
-    Example: "D:\Path\To\Target\Folder"
+    The full path to the target folder where the ACL settings will be applied.
 
 .PARAMETER SkipErrors
-    A switch that, if provided, will allow the script to skip errors and continue processing other items.
-    If not specified, the script will stop and throw an error if it encounters a missing item or failure.
-    Example: `-SkipErrors`
+    A switch to skip errors and continue processing other items.
 
 .PARAMETER FoldersOnly
-    A switch that, if provided, will apply the ACL only to folders, excluding files.
-    If not specified, ACLs will be applied to both folders and files.
-    Example: `-FoldersOnly`
+    A switch to apply the ACL only to folders, excluding files.
 
 .EXAMPLE
-    .\Set-ACL.ps1 -sourceFolder "C:\Path\To\Source\Folder" -targetFolder "D:\Path\To\Target\Folder"
-    This will apply the ACL from the source folder to both the folders and files in the target folder.
+    .\Set-ACL.ps1 -sourceFolder "C:\Source" -targetFolder "D:\Target"
 
 .EXAMPLE
-    .\Set-ACL.ps1 -sourceFolder "C:\Path\To\Source\Folder" -targetFolder "D:\Path\To\Target\Folder" -SkipErrors
-    This will apply the ACL from the source folder to both folders and files in the target folder, skipping errors.
-
-.EXAMPLE
-    .\Set-ACL.ps1 -sourceFolder "C:\Path\To\Source\Folder" -targetFolder "D:\Path\To\Target\Folder" -FoldersOnly
-    This will apply the ACL only to the folders in the target folder, skipping files.
-
-.NOTES
-    The script uses the `Get-Acl` cmdlet to retrieve the ACL from the source folder and the `Set-Acl` cmdlet to apply it to the target folder.
-    The script processes both directories and files in the target folder, applying the ACL recursively.
-    A progress bar is displayed to show the status of ACL application.
-    If `$SkipErrors` is provided, missing files or folders will not halt the execution.
-    If `$SkipErrors` is not provided, errors will throw and the script will stop.
-    If `$FoldersOnly` is provided, ACLs will be applied only to directories.
-
+    .\Set-ACL.ps1 -sourceFolder "C:\Source" -targetFolder "D:\Target" -SkipErrors -FoldersOnly -Verbose
+    Applies the ACL from the source folder to folders only, skipping errors, with verbose messages enabled.
 #>
 
-# Define the source and target folders
 param (
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [string]$sourceFolder,
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [string]$targetFolder,
 
     [switch]$SkipErrors,
@@ -61,63 +38,107 @@ param (
     [switch]$FoldersOnly
 )
 
-# Check if source folder exists
+Write-Verbose "Starting the script execution..."
+# Check if the source folder exists
+Write-Verbose "Checking if source folder exists: $sourceFolder"
 if (-not (Test-Path $sourceFolder)) {
     Write-Error "Source folder '$sourceFolder' does not exist."
-    exit
+    exit 1
+}
+Write-Verbose "Source folder exists: $sourceFolder"
+
+# Retrieve ACL from the source folder
+Write-Verbose "Retrieving ACL from source folder: $sourceFolder"
+try {
+    $acl = Get-Acl $sourceFolder
+    Write-Verbose "Successfully retrieved ACL from the source folder. ACL details: $($acl.Access | Format-Table | Out-String)"
+} catch {
+    Write-Error "Failed to retrieve ACL from the source folder: '$sourceFolder'. Exception: $_"
+    exit 1
 }
 
-# Get the ACL from the source folder
-$acl = Get-Acl $sourceFolder
+# Prepare target items
+Write-Verbose "Gathering target items from: $targetFolder"
+try {
+    # Start by adding the target folder itself
+    $targetItems = @($targetFolder)
 
-# Initialize progress bar variables
-if ($FoldersOnly) {
-    # Only get directories if FoldersOnly is specified
-    $directories = Get-ChildItem -Path $targetFolder -Recurse -Directory
-    $totalItems = $directories.Count
-} else {
-    # Get both directories and files if FoldersOnly is not specified
-    $directories = Get-ChildItem -Path $targetFolder -Recurse -Directory
-    $files = Get-ChildItem -Path $targetFolder -Recurse -File
-    $totalItems = $directories.Count + $files.Count
+    if ($FoldersOnly) {
+        # If only folders, add directories from the target folder recursively
+        $directories = Get-ChildItem -Path $targetFolder -Recurse -Directory
+        $targetItems += $directories
+        Write-Verbose "Found $($directories.Count) directories in target folder, including the target folder."
+    } else {
+        # If both files and folders, add directories and files
+        $directories = Get-ChildItem -Path $targetFolder -Recurse -Directory
+        $files = Get-ChildItem -Path $targetFolder -Recurse -File
+        $targetItems += $directories + $files
+        Write-Verbose "Found $($directories.Count) directories and $($files.Count) files in target folder, including the target folder."
+    }
+
+    # Check if $targetItems is empty or contains null values
+    $targetItems = $targetItems | Where-Object { $_ -ne $null -and $_ -ne '' }
+    Write-Verbose "Target Items: $($targetItems | Format-Table | Out-String)"
+    Write-Verbose "Total valid items to process: $($targetItems.Count)"
+} catch {
+    Write-Error "Failed to retrieve items from target folder: $targetFolder"
+    exit 1
 }
 
+$totalItems = $targetItems.Count
 $currentItem = 0
 
-# Function to apply ACL to a given path
+# Function to apply ACL to a path
 function Set-ACL {
     param (
         [string]$path
     )
-
     try {
-        Apply-ACL -Path $path -AclObject $acl
+        if (-not (Test-Path $path)) {
+            Write-Warning "The path '$path' does not exist. Skipping."
+            return
+        }
+
+        Write-Verbose "Verifying inherited permissions for '$path'."
+
+        # Check if the source folder has only inherited permissions
+        $sourceInheritedCount = ($acl.Access | Where-Object { $_.IsInherited }).Count
+
+        # Skip if all permissions are inherited from the source folder
+        if ($sourceInheritedCount -eq $acl.Access.Count) {
+            Write-Verbose "Source folder ACL contains only inherited permissions. Skipping ACL update."
+            return
+        }
+
+        # Apply the source ACL
+        Write-Verbose "Applying ACL to '$path' using source folder ACL."
+        Set-Acl -Path $path -AclObject $acl
+        Write-Verbose "Successfully applied ACL to '$path'."
+
+        # Update progress
         $global:currentItem++
-        Show-Progress -current $global:currentItem -total $global:totalItems -activity "Applying ACL" -status "$global:currentItem of $($global:totalItems) processed"
-    }
-    catch {
-        if (-not $SkipErrors) { throw $_ }
-        Write-Warning "Failed to apply ACL to: $path"
+        Show-Progress -current $global:currentItem -total $global:totalItems -activity "Applying ACL" -status "Processed $global:currentItem of $($global:totalItems)"
+    } catch {
+        if (-not $SkipErrors) {
+            throw $_
+        }
+        Write-Warning "Failed to apply ACL to '$path'. Skipping. Error: $_"
     }
 }
 
-# Function to update progress
+# Function to display progress
 function Show-Progress {
     param ($current, $total, $activity, $status)
     Write-Progress -PercentComplete (($current / $total) * 100) -Activity $activity -Status $status
 }
 
-# Apply ACL to directories
-foreach ($directory in $directories) {
-    Set-ACL -path $directory.FullName
+# Apply ACLs to target items
+Write-Verbose "Starting ACL application..."
+foreach ($item in $targetItems) {
+    Write-Verbose "Processing item: $item"
+    Set-ACL -path $item
 }
 
-# If FoldersOnly is not specified, apply ACL to files
-if (-not $FoldersOnly) {
-    foreach ($file in $files) {
-        Set-ACL -path $file.FullName
-    }
-}
-
-# Complete the progress bar
+# Complete progress
 Write-Progress -PercentComplete 100 -Activity "Applying ACL Completed" -Status "All items processed"
+Write-Host "ACL application process completed."
