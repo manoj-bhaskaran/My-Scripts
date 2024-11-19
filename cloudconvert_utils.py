@@ -46,7 +46,7 @@ def upload_file(file_name):
         logging.debug("Making API request to create an upload task.")
         response = requests.post(url, json=payload, headers=headers)
 
-        if response.status_code != 200:
+        if response.status_code != 201:
             logging.error(f"Error creating upload task: {response.status_code} - {response.text}")
             response.raise_for_status()
 
