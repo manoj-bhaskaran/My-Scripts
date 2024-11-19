@@ -20,4 +20,3 @@ function Send-FileToCloudConvert {
     Write-Host "Result from CloudConvert:" $result
 }
 
-Send-FileToCloudConvert -FileName $FileName
