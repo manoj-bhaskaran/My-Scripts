@@ -3,6 +3,7 @@ import sys
 import logging
 import requests
 import urllib.parse 
+import json
 
 # Set up logging
 def setup_logging(debug=False):
@@ -46,9 +47,18 @@ def upload_file(file_name):
         logging.debug("Making API request to create an upload task.")
         response = requests.post(url, json=payload, headers=headers)
 
+        # Check if the response is successful
         if response.status_code != 201:
             logging.error(f"Error creating upload task: {response.status_code} - {response.text}")
-            response.raise_for_status()
+            response.raise_for_status()  # This will raise an exception if the status code is not 201
+        else:
+            # If successful, parse the JSON response and log the details
+            try:
+                result = response.json()  # Parse the JSON response
+                logging.info(f"File uploaded successfully. Result: {json.dumps(result, indent=2)}")
+            except ValueError:
+                logging.error("Failed to parse the response JSON.")
+                logging.error(f"Response body: {response.text}")
 
         logging.debug(f"API response: {response.status_code} - {response.text}")
 
