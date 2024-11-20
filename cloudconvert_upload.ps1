@@ -17,7 +17,11 @@ function Send-FileToCloudConvert {
     $debugFlag = if ($Debug) { "--debug" } else { "" }
 
     # Call the Python script for file upload
-    $result = & $pythonExecutable $scriptPath $debugFlag $FileName
+    if ($debugFlag) {
+        $result = & $pythonExecutable $scriptPath $debugFlag $FileName
+    } else {
+        $result = & $pythonExecutable $scriptPath $FileName
+    }
 
     # Display the result
     Write-Host "Result from CloudConvert:" $result
