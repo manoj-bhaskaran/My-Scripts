@@ -47,43 +47,36 @@ def upload_file(file_name):
         logging.debug("Making API request to create an upload task.")
         response = requests.post(url, json=payload, headers=headers)
 
-        # Check if the response is successful
         if response.status_code != 201:
             logging.error(f"Error creating upload task: {response.status_code} - {response.text}")
-            response.raise_for_status()  # This will raise an exception if the status code is not 201
+            response.raise_for_status()
 
-        # Extract the upload URL and parameters
         try:
-            upload_task = response.json()["data"]["tasks"][0]  # Access the first task in the list
+            upload_task = response.json()["data"]["tasks"][0]
             upload_url = upload_task["result"]["form"]["url"]
             parameters = upload_task["result"]["form"]["parameters"]
 
-            # Replace the ${filename} placeholder in the URL with the actual file name
             parameters["key"] = parameters["key"].replace("${filename}", encoded_file_name)
 
             logging.debug(f"Upload URL: {upload_url}")
             logging.debug(f"Upload parameters: {parameters}")
 
-        except KeyError as e:
-            logging.error(f"KeyError: Unable to find expected keys in the API response. Missing key: {e}")
+        except (KeyError, IndexError) as e:
+            logging.error(f"Error parsing upload task response: {e}")
             logging.error(f"Full response: {response.json()}")
-            raise
-        except IndexError as e:
-            logging.error(f"IndexError: Unable to access the first task in the tasks list. Response: {response.json()}")
             raise
 
         # Step 2: Upload the file
         logging.debug(f"Attempting to upload file: {file_name}")
         with open(file_name, "rb") as file:
             files = {"file": file}
-            # Modify the URL and pass parameters as a POST form
             upload_response = requests.post(upload_url, data=parameters, files=files)
 
-            upload_response.raise_for_status()  # Will raise an error for HTTP error responses
+            upload_response.raise_for_status()
 
-        # Log the final success message
-        logging.info(f"File '{encoded_file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}")
-        return f"File '{encoded_file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
+        result_message = f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
+        logging.info(result_message)
+        print(result_message)  # Print the result for PowerShell to capture
 
     except requests.exceptions.RequestException as e:
         logging.error(f"Error during file upload: {e}")
