@@ -3,6 +3,7 @@ import sys
 import logging
 import requests
 import urllib.parse
+import argparse
 
 # Set up logging
 def setup_logging(debug=False):
@@ -74,10 +75,21 @@ def upload_file(file_name):
         logging.error(f"Error during file upload: {e}")
         raise Exception(f"Error during file upload: {e}")
 
+# Function to parse command-line arguments
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Upload a file to CloudConvert.')
+    parser.add_argument('file_name', type=str, help='The name of the file to be uploaded.')
+    args = parser.parse_args()
+    return args.file_name
+
 # Main function to be called
-if __name__ == "__main__":
+def main():
     setup_logging(debug=True)
     try:
-        upload_file(sys.argv[1])
+        file_name = parse_arguments()
+        upload_file(file_name)
     except Exception as e:
         logging.error(f"Unhandled exception: {e}")
+
+if __name__ == "__main__":
+    main()
