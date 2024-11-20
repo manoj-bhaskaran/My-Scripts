@@ -78,15 +78,16 @@ def upload_file(file_name):
 # Function to parse command-line arguments
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Upload a file to CloudConvert.')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging.')
     parser.add_argument('file_name', type=str, help='The name of the file to be uploaded.')
     args = parser.parse_args()
-    return args.file_name
+    return args.debug, args.file_name
 
 # Main function to be called
 def main():
-    setup_logging(debug=True)
+    debug, file_name = parse_arguments()
+    setup_logging(debug)
     try:
-        file_name = parse_arguments()
         upload_file(file_name)
     except Exception as e:
         logging.error(f"Unhandled exception: {e}")
