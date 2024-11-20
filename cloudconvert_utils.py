@@ -51,16 +51,6 @@ def upload_file(file_name):
         if response.status_code != 201:
             logging.error(f"Error creating upload task: {response.status_code} - {response.text}")
             response.raise_for_status()  # This will raise an exception if the status code is not 201
-        else:
-            # If successful, log the result
-            try:
-                result = response.json()  # Parse the JSON response
-                if logging.getLogger().level == logging.DEBUG:
-                    logging.debug(f"Full response: {json.dumps(result, indent=2)}")
-                logging.info(f"File uploaded successfully. Status: {response.status_code}")
-            except ValueError:
-                logging.error("Failed to parse the response JSON.")
-                logging.error(f"Response body: {response.text}")
 
         # Extract the upload URL and parameters
         try:
@@ -91,22 +81,10 @@ def upload_file(file_name):
 
             upload_response.raise_for_status()  # Will raise an error for HTTP error responses
 
+        # Log the final success message
         logging.info(f"File '{encoded_file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}")
         return f"File '{encoded_file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
 
     except requests.exceptions.RequestException as e:
         logging.error(f"Error during file upload: {e}")
         raise Exception(f"Error during file upload: {e}")
-
-# Main logic to handle the command line arguments
-if __name__ == "__main__":
-    debug_mode = '--debug' in sys.argv
-    setup_logging(debug=debug_mode)
-
-    # The file path argument is passed from the PowerShell script
-    if len(sys.argv) > 2:
-        file_name = sys.argv[2]
-        upload_file(file_name)
-    else:
-        logging.error("File path is required.")
-        sys.exit(1)
