@@ -16,13 +16,10 @@ function Send-FileToCloudConvert {
     # Check if the -Debug flag is set
     $debugFlag = if ($Debug) { "--debug" } else { "" }
 
-    # Run the Python script
-    $result = & $pythonExecutable $scriptPath --debug upload_file $FilePath
+    # Call the Python script for file upload
+    $result = & $pythonExecutable $scriptPath $debugFlag upload_file $FilePath
 
-    # Check if output is captured
-    if ($result -eq "") {
-        Write-Host "No output captured from Python script." -ForegroundColor Red
-    } else {
-        Write-Host "Result from CloudConvert:" $result
-    }
+    # Display the result
+    Write-Host "Result from CloudConvert:" $result
 }
+
