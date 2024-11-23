@@ -64,7 +64,7 @@ The script does not handle nested directories in the source folder; only top-lev
 
 param(
     [string]$SourceFolder = "C:\Users\manoj\OneDrive\Desktop\New folder",
-    [string]$TargetFolder = "D:\users\manoj\Documents\FIFA 07\elib"
+    [string]$TargetFolder = "D:\users\manoj\Documents\FIFA 07\elib",
     [int]$FilesPerFolderLimit = 20000,
     [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor.log",
     [switch]$Verbose # Enable verbose logging if specified
