@@ -2,7 +2,7 @@ param(
     [string]$SourceFolder,
     [string]$TargetFolder,
     [int]$FilesPerFolderLimit = 20000,
-    [string]$LogFilePath = "file_copy_log.txt",
+    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor.log",
     [switch]$Verbose # Enable verbose logging if specified
 )
 
@@ -150,14 +150,16 @@ function Main {
             New-Item -ItemType Directory -Path $TargetFolder
         }
 
-        # Count files in the source and target folder
+        # Count files in the source and target folder before distribution
         $sourceFiles = Get-ChildItem -Path $SourceFolder -File
         $totalSourceFiles = $sourceFiles.Count
+        $totalTargetFilesBefore = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
+
+        # Get subfolders in the target folder
         $subfolders = Get-ChildItem -Path $TargetFolder -Directory
 
         # Determine if subfolders need to be created
-        $totalTargetFiles = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
-        $totalFiles = $totalTargetFiles + $totalSourceFiles
+        $totalFiles = $totalTargetFilesBefore + $totalSourceFiles
         $currentFolderCount = $subfolders.Count
 
         if ($totalFiles / $FilesPerFolderLimit -gt $currentFolderCount) {
@@ -171,7 +173,20 @@ function Main {
         # Redistribute files within the target folder and subfolders if needed
         RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit
 
-        LogMessage "File distribution and cleanup completed successfully." -VerboseMode:$Verbose
+        # Count files in the target folder after distribution
+        $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
+
+        # Log summary message
+        LogMessage "Original number of files in the source folder: $totalSourceFiles" -VerboseMode:$Verbose
+        LogMessage "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -VerboseMode:$Verbose
+        LogMessage "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -VerboseMode:$Verbose
+
+        if ($totalSourceFiles + $totalTargetFilesBefore -ne $totalTargetFilesAfter) {
+            LogMessage "WARNING: Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -VerboseMode:$Verbose
+        } else {
+            LogMessage "File distribution and cleanup completed successfully." -VerboseMode:$Verbose
+        }
+
     } catch {
         LogMessage "ERROR: $($_.Exception.Message)" -VerboseMode:$Verbose
     }
