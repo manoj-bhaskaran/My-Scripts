@@ -90,7 +90,31 @@ function DistributeFilesToSubfolders {
         } else {
             LogMessage "ERROR: Failed to copy $($file.FullName) to $destinationFile. Original file not deleted." -VerboseMode:$Verbose
         }        
-        LogMessage "Copied and deleted $($file.FullName) to $destinationFile" -VerboseMode:$Verbose
+    }
+}
+
+# Function to redistribute files within the target folder and subfolders
+function RedistributeFilesInTarget {
+    param (
+        [string]$TargetFolder,
+        [string[]]$Subfolders,
+        [int]$FilesPerFolderLimit
+    )
+    $allFiles = Get-ChildItem -Path $TargetFolder -Recurse -File
+    $folderFilesMap = @{}
+
+    foreach ($subfolder in $Subfolders) {
+        $folderFilesMap[$subfolder] = (Get-ChildItem -Path $subfolder -File).Count
+    }
+
+    foreach ($file in $allFiles) {
+        $folder = $file.DirectoryName
+        $currentFileCount = $folderFilesMap[$folder]
+
+        if ($currentFileCount -gt $FilesPerFolderLimit) {
+            DistributeFilesToSubfolders -Files @($file) -Subfolders $Subfolders -Limit $FilesPerFolderLimit
+            $folderFilesMap[$folder]--
+        }
     }
 }
 
@@ -122,8 +146,11 @@ function Main {
             $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders
         }
 
-        # Distribute files
+        # Distribute files from the source folder to subfolders
         DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit
+
+        # Redistribute files within the target folder and subfolders if needed
+        RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit
 
         LogMessage "File distribution and cleanup completed successfully." -VerboseMode:$Verbose
     } catch {
