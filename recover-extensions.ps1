@@ -61,9 +61,17 @@ foreach ($file in $files) {
     # If no extension, try to recover it
     $extension = Get-FileExtension -filePath $file.FullName
     if ($extension -and $extension -ne $file.Name) {
+        # Extract the file name without extension
+        $fileNameWithoutExtension = [System.IO.Path]::GetFileNameWithoutExtension($file.FullName)
+        
+        # Construct the new file name
+        $newFileName = $fileNameWithoutExtension + $extension
+        
+        # Get the new full file path
+        $newFullFilePath = [System.IO.Path]::Combine($file.DirectoryName, $newFileName)
+        
         # Rename the file with the correct extension
-        $newFileName = $file.FullName + $extension
-        Rename-Item -Path $file.FullName -NewName $newFileName
+        Rename-Item -Path $file.FullName -NewName $newFullFilePath
         Write-Log "Renamed $($file.Name) to $($newFileName)"
         $renamedCount++
     }
