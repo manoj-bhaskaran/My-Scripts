@@ -59,6 +59,17 @@ function CreateRandomSubfolders {
     return $createdFolders
 }
 
+# Function to move files to Recycle Bin
+function Move-ToRecycleBin {
+    param (
+        [string]$FilePath
+    )
+    $shell = New-Object -ComObject Shell.Application
+    $recycleBin = $shell.NameSpace(10) # 10 is the folder type for Recycle Bin
+    $file = Get-Item $FilePath
+    $recycleBin.MoveHere($file.FullName, 0x100) # 0x100 suppresses the confirmation dialog
+}
+
 # Function to distribute files to subfolders
 function DistributeFilesToSubfolders {
     param (
@@ -85,10 +96,14 @@ function DistributeFilesToSubfolders {
 
         # Verify the file was copied successfully
         if (Test-Path -Path $destinationFile) {
-            Remove-Item -Path $file.FullName -Force
-            LogMessage "Copied and deleted $($file.FullName) to $destinationFile" -VerboseMode:$Verbose
+            try {
+                Move-ToRecycleBin -FilePath $file.FullName
+                LogMessage "Copied and moved to Recycle Bin: $($file.FullName) to $destinationFile" -VerboseMode:$Verbose
+            } catch {
+                LogMessage "ERROR: Failed to move $($file.FullName) to Recycle Bin. Error: $($_.Exception.Message)" -VerboseMode:$Verbose
+            }
         } else {
-            LogMessage "ERROR: Failed to copy $($file.FullName) to $destinationFile. Original file not deleted." -VerboseMode:$Verbose
+            LogMessage "ERROR: Failed to copy $($file.FullName) to $destinationFile. Original file not moved." -VerboseMode:$Verbose
         }        
     }
 }
