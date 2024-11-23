@@ -113,6 +113,30 @@ function ResolveFileNameConflict {
     return $newFileName
 }
 
+# Function to rename files in the source folder to random names
+function RenameFilesInSourceFolder {
+    param (
+        [string]$SourceFolder
+    )
+    $files = Get-ChildItem -Path $SourceFolder -File
+
+    foreach ($file in $files) {
+        try {
+            $extension = $file.Extension
+            do {
+                $newFileName = Get-RandomFileName + $extension
+                $newFilePath = Join-Path -Path $SourceFolder -ChildPath $newFileName
+            } while (Test-Path -Path $newFilePath)
+
+            # Rename the file
+            Rename-Item -LiteralPath $file.FullName -NewName $newFileName -Force
+            LogMessage "Renamed file $($file.FullName) to $newFileName" -VerboseMode:$Verbose
+        } catch {
+            LogMessage "ERROR: Failed to rename file '$($file.FullName)': $_" -VerboseMode:$Verbose
+        }
+    }
+}
+
 # Function to create random subfolders
 function CreateRandomSubfolders {
     param (
@@ -205,6 +229,9 @@ function RedistributeFilesInTarget {
         $currentFileCount = $folderFilesMap[$folder]
 
         if ($currentFileCount -gt $FilesPerFolderLimit) {
+            if ($Verbose) {
+                LogMessage "Renaming and redistributing files from folder: $folder" -VerboseMode:$Verbose
+            }
             DistributeFilesToSubfolders -Files @($file) -Subfolders $Subfolders -Limit $FilesPerFolderLimit
             $folderFilesMap[$folder]--
         }
@@ -223,6 +250,9 @@ function Main {
             LogMessage "Target folder '$TargetFolder' does not exist. Creating it." -VerboseMode:$Verbose
             New-Item -ItemType Directory -Path $TargetFolder
         }
+
+        # Rename files in the source folder to random names
+        RenameFilesInSourceFolder -SourceFolder $SourceFolder
 
         # Count files in the source and target folder before distribution
         $sourceFiles = Get-ChildItem -Path $SourceFolder -File
@@ -244,27 +274,28 @@ function Main {
         # Distribute files from the source folder to subfolders
         DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit
 
-        # Redistribute files within the target folder and subfolders if needed
-        RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit
+         # Redistribute files within the target folder and subfolders if needed
+         RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit
 
-        # Count files in the target folder after distribution
-        $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
-
-        # Log summary message
-        LogMessage "Original number of files in the source folder: $totalSourceFiles" -VerboseMode:$Verbose
-        LogMessage "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -VerboseMode:$Verbose
-        LogMessage "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -VerboseMode:$Verbose
-
-        if ($totalSourceFiles + $totalTargetFilesBefore -ne $totalTargetFilesAfter) {
-            LogMessage "WARNING: Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -VerboseMode:$Verbose
-        } else {
-            LogMessage "File distribution and cleanup completed successfully." -VerboseMode:$Verbose
-        }
-
-    } catch {
-        LogMessage "ERROR: $($_.Exception.Message)" -VerboseMode:$Verbose
-    }
-}
-
-# Run the script
-Main
+         # Count files in the target folder after distribution
+         $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
+ 
+         # Log summary message
+         LogMessage "Original number of files in the source folder: $totalSourceFiles" -VerboseMode:$Verbose
+         LogMessage "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -VerboseMode:$Verbose
+         LogMessage "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -VerboseMode:$Verbose
+ 
+         if ($totalSourceFiles + $totalTargetFilesBefore -ne $totalTargetFilesAfter) {
+             LogMessage "WARNING: Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -VerboseMode:$Verbose
+         } else {
+             LogMessage "File distribution and cleanup completed successfully." -VerboseMode:$Verbose
+         }
+ 
+     } catch {
+         LogMessage "ERROR: $($_.Exception.Message)" -VerboseMode:$Verbose
+     }
+ }
+ 
+ # Run the script
+ Main
+ 
