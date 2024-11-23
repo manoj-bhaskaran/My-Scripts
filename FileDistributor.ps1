@@ -107,6 +107,10 @@ function RedistributeFilesInTarget {
         $folderFilesMap[$subfolder] = (Get-ChildItem -Path $subfolder -File).Count
     }
 
+    # Redistribute files in the target folder (not in subfolders) regardless of limit
+    $rootFiles = Get-ChildItem -Path $TargetFolder -File
+    DistributeFilesToSubfolders -Files $rootFiles -Subfolders $Subfolders -Limit $FilesPerFolderLimit
+
     foreach ($file in $allFiles) {
         $folder = $file.DirectoryName
         $currentFileCount = $folderFilesMap[$folder]
