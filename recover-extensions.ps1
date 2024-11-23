@@ -5,6 +5,11 @@ $logFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions.log"
 function Write-Log {
     param([string]$message)
 
+    # Check if log file exists, and create it if it doesn't
+    if (-not (Test-Path -Path $logFilePath)) {
+        New-Item -ItemType File -Path $logFilePath -Force
+    }
+
     # Get current timestamp
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     
