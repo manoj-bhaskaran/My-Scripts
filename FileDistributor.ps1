@@ -1,73 +1,77 @@
-<# .SYNOPSIS This PowerShell script copies files from a source folder to a target folder, distributing them across subfolders while maintaining a maximum file count per subfolder. It also moves the original files to the Recycle Bin after ensuring successful copying and resolves file name conflicts.
+<# 
+.SYNOPSIS
+This PowerShell script copies files from a source folder to a target folder, distributing them across subfolders while maintaining a maximum file count per subfolder. It also moves the original files to the Recycle Bin after ensuring successful copying and resolves file name conflicts.
 
-.DESCRIPTION The script ensures that files are evenly distributed across subfolders in the target directory, with a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created as needed. Files in the target folder (not in subfolders) are also redistributed. File name conflicts are resolved using a custom random name generator. The script validates file copying before moving the original files to the Recycle Bin from the source folder and logs its actions in both summary and verbose modes.
+.DESCRIPTION
+The script ensures that files are evenly distributed across subfolders in the target directory, with a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created as needed. Files in the target folder (not in subfolders) are also redistributed. File name conflicts are resolved using a custom random name generator. The script validates file copying before moving the original files to the Recycle Bin from the source folder and logs its actions in a log file. Additional details can be viewed using PowerShell's `-Verbose` switch.
 
-.PARAMETER SourceFolder Mandatory. Specifies the path to the source folder containing the files to be copied.
+.PARAMETER SourceFolder
+Mandatory. Specifies the path to the source folder containing the files to be copied.
 
-.PARAMETER TargetFolder Mandatory. Specifies the path to the target folder where the files will be distributed.
+.PARAMETER TargetFolder
+Mandatory. Specifies the path to the target folder where the files will be distributed.
 
-.PARAMETER FilesPerFolderLimit Optional. Specifies the maximum number of files allowed in each subfolder of the target folder. Defaults to 20,000.
+.PARAMETER FilesPerFolderLimit
+Optional. Specifies the maximum number of files allowed in each subfolder of the target folder. Defaults to 20,000.
 
-.PARAMETER LogFilePath Optional. Specifies the path to the log file for recording script activities. Defaults to "file_copy_log.txt" in the current directory.
+.PARAMETER LogFilePath
+Optional. Specifies the path to the log file for recording script activities. Defaults to "file_copy_log.txt" in the current directory.
 
-.PARAMETER Verbose Optional. Enables detailed logging and output to the console.
+.EXAMPLES
+To copy files from "C:\Source" to "C:\Target" with a default file limit:
+.\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
 
-.EXAMPLES To copy files from "C:\Source" to "C:\Target" with a default file limit: .\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
+To copy files with a custom file limit and log to a specific file:
+.\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -FilesPerFolderLimit 10000 -LogFilePath "C:\Logs\copy_log.txt"
 
-To copy files with a custom file limit and log to a specific file: .\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -FilesPerFolderLimit 10000 -LogFilePath "C:\Logs\copy_log.txt"
+To enable verbose logging using PowerShell's built-in `-Verbose` switch:
+.\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Verbose
 
-To enable verbose logging: .\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Verbose
-
-.NOTES Script Workflow:
+.NOTES
+Script Workflow:
 
 Initialization:
 
-Validates input parameters and checks if the source and target folders exist.
-
-Initializes logging and ensures the random name generator script is available.
+- Validates input parameters and checks if the source and target folders exist.
+- Initializes logging and ensures the random name generator script is available.
 
 Subfolder Management:
 
-Counts existing subfolders in the target folder.
-
-Creates new subfolders only if required to maintain the file limit.
+- Counts existing subfolders in the target folder.
+- Creates new subfolders only if required to maintain the file limit.
 
 File Processing:
 
-Files are copied from the source folder to the target subfolders.
-
-Files in the target folder (not in subfolders) are redistributed regardless of the limit.
-
-File name conflicts are resolved using the random name generator.
-
-Successful copying is verified before moving the original files to the Recycle Bin.
+- Files are copied from the source folder to the target subfolders.
+- Files in the target folder (not in subfolders) are redistributed regardless of the limit.
+- File name conflicts are resolved using the random name generator.
+- Successful copying is verified before moving the original files to the Recycle Bin.
 
 Error Handling:
 
-Logs errors during file operations and skips problematic files without stopping the script.
+- Logs errors during file operations and skips problematic files without stopping the script.
 
 Completion:
 
-Logs completion of the operation and reports any unprocessed files.
-
-Provides a final summary message with the original number of files in the source folder, the original number of files in the target folder hierarchy, and the final number of files in the target folder hierarchy. Throws a warning if the sum of the original counts is not equal to the final count in the target.
+- Logs completion of the operation and reports any unprocessed files.
+- Provides a final summary message with the original number of files in the source folder, the original number of files in the target folder hierarchy, and the final number of files in the target folder hierarchy.
+- Throws a warning if the sum of the original counts is not equal to the final count in the target.
 
 Prerequisites:
 
-Ensure permissions for reading and writing in both source and target directories.
-
-The random name generator script should be located at: C:\Users\manoj\Documents\Scripts\randomname.ps1.
+- Ensure permissions for reading and writing in both source and target directories.
+- The random name generator script should be located at: C:\Users\manoj\Documents\Scripts\randomname.ps1.
 
 Limitations:
 
-The script does not handle nested directories in the source folder; only top-level files are processed. #>
+- The script does not handle nested directories in the source folder; only top-level files are processed.
+#>
 
 param(
     [string]$SourceFolder = "C:\Users\manoj\OneDrive\Desktop\New folder",
     [string]$TargetFolder = "D:\users\manoj\Documents\FIFA 07\elib",
     [int]$FilesPerFolderLimit = 20000,
-    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor.log",
-    [switch]$Verbose # Enable verbose logging if specified
+    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor.log"
 )
 
 # Function to log messages
@@ -81,9 +85,7 @@ function LogMessage {
     $logEntry | Out-File -FilePath $LogFilePath -Append
 
     # Print to console only in verbose mode
-    if ($VerboseMode) {
-        Write-Host $logEntry
-    }
+    Write-Verbose $logentry
 }
 
 # Check if the random name generator script exists and load it
