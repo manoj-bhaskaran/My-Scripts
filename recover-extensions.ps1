@@ -1,3 +1,46 @@
+<#
+.SYNOPSIS
+This PowerShell script recovers file extensions for files that have lost their extensions. It scans a specified folder, determines the file type based on the file's signature (first few bytes), and appends the appropriate extension to the file name. The script logs all actions for future reference.
+
+.DESCRIPTION
+The script iterates through each file in the specified folder and checks if the file already has an extension. If the file does not have an extension, it reads the first few bytes to determine the file type and appends the appropriate extension. The script supports common file signatures for PNG and JPEG files. It logs each action taken, including files skipped, renamed, and those with unknown extensions.
+
+.PARAMETER LogFilePath
+Optional. Specifies the path to the log file where actions are recorded. Defaults to "C:\users\manoj\Documents\Scripts\recover-extensions.log".
+
+.PARAMETER FolderPath
+Optional. Specifies the path to the folder containing the files to be processed. Defaults to "C:\Users\manoj\OneDrive\Desktop\New folder".
+
+.EXAMPLES
+To recover file extensions in the default folder and log the actions:
+.\recover-extensions.ps1
+
+To recover file extensions in a custom folder and log the actions:
+.\recover-extensions.ps1 -FolderPath "C:\Custom\Path"
+
+.NOTES
+Script Workflow:
+1. **Initialization**:
+   - Defines the log file path and the target folder path using the provided parameters or defaults to the specified paths.
+
+2. **File Extension Detection**:
+   - Reads the first few bytes of each file to determine its type based on common file signatures (e.g., PNG, JPEG).
+
+3. **File Processing**:
+   - Iterates through each file in the target folder.
+   - Skips files that already have an extension.
+   - Appends the correct extension to files without an extension based on their detected file type.
+   - Logs each action (skipped, renamed, unknown extension).
+
+4. **Summary Logging**:
+   - Logs a summary of all actions taken (files skipped, renamed, and unknown extensions).
+
+Limitations:
+- The script currently supports common file signatures for PNG and JPEG files.
+- Additional file signatures can be added to the `Get-FileExtension` function as needed.
+- Ensure you have the necessary permissions to read, write, and rename files in the target directory.
+#>
+
 # Define the path to the log file
 $logFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions-log.txt"
 
