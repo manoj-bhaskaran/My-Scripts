@@ -1,5 +1,5 @@
 # Define the path to the log file
-$logFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions.log"
+$logFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions-log.txt"
 
 # Function to log messages with timestamp
 function Write-Log {
