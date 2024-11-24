@@ -34,6 +34,7 @@ function Get-FileExtension {
     switch ($hex) {
         '89504E47' { return ".png" }  # PNG signature
         'FFD8FFDB' { return ".jpg" }  # JPEG signature
+        'FFD8FFE0' { return ".jpg" }  # Another common JPEG signature
         default { return $hex }      # Return hex if extension is not found
     }
 }
@@ -60,6 +61,8 @@ foreach ($file in $files) {
 
     # If no extension, try to recover it
     $extension = Get-FileExtension -filePath $file.FullName
+    Write-Log "Detected extension $extension for file $($file.Name)"  # Added log for detected extension
+
     if ($extension -and $extension -ne $file.Name) {
         # Extract the file name without extension
         $fileNameWithoutExtension = [System.IO.Path]::GetFileNameWithoutExtension($file.FullName)
