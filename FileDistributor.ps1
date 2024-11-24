@@ -78,14 +78,25 @@ param(
 function LogMessage {
     param (
         [string]$Message,
-        [switch]$VerboseMode
+        [switch]$ConsoleOutput,  # Explicit control for always printing to the console
+        [switch]$IsError,        # Indicates if the message is an error
+        [switch]$IsWarning       # Indicates if the message is a warning
     )
+    # Get the timestamp and format the log entry
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "$timestamp : $Message"
+
+    # Append the log entry to the log file
     $logEntry | Out-File -FilePath $LogFilePath -Append
 
-    # Print to console only in verbose mode
-    Write-Verbose $logentry
+    # Use appropriate PowerShell cmdlet for errors, warnings, or console output
+    if ($IsError) {
+        Write-Error $logEntry
+    } elseif ($IsWarning) {
+        Write-Warning $logEntry
+    } elseif ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
+        Write-Host $logEntry
+    }
 }
 
 # Check if the random name generator script exists and load it
@@ -93,11 +104,11 @@ $randomNameScriptPath = "C:\Users\manoj\Documents\Scripts\randomname.ps1"
 if (Test-Path -Path $randomNameScriptPath) {
     . $randomNameScriptPath
     if (-not (Get-Command -Name Get-RandomFileName -ErrorAction SilentlyContinue)) {
-        LogMessage "ERROR: Failed to load the random name generator script from '$randomNameScriptPath'." -VerboseMode:$Verbose
+        LogMessage -Message "ERROR: Failed to load the random name generator script from '$randomNameScriptPath'." -IsError
         throw "Failed to load the random name generator script."
     }
 } else {
-    LogMessage "ERROR: Random name generator script '$randomNameScriptPath' not found." -VerboseMode:$Verbose
+    LogMessage -Message "ERROR: Random name generator script '$randomNameScriptPath' not found." -IsError
     throw "Random name generator script not found."
 }
 
@@ -132,9 +143,9 @@ function RenameFilesInSourceFolder {
 
             # Rename the file
             Rename-Item -LiteralPath $file.FullName -NewName $newFileName -Force
-            LogMessage "Renamed file $($file.FullName) to $newFileName" -VerboseMode:$Verbose
+            LogMessage -Message "Renamed file $($file.FullName) to $newFileName"
         } catch {
-            LogMessage "ERROR: Failed to rename file '$($file.FullName)': $_" -VerboseMode:$Verbose
+            LogMessage -Message "ERROR: Failed to rename file '$($file.FullName)': $_" -IsError
         }
     }
 }
@@ -154,7 +165,7 @@ function CreateRandomSubfolders {
 
         New-Item -ItemType Directory -Path $folderPath | Out-Null
         $createdFolders += $folderPath
-        LogMessage "Created folder: $folderPath" -VerboseMode:$Verbose
+        LogMessage -Message "Created folder: $folderPath"
     }
     return $createdFolders
 }
@@ -198,12 +209,12 @@ function DistributeFilesToSubfolders {
         if (Test-Path -Path $destinationFile) {
             try {
                 Move-ToRecycleBin -FilePath $file.FullName
-                LogMessage "Copied and moved to Recycle Bin: $($file.FullName) to $destinationFile" -VerboseMode:$Verbose
+                LogMessage -Message "Copied and moved to Recycle Bin: $($file.FullName) to $destinationFile"
             } catch {
-                LogMessage "ERROR: Failed to move $($file.FullName) to Recycle Bin. Error: $($_.Exception.Message)" -VerboseMode:$Verbose
+                LogMessage -Message "ERROR: Failed to move $($file.FullName) to Recycle Bin. Error: $($_.Exception.Message)" -IsError
             }
         } else {
-            LogMessage "ERROR: Failed to copy $($file.FullName) to $destinationFile. Original file not moved." -VerboseMode:$Verbose
+            LogMessage -Message "ERROR: Failed to copy $($file.FullName) to $destinationFile. Original file not moved." -IsError
         }        
     }
 }
@@ -223,17 +234,18 @@ function RedistributeFilesInTarget {
     }
 
     # Redistribute files in the target folder (not in subfolders) regardless of limit
+    LogMessage -Message "Redistributing files from target folder $TargetFolder to subfolders..."
     $rootFiles = Get-ChildItem -Path $TargetFolder -File
     DistributeFilesToSubfolders -Files $rootFiles -Subfolders $Subfolders -Limit $FilesPerFolderLimit
+    LogMessage -Message "Completed file redistribution from target folder"
 
+    LogMessage -Message "Redistributing files from subfolders..."
     foreach ($file in $allFiles) {
         $folder = $file.DirectoryName
         $currentFileCount = $folderFilesMap[$folder]
 
         if ($currentFileCount -gt $FilesPerFolderLimit) {
-            if ($Verbose) {
-                LogMessage "Renaming and redistributing files from folder: $folder" -VerboseMode:$Verbose
-            }
+            LogMessage -Message "Renaming and redistributing files from folder: $folder"
             DistributeFilesToSubfolders -Files @($file) -Subfolders $Subfolders -Limit $FilesPerFolderLimit
             $folderFilesMap[$folder]--
         }
@@ -242,59 +254,74 @@ function RedistributeFilesInTarget {
 
 # Main script logic
 function Main {
+    LogMessage -Message "FileDistributor starting..." -ConsoleOutput
+    LogMessage -Message "Validating parameters: SourceFolder - $SourceFolder, TargetFolder - $TargetFolder, FilePerFolderLimit - $FilesPerFolderLimit"
     try {
         # Ensure source and target folders exist
         if (!(Test-Path -Path $SourceFolder)) {
-            LogMessage "ERROR: Source folder '$SourceFolder' does not exist." -VerboseMode:$Verbose
+            LogMessage -Message "ERROR: Source folder '$SourceFolder' does not exist." -IsError
             throw "Source folder not found."
         }
+        if(!($FilesPerFolderLimit -gt 0)) {
+            LogMessage -Message "WARNING: Incorrect value for FilesPerFolderLimit. Resetting to default: 20000." -IsWarning
+            $FilesPerFolderLimit = 20000
+        }
         if (!(Test-Path -Path $TargetFolder)) {
-            LogMessage "Target folder '$TargetFolder' does not exist. Creating it." -VerboseMode:$Verbose
+            LogMessage -Message "WARNING: Target folder '$TargetFolder' does not exist. Creating it." -IsWarning
             New-Item -ItemType Directory -Path $TargetFolder
         }
 
         # Rename files in the source folder to random names
+        LogMessage -Message "Renaming files in source folder..."
         RenameFilesInSourceFolder -SourceFolder $SourceFolder
+        LogMessage -Message "File rename completed"
 
         # Count files in the source and target folder before distribution
         $sourceFiles = Get-ChildItem -Path $SourceFolder -File
         $totalSourceFiles = $sourceFiles.Count
         $totalTargetFilesBefore = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
+        LogMessage -Message "Source File Count: $totalSourceFiles. Target File Count Before: $totalTargetFilesBefore."
 
         # Get subfolders in the target folder
         $subfolders = Get-ChildItem -Path $TargetFolder -Directory
 
         # Determine if subfolders need to be created
         $totalFiles = $totalTargetFilesBefore + $totalSourceFiles
+        LogMessage -Message "Total Files Before: $totalFiles."
         $currentFolderCount = $subfolders.Count
+        LogMessage -Message "Sub-folder Count Before: $currentFolderCount."
 
         if ($totalFiles / $FilesPerFolderLimit -gt $currentFolderCount) {
             $additionalFolders = [math]::Ceiling($totalFiles / $FilesPerFolderLimit) - $currentFolderCount
+            LogMessage -Message "Need to create $additionalFolders subfolders"
             $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders
         }
 
         # Distribute files from the source folder to subfolders
+        LogMessage -Message "Distributing files to subfolders..."
         DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit
+        LogMessage -Message "Completed file distribution"
 
          # Redistribute files within the target folder and subfolders if needed
+         LogMessage -Message "Redistributing files in target folders..."
          RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit
 
          # Count files in the target folder after distribution
          $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
  
          # Log summary message
-         LogMessage "Original number of files in the source folder: $totalSourceFiles" -VerboseMode:$Verbose
-         LogMessage "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -VerboseMode:$Verbose
-         LogMessage "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -VerboseMode:$Verbose
+         LogMessage "Original number of files in the source folder: $totalSourceFiles" -ConsoleOutput
+         LogMessage "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -ConsoleOutput
+         LogMessage "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
  
          if ($totalSourceFiles + $totalTargetFilesBefore -ne $totalTargetFilesAfter) {
-             LogMessage "WARNING: Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -VerboseMode:$Verbose
+             LogMessage "WARNING: Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -IsWarning
          } else {
-             LogMessage "File distribution and cleanup completed successfully." -VerboseMode:$Verbose
+             LogMessage "File distribution and cleanup completed successfully." -ConsoleOutput
          }
  
      } catch {
-         LogMessage "ERROR: $($_.Exception.Message)" -VerboseMode:$Verbose
+         LogMessage "ERROR: $($_.Exception.Message)" -IsError
      }
  }
  
