@@ -36,7 +36,8 @@ function Get-FileExtension {
         'FFD8FFDB' { return ".jpg" }  # JPEG signature
         'FFD8FFE0' { return ".jpg" }  # Another common JPEG signature
         'FFD8FFE1' { return ".jpg" }  # Another common JPEG signature
-        default { return $hex }      # Return hex if extension is not found
+        'FFD8FFE2' { return ".jpg" }  # Another common JPEG signature
+        default { return $hex }       # Return hex if extension is not found
     }
 }
 
@@ -64,7 +65,7 @@ foreach ($file in $files) {
     $extension = Get-FileExtension -filePath $file.FullName
     Write-Log "Detected extension $extension for file $($file.Name)"  # Added log for detected extension
 
-    if ($extension -and $extension -ne $file.Name) {
+    if ($extension -and $extension.StartsWith(".")) {
         # Extract the file name without extension
         $fileNameWithoutExtension = [System.IO.Path]::GetFileNameWithoutExtension($file.FullName)
         
@@ -78,8 +79,7 @@ foreach ($file in $files) {
         Rename-Item -Path $file.FullName -NewName $newFullFilePath
         Write-Log "Renamed $($file.Name) to $($newFileName)"
         $renamedCount++
-    }
-    else {
+    } else {
         # Log the hex value for unknown file types
         Write-Log "Could not determine extension for $($file.Name). Hex: $extension"
         $unknownCount++
