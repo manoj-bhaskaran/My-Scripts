@@ -35,6 +35,7 @@ function Get-FileExtension {
         '89504E47' { return ".png" }  # PNG signature
         'FFD8FFDB' { return ".jpg" }  # JPEG signature
         'FFD8FFE0' { return ".jpg" }  # Another common JPEG signature
+        'FFD8FFE1' { return ".jpg" }  # Another common JPEG signature
         default { return $hex }      # Return hex if extension is not found
     }
 }
