@@ -71,7 +71,7 @@ param(
     [string]$SourceFolder = "C:\Users\manoj\OneDrive\Desktop\New folder",
     [string]$TargetFolder = "D:\users\manoj\Documents\FIFA 07\elib",
     [int]$FilesPerFolderLimit = 20000,
-    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor.log"
+    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor-log.txt"
 )
 
 # Function to log messages
@@ -120,8 +120,9 @@ function ResolveFileNameConflict {
     )
     $extension = [System.IO.Path]::GetExtension($OriginalFileName)
     do {
-        $newFileName = Get-RandomFileName + $extension
-        $newFilePath = Join-Path -Path $TargetFolder -ChildPath $newFileName
+        $newFileName = Get-RandomFileName
+        $newFullFileName = $newFileName + $extension
+        $newFilePath = Join-Path -Path $TargetFolder -ChildPath $newFullFileName
     } while (Test-Path -Path $newFilePath)
     return $newFileName
 }
@@ -137,8 +138,9 @@ function RenameFilesInSourceFolder {
         try {
             $extension = $file.Extension
             do {
-                $newFileName = Get-RandomFileName + $extension
-                $newFilePath = Join-Path -Path $SourceFolder -ChildPath $newFileName
+                $newFileName = Get-RandomFileName
+                $newFullFileName = $newFileName + $extension
+                $newFilePath = Join-Path -Path $SourceFolder -ChildPath $newFullFileName
             } while (Test-Path -Path $newFilePath)
 
             # Rename the file
@@ -270,6 +272,7 @@ function Main {
             LogMessage -Message "WARNING: Target folder '$TargetFolder' does not exist. Creating it." -IsWarning
             New-Item -ItemType Directory -Path $TargetFolder
         }
+        LogMessage -Message "Parameter validation completed"
 
         # Rename files in the source folder to random names
         LogMessage -Message "Renaming files in source folder..."
