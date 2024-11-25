@@ -145,7 +145,7 @@ function RenameFilesInSourceFolder {
 
             # Rename the file
             Rename-Item -LiteralPath $file.FullName -NewName $newFullFileName -Force
-            LogMessage -Message "Renamed file $($file.FullName) to $newFileName"
+            LogMessage -Message "Renamed file $($file.FullName) to $newFullFileName"
         } catch {
             LogMessage -Message "ERROR: Failed to rename file '$($file.FullName)': $_" -IsError
         }
