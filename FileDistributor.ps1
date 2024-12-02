@@ -71,7 +71,9 @@ param(
     [string]$SourceFolder = "C:\Users\manoj\OneDrive\Desktop\New folder",
     [string]$TargetFolder = "D:\users\manoj\Documents\FIFA 07\elib",
     [int]$FilesPerFolderLimit = 20000,
-    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor-log.txt"
+    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor-log.txt",
+    [string]$StateFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor-State.json",
+    [switch]$Restart
 )
 
 # Function to log messages
@@ -254,6 +256,38 @@ function RedistributeFilesInTarget {
     }
 }
 
+# Function to save state
+function SaveState {
+    param (
+        [int]$Checkpoint
+    )
+
+    # Ensure the state file exists
+    if (-not (Test-Path -Path $StateFilePath)) {
+        New-Item -Path $StateFilePath -ItemType File -Force | Out-Null
+        LogMessage -Message "State file created at $StateFilePath"
+    }
+
+    # Save the state to the file
+    $state = @{
+        Checkpoint = $Checkpoint
+        Timestamp  = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    }
+    $state | ConvertTo-Json -Depth 10 | Set-Content -Path $StateFilePath
+
+    # Log the save operation
+    LogMessage -Message "Saved state: Checkpoint $Checkpoint"
+}
+
+# Function to load state
+function LoadState {
+    if (Test-Path -Path $StateFilePath) {
+        return Get-Content -Path $StateFilePath | ConvertFrom-Json
+    } else {
+        return @{ Checkpoint = 0 }
+    }
+}
+
 # Main script logic
 function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
@@ -274,40 +308,73 @@ function Main {
         }
         LogMessage -Message "Parameter validation completed"
 
-        # Rename files in the source folder to random names
-        LogMessage -Message "Renaming files in source folder..."
-        RenameFilesInSourceFolder -SourceFolder $SourceFolder
-        LogMessage -Message "File rename completed"
-
-        # Count files in the source and target folder before distribution
-        $sourceFiles = Get-ChildItem -Path $SourceFolder -File
-        $totalSourceFiles = $sourceFiles.Count
-        $totalTargetFilesBefore = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
-        LogMessage -Message "Source File Count: $totalSourceFiles. Target File Count Before: $totalTargetFilesBefore."
-
-        # Get subfolders in the target folder
-        $subfolders = Get-ChildItem -Path $TargetFolder -Directory
-
-        # Determine if subfolders need to be created
-        $totalFiles = $totalTargetFilesBefore + $totalSourceFiles
-        LogMessage -Message "Total Files Before: $totalFiles."
-        $currentFolderCount = $subfolders.Count
-        LogMessage -Message "Sub-folder Count Before: $currentFolderCount."
-
-        if ($totalFiles / $FilesPerFolderLimit -gt $currentFolderCount) {
-            $additionalFolders = [math]::Ceiling($totalFiles / $FilesPerFolderLimit) - $currentFolderCount
-            LogMessage -Message "Need to create $additionalFolders subfolders"
-            $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders
+        #Restart logic
+        $lastCheckpoint = 0
+        if ($Restart) {
+            LogMessage -Message "Restart requested. Loading checkpoint..." -ConsoleOutput
+            $state = LoadState
+            $lastCheckpoint = $state.Checkpoint
+            if ($lastCheckpoint -gt 0) {
+                LogMessage -Message "Restarting from checkpoint $lastCheckpoint"
+            } else {
+                LogMessage -Message "WARNING: Checkpoint not found. Executing from top..." -IsWarning
+            }
+        } else {
+            # Check if a restart state file exists
+            if (Test-Path -Path $StateFilePath) {
+                LogMessage -Message "WARNING: Restart state file found but restart not requested. Deleting state file..." -IsWarning
+                Remove-Item -Path $StateFilePath -Force
+            }
         }
 
-        # Distribute files from the source folder to subfolders
-        LogMessage -Message "Distributing files to subfolders..."
-        DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit
-        LogMessage -Message "Completed file distribution"
+        If ($lastCheckpoint -lt 1) {
+            # Rename files in the source folder to random names
+            LogMessage -Message "Renaming files in source folder..."
+            RenameFilesInSourceFolder -SourceFolder $SourceFolder
+            LogMessage -Message "File rename completed"
+            SaveState -Checkpoint 1
+        }
 
-         # Redistribute files within the target folder and subfolders if needed
-         LogMessage -Message "Redistributing files in target folders..."
-         RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit
+        If ($lastCheckpoint -lt 2) {
+            # Count files in the source and target folder before distribution
+            $sourceFiles = Get-ChildItem -Path $SourceFolder -File
+            $totalSourceFiles = $sourceFiles.Count
+            $totalTargetFilesBefore = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
+            LogMessage -Message "Source File Count: $totalSourceFiles. Target File Count Before: $totalTargetFilesBefore."
+
+            # Get subfolders in the target folder
+            $subfolders = Get-ChildItem -Path $TargetFolder -Directory
+
+            # Determine if subfolders need to be created
+            $totalFiles = $totalTargetFilesBefore + $totalSourceFiles
+            LogMessage -Message "Total Files Before: $totalFiles."
+            $currentFolderCount = $subfolders.Count
+            LogMessage -Message "Sub-folder Count Before: $currentFolderCount."
+
+            if ($totalFiles / $FilesPerFolderLimit -gt $currentFolderCount) {
+                $additionalFolders = [math]::Ceiling($totalFiles / $FilesPerFolderLimit) - $currentFolderCount
+                LogMessage -Message "Need to create $additionalFolders subfolders"
+                $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders
+            }
+            SaveState -Checkpoint 2
+        }
+
+        If ($lastCheckpoint -lt 3) {
+            # Distribute files from the source folder to subfolders
+            LogMessage -Message "Distributing files to subfolders..."
+            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit
+            LogMessage -Message "Completed file distribution"
+        
+            SaveState -Checkpoint 3
+        }
+
+        if ($lastCheckpoint -lt 4) {
+            # Redistribute files within the target folder and subfolders if needed
+            LogMessage -Message "Redistributing files in target folders..."
+            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit
+
+            SaveState -Checkpoint 4
+        }
 
          # Count files in the target folder after distribution
          $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
