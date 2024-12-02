@@ -366,6 +366,9 @@ function Main {
                 $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders
             }
 
+            $flatsubfolders = $subfolders | Select-Object FullName
+            Write-Host $flatsubfolders
+
             $additionalVars = @{
                 sourceFiles = $sourceFiles
                 totalSourceFiles = $totalSourceFiles
