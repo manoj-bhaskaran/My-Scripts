@@ -367,7 +367,7 @@ function Main {
             }
 
             $flatsubfolders = $subfolders | Select-Object FullName
-            $flatjson = $flatsubfolders | Convert-Json
+            $flatjson = $flatsubfolders | ConvertTo-Json
             Write-Host $flatjson
 
             $additionalVars = @{
