@@ -370,7 +370,7 @@ function Main {
                 sourceFiles = $sourceFiles
                 totalSourceFiles = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders = $subfolders
+                subfolders = $subfolders | Select-Object FullName
             }
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
         }
