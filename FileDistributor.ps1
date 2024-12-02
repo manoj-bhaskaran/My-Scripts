@@ -259,7 +259,8 @@ function RedistributeFilesInTarget {
 # Function to save state
 function SaveState {
     param (
-        [int]$Checkpoint
+        [int]$Checkpoint,
+        [hashtable]$AdditionalVariables = @{}
     )
 
     # Ensure the state file exists
@@ -268,15 +269,22 @@ function SaveState {
         LogMessage -Message "State file created at $StateFilePath"
     }
 
-    # Save the state to the file
+    # Combine state information
     $state = @{
         Checkpoint = $Checkpoint
         Timestamp  = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     }
+
+    # Merge additional variables into the state
+    foreach ($key in $AdditionalVariables.Keys) {
+        $state[$key] = $AdditionalVariables[$key]
+    }
+
+    # Save the state to the file
     $state | ConvertTo-Json -Depth 10 | Set-Content -Path $StateFilePath
 
     # Log the save operation
-    LogMessage -Message "Saved state: Checkpoint $Checkpoint"
+    LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')"
 }
 
 # Function to load state
@@ -284,6 +292,7 @@ function LoadState {
     if (Test-Path -Path $StateFilePath) {
         return Get-Content -Path $StateFilePath | ConvertFrom-Json
     } else {
+        # Default state if no file exists
         return @{ Checkpoint = 0 }
     }
 }
@@ -356,9 +365,16 @@ function Main {
                 LogMessage -Message "Need to create $additionalFolders subfolders"
                 $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders
             }
-            SaveState -Checkpoint 2
-        }
 
+            $additionalVars = @{
+                sourceFiles = $sourceFiles
+                totalSourceFiles = $totalSourceFiles
+                totalTargetFilesBefore = $totalTargetFilesBefore
+                subfolders = $subfolders
+            }
+            SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
+        }
+        return
         If ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
             LogMessage -Message "Distributing files to subfolders..."
