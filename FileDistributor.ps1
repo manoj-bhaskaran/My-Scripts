@@ -281,7 +281,7 @@ function SaveState {
     }
 
     # Save the state to the file
-    $state | ConvertTo-Json -Depth 10 | Set-Content -Path $StateFilePath
+    $state | ConvertTo-Json -Depth 100 | Set-Content -Path $StateFilePath
 
     # Log the save operation
     LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')"
@@ -374,7 +374,7 @@ function Main {
             }
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
         }
-        return
+        exit
         If ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
             LogMessage -Message "Distributing files to subfolders..."
