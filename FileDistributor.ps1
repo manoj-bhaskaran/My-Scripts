@@ -280,8 +280,6 @@ function SaveState {
         $state[$key] = $AdditionalVariables[$key]
     }
 
-    Write-Host $state
-
     # Save the state to the file
     $state | ConvertTo-Json -Depth 100 | Set-Content -Path $StateFilePath
 
