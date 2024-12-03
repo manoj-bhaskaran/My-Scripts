@@ -200,8 +200,9 @@ function DistributeFilesToSubfolders {
         }
 
         $destinationFolder = $subfolderQueue.Current
-        Write-Host $destinationFolder
         $destinationFile = Join-Path -Path $destinationFolder -ChildPath $file.Name
+
+        Write-Host $destinationFile
 
         if (Test-Path -Path $destinationFile) {
             $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $file.Name
