@@ -366,16 +366,16 @@ function Main {
                 $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders
             }
 
-            $flatsubfolders = $subfolders | Select-Object FullName
-            $flatjson = $flatsubfolders | ConvertTo-Json
-            Write-Host $flatjson
-
             $additionalVars = @{
                 sourceFiles = $sourceFiles
                 totalSourceFiles = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders = $subfolders | Select-Object FullName
             }
+
+            foreach ($subfolder in $subfolders) {
+                $additionalVars[$subfolder.Name] = $subfolder.FullName
+            }
+
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
         }
         exit
