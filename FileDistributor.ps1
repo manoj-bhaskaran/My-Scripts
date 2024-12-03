@@ -280,8 +280,6 @@ function SaveState {
         $state[$key] = $AdditionalVariables[$key]
     }
 
-    Write-Host $state
-
     # Save the state to the file
     $state | ConvertTo-Json -Depth 100 | Set-Content -Path $StateFilePath
 
@@ -357,7 +355,7 @@ function Main {
             $state = LoadState
             $lastCheckpoint = $state.Checkpoint
             if ($lastCheckpoint -gt 0) {
-                LogMessage -Message "Restarting from checkpoint $lastCheckpoint"
+                LogMessage -Message "Restarting from checkpoint $lastCheckpoint" -ConsoleOutput
             } else {
                 LogMessage -Message "WARNING: Checkpoint not found. Executing from top..." -IsWarning
             }
@@ -415,7 +413,7 @@ function Main {
 
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
         }
-        exit
+
         If ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
             LogMessage -Message "Distributing files to subfolders..."
