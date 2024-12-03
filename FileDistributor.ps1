@@ -207,8 +207,7 @@ function DistributeFilesToSubfolders {
             $destinationFile = Join-Path -Path $destinationFolder -ChildPath $newFileName
         }
 
-        Write-Host $file.FullName
-        Copy-Item -Path $file.FullName -Destination $destinationFile
+        Copy-Item -Path $file -Destination $destinationFile
 
         # Verify the file was copied successfully
         if (Test-Path -Path $destinationFile) {
