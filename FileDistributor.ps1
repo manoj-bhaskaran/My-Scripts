@@ -374,8 +374,6 @@ function Main {
 
             $subfolderPaths = $subfolders.$newFullFileName
             $additionalVars["subfolders"] = $subfolderPaths
-            Write-Host: "Output 1:"
-            Write-Host $additionalVars
 
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
         }
