@@ -376,6 +376,8 @@ function Main {
                 $additionalVars[$subfolder.Name] = $subfolder.FullName
             }
 
+            Write-Host $additionalVars
+
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
         }
         exit
