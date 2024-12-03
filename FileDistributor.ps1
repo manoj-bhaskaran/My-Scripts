@@ -212,10 +212,10 @@ function DistributeFilesToSubfolders {
         # Verify the file was copied successfully
         if (Test-Path -Path $destinationFile) {
             try {
-                Move-ToRecycleBin -FilePath $file.FullName
-                LogMessage -Message "Copied and moved to Recycle Bin: $($file.FullName) to $destinationFile"
+                Move-ToRecycleBin -FilePath $file
+                LogMessage -Message "Copied and moved to Recycle Bin: $($file) to $destinationFile"
             } catch {
-                LogMessage -Message "ERROR: Failed to move $($file.FullName) to Recycle Bin. Error: $($_.Exception.Message)" -IsError
+                LogMessage -Message "ERROR: Failed to move $($file) to Recycle Bin. Error: $($_.Exception.Message)" -IsWarning
             }
         } else {
             LogMessage -Message "ERROR: Failed to copy $($file.FullName) to $destinationFile. Original file not moved." -IsError
