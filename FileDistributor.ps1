@@ -372,11 +372,8 @@ function Main {
                 totalTargetFilesBefore = $totalTargetFilesBefore
             }
 
-            foreach ($subfolder in $subfolders) {
-                $additionalVars[$subfolder.Name] = $subfolder.FullName
-            }
-
-            Write-Host $additionalVars
+            $subfolderPaths = $subfolders.$newFullFileName
+            $additionalVars["subfolders"] = $subfolderPaths
 
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
         }
