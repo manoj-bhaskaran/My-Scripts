@@ -208,6 +208,9 @@ function DistributeFilesToSubfolders {
         }
 
         Copy-Item -Path $file -Destination $destinationFile
+        Write-Host $file
+        Write-Host $destinationFile
+        exit
 
         # Verify the file was copied successfully
         if (Test-Path -Path $destinationFile) {
