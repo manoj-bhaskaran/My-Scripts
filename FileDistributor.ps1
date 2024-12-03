@@ -299,6 +299,19 @@ function LoadState {
     }
 }
 
+# Extract paths from subfolders
+function Convert-SubfoldersToPaths {
+    param (
+        [array]$Subfolders
+    )
+
+    # Create an array of subfolder full paths
+    $subfolderPaths = $Subfolders.FullName
+
+    # Return the array
+    return $subfolderPaths
+}
+
 # Main script logic
 function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
@@ -369,13 +382,11 @@ function Main {
             }
 
             $additionalVars = @{
-                sourceFiles = $sourceFiles
+                sourceFiles = Convert-SubfoldersToPaths($sourceFiles)
                 totalSourceFiles = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
+                subfolders = Convert-SubfoldersToPaths($subfolders)
             }
-
-            $subfolderPaths = $subfolders.$newFullFileName
-            $additionalVars["subfolders"] = $subfolderPaths
 
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
         }
