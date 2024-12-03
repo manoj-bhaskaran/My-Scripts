@@ -299,17 +299,17 @@ function LoadState {
     }
 }
 
-# Extract paths from subfolders
-function Convert-SubfoldersToPaths {
+# Extract paths from files and subfolders
+function ConvertItemsToPaths {
     param (
-        [array]$Subfolders
+        [array]$Items
     )
 
     # Create an array of subfolder full paths
-    $subfolderPaths = $Subfolders.FullName
+    $itemPaths = $Items.FullName
 
     # Return the array
-    return $subfolderPaths
+    return $itemPaths
 }
 
 # Main script logic
@@ -382,10 +382,10 @@ function Main {
             }
 
             $additionalVars = @{
-                sourceFiles = Convert-SubfoldersToPaths($sourceFiles)
+                sourceFiles = ConvertItemsToPaths($sourceFiles)
                 totalSourceFiles = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders = Convert-SubfoldersToPaths($subfolders)
+                subfolders = ConvertItemsToPaths($subfolders)
             }
 
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
