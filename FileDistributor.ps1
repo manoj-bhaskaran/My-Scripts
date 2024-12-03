@@ -280,7 +280,7 @@ function SaveState {
         $state[$key] = $AdditionalVariables[$key]
     }
 
-    Write-Host "Output 2::"
+    Write-Host "Output 2:"
     Write-Host $state
 
     # Save the state to the file
