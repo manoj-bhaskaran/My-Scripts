@@ -203,18 +203,12 @@ function DistributeFilesToSubfolders {
         $fileName = [System.IO.Path]::GetFileName($file)
         $destinationFile = Join-Path -Path $destinationFolder -ChildPath $fileName
 
-        Write-Host $destinationFolder
-        Write-Host $destinationFile
         if (Test-Path -Path $destinationFile) {
-            Write-Host "File Name exists"
             $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $file.Name
             $destinationFile = Join-Path -Path $destinationFolder -ChildPath $newFileName
         }
 
         Copy-Item -Path $file -Destination $destinationFile
-        Write-Host $file
-        Write-Host $destinationFile
-        exit
 
         # Verify the file was copied successfully
         if (Test-Path -Path $destinationFile) {
