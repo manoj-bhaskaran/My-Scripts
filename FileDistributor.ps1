@@ -312,6 +312,24 @@ function ConvertItemsToPaths {
     return $itemPaths
 }
 
+function ConvertPathsToItems {
+    param (
+        [array]$Paths
+    )
+
+    # Create an array to hold the item objects
+    $items = @()
+
+    # Loop through each path and get the corresponding item
+    foreach ($path in $Paths) {
+        $item = Get-Item -Path $path
+        $items += $item
+    }
+
+    # Return the array of item objects
+    return $items
+}
+
 # Main script logic
 function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
@@ -342,6 +360,13 @@ function Main {
                 LogMessage -Message "Restarting from checkpoint $lastCheckpoint"
             } else {
                 LogMessage -Message "WARNING: Checkpoint not found. Executing from top..." -IsWarning
+            }
+            # Checkpoint-specific additional variable load
+            if ($lastCheckpoint -eq 2) {
+                $sourceFiles = ConvertPathsToItems($state.sourceFiles)
+                $totalSourceFiles = $state.totalSourceFiles
+                $subfolders = ConvertPathsToItems($state.subfolders)
+                $totalTargetFilesBefore = $state.totalTargetFilesBefore
             }
         } else {
             # Check if a restart state file exists
@@ -396,10 +421,16 @@ function Main {
             LogMessage -Message "Distributing files to subfolders..."
             DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit
             LogMessage -Message "Completed file distribution"
-        
-            SaveState -Checkpoint 3
-        }
 
+            $additionalVars = @{
+                totalSourceFiles = $totalSourceFiles
+                totalTargetFilesBefore = $totalTargetFilesBefore
+                subfolders = ConvertItemsToPaths($subfolders)
+            }
+        
+            SaveState -Checkpoint 3 -AdditionalVariables $additionalVars
+        }
+        exit
         if ($lastCheckpoint -lt 4) {
             # Redistribute files within the target folder and subfolders if needed
             LogMessage -Message "Redistributing files in target folders..."
