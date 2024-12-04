@@ -360,13 +360,20 @@ function Main {
             } else {
                 LogMessage -Message "WARNING: Checkpoint not found. Executing from top..." -IsWarning
             }
-            # Checkpoint-specific additional variable load
-            if ($lastCheckpoint -eq 2) {
-                $sourceFiles = ConvertPathsToItems($state.sourceFiles)
+            # Load checkpoint-specific additional variables
+            if ($lastCheckpoint -in 2, 3, 4) {
                 $totalSourceFiles = $state.totalSourceFiles
-                $subfolders = ConvertPathsToItems($state.subfolders)
                 $totalTargetFilesBefore = $state.totalTargetFilesBefore
             }
+
+            if ($lastCheckpoint -in 2, 3) {
+                $subfolders = ConvertPathsToItems($state.subfolders)
+            }
+
+            if ($lastCheckpoint -eq 2) {
+                $sourceFiles = ConvertPathsToItems($state.sourceFiles)
+            }
+
         } else {
             # Check if a restart state file exists
             if (Test-Path -Path $StateFilePath) {
@@ -435,7 +442,11 @@ function Main {
             LogMessage -Message "Redistributing files in target folders..."
             RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit
 
-            SaveState -Checkpoint 4
+            $additionalVars = @{
+                totalSourceFiles = $totalSourceFiles
+                totalTargetFilesBefore = $totalTargetFilesBefore
+            }
+            SaveState -Checkpoint 4 -AdditionalVariables $additionalVars
         }
 
          # Count files in the target folder after distribution
@@ -451,6 +462,8 @@ function Main {
          } else {
              LogMessage "File distribution and cleanup completed successfully." -ConsoleOutput
          }
+
+         Remove-Item -Path $StateFilePath -Force
  
      } catch {
          LogMessage "ERROR: $($_.Exception.Message)" -IsError
