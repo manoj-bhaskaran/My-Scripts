@@ -1,18 +1,18 @@
 <#
 .SYNOPSIS
-This PowerShell script selects and opens a random file from a random subfolder in the specified target directory. If no subfolders are found, it selects a random file directly from the target directory.
+This PowerShell script selects and opens a random file from a random subfolder or the main target folder in the specified directory.
 
 .DESCRIPTION
-The script first checks for subfolders in the specified target directory. If subfolders are found, it randomly selects one and then randomly selects a file from within that subfolder to open. If no subfolders are found, it randomly selects a file from the target directory itself.
+The script first checks for subfolders in the specified target directory. If subfolders are found, it randomly selects one of them. If there are files in the main target folder, it includes the main folder in the list of subfolders. It then randomly selects a file from the chosen folder to open.
 
 .PARAMETER FilePath
 Optional. Specifies the path to the target directory where the files are located. Defaults to "C:\users\Manoj\Documents\FIFA 07\elib".
 
 .EXAMPLES
-To select and open a random file from a subfolder (or the target directory if no subfolders exist) in the default target directory:
+To select and open a random file from a subfolder or the main target folder in the default target directory:
 .\SelObj.ps1
 
-To select and open a random file from a subfolder (or the target directory if no subfolders exist) in a custom target directory:
+To select and open a random file from a subfolder or the main target folder in a custom target directory:
 .\SelObj.ps1 -FilePath "C:\Custom\Path"
 
 .NOTES
@@ -22,13 +22,14 @@ Script Workflow:
    
 2. **Subfolder Management**:
    - Gets all subfolders in the target directory.
+   - Checks if there are files in the main target folder and includes it in the list of subfolders if applicable.
 
 3. **File Selection**:
-   - If subfolders exist, selects a random subfolder and then selects a random file from that subfolder.
-   - If no subfolders exist, selects a random file from the target directory.
+   - Selects a random folder from the list of subfolders (including the main target folder if it has files).
+   - Selects a random file from the chosen folder.
 
 4. **Error Handling**:
-   - Logs a message if no files are found in the selected subfolder or the target directory.
+   - Logs a message if no files are found in the selected folder or the target directory.
 
 Limitations:
 - The script only processes top-level files and subfolders within the target directory.
@@ -41,30 +42,24 @@ param(
 # Get all subfolders
 $subfolders = Get-ChildItem -Path $FilePath -Directory -Force
 
-# Check if there are any subfolders
-if ($subfolders.Count -gt 0) {
-    # Select a random subfolder
-    $randomSubfolder = $subfolders | Get-Random
-    
-    # Get all files from the random subfolder
-    $files = Get-ChildItem -Path $randomSubfolder.FullName -File -Force
+# Check if there are any files in the main target folder
+$mainFolderFiles = Get-ChildItem -Path $FilePath -File -Force
+if ($mainFolderFiles.Count -gt 0) {
+    # Add the main target folder to the list of subfolders
+    $subfolders += Get-Item -Path $FilePath
+}
 
-    # Check if there are any files in the selected subfolder
-    if ($files.Count -gt 0) {
-        # Select a random file and open it
-        $randomFile = $files | Get-Random
-        Invoke-Item $randomFile.FullName
-    } else {
-        Write-Host "No files found in the randomly selected subfolder: $($randomSubfolder.FullName)"
-    }
+# Select a random folder (including the main target folder if applicable)
+$randomFolder = $subfolders | Get-Random
+
+# Get all files from the random folder
+$files = Get-ChildItem -Path $randomFolder.FullName -File -Force
+
+# Check if there are any files in the selected folder
+if ($files.Count -gt 0) {
+    # Select a random file and open it
+    $randomFile = $files | Get-Random
+    Invoke-Item $randomFile.FullName
 } else {
-    # No subfolders found, select a random file from the target directory
-    $files = Get-ChildItem -Path $FilePath -File -Force
-    if ($files.Count -gt 0) {
-        # Select a random file and open it
-        $randomFile = $files | Get-Random
-        Invoke-Item $randomFile.FullName
-    } else {
-        Write-Host "No files found in the target directory: $FilePath"
-    }
+    Write-Host "No files found in the randomly selected folder: $($randomFolder.FullName)"
 }
