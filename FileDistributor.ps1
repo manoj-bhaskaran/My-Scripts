@@ -137,7 +137,7 @@ function ResolveFileNameConflict {
 
     # Loop to generate a unique file name
     do {
-        $newFileName = Get-RandomFileName + $extension
+        $newFileName = (Get-RandomFileName) + $extension
         $newFilePath = Join-Path -Path $TargetFolder -ChildPath $newFileName
     } while (Test-Path -Path $newFilePath)
 
@@ -158,7 +158,7 @@ function RenameFilesInSourceFolder {
             $extension = $file.Extension
             do {
                 # Generate a new random file name
-                $newFileName = Get-RandomFileName + $extension
+                $newFileName = (Get-RandomFileName) + $extension
                 $newFilePath = Join-Path -Path $SourceFolder -ChildPath $newFileName
             } while (Test-Path -Path $newFilePath)
 
