@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-This PowerShell script copies files from a source folder to a target folder, distributing them across subfolders while maintaining a maximum file count per subfolder. It also moves the original files to the Recycle Bin after ensuring successful copying and resolves file name conflicts.
+This PowerShell script copies files from a source folder to a target folder, distributing them across subfolders while maintaining a maximum file count per subfolder. It provides configurable progress updates and moves the original files to the Recycle Bin after ensuring successful copying. File name conflicts are resolved automatically.
 
 .DESCRIPTION
-The script ensures that files are evenly distributed across subfolders in the target directory, with a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created as needed. Files in the target folder (not in subfolders) are also redistributed. File name conflicts are resolved using a custom random name generator. The script validates file copying before moving the original files to the Recycle Bin from the source folder and logs its actions in a log file. Additional details can be viewed using PowerShell's `-Verbose` switch.
+The script ensures that files are evenly distributed across subfolders in the target directory, with a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created as needed. Files in the target folder (not in subfolders) are also redistributed. File name conflicts are resolved using a custom random name generator. The script validates file copying before moving the original files to the Recycle Bin from the source folder and logs its actions in a log file. Progress updates can be displayed during processing, configurable by file count or percentage.
 
 .PARAMETER SourceFolder
 Mandatory. Specifies the path to the source folder containing the files to be copied.
@@ -20,18 +20,24 @@ Optional. Specifies the path to the log file for recording script activities. De
 .PARAMETER Restart
 Optional. If specified, the script will restart from the last checkpoint, resuming its previous state.
 
+.PARAMETER ShowProgress
+Optional. Displays progress updates during the script's execution. Use this parameter to enable progress reporting.
+
+.PARAMETER UpdateFrequency
+Optional. Specifies how often progress updates are displayed. Can be set to a specific file count (e.g., every 100 files) or percentage increments. Defaults to 100.
+
 .EXAMPLES
 To copy files from "C:\Source" to "C:\Target" with a default file limit:
 .\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
 
-To copy files with a custom file limit and log to a specific file:
-.\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -FilesPerFolderLimit 10000 -LogFilePath "C:\Logs\copy_log.txt"
-
-To enable verbose logging using PowerShell's built-in `-Verbose` switch:
-.\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Verbose
+To copy files with progress updates every 50 files:
+.\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -ShowProgress -UpdateFrequency 50
 
 To restart the script from the last checkpoint:
 .\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Restart
+
+To enable verbose logging using PowerShell's built-in `-Verbose` switch:
+.\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Verbose
 
 .NOTES
 Script Workflow:
@@ -44,7 +50,7 @@ Initialization:
 Subfolder Management:
 
 - Counts existing subfolders in the target folder.
-- Creates new subfolders only if required to maintain the file limit.
+- Creates new subfolders as needed while providing progress updates if enabled.
 
 File Processing:
 
@@ -52,6 +58,7 @@ File Processing:
 - Files in the target folder (not in subfolders) are redistributed regardless of the limit.
 - File name conflicts are resolved using the random name generator.
 - Successful copying is verified before moving the original files to the Recycle Bin.
+- Progress updates are displayed based on the specified `UpdateFrequency`.
 
 Error Handling:
 
@@ -59,7 +66,7 @@ Error Handling:
 
 Completion:
 
-- Logs completion of the operation and reports any unprocessed files.
+- Logs the completion of the operation and reports any unprocessed files.
 - Provides a final summary message with the original number of files in the source folder, the original number of files in the target folder hierarchy, and the final number of files in the target folder hierarchy.
 - Throws a warning if the sum of the original counts is not equal to the final count in the target.
 
@@ -79,7 +86,9 @@ param(
     [int]$FilesPerFolderLimit = 20000,
     [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor-log.txt",
     [string]$StateFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor-State.json",
-    [switch]$Restart
+    [switch]$Restart,
+    [switch]$ShowProgress = $false,
+    [int]$UpdateFrequency = 100 # Default: 100 files
 )
 
 # Function to log messages
@@ -146,14 +155,29 @@ function ResolveFileNameConflict {
 
 function RenameFilesInSourceFolder {
     param (
-        [string]$SourceFolder
+        [string]$SourceFolder,
+        [switch]$ShowProgress,
+        [int]$UpdateFrequency
     )
 
     # Get all files in the source folder
     $files = Get-ChildItem -Path $SourceFolder -File
+    $totalFiles = $files.Count
+    $fileCount = 0
 
     foreach ($file in $files) {
         try {
+            # Increment file counter
+            $fileCount++
+
+            # Show progress if enabled
+            if ($ShowProgress -and ($fileCount % $UpdateFrequency -eq 0)) {
+                $percentComplete = [math]::Floor(($fileCount / $totalFiles) * 100)
+                Write-Progress -Activity "Renaming Files" `
+                               -Status "Processing file $fileCount of $totalFiles" `
+                               -PercentComplete $percentComplete
+            }
+
             # Get the file extension
             $extension = $file.Extension
             do {
@@ -170,12 +194,19 @@ function RenameFilesInSourceFolder {
             LogMessage -Message "Failed to rename file '$($file.FullName)': $_" -IsError
         }
     }
+    # Final progress message
+    if ($ShowProgress) {
+        Write-Progress -Activity "Renaming Files" -Status "Complete" -Completed
+    }
+    LogMessage -Message "Renaming completed: Processed $fileCount of $totalFiles files." -ConsoleOutput
 }
 
 function CreateRandomSubfolders {
     param (
         [string]$TargetPath,
-        [int]$NumberOfFolders
+        [int]$NumberOfFolders,
+        [switch]$ShowProgress,
+        [int]$UpdateFrequency
     )
 
     # Initialize an array to store created folder paths
@@ -194,6 +225,19 @@ function CreateRandomSubfolders {
 
         # Log the creation of the folder
         LogMessage -Message "Created folder: $folderPath"
+
+        # Show progress if enabled
+        if ($ShowProgress -and ($i % $UpdateFrequency -eq 0)) {
+            $percentComplete = [math]::Floor(($i / $NumberOfFolders) * 100)
+            Write-Progress -Activity "Creating Subfolders" `
+                           -Status "Created $i of $NumberOfFolders folders" `
+                           -PercentComplete $percentComplete
+        }
+    }
+
+    # Final progress message
+    if ($ShowProgress) {
+        Write-Progress -Activity "Creating Subfolders" -Status "Complete" -Completed
     }
 
     return $createdFolders
@@ -221,11 +265,15 @@ function DistributeFilesToSubfolders {
     param (
         [string[]]$Files,
         [string[]]$Subfolders,
-        [int]$Limit
+        [int]$Limit,
+        [switch]$ShowProgress,        # Enable/disable progress updates
+        [int]$UpdateFrequency         # Frequency for progress updates
     )
 
     # Create an enumerator for subfolders to cycle through them
     $subfolderQueue = $Subfolders.GetEnumerator()
+    $totalFiles = $Files.Count
+    $fileCount = 0
 
     foreach ($file in $Files) {
         if (!$subfolderQueue.MoveNext()) {
@@ -254,15 +302,35 @@ function DistributeFilesToSubfolders {
             }
         } else {
             LogMessage -Message "Failed to copy $($file.FullName) to $destinationFile. Original file not moved." -IsError
-        }        
+        }
+
+        # Increment file counter
+        $fileCount++
+
+        # Show progress if enabled
+        if ($ShowProgress -and ($fileCount % $UpdateFrequency -eq 0)) {
+            $percentComplete = [math]::Floor(($fileCount / $totalFiles) * 100)
+            Write-Progress -Activity "Distributing Files" `
+                           -Status "Processing file $fileCount of $totalFiles" `
+                           -PercentComplete $percentComplete
+        }
     }
+
+    # Final progress message
+    if ($ShowProgress) {
+        Write-Progress -Activity "Distributing Files" -Status "Complete" -Completed
+    }
+
+    LogMessage -Message "File distribution completed: Processed $fileCount of $totalFiles files." -ConsoleOutput
 }
 
 function RedistributeFilesInTarget {
     param (
         [string]$TargetFolder,
         [string[]]$Subfolders,
-        [int]$FilesPerFolderLimit
+        [int]$FilesPerFolderLimit,
+        [switch]$ShowProgress,
+        [int]$UpdateFrequency 
     )
 
     # Get all files in the target folder and its subfolders
@@ -276,8 +344,7 @@ function RedistributeFilesInTarget {
     # Redistribute files in the target folder (not in subfolders) regardless of limit
     LogMessage -Message "Redistributing files from target folder $TargetFolder to subfolders..."
     $rootFiles = Get-ChildItem -Path $TargetFolder -File
-    DistributeFilesToSubfolders -Files $rootFiles -Subfolders $Subfolders -Limit $FilesPerFolderLimit
-    LogMessage -Message "Completed file redistribution from target folder"
+    DistributeFilesToSubfolders -Files $rootFiles -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
 
     LogMessage -Message "Redistributing files from subfolders..."
     foreach ($file in $allFiles) {
@@ -286,7 +353,7 @@ function RedistributeFilesInTarget {
 
         if ($currentFileCount -gt $FilesPerFolderLimit) {
             LogMessage -Message "Renaming and redistributing files from folder: $folder"
-            DistributeFilesToSubfolders -Files @($file) -Subfolders $Subfolders -Limit $FilesPerFolderLimit
+            DistributeFilesToSubfolders -Files @($file) -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
             $folderFilesMap[$folder]--
         }
     }
@@ -413,8 +480,7 @@ function Main {
         if ($lastCheckpoint -lt 1) {
             # Rename files in the source folder to random names
             LogMessage -Message "Renaming files in source folder..."
-            RenameFilesInSourceFolder -SourceFolder $SourceFolder
-            LogMessage -Message "File rename completed"
+            RenameFilesInSourceFolder -SourceFolder $SourceFolder -ShowProgress:$ShowProgress -UpdateFrequency $UpdateFrequency
             SaveState -Checkpoint 1
         }
 
@@ -438,7 +504,7 @@ function Main {
             if ($totalFiles / $FilesPerFolderLimit -gt $currentFolderCount) {
                 $additionalFolders = [math]::Ceiling($totalFiles / $FilesPerFolderLimit) - $currentFolderCount
                 LogMessage -Message "Need to create $additionalFolders subfolders"
-                $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders
+                $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
             }
 
             $additionalVars = @{
@@ -469,7 +535,7 @@ function Main {
         if ($lastCheckpoint -lt 4) {
             # Redistribute files within the target folder and subfolders if needed
             LogMessage -Message "Redistributing files in target folders..."
-            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit
+            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
 
             $additionalVars = @{
                 totalSourceFiles = $totalSourceFiles
