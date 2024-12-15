@@ -478,7 +478,8 @@ function Main {
         }
 
         # Count files in the target folder after distribution
-        $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object -Property Count -Sum | Select-Object -ExpandProperty Count
+        $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
+        $totalTargetFilesAfter = if ($null -eq $totalTargetFilesAfter) { 0 } else { $totalTargetFilesAfter }
 
         # Log summary message
         LogMessage -Message "Original number of files in the source folder: $totalSourceFiles" -ConsoleOutput
