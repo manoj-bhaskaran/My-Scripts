@@ -118,11 +118,11 @@ if (Test-Path -Path $randomNameScriptPath) {
         }
     }
     catch {
-        LogMessage -Message "ERROR: Failed to load the random name generator script from '$randomNameScriptPath'. $_" -IsError
+        LogMessage -Message "Failed to load the random name generator script from '$randomNameScriptPath'. $_" -IsError
         throw
     }
 } else {
-    LogMessage -Message "ERROR: Random name generator script '$randomNameScriptPath' not found." -IsError
+    LogMessage -Message "Random name generator script '$randomNameScriptPath' not found." -IsError
     throw "Random name generator script not found."
 }
 
@@ -167,7 +167,7 @@ function RenameFilesInSourceFolder {
             LogMessage -Message "Renamed file $($file.FullName) to $newFileName"
         } catch {
             # Log error if renaming fails
-            LogMessage -Message "ERROR: Failed to rename file '$($file.FullName)': $_" -IsError
+            LogMessage -Message "Failed to rename file '$($file.FullName)': $_" -IsError
         }
     }
 }
@@ -248,12 +248,12 @@ function DistributeFilesToSubfolders {
         if (Test-Path -Path $destinationFile) {
             try {
                 Move-ToRecycleBin -FilePath $file
-                LogMessage -Message "Copied and moved to Recycle Bin: $($file.FullName) to $destinationFile"
+                LogMessage -Message "Copied and moved to Recycle Bin: $file to $destinationFile"
             } catch {
-                LogMessage -Message "ERROR: Failed to move $($file.FullName) to Recycle Bin. Error: $($_.Exception.Message)" -IsWarning
+                LogMessage -Message "Failed to move $($file.FullName) to Recycle Bin. Error: $($_.Exception.Message)" -IsWarning
             }
         } else {
-            LogMessage -Message "ERROR: Failed to copy $($file.FullName) to $destinationFile. Original file not moved." -IsError
+            LogMessage -Message "Failed to copy $($file.FullName) to $destinationFile. Original file not moved." -IsError
         }        
     }
 }
@@ -361,17 +361,17 @@ function Main {
     try {
         # Ensure source and target folders exist
         if (!(Test-Path -Path $SourceFolder)) {
-            LogMessage -Message "ERROR: Source folder '$SourceFolder' does not exist." -IsError
+            LogMessage -Message "Source folder '$SourceFolder' does not exist." -IsError
             throw "Source folder not found."
         }
 
         if (!($FilesPerFolderLimit -gt 0)) {
-            LogMessage -Message "WARNING: Incorrect value for FilesPerFolderLimit. Resetting to default: 20000." -IsWarning
+            LogMessage -Message "Incorrect value for FilesPerFolderLimit. Resetting to default: 20000." -IsWarning
             $FilesPerFolderLimit = 20000
         }
 
         if (!(Test-Path -Path $TargetFolder)) {
-            LogMessage -Message "WARNING: Target folder '$TargetFolder' does not exist. Creating it." -IsWarning
+            LogMessage -Message "Target folder '$TargetFolder' does not exist. Creating it." -IsWarning
             New-Item -ItemType Directory -Path $TargetFolder -Force
         }
 
@@ -386,7 +386,7 @@ function Main {
             if ($lastCheckpoint -gt 0) {
                 LogMessage -Message "Restarting from checkpoint $lastCheckpoint" -ConsoleOutput
             } else {
-                LogMessage -Message "WARNING: Checkpoint not found. Executing from top..." -IsWarning
+                LogMessage -Message "Checkpoint not found. Executing from top..." -IsWarning
             }
 
             # Load checkpoint-specific additional variables
@@ -405,7 +405,7 @@ function Main {
         } else {
             # Check if a restart state file exists
             if (Test-Path -Path $StateFilePath) {
-                LogMessage -Message "WARNING: Restart state file found but restart not requested. Deleting state file..." -IsWarning
+                LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
                 Remove-Item -Path $StateFilePath -Force
             }
         }
@@ -488,7 +488,7 @@ function Main {
         LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
 
         if ($totalSourceFiles + $totalTargetFilesBefore -ne $totalTargetFilesAfter) {
-            LogMessage -Message "WARNING: Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -IsWarning
+            LogMessage -Message "Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -IsWarning
         } else {
             LogMessage -Message "File distribution and cleanup completed successfully." -ConsoleOutput
         }
@@ -496,7 +496,7 @@ function Main {
         Remove-Item -Path $StateFilePath -Force
 
     } catch {
-        LogMessage -Message "ERROR: $($_.Exception.Message)" -IsError
+        LogMessage -Message "$($_.Exception.Message)" -IsError
     }
 }
  
