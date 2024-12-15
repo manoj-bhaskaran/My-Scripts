@@ -422,7 +422,8 @@ function Main {
             # Count files in the source and target folder before distribution
             $sourceFiles = Get-ChildItem -Path $SourceFolder -File
             $totalSourceFiles = $sourceFiles.Count
-            $totalTargetFilesBefore = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object -Property Count -Sum | Select-Object -ExpandProperty Count
+            $totalTargetFilesBefore = (Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object).Count
+            $totalTargetFilesBefore = if ($null -eq $totalTargetFilesBefore) { 0 } else { $totalTargetFilesBefore }
             LogMessage -Message "Source File Count: $totalSourceFiles. Target File Count Before: $totalTargetFilesBefore."
 
             # Get subfolders in the target folder
