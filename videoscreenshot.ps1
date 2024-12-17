@@ -92,6 +92,10 @@ $savePath = "C:\Users\manoj\OneDrive\Desktop\Screenshots"
 $logFilePath = "$savePath\processed_videos.log"  # Path to the log file
 $pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
 
+# Enable Debugging Messages
+if ($PSCmdlet.MyInvocation.BoundParameters["Debug"].IsPresent) {
+    $DebugPreference = "Continue"
+}
 Write-Debug "Parameter VideoLimit: $VideoLimit"
 # Override default values with command-line arguments, if provided
 $timeLimitInMinutes = if ($TimeLimit) { $TimeLimit } else { $timeLimitInMinutes }
