@@ -92,9 +92,11 @@ $savePath = "C:\Users\manoj\OneDrive\Desktop\Screenshots"
 $logFilePath = "$savePath\processed_videos.log"  # Path to the log file
 $pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
 
+Write-Debug "Parameter VideoLimit: $VideoLimit"
 # Override default values with command-line arguments, if provided
 $timeLimitInMinutes = if ($TimeLimit) { $TimeLimit } else { $timeLimitInMinutes }
 $videoLimit = $VideoLimit ?? 5
+Write-Debug "videoLimit is set to: $videoLimit"
 
 # Helper function to log messages with timestamps
 function Write-Message {
@@ -179,6 +181,9 @@ if (-not $CropOnly) {
     # Normalize paths for comparison
     $normalizedProcessedVideos = $processedVideos | ForEach-Object { $_.Trim().ToLower() }
     $videoFiles = $allVideoFiles | Where-Object { ($_.FullName.Trim().ToLower()) -notin $normalizedProcessedVideos }
+    Write-Debug "Total videos: $($videoFiles.Count)"
+    Write-Debug "Processing first $videoLimit videos."
+
 
     if ($videoFiles.Count -eq 0) {
         Write-Message "No unprocessed videos found. Exiting."
