@@ -110,11 +110,6 @@ function Write-Message {
     Write-Output "[$timestamp] $message"
 }
 
-if (-not (Test-Path -Path $sourceFolderPath)) {
-    Write-Message "Error: Source folder does not exist. Please check the path: $sourceFolderPath"
-    exit
-}
-
 if (-not (Get-Command "vlc.exe" -ErrorAction SilentlyContinue)) {
     Write-Message "Error: VLC Media Player is not installed or not in the system path."
     exit
@@ -125,8 +120,29 @@ if (-not (Test-Path -Path $pythonScriptPath)) {
     exit
 }
 
-# Create save directory if it does not exist
-New-Item -ItemType Directory -Force -Path $savePath | Out-Null
+# Conditional checks based on CropOnly mode
+if ($CropOnly) {
+    # CropOnly mode: Validate savePath only
+    if (-not (Test-Path -Path $savePath)) {
+        Write-Output "Error: Save path does not exist: $savePath"
+        exit 1
+    }
+    Write-Output "CropOnly mode enabled. Proceeding with cropping tasks..."
+} 
+else {
+    # Standard mode: Validate source folder and save path
+    if (-not (Test-Path -Path $sourceFolderPath)) {
+        Write-Output "Error: Source folder does not exist. Please check the path: $sourceFolderPath"
+        exit 1
+    }
+
+    if (-not (Test-Path -Path $savePath)) {
+        Write-Output "Save path does not exist. Creating it: $savePath"
+        New-Item -ItemType Directory -Force -Path $savePath | Out-Null
+    }
+
+    Write-Output "Standard mode enabled. Processing videos from the source folder..."
+}
 
 # Determine if this is a fresh start
 $freshStart = -not (Test-Path -Path $logFilePath)
