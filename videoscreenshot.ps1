@@ -94,7 +94,7 @@ $pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
 
 # Override default values with command-line arguments, if provided
 $timeLimitInMinutes = if ($TimeLimit) { $TimeLimit } else { $timeLimitInMinutes }
-$videoLimit = if ($VideoLimit) { $VideoLimit } else { $videoLimit }
+$videoLimit = $VideoLimit ?? 5
 
 # Helper function to log messages with timestamps
 function Write-Message {
