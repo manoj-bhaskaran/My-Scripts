@@ -77,7 +77,8 @@ param (
     [int]$TimeLimit,
     [int]$VideoLimit,
     [switch]$CropOnly,
-    [string]$ResumeFile
+    [string]$ResumeFile,
+    [switch]$Debug  # Add a custom Debug switch
 )
 
 # Configurable parameters
@@ -93,7 +94,9 @@ $logFilePath = "$savePath\processed_videos.log"  # Path to the log file
 $pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
 
 # Enable Debugging Messages if -Debug is passed
-if ($Debug) { $DebugPreference = "Continue" }
+if ($Debug.IsPresent) {
+    $DebugPreference = "Continue"
+}
 Write-Debug "Parameter VideoLimit: $VideoLimit"
 # Override default values with command-line arguments, if provided
 $timeLimitInMinutes = if ($TimeLimit) { $TimeLimit } else { $timeLimitInMinutes }
