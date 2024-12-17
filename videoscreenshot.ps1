@@ -87,7 +87,7 @@ $timeLimitInMinutes = 10     # Maximum time limit for processing videos (default
 $videoLimit = 5              # Maximum number of videos to process in a single run (default value)
 
 # Define paths
-$sourceFolderPath = "C:\Users\manoj\Downloads"
+$sourceFolderPath = "C:\Users\manoj\OneDrive\Desktop\picconvert_20241215_160556_mp4_1"
 $savePath = "C:\Users\manoj\OneDrive\Desktop\Screenshots"
 $logFilePath = "$savePath\processed_videos.log"  # Path to the log file
 $pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
