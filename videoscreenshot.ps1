@@ -9,7 +9,7 @@ The script allows for configurable parameters, such as the maximum number of vid
 Optional. Specifies the maximum time in minutes for processing videos in a single run. Defaults to $timeLimitInMinutes (10 minutes) if not provided. This parameter is ignored in cropping-only mode.
 
 .PARAMETER VideoLimit
-Optional. Specifies the maximum number of videos to process in a single run. Defaults to $videoLimit (5 videos) if not provided. This parameter is ignored in cropping-only mode.
+Optional. Specifies the maximum number of videos to process in a single run. Defaults to $maxVideosToProcess (5 videos) if not provided. This parameter is ignored in cropping-only mode.
 
 .PARAMETER CropOnly
 Activates cropping-only mode, skipping video processing and screenshot capturing. Any settings for -TimeLimit and -VideoLimit are ignored in this mode.
@@ -85,7 +85,7 @@ param (
 $initialDelay = 200          # Time to wait for VLC to open (milliseconds)
 $screenshotInterval = 500    # Interval between screenshots (milliseconds)
 $timeLimitInMinutes = 10     # Maximum time limit for processing videos (default value in minutes)
-$videoLimit = 5              # Maximum number of videos to process in a single run (default value)
+$maxVideosToProcess = 5              # Maximum number of videos to process in a single run (default value)
 
 # Define paths
 $sourceFolderPath = "C:\Users\manoj\OneDrive\Desktop\picconvert_20241215_160556_mp4_1"
@@ -100,8 +100,8 @@ if ($Debug.IsPresent) {
 Write-Debug "Parameter VideoLimit: $VideoLimit"
 # Override default values with command-line arguments, if provided
 $timeLimitInMinutes = if ($TimeLimit) { $TimeLimit } else { $timeLimitInMinutes }
-$videoLimit = $VideoLimit ?? 5
-Write-Debug "videoLimit is set to: $videoLimit"
+$maxVideosToProcess = $VideoLimit ?? 5
+Write-Debug "maxVideosToProcess is set to: $maxVideosToProcess"
 
 # Helper function to log messages with timestamps
 function Write-Message {
@@ -187,7 +187,7 @@ if (-not $CropOnly) {
     $normalizedProcessedVideos = $processedVideos | ForEach-Object { $_.Trim().ToLower() }
     $videoFiles = $allVideoFiles | Where-Object { ($_.FullName.Trim().ToLower()) -notin $normalizedProcessedVideos }
     Write-Debug "Total videos: $($videoFiles.Count)"
-    Write-Debug "Processing first $videoLimit videos."
+    Write-Debug "Processing first $maxVideosToProcess videos."
 
 
     if ($videoFiles.Count -eq 0) {
@@ -196,7 +196,7 @@ if (-not $CropOnly) {
     }
 
     # Limit the number of videos to process
-    $videoFiles = $videoFiles[0..([Math]::Min($videoLimit, $videoFiles.Count) - 1)]
+    $videoFiles = $videoFiles[0..([Math]::Min($maxVideosToProcess, $videoFiles.Count) - 1)]
 
     try {
         foreach ($video in $videoFiles) {
@@ -236,8 +236,8 @@ if (-not $CropOnly) {
             Write-Message "Completed video $currentRunCount/$($videoFiles.Count)"
 
             # Stop if video limit is reached
-            if ($currentRunCount -eq $videoLimit) {
-                Write-Message "Video limit of $videoLimit reached. Proceeding to cropping step."
+            if ($currentRunCount -eq $maxVideosToProcess) {
+                Write-Message "Video limit of $maxVideosToProcess reached. Proceeding to cropping step."
                 break
             }
 
