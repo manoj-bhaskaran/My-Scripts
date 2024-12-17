@@ -176,7 +176,10 @@ if (-not $CropOnly) {
     $allVideoFiles = Get-ChildItem -Path $sourceFolderPath -Recurse -Include *.mp4, *.avi, *.mkv
 
     # Filter out videos that are already processed
-    $videoFiles = $allVideoFiles | Where-Object { $_.FullName -notin $processedVideos }
+    # Normalize paths for comparison
+    $normalizedProcessedVideos = $processedVideos | ForEach-Object { $_.Trim().ToLower() }
+    $videoFiles = $allVideoFiles | Where-Object { ($_.FullName.Trim().ToLower()) -notin $normalizedProcessedVideos }
+
     if ($videoFiles.Count -eq 0) {
         Write-Message "No unprocessed videos found. Exiting."
         exit
