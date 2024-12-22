@@ -7,8 +7,9 @@ from googleapiclient.errors import HttpError
 # Define the directory and filename for the log file 
 log_directory = 'C:/users/manoj/Documents/Scripts'
 log_filename = 'drive_monitor.log'
-# Setup logging
-logging.basicConfig(filename='drive_monitor.log', level=logging.INFO, 
+# Setup logging with the full path to the log file
+log_file_path = os.path.join(log_directory, log_filename)
+logging.basicConfig(filename=log_file_path, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Define the scope and authenticate using service account
