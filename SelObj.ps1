@@ -52,8 +52,8 @@ if ($mainFolderFiles.Count -gt 0) {
 # Select a random folder (including the main target folder if applicable)
 $randomFolder = $subfolders | Get-Random
 
-# Get all files from the random folder
-$files = Get-ChildItem -Path $randomFolder.FullName -File -Force
+# Get all files from the random folder excluding hidden and system files
+$files = Get-ChildItem -Path $randomFolder.FullName -File -Force | Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::Hidden) -and -not ($_.Attributes -band [IO.FileAttributes]::System) }
 
 # Check if there are any files in the selected folder
 if ($files.Count -gt 0) {
