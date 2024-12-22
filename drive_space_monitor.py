@@ -53,6 +53,19 @@ def authenticate_and_get_drive_service():
     # Build the Drive API service
     return build('drive', 'v3', credentials=creds)
 
+def format_size(bytes_size):
+    # Define size units
+    units = ["Bytes", "KB", "MB", "GB", "TB", "PB"]
+    size = bytes_size
+    unit_index = 0
+
+    # Loop to find the correct unit
+    while size >= 1024 and unit_index < len(units) - 1:
+        size /= 1024
+        unit_index += 1
+
+    return f"{size:.2f} {units[unit_index]}"
+
 def get_storage_usage(service):
     try:
         about = service.about().get(fields="storageQuota").execute()
@@ -65,7 +78,13 @@ def get_storage_usage(service):
         limit = int(about['storageQuota']['limit'])
 
         usage_percentage = (total_usage / limit) * 100
-        logging.info(f"Current storage usage: {total_usage} bytes, Total limit: {limit} bytes, Usage: {usage_percentage:.2f}%")
+
+        # Convert sizes to human-readable format
+        readable_total_usage = format_size(total_usage)
+        readable_limit = format_size(limit)
+
+        logging.info(f"Current storage usage: {readable_total_usage} / {readable_limit} ({usage_percentage:.2f}%)")
+        logging.info(f"Storage usage is within limits: {usage_percentage:.2f}% ({readable_total_usage} of {readable_limit}).")
         return usage_percentage, total_usage, limit
     except HttpError as error:
         logging.error(f"An error occurred: {error}")
