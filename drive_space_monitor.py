@@ -5,19 +5,25 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# Define the directory and filename for the log file 
+# Define the directory and filename for the log file
 log_directory = 'C:/users/manoj/Documents/Scripts'
 log_filename = 'drive_monitor.log'
 
+# Ensure the directory exists
+if not os.path.exists(log_directory):
+    os.makedirs(log_directory)
+
 # Function to set up logging
 def setup_logging(debug):
-	log_file_path = os.path.join(log_directory, log_filename)
-	if debug:
-		logging_level = logging.DEBUG
-	else:
-		logging_level = logging.INFO
-	logging.basicConfig(filename=log_file_path, level=logging_level,
-				format='%(asctime)s - %(levelname)s - %(message)s')
+    log_file_path = os.path.join(log_directory, log_filename)
+    logging_level = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(filename=log_file_path, level=logging_level,
+                        format='%(asctime)s - %(levelname)s - %(message)s')
+    # Add a console handler to see logs on the console as well
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging_level)
+    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logging.getLogger().addHandler(console_handler)
 
 # Define the scope and authenticate using service account
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -63,3 +69,9 @@ def main(debug):
         clear_trash(service)
     else:
         logging.info(f"Storage usage is within limits: {usage_percentage:.2f}% ({usage} of {limit} bytes).")
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Google Drive Storage Monitor')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    args = parser.parse_args()
+    main(args.debug)
