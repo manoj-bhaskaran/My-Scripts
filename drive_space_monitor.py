@@ -83,8 +83,8 @@ def get_storage_usage(service):
         readable_total_usage = format_size(total_usage)
         readable_limit = format_size(limit)
 
+        # Log storage usage in human-readable format
         logging.info(f"Current storage usage: {readable_total_usage} / {readable_limit} ({usage_percentage:.2f}%)")
-        logging.info(f"Storage usage is within limits: {usage_percentage:.2f}% ({readable_total_usage} of {readable_limit}).")
         return usage_percentage, total_usage, limit
     except HttpError as error:
         logging.error(f"An error occurred: {error}")
