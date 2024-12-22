@@ -11,7 +11,7 @@ from googleapiclient.errors import HttpError
 log_directory = 'C:/users/manoj/Documents/Scripts'
 log_filename = 'drive_monitor.log'
 TOKEN_FILE = os.path.join(log_directory, 'drive_token.json')  # File to store OAuth tokens
-CREDENTIALS_FILE = 'C:/Users/manoj/Documents/Scripts/Google Drive JSON/ethereal-entity-443310-i4-96248e85f607.json'
+CREDENTIALS_FILE = 'C:/Users/manoj/Documents/Scripts/Google Drive JSON/client_secret_616159019059-09mhd30aim0ug4fvim49kjfvjtk3i0dd.json'
 
 # Ensure the directory exists
 if not os.path.exists(log_directory):
