@@ -1,5 +1,6 @@
 import os
 import logging
+import argparse
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -7,10 +8,16 @@ from googleapiclient.errors import HttpError
 # Define the directory and filename for the log file 
 log_directory = 'C:/users/manoj/Documents/Scripts'
 log_filename = 'drive_monitor.log'
-# Setup logging with the full path to the log file
-log_file_path = os.path.join(log_directory, log_filename)
-logging.basicConfig(filename=log_file_path, level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Function to set up logging
+def setup_logging(debug):
+	log_file_path = os.path.join(log_directory, log_filename)
+	if debug:
+		logging_level = logging.DEBUG
+	else:
+		logging_level = logging.INFO
+	logging.basicConfig(filename=log_file_path, level=logging_level,
+				format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Define the scope and authenticate using service account
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -25,14 +32,15 @@ def get_drive_service():
 def get_storage_usage(service):
     try:
         about = service.about().get(fields="storageQuota").execute()
-        usage = int(about['storageQuota']['usage'])
+        logging.debug(f"Storage quota data: {about}")  # Log the entire storage quota data for debugging
+        usage = int(about['storageQuota']['usageInDrive'])
         limit = int(about['storageQuota']['limit'])
         usage_percentage = (usage / limit) * 100
-        logging.info(f"Current storage usage: {usage_percentage:.2f}%")
-        return usage_percentage
+        logging.info(f"Current storage usage: {usage} bytes, Total limit: {limit} bytes, Usage: {usage_percentage:.2f}%")
+        return usage_percentage, usage, limit
     except HttpError as error:
         logging.error(f"An error occurred: {error}")
-        return None
+        return None, None, None
 
 def clear_trash(service):
     try:
@@ -41,7 +49,8 @@ def clear_trash(service):
     except HttpError as error:
         logging.error(f"An error occurred: {error}")
 
-def main():
+def main(debug):
+    setup_logging(debug)
     service = get_drive_service()
     usage_percentage = get_storage_usage(service)
     if usage_percentage and usage_percentage > 90:
@@ -52,4 +61,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='Google Drive Storage Monitor')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    args = parser.parse_args()
+    main(args.debug)
