@@ -21,13 +21,11 @@ if not os.path.exists(log_directory):
 def setup_logging(debug):
     log_file_path = os.path.join(log_directory, log_filename)
     logging_level = logging.DEBUG if debug else logging.INFO
-    logging.basicConfig(filename=log_file_path, level=logging_level,
-                        format='%(asctime)s - %(levelname)s - %(message)s')
-    # Add a console handler to see logs on the console as well
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging_level)
-    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logging.getLogger().addHandler(console_handler)
+    logging.basicConfig(
+        filename=log_file_path,
+        level=logging_level,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
 
 # Define the scope for Drive API access
 SCOPES = ['https://www.googleapis.com/auth/drive.metadata.readonly']
