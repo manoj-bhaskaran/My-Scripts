@@ -33,11 +33,16 @@ def get_storage_usage(service):
     try:
         about = service.about().get(fields="storageQuota").execute()
         logging.debug(f"Storage quota data: {about}")  # Log the entire storage quota data for debugging
-        usage = int(about['storageQuota']['usageInDrive'])
+
+        # Access different fields to get more accurate usage data
+        usage_in_drive = int(about['storageQuota'].get('usageInDrive', 0))
+        usage_in_drive_trash = int(about['storageQuota'].get('usageInDriveTrash', 0))
+        total_usage = usage_in_drive + usage_in_drive_trash
         limit = int(about['storageQuota']['limit'])
-        usage_percentage = (usage / limit) * 100
-        logging.info(f"Current storage usage: {usage} bytes, Total limit: {limit} bytes, Usage: {usage_percentage:.2f}%")
-        return usage_percentage, usage, limit
+
+        usage_percentage = (total_usage / limit) * 100
+        logging.info(f"Current storage usage: {total_usage} bytes, Total limit: {limit} bytes, Usage: {usage_percentage:.2f}%")
+        return usage_percentage, total_usage, limit
     except HttpError as error:
         logging.error(f"An error occurred: {error}")
         return None, None, None
