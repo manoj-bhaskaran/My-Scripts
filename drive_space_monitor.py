@@ -4,6 +4,9 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+# Define the directory and filename for the log file 
+log_directory = 'C:/users/manoj/Documents/Scripts'
+log_filename = 'drive_monitor.log'
 # Setup logging
 logging.basicConfig(filename='drive_monitor.log', level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
