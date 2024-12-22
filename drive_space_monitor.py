@@ -52,16 +52,9 @@ def clear_trash(service):
 def main(debug):
     setup_logging(debug)
     service = get_drive_service()
-    usage_percentage = get_storage_usage(service)
-    if usage_percentage and usage_percentage > 90:
-        logging.info(f"Storage usage exceeds 90%: {usage_percentage:.2f}%. Clearing trash.")
+    usage_percentage, usage, limit = get_storage_usage(service)
+    if usage_percentage is not None and usage_percentage > 90:
+        logging.info(f"Storage usage exceeds 90%: {usage_percentage:.2f}% ({usage} of {limit} bytes). Clearing trash.")
         clear_trash(service)
     else:
-        logging.info(f"Storage usage is within limits: {usage_percentage:.2f}%.")
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Google Drive Storage Monitor')
-    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
-    args = parser.parse_args()
-    main(args.debug)
+        logging.info(f"Storage usage is within limits: {usage_percentage:.2f}% ({usage} of {limit} bytes).")
