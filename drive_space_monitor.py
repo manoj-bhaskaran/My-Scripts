@@ -110,6 +110,11 @@ def main(debug):
         if usage_percentage > 90:
             logging.info(f"Storage usage exceeds 90%: {usage_percentage:.2f}% ({readable_total_usage} of {readable_limit}). Clearing trash.")
             clear_trash(service)
+
+            # Get and log usage after clearing trash
+            new_usage_percentage, new_usage, _ = get_storage_usage(service)
+            readable_new_usage = format_size(new_usage)
+            logging.info(f"Storage usage after trash clearance: {new_usage_percentage:.2f}% ({readable_new_usage} of {readable_limit}).")
         else:
             logging.info(f"Storage usage is within limits: {usage_percentage:.2f}% ({readable_total_usage} of {readable_limit}).")
 
