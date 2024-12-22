@@ -1,13 +1,17 @@
 import os
 import logging
 import argparse
-from google.oauth2 import service_account
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # Define the directory and filename for the log file
 log_directory = 'C:/users/manoj/Documents/Scripts'
 log_filename = 'drive_monitor.log'
+TOKEN_FILE = os.path.join(log_directory, 'drive_token.json')  # File to store OAuth tokens
+CREDENTIALS_FILE = 'C:/Users/manoj/Documents/Scripts/Google Drive JSON/oauth-client.json'  # OAuth client credentials file
 
 # Ensure the directory exists
 if not os.path.exists(log_directory):
@@ -25,22 +29,36 @@ def setup_logging(debug):
     console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logging.getLogger().addHandler(console_handler)
 
-# Define the scope and authenticate using service account
-SCOPES = ['https://www.googleapis.com/auth/drive']
-SERVICE_ACCOUNT_FILE = 'C:/Users/manoj/Documents/Scripts/Google Drive JSON/ethereal-entity-443310-i4-96248e85f607.json'
+# Define the scope for Drive API access
+SCOPES = ['https://www.googleapis.com/auth/drive.metadata.readonly']
 
-credentials = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+def authenticate_and_get_drive_service():
+    creds = None
 
-def get_drive_service():
-    return build('drive', 'v3', credentials=credentials)
+    # Check if token already exists
+    if os.path.exists(TOKEN_FILE):
+        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+
+    # If no valid credentials, perform the OAuth flow
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+            creds = flow.run_local_server(port=0)
+            # Save the credentials for future use
+            with open(TOKEN_FILE, 'w') as token:
+                token.write(creds.to_json())
+
+    # Build the Drive API service
+    return build('drive', 'v3', credentials=creds)
 
 def get_storage_usage(service):
     try:
         about = service.about().get(fields="storageQuota").execute()
         logging.debug(f"Storage quota data: {about}")  # Log the entire storage quota data for debugging
 
-        # Access different fields to get more accurate usage data
+        # Access different fields to get storage data
         usage_in_drive = int(about['storageQuota'].get('usageInDrive', 0))
         usage_in_drive_trash = int(about['storageQuota'].get('usageInDriveTrash', 0))
         total_usage = usage_in_drive + usage_in_drive_trash
@@ -62,7 +80,7 @@ def clear_trash(service):
 
 def main(debug):
     setup_logging(debug)
-    service = get_drive_service()
+    service = authenticate_and_get_drive_service()
     usage_percentage, usage, limit = get_storage_usage(service)
     if usage_percentage is not None and usage_percentage > 90:
         logging.info(f"Storage usage exceeds 90%: {usage_percentage:.2f}% ({usage} of {limit} bytes). Clearing trash.")
