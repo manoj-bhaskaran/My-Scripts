@@ -101,11 +101,17 @@ def main(debug):
     setup_logging(debug)
     service = authenticate_and_get_drive_service()
     usage_percentage, usage, limit = get_storage_usage(service)
-    if usage_percentage is not None and usage_percentage > 90:
-        logging.info(f"Storage usage exceeds 90%: {usage_percentage:.2f}% ({usage} of {limit} bytes). Clearing trash.")
-        clear_trash(service)
-    else:
-        logging.info(f"Storage usage is within limits: {usage_percentage:.2f}% ({usage} of {limit} bytes).")
+
+    if usage_percentage is not None:
+        # Convert to human-readable format
+        readable_total_usage = format_size(usage)
+        readable_limit = format_size(limit)
+
+        if usage_percentage > 90:
+            logging.info(f"Storage usage exceeds 90%: {usage_percentage:.2f}% ({readable_total_usage} of {readable_limit}). Clearing trash.")
+            clear_trash(service)
+        else:
+            logging.info(f"Storage usage is within limits: {usage_percentage:.2f}% ({readable_total_usage} of {readable_limit}).")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Google Drive Storage Monitor')
