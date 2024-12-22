@@ -10,7 +10,7 @@ logging.basicConfig(filename='drive_monitor.log', level=logging.INFO,
 
 # Define the scope and authenticate using service account
 SCOPES = ['https://www.googleapis.com/auth/drive']
-SERVICE_ACCOUNT_FILE = 'C:/Users/manoj/Documents/Scripts/Google Drive JSON/client_secret_616159019059-8hm47qh9eoph2k9rhtvhpph3qjam4msh.json'
+SERVICE_ACCOUNT_FILE = 'C:/Users/manoj/Documents/Scripts/Google Drive JSON/ethereal-entity-443310-i4-96248e85f607.json'
 
 credentials = service_account.Credentials.from_service_account_file(
         SERVICE_ACCOUNT_FILE, scopes=SCOPES)
