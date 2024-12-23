@@ -296,7 +296,7 @@ function Move-ToRecycleBin {
 }
 
 # Function to delete files
-function Delete-File {
+function Remove-File {
     param (
         [string]$FilePath
     )
@@ -588,7 +588,7 @@ function Main {
             if ($DeleteMode -eq "Immediate") {
                 foreach ($file in $sourceFiles) {
                     try {
-                        Delete-File -FilePath $file.FullName
+                        Remove-File -FilePath $file.FullName
                     } catch {
                         LogMessage -Message "Failed to delete file $($file.FullName). Error: $($_.Exception.Message)" -IsWarning
                     }
@@ -624,7 +624,7 @@ function Main {
                 # Attempt to delete each file in $FilesToDelete
                 foreach ($file in $FilesToDelete) {
                     try {
-                        Delete-File -FilePath $file
+                        Remove-File -FilePath $file
                     } catch {
                         # Log a warning for failure to delete
                         LogMessage -Message "Failed to delete file $file. Error: $($_.Exception.Message)" -IsWarning
