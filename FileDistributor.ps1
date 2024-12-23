@@ -310,7 +310,9 @@ function DistributeFilesToSubfolders {
         [string[]]$Subfolders,
         [int]$Limit,
         [switch]$ShowProgress,        # Enable/disable progress updates
-        [int]$UpdateFrequency         # Frequency for progress updates
+        [int]$UpdateFrequency,       # Frequency for progress updates
+        [string]$DeleteMode,         # Specifies the deletion mode
+        [ref]$FilesToDelete          # Reference to the files pending deletion
     )
 
     # Create an enumerator for subfolders to cycle through them
@@ -338,10 +340,20 @@ function DistributeFilesToSubfolders {
         # Verify the file was copied successfully
         if (Test-Path -Path $destinationFile) {
             try {
-                Move-ToRecycleBin -FilePath $file
-                LogMessage -Message "Copied and moved to Recycle Bin: $file to $destinationFile"
+                # Handle file deletion based on DeleteMode
+                if ($DeleteMode -eq "RecycleBin") {
+                    Move-ToRecycleBin -FilePath $file
+                    LogMessage -Message "Copied and moved to Recycle Bin: $file to $destinationFile"
+                } elseif ($DeleteMode -eq "Immediate") {
+                    Remove-File -FilePath $file
+                    LogMessage -Message "Copied and immediately deleted: $file to $destinationFile"
+                } elseif ($DeleteMode -eq "EndOfScript") {
+                    # Add file to the list for end-of-script deletion
+                    $FilesToDelete.Value += $file.FullName
+                    LogMessage -Message "Copied successfully: $file to $destinationFile (pending end-of-script deletion)"
+                }
             } catch {
-                LogMessage -Message "Failed to move $($file.FullName) to Recycle Bin. Error: $($_.Exception.Message)" -IsWarning
+                LogMessage -Message "Failed to process file $($file.FullName) after copying. Error: $($_.Exception.Message)" -IsWarning
             }
         } else {
             LogMessage -Message "Failed to copy $($file.FullName) to $destinationFile. Original file not moved." -IsError
@@ -373,7 +385,9 @@ function RedistributeFilesInTarget {
         [string[]]$Subfolders,
         [int]$FilesPerFolderLimit,
         [switch]$ShowProgress,
-        [int]$UpdateFrequency 
+        [int]$UpdateFrequency,
+        [string]$DeleteMode,         # Added DeleteMode parameter
+        [ref]$FilesToDelete          # Added FilesToDelete parameter 
     )
 
     # Get all files in the target folder and its subfolders
@@ -387,7 +401,7 @@ function RedistributeFilesInTarget {
     # Redistribute files in the target folder (not in subfolders) regardless of limit
     LogMessage -Message "Redistributing files from target folder $TargetFolder to subfolders..."
     $rootFiles = Get-ChildItem -Path $TargetFolder -File
-    DistributeFilesToSubfolders -Files $rootFiles -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
+    DistributeFilesToSubfolders -Files $rootFiles -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
 
     LogMessage -Message "Redistributing files from subfolders..."
     foreach ($file in $allFiles) {
@@ -396,7 +410,7 @@ function RedistributeFilesInTarget {
 
         if ($currentFileCount -gt $FilesPerFolderLimit) {
             LogMessage -Message "Renaming and redistributing files from folder: $folder"
-            DistributeFilesToSubfolders -Files @($file) -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
+            DistributeFilesToSubfolders -Files @($file) -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
             $folderFilesMap[$folder]--
         }
     }
@@ -581,7 +595,7 @@ function Main {
         if ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
             LogMessage -Message "Distributing files to subfolders..."
-            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit
+            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
             LogMessage -Message "Completed file distribution"
 
             # Added: Immediate deletion logic
@@ -607,7 +621,7 @@ function Main {
         if ($lastCheckpoint -lt 4) {
             # Redistribute files within the target folder and subfolders if needed
             LogMessage -Message "Redistributing files in target folders..."
-            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
+            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
 
             $additionalVars = @{
                 totalSourceFiles = $totalSourceFiles
