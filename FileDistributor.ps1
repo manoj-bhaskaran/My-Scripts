@@ -1,9 +1,17 @@
 <#
 .SYNOPSIS
-This PowerShell script copies files from a source folder to a target folder, distributing them across subfolders while maintaining a maximum file count per subfolder. It provides configurable progress updates and moves the original files to the Recycle Bin after ensuring successful copying. File name conflicts are resolved automatically.
+This PowerShell script copies files from a source folder to a target folder, distributing them across subfolders while maintaining a maximum file count per subfolder. It supports configurable deletion modes, progress updates, and automatic conflict resolution for file names.
 
 .DESCRIPTION
-The script ensures that files are evenly distributed across subfolders in the target directory, with a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created as needed. Files in the target folder (not in subfolders) are also redistributed. File name conflicts are resolved using a custom random name generator. The script validates file copying before moving the original files to the Recycle Bin from the source folder and logs its actions in a log file. Progress updates can be displayed during processing, configurable by file count or percentage.
+The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
+
+File name conflicts are resolved using a custom random name generator. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
+
+- `RecycleBin`: Moves the files to the Recycle Bin.
+- `Immediate`: Deletes the files immediately after successful copying.
+- `EndOfScript`: Deletes the files at the end of the script if no critical errors or warnings (as configured) are encountered.
+
+All actions are logged to a specified log file. Progress updates are displayed during processing if enabled, configurable by file count.
 
 .PARAMETER SourceFolder
 Mandatory. Specifies the path to the source folder containing the files to be copied.
@@ -15,7 +23,7 @@ Mandatory. Specifies the path to the target folder where the files will be distr
 Optional. Specifies the maximum number of files allowed in each subfolder of the target folder. Defaults to 20,000.
 
 .PARAMETER LogFilePath
-Optional. Specifies the path to the log file for recording script activities. Defaults to "file_copy_log.txt" in the current directory.
+Optional. Specifies the path to the log file for recording script activities. Defaults to "FileDistributor-log.txt" in the current directory.
 
 .PARAMETER Restart
 Optional. If specified, the script will restart from the last checkpoint, resuming its previous state.
@@ -24,59 +32,76 @@ Optional. If specified, the script will restart from the last checkpoint, resumi
 Optional. Displays progress updates during the script's execution. Use this parameter to enable progress reporting.
 
 .PARAMETER UpdateFrequency
-Optional. Specifies how often progress updates are displayed. Can be set to a specific file count (e.g., every 100 files) or percentage increments. Defaults to 100.
+Optional. Specifies how often progress updates are displayed. Can be set to a specific file count (e.g., every 100 files). Defaults to 100.
+
+.PARAMETER DeleteMode
+Optional. Specifies how the original files should be handled after successful copying. Options are:
+- `RecycleBin`: Moves the files to the Recycle Bin (default).
+- `Immediate`: Deletes the files immediately after copying.
+- `EndOfScript`: Deletes the files at the end of the script if conditions are met.
+
+.PARAMETER EndOfScriptDeletionCondition
+Optional. Specifies the conditions under which files are deleted in `EndOfScript` mode. Options are:
+- `NoWarnings`: Deletes files only if there are no warnings or errors (default).
+- `WarningsOnly`: Deletes files if there are no errors, even if warnings exist.
 
 .EXAMPLES
 To copy files from "C:\Source" to "C:\Target" with a default file limit:
-.\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
 
 To copy files with progress updates every 50 files:
-.\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -ShowProgress -UpdateFrequency 50
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -ShowProgress -UpdateFrequency 50
 
 To restart the script from the last checkpoint:
-.\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Restart
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Restart
+
+To delete files immediately after copying:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -DeleteMode Immediate
+
+To delete files at the end of the script only if no warnings occur:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -DeleteMode EndOfScript -EndOfScriptDeletionCondition NoWarnings
 
 To enable verbose logging using PowerShell's built-in `-Verbose` switch:
-.\FileDistribution.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Verbose
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Verbose
 
 .NOTES
 Script Workflow:
 
 Initialization:
-
 - Validates input parameters and checks if the source and target folders exist.
 - Initializes logging and ensures the random name generator script is available.
 
 Subfolder Management:
-
 - Counts existing subfolders in the target folder.
 - Creates new subfolders as needed while providing progress updates if enabled.
 
 File Processing:
-
-- Files are copied from the source folder to the target subfolders.
-- Files in the target folder (not in subfolders) are redistributed regardless of the limit.
+- Files are copied from the source folder to subfolders.
+- Files in the target folder (not in subfolders) are redistributed to adhere to folder limits.
 - File name conflicts are resolved using the random name generator.
-- Successful copying is verified before moving the original files to the Recycle Bin.
+- Successful copying is verified before handling the original files based on the `DeleteMode`.
 - Progress updates are displayed based on the specified `UpdateFrequency`.
 
-Error Handling:
+Deletion Modes:
+- Handles files according to the `DeleteMode`:
+  - `RecycleBin`: Moves files to the Recycle Bin.
+  - `Immediate`: Deletes files immediately.
+  - `EndOfScript`: Deletes files conditionally at the end of the script.
 
-- Logs errors with detailed messages during file operations and skips problematic files without stopping the script.
+Error Handling:
+- Logs errors and warnings with detailed messages during file operations.
+- Skips problematic files without stopping the script.
 
 Completion:
-
 - Logs the completion of the operation and reports any unprocessed files.
-- Provides a final summary message with the original number of files in the source folder, the original number of files in the target folder hierarchy, and the final number of files in the target folder hierarchy.
+- Provides a final summary message, including the original number of files in the source folder, the original number of files in the target folder hierarchy, and the final number of files in the target folder hierarchy.
 - Throws a warning if the sum of the original counts is not equal to the final count in the target.
 
 Prerequisites:
-
 - Ensure permissions for reading and writing in both source and target directories.
-- The random name generator script should be located at: C:\Users\manoj\Documents\Scripts\randomname.ps1.
+- The random name generator script should be located at: `C:\Users\manoj\Documents\Scripts\randomname.ps1`.
 
 Limitations:
-
 - The script does not handle nested directories in the source folder; only top-level files are processed.
 #>
 
@@ -88,8 +113,14 @@ param(
     [string]$StateFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor-State.json",
     [switch]$Restart,
     [switch]$ShowProgress = $false,
-    [int]$UpdateFrequency = 100 # Default: 100 files
+    [int]$UpdateFrequency = 100, # Default: 100 files
+    [string]$DeleteMode = "RecycleBin", # Options: "RecycleBin", "Immediate", "EndOfScript"
+    [string]$EndOfScriptDeletionCondition = "NoWarnings" # Options: "NoWarnings", "WarningsOnly"
 )
+
+# Define script-scoped variables for warnings and errors
+$script:Warnings = 0
+$script:Errors = 0
 
 # Function to log messages
 function LogMessage {
@@ -109,8 +140,11 @@ function LogMessage {
     # Use appropriate PowerShell cmdlet for errors, warnings, or console output
     if ($IsError) {
         Write-Error -Message $logEntry
+        $script:Errors++
+        
     } elseif ($IsWarning) {
         Write-Warning -Message $logEntry
+        $script:Warnings++
     } elseif ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
         Write-Host -Object $logEntry
     }
@@ -259,6 +293,15 @@ function Move-ToRecycleBin {
 
     # Move the file to the Recycle Bin, suppressing the confirmation dialog (0x100)
     $recycleBin.MoveHere($file.FullName, 0x100)
+}
+
+# Function to delete files
+function Delete-File {
+    param (
+        [string]$FilePath
+    )
+    Remove-Item -Path $FilePath -Force
+    LogMessage -Message "Deleted file: $FilePath"
 }
 
 function DistributeFilesToSubfolders {
@@ -442,7 +485,20 @@ function Main {
             New-Item -ItemType Directory -Path $TargetFolder -Force
         }
 
+        # Validate input parameters
+        if (-not ("RecycleBin", "Immediate", "EndOfScript" -contains $DeleteMode)) {
+            Write-Error "Invalid value for DeleteMode: $DeleteMode. Valid options are 'RecycleBin', 'Immediate', 'EndOfScript'."
+            exit 1
+        }
+
+        if (-not ("NoWarnings", "WarningsOnly" -contains $EndOfScriptDeletionCondition)) {
+            Write-Error "Invalid value for EndOfScriptDeletionCondition: $EndOfScriptDeletionCondition. Valid options are 'NoWarnings', 'WarningsOnly'."
+            exit 1
+        }
+
         LogMessage -Message "Parameter validation completed"
+
+        $FilesToDelete = @()
 
         # Restart logic
         $lastCheckpoint = 0
@@ -507,6 +563,11 @@ function Main {
                 $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
             }
 
+            # Added: Collect files for end-of-script deletion
+            if ($DeleteMode -eq "EndOfScript") {
+                $FilesToDelete += $sourceFiles.FullName
+            }
+
             $additionalVars = @{
                 sourceFiles = ConvertItemsToPaths($sourceFiles)
                 totalSourceFiles = $totalSourceFiles
@@ -522,6 +583,17 @@ function Main {
             LogMessage -Message "Distributing files to subfolders..."
             DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit
             LogMessage -Message "Completed file distribution"
+
+            # Added: Immediate deletion logic
+            if ($DeleteMode -eq "Immediate") {
+                foreach ($file in $sourceFiles) {
+                    try {
+                        Delete-File -FilePath $file.FullName
+                    } catch {
+                        LogMessage -Message "Failed to delete file $($file.FullName). Error: $($_.Exception.Message)" -IsWarning
+                    }
+                }
+            }
 
             $additionalVars = @{
                 totalSourceFiles = $totalSourceFiles
@@ -543,6 +615,26 @@ function Main {
             }
             SaveState -Checkpoint 4 -AdditionalVariables $additionalVars
         }
+
+        if ($DeleteMode -eq "EndOfScript") {
+            # Check if conditions for deletion are satisfied
+            if (($EndOfScriptDeletionCondition -eq "NoWarnings" -and $Warnings -eq 0 -and $Errors -eq 0) -or
+                ($EndOfScriptDeletionCondition -eq "WarningsOnly" -and $Errors -eq 0)) {
+                
+                # Attempt to delete each file in $FilesToDelete
+                foreach ($file in $FilesToDelete) {
+                    try {
+                        Delete-File -FilePath $file
+                    } catch {
+                        # Log a warning for failure to delete
+                        LogMessage -Message "Failed to delete file $file. Error: $($_.Exception.Message)" -IsWarning
+                    }
+                }
+            } else {
+                # Log a message if conditions are not met
+                LogMessage -Message "End-of-script deletion skipped due to warnings or errors."
+            }
+        }        
 
         # Count files in the target folder after distribution
         $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
