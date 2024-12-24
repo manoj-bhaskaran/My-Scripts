@@ -43,7 +43,7 @@ param(
 $subfolders = Get-ChildItem -Path $FilePath -Directory -Force
 
 # Check if there are any files in the main target folder
-$mainFolderFiles = Get-ChildItem -Path $FilePath -File -Force
+$mainFolderFiles = Get-ChildItem -Path $FilePath -File | Where-Object { -not $_.Attributes.HasFlag([System.IO.FileAttributes]::Hidden) -and -not $_.Attributes.HasFlag([System.IO.FileAttributes]::System) }
 if ($mainFolderFiles.Count -gt 0) {
     # Add the main target folder to the list of subfolders
     $subfolders += Get-Item -Path $FilePath
