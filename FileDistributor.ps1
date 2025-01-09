@@ -577,11 +577,6 @@ function Main {
                 $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
             }
 
-            # Added: Collect files for end-of-script deletion
-            if ($DeleteMode -eq "EndOfScript") {
-                $FilesToDelete += $sourceFiles.FullName
-            }
-
             $additionalVars = @{
                 sourceFiles = ConvertItemsToPaths($sourceFiles)
                 totalSourceFiles = $totalSourceFiles
