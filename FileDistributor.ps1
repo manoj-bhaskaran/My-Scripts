@@ -633,7 +633,12 @@ function Main {
                 # Attempt to delete each file in $FilesToDelete
                 foreach ($file in $FilesToDelete) {
                     try {
-                        Remove-File -FilePath $file
+                        if (Test-Path -Path $file) {
+                            Remove-File -FilePath $file
+                            LogMessage -Message "Deleted file: $file during EndOfScript cleanup."
+                        } else {
+                            LogMessage -Message "File $file not found during EndOfScript deletion." -IsWarning
+                        }
                     } catch {
                         # Log a warning for failure to delete
                         LogMessage -Message "Failed to delete file $file. Error: $($_.Exception.Message)" -IsWarning
