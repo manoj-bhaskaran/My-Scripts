@@ -300,8 +300,17 @@ function Remove-File {
     param (
         [string]$FilePath
     )
-    Remove-Item -Path $FilePath -Force
-    LogMessage -Message "Deleted file: $FilePath"
+
+    try {
+        # Attempt to remove the file
+        Remove-Item -Path $FilePath -Force
+
+        # Log success
+        LogMessage -Message "Deleted file: $FilePath"
+    } catch {
+        # Log failure
+        LogMessage -Message "Failed to delete file $FilePath. Error: $($_.Exception.Message)" -IsWarning
+    }
 }
 
 function DistributeFilesToSubfolders {
