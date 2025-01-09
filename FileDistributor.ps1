@@ -282,17 +282,25 @@ function Move-ToRecycleBin {
         [string]$FilePath
     )
 
-    # Create a new Shell.Application COM object
-    $shell = New-Object -ComObject Shell.Application
+    try {
+        # Create a new Shell.Application COM object
+        $shell = New-Object -ComObject Shell.Application
 
-    # 10 is the folder type for Recycle Bin
-    $recycleBin = $shell.NameSpace(10)
+        # 10 is the folder type for Recycle Bin
+        $recycleBin = $shell.NameSpace(10)
 
-    # Get the file to be moved to the Recycle Bin
-    $file = Get-Item $FilePath
+        # Get the file to be moved to the Recycle Bin
+        $file = Get-Item $FilePath
 
-    # Move the file to the Recycle Bin, suppressing the confirmation dialog (0x100)
-    $recycleBin.MoveHere($file.FullName, 0x100)
+        # Move the file to the Recycle Bin, suppressing the confirmation dialog (0x100)
+        $recycleBin.MoveHere($file.FullName, 0x100)
+
+        # Log success
+        LogMessage -Message "Moved file to Recycle Bin: $FilePath"
+    } catch {
+        # Log failure
+        LogMessage -Message "Failed to move file to Recycle Bin: $FilePath. Error: $($_.Exception.Message)" -IsWarning
+    }
 }
 
 # Function to delete files
