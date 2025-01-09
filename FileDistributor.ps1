@@ -361,10 +361,10 @@ function DistributeFilesToSubfolders {
             try {
                 # Handle file deletion based on DeleteMode
                 if ($DeleteMode -eq "RecycleBin") {
-                    Move-ToRecycleBin -FilePath $file
+                    Move-ToRecycleBin -FilePath $file.FullName
                     LogMessage -Message "Copied and moved to Recycle Bin: $file to $destinationFile"
                 } elseif ($DeleteMode -eq "Immediate") {
-                    Remove-File -FilePath $file
+                    Remove-File -FilePath $file.FullName
                     LogMessage -Message "Copied and immediately deleted: $file to $destinationFile"
                 } elseif ($DeleteMode -eq "EndOfScript") {
                     # Add file to the list for end-of-script deletion
@@ -653,7 +653,7 @@ function Main {
                 foreach ($file in $FilesToDelete) {
                     try {
                         if (Test-Path -Path $file) {
-                            Remove-File -FilePath $file
+                            Remove-File -FilePath $file.FullName
                             LogMessage -Message "Deleted file: $file during EndOfScript cleanup."
                         } else {
                             LogMessage -Message "File $file not found during EndOfScript deletion." -IsWarning
