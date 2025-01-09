@@ -310,11 +310,13 @@ function Remove-File {
     )
 
     try {
-        # Attempt to remove the file
-        Remove-Item -Path $FilePath -Force
-
-        # Log success
-        LogMessage -Message "Deleted file: $FilePath"
+        # Check if the file exists before attempting deletion
+        if (Test-Path -Path $FilePath) {
+            Remove-Item -Path $FilePath -Force
+            LogMessage -Message "Deleted file: $FilePath"
+        } else {
+            LogMessage -Message "File $FilePath not found. Skipping deletion." -IsWarning
+        }
     } catch {
         # Log failure
         LogMessage -Message "Failed to delete file $FilePath. Error: $($_.Exception.Message)" -IsWarning
