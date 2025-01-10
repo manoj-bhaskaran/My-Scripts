@@ -617,6 +617,9 @@ function Main {
             Write-Host "DEBUG: FilesToDelete after DistributeFilesToSubfolders"
             Write-Host $FilesToDelete
             Write-Host "DEBUG: Data Type of FilesToDelete:" $($FilesToDelete.GetType().FullName)
+            foreach ($file in $FilesToDelete) {
+                Write-Host "DEBUG: Element Type: $($file.GetType().FullName)"
+            }            
             LogMessage -Message "Completed file distribution"
 
             # Added: Immediate deletion logic
