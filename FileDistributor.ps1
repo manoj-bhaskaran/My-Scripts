@@ -650,8 +650,11 @@ function Main {
             if (($EndOfScriptDeletionCondition -eq "NoWarnings" -and $Warnings -eq 0 -and $Errors -eq 0) -or
                 ($EndOfScriptDeletionCondition -eq "WarningsOnly" -and $Errors -eq 0)) {
                 
+                Write-Host "DEBUG: FilesToDelete:"
+                Write-Host $FilesToDelete
                 # Attempt to delete each file in $FilesToDelete
                 foreach ($file in $FilesToDelete) {
+                    Write-Host "file: $file"
                     try {
                         if (Test-Path -Path $file) {
                             Remove-File -FilePath $file.FullName
