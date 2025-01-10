@@ -615,7 +615,8 @@ function Main {
             LogMessage -Message "Distributing files to subfolders..."
             DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
             Write-Host "DEBUG: FilesToDelete after DistributeFilesToSubfolders"
-            Write-Host $FilesToDelete.Value
+            Write-Host $FilesToDelete
+            Write-Host "DEBUG: Data Type of FilesToDelete:" $($FilesToDelete.GetType().FullName)
             LogMessage -Message "Completed file distribution"
 
             # Added: Immediate deletion logic
