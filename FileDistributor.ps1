@@ -309,7 +309,6 @@ function Remove-File {
         [string]$FilePath
     )
 
-    Write-Host "DEBUG: FilePath: $FilePath"
     try {
         # Check if the file exists before attempting deletion
         if (Test-Path -Path $FilePath) {
@@ -369,17 +368,14 @@ function DistributeFilesToSubfolders {
                     LogMessage -Message "Copied and immediately deleted: $file to $destinationFile"
                 } elseif ($DeleteMode -eq "EndOfScript") {
                     # Add file to the list for end-of-script deletion
-                    Write-Host "DEBUG: file: $file"
                     $FilesToDelete.Value += $file
-                    Write-Host "DEBUG: FilesToDelete:"
-                    Write-Host $FilesToDelete.Value
                     LogMessage -Message "Copied successfully: $file to $destinationFile (pending end-of-script deletion)"
                 }
             } catch {
-                LogMessage -Message "Failed to process file $($file.FullName) after copying. Error: $($_.Exception.Message)" -IsWarning
+                LogMessage -Message "Failed to process file $file after copying. Error: $($_.Exception.Message)" -IsWarning
             }
         } else {
-            LogMessage -Message "Failed to copy $($file.FullName) to $destinationFile. Original file not moved." -IsError
+            LogMessage -Message "Failed to copy $file to $destinationFile. Original file not moved." -IsError
         }
 
         # Increment file counter
@@ -613,14 +609,7 @@ function Main {
         if ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
             LogMessage -Message "Distributing files to subfolders..."
-            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
-            Write-Host "DEBUG: FilesToDelete after DistributeFilesToSubfolders"
-            Write-Host $FilesToDelete
-            Write-Host "DEBUG: Data Type of FilesToDelete:" $($FilesToDelete.GetType().FullName)
-            foreach ($file in $FilesToDelete) {
-                Write-Host "DEBUG: Element Type: $($file.GetType().FullName)"
-                Write-Host "DEBUG: Element: $file"
-            }            
+            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)        
             LogMessage -Message "Completed file distribution"
 
             $additionalVars = @{
@@ -636,13 +625,7 @@ function Main {
             # Redistribute files within the target folder and subfolders if needed
             LogMessage -Message "Redistributing files in target folders..."
             RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
-            Write-Host "DEBUG: FilesToDelete after RedistributeFilesInTarget"
-            Write-Host $FilesToDelete
-            Write-Host "DEBUG: Data Type of FilesToDelete:" $($FilesToDelete.GetType().FullName)
-            foreach ($file in $FilesToDelete) {
-                Write-Host "DEBUG: Element Type: $($file.GetType().FullName)"
-                Write-Host "DEBUG: Element: $file"
-            }            
+
             $additionalVars = @{
                 totalSourceFiles = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
@@ -655,8 +638,6 @@ function Main {
             if (($EndOfScriptDeletionCondition -eq "NoWarnings" -and $Warnings -eq 0 -and $Errors -eq 0) -or
                 ($EndOfScriptDeletionCondition -eq "WarningsOnly" -and $Errors -eq 0)) {
                 
-                Write-Host "DEBUG: FilesToDelete:"
-                Write-Host $FilesToDelete
                 # Attempt to delete each file in $FilesToDelete
                 foreach ($file in $FilesToDelete) {
                     Write-Host "file: $file"
