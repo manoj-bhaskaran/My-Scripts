@@ -362,16 +362,16 @@ function DistributeFilesToSubfolders {
             try {
                 # Handle file deletion based on DeleteMode
                 if ($DeleteMode -eq "RecycleBin") {
-                    Move-ToRecycleBin -FilePath $file.FullName
+                    Move-ToRecycleBin -FilePath $file
                     LogMessage -Message "Copied and moved to Recycle Bin: $file to $destinationFile"
                 } elseif ($DeleteMode -eq "Immediate") {
-                    Remove-File -FilePath $file.FullName
+                    Remove-File -FilePath $file
                     LogMessage -Message "Copied and immediately deleted: $file to $destinationFile"
                 } elseif ($DeleteMode -eq "EndOfScript") {
                     # Add file to the list for end-of-script deletion
-                    Write-Host "DEBUG: file type: $($file.GetType().FullName)"
-                    Write-Host "DEBUG: file.FullName: $file.FullName"
-                    $FilesToDelete.Value += $file.FullName
+                    Write-Host "DEBUG: file type: $($file.GetType())"
+                    Write-Host "DEBUG: file: $file"
+                    $FilesToDelete.Value += $file
                     LogMessage -Message "Copied successfully: $file to $destinationFile (pending end-of-script deletion)"
                 }
             } catch {
