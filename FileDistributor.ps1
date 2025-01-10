@@ -662,7 +662,7 @@ function Main {
                     Write-Host "file: $file"
                     try {
                         if (Test-Path -Path $file) {
-                            Remove-File -FilePath $file.FullName
+                            Remove-File -FilePath $file
                             LogMessage -Message "Deleted file: $file during EndOfScript cleanup."
                         } else {
                             LogMessage -Message "File $file not found during EndOfScript deletion." -IsWarning
