@@ -619,6 +619,7 @@ function Main {
             Write-Host "DEBUG: Data Type of FilesToDelete:" $($FilesToDelete.GetType().FullName)
             foreach ($file in $FilesToDelete) {
                 Write-Host "DEBUG: Element Type: $($file.GetType().FullName)"
+                Write-Host "DEBUG: Element: $file"
             }            
             LogMessage -Message "Completed file distribution"
 
