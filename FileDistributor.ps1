@@ -369,7 +369,7 @@ function DistributeFilesToSubfolders {
                     LogMessage -Message "Copied and immediately deleted: $file to $destinationFile"
                 } elseif ($DeleteMode -eq "EndOfScript") {
                     # Add file to the list for end-of-script deletion
-                    $FilesToDelete += $file.FullName
+                    $FilesToDelete.Value += $file.FullName
                     LogMessage -Message "Copied successfully: $file to $destinationFile (pending end-of-script deletion)"
                 }
             } catch {
