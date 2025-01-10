@@ -371,6 +371,8 @@ function DistributeFilesToSubfolders {
                     # Add file to the list for end-of-script deletion
                     Write-Host "DEBUG: file: $file"
                     $FilesToDelete.Value += $file
+                    Write-Host "DEBUG: FilesToDelete:"
+                    Write-Host $FilesToDelete.Value
                     LogMessage -Message "Copied successfully: $file to $destinationFile (pending end-of-script deletion)"
                 }
             } catch {
