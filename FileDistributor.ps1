@@ -282,17 +282,25 @@ function Move-ToRecycleBin {
         [string]$FilePath
     )
 
-    # Create a new Shell.Application COM object
-    $shell = New-Object -ComObject Shell.Application
+    try {
+        # Create a new Shell.Application COM object
+        $shell = New-Object -ComObject Shell.Application
 
-    # 10 is the folder type for Recycle Bin
-    $recycleBin = $shell.NameSpace(10)
+        # 10 is the folder type for Recycle Bin
+        $recycleBin = $shell.NameSpace(10)
 
-    # Get the file to be moved to the Recycle Bin
-    $file = Get-Item $FilePath
+        # Get the file to be moved to the Recycle Bin
+        $file = Get-Item $FilePath
 
-    # Move the file to the Recycle Bin, suppressing the confirmation dialog (0x100)
-    $recycleBin.MoveHere($file.FullName, 0x100)
+        # Move the file to the Recycle Bin, suppressing the confirmation dialog (0x100)
+        $recycleBin.MoveHere($file.FullName, 0x100)
+
+        # Log success
+        LogMessage -Message "Moved file to Recycle Bin: $FilePath"
+    } catch {
+        # Log failure
+        LogMessage -Message "Failed to move file to Recycle Bin: $FilePath. Error: $($_.Exception.Message)" -IsWarning
+    }
 }
 
 # Function to delete files
@@ -300,8 +308,19 @@ function Remove-File {
     param (
         [string]$FilePath
     )
-    Remove-Item -Path $FilePath -Force
-    LogMessage -Message "Deleted file: $FilePath"
+
+    try {
+        # Check if the file exists before attempting deletion
+        if (Test-Path -Path $FilePath) {
+            Remove-Item -Path $FilePath -Force
+            LogMessage -Message "Deleted file: $FilePath"
+        } else {
+            LogMessage -Message "File $FilePath not found. Skipping deletion." -IsWarning
+        }
+    } catch {
+        # Log failure
+        LogMessage -Message "Failed to delete file $FilePath. Error: $($_.Exception.Message)" -IsWarning
+    }
 }
 
 function DistributeFilesToSubfolders {
@@ -349,14 +368,14 @@ function DistributeFilesToSubfolders {
                     LogMessage -Message "Copied and immediately deleted: $file to $destinationFile"
                 } elseif ($DeleteMode -eq "EndOfScript") {
                     # Add file to the list for end-of-script deletion
-                    $FilesToDelete.Value += $file.FullName
+                    $FilesToDelete.Value += $file
                     LogMessage -Message "Copied successfully: $file to $destinationFile (pending end-of-script deletion)"
                 }
             } catch {
-                LogMessage -Message "Failed to process file $($file.FullName) after copying. Error: $($_.Exception.Message)" -IsWarning
+                LogMessage -Message "Failed to process file $file after copying. Error: $($_.Exception.Message)" -IsWarning
             }
         } else {
-            LogMessage -Message "Failed to copy $($file.FullName) to $destinationFile. Original file not moved." -IsError
+            LogMessage -Message "Failed to copy $file to $destinationFile. Original file not moved." -IsError
         }
 
         # Increment file counter
@@ -577,11 +596,6 @@ function Main {
                 $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
             }
 
-            # Added: Collect files for end-of-script deletion
-            if ($DeleteMode -eq "EndOfScript") {
-                $FilesToDelete += $sourceFiles.FullName
-            }
-
             $additionalVars = @{
                 sourceFiles = ConvertItemsToPaths($sourceFiles)
                 totalSourceFiles = $totalSourceFiles
@@ -595,19 +609,8 @@ function Main {
         if ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
             LogMessage -Message "Distributing files to subfolders..."
-            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
+            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)        
             LogMessage -Message "Completed file distribution"
-
-            # Added: Immediate deletion logic
-            if ($DeleteMode -eq "Immediate") {
-                foreach ($file in $sourceFiles) {
-                    try {
-                        Remove-File -FilePath $file.FullName
-                    } catch {
-                        LogMessage -Message "Failed to delete file $($file.FullName). Error: $($_.Exception.Message)" -IsWarning
-                    }
-                }
-            }
 
             $additionalVars = @{
                 totalSourceFiles = $totalSourceFiles
@@ -637,8 +640,14 @@ function Main {
                 
                 # Attempt to delete each file in $FilesToDelete
                 foreach ($file in $FilesToDelete) {
+                    Write-Host "file: $file"
                     try {
-                        Remove-File -FilePath $file
+                        if (Test-Path -Path $file) {
+                            Remove-File -FilePath $file
+                            LogMessage -Message "Deleted file: $file during EndOfScript cleanup."
+                        } else {
+                            LogMessage -Message "File $file not found during EndOfScript deletion." -IsWarning
+                        }
                     } catch {
                         # Log a warning for failure to delete
                         LogMessage -Message "Failed to delete file $file. Error: $($_.Exception.Message)" -IsWarning
