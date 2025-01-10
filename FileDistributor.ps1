@@ -651,7 +651,7 @@ function Main {
                 ($EndOfScriptDeletionCondition -eq "WarningsOnly" -and $Errors -eq 0)) {
                 
                 Write-Host "DEBUG: FilesToDelete:"
-                Write-Host $FilesToDelete
+                Write-Host $(FilesToDelete.Value)
                 # Attempt to delete each file in $FilesToDelete
                 foreach ($file in $FilesToDelete) {
                     Write-Host "file: $file"
