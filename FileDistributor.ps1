@@ -623,17 +623,6 @@ function Main {
             }            
             LogMessage -Message "Completed file distribution"
 
-            # Added: Immediate deletion logic
-            if ($DeleteMode -eq "Immediate") {
-                foreach ($file in $sourceFiles) {
-                    try {
-                        Remove-File -FilePath $file.FullName
-                    } catch {
-                        LogMessage -Message "Failed to delete file $($file.FullName). Error: $($_.Exception.Message)" -IsWarning
-                    }
-                }
-            }
-
             $additionalVars = @{
                 totalSourceFiles = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
@@ -647,7 +636,13 @@ function Main {
             # Redistribute files within the target folder and subfolders if needed
             LogMessage -Message "Redistributing files in target folders..."
             RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
-
+            Write-Host "DEBUG: FilesToDelete after RedistributeFilesInTarget"
+            Write-Host $FilesToDelete
+            Write-Host "DEBUG: Data Type of FilesToDelete:" $($FilesToDelete.GetType().FullName)
+            foreach ($file in $FilesToDelete) {
+                Write-Host "DEBUG: Element Type: $($file.GetType().FullName)"
+                Write-Host "DEBUG: Element: $file"
+            }            
             $additionalVars = @{
                 totalSourceFiles = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
