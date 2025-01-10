@@ -309,6 +309,7 @@ function Remove-File {
         [string]$FilePath
     )
 
+    Write-Host "DEBUG: FilePath: $FilePath"
     try {
         # Check if the file exists before attempting deletion
         if (Test-Path -Path $FilePath) {
