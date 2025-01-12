@@ -640,7 +640,6 @@ function Main {
                 
                 # Attempt to delete each file in $FilesToDelete
                 foreach ($file in $FilesToDelete) {
-                    Write-Host "file: $file"
                     try {
                         if (Test-Path -Path $file) {
                             Remove-File -FilePath $file
