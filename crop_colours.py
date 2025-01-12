@@ -105,6 +105,7 @@ def crop_and_save_image(image_path, cropped_file_path):
         image_path (str): Path to the image file.
         cropped_file_path (str): Path to save the cropped image.
     """
+    cropped_image = None  # Initialize to None to avoid reference errors
     try:
         # Load and process the image in a context manager to ensure memory is freed
         with open(image_path, 'rb') as f:
@@ -123,8 +124,10 @@ def crop_and_save_image(image_path, cropped_file_path):
         
         return cropped_file_path
     finally:
-        # Explicitly delete variables to free memory
-        del gray, original, cropped_image
+        # Only delete variables if they were set
+        if cropped_image is not None:
+            del cropped_image
+        del gray, original
         gc.collect()
 
 # List all images in the folder
