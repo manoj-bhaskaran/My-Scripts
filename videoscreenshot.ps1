@@ -12,10 +12,10 @@ Mandatory unless in CropOnly mode. Specifies the path to the source folder conta
 Optional. Specifies the path to the folder where screenshots will be saved.
 
 .PARAMETER TimeLimit
-Optional. Specifies the maximum time in minutes for processing videos in a single run. Defaults to $timeLimitInMinutes (10 minutes) if not provided. This parameter is ignored in cropping-only mode.
+Optional. Specifies the maximum time in minutes for processing videos in a single run. Defaults to 0 (no time limit) if not provided. This parameter is ignored in cropping-only mode.
 
 .PARAMETER VideoLimit
-Optional. Specifies the maximum number of videos to process in a single run. Defaults to $maxVideosToProcess (5 videos) if not provided. This parameter is ignored in cropping-only mode.
+Optional. Specifies the maximum number of videos to process in a single run. Defaults to 0 (no limit) if not provided. This parameter is ignored in cropping-only mode.
 
 .PARAMETER CropOnly
 Activates cropping-only mode, skipping video processing and screenshot capturing. Any settings for -TimeLimit and -VideoLimit are ignored in this mode.
@@ -82,8 +82,8 @@ Script Workflow:
 param (
     [string]$SourceFolder,
     [string]$SaveFolder = "C:\Users\manoj\OneDrive\Desktop\Screenshots",
-    [int]$TimeLimit,
-    [int]$VideoLimit,
+    [int]$TimeLimit = 0,
+    [int]$VideoLimit = 0,
     [switch]$CropOnly,
     [string]$ResumeFile,
     [switch]$Debug  # Add a custom Debug switch
@@ -92,8 +92,8 @@ param (
 # Configurable parameters
 $initialDelay = 200          # Time to wait for VLC to open (milliseconds)
 $screenshotInterval = 500    # Interval between screenshots (milliseconds)
-$timeLimitInMinutes = 10     # Maximum time limit for processing videos (default value in minutes)
-$maxVideosToProcess = 5      # Maximum number of videos to process in a single run (default value)
+$timeLimitInMinutes = $TimeLimit     # Maximum time limit for processing videos (default value in minutes)
+$maxVideosToProcess = $VideoLimit    # Maximum number of videos to process in a single run (default value)
 
 # Define paths
 $logFilePath = "$SaveFolder\processed_videos.log"  # Path to the log file
@@ -103,11 +103,6 @@ $pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
 if ($Debug.IsPresent) {
     $DebugPreference = "Continue"
 }
-Write-Debug "Parameter VideoLimit: $VideoLimit"
-# Override default values with command-line arguments, if provided
-$timeLimitInMinutes = if ($TimeLimit) { $TimeLimit } else { $timeLimitInMinutes }
-$maxVideosToProcess = $VideoLimit ?? 5
-Write-Debug "maxVideosToProcess is set to: $maxVideosToProcess"
 
 # Helper function to log messages with timestamps
 function Write-Message {
@@ -216,8 +211,10 @@ if (-not $CropOnly) {
         exit
     }
 
-    # Limit the number of videos to process
-    $videoFiles = $videoFiles[0..([Math]::Min($maxVideosToProcess, $videoFiles.Count) - 1)]
+    # Limit the number of videos to process if VideoLimit is not 0
+    if ($maxVideosToProcess -gt 0) {
+        $videoFiles = $videoFiles[0..([Math]::Min($maxVideosToProcess, $videoFiles.Count) - 1)]
+    }
 
     try {
         foreach ($video in $videoFiles) {
@@ -241,11 +238,13 @@ if (-not $CropOnly) {
                 Write-Message "Screenshot saved: $file"
                 Start-Sleep -Milliseconds $screenshotInterval
 
-                # Check if the time limit has been reached
-                $elapsedTime = (Get-Date) - $startTime
-                if ($elapsedTime.TotalMinutes -ge $timeLimitInMinutes) {
-                    Write-Message "Time limit of $timeLimitInMinutes minutes reached. Proceeding to cropping step."
-                    break
+                # Check if the time limit has been reached if TimeLimit is not 0
+                if ($timeLimitInMinutes -gt 0) {
+                    $elapsedTime = (Get-Date) - $startTime
+                    if ($elapsedTime.TotalMinutes -ge $timeLimitInMinutes) {
+                        Write-Message "Time limit of $timeLimitInMinutes minutes reached. Proceeding to cropping step."
+                        break
+                    }
                 }
             }
 
@@ -257,16 +256,18 @@ if (-not $CropOnly) {
             Write-Message "Completed video $currentRunCount/$($videoFiles.Count)"
 
             # Stop if video limit is reached
-            if ($currentRunCount -eq $maxVideosToProcess) {
+            if ($maxVideosToProcess -gt 0 -and $currentRunCount -eq $maxVideosToProcess) {
                 Write-Message "Video limit of $maxVideosToProcess reached. Proceeding to cropping step."
                 break
             }
 
-            # Check if the time limit has been reached
-            $elapsedTime = (Get-Date) - $startTime
-            if ($elapsedTime.TotalMinutes -ge $timeLimitInMinutes) {
-                Write-Message "Time limit of $timeLimitInMinutes minutes reached. Proceeding to cropping step."
-                break
+            # Check if the time limit has been reached if TimeLimit is not 0
+            if ($timeLimitInMinutes -gt 0) {
+                $elapsedTime = (Get-Date) - $startTime
+                if ($elapsedTime.TotalMinutes -ge $timeLimitInMinutes) {
+                    Write-Message "Time limit of $timeLimitInMinutes minutes reached. Proceeding to cropping step."
+                    break
+                }
             }
         }
     } catch {
