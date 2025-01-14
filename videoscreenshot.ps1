@@ -5,6 +5,12 @@ This PowerShell script processes video files from a specified source folder, tak
 .DESCRIPTION
 The script allows for configurable parameters, such as the maximum number of videos to process in a single run and the time limit for processing videos. Additionally, it supports command-line parameters to override these default values and handles interrupts gracefully. The script can also be run in a cropping-only mode, skipping video processing and screenshot capturing if the screenshots have already been taken. When running in cropping-only mode, it can resume processing from a specified file name.
 
+.PARAMETER SourceFolder
+Mandatory unless in CropOnly mode. Specifies the path to the source folder containing the video files to be processed.
+
+.PARAMETER SaveFolder
+Optional. Specifies the path to the folder where screenshots will be saved.
+
 .PARAMETER TimeLimit
 Optional. Specifies the maximum time in minutes for processing videos in a single run. Defaults to $timeLimitInMinutes (10 minutes) if not provided. This parameter is ignored in cropping-only mode.
 
@@ -19,16 +25,16 @@ Works in cropping-only mode to specify the file name from which to resume croppi
 
 .EXAMPLES
 To run the script with the default values:
-.\videoscreenshot.ps1
+.\videoscreenshot.ps1 -SourceFolder "C:\Source"
 
 To specify a time limit of 15 minutes and a video limit of 10:
-.\videoscreenshot.ps1 -TimeLimit 15 -VideoLimit 10
+.\videoscreenshot.ps1 -SourceFolder "C:\Source" -TimeLimit 15 -VideoLimit 10
 
 To run the script in cropping-only mode, ignoring video-related parameters:
-.\videoscreenshot.ps1 -CropOnly
+.\videoscreenshot.ps1 -CropOnly -SaveFolder "C:\Save"
 
 To run the script in cropping-only mode and resume cropping from a specific file:
-.\videoscreenshot.ps1 -CropOnly -ResumeFile "Screenshot_20231116180000.png"
+.\videoscreenshot.ps1 -CropOnly -SaveFolder "C:\Save" -ResumeFile "Screenshot_20231116180000.png"
 
 .NOTES
 Script Workflow:
@@ -74,6 +80,8 @@ Script Workflow:
 
 # Parse command-line arguments
 param (
+    [string]$SourceFolder,
+    [string]$SaveFolder = "C:\Users\manoj\OneDrive\Desktop\Screenshots",
     [int]$TimeLimit,
     [int]$VideoLimit,
     [switch]$CropOnly,
@@ -85,12 +93,10 @@ param (
 $initialDelay = 200          # Time to wait for VLC to open (milliseconds)
 $screenshotInterval = 500    # Interval between screenshots (milliseconds)
 $timeLimitInMinutes = 10     # Maximum time limit for processing videos (default value in minutes)
-$maxVideosToProcess = 5              # Maximum number of videos to process in a single run (default value)
+$maxVideosToProcess = 5      # Maximum number of videos to process in a single run (default value)
 
 # Define paths
-$sourceFolderPath = "C:\Users\manoj\OneDrive\Desktop\picconvert_20241215_160556_mp4_1"
-$savePath = "C:\Users\manoj\OneDrive\Desktop\Screenshots"
-$logFilePath = "$savePath\processed_videos.log"  # Path to the log file
+$logFilePath = "$SaveFolder\processed_videos.log"  # Path to the log file
 $pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
 
 # Enable Debugging Messages if -Debug is passed
@@ -110,6 +116,23 @@ function Write-Message {
     Write-Output "[$timestamp] $message"
 }
 
+# Validate the source folder unless in CropOnly mode
+if (-not $CropOnly -and -not (Test-Path -Path $SourceFolder)) {
+    Write-Message "Error: Source folder does not exist. Please check the path: $SourceFolder"
+    exit 1
+}
+
+# Validate or create the save folder in Standard mode
+if (-not $CropOnly) {
+    if (-not (Test-Path -Path $SaveFolder)) {
+        Write-Message "Save folder does not exist. Creating it: $SaveFolder"
+        New-Item -ItemType Directory -Force -Path $SaveFolder | Out-Null
+    }
+} elseif (-not (Test-Path -Path $SaveFolder)) {
+    Write-Message "Error: Save path does not exist: $SaveFolder"
+    exit 1
+}
+
 if (-not (Get-Command "vlc.exe" -ErrorAction SilentlyContinue)) {
     Write-Message "Error: VLC Media Player is not installed or not in the system path."
     exit
@@ -122,25 +145,8 @@ if (-not (Test-Path -Path $pythonScriptPath)) {
 
 # Conditional checks based on CropOnly mode
 if ($CropOnly) {
-    # CropOnly mode: Validate savePath only
-    if (-not (Test-Path -Path $savePath)) {
-        Write-Output "Error: Save path does not exist: $savePath"
-        exit 1
-    }
     Write-Output "CropOnly mode enabled. Proceeding with cropping tasks..."
-} 
-else {
-    # Standard mode: Validate source folder and save path
-    if (-not (Test-Path -Path $sourceFolderPath)) {
-        Write-Output "Error: Source folder does not exist. Please check the path: $sourceFolderPath"
-        exit 1
-    }
-
-    if (-not (Test-Path -Path $savePath)) {
-        Write-Output "Save path does not exist. Creating it: $savePath"
-        New-Item -ItemType Directory -Force -Path $savePath | Out-Null
-    }
-
+} else {
     Write-Output "Standard mode enabled. Processing videos from the source folder..."
 }
 
@@ -162,8 +168,8 @@ if ((Get-Content -Path $logFilePath | Measure-Object).Count -gt 0) {
 
 # Clear existing screenshots only for fresh starts
 if ($freshStart -and -not $CropOnly) {
-    Get-ChildItem -Path $savePath -Recurse -File | Remove-Item -Force
-    Write-Message "Cleared existing screenshots from $savePath"
+    Get-ChildItem -Path $SaveFolder -Recurse -File | Remove-Item -Force
+    Write-Message "Cleared existing screenshots from $SaveFolder"
 }
 
 # Load required .NET assemblies for GDI+
@@ -196,7 +202,7 @@ $startTime = Get-Date # Record the start time
 
 if (-not $CropOnly) {
     # Get all video files in the source folder
-    $allVideoFiles = Get-ChildItem -Path $sourceFolderPath -Recurse -Include *.mp4, *.avi, *.mkv
+    $allVideoFiles = Get-ChildItem -Path $SourceFolder -Recurse -Include *.mp4, *.avi, *.mkv
 
     # Filter out videos that are already processed
     # Normalize paths for comparison
@@ -204,7 +210,6 @@ if (-not $CropOnly) {
     $videoFiles = $allVideoFiles | Where-Object { ($_.FullName.Trim().ToLower()) -notin $normalizedProcessedVideos }
     Write-Debug "Total videos: $($videoFiles.Count)"
     Write-Debug "Processing first $maxVideosToProcess videos."
-
 
     if ($videoFiles.Count -eq 0) {
         Write-Message "No unprocessed videos found. Exiting."
@@ -231,7 +236,7 @@ if (-not $CropOnly) {
 
             # Capture screenshots until VLC exits
             while ($vlcProcess.HasExited -eq $false) {
-                $file = "$savePath\Screenshot_$((Get-Date).ToString('yyyyMMddHHmmssfff')).png"
+                $file = "$SaveFolder\Screenshot_$((Get-Date).ToString('yyyyMMddHHmmssfff')).png"
                 Get-ScreenWithGDIPlus -filePath $file
                 Write-Message "Screenshot saved: $file"
                 Start-Sleep -Milliseconds $screenshotInterval
@@ -285,9 +290,9 @@ if (-not $CropOnly) {
 try {
     Write-Message "Calling Python cropping script: $pythonScriptPath"
     if ($ResumeFile) {
-        $pythonOutput = python $pythonScriptPath --folder_path "$savePath" --resume_file "$ResumeFile" 2>&1
+        $pythonOutput = python $pythonScriptPath --folder_path "$SaveFolder" --resume_file "$ResumeFile" 2>&1
     } else {
-        $pythonOutput = python $pythonScriptPath --folder_path "$savePath" 2>&1
+        $pythonOutput = python $pythonScriptPath --folder_path "$SaveFolder" 2>&1
     }
     Write-Message "Python script output: $pythonOutput"
 
