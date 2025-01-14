@@ -545,6 +545,24 @@ function Main {
                 LogMessage -Message "Checkpoint not found. Executing from top..." -IsWarning
             }
 
+            # Restore DeleteMode
+            if ($state.ContainsKey("deleteMode")) {
+                $savedDeleteMode = $state.deleteMode
+
+                # Validate the loaded DeleteMode
+                if (-not ("RecycleBin", "Immediate", "EndOfScript" -contains $savedDeleteMode)) {
+                    throw "Invalid value for DeleteMode in state file: '$savedDeleteMode'. Valid options are 'RecycleBin', 'Immediate', 'EndOfScript'."
+                }
+                
+                if ($DeleteMode -ne $savedDeleteMode) {
+                    throw "DeleteMode mismatch: Restarted script must use the saved DeleteMode ('$savedDeleteMode'). Aborting."
+                }
+                $DeleteMode = $savedDeleteMode
+                Write-Output "DeleteMode restored from state file: $DeleteMode"
+            } else {
+                throw "State file does not contain DeleteMode. Unable to enforce."
+            }
+
             # Load checkpoint-specific additional variables
             if ($lastCheckpoint -in 2, 3, 4) {
                 $totalSourceFiles = $state.totalSourceFiles
@@ -558,6 +576,25 @@ function Main {
             if ($lastCheckpoint -eq 2) {
                 $sourceFiles = ConvertPathsToItems($state.sourceFiles)
             }
+
+            # Load FilesToDelete only for EndOfScript mode and lastCheckpoint 3 or 4
+            if ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4 -and $state.ContainsKey("FilesToDelete")) {
+                $FilesToDelete = $state.FilesToDelete
+
+                # Handle empty FilesToDelete array
+                if (-not $FilesToDelete -or $FilesToDelete.Count -eq 0) {
+                    Write-Output "No files to delete from the previous session."
+                } else {
+                    Write-Output "Loaded $($FilesToDelete.Count) files to delete from the previous session."
+                }
+            } elseif ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4) {
+                # If DeleteMode is EndOfScript but no FilesToDelete key exists
+                Write-Warning "State file does not contain FilesToDelete key for EndOfScript mode."
+                $FilesToDelete = @() # Initialise to an empty array
+            } else {
+                # Default initialisation when EndOfScript mode does not apply
+                $FilesToDelete = @() # Ensure FilesToDelete is always defined
+            }
         } else {
             # Check if a restart state file exists
             if (Test-Path -Path $StateFilePath) {
@@ -570,7 +607,10 @@ function Main {
             # Rename files in the source folder to random names
             LogMessage -Message "Renaming files in source folder..."
             RenameFilesInSourceFolder -SourceFolder $SourceFolder -ShowProgress:$ShowProgress -UpdateFrequency $UpdateFrequency
-            SaveState -Checkpoint 1
+            $additionalVars = @{
+                deleteMode            = $DeleteMode # Persist DeleteMode
+            }
+            SaveState -Checkpoint 1 -AdditionalVariables $additionalVars
         }
 
         if ($lastCheckpoint -lt 2) {
@@ -601,6 +641,7 @@ function Main {
                 totalSourceFiles = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
                 subfolders = ConvertItemsToPaths($subfolders)
+                deleteMode            = $DeleteMode # Persist DeleteMode
             }
 
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
@@ -612,26 +653,44 @@ function Main {
             DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)        
             LogMessage -Message "Completed file distribution"
 
+            # Common base for additional variables
             $additionalVars = @{
-                totalSourceFiles = $totalSourceFiles
+                totalSourceFiles      = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders = ConvertItemsToPaths($subfolders)
+                subfolders            = ConvertItemsToPaths($subfolders)
+                deleteMode            = $DeleteMode # Persist DeleteMode
             }
-        
+
+            # Conditionally add FilesToDelete for EndOfScript mode
+            if ($DeleteMode -eq "EndOfScript") {
+                $additionalVars["FilesToDelete"] = $FilesToDelete
+            }
+
+            # Save the state with the consolidated additional variables
             SaveState -Checkpoint 3 -AdditionalVariables $additionalVars
+
         }
 
         if ($lastCheckpoint -lt 4) {
             # Redistribute files within the target folder and subfolders if needed
             LogMessage -Message "Redistributing files in target folders..."
             RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
-
+        
+            # Base additional variables
             $additionalVars = @{
-                totalSourceFiles = $totalSourceFiles
+                totalSourceFiles      = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
+                deleteMode            = $DeleteMode # Persist DeleteMode
             }
+        
+            # Conditionally add FilesToDelete if DeleteMode is EndOfScript
+            if ($DeleteMode -eq "EndOfScript") {
+                $additionalVars["FilesToDelete"] = $FilesToDelete
+            }
+        
+            # Save state with checkpoint 4 and additional variables
             SaveState -Checkpoint 4 -AdditionalVariables $additionalVars
-        }
+        }        
 
         if ($DeleteMode -eq "EndOfScript") {
             # Check if conditions for deletion are satisfied
