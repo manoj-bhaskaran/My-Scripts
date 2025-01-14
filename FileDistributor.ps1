@@ -545,6 +545,24 @@ function Main {
                 LogMessage -Message "Checkpoint not found. Executing from top..." -IsWarning
             }
 
+            # Restore DeleteMode
+            if ($state.ContainsKey("deleteMode")) {
+                $savedDeleteMode = $state.deleteMode
+
+                # Validate the loaded DeleteMode
+                if (-not ("RecycleBin", "Immediate", "EndOfScript" -contains $savedDeleteMode)) {
+                    throw "Invalid value for DeleteMode in state file: '$savedDeleteMode'. Valid options are 'RecycleBin', 'Immediate', 'EndOfScript'."
+                }
+                
+                if ($DeleteMode -ne $savedDeleteMode) {
+                    throw "DeleteMode mismatch: Restarted script must use the saved DeleteMode ('$savedDeleteMode'). Aborting."
+                }
+                $DeleteMode = $savedDeleteMode
+                Write-Output "DeleteMode restored from state file: $DeleteMode"
+            } else {
+                throw "State file does not contain DeleteMode. Unable to enforce."
+            }
+
             # Load checkpoint-specific additional variables
             if ($lastCheckpoint -in 2, 3, 4) {
                 $totalSourceFiles = $state.totalSourceFiles
@@ -589,7 +607,10 @@ function Main {
             # Rename files in the source folder to random names
             LogMessage -Message "Renaming files in source folder..."
             RenameFilesInSourceFolder -SourceFolder $SourceFolder -ShowProgress:$ShowProgress -UpdateFrequency $UpdateFrequency
-            SaveState -Checkpoint 1
+            $additionalVars = @{
+                deleteMode            = $DeleteMode # Persist DeleteMode
+            }
+            SaveState -Checkpoint 1 -AdditionalVariables $additionalVars
         }
 
         if ($lastCheckpoint -lt 2) {
@@ -620,6 +641,7 @@ function Main {
                 totalSourceFiles = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
                 subfolders = ConvertItemsToPaths($subfolders)
+                deleteMode            = $DeleteMode # Persist DeleteMode
             }
 
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
@@ -636,6 +658,7 @@ function Main {
                 totalSourceFiles      = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
                 subfolders            = ConvertItemsToPaths($subfolders)
+                deleteMode            = $DeleteMode # Persist DeleteMode
             }
 
             # Conditionally add FilesToDelete for EndOfScript mode
@@ -657,6 +680,7 @@ function Main {
             $additionalVars = @{
                 totalSourceFiles      = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
+                deleteMode            = $DeleteMode # Persist DeleteMode
             }
         
             # Conditionally add FilesToDelete if DeleteMode is EndOfScript
