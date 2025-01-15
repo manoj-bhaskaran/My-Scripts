@@ -45,6 +45,12 @@ Optional. Specifies the conditions under which files are deleted in `EndOfScript
 - `NoWarnings`: Deletes files only if there are no warnings or errors (default).
 - `WarningsOnly`: Deletes files if there are no errors, even if warnings exist.
 
+.PARAMETER RetryDelay
+Optional. Specifies the delay in seconds before retrying file access if locked. Defaults to 10 seconds.
+
+.PARAMETER RetryCount
+Optional. Specifies the number of times to retry file access if locked. Defaults to 1. A value of 0 means unlimited retries.
+
 .EXAMPLES
 To copy files from "C:\Source" to "C:\Target" with a default file limit:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
@@ -115,7 +121,9 @@ param(
     [switch]$ShowProgress = $false,
     [int]$UpdateFrequency = 100, # Default: 100 files
     [string]$DeleteMode = "RecycleBin", # Options: "RecycleBin", "Immediate", "EndOfScript"
-    [string]$EndOfScriptDeletionCondition = "NoWarnings" # Options: "NoWarnings", "WarningsOnly"
+    [string]$EndOfScriptDeletionCondition = "NoWarnings", # Options: "NoWarnings", "WarningsOnly"
+    [int]$RetryDelay = 10, # Time to wait before retrying file access (seconds)
+    [int]$RetryCount = 1 # Number of times to retry file access (0 for unlimited retries)
 )
 
 # Define script-scoped variables for warnings and errors
@@ -496,6 +504,41 @@ function ConvertPathsToItems {
     return $Paths | ForEach-Object { Get-Item -Path $_ }
 }
 
+# Function to acquire a lock on the state file
+function AcquireFileLock {
+    param (
+        [string]$FilePath,
+        [int]$RetryDelay,
+        [int]$RetryCount
+    )
+
+    $attempts = 0
+    while ($true) {
+        try {
+            $fileStream = [System.IO.File]::Open($FilePath, 'OpenOrCreate', 'ReadWrite', 'None')
+            return $fileStream
+        } catch {
+            $attempts++
+            if ($RetryCount -ne 0 -and $attempts -ge $RetryCount) {
+                LogMessage -Message "Failed to acquire lock on $FilePath after $attempts attempts. Aborting." -IsError
+                throw "Failed to acquire lock on $FilePath after $attempts attempts."
+            }
+            LogMessage -Message "Failed to acquire lock on $FilePath. Retrying in $RetryDelay seconds... (Attempt $attempts)" -IsWarning
+            Start-Sleep -Seconds $RetryDelay
+        }
+    }
+}
+
+# Function to release the file lock
+function ReleaseFileLock {
+    param (
+        [System.IO.FileStream]$FileStream
+    )
+
+    $FileStream.Close()
+    $FileStream.Dispose()
+}
+
 # Main script logic
 function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
@@ -532,6 +575,9 @@ function Main {
         LogMessage -Message "Parameter validation completed"
 
         $FilesToDelete = @()
+
+        # Acquire a lock on the state file
+        $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
 
         # Restart logic
         $lastCheckpoint = 0
@@ -734,6 +780,9 @@ function Main {
 
         Remove-Item -Path $StateFilePath -Force
 
+        # Release the file lock
+        ReleaseFileLock -FileStream $fileLock
+
     } catch {
         LogMessage -Message "$($_.Exception.Message)" -IsError
     }
@@ -741,4 +790,3 @@ function Main {
  
  # Run the script
  Main
- 
