@@ -591,6 +591,20 @@ function Main {
                 LogMessage -Message "Checkpoint not found. Executing from top..." -IsWarning
             }
 
+            # Restore SourceFolder
+            if ($state.ContainsKey("SourceFolder")) {
+                $savedSourceFolder = $state.SourceFolder
+
+                # Validate the loaded SourceFolder
+                if ($SourceFolder -ne $savedSourceFolder) {
+                    throw "SourceFolder mismatch: Restarted script must use the saved SourceFolder ('$savedSourceFolder'). Aborting."
+                }
+                $SourceFolder = $savedSourceFolder
+                Write-Output "SourceFolder restored from state file: $SourceFolder"
+            } else {
+                throw "State file does not contain SourceFolder. Unable to enforce."
+            }
+
             # Restore DeleteMode
             if ($state.ContainsKey("deleteMode")) {
                 $savedDeleteMode = $state.deleteMode
@@ -655,6 +669,7 @@ function Main {
             RenameFilesInSourceFolder -SourceFolder $SourceFolder -ShowProgress:$ShowProgress -UpdateFrequency $UpdateFrequency
             $additionalVars = @{
                 deleteMode            = $DeleteMode # Persist DeleteMode
+                SourceFolder          = $SourceFolder # Persist SourceFolder
             }
             SaveState -Checkpoint 1 -AdditionalVariables $additionalVars
         }
@@ -688,6 +703,7 @@ function Main {
                 totalTargetFilesBefore = $totalTargetFilesBefore
                 subfolders = ConvertItemsToPaths($subfolders)
                 deleteMode            = $DeleteMode # Persist DeleteMode
+                SourceFolder          = $SourceFolder # Persist SourceFolder
             }
 
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
@@ -705,6 +721,7 @@ function Main {
                 totalTargetFilesBefore = $totalTargetFilesBefore
                 subfolders            = ConvertItemsToPaths($subfolders)
                 deleteMode            = $DeleteMode # Persist DeleteMode
+                SourceFolder          = $SourceFolder # Persist SourceFolder
             }
 
             # Conditionally add FilesToDelete for EndOfScript mode
@@ -727,6 +744,7 @@ function Main {
                 totalSourceFiles      = $totalSourceFiles
                 totalTargetFilesBefore = $totalTargetFilesBefore
                 deleteMode            = $DeleteMode # Persist DeleteMode
+                SourceFolder          = $SourceFolder # Persist SourceFolder
             }
         
             # Conditionally add FilesToDelete if DeleteMode is EndOfScript
