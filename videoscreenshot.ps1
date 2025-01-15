@@ -1,28 +1,40 @@
 <#
 .SYNOPSIS
-This PowerShell script processes video files from a specified source folder, takes screenshots at regular intervals, and then crops the screenshots using a Python script. It also supports a cropping-only mode to skip video processing and screenshot capturing, and directly crop the images.
+This PowerShell script processes video files from a specified source folder, takes screenshots at regular intervals, and then crops the screenshots using a Python script. It also supports a cropping-only mode to skip video processing and screenshot capturing, and directly crop the images. In cropping-only mode, it can resume processing from a specified file name.
 
 .DESCRIPTION
-The script allows for configurable parameters, such as the maximum number of videos to process in a single run and the time limit for processing videos. Additionally, it supports command-line parameters to override these default values and handles interrupts gracefully. The script can also be run in a cropping-only mode, skipping video processing and screenshot capturing if the screenshots have already been taken.
+The script allows for configurable parameters, such as the maximum number of videos to process in a single run and the time limit for processing videos. Additionally, it supports command-line parameters to override these default values and handles interrupts gracefully. The script can also be run in a cropping-only mode, skipping video processing and screenshot capturing if the screenshots have already been taken. When running in cropping-only mode, it can resume processing from a specified file name.
+
+.PARAMETER SourceFolder
+Mandatory unless in CropOnly mode. Specifies the path to the source folder containing the video files to be processed.
+
+.PARAMETER SaveFolder
+Optional. Specifies the path to the folder where screenshots will be saved.
 
 .PARAMETER TimeLimit
-Maximum time in minutes for processing videos in a single run. Overrides the default value of $timeLimitInMinutes.
+Optional. Specifies the maximum time in minutes for processing videos in a single run. Defaults to 0 (no time limit) if not provided. This parameter is ignored in cropping-only mode.
 
 .PARAMETER VideoLimit
-Maximum number of videos to process in a single run. Overrides the default value of $videoLimit.
+Optional. Specifies the maximum number of videos to process in a single run. Defaults to 0 (no limit) if not provided. This parameter is ignored in cropping-only mode.
 
 .PARAMETER CropOnly
-Runs the script in cropping-only mode, skipping video processing and screenshot capturing, and directly calling the Python cropping script.
+Activates cropping-only mode, skipping video processing and screenshot capturing. Any settings for -TimeLimit and -VideoLimit are ignored in this mode.
+
+.PARAMETER ResumeFile
+Works in cropping-only mode to specify the file name from which to resume cropping. This parameter is ignored if cropping-only mode (-CropOnly) is not specified.
 
 .EXAMPLES
 To run the script with the default values:
-.\videoscreenshot.ps1
+.\videoscreenshot.ps1 -SourceFolder "C:\Source"
 
 To specify a time limit of 15 minutes and a video limit of 10:
-.\videoscreenshot.ps1 -TimeLimit 15 -VideoLimit 10
+.\videoscreenshot.ps1 -SourceFolder "C:\Source" -TimeLimit 15 -VideoLimit 10
 
-To run the script in cropping-only mode:
-.\videoscreenshot.ps1 -CropOnly
+To run the script in cropping-only mode, ignoring video-related parameters:
+.\videoscreenshot.ps1 -CropOnly -SaveFolder "C:\Save"
+
+To run the script in cropping-only mode and resume cropping from a specific file:
+.\videoscreenshot.ps1 -CropOnly -SaveFolder "C:\Save" -ResumeFile "Screenshot_20231116180000.png"
 
 .NOTES
 Script Workflow:
@@ -31,6 +43,7 @@ Script Workflow:
    - Source folder, save path, cropped images path, log file path, and Python script path are defined.
    - Command-line parameters are parsed to override default values, if provided.
    - The -CropOnly parameter is parsed to determine if the script should skip video processing.
+   - The -ResumeFile parameter is parsed to specify the file name to resume from in cropping-only mode.
 
 2. Prerequisite Checks:
    - The script checks if the source folder exists.
@@ -42,7 +55,7 @@ Script Workflow:
    - The log file is checked to determine if it is a fresh start. If so, existing screenshots are cleared (unless in cropping-only mode).
 
 4. Interrupt Handling:
-   - A signal handler is added to detect interrupt signals (e.g., Ctrl+C) to stop processing new videos and proceed to the cropping step.
+   - Interrupt handling logic has been removed for simplicity.
 
 5. Video Processing:
    - All video files in the source folder are listed.
@@ -52,31 +65,44 @@ Script Workflow:
 6. Cropping Mode (if -CropOnly is provided):
    - The script skips video processing and screenshot capturing.
    - The Python cropping script is called to crop the screenshots from the specified directory.
+   - If the -ResumeFile parameter is provided, the script resumes cropping from the specified file, skipping files until it reaches this file name.
 
 7. Error Handling and Cleanup:
    - Any errors during processing are logged.
    - VLC processes are terminated if still running after an error or interrupt.
 
 8. Python Script Execution:
-   - The Python script is called to crop the screenshots. If in cropping-only mode, it only processes the existing screenshots.
+   - The Python script is called to crop the screenshots. If in cropping-only mode, it only processes the existing screenshots. If the -ResumeFile parameter is provided, it resumes cropping from the specified file.
 
 9. Completion:
    - The script logs the completion of processing and deletes the log file if all videos are processed.
-
 #>
+
+# Parse command-line arguments
+param (
+    [string]$SourceFolder,
+    [string]$SaveFolder = "C:\Users\manoj\OneDrive\Desktop\Screenshots",
+    [int]$TimeLimit = 0,
+    [int]$VideoLimit = 0,
+    [switch]$CropOnly,
+    [string]$ResumeFile,
+    [switch]$Debug  # Add a custom Debug switch
+)
 
 # Configurable parameters
 $initialDelay = 200          # Time to wait for VLC to open (milliseconds)
 $screenshotInterval = 500    # Interval between screenshots (milliseconds)
-$timeLimitInMinutes = 10     # Maximum time limit for processing videos (default value in minutes)
-$videoLimit = 5              # Maximum number of videos to process in a single run (default value)
-
+$timeLimitInMinutes = $TimeLimit     # Maximum time limit for processing videos (default value in minutes)
+$maxVideosToProcess = $VideoLimit    # Maximum number of videos to process in a single run (default value)
 
 # Define paths
-$sourceFolderPath = "C:\Users\manoj\Downloads"
-$savePath = "C:\Users\manoj\OneDrive\Desktop\Screenshots"
-$logFilePath = "$savePath\processed_videos.log"  # Path to the log file
+$logFilePath = "$SaveFolder\processed_videos.log"  # Path to the log file
 $pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
+
+# Enable Debugging Messages if -Debug is passed
+if ($Debug.IsPresent) {
+    $DebugPreference = "Continue"
+}
 
 # Helper function to log messages with timestamps
 function Write-Message {
@@ -85,20 +111,21 @@ function Write-Message {
     Write-Output "[$timestamp] $message"
 }
 
-# Parse command-line arguments
-param (
-    [int]$TimeLimit = $timeLimitInMinutes,
-    [int]$VideoLimit = $videoLimit,
-    [switch]$CropOnly
-)
+# Validate the source folder unless in CropOnly mode
+if (-not $CropOnly -and -not (Test-Path -Path $SourceFolder)) {
+    Write-Message "Error: Source folder does not exist. Please check the path: $SourceFolder"
+    exit 1
+}
 
-# Override default values with command-line arguments, if provided
-$timeLimitInMinutes = $TimeLimit
-$videoLimit = $VideoLimit
-
-if (-not (Test-Path -Path $sourceFolderPath)) {
-    Write-Message "Error: Source folder does not exist. Please check the path: $sourceFolderPath"
-    exit
+# Validate or create the save folder in Standard mode
+if (-not $CropOnly) {
+    if (-not (Test-Path -Path $SaveFolder)) {
+        Write-Message "Save folder does not exist. Creating it: $SaveFolder"
+        New-Item -ItemType Directory -Force -Path $SaveFolder | Out-Null
+    }
+} elseif (-not (Test-Path -Path $SaveFolder)) {
+    Write-Message "Error: Save path does not exist: $SaveFolder"
+    exit 1
 }
 
 if (-not (Get-Command "vlc.exe" -ErrorAction SilentlyContinue)) {
@@ -111,8 +138,12 @@ if (-not (Test-Path -Path $pythonScriptPath)) {
     exit
 }
 
-# Create save directory if it does not exist
-New-Item -ItemType Directory -Force -Path $savePath | Out-Null
+# Conditional checks based on CropOnly mode
+if ($CropOnly) {
+    Write-Output "CropOnly mode enabled. Proceeding with cropping tasks..."
+} else {
+    Write-Output "Standard mode enabled. Processing videos from the source folder..."
+}
 
 # Determine if this is a fresh start
 $freshStart = -not (Test-Path -Path $logFilePath)
@@ -132,21 +163,13 @@ if ((Get-Content -Path $logFilePath | Measure-Object).Count -gt 0) {
 
 # Clear existing screenshots only for fresh starts
 if ($freshStart -and -not $CropOnly) {
-    Get-ChildItem -Path $savePath -Recurse -File | Remove-Item -Force
-    Write-Message "Cleared existing screenshots from $savePath"
+    Get-ChildItem -Path $SaveFolder -Recurse -File | Remove-Item -Force
+    Write-Message "Cleared existing screenshots from $SaveFolder"
 }
 
 # Load required .NET assemblies for GDI+
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
-
-# Add a signal handler to detect Ctrl+C
-$script:interrupted = $false
-[Console]::CancelKeyPress += {
-    $script:interrupted = $true
-    $_.Cancel = $true
-    Write-Message "Interrupt signal received. Stopping new video processing..."
-}
 
 # Function to capture the screen using GDI+
 function Get-ScreenWithGDIPlus {
@@ -174,28 +197,29 @@ $startTime = Get-Date # Record the start time
 
 if (-not $CropOnly) {
     # Get all video files in the source folder
-    $allVideoFiles = Get-ChildItem -Path $sourceFolderPath -Recurse -Include *.mp4, *.avi, *.mkv
+    $allVideoFiles = Get-ChildItem -Path $SourceFolder -Recurse -Include *.mp4, *.avi, *.mkv
 
     # Filter out videos that are already processed
-    $videoFiles = $allVideoFiles | Where-Object { $_.FullName -notin $processedVideos }
+    # Normalize paths for comparison
+    $normalizedProcessedVideos = $processedVideos | ForEach-Object { $_.Trim().ToLower() }
+    $videoFiles = $allVideoFiles | Where-Object { ($_.FullName.Trim().ToLower()) -notin $normalizedProcessedVideos }
+    Write-Debug "Total videos: $($videoFiles.Count)"
+    Write-Debug "Processing first $maxVideosToProcess videos."
+
     if ($videoFiles.Count -eq 0) {
         Write-Message "No unprocessed videos found. Exiting."
         exit
     }
 
-    # Limit the number of videos to process
-    $videoFiles = $videoFiles[0..([Math]::Min($videoLimit, $videoFiles.Count) - 1)]
+    # Limit the number of videos to process if VideoLimit is not 0
+    if ($maxVideosToProcess -gt 0) {
+        $videoFiles = $videoFiles[0..([Math]::Min($maxVideosToProcess, $videoFiles.Count) - 1)]
+    }
 
     try {
         foreach ($video in $videoFiles) {
             Write-Message "Processing video: $($video.Name)"
             Write-Message "Processing video $($currentRunCount + 1) of $($videoFiles.Count)"
-
-            # Check for interrupt signal
-            if ($script:interrupted) {
-                Write-Message "Processing interrupted. Proceeding to cropping step."
-                break
-            }
 
             # Start VLC for the current video
             $vlcProcess = Start-Process -FilePath "vlc.exe" -ArgumentList "`"$($video.FullName)`"", "--fullscreen", "--no-video-title-show", "--qt-minimal-view", "--no-qt-privacy-ask", "--video-on-top", "--play-and-exit" -PassThru
@@ -209,22 +233,18 @@ if (-not $CropOnly) {
 
             # Capture screenshots until VLC exits
             while ($vlcProcess.HasExited -eq $false) {
-                $file = "$savePath\Screenshot_$((Get-Date).ToString('yyyyMMddHHmmssfff')).png"
+                $file = "$SaveFolder\Screenshot_$((Get-Date).ToString('yyyyMMddHHmmssfff')).png"
                 Get-ScreenWithGDIPlus -filePath $file
                 Write-Message "Screenshot saved: $file"
                 Start-Sleep -Milliseconds $screenshotInterval
 
-                # Check if the time limit has been reached
-                $elapsedTime = (Get-Date) - $startTime
-                if ($elapsedTime.TotalMinutes -ge $timeLimitInMinutes) {
-                    Write-Message "Time limit of $timeLimitInMinutes minutes reached. Proceeding to cropping step."
-                    break
-                }
-
-                # Check for interrupt signal
-                if ($script:interrupted) {
-                    Write-Message "Processing interrupted. Proceeding to cropping step."
-                    break
+                # Check if the time limit has been reached if TimeLimit is not 0
+                if ($timeLimitInMinutes -gt 0) {
+                    $elapsedTime = (Get-Date) - $startTime
+                    if ($elapsedTime.TotalMinutes -ge $timeLimitInMinutes) {
+                        Write-Message "Time limit of $timeLimitInMinutes minutes reached. Proceeding to cropping step."
+                        break
+                    }
                 }
             }
 
@@ -236,16 +256,18 @@ if (-not $CropOnly) {
             Write-Message "Completed video $currentRunCount/$($videoFiles.Count)"
 
             # Stop if video limit is reached
-            if ($currentRunCount -eq $videoLimit) {
-                Write-Message "Video limit of $videoLimit reached. Proceeding to cropping step."
+            if ($maxVideosToProcess -gt 0 -and $currentRunCount -eq $maxVideosToProcess) {
+                Write-Message "Video limit of $maxVideosToProcess reached. Proceeding to cropping step."
                 break
             }
 
-            # Check if the time limit has been reached
-            $elapsedTime = (Get-Date) - $startTime
-            if ($elapsedTime.TotalMinutes -ge $timeLimitInMinutes) {
-                Write-Message "Time limit of $timeLimitInMinutes minutes reached. Proceeding to cropping step."
-                break
+            # Check if the time limit has been reached if TimeLimit is not 0
+            if ($timeLimitInMinutes -gt 0) {
+                $elapsedTime = (Get-Date) - $startTime
+                if ($elapsedTime.TotalMinutes -ge $timeLimitInMinutes) {
+                    Write-Message "Time limit of $timeLimitInMinutes minutes reached. Proceeding to cropping step."
+                    break
+                }
             }
         }
     } catch {
@@ -268,7 +290,11 @@ if (-not $CropOnly) {
 # Call the Python script to crop images
 try {
     Write-Message "Calling Python cropping script: $pythonScriptPath"
-    $pythonOutput = python $pythonScriptPath $savePath 2>&1
+    if ($ResumeFile) {
+        $pythonOutput = python $pythonScriptPath --folder_path "$SaveFolder" --resume_file "$ResumeFile" 2>&1
+    } else {
+        $pythonOutput = python $pythonScriptPath --folder_path "$SaveFolder" 2>&1
+    }
     Write-Message "Python script output: $pythonOutput"
 
     if ($LastExitCode -ne 0) {

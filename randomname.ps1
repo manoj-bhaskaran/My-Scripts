@@ -1,9 +1,63 @@
+<#
+.SYNOPSIS
+This PowerShell script generates a random file name, excluding characters that might cause issues. It accepts parameters for the minimum and maximum lengths of the file name.
+
+.DESCRIPTION
+The script generates a random file name by selecting random characters from a defined set, ensuring that problematic characters like \ / : * ? " < > | are excluded. The length of the generated name is random within the specified range provided by the parameters. If the first character is a problematic parenthesis, it is replaced with another random character from the filtered set.
+
+.PARAMETER MinimumLength
+Optional. Specifies the minimum length of the generated file name. Defaults to 4. Must be greater than 0.
+
+.PARAMETER MaximumLength
+Optional. Specifies the maximum length of the generated file name. Defaults to 32. Must be greater than or equal to the MinimumLength.
+
+.EXAMPLES
+To generate a random file name with default length range:
+Get-RandomFileName
+
+To generate a random file name with a custom length range:
+Get-RandomFileName -MinimumLength 5 -MaximumLength 15
+
+.NOTES
+Script Workflow:
+1. **Parameter Validation**:
+   - Validates that `MinimumLength` is greater than 0.
+   - Validates that `MaximumLength` is greater than or equal to `MinimumLength`.
+
+2. **Character Set Definition**:
+   - Defines a set of characters to be used for generating the random file name, excluding problematic characters.
+
+3. **Random Name Generation**:
+   - Randomly selects the length of the file name within the specified range.
+   - Randomly generates the file name by selecting characters from the defined set.
+
+4. **First Character Check**:
+   - Checks if the first character is a problematic parenthesis.
+   - If so, replaces it with another random character from the filtered set.
+
+Limitations:
+- The generated file name does not include some special characters that might be safe but are excluded for simplicity.
+#>
+
 # Function to generate a random file name
 function Get-RandomFileName {
+    param(
+        [int]$MinimumLength = 4,
+        [int]$MaximumLength = 32
+    )
+
+    # Validate parameters
+    if ($MinimumLength -le 0) {
+        throw "MinimumLength must be greater than 0."
+    }
+    if ($MaximumLength -lt $MinimumLength) {
+        throw "MaximumLength must be greater than or equal to MinimumLength."
+    }
+
     # Exclude problematic characters: \ / : * ? " < > | and others that might cause issues.
     $chars = 'abcdefghijklmnopqrstuvwxyz0123456789~!@$()_-+=QWERTYUIOPASDFGHJKLZXCVBNM'
-    $namelen = Get-Random -Maximum 32 -Minimum 4
-    $randomName = -join ((0..$namelen) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
+    $namelen = Get-Random -Minimum $MinimumLength -Maximum ($MaximumLength + 1)
+    $randomName = -join ((0..($namelen-1)) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
 
     if ($randomName[0] -eq '(' -or $randomName[0] -eq ')') {
         # Filter out '(' from the available characters
@@ -15,55 +69,3 @@ function Get-RandomFileName {
     }
     return $randomName
 }
-
-# Define the folder path
-$folderPath = "C:\Users\manoj\OneDrive\Desktop\New folder"
-
-# Check if the folder exists
-if (-Not (Test-Path -Path $folderPath -PathType Container)) {
-    Write-Host "The folder path '$folderPath' does not exist."
-    exit 1
-}
-
-# Get all files in the folder
-$files = Get-ChildItem -Path $folderPath -File
-
-# Counter for renamed files
-$renamedCount = 0
-
-# Loop through each file to rename
-foreach ($file in $files) {
-    try {
-        # Get the file extension
-        $extension = $file.Extension
-
-        # Generate a new file name
-        $newFileName = Get-RandomFileName
-
-        # Construct the new file path with the new file name and original extension
-        $newFilePath = Join-Path -Path $folderPath -ChildPath ($newFileName + $extension)
-
-        # Check if the new file name already exists to avoid overwriting
-        if (Test-Path -Path $newFilePath) {
-            throw "The file '$newFilePath' already exists."
-        }
-
-        # Rename the file
-        Rename-Item -LiteralPath $file.FullName -NewName ($newFileName + $extension) -Force
-
-        # Increment the count of renamed files
-        $renamedCount++
-
-        # Write progress every 1000 files
-        if ($renamedCount % 1000 -eq 0) {
-            $percentComplete = [math]::Round(($renamedCount / $files.Count) * 100, 2)
-            Write-Host "$renamedCount files renamed. $percentComplete% files renamed."
-        }
-    } catch {
-        # Output the file name that caused the error and the error message
-        Write-Host "Error renaming file '$($file.FullName)': $_"
-    }
-}
-
-# Output the total count of files renamed
-Write-Host "Total files renamed: $renamedCount"
