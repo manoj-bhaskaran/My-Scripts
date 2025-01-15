@@ -2,6 +2,7 @@ requests
 numpy
 pandas
 opencv-python
+cloudconvert
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
