@@ -84,12 +84,10 @@ $modifiedFiles | ForEach-Object {
     # Only copy if the source file exists and is not in .gitignore
     if ((Test-Path $sourceFilePath) -and !(Test-Ignored $_)) {
 
-    if ($Verbose) {
-        Write-Host "Processing modified file: $sourceFilePath" -ForegroundColor Blue
-    }
+        if ($Verbose) {
+            Write-Host "Processing modified file: $sourceFilePath" -ForegroundColor Blue
+        }
 
-    # Only copy if the source file exists and is not in .gitignore
-    if ((Test-Path $sourceFilePath) -and !(Test-Ignored $_)) {
         # Directly copy the file to the destination folder
         if ($Verbose) {
             Write-Host "Copying file $sourceFilePath to $destinationFolder" -ForegroundColor Blue
@@ -100,7 +98,7 @@ $modifiedFiles | ForEach-Object {
             Write-Host "File $sourceFilePath is ignored or does not exist" -ForegroundColor Blue
         }
     }
-}
+} # <-- Add this closing brace
 
 # Move deleted files to the Recycle Bin
 $deletedFiles | ForEach-Object {
