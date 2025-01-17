@@ -109,7 +109,7 @@ $deletedFiles | ForEach-Object {
     }
 
     # Only move to Recycle Bin if the file exists in the destination and is not ignored
-    if (Test-Path $destinationFilePath -and -not (Test-Ignored $_)) {
+    if ((Test-Path $destinationFilePath) -and -not (Test-Ignored $_)) {
         # Move file to Recycle Bin
         if ($Verbose) {
             Write-Host "Removing file $destinationFilePath" -ForegroundColor Magenta
