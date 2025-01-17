@@ -42,15 +42,12 @@ try {
 
     # Add a footer to the log
     Add-Content -Path $LogFilePath -Value "Log Ended: $(Get-Date)`r`n`r`n"
+    exit 0
 } catch {
     # Log detailed error information
     $ErrorMessage = $_.Exception.Message
     $ErrorDetails = $_.Exception | Out-String
     Add-Content -Path $LogFilePath -Value "Error: $ErrorMessage`r`nDetails: $ErrorDetails`r`n"
-
-    # Display a popup message with error details
-    $wshell = New-Object -ComObject Wscript.Shell
-    $wshell.Popup("Failed to delete old files in Downloads. Error: $ErrorMessage", 0, "Error", 16)
 
     # Exit with an error code to trigger Task Scheduler's failure actions
     exit 1
