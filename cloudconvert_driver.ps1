@@ -2,10 +2,11 @@
 $pythonExecutable = "python"  # Use "python3" if needed
 $scriptPath = "C:\Users\manoj\Documents\Scripts\cloudconvert_utils.py"  # Replace with the actual path to your Python script
 
-# Function to authenticate and upload a file
-function Send-FileToCloudConvert {
+# Function to authenticate, upload, and convert a file
+function Convert-FileWithCloudConvert {
     param (
-        [string]$FileName
+        [string]$FileName,
+        [string]$OutputFormat
     )
 
     if (-not (Test-Path $FileName)) {
@@ -16,11 +17,11 @@ function Send-FileToCloudConvert {
     # Check if the -Debug flag is set
     $debugFlag = if ($Debug) { "--debug" } else { "" }
 
-    # Call the Python script for file upload
+    # Call the Python script for file conversion
     if ($debugFlag) {
-        $result = & $pythonExecutable $scriptPath $debugFlag $FileName
+        $result = & $pythonExecutable $scriptPath $debugFlag $FileName $OutputFormat
     } else {
-        $result = & $pythonExecutable $scriptPath $FileName
+        $result = & $pythonExecutable $scriptPath $FileName $OutputFormat
     }
 
     # Display the result
