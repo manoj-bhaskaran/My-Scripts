@@ -56,7 +56,12 @@ os.makedirs(cropped_folder, exist_ok=True)
 
 # Set up logging
 log_file_path = "C:\\Users\\manoj\\Documents\\Scripts\\crop_colours.log"
-logging.basicConfig(filename=log_file_path, level=logging.INFO, format='%(Y-%m-%d %H:%M:%S) : %(message)s')
+logging.basicConfig(
+    filename=log_file_path, 
+    level=logging.INFO, 
+    format='%(asctime)s : %(message)s', 
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger()
 
 def load_image(image_path):
