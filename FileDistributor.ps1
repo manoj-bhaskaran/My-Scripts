@@ -123,7 +123,7 @@ param(
     [string]$DeleteMode = "RecycleBin", # Options: "RecycleBin", "Immediate", "EndOfScript"
     [string]$EndOfScriptDeletionCondition = "NoWarnings", # Options: "NoWarnings", "WarningsOnly"
     [int]$RetryDelay = 10, # Time to wait before retrying file access (seconds)
-    [int]$RetryCount = 1 # Number of times to retry file access (0 for unlimited retries)
+    [int]$RetryCount = 3 # Number of times to retry file access (0 for unlimited retries)
 )
 
 # Define script-scoped variables for warnings and errors
