@@ -155,6 +155,8 @@ function LogMessage {
         $script:Warnings++
     } elseif ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
         Write-Host -Object $logEntry
+    } catch {
+        LogMessage -Message "Failed to delete state file: $($_.Exception.Message)" -IsWarning
     }
 }
 
@@ -685,16 +687,18 @@ function Main {
                     # Re-acquire the file lock after deleting the state file
                     $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
               }
-          }
-
-
-                    LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
-                    Remove-Item -Path $StateFilePath -Force
-
-                    # Reacquire the file lock after deleting state file
+                LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
+                Remove-Item -Path $StateFilePath -Force
+    
+                # Reacquire the file lock after deleting state file
+                try {
                     $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+                } catch {
+                    LogMessage -Message "Failed to reacquire file lock: $($_.Exception.Message)" -IsError
+                    throw
                 }
             }
+        }
 
             if ($lastCheckpoint -lt 1) {
                 # Rename files in the source folder to random names
@@ -846,7 +850,5 @@ function Main {
     } catch {
         LogMessage -Message "$($_.Exception.Message)" -IsError
     }
-}
-
 # Run the script
 Main
