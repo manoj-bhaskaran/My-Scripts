@@ -550,9 +550,10 @@ function ReleaseFileLock {
         [System.IO.FileStream]$FileStream
     )
 
+    $fileName = $FileStream.Name
     $FileStream.Close()
     $FileStream.Dispose()
-    LogMessage -Message "Released lock on $FileStream.Name"
+    LogMessage -Message "Released lock on $fileName"
 }
 
 # Main script logic
