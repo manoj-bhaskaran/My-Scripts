@@ -598,8 +598,7 @@ function Main {
 
         $FilesToDelete = @()
 
-        $fileLock = $null
-        $fileLockRef = [ref]$fileLock
+        $fileLockRef = [ref]$null
 
         try {
             # Restart logic
