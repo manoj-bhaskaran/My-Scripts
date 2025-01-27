@@ -703,8 +703,8 @@ function Main {
             }
         } catch {
             LogMessage -Message "An unexpected error occurred: $($_.Exception.Message)" -IsError
+            throw
         }
-        
 
         if ($lastCheckpoint -lt 1) {
             # Rename files in the source folder to random names
@@ -845,11 +845,12 @@ function Main {
         Remove-Item -Path $StateFilePath -Force
         LogMessage -Message "Deleted state file: $StateFilePath"
 
-        # Reacquire the file lock after deleting state file
-        $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
-
     } catch {
         LogMessage -Message "$($_.Exception.Message)" -IsError
+    } finally {
+        if ($fileLock) {
+            ReleaseFileLock -FileStream $fileLock
+        }
     }
 }
 
