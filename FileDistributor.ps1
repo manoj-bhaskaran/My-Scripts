@@ -598,13 +598,15 @@ function Main {
 
         $FilesToDelete = @()
 
+        $fileLock = $null
+        $fileLockRef = [ref]$fileLock
+
         try {
             # Restart logic
             $lastCheckpoint = 0
             if ($Restart) {
                 # Acquire a lock on the state file
-                $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
-                $fileLockRef = [ref]$fileLock
+                $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
 
                 LogMessage -Message "Restart requested. Loading checkpoint..." -ConsoleOutput
                 $state = LoadState -fileLock $fileLockRef
@@ -684,7 +686,9 @@ function Main {
                 # Check if a restart state file exists
                 if (Test-Path -Path $StateFilePath) {
                     # Release the file lock before deleting state file
-                    ReleaseFileLock -FileStream $fileLock
+                    if ($fileLockRef.Value) {
+                        ReleaseFileLock -FileStream $fileLockRef.Value
+                    }
                     
                     LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
 
@@ -697,8 +701,7 @@ function Main {
                     }  
                     
                     # Acquire the file lock after deleting the file
-                    $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay
-                    $fileLockRef = [ref]$fileLock
+                    $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay
                 }
             }
         } catch {
@@ -840,7 +843,7 @@ function Main {
         }
 
         # Release the file lock before deleting state file
-        ReleaseFileLock -FileStream $fileLock
+        ReleaseFileLock -FileStream $fileLockRef.Value
 
         Remove-Item -Path $StateFilePath -Force
         LogMessage -Message "Deleted state file: $StateFilePath"
@@ -848,8 +851,8 @@ function Main {
     } catch {
         LogMessage -Message "$($_.Exception.Message)" -IsError
     } finally {
-        if ($fileLock) {
-            ReleaseFileLock -FileStream $fileLock
+        if ($fileLockRef.Value) {
+            ReleaseFileLock -FileStream $fileLockRef.Value
         }
     }
 }
