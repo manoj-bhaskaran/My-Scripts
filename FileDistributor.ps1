@@ -684,11 +684,7 @@ function Main {
 
                 # Check if a restart state file exists
                 if (Test-Path -Path $StateFilePath) {
-                    # Release the file lock before deleting state file
-                    if ($fileLockRef.Value) {
-                        ReleaseFileLock -FileStream $fileLockRef.Value
-                    }
-                    
+                  
                     LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
 
                     try {
@@ -698,10 +694,9 @@ function Main {
                         LogMessage -Message "Failed to delete state file $StateFilePath. Error: $_" -IsError
                         throw "An error occurred while deleting the state file: $($_.Exception.Message)"
                     }  
-                    
-                    # Acquire the file lock after deleting the file
-                    $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay
                 }
+                # Acquire the file lock after deleting the file
+                $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay
             }
         } catch {
             LogMessage -Message "An unexpected error occurred: $($_.Exception.Message)" -IsError
