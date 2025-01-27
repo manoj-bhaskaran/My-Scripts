@@ -696,7 +696,10 @@ function Main {
                     throw
                 }
             }
+        } catch {
+            LogMessage -Message "An unexpected error occurred: $($_.Exception.Message)" -IsError
         }
+        
 
             if ($lastCheckpoint -lt 1) {
                 # Rename files in the source folder to random names
