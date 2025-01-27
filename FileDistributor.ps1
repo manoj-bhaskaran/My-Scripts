@@ -673,10 +673,20 @@ function Main {
                     $FilesToDelete = @() # Ensure FilesToDelete is always defined
                 }
             } else {
+
                 # Check if a restart state file exists
                 if (Test-Path -Path $StateFilePath) {
                     # Release the file lock before deleting state file
                     ReleaseFileLock -FileStream $fileLock
+                    
+                    LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
+                    Remove-Item -Path $StateFilePath -Force
+                    
+                    # Re-acquire the file lock after deleting the state file
+                    $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+              }
+          }
+
 
                     LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
                     Remove-Item -Path $StateFilePath -Force
