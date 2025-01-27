@@ -446,8 +446,11 @@ function RedistributeFilesInTarget {
 function SaveState {
     param (
         [int]$Checkpoint,
-        [hashtable]$AdditionalVariables = @{}
+        [hashtable]$AdditionalVariables = @{ }
     )
+
+    # Release the file lock before saving state
+    ReleaseFileLock -FileStream $fileLock
 
     # Ensure the state file exists
     if (-not (Test-Path -Path $StateFilePath)) {
@@ -471,17 +474,28 @@ function SaveState {
 
     # Log the save operation
     LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')"
+
+    # Reacquire the file lock after saving state
+    $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
 }
 
 # Function to load state
 function LoadState {
+    # Release the file lock before loading state
+    ReleaseFileLock -FileStream $fileLock
+
     if (Test-Path -Path $StateFilePath) {
         # Load and convert the state file from JSON format
-        return Get-Content -Path $StateFilePath | ConvertFrom-Json
+        $state = Get-Content -Path $StateFilePath | ConvertFrom-Json
     } else {
         # Return a default state if the state file does not exist
-        return @{ Checkpoint = 0 }
+        $state = @{ Checkpoint = 0 }
     }
+
+    # Reacquire the file lock after loading state
+    $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+
+    return $state
 }
 
 # Function to extract paths from items
@@ -516,6 +530,7 @@ function AcquireFileLock {
     while ($true) {
         try {
             $fileStream = [System.IO.File]::Open($FilePath, 'OpenOrCreate', 'ReadWrite', 'None')
+            LogMessage -Message "Acquired lock on $FilePath"
             return $fileStream
         } catch {
             $attempts++
@@ -537,6 +552,7 @@ function ReleaseFileLock {
 
     $FileStream.Close()
     $FileStream.Dispose()
+    LogMessage -Message "Released lock on $FileStream.Name"
 }
 
 # Main script logic
@@ -579,236 +595,258 @@ function Main {
         # Acquire a lock on the state file
         $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
 
-        # Restart logic
-        $lastCheckpoint = 0
-        if ($Restart) {
-            LogMessage -Message "Restart requested. Loading checkpoint..." -ConsoleOutput
-            $state = LoadState
-            $lastCheckpoint = $state.Checkpoint
-            if ($lastCheckpoint -gt 0) {
-                LogMessage -Message "Restarting from checkpoint $lastCheckpoint" -ConsoleOutput
-            } else {
-                LogMessage -Message "Checkpoint not found. Executing from top..." -IsWarning
-            }
-
-            # Restore SourceFolder
-            if ($state.ContainsKey("SourceFolder")) {
-                $savedSourceFolder = $state.SourceFolder
-
-                # Validate the loaded SourceFolder
-                if ($SourceFolder -ne $savedSourceFolder) {
-                    throw "SourceFolder mismatch: Restarted script must use the saved SourceFolder ('$savedSourceFolder'). Aborting."
-                }
-                $SourceFolder = $savedSourceFolder
-                Write-Output "SourceFolder restored from state file: $SourceFolder"
-            } else {
-                throw "State file does not contain SourceFolder. Unable to enforce."
-            }
-
-            # Restore DeleteMode
-            if ($state.ContainsKey("deleteMode")) {
-                $savedDeleteMode = $state.deleteMode
-
-                # Validate the loaded DeleteMode
-                if (-not ("RecycleBin", "Immediate", "EndOfScript" -contains $savedDeleteMode)) {
-                    throw "Invalid value for DeleteMode in state file: '$savedDeleteMode'. Valid options are 'RecycleBin', 'Immediate', 'EndOfScript'."
-                }
-                
-                if ($DeleteMode -ne $savedDeleteMode) {
-                    throw "DeleteMode mismatch: Restarted script must use the saved DeleteMode ('$savedDeleteMode'). Aborting."
-                }
-                $DeleteMode = $savedDeleteMode
-                Write-Output "DeleteMode restored from state file: $DeleteMode"
-            } else {
-                throw "State file does not contain DeleteMode. Unable to enforce."
-            }
-
-            # Load checkpoint-specific additional variables
-            if ($lastCheckpoint -in 2, 3, 4) {
-                $totalSourceFiles = $state.totalSourceFiles
-                $totalTargetFilesBefore = $state.totalTargetFilesBefore
-            }
-
-            if ($lastCheckpoint -in 2, 3) {
-                $subfolders = ConvertPathsToItems($state.subfolders)
-            }
-
-            if ($lastCheckpoint -eq 2) {
-                $sourceFiles = ConvertPathsToItems($state.sourceFiles)
-            }
-
-            # Load FilesToDelete only for EndOfScript mode and lastCheckpoint 3 or 4
-            if ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4 -and $state.ContainsKey("FilesToDelete")) {
-                $FilesToDelete = $state.FilesToDelete
-
-                # Handle empty FilesToDelete array
-                if (-not $FilesToDelete -or $FilesToDelete.Count -eq 0) {
-                    Write-Output "No files to delete from the previous session."
+        try {
+            # Restart logic
+            $lastCheckpoint = 0
+            if ($Restart) {
+                LogMessage -Message "Restart requested. Loading checkpoint..." -ConsoleOutput
+                $state = LoadState
+                $lastCheckpoint = $state.Checkpoint
+                if ($lastCheckpoint -gt 0) {
+                    LogMessage -Message "Restarting from checkpoint $lastCheckpoint" -ConsoleOutput
                 } else {
-                    Write-Output "Loaded $($FilesToDelete.Count) files to delete from the previous session."
+                    LogMessage -Message "Checkpoint not found. Executing from top..." -IsWarning
                 }
-            } elseif ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4) {
-                # If DeleteMode is EndOfScript but no FilesToDelete key exists
-                Write-Warning "State file does not contain FilesToDelete key for EndOfScript mode."
-                $FilesToDelete = @() # Initialise to an empty array
-            } else {
-                # Default initialisation when EndOfScript mode does not apply
-                $FilesToDelete = @() # Ensure FilesToDelete is always defined
-            }
-        } else {
-            # Check if a restart state file exists
-            if (Test-Path -Path $StateFilePath) {
-                LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
-                # Release the file lock before deleting the state file
-                ReleaseFileLock -FileStream $fileLock
-                Remove-Item -Path $StateFilePath -Force
-                # Re-acquire the file lock after deleting the state file
-                $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
-            }
-        }
 
-        if ($lastCheckpoint -lt 1) {
-            # Rename files in the source folder to random names
-            LogMessage -Message "Renaming files in source folder..."
-            RenameFilesInSourceFolder -SourceFolder $SourceFolder -ShowProgress:$ShowProgress -UpdateFrequency $UpdateFrequency
-            $additionalVars = @{
-                deleteMode            = $DeleteMode # Persist DeleteMode
-                SourceFolder          = $SourceFolder # Persist SourceFolder
-            }
-            SaveState -Checkpoint 1 -AdditionalVariables $additionalVars
-        }
+                # Restore SourceFolder
+                if ($state.ContainsKey("SourceFolder")) {
+                    $savedSourceFolder = $state.SourceFolder
 
-        if ($lastCheckpoint -lt 2) {
-            # Count files in the source and target folder before distribution
-            $sourceFiles = Get-ChildItem -Path $SourceFolder -File
-            $totalSourceFiles = $sourceFiles.Count
-            $totalTargetFilesBefore = (Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object).Count
-            $totalTargetFilesBefore = if ($null -eq $totalTargetFilesBefore) { 0 } else { $totalTargetFilesBefore }
-            LogMessage -Message "Source File Count: $totalSourceFiles. Target File Count Before: $totalTargetFilesBefore."
-
-            # Get subfolders in the target folder
-            $subfolders = Get-ChildItem -Path $TargetFolder -Directory
-
-            # Determine if subfolders need to be created
-            $totalFiles = $totalTargetFilesBefore + $totalSourceFiles
-            LogMessage -Message "Total Files Before: $totalFiles."
-            $currentFolderCount = $subfolders.Count
-            LogMessage -Message "Sub-folder Count Before: $currentFolderCount."
-
-            if ($totalFiles / $FilesPerFolderLimit -gt $currentFolderCount) {
-                $additionalFolders = [math]::Ceiling($totalFiles / $FilesPerFolderLimit) - $currentFolderCount
-                LogMessage -Message "Need to create $additionalFolders subfolders"
-                $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
-            }
-
-            $additionalVars = @{
-                sourceFiles = ConvertItemsToPaths($sourceFiles)
-                totalSourceFiles = $totalSourceFiles
-                totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders = ConvertItemsToPaths($subfolders)
-                deleteMode            = $DeleteMode # Persist DeleteMode
-                SourceFolder          = $SourceFolder # Persist SourceFolder
-            }
-
-            SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
-        }
-
-        if ($lastCheckpoint -lt 3) {
-            # Distribute files from the source folder to subfolders
-            LogMessage -Message "Distributing files to subfolders..."
-            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)        
-            LogMessage -Message "Completed file distribution"
-
-            # Common base for additional variables
-            $additionalVars = @{
-                totalSourceFiles      = $totalSourceFiles
-                totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders            = ConvertItemsToPaths($subfolders)
-                deleteMode            = $DeleteMode # Persist DeleteMode
-                SourceFolder          = $SourceFolder # Persist SourceFolder
-            }
-
-            # Conditionally add FilesToDelete for EndOfScript mode
-            if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = $FilesToDelete
-            }
-
-            # Save the state with the consolidated additional variables
-            SaveState -Checkpoint 3 -AdditionalVariables $additionalVars
-
-        }
-
-        if ($lastCheckpoint -lt 4) {
-            # Redistribute files within the target folder and subfolders if needed
-            LogMessage -Message "Redistributing files in target folders..."
-            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
-        
-            # Base additional variables
-            $additionalVars = @{
-                totalSourceFiles      = $totalSourceFiles
-                totalTargetFilesBefore = $totalTargetFilesBefore
-                deleteMode            = $DeleteMode # Persist DeleteMode
-                SourceFolder          = $SourceFolder # Persist SourceFolder
-            }
-        
-            # Conditionally add FilesToDelete if DeleteMode is EndOfScript
-            if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = $FilesToDelete
-            }
-        
-            # Save state with checkpoint 4 and additional variables
-            SaveState -Checkpoint 4 -AdditionalVariables $additionalVars
-        }        
-
-        if ($DeleteMode -eq "EndOfScript") {
-            # Check if conditions for deletion are satisfied
-            if (($EndOfScriptDeletionCondition -eq "NoWarnings" -and $Warnings -eq 0 -and $Errors -eq 0) -or
-                ($EndOfScriptDeletionCondition -eq "WarningsOnly" -and $Errors -eq 0)) {
-                
-                # Attempt to delete each file in $FilesToDelete
-                foreach ($file in $FilesToDelete) {
-                    try {
-                        if (Test-Path -Path $file) {
-                            Remove-File -FilePath $file
-                            LogMessage -Message "Deleted file: $file during EndOfScript cleanup."
-                        } else {
-                            LogMessage -Message "File $file not found during EndOfScript deletion." -IsWarning
-                        }
-                    } catch {
-                        # Log a warning for failure to delete
-                        LogMessage -Message "Failed to delete file $file. Error: $($_.Exception.Message)" -IsWarning
+                    # Validate the loaded SourceFolder
+                    if ($SourceFolder -ne $savedSourceFolder) {
+                        throw "SourceFolder mismatch: Restarted script must use the saved SourceFolder ('$savedSourceFolder'). Aborting."
                     }
+                    $SourceFolder = $savedSourceFolder
+                    Write-Output "SourceFolder restored from state file: $SourceFolder"
+                } else {
+                    throw "State file does not contain SourceFolder. Unable to enforce."
+                }
+
+                # Restore DeleteMode
+                if ($state.ContainsKey("deleteMode")) {
+                    $savedDeleteMode = $state.deleteMode
+
+                    # Validate the loaded DeleteMode
+                    if (-not ("RecycleBin", "Immediate", "EndOfScript" -contains $savedDeleteMode)) {
+                        throw "Invalid value for DeleteMode in state file: '$savedDeleteMode'. Valid options are 'RecycleBin', 'Immediate', 'EndOfScript'."
+                    }
+                    
+                    if ($DeleteMode -ne $savedDeleteMode) {
+                        throw "DeleteMode mismatch: Restarted script must use the saved DeleteMode ('$savedDeleteMode'). Aborting."
+                    }
+                    $DeleteMode = $savedDeleteMode
+                    Write-Output "DeleteMode restored from state file: $DeleteMode"
+                } else {
+                    throw "State file does not contain DeleteMode. Unable to enforce."
+                }
+
+                # Load checkpoint-specific additional variables
+                if ($lastCheckpoint -in 2, 3, 4) {
+                    $totalSourceFiles = $state.totalSourceFiles
+                    $totalTargetFilesBefore = $state.totalTargetFilesBefore
+                }
+
+                if ($lastCheckpoint -in 2, 3) {
+                    $subfolders = ConvertPathsToItems($state.subfolders)
+                }
+
+                if ($lastCheckpoint -eq 2) {
+                    $sourceFiles = ConvertPathsToItems($state.sourceFiles)
+                }
+
+                # Load FilesToDelete only for EndOfScript mode and lastCheckpoint 3 or 4
+                if ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4 -and $state.ContainsKey("FilesToDelete")) {
+                    $FilesToDelete = $state.FilesToDelete
+
+                    # Handle empty FilesToDelete array
+                    if (-not $FilesToDelete -or $FilesToDelete.Count -eq 0) {
+                        Write-Output "No files to delete from the previous session."
+                    } else {
+                        Write-Output "Loaded $($FilesToDelete.Count) files to delete from the previous session."
+                    }
+                } elseif ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4) {
+                    # If DeleteMode is EndOfScript but no FilesToDelete key exists
+                    Write-Warning "State file does not contain FilesToDelete key for EndOfScript mode."
+                    $FilesToDelete = @() # Initialise to an empty array
+                } else {
+                    # Default initialisation when EndOfScript mode does not apply
+                    $FilesToDelete = @() # Ensure FilesToDelete is always defined
                 }
             } else {
-                # Log a message if conditions are not met
-                LogMessage -Message "End-of-script deletion skipped due to warnings or errors."
+
+                # Check if a restart state file exists
+                if (Test-Path -Path $StateFilePath) {
+                    # Release the file lock before deleting state file
+                    ReleaseFileLock -FileStream $fileLock
+                    
+                    LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
+                    Remove-Item -Path $StateFilePath -Force
+                    
+                    # Re-acquire the file lock after deleting the state file
+                    $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+              }
+          }
+
+
+                    LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
+                    Remove-Item -Path $StateFilePath -Force
+
+                    # Reacquire the file lock after deleting state file
+                    $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+                }
             }
-        }        
 
-        # Count files in the target folder after distribution
-        $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
-        $totalTargetFilesAfter = if ($null -eq $totalTargetFilesAfter) { 0 } else { $totalTargetFilesAfter }
+            if ($lastCheckpoint -lt 1) {
+                # Rename files in the source folder to random names
+                LogMessage -Message "Renaming files in source folder..."
+                RenameFilesInSourceFolder -SourceFolder $SourceFolder -ShowProgress:$ShowProgress -UpdateFrequency $UpdateFrequency
+                $additionalVars = @{
+                    deleteMode            = $DeleteMode # Persist DeleteMode
+                    SourceFolder          = $SourceFolder # Persist SourceFolder
+                }
+                SaveState -Checkpoint 1 -AdditionalVariables $additionalVars
+            }
 
-        # Log summary message
-        LogMessage -Message "Original number of files in the source folder: $totalSourceFiles" -ConsoleOutput
-        LogMessage -Message "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -ConsoleOutput
-        LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
+            if ($lastCheckpoint -lt 2) {
+                # Count files in the source and target folder before distribution
+                $sourceFiles = Get-ChildItem -Path $SourceFolder -File
+                $totalSourceFiles = $sourceFiles.Count
+                $totalTargetFilesBefore = (Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object).Count
+                $totalTargetFilesBefore = if ($null -eq $totalTargetFilesBefore) { 0 } else { $totalTargetFilesBefore }
+                LogMessage -Message "Source File Count: $totalSourceFiles. Target File Count Before: $totalTargetFilesBefore."
 
-        if ($totalSourceFiles + $totalTargetFilesBefore -ne $totalTargetFilesAfter) {
-            LogMessage -Message "Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -IsWarning
-        } else {
-            LogMessage -Message "File distribution and cleanup completed successfully." -ConsoleOutput
+                # Get subfolders in the target folder
+                $subfolders = Get-ChildItem -Path $TargetFolder -Directory
+
+                # Determine if subfolders need to be created
+                $totalFiles = $totalTargetFilesBefore + $totalSourceFiles
+                LogMessage -Message "Total Files Before: $totalFiles."
+                $currentFolderCount = $subfolders.Count
+                LogMessage -Message "Sub-folder Count Before: $currentFolderCount."
+
+                if ($totalFiles / $FilesPerFolderLimit -gt $currentFolderCount) {
+                    $additionalFolders = [math]::Ceiling($totalFiles / $FilesPerFolderLimit) - $currentFolderCount
+                    LogMessage -Message "Need to create $additionalFolders subfolders"
+                    $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
+                }
+
+                $additionalVars = @{
+                    sourceFiles = ConvertItemsToPaths($sourceFiles)
+                    totalSourceFiles = $totalSourceFiles
+                    totalTargetFilesBefore = $totalTargetFilesBefore
+                    subfolders = ConvertItemsToPaths($subfolders)
+                    deleteMode            = $DeleteMode # Persist DeleteMode
+                    SourceFolder          = $SourceFolder # Persist SourceFolder
+                }
+
+                SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
+            }
+
+            if ($lastCheckpoint -lt 3) {
+                # Distribute files from the source folder to subfolders
+                LogMessage -Message "Distributing files to subfolders..."
+                DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)        
+                LogMessage -Message "Completed file distribution"
+
+                # Common base for additional variables
+                $additionalVars = @{
+                    totalSourceFiles      = $totalSourceFiles
+                    totalTargetFilesBefore = $totalTargetFilesBefore
+                    subfolders            = ConvertItemsToPaths($subfolders)
+                    deleteMode            = $DeleteMode # Persist DeleteMode
+                    SourceFolder          = $SourceFolder # Persist SourceFolder
+                }
+
+                # Conditionally add FilesToDelete for EndOfScript mode
+                if ($DeleteMode -eq "EndOfScript") {
+                    $additionalVars["FilesToDelete"] = $FilesToDelete
+                }
+
+                # Save the state with the consolidated additional variables
+                SaveState -Checkpoint 3 -AdditionalVariables $additionalVars
+
+            }
+
+            if ($lastCheckpoint -lt 4) {
+                # Redistribute files within the target folder and subfolders if needed
+                LogMessage -Message "Redistributing files in target folders..."
+                RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
+            
+                # Base additional variables
+                $additionalVars = @{
+                    totalSourceFiles      = $totalSourceFiles
+                    totalTargetFilesBefore = $totalTargetFilesBefore
+                    deleteMode            = $DeleteMode # Persist DeleteMode
+                    SourceFolder          = $SourceFolder # Persist SourceFolder
+                }
+            
+                # Conditionally add FilesToDelete if DeleteMode is EndOfScript
+                if ($DeleteMode -eq "EndOfScript") {
+                    $additionalVars["FilesToDelete"] = $FilesToDelete
+                }
+            
+                # Save state with checkpoint 4 and additional variables
+                SaveState -Checkpoint 4 -AdditionalVariables $additionalVars
+            }        
+
+            if ($DeleteMode -eq "EndOfScript") {
+                # Check if conditions for deletion are satisfied
+                if (($EndOfScriptDeletionCondition -eq "NoWarnings" -and $Warnings -eq 0 -and $Errors -eq 0) -or
+                    ($EndOfScriptDeletionCondition -eq "WarningsOnly" -and $Errors -eq 0)) {
+                    
+                    # Attempt to delete each file in $FilesToDelete
+                    foreach ($file in $FilesToDelete) {
+                        try {
+                            if (Test-Path -Path $file) {
+                                Remove-File -FilePath $file
+                                LogMessage -Message "Deleted file: $file during EndOfScript cleanup."
+                            } else {
+                                LogMessage -Message "File $file not found during EndOfScript deletion." -IsWarning
+                            }
+                        } catch {
+                            # Log a warning for failure to delete
+                            LogMessage -Message "Failed to delete file $file. Error: $($_.Exception.Message)" -IsWarning
+                        }
+                    }
+                } else {
+                    # Log a message if conditions are not met
+                    LogMessage -Message "End-of-script deletion skipped due to warnings or errors."
+                }
+            }        
+
+            # Count files in the target folder after distribution
+            $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
+            $totalTargetFilesAfter = if ($null -eq $totalTargetFilesAfter) { 0 } else { $totalTargetFilesAfter }
+
+            # Log summary message
+            LogMessage -Message "Original number of files in the source folder: $totalSourceFiles" -ConsoleOutput
+            LogMessage -Message "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -ConsoleOutput
+            LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
+
+            if ($totalSourceFiles + $totalTargetFilesBefore -ne $totalTargetFilesAfter) {
+                LogMessage -Message "Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -IsWarning
+            } else {
+                LogMessage -Message "File distribution and cleanup completed successfully." -ConsoleOutput
+            }
+
+            # Release the file lock before deleting state file
+            ReleaseFileLock -FileStream $fileLock
+
+            Remove-Item -Path $StateFilePath -Force
+            LogMessage -Message "Deleted state file: $StateFilePath"
+
+            # Reacquire the file lock after deleting state file
+            $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+
+        } finally {
+            # Ensure the file lock is released
+            ReleaseFileLock -FileStream $fileLock
         }
-
-        Remove-Item -Path $StateFilePath -Force
-
-        # Release the file lock
-        ReleaseFileLock -FileStream $fileLock
 
     } catch {
         LogMessage -Message "$($_.Exception.Message)" -IsError
     }
 }
- 
- # Run the script
- Main
+
+# Run the script
+Main
