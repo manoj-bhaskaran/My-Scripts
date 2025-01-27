@@ -155,13 +155,6 @@ function LogMessage {
         $script:Warnings++
     } elseif ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
         Write-Host -Object $logEntry
-    } catch {
-        LogMessage -Message "Failed to delete state file: $($_.Exception.Message)" -IsWarning
-    } catch {
-        LogMessage -Message "An error occurred: $($_.Exception.Message)" -IsError
-    } finally {
-        # Ensure the file lock is released
-        ReleaseFileLock -FileStream $fileLock
     }
 }
 
