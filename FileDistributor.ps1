@@ -123,7 +123,7 @@ param(
     [string]$DeleteMode = "RecycleBin", # Options: "RecycleBin", "Immediate", "EndOfScript"
     [string]$EndOfScriptDeletionCondition = "NoWarnings", # Options: "NoWarnings", "WarningsOnly"
     [int]$RetryDelay = 10, # Time to wait before retrying file access (seconds)
-    [int]$RetryCount = 1 # Number of times to retry file access (0 for unlimited retries)
+    [int]$RetryCount = 3 # Number of times to retry file access (0 for unlimited retries)
 )
 
 # Define script-scoped variables for warnings and errors
@@ -446,11 +446,12 @@ function RedistributeFilesInTarget {
 function SaveState {
     param (
         [int]$Checkpoint,
-        [hashtable]$AdditionalVariables = @{ }
+        [hashtable]$AdditionalVariables = @{ },
+        [ref]$fileLock
     )
 
     # Release the file lock before saving state
-    ReleaseFileLock -FileStream $fileLock
+    ReleaseFileLock -FileStream $fileLock.Value
 
     # Ensure the state file exists
     if (-not (Test-Path -Path $StateFilePath)) {
@@ -476,13 +477,17 @@ function SaveState {
     LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')"
 
     # Reacquire the file lock after saving state
-    $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+    $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
 }
 
 # Function to load state
 function LoadState {
+    param (
+        [ref]$fileLock
+    )
+
     # Release the file lock before loading state
-    ReleaseFileLock -FileStream $fileLock
+    ReleaseFileLock -FileStream $fileLock.Value
 
     if (Test-Path -Path $StateFilePath) {
         # Load and convert the state file from JSON format
@@ -493,7 +498,7 @@ function LoadState {
     }
 
     # Reacquire the file lock after loading state
-    $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+    $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
 
     return $state
 }
@@ -550,9 +555,10 @@ function ReleaseFileLock {
         [System.IO.FileStream]$FileStream
     )
 
+    $fileName = $FileStream.Name
     $FileStream.Close()
     $FileStream.Dispose()
-    LogMessage -Message "Released lock on $FileStream.Name"
+    LogMessage -Message "Released lock on $fileName"
 }
 
 # Main script logic
@@ -592,15 +598,17 @@ function Main {
 
         $FilesToDelete = @()
 
-        # Acquire a lock on the state file
-        $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+        $fileLockRef = [ref]$null
 
         try {
             # Restart logic
             $lastCheckpoint = 0
             if ($Restart) {
+                # Acquire a lock on the state file
+                $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+
                 LogMessage -Message "Restart requested. Loading checkpoint..." -ConsoleOutput
-                $state = LoadState
+                $state = LoadState -fileLock $fileLockRef
                 $lastCheckpoint = $state.Checkpoint
                 if ($lastCheckpoint -gt 0) {
                     LogMessage -Message "Restarting from checkpoint $lastCheckpoint" -ConsoleOutput
@@ -676,9 +684,7 @@ function Main {
 
                 # Check if a restart state file exists
                 if (Test-Path -Path $StateFilePath) {
-                    # Release the file lock before deleting state file
-                    ReleaseFileLock -FileStream $fileLock
-                    
+                  
                     LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
 
                     try {
@@ -688,15 +694,14 @@ function Main {
                         LogMessage -Message "Failed to delete state file $StateFilePath. Error: $_" -IsError
                         throw "An error occurred while deleting the state file: $($_.Exception.Message)"
                     }  
-                    
-                    # Reacquire the file lock after deleting the file
-                    $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay
                 }
+                # Acquire the file lock after deleting the file
+                $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay
             }
         } catch {
             LogMessage -Message "An unexpected error occurred: $($_.Exception.Message)" -IsError
+            throw
         }
-        
 
         if ($lastCheckpoint -lt 1) {
             # Rename files in the source folder to random names
@@ -706,7 +711,7 @@ function Main {
                 deleteMode            = $DeleteMode # Persist DeleteMode
                 SourceFolder          = $SourceFolder # Persist SourceFolder
             }
-            SaveState -Checkpoint 1 -AdditionalVariables $additionalVars
+            SaveState -Checkpoint 1 -AdditionalVariables $additionalVars -fileLock $fileLockRef
         }
 
         if ($lastCheckpoint -lt 2) {
@@ -741,7 +746,7 @@ function Main {
                 SourceFolder          = $SourceFolder # Persist SourceFolder
             }
 
-            SaveState -Checkpoint 2 -AdditionalVariables $additionalVars
+            SaveState -Checkpoint 2 -AdditionalVariables $additionalVars -fileLock $fileLockRef
         }
 
         if ($lastCheckpoint -lt 3) {
@@ -765,7 +770,7 @@ function Main {
             }
 
             # Save the state with the consolidated additional variables
-            SaveState -Checkpoint 3 -AdditionalVariables $additionalVars
+            SaveState -Checkpoint 3 -AdditionalVariables $additionalVars -fileLock $fileLockRef
 
         }
 
@@ -788,7 +793,7 @@ function Main {
             }
         
             # Save state with checkpoint 4 and additional variables
-            SaveState -Checkpoint 4 -AdditionalVariables $additionalVars
+            SaveState -Checkpoint 4 -AdditionalVariables $additionalVars -fileLock $fileLockRef
         }        
 
         if ($DeleteMode -eq "EndOfScript") {
@@ -832,16 +837,19 @@ function Main {
         }
 
         # Release the file lock before deleting state file
-        ReleaseFileLock -FileStream $fileLock
+        if ($fileLockRef.Value) {
+            ReleaseFileLock -FileStream $fileLockRef.Value
+        }
 
         Remove-Item -Path $StateFilePath -Force
         LogMessage -Message "Deleted state file: $StateFilePath"
 
-        # Reacquire the file lock after deleting state file
-        $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
-
     } catch {
         LogMessage -Message "$($_.Exception.Message)" -IsError
+    } finally {
+        if ($fileLockRef.Value) {
+            ReleaseFileLock -FileStream $fileLockRef.Value
+        }
     }
 }
 
