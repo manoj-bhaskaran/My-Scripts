@@ -617,7 +617,7 @@ function Main {
                         throw "SourceFolder mismatch: Restarted script must use the saved SourceFolder ('$savedSourceFolder'). Aborting."
                     }
                     $SourceFolder = $savedSourceFolder
-                    Write-Output "SourceFolder restored from state file: $SourceFolder"
+                    LogMessage -Message "SourceFolder restored from state file: $SourceFolder"
                 } else {
                     throw "State file does not contain SourceFolder. Unable to enforce."
                 }
@@ -840,13 +840,10 @@ function Main {
             # Reacquire the file lock after deleting state file
             $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
 
-        } finally {
-            # Ensure the file lock is released
-            ReleaseFileLock -FileStream $fileLock
-        }
-
     } catch {
         LogMessage -Message "$($_.Exception.Message)" -IsError
     }
+}
+
 # Run the script
 Main
