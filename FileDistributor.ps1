@@ -843,7 +843,9 @@ function Main {
         }
 
         # Release the file lock before deleting state file
-        ReleaseFileLock -FileStream $fileLockRef.Value
+        if ($fileLockRef.Value) {
+            ReleaseFileLock -FileStream $fileLockRef.Value
+        }
 
         Remove-Item -Path $StateFilePath -Force
         LogMessage -Message "Deleted state file: $StateFilePath"
