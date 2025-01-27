@@ -659,7 +659,11 @@ function Main {
             # Check if a restart state file exists
             if (Test-Path -Path $StateFilePath) {
                 LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
+                # Release the file lock before deleting the state file
+                ReleaseFileLock -FileStream $fileLock
                 Remove-Item -Path $StateFilePath -Force
+                # Re-acquire the file lock after deleting the state file
+                $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
             }
         }
 
