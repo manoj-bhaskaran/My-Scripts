@@ -598,14 +598,14 @@ function Main {
 
         $FilesToDelete = @()
 
-        # Acquire a lock on the state file
-        $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
-        $fileLockRef = [ref]$fileLock
-
         try {
             # Restart logic
             $lastCheckpoint = 0
             if ($Restart) {
+                # Acquire a lock on the state file
+                $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+                $fileLockRef = [ref]$fileLock
+
                 LogMessage -Message "Restart requested. Loading checkpoint..." -ConsoleOutput
                 $state = LoadState -fileLock $fileLockRef
                 $lastCheckpoint = $state.Checkpoint
@@ -696,7 +696,7 @@ function Main {
                         throw "An error occurred while deleting the state file: $($_.Exception.Message)"
                     }  
                     
-                    # Reacquire the file lock after deleting the file
+                    # Acquire the file lock after deleting the file
                     $fileLock = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay
                     $fileLockRef = [ref]$fileLock
                 }
