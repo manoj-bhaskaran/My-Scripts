@@ -15,7 +15,7 @@ function Convert-FileWithCloudConvert {
     if ($Debug) {
         $arguments += "--debug"
     }
-    $arguments += "`"$FileName`""  # Ensure file paths with spaces are correctly passed
+    $arguments += $FileName  # No manual quotes needed
     $arguments += $OutputFormat
 
     # Debug print: Show command before execution
