@@ -10,12 +10,12 @@ function Convert-FileWithCloudConvert {
         return
     }
 
-    # Construct the argument list properly
+    # Construct argument list
     $arguments = @()
     if ($Debug) {
-        $arguments += "--debug"  # Ensure --debug is included when -Debug is passed
+        $arguments += "--debug"
     }
-    $arguments += "`"$FileName`""  # Wrap in quotes to handle spaces
+    $arguments += "`"$FileName`""  # Ensure file paths with spaces are correctly passed
     $arguments += $OutputFormat
 
     # Debug print: Show command before execution

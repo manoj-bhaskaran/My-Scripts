@@ -133,11 +133,16 @@ def convert_file(file_name, output_format):
         conversion_task = create_conversion_task(api_key, file_name, output_format)
         logging.debug(f"Conversion task response: {conversion_task}")
 
-        if isinstance(conversion_task["tasks"], list):
-            logging.error("Unexpected list type found in conversion_task['tasks']")
-            raise ValueError("Expected dictionary but found list in conversion_task['tasks']")
+        tasks = conversion_task["tasks"]
+        if not isinstance(tasks, list):
+            logging.error("Unexpected type for conversion_task['tasks']")
+            raise ValueError("Expected list but found different type in conversion_task['tasks']")
 
-        upload_task = conversion_task["tasks"]["import-my-file"]
+        # Find the required task in the list
+        upload_task = next((task for task in tasks if task.get("name") == "import-my-file"), None)
+        if not upload_task:
+            raise ValueError("Task 'import-my-file' not found in conversion_task['tasks']")
+
         upload_url = upload_task["result"]["form"]["url"]
         parameters = upload_task["result"]["form"]["parameters"]
         encoded_file_name = urllib.parse.quote(file_name)
