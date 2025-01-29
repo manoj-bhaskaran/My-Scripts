@@ -131,6 +131,11 @@ def convert_file(file_name, output_format):
     try:
         api_key = authenticate()
         conversion_task = create_conversion_task(api_key, file_name, output_format)
+        logging.debug(f"Conversion task response: {conversion_task}")
+
+        if isinstance(conversion_task["tasks"], list):
+            logging.error("Unexpected list type found in conversion_task['tasks']")
+            raise ValueError("Expected dictionary but found list in conversion_task['tasks']")
 
         upload_task = conversion_task["tasks"]["import-my-file"]
         upload_url = upload_task["result"]["form"]["url"]
@@ -153,6 +158,10 @@ def convert_file(file_name, output_format):
         # Check conversion status
         convert_task_id = conversion_task["tasks"]["convert-my-file"]["id"]
         status = check_task_status(api_key, convert_task_id)
+        logging.debug(f"Check task status response: {status}")
+        if isinstance(status, list):
+            logging.error("Unexpected list type found in status")
+            raise ValueError("Expected dictionary but found list in status")
         logging.info(f"Conversion status: {status['status']}")
 
         if status["status"] == "finished":
