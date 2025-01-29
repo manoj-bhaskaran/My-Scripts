@@ -11,9 +11,6 @@ function Convert-FileWithCloudConvert {
         return
     }
 
-    # Determine the debug flag
-    $debugFlag = if ($Debug) { "--debug" } else { "" }
-
     # Construct the command properly
     $arguments = @()
     if ($Debug) {

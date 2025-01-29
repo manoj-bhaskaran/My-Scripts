@@ -179,18 +179,21 @@ def convert_file(file_name, output_format):
 
 # Function to parse command-line arguments
 def parse_arguments():
+
+    print("Raw sys.argv:", sys.argv)  # Debug print
+
     parser = argparse.ArgumentParser(description='Upload and convert a file using CloudConvert.')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging.')
     parser.add_argument('file_name', type=str, help='The name of the file to be uploaded and converted.')
     parser.add_argument('output_format', type=str, help='The desired output format (e.g., jpg, pdf).')
     args = parser.parse_args()
+
+    print(f"Parsed Arguments -> Debug: {args.debug}, File: {args.file_name}, Format: {args.output_format}")
     return args.debug, args.file_name, args.output_format
 
 # Main function to be called
 def main():
     debug, file_name, output_format = parse_arguments()
-    print("Debug:")
-    print(debug)
     setup_logging(debug)
     try:
         convert_file(file_name, output_format)
