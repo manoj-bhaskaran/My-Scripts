@@ -1,6 +1,6 @@
 # Define the Python executable and script path
 $pythonExecutable = "python"  # Use "python3" if needed
-$scriptPath = "C:\Users\manoj\Documents\Scripts\cloudconvert_utils.py"  # Replace with the actual path to your Python script
+.$scriptPath = "C:\Users\manoj\Documents\Scripts\cloudconvert_utils.py"  # Replace with the actual path to your Python script
 
 # Function to authenticate, upload, and convert a file
 function Convert-FileWithCloudConvert {

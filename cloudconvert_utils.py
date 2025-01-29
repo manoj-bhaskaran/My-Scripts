@@ -189,6 +189,7 @@ def parse_arguments():
 # Main function to be called
 def main():
     debug, file_name, output_format = parse_arguments()
+    print(debug)
     setup_logging(debug)
     try:
         convert_file(file_name, output_format)
