@@ -1,9 +1,8 @@
-# Function to authenticate, upload, and convert a file
 function Convert-FileWithCloudConvert {
     param (
         [string]$FileName,
         [string]$OutputFormat,
-        [switch]$Debug  # Explicitly define a Debug flag
+        [switch]$Debug
     )
 
     if (-not (Test-Path $FileName)) {
@@ -11,15 +10,18 @@ function Convert-FileWithCloudConvert {
         return
     }
 
-    # Construct the command properly
+    # Construct the argument list properly
     $arguments = @()
     if ($Debug) {
         $arguments += "--debug"
     }
-    $arguments += $FileName
+    $arguments += "`"$FileName`""  # Wrap in quotes to handle spaces
     $arguments += $OutputFormat
 
-    # Call the Python script for file conversion
+    # Debug print: Show command before execution
+    Write-Host "Executing: $pythonExecutable $scriptPath $arguments"
+
+    # Execute the Python script
     $result = & $pythonExecutable $scriptPath @arguments
 
     # Display the result
