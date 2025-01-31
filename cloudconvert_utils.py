@@ -161,7 +161,11 @@ def convert_file(file_name, output_format):
         logging.info(f"File '{file_name}' uploaded successfully for conversion. HTTP Status: {upload_response.status_code}")
 
         # Check conversion status
-        convert_task_id = conversion_task["tasks"]["convert-my-file"]["id"]
+        convert_task = next((task for task in tasks if task.get("name") == "convert-my-file"), None)
+        if not convert_task:
+            raise ValueError("Task 'convert-my-file' not found in conversion_task['tasks']")
+        convert_task_id = convert_task["id"]
+
         status = check_task_status(api_key, convert_task_id)
         logging.debug(f"Check task status response: {status}")
         if isinstance(status, list):
@@ -170,7 +174,11 @@ def convert_file(file_name, output_format):
         logging.info(f"Conversion status: {status['status']}")
 
         if status["status"] == "finished":
-            export_task_id = conversion_task["tasks"]["export-my-file"]["id"]
+            export_task = next((task for task in tasks if task.get("name") == "export-my-file"), None)
+            if not export_task:
+                raise ValueError("Task 'export-my-file' not found in conversion_task['tasks']")
+            export_task_id = export_task["id"]
+
             export_status = check_task_status(api_key, export_task_id)
             logging.info(f"Export status: {export_status['status']}")
             if export_status["status"] == "finished":
