@@ -52,6 +52,17 @@ jobs:
           echo "Checking if sonar-scanner is available..."
           which sonar-scanner || echo "sonar-scanner not found"
           sonar-scanner --version || echo "sonar-scanner command failed"
+          
+      - name: Install PSScriptAnalyzer
+        run: |
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+          Invoke-ScriptAnalyzer -Path . -Recurse | Out-File PSScriptAnalyzerReport.txt
+
+      - name: Upload PSScriptAnalyzer Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: PSScriptAnalyzerReport
+          path: PSScriptAnalyzerReport.txt
 
       - name: SonarCloud Scan
         env:
@@ -66,5 +77,5 @@ jobs:
                         -Dsonar.sources=. \
                         -Dsonar.python.version=3.13 \
                         -Dsonar.language=ps \
-                        -Dsonar.inclusions="**/*.bat" \
+                        -Dsonar.inclusions="**/*.ps1,**/*.bat" \
                         -Dsonar.host.url=https://sonarcloud.io
