@@ -49,6 +49,43 @@ jobs:
           name: Bandit-Security-Report
           path: bandit-report.json
 
+      - name: Install PSScriptAnalyzer (PowerShell Linter)
+        run: |
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+          Invoke-ScriptAnalyzer -Path . -Recurse | Out-File PSScriptAnalyzerReport.txt
+
+      - name: Upload PSScriptAnalyzer Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: PSScriptAnalyzerReport
+          path: PSScriptAnalyzerReport.txt
+
+      - name: Install batlint (Batch File Linter)
+        run: |
+          sudo apt update && sudo apt install -y dos2unix
+          wget -q https://raw.githubusercontent.com/Un1Gfn/batlint/main/batlint
+          chmod +x batlint
+          mv batlint /usr/local/bin/
+
+      - name: Run batlint (Batch File Analysis)
+        run: |
+          find . -name "*.bat" -exec batlint {} \; || true
+
+      - name: Install chkbatsec (Batch Security Scanner)
+        run: |
+          wget -q https://raw.githubusercontent.com/s0md3v/ChkBatSec/main/chkbatsec.py
+          chmod +x chkbatsec.py
+
+      - name: Run chkbatsec (Batch Security Scan)
+        run: |
+          python3 chkbatsec.py --path . | tee chkbatsec-report.txt
+
+      - name: Upload Batch Security Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: Batch-Security-Report
+          path: chkbatsec-report.txt
+
       - name: Install SonarScanner
         run: |
           wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.0.0.4432-linux.zip
