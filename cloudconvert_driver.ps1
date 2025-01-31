@@ -21,9 +21,6 @@ function Convert-FileWithCloudConvert {
     $arguments += $FileName  # No manual quotes needed
     $arguments += $OutputFormat
 
-    # Debug print: Show command before execution
-    Write-Host "Executing: $pythonExecutable $scriptPath $arguments"
-
     # Execute the Python script
     $result = & $pythonExecutable $scriptPath @arguments
 
