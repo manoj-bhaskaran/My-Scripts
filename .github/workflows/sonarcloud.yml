@@ -26,56 +26,42 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '17'               # Specify Java version 17
-          distribution: 'temurin'          # Use Temurin as the distribution
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install Python & Dependencies
+        run: |
+          sudo apt update && sudo apt install -y python3 python3-pip
+          python3 -m pip install --upgrade pip
+          pip install pylint bandit
+
+      - name: Run Pylint (Python Linting)
+        run: |
+          pylint $(git ls-files '*.py') || true
+
+      - name: Run Bandit (Python Security Scan)
+        run: |
+          bandit -r . -f json -o bandit-report.json || true
+
+      - name: Upload Bandit Security Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: Bandit-Security-Report
+          path: bandit-report.json
 
       - name: Install SonarScanner
         run: |
-          # Download SonarScanner
           wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.0.0.4432-linux.zip
-          # Unzip SonarScanner
           unzip -q sonar-scanner-cli-6.0.0.4432-linux.zip -d sonar-scanner
-          # Set the PATH for the current job
           echo "${{ github.workspace }}/sonar-scanner/sonar-scanner-6.0.0.4432-linux/bin" >> $GITHUB_PATH
-          # Verify installation
-          ls -l "${{ github.workspace }}/sonar-scanner/sonar-scanner-6.0.0.4432-linux/bin"
-          # Print the PATH to verify
-          echo $PATH
-
-      - name: Check Java Version
-        run: |
-          echo "Checking Java version..."
-          java -version
-
-      - name: Check SonarScanner availability
-        run: |
-          echo "Checking if sonar-scanner is available..."
-          which sonar-scanner || echo "sonar-scanner not found"
-          sonar-scanner --version || echo "sonar-scanner command failed"
-          
-      - name: Install PSScriptAnalyzer
-        run: |
-          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
-          Invoke-ScriptAnalyzer -Path . -Recurse | Out-File PSScriptAnalyzerReport.txt
-
-      - name: Upload PSScriptAnalyzer Report
-        uses: actions/upload-artifact@v3
-        with:
-          name: PSScriptAnalyzerReport
-          path: PSScriptAnalyzerReport.txt
 
       - name: SonarCloud Scan
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed for GitHub integration
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Your SonarCloud token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          # Print JAVA_HOME to verify it's set correctly
-          echo "JAVA_HOME is set to: $JAVA_HOME"
-          # Run SonarCloud scan
           sonar-scanner -Dsonar.projectKey=manoj-bhaskaran_My-Scripts \
                         -Dsonar.organization=manoj-bhaskaran \
                         -Dsonar.sources=. \
-                        -Dsonar.python.version=3.13 \
-                        -Dsonar.language=ps \
-                        -Dsonar.inclusions="**/*.ps1,**/*.bat" \
+                        -Dsonar.inclusions="**/*.py,**/*.ps1,**/*.bat" \
                         -Dsonar.host.url=https://sonarcloud.io
