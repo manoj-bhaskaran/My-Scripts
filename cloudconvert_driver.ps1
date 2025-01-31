@@ -10,6 +10,9 @@ function Convert-FileWithCloudConvert {
         return
     }
 
+    $pythonExecutable = "python"  # Change to "python3" if required
+    $scriptPath = "C:\Users\manoj\Documents\Scripts\cloudconvert_utils.py"
+
     # Construct argument list
     $arguments = @()
     if ($Debug) {
