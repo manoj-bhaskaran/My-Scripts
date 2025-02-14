@@ -84,7 +84,7 @@ def upload_file(file_name):
         raise Exception(f"Error during file upload: {e}")
 
 # Function to create a conversion task
-def create_conversion_task(api_key, input_file, output_format):
+def create_conversion_task(api_key, output_format):
     url = "https://api.cloudconvert.com/v2/jobs"
     payload = {
         "tasks": {
@@ -138,7 +138,7 @@ def convert_file(file_name, output_format):
     
     try:
         api_key = authenticate()
-        conversion_task = create_conversion_task(api_key, file_name, output_format)
+        conversion_task = create_conversion_task(api_key, output_format)
         logging.debug(f"Conversion task response: {conversion_task}")
 
         tasks = conversion_task["tasks"]
@@ -181,7 +181,7 @@ def convert_file(file_name, output_format):
 
     except (requests.exceptions.RequestException, KeyError, IndexError, ValueError) as e:
         logging.error(f"Error during file conversion: {e}")
-        raise Exception(f"Error during file conversion: {e}")
+        raise RuntimeError(f"Error during file conversion: {e}")
 
 # Function to parse command-line arguments
 def parse_arguments():
