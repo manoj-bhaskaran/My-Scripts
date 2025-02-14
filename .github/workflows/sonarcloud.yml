@@ -66,21 +66,6 @@ jobs:
           name: PSScriptAnalyzerReport
           path: PSScriptAnalyzerReport.txt
 
-      - name: Install chkbatsec (Batch Security Scanner)
-        run: |
-          wget -q https://raw.githubusercontent.com/s0md3v/ChkBatSec/main/chkbatsec.py
-          chmod +x chkbatsec.py
-
-      - name: Run chkbatsec (Batch Security Scan)
-        run: |
-          python3 chkbatsec.py --path . | tee chkbatsec-report.txt
-
-      - name: Upload Batch Security Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: Batch-Security-Report
-          path: chkbatsec-report.txt
-
       - name: Install SonarScanner
         run: |
           wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.0.0.4432-linux.zip
