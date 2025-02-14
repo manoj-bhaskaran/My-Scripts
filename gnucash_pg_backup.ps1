@@ -1,5 +1,5 @@
 # Define variables
-$pg_dump_path = "D:\Program Files\PostgreSQL\16\bin\pg_dump.exe"  # Update path if different
+$pg_dump_path = "D:\Program Files\PostgreSQL\17\bin\pg_dump.exe"  # Update path if different
 $dbname = "gnucash_db"
 $backup_folder = "D:\pgbackup\gnucash_db"
 $log_folder = "D:\pgbackup\logs"
@@ -11,7 +11,7 @@ $retention_days = 90
 $min_backups = 3
 $user = "backup_user"
 $password = "pgadminbackup"
-$service_name = "postgresql-x64-16"
+$service_name = "postgresql-x64-17"
 $service_start_wait = 5
 $max_wait_time = 15  # Maximum wait time in seconds
 
@@ -82,7 +82,7 @@ try {
 }
 
 # Function to delete old backups
-Function Cleanup-OldBackups {
+Function Remove-OldBackups {
     $backup_files = Get-ChildItem -Path $backup_folder -Filter "${dbname}_backup_*.backup"
     $cutoff_date = (Get-Date).AddDays(-$retention_days)
     $files_deleted = $false
@@ -104,7 +104,7 @@ Function Cleanup-OldBackups {
 }
 
 # Function to clean up 0-byte backup files
-Function Cleanup-ZeroByteBackups {
+Function Remove-ZeroByteBackups {
     $backup_files = Get-ChildItem -Path $backup_folder -Filter "${dbname}_backup_*.backup"
     $files_deleted = $false
 
@@ -121,8 +121,8 @@ Function Cleanup-ZeroByteBackups {
 
 # Call the cleanup functions and log output
 try {
-    $old_backups_deleted = Cleanup-OldBackups
-    $zero_byte_backups_deleted = Cleanup-ZeroByteBackups
+    $old_backups_deleted = Remove-OldBackups
+    $zero_byte_backups_deleted = Remove-ZeroByteBackups
 
     if ($old_backups_deleted -or $zero_byte_backups_deleted) {
         "$(Get-Date): ${dbname}: Backup file cleanup completed successfully" | Out-File -FilePath $log_file -Append

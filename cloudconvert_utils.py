@@ -44,6 +44,24 @@ def create_upload_task(api_key):
 
     return response.json()["data"]["tasks"][0]
 
+# Function to handle file upload
+def handle_file_upload(file_name, upload_url, parameters):
+    encoded_file_name = urllib.parse.quote(file_name)
+    parameters["key"] = parameters["key"].replace("${filename}", encoded_file_name)
+
+    logging.debug(f"Upload URL: {upload_url}")
+    logging.debug(f"Upload parameters: {parameters}")
+
+    logging.debug(f"Attempting to upload file: {file_name}")
+    with open(file_name, "rb") as file:
+        files = {"file": file}
+        upload_response = requests.post(upload_url, data=parameters, files=files)
+
+        upload_response.raise_for_status()
+
+    logging.info(f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}")
+    return upload_response
+
 # Function to upload a file
 def upload_file(file_name):
     logging.debug(f"Starting file upload process for file: {file_name}")
@@ -54,19 +72,9 @@ def upload_file(file_name):
 
         upload_url = upload_task["result"]["form"]["url"]
         parameters = upload_task["result"]["form"]["parameters"]
-        encoded_file_name = urllib.parse.quote(file_name)
-        parameters["key"] = parameters["key"].replace("${filename}", encoded_file_name)
+        upload_response = handle_file_upload(file_name, upload_url, parameters)
 
-        logging.debug(f"Upload URL: {upload_url}")
-        logging.debug(f"Upload parameters: {parameters}")
-
-        logging.debug(f"Attempting to upload file: {file_name}")
-        with open(file_name, "rb") as file:
-            files = {"file": file}
-            upload_response = requests.post(upload_url, data=parameters, files=files)
-
-            upload_response.raise_for_status()
-
+        result_message = f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
         result_message = f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
         logging.info(result_message)
         print(result_message)  # Print the result for PowerShell to capture
@@ -143,22 +151,7 @@ def convert_file(file_name, output_format):
         if not upload_task:
             raise ValueError("Task 'import-my-file' not found in conversion_task['tasks']")
 
-        upload_url = upload_task["result"]["form"]["url"]
-        parameters = upload_task["result"]["form"]["parameters"]
-        encoded_file_name = urllib.parse.quote(file_name)
-        parameters["key"] = parameters["key"].replace("${filename}", encoded_file_name)
-
-        logging.debug(f"Upload URL: {upload_url}")
-        logging.debug(f"Upload parameters: {parameters}")
-
-        logging.debug(f"Attempting to upload file: {file_name}")
-        with open(file_name, "rb") as file:
-            files = {"file": file}
-            upload_response = requests.post(upload_url, data=parameters, files=files)
-
-            upload_response.raise_for_status()
-
-        logging.info(f"File '{file_name}' uploaded successfully for conversion. HTTP Status: {upload_response.status_code}")
+        handle_file_upload(file_name, upload_task["result"]["form"]["url"], upload_task["result"]["form"]["parameters"])
 
         # Check conversion status
         convert_task = next((task for task in tasks if task.get("name") == "convert-my-file"), None)
