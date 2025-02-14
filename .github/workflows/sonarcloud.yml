@@ -69,9 +69,10 @@ jobs:
       - name: Install batlint (Batch File Linter)
         run: |
           sudo apt update && sudo apt install -y dos2unix
-          wget -q https://raw.githubusercontent.com/Un1Gfn/batlint/main/batlint
+          wget -q -O batlint https://raw.githubusercontent.com/Un1Gfn/batlint/main/batlint
+          if [ ! -f "batlint" ]; then echo "Error: batlint download failed"; exit 1; fi
           chmod +x batlint
-          mv batlint /usr/local/bin/
+          sudo mv batlint /usr/local/bin/ || { echo "Error: Failed to move batlint"; exit 1; }
 
       - name: Run batlint (Batch File Analysis)
         run: |
