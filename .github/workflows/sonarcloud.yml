@@ -66,40 +66,6 @@ jobs:
           name: PSScriptAnalyzerReport
           path: PSScriptAnalyzerReport.txt
 
-      - name: Install batlint (Batch File Linter)
-        run: |
-          sudo apt update && sudo apt install -y dos2unix
-          wget -O batlint https://raw.githubusercontent.com/Un1Gfn/batlint/main/batlint
-          
-          # Debug: List downloaded files and print batlint contents
-          echo "🔍 Checking batlint file..."
-          ls -lah batlint
-          cat batlint || echo "⚠️ Warning: batlint file is empty or unreadable!"
-          
-          # Check if the file was downloaded
-          if [ ! -s "batlint" ]; then 
-            echo "❌ Error: batlint download failed or file is empty! Exiting..."
-            exit 1
-          fi
-          
-          chmod +x batlint
-          
-          # Move to a user-writable location if needed
-          mv batlint $HOME/.local/bin/
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-          # Confirm batlint is installed
-          if ! command -v batlint &> /dev/null; then
-            echo "❌ Error: batlint is not found in PATH! Exiting..."
-            exit 1
-          fi
-
-          echo "✅ batlint installation successful!"
-
-      - name: Run batlint (Batch File Analysis)
-        run: |
-          find . -name "*.bat" -exec batlint {} \; || true
-
       - name: Install chkbatsec (Batch Security Scanner)
         run: |
           wget -q https://raw.githubusercontent.com/s0md3v/ChkBatSec/main/chkbatsec.py
