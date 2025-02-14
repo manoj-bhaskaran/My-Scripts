@@ -82,7 +82,7 @@ try {
 }
 
 # Function to delete old backups
-Function Cleanup-OldBackups {
+Function Remove-OldBackups {
     $backup_files = Get-ChildItem -Path $backup_folder -Filter "${dbname}_backup_*.backup"
     $cutoff_date = (Get-Date).AddDays(-$retention_days)
     $files_deleted = $false
@@ -104,7 +104,7 @@ Function Cleanup-OldBackups {
 }
 
 # Function to clean up 0-byte backup files
-Function Cleanup-ZeroByteBackups {
+Function Remove-ZeroByteBackups {
     $backup_files = Get-ChildItem -Path $backup_folder -Filter "${dbname}_backup_*.backup"
     $files_deleted = $false
 
@@ -121,8 +121,8 @@ Function Cleanup-ZeroByteBackups {
 
 # Call the cleanup functions and log output
 try {
-    $old_backups_deleted = Cleanup-OldBackups
-    $zero_byte_backups_deleted = Cleanup-ZeroByteBackups
+    $old_backups_deleted = Remove-OldBackups
+    $zero_byte_backups_deleted = Remove-ZeroByteBackups
 
     if ($old_backups_deleted -or $zero_byte_backups_deleted) {
         "$(Get-Date): ${dbname}: Backup file cleanup completed successfully" | Out-File -FilePath $log_file -Append
