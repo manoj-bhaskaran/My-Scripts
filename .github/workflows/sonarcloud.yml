@@ -66,6 +66,25 @@ jobs:
           name: PSScriptAnalyzerReport
           path: PSScriptAnalyzerReport.txt
 
+      - name: Install SQLLint and SQLFluff
+        run: |
+          npm install -g sql-lint
+          pip install sqlfluff
+
+      - name: Run SQLLint (Syntax Check)
+        run: |
+          sql-lint $(git ls-files '*.sql') || true
+
+      - name: Run SQLFluff (Style Guide Check)
+        run: |
+          sqlfluff lint --format github-annotation --annotation-level warning > sqlfluff-report.txt || true
+
+      - name: Upload SQL Lint Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: SQL-Lint-Reports
+          path: sqlfluff-report.txt
+
       - name: Install SonarScanner
         run: |
           wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.0.0.4432-linux.zip
@@ -80,7 +99,7 @@ jobs:
           sonar-scanner -Dsonar.projectKey=manoj-bhaskaran_My-Scripts \
                         -Dsonar.organization=manoj-bhaskaran \
                         -Dsonar.sources=. \
-                        -Dsonar.inclusions="**/*.py,**/*.ps1,**/*.bat" \
+                        -Dsonar.inclusions="**/*.py,**/*.ps1,**/*.bat,**/*.sql" \
                         -Dsonar.host.url=https://sonarcloud.io \
                         -Dsonar.python.coverage.reportPaths= \
                         -Dsonar.coverage.exclusions="**/*"
