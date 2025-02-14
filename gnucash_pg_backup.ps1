@@ -1,5 +1,5 @@
 # Define variables
-$pg_dump_path = "D:\Program Files\PostgreSQL\16\bin\pg_dump.exe"  # Update path if different
+$pg_dump_path = "D:\Program Files\PostgreSQL\17\bin\pg_dump.exe"  # Update path if different
 $dbname = "gnucash_db"
 $backup_folder = "D:\pgbackup\gnucash_db"
 $log_folder = "D:\pgbackup\logs"
@@ -11,7 +11,7 @@ $retention_days = 90
 $min_backups = 3
 $user = "backup_user"
 $password = "pgadminbackup"
-$service_name = "postgresql-x64-16"
+$service_name = "postgresql-x64-17"
 $service_start_wait = 5
 $max_wait_time = 15  # Maximum wait time in seconds
 
