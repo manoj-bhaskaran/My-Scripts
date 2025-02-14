@@ -70,9 +70,28 @@ jobs:
         run: |
           sudo apt update && sudo apt install -y dos2unix
           wget -q -O batlint https://raw.githubusercontent.com/Un1Gfn/batlint/main/batlint
-          if [ ! -f "batlint" ]; then echo "Error: batlint download failed"; exit 1; fi
+          
+          # Check if the file was downloaded
+          if [ ! -f "batlint" ]; then 
+            echo "❌ Error: batlint download failed! Exiting..."
+            exit 1
+          fi
+          
           chmod +x batlint
-          sudo mv batlint /usr/local/bin/ || { echo "Error: Failed to move batlint"; exit 1; }
+          
+          # Ensure move operation succeeds
+          sudo mv batlint /usr/local/bin/ || { 
+            echo "❌ Error: Failed to move batlint! Exiting..."
+            exit 1
+          }
+          
+          # Confirm batlint is installed
+          if ! command -v batlint &> /dev/null; then
+            echo "❌ Error: batlint is not found in PATH! Exiting..."
+            exit 1
+          fi
+
+          echo "✅ batlint installation successful!"
 
       - name: Run batlint (Batch File Analysis)
         run: |
