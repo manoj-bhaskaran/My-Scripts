@@ -44,12 +44,18 @@ jobs:
           bandit -r . -f json -o bandit-report.json || true
 
       - name: Upload Bandit Security Report
-        uses: actions/upload-artifact@4
+        uses: actions/upload-artifact@v4
         with:
           name: Bandit-Security-Report
           path: bandit-report.json
 
+      - name: Install PowerShell
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y powershell
+
       - name: Install PSScriptAnalyzer (PowerShell Linter)
+        shell: pwsh
         run: |
           Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
           Invoke-ScriptAnalyzer -Path . -Recurse | Out-File PSScriptAnalyzerReport.txt
