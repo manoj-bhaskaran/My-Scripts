@@ -39,5 +39,5 @@ AND guid IN (
     JOIN zero_balance_accounts z ON a.guid = z.account_guid
     JOIN last_transaction_dates l ON a.guid = l.account_guid
     WHERE children.guid IS NULL  -- Ensures it is a leaf account
-    AND l.last_txn_date > 'YYYY-MM-DD'  -- Replace with the desired date
+    AND l.last_txn_date <= 'YYYY-MM-DD'  -- Replace with the desired date
 );
