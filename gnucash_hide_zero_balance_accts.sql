@@ -29,7 +29,7 @@ AND guid IN (
         -- CTE to get the last transaction date for each account
         SELECT s.account_guid, MAX(t.post_date) AS last_txn_date
         FROM transactions t
-        JOIN splits s ON t.guid = s.txn_guid
+        JOIN splits s ON t.guid = s.tx_guid
         GROUP BY s.account_guid
     )
     -- Select leaf accounts with zero balance and last transaction date > specified date
