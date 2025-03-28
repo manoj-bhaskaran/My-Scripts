@@ -376,7 +376,10 @@ function DistributeFilesToSubfolders {
                     LogMessage -Message "Copied and immediately deleted: $file to $destinationFile"
                 } elseif ($DeleteMode -eq "EndOfScript") {
                     # Add file to the list for end-of-script deletion
-                    $FilesToDelete.Value = $FilesToDelete.Value + @($file)  # Correctly update the ref variable
+                    if (-not $FilesToDelete.Value) {
+                        $FilesToDelete.Value = @()  # Initialize as an empty array if not already initialized
+                    }
+                    $FilesToDelete.Value += $file  # Correctly update the ref variable
                     LogMessage -Message "Copied successfully: $file to $destinationFile (pending end-of-script deletion)"
                 }
             } catch {
@@ -596,7 +599,7 @@ function Main {
 
         LogMessage -Message "Parameter validation completed"
 
-        $FilesToDelete = @()
+        $FilesToDelete = [ref]@()  # Initialize FilesToDelete as a [ref] object with an empty array
 
         $fileLockRef = [ref]$null
 
@@ -752,7 +755,7 @@ function Main {
         if ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
             LogMessage -Message "Distributing files to subfolders..."
-            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)        
+            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete        
             LogMessage -Message "Completed file distribution"
 
             # Common base for additional variables
@@ -777,7 +780,7 @@ function Main {
         if ($lastCheckpoint -lt 4) {
             # Redistribute files within the target folder and subfolders if needed
             LogMessage -Message "Redistributing files in target folders..."
-            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete ([ref]$FilesToDelete)
+            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete
         
             # Base additional variables
             $additionalVars = @{
@@ -801,8 +804,8 @@ function Main {
             if (($EndOfScriptDeletionCondition -eq "NoWarnings" -and $Warnings -eq 0 -and $Errors -eq 0) -or
                 ($EndOfScriptDeletionCondition -eq "WarningsOnly" -and $Errors -eq 0)) {
                 
-                # Attempt to delete each file in $FilesToDelete
-                foreach ($file in $FilesToDelete) {
+                # Attempt to delete each file in $FilesToDelete.Value
+                foreach ($file in $FilesToDelete.Value) {
                     try {
                         if (Test-Path -Path $file) {
                             Remove-File -FilePath $file
