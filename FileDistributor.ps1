@@ -375,9 +375,9 @@ function DistributeFilesToSubfolders {
                     Remove-File -FilePath $file
                     LogMessage -Message "Copied and immediately deleted: $file to $destinationFile"
                 } elseif ($DeleteMode -eq "EndOfScript") {
-                    # Add file to the list for end-of-script deletion
+                    # Ensure FilesToDelete.Value is initialized as an array
                     if (-not $FilesToDelete.Value) {
-                        $FilesToDelete.Value = @()  # Initialize as an empty array if not already initialized
+                        $FilesToDelete.Value = @()
                     }
                     $FilesToDelete.Value += $file  # Correctly update the ref variable
                     LogMessage -Message "Copied successfully: $file to $destinationFile (pending end-of-script deletion)"
