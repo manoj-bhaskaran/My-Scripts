@@ -339,13 +339,13 @@ function DistributeFilesToSubfolders {
         [switch]$ShowProgress,        # Enable/disable progress updates
         [int]$UpdateFrequency,       # Frequency for progress updates
         [string]$DeleteMode,         # Specifies the deletion mode
-        [ref]$FilesToDelete          # Reference to the files pending deletion
+        [ref]$FilesToDelete,         # Reference to the files pending deletion
+        [ref]$GlobalFileCounter,     # Reference to a global file counter
+        [int]$TotalFiles             # Total number of files to process
     )
 
     # Create an enumerator for subfolders to cycle through them
     $subfolderQueue = $Subfolders.GetEnumerator()
-    $totalFiles = $Files.Count
-    $fileCount = 0
 
     foreach ($file in $Files) {
         if (!$subfolderQueue.MoveNext()) {
@@ -389,14 +389,14 @@ function DistributeFilesToSubfolders {
             LogMessage -Message "Failed to copy $file to $destinationFile. Original file not moved." -IsError
         }
 
-        # Increment file counter
-        $fileCount++
+        # Increment the global file counter
+        $GlobalFileCounter.Value++
 
         # Show progress if enabled
-        if ($ShowProgress -and ($fileCount % $UpdateFrequency -eq 0)) {
-            $percentComplete = [math]::Floor(($fileCount / $totalFiles) * 100)
+        if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
+            $percentComplete = [math]::Floor(($GlobalFileCounter.Value / $TotalFiles) * 100)
             Write-Progress -Activity "Distributing Files" `
-                           -Status "Processing file $fileCount of $totalFiles" `
+                           -Status "Processed $($GlobalFileCounter.Value) of $TotalFiles files" `
                            -PercentComplete $percentComplete
         }
     }
@@ -406,7 +406,7 @@ function DistributeFilesToSubfolders {
         Write-Progress -Activity "Distributing Files" -Status "Complete" -Completed
     }
 
-    LogMessage -Message "File distribution completed: Processed $fileCount of $totalFiles files." -ConsoleOutput
+    LogMessage -Message "File distribution completed: Processed $($GlobalFileCounter.Value) of $TotalFiles files." -ConsoleOutput
 }
 
 function RedistributeFilesInTarget {
@@ -417,7 +417,9 @@ function RedistributeFilesInTarget {
         [switch]$ShowProgress,
         [int]$UpdateFrequency,
         [string]$DeleteMode,         # Added DeleteMode parameter
-        [ref]$FilesToDelete          # Added FilesToDelete parameter 
+        [ref]$FilesToDelete,         # Added FilesToDelete parameter 
+        [ref]$GlobalFileCounter,     # Reference to a global file counter
+        [int]$TotalFiles             # Total number of files to process
     )
 
     # Get all files in the target folder and its subfolders
@@ -431,7 +433,7 @@ function RedistributeFilesInTarget {
     # Redistribute files in the target folder (not in subfolders) regardless of limit
     LogMessage -Message "Redistributing files from target folder $TargetFolder to subfolders..."
     $rootFiles = Get-ChildItem -Path $TargetFolder -File
-    DistributeFilesToSubfolders -Files $rootFiles -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete
+    DistributeFilesToSubfolders -Files $rootFiles -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter -TotalFiles $TotalFiles
 
     LogMessage -Message "Redistributing files from subfolders..."
     foreach ($file in $allFiles) {
@@ -440,7 +442,7 @@ function RedistributeFilesInTarget {
 
         if ($currentFileCount -gt $FilesPerFolderLimit) {
             LogMessage -Message "Renaming and redistributing files from folder: $folder"
-            DistributeFilesToSubfolders -Files @($file) -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete
+            DistributeFilesToSubfolders -Files @($file) -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter -TotalFiles $TotalFiles
             $folderFilesMap[$folder]--
         }
     }
@@ -600,6 +602,7 @@ function Main {
         LogMessage -Message "Parameter validation completed"
 
         $FilesToDelete = [ref]@()  # Initialize FilesToDelete as a [ref] object with an empty array
+        $GlobalFileCounter = [ref]0  # Initialize GlobalFileCounter as a [ref] object with a value of 0
 
         $fileLockRef = [ref]$null
 
@@ -755,7 +758,7 @@ function Main {
         if ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
             LogMessage -Message "Distributing files to subfolders..."
-            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete        
+            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter -TotalFiles $totalSourceFiles        
             LogMessage -Message "Completed file distribution"
 
             # Common base for additional variables
@@ -780,7 +783,7 @@ function Main {
         if ($lastCheckpoint -lt 4) {
             # Redistribute files within the target folder and subfolders if needed
             LogMessage -Message "Redistributing files in target folders..."
-            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete
+            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter -TotalFiles $totalSourceFiles + $totalTargetFilesBefore
         
             # Base additional variables
             $additionalVars = @{
