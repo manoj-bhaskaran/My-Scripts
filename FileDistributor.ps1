@@ -392,12 +392,13 @@ function DistributeFilesToSubfolders {
         # Increment the global file counter
         $GlobalFileCounter.Value++
 
-        # Show progress if enabled
+        # Show progress if enabled and only after every $UpdateFrequency files
         if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
             $percentComplete = [math]::Floor(($GlobalFileCounter.Value / $TotalFiles) * 100)
             Write-Progress -Activity "Distributing Files" `
                            -Status "Processed $($GlobalFileCounter.Value) of $TotalFiles files" `
                            -PercentComplete $percentComplete
+            LogMessage -Message "Processed $($GlobalFileCounter.Value) of $TotalFiles files." -ConsoleOutput
         }
     }
 
@@ -405,7 +406,6 @@ function DistributeFilesToSubfolders {
     if ($ShowProgress) {
         Write-Progress -Activity "Distributing Files" -Status "Complete" -Completed
     }
-
     LogMessage -Message "File distribution completed: Processed $($GlobalFileCounter.Value) of $TotalFiles files." -ConsoleOutput
 }
 
