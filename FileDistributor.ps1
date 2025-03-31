@@ -51,6 +51,12 @@ Optional. Specifies the delay in seconds before retrying file access if locked. 
 .PARAMETER RetryCount
 Optional. Specifies the number of times to retry file access if locked. Defaults to 1. A value of 0 means unlimited retries.
 
+.PARAMETER CleanupDuplicates
+Optional. If specified, invokes the duplicate file removal script after distribution.
+
+.PARAMETER CleanupEmptyFolders
+Optional. If specified, invokes the empty folder cleanup script after distribution.
+
 .EXAMPLES
 To copy files from "C:\Source" to "C:\Target" with a default file limit:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
@@ -69,6 +75,9 @@ To delete files at the end of the script only if no warnings occur:
 
 To enable verbose logging using PowerShell's built-in `-Verbose` switch:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Verbose
+
+To invoke cleanup scripts for duplicates and empty folders:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -CleanupDuplicates -CleanupEmptyFolders
 
 .NOTES
 Script Workflow:
@@ -103,6 +112,9 @@ Completion:
 - Provides a final summary message, including the original number of files in the source folder, the original number of files in the target folder hierarchy, and the final number of files in the target folder hierarchy.
 - Throws a warning if the sum of the original counts is not equal to the final count in the target.
 
+Post-Processing:
+- Optionally invokes cleanup scripts for duplicate files and empty folders based on parameters.
+
 Prerequisites:
 - Ensure permissions for reading and writing in both source and target directories.
 - The random name generator script should be located at: `C:\Users\manoj\Documents\Scripts\randomname.ps1`.
@@ -123,12 +135,17 @@ param(
     [string]$DeleteMode = "RecycleBin", # Options: "RecycleBin", "Immediate", "EndOfScript"
     [string]$EndOfScriptDeletionCondition = "NoWarnings", # Options: "NoWarnings", "WarningsOnly"
     [int]$RetryDelay = 10, # Time to wait before retrying file access (seconds)
-    [int]$RetryCount = 3 # Number of times to retry file access (0 for unlimited retries)
+    [int]$RetryCount = 3, # Number of times to retry file access (0 for unlimited retries)
+    [switch]$CleanupDuplicates,
+    [switch]$CleanupEmptyFolders
 )
 
 # Define script-scoped variables for warnings and errors
 $script:Warnings = 0
 $script:Errors = 0
+
+# Define the script directory
+$ScriptDirectory = "C:\Users\manoj\Documents\Scripts"
 
 # Function to log messages
 function LogMessage {
@@ -159,7 +176,7 @@ function LogMessage {
 }
 
 # Check if the random name generator script exists and load it
-$randomNameScriptPath = "C:\Users\manoj\Documents\Scripts\randomname.ps1"
+$randomNameScriptPath = Join-Path -Path $ScriptDirectory -ChildPath "randomname.ps1"
 
 if (Test-Path -Path $randomNameScriptPath) {
     try {
@@ -856,6 +873,26 @@ function Main {
 
         Remove-Item -Path $StateFilePath -Force
         LogMessage -Message "Deleted state file: $StateFilePath"
+
+        # Post-processing: Cleanup duplicates
+        if ($CleanupDuplicates) {
+            LogMessage -Message "Invoking duplicate file cleanup script..."
+            & (Join-Path -Path $ScriptDirectory -ChildPath "Remove-DuplicateFiles.ps1") -ParentDirectory $TargetFolder -LogFilePath $LogFilePath -DryRun:$false
+            LogMessage -Message "Duplicate file cleanup completed."
+        } else {
+            LogMessage -Message "Skipping duplicate file cleanup."
+        }
+
+        # Post-processing: Cleanup empty folders
+        if ($CleanupEmptyFolders) {
+            LogMessage -Message "Invoking empty folder cleanup script..."
+            & (Join-Path -Path $ScriptDirectory -ChildPath "Remove-EmptyFolders.ps1") -ParentDirectory $TargetFolder -LogFilePath $LogFilePath -DryRun:$false
+            LogMessage -Message "Empty folder cleanup completed."
+        } else {
+            LogMessage -Message "Skipping empty folder cleanup."
+        }
+
+        LogMessage -Message "File distribution and optional cleanup completed."
 
     } catch {
         LogMessage -Message "$($_.Exception.Message)" -IsError

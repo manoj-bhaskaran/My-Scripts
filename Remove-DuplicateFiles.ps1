@@ -35,7 +35,7 @@ if (-not (Test-Path $LogFilePath)) {
 function Log {
     param ([string]$Message)
     $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$Timestamp - $Message" | Out-File -FilePath $LogFilePath -Append
+    "$($Timestamp): $Message" | Out-File -FilePath $LogFilePath -Append
 }
 
 # Validate the parent directory

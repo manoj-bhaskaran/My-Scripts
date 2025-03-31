@@ -32,12 +32,17 @@ param (
 )
 
 # Initialize logging
+# Ensure the log file exists
+if (-not (Test-Path $LogFilePath)) {
+    New-Item -ItemType File -Path $LogFilePath -Force | Out-Null
+}
+
 function Log {
     param (
         [string]$Message
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$timestamp: $Message" | Out-File -FilePath $LogFilePath -Append
+    "$($timestamp): $Message" | Out-File -FilePath $LogFilePath -Append
 }
 
 # Start logging
