@@ -392,12 +392,13 @@ function DistributeFilesToSubfolders {
         # Increment the global file counter
         $GlobalFileCounter.Value++
 
-        # Show progress if enabled
+        # Show progress if enabled and only after every $UpdateFrequency files
         if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
             $percentComplete = [math]::Floor(($GlobalFileCounter.Value / $TotalFiles) * 100)
             Write-Progress -Activity "Distributing Files" `
                            -Status "Processed $($GlobalFileCounter.Value) of $TotalFiles files" `
                            -PercentComplete $percentComplete
+            LogMessage -Message "Processed $($GlobalFileCounter.Value) of $TotalFiles files." -ConsoleOutput
         }
     }
 
@@ -405,7 +406,6 @@ function DistributeFilesToSubfolders {
     if ($ShowProgress) {
         Write-Progress -Activity "Distributing Files" -Status "Complete" -Completed
     }
-
     LogMessage -Message "File distribution completed: Processed $($GlobalFileCounter.Value) of $TotalFiles files." -ConsoleOutput
 }
 
@@ -726,13 +726,13 @@ function Main {
             $totalSourceFiles = $sourceFiles.Count
             $totalTargetFilesBefore = (Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object).Count
             $totalTargetFilesBefore = if ($null -eq $totalTargetFilesBefore) { 0 } else { $totalTargetFilesBefore }
+            $totalFiles = $totalSourceFiles + $totalTargetFilesBefore # Correctly calculate total files
             LogMessage -Message "Source File Count: $totalSourceFiles. Target File Count Before: $totalTargetFilesBefore."
 
             # Get subfolders in the target folder
             $subfolders = Get-ChildItem -Path $TargetFolder -Directory
 
             # Determine if subfolders need to be created
-            $totalFiles = $totalTargetFilesBefore + $totalSourceFiles
             LogMessage -Message "Total Files Before: $totalFiles."
             $currentFolderCount = $subfolders.Count
             LogMessage -Message "Sub-folder Count Before: $currentFolderCount."
@@ -758,7 +758,10 @@ function Main {
         if ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
             LogMessage -Message "Distributing files to subfolders..."
-            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter -TotalFiles $totalSourceFiles        
+            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit `
+                                        -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency `
+                                        -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete `
+                                        -GlobalFileCounter $GlobalFileCounter -TotalFiles $totalFiles # Pass correct total
             LogMessage -Message "Completed file distribution"
 
             # Common base for additional variables
@@ -783,7 +786,11 @@ function Main {
         if ($lastCheckpoint -lt 4) {
             # Redistribute files within the target folder and subfolders if needed
             LogMessage -Message "Redistributing files in target folders..."
-            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter -TotalFiles $totalSourceFiles + $totalTargetFilesBefore
+            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders `
+                                      -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress `
+                                      -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode `
+                                      -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter `
+                                      -TotalFiles $totalFiles # Pass correct total
         
             # Base additional variables
             $additionalVars = @{
