@@ -157,7 +157,7 @@ function LogMessage {
     )
     # Get the timestamp and format the log entry
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$timestamp: $Message" # Removed the extra space after the timestamp
+    $logEntry = "$($timestamp): $($Message)" # Removed the extra space after the timestamp
 
     # Append the log entry to the log file
     $logEntry | Add-Content -Path $LogFilePath
