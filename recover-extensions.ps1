@@ -11,8 +11,14 @@ Optional. Specifies the path to the log file where actions are recorded. Default
 .PARAMETER FolderPath
 Optional. Specifies the path to the folder containing the files to be processed. Defaults to "C:\Users\manoj\OneDrive\Desktop\New folder".
 
+.PARAMETER UnknownsFolder
+Optional. Specifies the path to the folder where files with unrecognized extensions are moved. Defaults to "C:\Users\manoj\OneDrive\Desktop\UnidentifiedFiles".
+
 .PARAMETER DryRun
-Optional. When specified, the script will not rename any files. Instead, it will log the actions that would have been taken and provide a summary report.
+Optional. If specified, no changes are made to the files or folders. Actions are logged but not executed.
+
+.PARAMETER MoveUnknowns
+Optional. If specified, files with unrecognized extensions are moved to the UnknownsFolder. If not specified, these files are not moved.
 
 .EXAMPLES
 To recover file extensions in the default folder and log the actions:
@@ -24,10 +30,13 @@ To recover file extensions in a custom folder and log the actions:
 To perform a dry run without renaming files:
 .\recover-extensions.ps1 -DryRun
 
+To move files with unrecognized extensions to a specific folder:
+.\recover-extensions.ps1 -MoveUnknowns
+
 .NOTES
 Script Workflow:
 1. **Initialization**:
-   - Defines the log file path and the target folder path using the provided parameters or defaults to the specified paths.
+   - Defines the log file path, target folder path, and unknowns folder path using the provided parameters or defaults to the specified paths.
 
 2. **File Extension Detection**:
    - Reads the first few bytes of each file to determine its type based on common file signatures (e.g., PNG, JPEG).
@@ -36,11 +45,12 @@ Script Workflow:
    - Iterates through each file in the target folder.
    - Skips files that already have an extension.
    - Appends the correct extension to files without an extension based on their detected file type.
-   - Logs each action (skipped, renamed, unknown extension).
+   - Moves files with unrecognized extensions to the unknowns folder if specified.
+   - Logs each action (skipped, renamed, moved, unknown extension).
 
 4. **Summary Logging**:
-   - Logs a summary of all actions taken (files skipped, renamed, and unknown extensions).
-   - In dry run mode, logs actions without renaming files and provides a detailed summary.
+   - Logs a summary of all actions taken (files skipped, renamed, moved, and unknown extensions).
+   - In dry run mode, logs actions without renaming or moving files and provides a detailed summary.
 
 Limitations:
 - The script currently supports common file signatures for PNG and JPEG files.
@@ -48,15 +58,23 @@ Limitations:
 - Ensure you have the necessary permissions to read, write, and rename files in the target directory.
 #>
 
-# Add DryRun parameter
+# Add new parameters for unknowns folder and moving unknown files
 param(
     [string]$FolderPath = "C:\Users\manoj\OneDrive\Desktop\New folder",
     [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions-log.txt",
-    [switch]$DryRun
+    [string]$UnknownsFolder = "C:\Users\manoj\OneDrive\Desktop\UnidentifiedFiles",
+    [switch]$DryRun,
+    [switch]$MoveUnknowns
 )
 
 # Update log file path
 $logFilePath = $LogFilePath
+
+# Ensure the unknowns folder exists if not in dry run mode and moving unknowns is enabled
+if ($MoveUnknowns -and -not $DryRun -and -not (Test-Path -Path $UnknownsFolder)) {
+    New-Item -ItemType Directory -Path $UnknownsFolder -Force | Out-Null
+    Write-Log "Created unknowns folder at $UnknownsFolder"
+}
 
 # Function to log messages with timestamp
 function Write-Log {
@@ -151,6 +169,13 @@ foreach ($file in $files) {
         $unknownSignatures[$extension]++
         Write-Log "Could not determine extension for $($file.Name). Hex: $extension"
         $unknownCount++
+
+        # Move unknown files to the unknowns folder if MoveUnknowns is enabled and not in dry run mode
+        if ($MoveUnknowns -and -not $DryRun) {
+            $destinationPath = Join-Path -Path $UnknownsFolder -ChildPath $file.Name
+            Move-Item -Path $file.FullName -Destination $destinationPath
+            Write-Log "Moved $($file.Name) to $UnknownsFolder"
+        }
     }
 }
 
