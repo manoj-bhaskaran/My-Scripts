@@ -69,6 +69,9 @@ Optional. Specifies a timestamp in the format "YYYY-MM-DD HH:MM:SS" or ISO 8601.
 .PARAMETER RemoveEntriesOlderThan
 Optional. Specifies an age in days. All log entries older than the specified number of days will be removed.
 
+.PARAMETER Help
+Optional. Displays the script's synopsis/help text and exits without performing any operations.
+
 .EXAMPLES
 To copy files from "C:\Source" to "C:\Target" with a default file limit:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
@@ -102,6 +105,9 @@ To remove log entries before a specific timestamp:
 
 To remove log entries older than 30 days:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -RemoveEntriesOlderThan 30
+
+To display the script's help text:
+.\FileDistributor.ps1 -Help
 
 .NOTES
 Script Workflow:
@@ -165,8 +171,61 @@ param(
     [switch]$TruncateLog,
     [string]$TruncateIfLarger,
     [string]$RemoveEntriesBefore,
-    [int]$RemoveEntriesOlderThan
+    [int]$RemoveEntriesOlderThan,
+    [switch]$Help
 )
+
+# Display help and exit if -Help is specified
+if ($Help) {
+    @"
+FileDistributor.ps1 - File Distribution Script
+
+SYNOPSIS
+This PowerShell script copies files from a source folder to a target folder, distributing them across subfolders while maintaining a maximum file count per subfolder. It supports configurable deletion modes, progress updates, and automatic conflict resolution for file names.
+
+DESCRIPTION
+The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
+
+PARAMETERS
+- SourceFolder: Mandatory. Specifies the path to the source folder containing the files to be copied.
+- TargetFolder: Mandatory. Specifies the path to the target folder where the files will be distributed.
+- FilesPerFolderLimit: Optional. Maximum number of files allowed in each subfolder. Defaults to 20,000.
+- LogFilePath: Optional. Path to the log file for recording script activities. Defaults to "FileDistributor-log.txt".
+- Restart: Optional. Resumes the script from the last checkpoint.
+- ShowProgress: Optional. Displays progress updates during execution.
+- UpdateFrequency: Optional. Frequency of progress updates. Defaults to 100 files.
+- DeleteMode: Optional. Specifies how original files are handled after copying. Options: RecycleBin (default), Immediate, EndOfScript.
+- EndOfScriptDeletionCondition: Optional. Conditions for deletion in EndOfScript mode. Options: NoWarnings (default), WarningsOnly.
+- RetryDelay: Optional. Delay in seconds before retrying file access. Defaults to 10 seconds.
+- RetryCount: Optional. Number of retries for file access. Defaults to 1.
+- CleanupDuplicates: Optional. Invokes duplicate file removal script after distribution.
+- CleanupEmptyFolders: Optional. Invokes empty folder cleanup script after distribution.
+- TruncateLog: Optional. Clears the log file at the start of the script.
+- TruncateIfLarger: Optional. Truncates the log file if it exceeds a specified size.
+- RemoveEntriesBefore: Optional. Removes log entries before a specific timestamp.
+- RemoveEntriesOlderThan: Optional. Removes log entries older than a specified number of days.
+- Help: Displays this help text and exits.
+
+EXAMPLES
+To copy files from "C:\Source" to "C:\Target" with a default file limit:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
+
+To display progress updates every 50 files:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -ShowProgress -UpdateFrequency 50
+
+To restart the script from the last checkpoint:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Restart
+
+To display this help text:
+.\FileDistributor.ps1 -Help
+
+NOTES
+Ensure permissions for reading and writing in both source and target directories.
+The random name generator script should be located at: `C:\Users\manoj\Documents\Scripts\randomname.ps1`.
+
+"@ | Out-Host
+    exit
+}
 
 # Define script-scoped variables for warnings and errors
 $script:Warnings = 0
@@ -524,7 +583,7 @@ function SaveState {
     $state | ConvertTo-Json -Depth 100 | Set-Content -Path $StateFilePath
 
     # Log the save operation
-    LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')"
+    LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')" 
 
     # Reacquire the file lock after saving state
     $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
