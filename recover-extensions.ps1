@@ -210,6 +210,7 @@ if ($DryRun) {
 # Write summary of files grouped by extension
 if ($extensionSummary.Count -gt 0) {
     $extensionSummaryMessage = $extensionSummary.GetEnumerator() | ForEach-Object { "Extension $($_.Key): $($_.Value) file(s)" } | Out-String
-    Write-Log "Summary of files with extensions:\n$extensionSummaryMessage"
-    Write-Host "Summary of files with extensions:\n$extensionSummaryMessage"
+    $formattedSummaryMessage = $extensionSummaryMessage -replace "\n", "`n"
+    Write-Log "Summary of files with extensions:`n$formattedSummaryMessage"
+    Write-Host "Summary of files with extensions:`n$formattedSummaryMessage"
 }
