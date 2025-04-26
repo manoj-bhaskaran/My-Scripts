@@ -69,6 +69,9 @@ Optional. Specifies a timestamp in the format "YYYY-MM-DD HH:MM:SS" or ISO 8601.
 .PARAMETER RemoveEntriesOlderThan
 Optional. Specifies an age in days. All log entries older than the specified number of days will be removed.
 
+.PARAMETER Help
+Optional. Displays the script's synopsis/help text and exits without performing any operations.
+
 .EXAMPLES
 To copy files from "C:\Source" to "C:\Target" with a default file limit:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
@@ -102,6 +105,9 @@ To remove log entries before a specific timestamp:
 
 To remove log entries older than 30 days:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -RemoveEntriesOlderThan 30
+
+To display the script's help text:
+.\FileDistributor.ps1 -Help
 
 .NOTES
 Script Workflow:
@@ -165,8 +171,73 @@ param(
     [switch]$TruncateLog,
     [string]$TruncateIfLarger,
     [string]$RemoveEntriesBefore,
-    [int]$RemoveEntriesOlderThan
+    [int]$RemoveEntriesOlderThan,
+    [switch]$Help
 )
+
+# Display help and exit if -Help is specified
+if ($Help) {
+    Write-Host "FileDistributor.ps1 - File Distribution Script" -ForegroundColor Cyan
+    Write-Host "`nSYNOPSIS" -ForegroundColor Yellow
+    Write-Host "This PowerShell script copies files from a source folder to a target folder, distributing them across subfolders while maintaining a maximum file count per subfolder. It supports configurable deletion modes, progress updates, and automatic conflict resolution for file names." -ForegroundColor White
+
+    Write-Host "`nDESCRIPTION" -ForegroundColor Yellow
+    Write-Host "The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed." -ForegroundColor White
+
+    Write-Host "`nPARAMETERS" -ForegroundColor Yellow
+    Write-Host "- SourceFolder:" -ForegroundColor Green
+    Write-Host "  Mandatory. Specifies the path to the source folder containing the files to be copied." -ForegroundColor White
+    Write-Host "- TargetFolder:" -ForegroundColor Green
+    Write-Host "  Mandatory. Specifies the path to the target folder where the files will be distributed." -ForegroundColor White
+    Write-Host "- FilesPerFolderLimit:" -ForegroundColor Green
+    Write-Host "  Optional. Maximum number of files allowed in each subfolder. Defaults to 20,000." -ForegroundColor White
+    Write-Host "- LogFilePath:" -ForegroundColor Green
+    Write-Host "  Optional. Path to the log file for recording script activities. Defaults to 'FileDistributor-log.txt'." -ForegroundColor White
+    Write-Host "- Restart:" -ForegroundColor Green
+    Write-Host "  Optional. Resumes the script from the last checkpoint." -ForegroundColor White
+    Write-Host "- ShowProgress:" -ForegroundColor Green
+    Write-Host "  Optional. Displays progress updates during execution." -ForegroundColor White
+    Write-Host "- UpdateFrequency:" -ForegroundColor Green
+    Write-Host "  Optional. Frequency of progress updates. Defaults to 100 files." -ForegroundColor White
+    Write-Host "- DeleteMode:" -ForegroundColor Green
+    Write-Host "  Optional. Specifies how original files are handled after copying. Options: RecycleBin (default), Immediate, EndOfScript." -ForegroundColor White
+    Write-Host "- EndOfScriptDeletionCondition:" -ForegroundColor Green
+    Write-Host "  Optional. Conditions for deletion in EndOfScript mode. Options: NoWarnings (default), WarningsOnly." -ForegroundColor White
+    Write-Host "- RetryDelay:" -ForegroundColor Green
+    Write-Host "  Optional. Delay in seconds before retrying file access. Defaults to 10 seconds." -ForegroundColor White
+    Write-Host "- RetryCount:" -ForegroundColor Green
+    Write-Host "  Optional. Number of retries for file access. Defaults to 1." -ForegroundColor White
+    Write-Host "- CleanupDuplicates:" -ForegroundColor Green
+    Write-Host "  Optional. Invokes duplicate file removal script after distribution." -ForegroundColor White
+    Write-Host "- CleanupEmptyFolders:" -ForegroundColor Green
+    Write-Host "  Optional. Invokes empty folder cleanup script after distribution." -ForegroundColor White
+    Write-Host "- TruncateLog:" -ForegroundColor Green
+    Write-Host "  Optional. Clears the log file at the start of the script." -ForegroundColor White
+    Write-Host "- TruncateIfLarger:" -ForegroundColor Green
+    Write-Host "  Optional. Truncates the log file if it exceeds a specified size." -ForegroundColor White
+    Write-Host "- RemoveEntriesBefore:" -ForegroundColor Green
+    Write-Host "  Optional. Removes log entries before a specific timestamp." -ForegroundColor White
+    Write-Host "- RemoveEntriesOlderThan:" -ForegroundColor Green
+    Write-Host "  Optional. Removes log entries older than a specified number of days." -ForegroundColor White
+    Write-Host "- Help:" -ForegroundColor Green
+    Write-Host "  Displays this help text and exits." -ForegroundColor White
+
+    Write-Host "`nEXAMPLES" -ForegroundColor Yellow
+    Write-Host "To copy files from 'C:\Source' to 'C:\Target' with a default file limit:" -ForegroundColor White
+    Write-Host ".\FileDistributor.ps1 -SourceFolder 'C:\Source' -TargetFolder 'C:\Target'" -ForegroundColor DarkCyan
+    Write-Host "`nTo display progress updates every 50 files:" -ForegroundColor White
+    Write-Host ".\FileDistributor.ps1 -SourceFolder 'C:\Source' -TargetFolder 'C:\Target' -ShowProgress -UpdateFrequency 50" -ForegroundColor DarkCyan
+    Write-Host "`nTo restart the script from the last checkpoint:" -ForegroundColor White
+    Write-Host ".\FileDistributor.ps1 -SourceFolder 'C:\Source' -TargetFolder 'C:\Target' -Restart" -ForegroundColor DarkCyan
+    Write-Host "`nTo display this help text:" -ForegroundColor White
+    Write-Host ".\FileDistributor.ps1 -Help" -ForegroundColor DarkCyan
+
+    Write-Host "`nNOTES" -ForegroundColor Yellow
+    Write-Host "Ensure permissions for reading and writing in both source and target directories." -ForegroundColor White
+    Write-Host "The random name generator script should be located at: 'C:\Users\manoj\Documents\Scripts\randomname.ps1'." -ForegroundColor White
+
+    exit
+}
 
 # Define script-scoped variables for warnings and errors
 $script:Warnings = 0
@@ -524,7 +595,7 @@ function SaveState {
     $state | ConvertTo-Json -Depth 100 | Set-Content -Path $StateFilePath
 
     # Log the save operation
-    LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')"
+    LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')" 
 
     # Reacquire the file lock after saving state
     $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
@@ -701,7 +772,7 @@ function Main {
                 $thresholdBytes = ConvertToBytes -Size $TruncateIfLarger
                 if ((Test-Path -Path $LogFilePath) -and ((Get-Item -Path $LogFilePath).Length -gt $thresholdBytes)) {
                     Clear-Content -Path $LogFilePath -Force
-                    LogMessage -Message "Log file truncated due to size exceeding $TruncateIfLarger: $LogFilePath"
+                    LogMessage -Message "Log file truncated due to size exceeding ${TruncateIfLarger}: $LogFilePath"
                 }
             } catch {
                 LogMessage -Message "Failed to evaluate or truncate log file based on size: $($_.Exception.Message)" -IsError
