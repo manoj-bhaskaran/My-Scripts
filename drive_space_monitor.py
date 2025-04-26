@@ -95,8 +95,9 @@ def clear_trash(service):
     except HttpError as error:
         logging.error(f"An error occurred: {error}")
 
-def main(debug):
+def main(debug, threshold):
     setup_logging(debug)
+    logging.info(f"Using threshold: {threshold}%")  # Log the threshold value
     service = authenticate_and_get_drive_service()
     usage_percentage, usage, limit = get_storage_usage(service)
 
@@ -105,8 +106,8 @@ def main(debug):
         readable_total_usage = format_size(usage)
         readable_limit = format_size(limit)
 
-        if usage_percentage > 90:
-            logging.info(f"Storage usage exceeds 90%: {usage_percentage:.2f}% ({readable_total_usage} of {readable_limit}). Clearing trash.")
+        if usage_percentage > threshold:
+            logging.info(f"Storage usage exceeds {threshold}%: {usage_percentage:.2f}% ({readable_total_usage} of {readable_limit}). Clearing trash.")
             clear_trash(service)
 
             # Get and log usage after clearing trash
@@ -119,5 +120,11 @@ def main(debug):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Google Drive Storage Monitor')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    parser.add_argument('--threshold', '-t', type=float, default=90.0, help='Threshold percentage for storage usage (default: 90%)')
     args = parser.parse_args()
-    main(args.debug)
+
+    # Validate threshold value
+    if not (0 < args.threshold < 100):
+        raise ValueError("Threshold must be a value between 0 and 100 (exclusive).")
+
+    main(args.debug, args.threshold)
