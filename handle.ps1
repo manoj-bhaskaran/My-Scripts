@@ -18,6 +18,11 @@ param (
     [string]$FileToCheck
 )
 
+# If no parameter is provided, check for command-line arguments
+if (-not $FileToCheck -and $args.Count -gt 0) {
+    $FileToCheck = $args[0]
+}
+
 # Define the path to the Handle.exe utility
 $handlePath = "C:\Users\manoj\Documents\Scripts\Handle\handle.exe"  # Update this path to where you have handle.exe
 
