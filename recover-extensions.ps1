@@ -159,11 +159,18 @@ Write-Log "MoveUnknowns: $MoveUnknowns" -isDebug
 # Recursive file scanning
 Write-Log "Discovering files in folder: $FolderPath" -isDebug
 $files = Get-ChildItem -Path $FolderPath -File -Recurse
-if ($Debug) { Write-Host "Found $($files.Count) file(s) in folder." }
-Write-Log "Found $($files.Count) file(s) in folder." -isDebug
+$totalFiles = $files.Count
+if ($Debug) { Write-Host "Found $totalFiles file(s) in folder." }
+Write-Log "Found $totalFiles file(s) in folder." -isDebug
 
 # Iterate through each file and check its type
+$processedFiles = 0
 foreach ($file in $files) {
+    # Update progress bar
+    $processedFiles++
+    $percentComplete = [math]::Round(($processedFiles / $totalFiles) * 100, 2)
+    Write-Progress -Activity "Processing Files" -Status "Processing file $processedFiles of $totalFiles" -PercentComplete $percentComplete
+
     if ($Debug) { Write-Host "Processing file: $($file.FullName)" }  # Debug message for the first file
     Write-Log "Processing file: $($file.FullName)" -isDebug
 
@@ -229,6 +236,9 @@ foreach ($file in $files) {
         }
     }
 }
+
+# Clear the progress bar after processing is complete
+Write-Progress -Activity "Processing Files" -Status "Completed" -Completed
 
 # Debug log for summary
 Write-Log "Script completed. Generating summary." -isDebug
