@@ -479,7 +479,8 @@ function RedistributeFilesInTarget {
     $rootFiles = Get-ChildItem -Path $TargetFolder -File
     DistributeFilesToSubfolders -Files $rootFiles -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter -TotalFiles $TotalFiles
 
-    LogMessage -Message "Redistributing files from subfolders..."
+    LogMessage -Message "File redistribution completed: Processed $($GlobalFileCounter.Value) of $TotalFiles files in the target folder."
+
     foreach ($file in $allFiles) {
         $folder = $file.DirectoryName
         $currentFileCount = $folderFilesMap[$folder]
