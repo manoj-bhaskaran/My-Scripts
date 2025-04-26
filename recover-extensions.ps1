@@ -159,7 +159,10 @@ if ($DryRun) {
     $identifiedExtensions = $extensionCounts.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }
     $unknownExtensions = $unknownSignatures.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }
 
-    $summaryMessage = "Dry Run Summary: Skipped $skippedCount file(s), Identified extensions: $($identifiedExtensions -join ", "), Unknown extensions: $($unknownExtensions -join ", ")."
+    $identifiedExtensionsMessage = if ($identifiedExtensions) { $identifiedExtensions -join ", " } else { "None" }
+    $unknownExtensionsMessage = if ($unknownExtensions) { $unknownExtensions -join ", " } else { "None" }
+
+    $summaryMessage = "Dry Run Summary: Skipped $skippedCount file(s), Identified extensions: $identifiedExtensionsMessage, Unknown extensions: $unknownExtensionsMessage."
     Write-Log $summaryMessage
     Write-Host $summaryMessage
 } else {
