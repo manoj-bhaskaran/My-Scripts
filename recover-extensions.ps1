@@ -121,6 +121,14 @@ function Get-FileExtension {
     }
 }
 
+# Check if the input folder exists
+if (-not (Test-Path -Path $FolderPath)) {
+    $errorMessage = "Error: The specified folder '$FolderPath' does not exist."
+    Write-Host $errorMessage
+    Write-Log $errorMessage
+    exit 1
+}
+
 # Ensure the unknowns folder exists if not in dry run mode and moving unknowns is enabled
 if ($MoveUnknowns -and -not $DryRun -and -not (Test-Path -Path $UnknownsFolder)) {
     New-Item -ItemType Directory -Path $UnknownsFolder -Force | Out-Null
