@@ -137,6 +137,10 @@ $unknownSignatures = @{ }
 # Initialize a dictionary to count files by extension
 $extensionSummary = @{}
 
+# Debug log for script start
+if ($Debug) { Write-Host "Script started. Processing folder: $FolderPath" }
+Write-Log "Script started. Processing folder: $FolderPath" -isDebug
+
 # Debug log for folder path
 Write-Log "Starting script with FolderPath: $FolderPath" -isDebug
 Write-Log "LogFilePath: $LogFilePath" -isDebug
@@ -147,10 +151,12 @@ Write-Log "MoveUnknowns: $MoveUnknowns" -isDebug
 # Recursive file scanning
 Write-Log "Discovering files in folder: $FolderPath" -isDebug
 $files = Get-ChildItem -Path $FolderPath -File -Recurse
+if ($Debug) { Write-Host "Found $($files.Count) file(s) in folder." }
 Write-Log "Found $($files.Count) file(s) in folder." -isDebug
 
 # Iterate through each file and check its type
 foreach ($file in $files) {
+    if ($Debug) { Write-Host "Processing file: $($file.FullName)" }  # Debug message for the first file
     Write-Log "Processing file: $($file.FullName)" -isDebug
 
     # Skip files that already have an extension
