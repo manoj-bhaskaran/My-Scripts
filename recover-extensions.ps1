@@ -156,7 +156,10 @@ foreach ($file in $files) {
 
 # Write summary at the end
 if ($DryRun) {
-    $summaryMessage = "Dry Run Summary: Skipped $skippedCount file(s), Identified extensions: $($extensionCounts.GetEnumerator() | ForEach-Object { \"$($_.Key): $($_.Value)\" } -join ", "), Unknown extensions: $($unknownSignatures.GetEnumerator() | ForEach-Object { \"$($_.Key): $($_.Value)\" } -join ", ")."
+    $identifiedExtensions = $extensionCounts.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }
+    $unknownExtensions = $unknownSignatures.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }
+
+    $summaryMessage = "Dry Run Summary: Skipped $skippedCount file(s), Identified extensions: $($identifiedExtensions -join ", "), Unknown extensions: $($unknownExtensions -join ", ")."
     Write-Log $summaryMessage
     Write-Host $summaryMessage
 } else {
