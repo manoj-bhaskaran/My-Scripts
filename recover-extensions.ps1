@@ -58,41 +58,23 @@ Limitations:
 - Ensure you have the necessary permissions to read, write, and rename files in the target directory.
 #>
 
-# Add new parameters for unknowns folder and moving unknown files
-param(
-    [string]$FolderPath = "C:\Users\manoj\OneDrive\Desktop\New folder",
-    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions-log.txt",
-    [string]$UnknownsFolder = "C:\Users\manoj\OneDrive\Desktop\UnidentifiedFiles",
-    [switch]$DryRun,
-    [switch]$MoveUnknowns
-)
-
-# Update log file path
-$logFilePath = $LogFilePath
-
-# Ensure the unknowns folder exists if not in dry run mode and moving unknowns is enabled
-if ($MoveUnknowns -and -not $DryRun -and -not (Test-Path -Path $UnknownsFolder)) {
-    New-Item -ItemType Directory -Path $UnknownsFolder -Force | Out-Null
-    Write-Log "Created unknowns folder at $UnknownsFolder"
-}
-
-# Function to log messages with timestamp
+# Define the Write-Log function if not already defined
 function Write-Log {
     param([string]$message)
 
     # Check if log file exists, and create it if it doesn't
-    if (-not (Test-Path -Path $logFilePath)) {
-        New-Item -ItemType File -Path $logFilePath -Force
+    if (-not (Test-Path -Path $LogFilePath)) {
+        New-Item -ItemType File -Path $LogFilePath -Force | Out-Null
     }
 
     # Get current timestamp
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    
+
     # Prepare log entry
     $logEntry = "$timestamp - $message"
 
     # Write log entry to the log file
-    Add-Content -Path $logFilePath -Value "$logEntry"
+    Add-Content -Path $LogFilePath -Value $logEntry
 }
 
 # Define a function to get file type based on the first few bytes
@@ -116,12 +98,30 @@ function Get-FileExtension {
     }
 }
 
+# Add new parameters for unknowns folder and moving unknown files
+param(
+    [string]$FolderPath = "C:\Users\manoj\OneDrive\Desktop\New folder",
+    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions-log.txt",
+    [string]$UnknownsFolder = "C:\Users\manoj\OneDrive\Desktop\UnidentifiedFiles",
+    [switch]$DryRun,
+    [switch]$MoveUnknowns
+)
+
+# Update log file path
+$logFilePath = $LogFilePath
+
+# Ensure the unknowns folder exists if not in dry run mode and moving unknowns is enabled
+if ($MoveUnknowns -and -not $DryRun -and -not (Test-Path -Path $UnknownsFolder)) {
+    New-Item -ItemType Directory -Path $UnknownsFolder -Force | Out-Null
+    Write-Log "Created unknowns folder at $UnknownsFolder"
+}
+
 # Initialize counters
 $skippedCount = 0
 $renamedCount = 0
 $unknownCount = 0
-$extensionCounts = @{}
-$unknownSignatures = @{}
+$extensionCounts = @{ }
+$unknownSignatures = @{ }
 
 # Recursive file scanning
 $files = Get-ChildItem -Path $FolderPath -File -Recurse
