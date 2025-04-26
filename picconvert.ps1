@@ -37,6 +37,9 @@ foreach ($file in $files) {
             $notCopiedJpgCount++
             continue
         }
+    } elseif ($extension -eq "png") {
+        # Skip copying PNG files by default
+        continue
     }
 
     # Initialize counters if not already done
