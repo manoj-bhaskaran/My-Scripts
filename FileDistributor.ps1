@@ -60,6 +60,9 @@ Optional. If specified, invokes the empty folder cleanup script after distributi
 .PARAMETER TruncateLog
 Optional. If specified, the log file will be truncated (cleared) at the start of the script. This option is ignored during a restart.
 
+.PARAMETER TruncateIfLarger
+Optional. Specifies a size threshold for truncating the log file at the start of the script. The size can be specified in formats like 1K (kilobytes), 2M (megabytes), or 3G (gigabytes). This option is ignored during a restart.
+
 .EXAMPLES
 To copy files from "C:\Source" to "C:\Target" with a default file limit:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
@@ -84,6 +87,9 @@ To invoke cleanup scripts for duplicates and empty folders:
 
 To truncate the log file and start afresh:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateLog
+
+To truncate the log file if it exceeds 10 megabytes:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateIfLarger 10M
 
 .NOTES
 Script Workflow:
@@ -144,7 +150,8 @@ param(
     [int]$RetryCount = 3, # Number of times to retry file access (0 for unlimited retries)
     [switch]$CleanupDuplicates,
     [switch]$CleanupEmptyFolders,
-    [switch]$TruncateLog
+    [switch]$TruncateLog,
+    [string]$TruncateIfLarger
 )
 
 # Define script-scoped variables for warnings and errors
@@ -590,17 +597,46 @@ function ReleaseFileLock {
     LogMessage -Message "Released lock on $fileName"
 }
 
+# Function to convert size string to bytes
+function ConvertToBytes {
+    param (
+        [string]$Size
+    )
+    if ($Size -match '^(\d+)([KMG])$') {
+        $value = [int]$matches[1]
+        switch ($matches[2]) {
+            'K' { return $value * 1KB }
+            'M' { return $value * 1MB }
+            'G' { return $value * 1GB }
+        }
+    } else {
+        throw "Invalid size format: $Size. Use formats like 1K, 2M, or 3G."
+    }
+}
+
 # Main script logic
 function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
 
     # Handle log truncation for fresh runs
-    if (-not $Restart -and $TruncateLog) {
-        try {
-            Clear-Content -Path $LogFilePath -Force
-            LogMessage -Message "Log file truncated: $LogFilePath"
-        } catch {
-            LogMessage -Message "Failed to truncate log file: $($_.Exception.Message)" -IsError
+    if (-not $Restart) {
+        if ($TruncateIfLarger) {
+            try {
+                $thresholdBytes = ConvertToBytes -Size $TruncateIfLarger
+                if ((Test-Path -Path $LogFilePath) -and ((Get-Item -Path $LogFilePath).Length -gt $thresholdBytes)) {
+                    Clear-Content -Path $LogFilePath -Force
+                    LogMessage -Message "Log file truncated due to size exceeding $TruncateIfLarger: $LogFilePath"
+                }
+            } catch {
+                LogMessage -Message "Failed to evaluate or truncate log file based on size: $($_.Exception.Message)" -IsError
+            }
+        } elseif ($TruncateLog) {
+            try {
+                Clear-Content -Path $LogFilePath -Force
+                LogMessage -Message "Log file truncated: $LogFilePath"
+            } catch {
+                LogMessage -Message "Failed to truncate log file: $($_.Exception.Message)" -IsError
+            }
         }
     }
 
