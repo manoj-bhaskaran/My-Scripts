@@ -124,6 +124,9 @@ $unknownCount = 0
 $extensionCounts = @{ }
 $unknownSignatures = @{ }
 
+# Initialize a dictionary to count files by extension
+$extensionSummary = @{}
+
 # Recursive file scanning
 $files = Get-ChildItem -Path $FolderPath -File -Recurse
 
@@ -133,6 +136,13 @@ foreach ($file in $files) {
     if ($file.Extension) {
         Write-Log "Skipping $($file.Name), already has extension."
         $skippedCount++
+
+        # Increment the count for the extension
+        if (-not $extensionSummary.ContainsKey($file.Extension)) {
+            $extensionSummary[$file.Extension] = 0
+        }
+        $extensionSummary[$file.Extension]++
+
         continue
     }
 
@@ -195,4 +205,11 @@ if ($DryRun) {
     $summaryMessage = "Summary: Skipped $skippedCount file(s), Renamed $renamedCount file(s), Unknown extension for $unknownCount file(s)."
     Write-Log $summaryMessage
     Write-Host $summaryMessage
+}
+
+# Write summary of files grouped by extension
+if ($extensionSummary.Count -gt 0) {
+    $extensionSummaryMessage = $extensionSummary.GetEnumerator() | ForEach-Object { "Extension $($_.Key): $($_.Value) file(s)" } | Out-String
+    Write-Log "Summary of files with extensions:\n$extensionSummaryMessage"
+    Write-Host "Summary of files with extensions:\n$extensionSummaryMessage"
 }
