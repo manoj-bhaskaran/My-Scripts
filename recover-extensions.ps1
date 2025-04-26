@@ -123,7 +123,7 @@ function Get-FileExtension {
 
 # Check if the input folder exists
 if (-not (Test-Path -Path $FolderPath)) {
-    $errorMessage = "The specified folder '$FolderPath' does not exist."
+    $errorMessage = "ERROR: The specified folder '$FolderPath' does not exist."
     Write-Error $errorMessage
     Write-Log $errorMessage
     exit 1
