@@ -89,10 +89,26 @@ jobs:
           name: SQL-Lint-Reports
           path: sqlfluff-report.txt
 
-      - name: Install SonarScanner
+      # --- Updated SonarScanner installation with cache ---
+      - name: Cache Sonar Scanner
+        id: cache-sonar
+        uses: actions/cache@v4
+        with:
+          path: sonar-scanner
+          key: sonar-scanner-6.0.0.4432-linux
+
+      - name: Install Sonar Scanner
+        if: steps.cache-sonar.outputs.cache-hit != 'true'
         run: |
           wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.0.0.4432-linux.zip
+          if [ ! -f sonar-scanner-cli-6.0.0.4432-linux.zip ]; then
+            echo "Download failed!"
+            exit 1
+          fi
           unzip -q sonar-scanner-cli-6.0.0.4432-linux.zip -d sonar-scanner
+
+      - name: Update PATH for Sonar Scanner
+        run: |
           echo "${{ github.workspace }}/sonar-scanner/sonar-scanner-6.0.0.4432-linux/bin" >> $GITHUB_PATH
 
       - name: SonarCloud Scan
