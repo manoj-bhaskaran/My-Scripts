@@ -30,10 +30,26 @@ To run the script manually:
 $localRepoPath = "D:\My Scripts"
 $compareDirectory = "C:\Users\manoj\Documents\Scripts"
 $targetDirectory = "C:\Users\manoj\Documents\Scripts"
+$logFile = "C:\Users\manoj\Documents\Scripts\git-post-action.log"
+
+# Function to log messages with timestamps and source identifier
+function Log-Message {
+    param (
+        [string]$message,
+        [string]$source = "post-merge"
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$timestamp][$source] $message"
+    Add-Content -Path $logFile -Value $logEntry
+    Write-Host $logEntry
+}
+
+Log-Message "Script execution started."
 
 # Pull the latest changes from the main branch
-Write-Output "Pulling latest changes from the main branch..."
+Log-Message "Pulling latest changes from the main branch..."
 Set-Location -Path $localRepoPath
+git pull origin main | ForEach-Object { Log-Message $_ }
 
 # Function to compare and copy newer files
 function Compare-And-Copy {
@@ -49,17 +65,19 @@ function Compare-And-Copy {
         $targetFilePath = Join-Path $target $relativePath
 
         if (-not (Test-Path -Path $compareFilePath)) {
-            Write-Output "New file: $relativePath"
+            Log-Message "New file: $relativePath"
             Copy-Item -Path $_.FullName -Destination $targetFilePath -Force
+            Log-Message "Copied new file $relativePath to $target"
         } elseif ((Get-Item -Path $_.FullName).LastWriteTime -gt (Get-Item -Path $compareFilePath).LastWriteTime) {
-            Write-Output "Updated file: $relativePath"
+            Log-Message "Updated file: $relativePath"
             Copy-Item -Path $_.FullName -Destination $targetFilePath -Force
+            Log-Message "Copied updated file $relativePath to $target"
         }
     }
 }
 
 # Compare and copy newer files
-Write-Output "Comparing files and copying newer ones to target directory..."
+Log-Message "Comparing files and copying newer ones to target directory..."
 Compare-And-Copy -source $localRepoPath -destination $compareDirectory -target $targetDirectory
 
-Write-Output "Done!"
+Log-Message "Script execution completed."
