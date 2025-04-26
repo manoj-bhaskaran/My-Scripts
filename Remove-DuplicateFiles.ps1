@@ -53,7 +53,13 @@ $Files = Get-ChildItem -Path $ParentDirectory -Recurse -File
 # Group files by name, extension, size, and last write time
 $DuplicateGroups = $Files | Group-Object -Property Name, Extension, Length, LastWriteTime | Where-Object { $_.Count -gt 1 }
 
+# Initialize counters for summary statistics
+$TotalDuplicatesFound = 0
+$TotalDeleted = 0
+$TotalRetained = 0
+
 foreach ($Group in $DuplicateGroups) {
+    $TotalDuplicatesFound += $Group.Count
     $FilesToDelete = $Group.Group | Select-Object -Skip 1 # Retain the first file, delete the rest
 
     foreach ($File in $FilesToDelete) {
@@ -63,6 +69,7 @@ foreach ($Group in $DuplicateGroups) {
             try {
                 Remove-Item -Path $File.FullName -Force
                 Log "Deleted file: $($File.FullName)"
+                $TotalDeleted++
             } catch {
                 Log "ERROR: Failed to delete file: $($File.FullName). Error: $_"
             }
@@ -72,7 +79,19 @@ foreach ($Group in $DuplicateGroups) {
     # Log the retained file
     $RetainedFile = $Group.Group | Select-Object -First 1
     Log "Retained file: $($RetainedFile.FullName)"
+    $TotalRetained++
 }
+
+# Log and display summary statistics
+$Summary = @"
+Summary:
+Duplicate files found : $TotalDuplicatesFound
+Duplicate files deleted : $TotalDeleted
+Duplicate files retained : $TotalRetained
+"@
+
+Log $Summary
+Write-Host $Summary
 
 Log "Duplicate file scan completed."
 Write-Host "Duplicate file scan completed. Actions logged to $LogFilePath."
