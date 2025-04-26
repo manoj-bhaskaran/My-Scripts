@@ -57,6 +57,9 @@ Optional. If specified, invokes the duplicate file removal script after distribu
 .PARAMETER CleanupEmptyFolders
 Optional. If specified, invokes the empty folder cleanup script after distribution.
 
+.PARAMETER TruncateLog
+Optional. If specified, the log file will be truncated (cleared) at the start of the script. This option is ignored during a restart.
+
 .EXAMPLES
 To copy files from "C:\Source" to "C:\Target" with a default file limit:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
@@ -78,6 +81,9 @@ To enable verbose logging using PowerShell's built-in `-Verbose` switch:
 
 To invoke cleanup scripts for duplicates and empty folders:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -CleanupDuplicates -CleanupEmptyFolders
+
+To truncate the log file and start afresh:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateLog
 
 .NOTES
 Script Workflow:
@@ -137,7 +143,8 @@ param(
     [int]$RetryDelay = 10, # Time to wait before retrying file access (seconds)
     [int]$RetryCount = 3, # Number of times to retry file access (0 for unlimited retries)
     [switch]$CleanupDuplicates,
-    [switch]$CleanupEmptyFolders
+    [switch]$CleanupEmptyFolders,
+    [switch]$TruncateLog
 )
 
 # Define script-scoped variables for warnings and errors
@@ -586,6 +593,17 @@ function ReleaseFileLock {
 # Main script logic
 function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
+
+    # Handle log truncation for fresh runs
+    if (-not $Restart -and $TruncateLog) {
+        try {
+            Clear-Content -Path $LogFilePath -Force
+            LogMessage -Message "Log file truncated: $LogFilePath"
+        } catch {
+            LogMessage -Message "Failed to truncate log file: $($_.Exception.Message)" -IsError
+        }
+    }
+
     LogMessage -Message "Validating parameters: SourceFolder - $SourceFolder, TargetFolder - $TargetFolder, FilePerFolderLimit - $FilesPerFolderLimit"
 
     try {
