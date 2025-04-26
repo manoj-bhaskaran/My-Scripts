@@ -760,7 +760,7 @@ function Main {
                 $thresholdBytes = ConvertToBytes -Size $TruncateIfLarger
                 if ((Test-Path -Path $LogFilePath) -and ((Get-Item -Path $LogFilePath).Length -gt $thresholdBytes)) {
                     Clear-Content -Path $LogFilePath -Force
-                    LogMessage -Message "Log file truncated due to size exceeding $TruncateIfLarger: $LogFilePath"
+                    LogMessage -Message "Log file truncated due to size exceeding ${TruncateIfLarger}: $LogFilePath"
                 }
             } catch {
                 LogMessage -Message "Failed to evaluate or truncate log file based on size: $($_.Exception.Message)" -IsError
