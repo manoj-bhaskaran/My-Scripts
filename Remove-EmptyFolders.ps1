@@ -48,6 +48,9 @@ function Log {
 # Start logging
 Log "Starting empty folder cleanup. Dry-run: $DryRun"
 
+# Initialize a counter for deleted folders
+$DeletedFolderCount = 0
+
 # Recursively search for empty folders
 Get-ChildItem -Path $ParentDirectory -Directory -Recurse | ForEach-Object {
     if (-not (Get-ChildItem -Path $_.FullName -Recurse -Force | Where-Object { $_.PSIsContainer -or $_.PSIsContainer -eq $false })) {
@@ -57,6 +60,7 @@ Get-ChildItem -Path $ParentDirectory -Directory -Recurse | ForEach-Object {
             try {
                 Remove-Item -Path $_.FullName -Recurse -Force
                 Log "Deleted empty folder: $($_.FullName)"
+                $DeletedFolderCount++
             } catch {
                 Log "Failed to delete folder $($_.FullName): $($_.Exception.Message)"
             }
@@ -65,4 +69,11 @@ Get-ChildItem -Path $ParentDirectory -Directory -Recurse | ForEach-Object {
 }
 
 # End logging
-Log "Empty folder cleanup completed."
+if ($DryRun) {
+    $completionMessage = "Empty folder cleanup completed. Dry-run mode: No folders were deleted. $DeletedFolderCount folders will be deleted if executed in normal mode."
+} else {
+    $completionMessage = "Empty folder cleanup completed. $DeletedFolderCount folders were deleted."
+}
+
+Log $completionMessage
+Write-Host $completionMessage
