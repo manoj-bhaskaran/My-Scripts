@@ -20,6 +20,9 @@ Optional. If specified, no changes are made to the files or folders. Actions are
 .PARAMETER MoveUnknowns
 Optional. If specified, files with unrecognized extensions are moved to the UnknownsFolder. If not specified, these files are not moved.
 
+.PARAMETER Debug
+Optional. If specified, debug messages are logged and displayed in the console.
+
 .EXAMPLES
 To recover file extensions in the default folder and log the actions:
 .\recover-extensions.ps1
@@ -32,6 +35,9 @@ To perform a dry run without renaming files:
 
 To move files with unrecognized extensions to a specific folder:
 .\recover-extensions.ps1 -MoveUnknowns
+
+To enable debug logging:
+.\recover-extensions.ps1 -Debug
 
 .NOTES
 Script Workflow:
@@ -58,19 +64,26 @@ Limitations:
 - Ensure you have the necessary permissions to read, write, and rename files in the target directory.
 #>
 
-# Define the Write-Log function if not already defined
-
-# Add new parameters for unknowns folder and moving unknown files
+# Add Debug parameter to the script
 param(
     [string]$FolderPath = "C:\Users\manoj\OneDrive\Desktop\New folder",
     [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions-log.txt",
     [string]$UnknownsFolder = "C:\Users\manoj\OneDrive\Desktop\UnidentifiedFiles",
     [switch]$DryRun,
-    [switch]$MoveUnknowns
+    [switch]$MoveUnknowns,
+    [switch]$Debug
 )
 
+# Update Write-Log to handle debug messages without using Write-Host
 function Write-Log {
-    param([string]$message)
+    param(
+        [string]$message,
+        [switch]$isDebug
+    )
+
+    if ($isDebug -and -not $Debug) {
+        return
+    }
 
     # Check if log file exists, and create it if it doesn't
     if (-not (Test-Path -Path $LogFilePath)) {
@@ -81,7 +94,7 @@ function Write-Log {
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 
     # Prepare log entry
-    $logEntry = "$timestamp - $message"
+    $logEntry = if ($isDebug) { "$timestamp - DEBUG: $message" } else { "$timestamp - $message" }
 
     # Write log entry to the log file
     Add-Content -Path $LogFilePath -Value $logEntry
@@ -127,13 +140,25 @@ $unknownSignatures = @{ }
 # Initialize a dictionary to count files by extension
 $extensionSummary = @{}
 
+# Debug log for folder path
+Write-Log "Starting script with FolderPath: $FolderPath" -isDebug
+Write-Log "LogFilePath: $LogFilePath" -isDebug
+Write-Log "UnknownsFolder: $UnknownsFolder" -isDebug
+Write-Log "DryRun: $DryRun" -isDebug
+Write-Log "MoveUnknowns: $MoveUnknowns" -isDebug
+
 # Recursive file scanning
+Write-Log "Discovering files in folder: $FolderPath" -isDebug
 $files = Get-ChildItem -Path $FolderPath -File -Recurse
+Write-Log "Found $($files.Count) file(s) in folder." -isDebug
 
 # Iterate through each file and check its type
 foreach ($file in $files) {
+    Write-Log "Processing file: $($file.FullName)" -isDebug
+
     # Skip files that already have an extension
     if ($file.Extension) {
+        Write-Log "File already has an extension: $($file.Extension)" -isDebug
         Write-Log "Skipping $($file.Name), already has extension."
         $skippedCount++
 
@@ -151,6 +176,8 @@ foreach ($file in $files) {
     Write-Log "Detected extension $extension for file $($file.Name)"  # Added log for detected extension
 
     if ($extension -and $extension.StartsWith(".")) {
+        Write-Log "Detected valid extension: $extension for file: $($file.Name)" -isDebug
+
         # Update extension count
         if (-not $extensionCounts.ContainsKey($extension)) {
             $extensionCounts[$extension] = 0
@@ -173,6 +200,8 @@ foreach ($file in $files) {
             $renamedCount++
         }
     } else {
+        Write-Log "Unknown extension detected for file: $($file.Name)" -isDebug
+
         # Log the hex value for unknown file types
         if (-not $unknownSignatures.ContainsKey($extension)) {
             $unknownSignatures[$extension] = 0
@@ -189,6 +218,9 @@ foreach ($file in $files) {
         }
     }
 }
+
+# Debug log for summary
+Write-Log "Script completed. Generating summary." -isDebug
 
 # Update dry run summary to include identified extensions and total files processed
 if ($DryRun) {
