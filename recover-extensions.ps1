@@ -190,7 +190,7 @@ foreach ($file in $files) {
     }
 }
 
-# Write summary at the end
+# Update dry run summary to include identified extensions and total files processed
 if ($DryRun) {
     $identifiedExtensions = $extensionCounts.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }
     $unknownExtensions = $unknownSignatures.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }
@@ -198,11 +198,14 @@ if ($DryRun) {
     $identifiedExtensionsMessage = if ($identifiedExtensions) { $identifiedExtensions -join ", " } else { "None" }
     $unknownExtensionsMessage = if ($unknownExtensions) { $unknownExtensions -join ", " } else { "None" }
 
-    $summaryMessage = "Dry Run Summary: Skipped $skippedCount file(s), Identified extensions: $identifiedExtensionsMessage, Unknown extensions: $unknownExtensionsMessage."
+    $totalFilesProcessed = $skippedCount + $renamedCount + $unknownCount
+    $summaryMessage = "Dry Run Summary: Processed $totalFilesProcessed file(s). Skipped $skippedCount file(s), Identified extensions: $identifiedExtensionsMessage, Unknown extensions: $unknownExtensionsMessage."
     Write-Log $summaryMessage
     Write-Host $summaryMessage
 } else {
-    $summaryMessage = "Summary: Skipped $skippedCount file(s), Renamed $renamedCount file(s), Unknown extension for $unknownCount file(s)."
+    # Update non-dry run summary to include total files processed
+    $totalFilesProcessed = $skippedCount + $renamedCount + $unknownCount
+    $summaryMessage = "Summary: Processed $totalFilesProcessed file(s). Skipped $skippedCount file(s), Renamed $renamedCount file(s), Unknown extension for $unknownCount file(s)."
     Write-Log $summaryMessage
     Write-Host $summaryMessage
 }
