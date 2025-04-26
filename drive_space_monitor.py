@@ -28,7 +28,7 @@ def setup_logging(debug):
     )
 
 # Define the scope for Drive API access
-SCOPES = ['https://www.googleapis.com/auth/drive.metadata.readonly']
+SCOPES = ['https://www.googleapis.com/auth/drive']
 
 def authenticate_and_get_drive_service():
     creds = None
