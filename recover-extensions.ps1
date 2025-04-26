@@ -121,9 +121,6 @@ function Get-FileExtension {
     }
 }
 
-# Update log file path
-$logFilePath = $LogFilePath
-
 # Ensure the unknowns folder exists if not in dry run mode and moving unknowns is enabled
 if ($MoveUnknowns -and -not $DryRun -and -not (Test-Path -Path $UnknownsFolder)) {
     New-Item -ItemType Directory -Path $UnknownsFolder -Force | Out-Null
