@@ -5,6 +5,23 @@ param (
 # Define paths
 $repoPath = "D:\My Scripts"
 $destinationFolder = "C:\Users\manoj\Documents\Scripts"
+$logFile = "C:\Users\manoj\Documents\Scripts\git-post-action.log"
+
+# Function to log messages with timestamps and source identifier
+function Log-Message {
+    param (
+        [string]$message,
+        [string]$source = "post-commit"
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$timestamp][$source] $message"
+    Add-Content -Path $logFile -Value $logEntry
+    if ($Verbose) {
+        Write-Host $logEntry
+    }
+}
+
+Log-Message "Script execution started."
 
 if ($Verbose) {
     Write-Host "Verbose mode enabled"
@@ -84,40 +101,27 @@ $modifiedFiles | ForEach-Object {
     # Only copy if the source file exists and is not in .gitignore
     if ((Test-Path $sourceFilePath) -and !(Test-Ignored $_)) {
 
-        if ($Verbose) {
-            Write-Host "Processing modified file: $sourceFilePath" -ForegroundColor Blue
-        }
-
-        # Directly copy the file to the destination folder
-        if ($Verbose) {
-            Write-Host "Copying file $sourceFilePath to $destinationFolder" -ForegroundColor Blue
-        }
+        Log-Message "Processing modified file: $sourceFilePath"
         Copy-Item -Path $sourceFilePath -Destination $destinationFolder -Force
+        Log-Message "Copied file $sourceFilePath to $destinationFolder"
     } else {
-        if ($Verbose) {
-            Write-Host "File $sourceFilePath is ignored or does not exist" -ForegroundColor Blue
-        }
+        Log-Message "File $sourceFilePath is ignored or does not exist"
     }
-} # <-- Add this closing brace
+}
 
 # Move deleted files to the Recycle Bin
 $deletedFiles | ForEach-Object {
     $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $_
 
-    if ($Verbose) {
-        Write-Host "Processing deleted file: $destinationFilePath" -ForegroundColor Magenta
-    }
+    Log-Message "Processing deleted file: $destinationFilePath"
 
     # Only move to Recycle Bin if the file exists in the destination and is not ignored
     if ((Test-Path $destinationFilePath) -and -not (Test-Ignored $_)) {
-        # Move file to Recycle Bin
-        if ($Verbose) {
-            Write-Host "Removing file $destinationFilePath" -ForegroundColor Magenta
-        }
+        Log-Message "Removing file $destinationFilePath"
         Remove-Item -Path $destinationFilePath -Recurse -Confirm:$false -ErrorAction SilentlyContinue
     } else {
-        if ($Verbose) {
-            Write-Host "File $destinationFilePath is ignored or does not exist in the destination folder" -ForegroundColor Magenta
-        }
+        Log-Message "File $destinationFilePath is ignored or does not exist in the destination folder"
     }
 }
+
+Log-Message "Script execution completed."
