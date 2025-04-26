@@ -11,12 +11,18 @@ Optional. Specifies the path to the log file where actions are recorded. Default
 .PARAMETER FolderPath
 Optional. Specifies the path to the folder containing the files to be processed. Defaults to "C:\Users\manoj\OneDrive\Desktop\New folder".
 
+.PARAMETER DryRun
+Optional. When specified, the script will not rename any files. Instead, it will log the actions that would have been taken and provide a summary report.
+
 .EXAMPLES
 To recover file extensions in the default folder and log the actions:
 .\recover-extensions.ps1
 
 To recover file extensions in a custom folder and log the actions:
 .\recover-extensions.ps1 -FolderPath "C:\Custom\Path"
+
+To perform a dry run without renaming files:
+.\recover-extensions.ps1 -DryRun
 
 .NOTES
 Script Workflow:
@@ -34,6 +40,7 @@ Script Workflow:
 
 4. **Summary Logging**:
    - Logs a summary of all actions taken (files skipped, renamed, and unknown extensions).
+   - In dry run mode, logs actions without renaming files and provides a detailed summary.
 
 Limitations:
 - The script currently supports common file signatures for PNG and JPEG files.
@@ -41,8 +48,15 @@ Limitations:
 - Ensure you have the necessary permissions to read, write, and rename files in the target directory.
 #>
 
-# Define the path to the log file
-$logFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions-log.txt"
+# Add DryRun parameter
+param(
+    [string]$FolderPath = "C:\Users\manoj\OneDrive\Desktop\New folder",
+    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions-log.txt",
+    [switch]$DryRun
+)
+
+# Update log file path
+$logFilePath = $LogFilePath
 
 # Function to log messages with timestamp
 function Write-Log {
@@ -84,16 +98,15 @@ function Get-FileExtension {
     }
 }
 
-# Path to the folder with renamed files
-$folderPath = "C:\Users\manoj\OneDrive\Desktop\New folder"
-
-# Get all files in the folder
-$files = Get-ChildItem -Path $folderPath -File
-
 # Initialize counters
 $skippedCount = 0
 $renamedCount = 0
 $unknownCount = 0
+$extensionCounts = @{}
+$unknownSignatures = @{}
+
+# Recursive file scanning
+$files = Get-ChildItem -Path $FolderPath -File -Recurse
 
 # Iterate through each file and check its type
 foreach ($file in $files) {
@@ -109,27 +122,45 @@ foreach ($file in $files) {
     Write-Log "Detected extension $extension for file $($file.Name)"  # Added log for detected extension
 
     if ($extension -and $extension.StartsWith(".")) {
-        # Extract the file name without extension
-        $fileNameWithoutExtension = [System.IO.Path]::GetFileNameWithoutExtension($file.FullName)
-        
-        # Construct the new file name
-        $newFileName = $fileNameWithoutExtension + $extension
-        
-        # Get the new full file path
-        $newFullFilePath = [System.IO.Path]::Combine($file.DirectoryName, $newFileName)
-        
-        # Rename the file with the correct extension
-        Rename-Item -Path $file.FullName -NewName $newFullFilePath
-        Write-Log "Renamed $($file.Name) to $($newFileName)"
-        $renamedCount++
+        # Update extension count
+        if (-not $extensionCounts.ContainsKey($extension)) {
+            $extensionCounts[$extension] = 0
+        }
+        $extensionCounts[$extension]++
+
+        if (-not $DryRun) {
+            # Extract the file name without extension
+            $fileNameWithoutExtension = [System.IO.Path]::GetFileNameWithoutExtension($file.FullName)
+
+            # Construct the new file name
+            $newFileName = $fileNameWithoutExtension + $extension
+
+            # Get the new full file path
+            $newFullFilePath = [System.IO.Path]::Combine($file.DirectoryName, $newFileName)
+
+            # Rename the file with the correct extension
+            Rename-Item -Path $file.FullName -NewName $newFullFilePath
+            Write-Log "Renamed $($file.Name) to $($newFileName)"
+            $renamedCount++
+        }
     } else {
         # Log the hex value for unknown file types
+        if (-not $unknownSignatures.ContainsKey($extension)) {
+            $unknownSignatures[$extension] = 0
+        }
+        $unknownSignatures[$extension]++
         Write-Log "Could not determine extension for $($file.Name). Hex: $extension"
         $unknownCount++
     }
 }
 
 # Write summary at the end
-$summaryMessage = "Summary: Skipped $skippedCount file(s), Renamed $renamedCount file(s), Unknown extension for $unknownCount file(s)."
-Write-Log $summaryMessage
-Write-Host $summaryMessage
+if ($DryRun) {
+    $summaryMessage = "Dry Run Summary: Skipped $skippedCount file(s), Identified extensions: $($extensionCounts.GetEnumerator() | ForEach-Object { \"$($_.Key): $($_.Value)\" } -join ", "), Unknown extensions: $($unknownSignatures.GetEnumerator() | ForEach-Object { \"$($_.Key): $($_.Value)\" } -join ", ")."
+    Write-Log $summaryMessage
+    Write-Host $summaryMessage
+} else {
+    $summaryMessage = "Summary: Skipped $skippedCount file(s), Renamed $renamedCount file(s), Unknown extension for $unknownCount file(s)."
+    Write-Log $summaryMessage
+    Write-Host $summaryMessage
+}
