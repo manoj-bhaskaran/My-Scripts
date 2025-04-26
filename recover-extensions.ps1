@@ -59,6 +59,16 @@ Limitations:
 #>
 
 # Define the Write-Log function if not already defined
+
+# Add new parameters for unknowns folder and moving unknown files
+param(
+    [string]$FolderPath = "C:\Users\manoj\OneDrive\Desktop\New folder",
+    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions-log.txt",
+    [string]$UnknownsFolder = "C:\Users\manoj\OneDrive\Desktop\UnidentifiedFiles",
+    [switch]$DryRun,
+    [switch]$MoveUnknowns
+)
+
 function Write-Log {
     param([string]$message)
 
@@ -97,15 +107,6 @@ function Get-FileExtension {
         default { return $hex }       # Return hex if extension is not found
     }
 }
-
-# Add new parameters for unknowns folder and moving unknown files
-param(
-    [string]$FolderPath = "C:\Users\manoj\OneDrive\Desktop\New folder",
-    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions-log.txt",
-    [string]$UnknownsFolder = "C:\Users\manoj\OneDrive\Desktop\UnidentifiedFiles",
-    [switch]$DryRun,
-    [switch]$MoveUnknowns
-)
 
 # Update log file path
 $logFilePath = $LogFilePath
