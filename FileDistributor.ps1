@@ -185,7 +185,7 @@ function LogMessage {
     )
     # Get the timestamp and format the log entry
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$($timestamp): $($Message)" # Removed the extra space after the timestamp
+    $logEntry = "$($timestamp): $($Message)"
 
     # Append the log entry to the log file
     $logEntry | Add-Content -Path $LogFilePath
@@ -194,7 +194,6 @@ function LogMessage {
     if ($IsError) {
         Write-Error -Message $logEntry
         $script:Errors++
-        
     } elseif ($IsWarning) {
         Write-Warning -Message $logEntry
         $script:Warnings++
@@ -349,10 +348,10 @@ function Move-ToRecycleBin {
         $recycleBin.MoveHere($file.FullName, 0x100)
 
         # Log success
-        LogMessage -Message "Moved file to Recycle Bin: $FilePath"
+        LogMessage -Message "Moved $FilePath to Recycle Bin."
     } catch {
         # Log failure
-        LogMessage -Message "Failed to move file to Recycle Bin: $FilePath. Error: $($_.Exception.Message)" -IsWarning
+        LogMessage -Message "Failed to move $FilePath to Recycle Bin. Error: $($_.Exception.Message)" -IsWarning
     }
 }
 
@@ -366,7 +365,7 @@ function Remove-File {
         # Check if the file exists before attempting deletion
         if (Test-Path -Path $FilePath) {
             Remove-Item -Path $FilePath -Force
-            LogMessage -Message "Deleted file: $FilePath"
+            LogMessage -Message "Deleted file: $FilePath."
         } else {
             LogMessage -Message "File $FilePath not found. Skipping deletion." -IsWarning
         }
@@ -415,20 +414,20 @@ function DistributeFilesToSubfolders {
                 # Handle file deletion based on DeleteMode
                 if ($DeleteMode -eq "RecycleBin") {
                     Move-ToRecycleBin -FilePath $file
-                    LogMessage -Message "Copied and moved to Recycle Bin: $file to $destinationFile"
+                    LogMessage -Message "Copied from $file to $destinationFile and moved original to Recycle Bin."
                 } elseif ($DeleteMode -eq "Immediate") {
                     Remove-File -FilePath $file
-                    LogMessage -Message "Copied and immediately deleted: $file to $destinationFile"
+                    LogMessage -Message "Copied from $file to $destinationFile and immediately deleted original."
                 } elseif ($DeleteMode -eq "EndOfScript") {
                     # Ensure FilesToDelete.Value is initialized as an array
                     if (-not $FilesToDelete.Value) {
                         $FilesToDelete.Value = @()
                     }
                     $FilesToDelete.Value += $file  # Correctly update the ref variable
-                    LogMessage -Message "Copied successfully: $file to $destinationFile (pending end-of-script deletion)"
+                    LogMessage -Message "Copied from $file to $destinationFile. Original pending deletion at end of script."
                 }
             } catch {
-                LogMessage -Message "Failed to process file $file after copying. Error: $($_.Exception.Message)" -IsWarning
+                LogMessage -Message "Failed to process file $file after copying to $destinationFile. Error: $($_.Exception.Message)" -IsWarning
             }
         } else {
             LogMessage -Message "Failed to copy $file to $destinationFile. Original file not moved." -IsError
