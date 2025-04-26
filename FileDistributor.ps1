@@ -57,6 +57,18 @@ Optional. If specified, invokes the duplicate file removal script after distribu
 .PARAMETER CleanupEmptyFolders
 Optional. If specified, invokes the empty folder cleanup script after distribution.
 
+.PARAMETER TruncateLog
+Optional. If specified, the log file will be truncated (cleared) at the start of the script. This option is ignored during a restart.
+
+.PARAMETER TruncateIfLarger
+Optional. Specifies a size threshold for truncating the log file at the start of the script. The size can be specified in formats like 1K (kilobytes), 2M (megabytes), or 3G (gigabytes). This option is ignored during a restart.
+
+.PARAMETER RemoveEntriesBefore
+Optional. Specifies a timestamp in the format "YYYY-MM-DD HH:MM:SS" or ISO 8601. All log entries before this timestamp will be removed.
+
+.PARAMETER RemoveEntriesOlderThan
+Optional. Specifies an age in days. All log entries older than the specified number of days will be removed.
+
 .EXAMPLES
 To copy files from "C:\Source" to "C:\Target" with a default file limit:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
@@ -78,6 +90,18 @@ To enable verbose logging using PowerShell's built-in `-Verbose` switch:
 
 To invoke cleanup scripts for duplicates and empty folders:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -CleanupDuplicates -CleanupEmptyFolders
+
+To truncate the log file and start afresh:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateLog
+
+To truncate the log file if it exceeds 10 megabytes:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateIfLarger 10M
+
+To remove log entries before a specific timestamp:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -RemoveEntriesBefore "2023-01-01 00:00:00"
+
+To remove log entries older than 30 days:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -RemoveEntriesOlderThan 30
 
 .NOTES
 Script Workflow:
@@ -137,7 +161,11 @@ param(
     [int]$RetryDelay = 10, # Time to wait before retrying file access (seconds)
     [int]$RetryCount = 3, # Number of times to retry file access (0 for unlimited retries)
     [switch]$CleanupDuplicates,
-    [switch]$CleanupEmptyFolders
+    [switch]$CleanupEmptyFolders,
+    [switch]$TruncateLog,
+    [string]$TruncateIfLarger,
+    [string]$RemoveEntriesBefore,
+    [int]$RemoveEntriesOlderThan
 )
 
 # Define script-scoped variables for warnings and errors
@@ -583,9 +611,111 @@ function ReleaseFileLock {
     LogMessage -Message "Released lock on $fileName"
 }
 
+# Function to convert size string to bytes
+function ConvertToBytes {
+    param (
+        [string]$Size
+    )
+    if ($Size -match '^(\d+)([KMG])$') {
+        $value = [int]$matches[1]
+        switch ($matches[2]) {
+            'K' { return $value * 1KB }
+            'M' { return $value * 1MB }
+            'G' { return $value * 1GB }
+        }
+    } else {
+        throw "Invalid size format: $Size. Use formats like 1K, 2M, or 3G."
+    }
+}
+
+# Function to remove log entries based on timestamp or age
+function RemoveLogEntries {
+    param (
+        [string]$LogFilePath,
+        [datetime]$BeforeTimestamp,
+        [int]$OlderThanDays
+    )
+
+    try {
+        if (-not (Test-Path -Path $LogFilePath)) {
+            LogMessage -Message "Log file not found: $LogFilePath. Skipping log entry removal." -IsWarning
+            return
+        }
+
+        $logEntries = Get-Content -Path $LogFilePath
+        $filteredEntries = @()
+
+        foreach ($entry in $logEntries) {
+            if ($entry -match '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}') {
+                $entryTimestamp = [datetime]::ParseExact($matches[0], "yyyy-MM-dd HH:mm:ss", $null)
+
+                if ($BeforeTimestamp -and $entryTimestamp -ge $BeforeTimestamp) {
+                    $filteredEntries += $entry
+                } elseif ($OlderThanDays -and $entryTimestamp -ge (Get-Date).AddDays(-$OlderThanDays)) {
+                    $filteredEntries += $entry
+                }
+            } else {
+                # Preserve entries without a valid timestamp
+                $filteredEntries += $entry
+            }
+        }
+
+        # Overwrite the log file with filtered entries
+        $filteredEntries | Set-Content -Path $LogFilePath
+        LogMessage -Message "Log entries filtered successfully. Updated log file: $LogFilePath"
+    } catch {
+        LogMessage -Message "Failed to filter log entries: $($_.Exception.Message)" -IsError
+    }
+}
+
 # Main script logic
 function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
+
+    # Handle log entry removal
+    if (-not $Restart) {
+        $beforeTimestamp = $null
+        if ($RemoveEntriesBefore) {
+            try {
+                $beforeTimestamp = [datetime]::Parse($RemoveEntriesBefore)
+            } catch {
+                LogMessage -Message "Invalid timestamp format for RemoveEntriesBefore: $RemoveEntriesBefore" -IsError
+                throw "Invalid timestamp format. Use 'YYYY-MM-DD HH:MM:SS' or ISO 8601."
+            }
+        }
+
+        if ($RemoveEntriesOlderThan -lt 0) {
+            LogMessage -Message "Invalid value for RemoveEntriesOlderThan: $RemoveEntriesOlderThan. Must be a non-negative integer." -IsError
+            throw "Invalid value for RemoveEntriesOlderThan. Must be a non-negative integer."
+        }
+
+        if ($beforeTimestamp -or $RemoveEntriesOlderThan) {
+            RemoveLogEntries -LogFilePath $LogFilePath -BeforeTimestamp $beforeTimestamp -OlderThanDays $RemoveEntriesOlderThan
+        }
+    }
+
+    # Handle log truncation for fresh runs
+    if (-not $Restart) {
+        if ($TruncateIfLarger) {
+            try {
+                $thresholdBytes = ConvertToBytes -Size $TruncateIfLarger
+                if ((Test-Path -Path $LogFilePath) -and ((Get-Item -Path $LogFilePath).Length -gt $thresholdBytes)) {
+                    Clear-Content -Path $LogFilePath -Force
+                    LogMessage -Message "Log file truncated due to size exceeding $TruncateIfLarger: $LogFilePath"
+                }
+            } catch {
+                LogMessage -Message "Failed to evaluate or truncate log file based on size: $($_.Exception.Message)" -IsError
+            }
+        } elseif ($TruncateLog) {
+            try {
+                Clear-Content -Path $LogFilePath -Force
+                LogMessage -Message "Log file truncated: $LogFilePath"
+            } catch {
+                LogMessage -Message "Failed to truncate log file: $($_.Exception.Message)" -IsError
+            }
+        }
+    }
+
     LogMessage -Message "Validating parameters: SourceFolder - $SourceFolder, TargetFolder - $TargetFolder, FilePerFolderLimit - $FilesPerFolderLimit"
 
     try {
