@@ -231,11 +231,15 @@ foreach ($file in $files) {
         Write-Log "Unknown extension detected for file: $($file.Name)" -isDebug
 
         # Log the hex value for unknown file types
-        if (-not $unknownSignatures.ContainsKey($extension)) {
-            $unknownSignatures[$extension] = 0
+        if ($extension) {
+            if (-not $unknownSignatures.ContainsKey($extension)) {
+                $unknownSignatures[$extension] = 0
+            }
+            $unknownSignatures[$extension]++
+        } else {
+            Write-Log "Could not determine extension for $($file.Name). Hex: $hex"
         }
-        $unknownSignatures[$extension]++
-        Write-Log "Could not determine extension for $($file.Name). Hex: $extension"
+
         $unknownCount++
 
         # Move unknown files to the unknowns folder if MoveUnknowns is enabled and not in dry run mode
