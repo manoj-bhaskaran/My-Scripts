@@ -114,7 +114,7 @@ function Get-FileExtension {
     $hex = [BitConverter]::ToString($buffer[0..($bytesRead - 1)]) -replace '-'
 
     # Match common file signatures and return the extension
-    switch -regex $hex {
+    switch -regex ($hex) {
         '^89504E47' { return ".png" }  # PNG signature (4 bytes)
         '^FFD8FF(DB|E0|E1|E2|EE)' { return ".jpg" }  # JPEG signatures (4 bytes)
         '^49492A00' { return ".tiff" } # TIFF signature (4 bytes)
