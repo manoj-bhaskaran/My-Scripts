@@ -256,17 +256,42 @@ if ($DryRun) {
     Write-Log $summaryMessage
     Write-Host $summaryMessage
 } else {
-    # Update non-dry run summary to include total files processed
+    # Update non-dry run summary to include identified extensions and unknown hex signatures
     $totalFilesProcessed = $skippedCount + $renamedCount + $unknownCount
     $summaryMessage = "Summary: Processed $totalFilesProcessed file(s). Skipped $skippedCount file(s), Renamed $renamedCount file(s), Unknown extension for $unknownCount file(s)."
     Write-Log $summaryMessage
     Write-Host $summaryMessage
-}
 
-# Write summary of files grouped by extension
-if ($extensionSummary.Count -gt 0) {
-    $extensionSummaryMessage = $extensionSummary.GetEnumerator() | ForEach-Object { "Extension $($_.Key): $($_.Value) file(s)" } | Out-String
-    $formattedSummaryMessage = $extensionSummaryMessage -replace "\n", "`n"
-    Write-Log "Summary of files with extensions:`n$formattedSummaryMessage"
-    Write-Host "Summary of files with extensions:`n$formattedSummaryMessage"
+    # Include identified extensions and their counts
+    if ($extensionCounts.Count -gt 0) {
+        $identifiedExtensionsMessage = $extensionCounts.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" } | Out-String
+        $formattedIdentifiedExtensionsMessage = $identifiedExtensionsMessage -replace "\n", "`n"
+        Write-Log "Identified extensions and counts:`n$formattedIdentifiedExtensionsMessage"
+        Write-Host "Identified extensions and counts:`n$formattedIdentifiedExtensionsMessage"
+    } else {
+        Write-Log "No identified extensions."
+        Write-Host "No identified extensions."
+    }
+
+    # Include unknown hex signatures and their counts
+    if ($unknownSignatures.Count -gt 0) {
+        $unknownSignaturesMessage = $unknownSignatures.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" } | Out-String
+        $formattedUnknownSignaturesMessage = $unknownSignaturesMessage -replace "\n", "`n"
+        Write-Log "Unknown hex signatures and counts:`n$formattedUnknownSignaturesMessage"
+        Write-Host "Unknown hex signatures and counts:`n$formattedUnknownSignaturesMessage"
+    } else {
+        Write-Log "No unknown hex signatures."
+        Write-Host "No unknown hex signatures."
+    }
+
+    # Summary of files grouped by extension
+    if ($extensionSummary.Count -gt 0) {
+        $extensionSummaryMessage = $extensionSummary.GetEnumerator() | ForEach-Object { "Extension $($_.Key): $($_.Value) file(s)" } | Out-String
+        $formattedSummaryMessage = $extensionSummaryMessage -replace "\n", "`n"
+        Write-Log "Summary of files with extensions:`n$formattedSummaryMessage"
+        Write-Host "Summary of files with extensions:`n$formattedSummaryMessage"
+    } else {
+        Write-Log "No files with extensions to summarize."
+        Write-Host "No files with extensions to summarize."
+    }
 }
