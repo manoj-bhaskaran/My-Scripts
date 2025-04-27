@@ -127,7 +127,7 @@ function Get-FileExtension {
         '^474946383961' { return ".gif" }  # GIF89a signature (6 bytes)
         '^424D' { return ".bmp" }  # BMP signature (2 bytes)
         '^52494646.{8}57454250' { return ".webp" } # WEBP signature (RIFF + WEBP in bytes 9-12)
-        default { return $null }       # Return null if extension is not found
+        default { return $hex }  # Return hex if extension is not found
     }
 }
 
