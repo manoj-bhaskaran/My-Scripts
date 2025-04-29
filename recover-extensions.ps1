@@ -100,7 +100,7 @@ function Write-Log {
     Add-Content -Path $LogFilePath -Value $logEntry
 }
 
-# Define a function to get file type based on the first few bytes
+# Modify Get-FileExtension to return both extension and hex signature
 function Get-FileExtension {
     param([string]$filePath)
 
@@ -114,21 +114,23 @@ function Get-FileExtension {
     $hex = [BitConverter]::ToString($buffer[0..($bytesRead - 1)]) -replace '-'
 
     # Match common file signatures and return the extension
-    switch -regex ($hex) {
-        '^89504E47' { return ".png" }  # PNG signature (4 bytes)
-        '^FFD8FF(DB|E0|E1|E2|EE)' { return ".jpg" }  # JPEG signatures (4 bytes)
-        '^49492A00' { return ".tiff" } # TIFF signature (4 bytes)
-        '^4D4D002(A|B)' { return ".tiff" } # TIFF signatures (4 bytes)
-        '^49492800' { return ".tiff" } # TIFF signature (4 bytes)
-        '^492049'   { return ".tiff" } # TIFF 3-byte signature
-        '^6674797068656963' { return ".heic" } # HEIC signature (8 bytes)
-        '^6674797061766966' { return ".avif" } # AVIF signature (8 bytes)
-        '^474946383761' { return ".gif" }  # GIF87a signature (6 bytes)
-        '^474946383961' { return ".gif" }  # GIF89a signature (6 bytes)
-        '^424D' { return ".bmp" }  # BMP signature (2 bytes)
-        '^52494646.{8}57454250' { return ".webp" } # WEBP signature (RIFF + WEBP in bytes 9-12)
-        default { return $hex }  # Return hex if extension is not found
+    $extension = switch -regex ($hex) {
+        '^89504E47' { ".png" }  # PNG signature (4 bytes)
+        '^FFD8FF(DB|E0|E1|E2|EE)' { ".jpg" }  # JPEG signatures (4 bytes)
+        '^49492A00' { ".tiff" } # TIFF signature (4 bytes)
+        '^4D4D002(A|B)' { ".tiff" } # TIFF signatures (4 bytes)
+        '^49492800' { ".tiff" } # TIFF signature (4 bytes)
+        '^492049'   { ".tiff" } # TIFF 3-byte signature
+        '^6674797068656963' { ".heic" } # HEIC signature (8 bytes)
+        '^6674797061766966' { ".avif" } # AVIF signature (8 bytes)
+        '^474946383761' { ".gif" }  # GIF87a signature (6 bytes)
+        '^474946383961' { ".gif" }  # GIF89a signature (6 bytes)
+        '^424D' { ".bmp" }  # BMP signature (2 bytes)
+        '^52494646.{8}57454250' { ".webp" } # WEBP signature (RIFF + WEBP in bytes 9-12)
+        default { $null }
     }
+
+    return @{ Extension = $extension; Hex = $hex }
 }
 
 # Check if the input folder exists
@@ -200,7 +202,9 @@ foreach ($file in $files) {
     }
 
     # If no extension, try to recover it
-    $extension = Get-FileExtension -filePath $file.FullName
+    $fileInfo = Get-FileExtension -filePath $file.FullName
+    $extension = $fileInfo.Extension
+    $hex = $fileInfo.Hex
     Write-Log "Detected extension $extension for file $($file.Name)"  # Added log for detected extension
 
     if ($extension -and $extension.StartsWith(".")) {
@@ -231,14 +235,13 @@ foreach ($file in $files) {
         Write-Log "Unknown extension detected for file: $($file.Name)" -isDebug
 
         # Log the hex value for unknown file types
-        if ($extension) {
-            if (-not $unknownSignatures.ContainsKey($extension)) {
-                $unknownSignatures[$extension] = 0
+        if ($hex) {
+            if (-not $unknownSignatures.ContainsKey($hex)) {
+                $unknownSignatures[$hex] = 0
             }
-            $unknownSignatures[$extension]++
-        } else {
-            Write-Log "Could not determine extension for $($file.Name). Hex: $hex"
+            $unknownSignatures[$hex]++
         }
+        Write-Log "Could not determine extension for $($file.Name). Hex: $hex"
 
         $unknownCount++
 
