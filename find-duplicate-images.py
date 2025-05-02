@@ -54,38 +54,27 @@ def find_duplicates(folder, log_file):
             except Exception as e:
                 logging.warning(f"Error accessing file {file_path}: {e}")
 
-    # Step 2: Compute MD5 hashes for final confirmation
-    duplicates = []
-    with ThreadPoolExecutor() as executor:
-        futures = {}
-        for size, files in size_groups.items():
-            if len(files) > 1:  # Only process groups with potential duplicates
-                for file_path in files:
-                    futures[executor.submit(compute_md5, file_path)] = file_path
+    # Step 2 & 3: Compute MD5 hashes and group by hash
+hash_groups = defaultdict(list)
+with ThreadPoolExecutor(max_workers=8) as executor:
 
-        # Use tqdm to display progress
-        with tqdm(total=len(futures), desc="Hashing files") as pbar:
-            for future in as_completed(futures):
-                file_path = futures[future]
-                try:
-                    file_hash = future.result()
-                    if file_hash:
-                        duplicates.append((file_hash, file_path))
-                except Exception as e:
-                    logging.warning(f"Error hashing file {file_path}: {e}")
-                pbar.update(1)
+    futures = {}
+    for size, files in size_groups.items():
+        if len(files) > 1:  # Only process groups with potential duplicates
+            for file_path in files:
+                futures[executor.submit(compute_md5, file_path)] = file_path
+
+    # Use tqdm to display progress
+    with tqdm(total=len(futures), desc="Hashing files") as pbar:
+        for future in as_completed(futures):
             file_path = futures[future]
             try:
                 file_hash = future.result()
                 if file_hash:
-                    duplicates.append((file_hash, file_path))
+                    hash_groups[file_hash].append(file_path)
             except Exception as e:
                 logging.warning(f"Error hashing file {file_path}: {e}")
-
-    # Step 3: Group duplicates by hash
-    hash_groups = defaultdict(list)
-    for file_hash, file_path in duplicates:
-        hash_groups[file_hash].append(file_path)
+            pbar.update(1)
 
     # Step 4: Log duplicate groups
     logging.info("Duplicate groups found:")
