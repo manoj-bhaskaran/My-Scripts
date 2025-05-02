@@ -174,9 +174,18 @@ def main():
 
     log_event("Duplicate detection script started")
 
-    stage1_list_files(args.folder, args.temp)
-    stage2_sort_csv(args.temp, args.sorted)
-    stage3_find_duplicates(args.sorted, args.log, args.output)
+    try:
+        stage1_list_files(args.folder, args.temp)
+        stage2_sort_csv(args.temp, args.sorted)
+        stage3_find_duplicates(args.sorted, args.log, args.output)
+    finally:
+        # Delete temporary and sorted files after successful completion
+        if os.path.exists(args.temp):
+            os.remove(args.temp)
+            log_event(f"Deleted temporary file: {args.temp}")
+        if os.path.exists(args.sorted):
+            os.remove(args.sorted)
+            log_event(f"Deleted sorted file: {args.sorted}")
 
     log_event("Duplicate detection script completed")
 
