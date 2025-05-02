@@ -155,7 +155,7 @@ $extensionCounts = @{ }
 $unknownSignatures = @{ }
 
 # Initialize a dictionary to count files by extension
-$extensionSummary = @{}
+$extensionSummary = @{ }
 
 # Debug log for script start
 if ($Debug) { Write-Host "Script started. Processing folder: $FolderPath" }
@@ -168,22 +168,17 @@ Write-Log "UnknownsFolder: $UnknownsFolder" -isDebug
 Write-Log "DryRun: $DryRun" -isDebug
 Write-Log "MoveUnknowns: $MoveUnknowns" -isDebug
 
-# Recursive file scanning
-Write-Log "Discovering files in folder: $FolderPath" -isDebug
-$files = Get-ChildItem -Path $FolderPath -File -Recurse
-$totalFiles = $files.Count
-if ($Debug) { Write-Host "Found $totalFiles file(s) in folder." }
-Write-Log "Found $totalFiles file(s) in folder." -isDebug
-
-# Iterate through each file and check its type
+# Recursive file scanning with streaming
+Write-Log "Discovering and processing files in folder: $FolderPath" -isDebug
 $processedFiles = 0
-foreach ($file in $files) {
-    # Update progress bar
-    $processedFiles++
-    $percentComplete = [math]::Round(($processedFiles / $totalFiles) * 100, 2)
-    Write-Progress -Activity "Processing Files" -Status "Processing file $processedFiles of $totalFiles" -PercentComplete $percentComplete
 
-    if ($Debug) { Write-Host "Processing file: $($file.FullName)" }  # Debug message for the first file
+Get-ChildItem -Path $FolderPath -File -Recurse | ForEach-Object {
+    $file = $_
+    $processedFiles++
+    $percentComplete = [math]::Round(($processedFiles / ($processedFiles + 1)) * 100, 2) # Approximation for progress
+    Write-Progress -Activity "Processing Files" -Status "Processing file $processedFiles" -PercentComplete $percentComplete
+
+    if ($Debug) { Write-Host "Processing file: $($file.FullName)" }
     Write-Log "Processing file: $($file.FullName)" -isDebug
 
     # Skip files that already have an extension
@@ -198,14 +193,14 @@ foreach ($file in $files) {
         }
         $extensionSummary[$file.Extension]++
 
-        continue
+        return
     }
 
     # If no extension, try to recover it
     $fileInfo = Get-FileExtension -filePath $file.FullName
     $extension = $fileInfo.Extension
     $hex = $fileInfo.Hex
-    Write-Log "Detected extension $extension for file $($file.Name)"  # Added log for detected extension
+    Write-Log "Detected extension $extension for file $($file.Name)" -isDebug
 
     if ($extension -and $extension.StartsWith(".")) {
         Write-Log "Detected valid extension: $extension for file: $($file.Name)" -isDebug
@@ -217,16 +212,10 @@ foreach ($file in $files) {
         $extensionCounts[$extension]++
 
         if (-not $DryRun) {
-            # Extract the file name without extension
             $fileNameWithoutExtension = [System.IO.Path]::GetFileNameWithoutExtension($file.FullName)
-
-            # Construct the new file name
             $newFileName = $fileNameWithoutExtension + $extension
-
-            # Get the new full file path
             $newFullFilePath = [System.IO.Path]::Combine($file.DirectoryName, $newFileName)
 
-            # Rename the file with the correct extension
             Rename-Item -Path $file.FullName -NewName $newFullFilePath
             Write-Log "Renamed $($file.Name) to $($newFileName)"
             $renamedCount++
@@ -234,7 +223,6 @@ foreach ($file in $files) {
     } else {
         Write-Log "Unknown extension detected for file: $($file.Name)" -isDebug
 
-        # Log the hex value for unknown file types
         if ($hex) {
             if (-not $unknownSignatures.ContainsKey($hex)) {
                 $unknownSignatures[$hex] = 0
@@ -245,7 +233,6 @@ foreach ($file in $files) {
 
         $unknownCount++
 
-        # Move unknown files to the unknowns folder if MoveUnknowns is enabled and not in dry run mode
         if ($MoveUnknowns -and -not $DryRun) {
             $destinationPath = Join-Path -Path $UnknownsFolder -ChildPath $file.Name
             Move-Item -Path $file.FullName -Destination $destinationPath
