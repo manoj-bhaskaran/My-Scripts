@@ -6,7 +6,7 @@ This PowerShell script recovers file extensions for files that have lost their e
 The script iterates through each file in the specified folder and checks if the file already has an extension. If the file does not have an extension, it reads the first few bytes to determine the file type and appends the appropriate extension. The script supports common file signatures for PNG and JPEG files. It logs each action taken, including files skipped, renamed, and those with unknown extensions.
 
 .PARAMETER LogFilePath
-Optional. Specifies the path to the log file where actions are recorded. Defaults to "C:\users\manoj\Documents\Scripts\recover-extensions.log".
+Optional. Specifies the path to the log file where actions are recorded. Defaults to "C:\Users\manoj\Documents\Scripts\recover-extensions.log".
 
 .PARAMETER FolderPath
 Optional. Specifies the path to the folder containing the files to be processed. Defaults to "C:\Users\manoj\OneDrive\Desktop\New folder".
@@ -67,7 +67,7 @@ Limitations:
 # Add Debug parameter to the script
 param(
     [string]$FolderPath = "C:\Users\manoj\OneDrive\Desktop\New folder",
-    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\recover-extensions-log.txt",
+    [string]$LogFilePath = "C:\Users\manoj\Documents\Scripts\recover-extensions-log.txt",
     [string]$UnknownsFolder = "C:\Users\manoj\OneDrive\Desktop\UnidentifiedFiles",
     [switch]$DryRun,
     [switch]$MoveUnknowns,
