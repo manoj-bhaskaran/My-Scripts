@@ -1,21 +1,23 @@
 import os
+import csv
 import hashlib
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
 import argparse
 import logging
+import subprocess
+from collections import defaultdict
+from itertools import groupby
+from operator import itemgetter
+from datetime import datetime
+
+from datetime import datetime
+
+def log_event(message):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    full_message = f"[{timestamp}] {message}"
+    print(full_message)
+    logging.info(message)
 
 def compute_md5(file_path):
-    """
-    Compute the MD5 hash of a file.
-
-    Args:
-        file_path (str): Path to the file.
-
-    Returns:
-        str: MD5 hash of the file, or None if an error occurs.
-    """
     hash_md5 = hashlib.md5()
     try:
         with open(file_path, "rb") as f:
@@ -23,91 +25,98 @@ def compute_md5(file_path):
                 hash_md5.update(chunk)
         return hash_md5.hexdigest()
     except Exception as e:
-        logging.error(f"Error hashing file {file_path}: {e}")
+        logging.warning(f"Error hashing {file_path}: {e}")
         return None
 
-def find_duplicates(folder, log_file):
+def stage1_list_files(folder, out_csv):
+    log_event("Starting Stage 1: File listing")
+    with open(out_csv, "w", newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        for root, _, files in os.walk(folder):
+            for file in files:
+                path = os.path.join(root, file)
+                try:
+                    size = os.path.getsize(path)
+                    writer.writerow([size, path])
+                except Exception as e:
+                    logging.warning(f"Skipping file {path}: {e}")
+    log_event(f"Completed Stage 1: File list written to {out_csv}")
+
+def stage2_sort_csv(input_csv, sorted_csv):
+    log_event("Starting Stage 2: Sorting by file size")
+
+    ps_script = f"""
+    Import-Csv -Path '{input_csv}' -Header size,path |
+        Sort-Object {{ [int]$_.size }} |
+        ForEach-Object {{ "$($_.size),$($_.path)" }} |
+        Set-Content -Path '{sorted_csv}'
     """
-    Identify duplicate images in a directory structure.
 
-    Args:
-        folder (str): Path to the directory to scan for duplicates.
-        log_file (str): Path to the log file where results will be saved.
+    try:
+        subprocess.run(["powershell", "-Command", ps_script], check=True)
+        log_event(f"Completed Stage 2: Sorted list written to {sorted_csv}")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"PowerShell sort failed: {e}")
+        raise
 
-    Returns:
-        None
-    """
-    logging.basicConfig(filename=log_file, level=logging.INFO, 
-                        format='%(asctime)s - %(levelname)s - %(message)s')
-    logging.info("Starting duplicate image detection.")
+def stage3_find_duplicates(sorted_csv, log_file, output_file):
 
-    # Step 1: Group files by size
-    size_groups = defaultdict(list)
-    all_files = []
-    for root, _, files in os.walk(folder):
-        for file in files:
-            file_path = os.path.join(root, file)
-            try:
-                file_size = os.path.getsize(file_path)
-                size_groups[file_size].append(file_path)
-                all_files.append(file_path)
-            except Exception as e:
-                logging.warning(f"Error accessing file {file_path}: {e}")
+    log_event("Starting Stage 3: Hashing and duplicate detection")
+    with open(sorted_csv, newline='', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        sorted_rows = list(reader)
 
-    # Step 2 & 3: Compute MD5 hashes and group by hash
-hash_groups = defaultdict(list)
-with ThreadPoolExecutor(max_workers=8) as executor:
+    duplicate_sets = 0
 
-    futures = {}
-    for size, files in size_groups.items():
-        if len(files) > 1:  # Only process groups with potential duplicates
-            for file_path in files:
-                futures[executor.submit(compute_md5, file_path)] = file_path
+    with open(output_file, "w", newline='', encoding="utf-8") as out_csv:
+        writer = csv.writer(out_csv)
 
-    # Use tqdm to display progress
-    with tqdm(total=len(futures), desc="Hashing files") as pbar:
-        for future in as_completed(futures):
-            file_path = futures[future]
-            try:
-                file_hash = future.result()
-                if file_hash:
-                    hash_groups[file_hash].append(file_path)
-            except Exception as e:
-                logging.warning(f"Error hashing file {file_path}: {e}")
-            pbar.update(1)
+        for size, group in groupby(sorted_rows, key=itemgetter(0)):
+            group = list(group)
+            if len(group) <= 1:
+                continue
 
-    # Step 4: Log duplicate groups
-    logging.info("Duplicate groups found:")
-    duplicate_count = 0
-    for file_hash, files in hash_groups.items():
-        # Only log actual duplicates (exclude single files or self-duplicates)
-        unique_files = list(set(files))  # Remove self-duplicates
-        if len(unique_files) > 1:
-            duplicate_count += 1
-            logging.info(f"Duplicate group {duplicate_count}:")
-            for file in unique_files:
-                logging.info(f"  {file}")
+            hash_groups = defaultdict(list)
+            for _, path in group:
+                md5 = compute_md5(path)
+                if md5:
+                    hash_groups[md5].append(path)
 
-    # Print summary to console
-    print(f"Duplicate detection complete. {duplicate_count} duplicate groups found.")
-    print(f"Details logged to {log_file}.")
+            for h, paths in hash_groups.items():
+                if len(paths) > 1:
+                    duplicate_sets += 1
+                    logging.info(f"Duplicate group {duplicate_sets}: {len(paths)} files")
+                    for p in paths:
+                        logging.info(f"  {p}")
+                        writer.writerow([duplicate_sets, p])
+
+    log_event(f"Completed Stage 3: {duplicate_sets} duplicate groups found")
+    log_event(f"Duplicate list saved to {output_file}")
+
+def main():
+
+    parser = argparse.ArgumentParser(description="Efficient duplicate file detector (staged method).")
+    parser.add_argument("--folder", type=str, required=True, help="Folder to scan")
+    parser.add_argument("--log", type=str, default="duplicate-staged.log", help="Log file path (appends)")
+    parser.add_argument("--output", type=str, default="duplicate-files.csv", help="Output CSV (overwritten)")
+    parser.add_argument("--temp", type=str, default="filelist.csv", help="Temp file for raw file list")
+    parser.add_argument("--sorted", type=str, default="filelist_sorted.csv", help="Sorted file list path")
+    args = parser.parse_args()
+        
+    logging.basicConfig(
+    filename=args.log,
+    level=logging.INFO,
+    filemode='a',
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+    log_event("Duplicate detection script started")
+
+    stage1_list_files(args.folder, args.temp)
+    stage2_sort_csv(args.temp, args.sorted)
+    stage3_find_duplicates(args.sorted, args.log, args.output)
+
+    log_event("Duplicate detection script completed")
 
 if __name__ == "__main__":
-    """
-    Main script entry point. Parses command-line arguments and initiates duplicate detection.
-
-    Command-line Arguments:
-        --folder (str): Input directory to scan for duplicates. Defaults to the specified directory.
-        --log (str): Path to the log file where results will be saved. Defaults to 'duplicate-images-log.txt'.
-
-    Returns:
-        None
-    """
-    parser = argparse.ArgumentParser(description="Identify duplicate images in a directory.")
-    parser.add_argument("--folder", type=str, default="D:\\users\\Manoj\\Documents\\FIFA 07\\elib", 
-                        help="Input directory to scan.")
-    parser.add_argument("--log", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\duplicate-images.log", 
-                        help="Output log file path.")
-    args = parser.parse_args()
-
-    find_duplicates(args.folder, args.log)
+    main()
