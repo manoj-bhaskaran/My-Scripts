@@ -3,6 +3,7 @@ import csv
 import hashlib
 import argparse
 import logging
+import subprocess
 from collections import defaultdict
 from itertools import groupby
 from operator import itemgetter
