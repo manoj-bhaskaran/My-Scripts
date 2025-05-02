@@ -144,23 +144,23 @@ def main():
     and a CSV file containing duplicate file information.
 
     Command-line Arguments:
-        --folder : str (required)
+        --folder : str (optional, default="D:\\users\\Manoj\\Documents\\FIFA 07\\elib")
             The folder to scan for duplicate files.
-        --log : str (optional, default="duplicate-staged.log")
+        --log : str (optional, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-log.log")
             The path to the log file where events and errors will be appended.
-        --output : str (optional, default="duplicate-files.csv")
+        --output : str (optional, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-output.csv")
             The path to the output CSV file that will contain the list of duplicate files.
-        --temp : str (optional, default="filelist.csv")
+        --temp : str (optional, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-temp.csv")
             The path to the temporary file where the raw file list will be stored.
-        --sorted : str (optional, default="filelist_sorted.csv")
+        --sorted : str (optional, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-sorted.csv")
             The path to the sorted file list generated during the process.
     """
     parser = argparse.ArgumentParser(description="Efficient duplicate file detector (staged method).")
-    parser.add_argument("--folder", type=str, required=True, help="Folder to scan")
-    parser.add_argument("--log", type=str, default="duplicate-staged.log", help="Log file path (appends)")
-    parser.add_argument("--output", type=str, default="duplicate-files.csv", help="Output CSV (overwritten)")
-    parser.add_argument("--temp", type=str, default="filelist.csv", help="Temp file for raw file list")
-    parser.add_argument("--sorted", type=str, default="filelist_sorted.csv", help="Sorted file list path")
+    parser.add_argument("--folder", type=str, default="D:\\users\\Manoj\\Documents\\FIFA 07\\elib", help="Folder to scan")
+    parser.add_argument("--log", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-log.log", help="Log file path (appends)")
+    parser.add_argument("--output", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-output.csv", help="Output CSV (overwritten)")
+    parser.add_argument("--temp", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-temp.csv", help="Temp file for raw file list")
+    parser.add_argument("--sorted", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-sorted.csv", help="Sorted file list path")
     args = parser.parse_args()
 
     args.folder = os.path.abspath(args.folder)
