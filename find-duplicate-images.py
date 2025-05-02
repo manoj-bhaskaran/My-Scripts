@@ -91,10 +91,12 @@ def find_duplicates(folder, log_file):
     logging.info("Duplicate groups found:")
     duplicate_count = 0
     for file_hash, files in hash_groups.items():
-        if len(files) > 1:  # Only log actual duplicates
+        # Only log actual duplicates (exclude single files or self-duplicates)
+        unique_files = list(set(files))  # Remove self-duplicates
+        if len(unique_files) > 1:
             duplicate_count += 1
             logging.info(f"Duplicate group {duplicate_count}:")
-            for file in files:
+            for file in unique_files:
                 logging.info(f"  {file}")
 
     # Print summary to console
