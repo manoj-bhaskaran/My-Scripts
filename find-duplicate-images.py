@@ -64,7 +64,16 @@ def find_duplicates(folder, log_file):
                     futures[executor.submit(compute_md5, file_path)] = file_path
 
         # Use tqdm to display progress
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Hashing files"):
+        with tqdm(total=len(futures), desc="Hashing files") as pbar:
+            for future in as_completed(futures):
+                file_path = futures[future]
+                try:
+                    file_hash = future.result()
+                    if file_hash:
+                        duplicates.append((file_hash, file_path))
+                except Exception as e:
+                    logging.warning(f"Error hashing file {file_path}: {e}")
+                pbar.update(1)
             file_path = futures[future]
             try:
                 file_hash = future.result()
