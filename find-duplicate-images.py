@@ -177,22 +177,29 @@ def stage3_find_duplicates(sorted_csv, log_file, output_file):
 
         reader = csv.reader(f_in)
         rows = [(int(size), path) for size, path in reader if size and path.strip()]
+       
+        # Pre-count how many files will actually be hashed
+        from collections import defaultdict
+        size_counts = defaultdict(int)
+        for size, _ in rows:
+            size_counts[size] += 1
+        hashable_files = sum(count for count in size_counts.values() if count > 1)
+
         writer = csv.writer(f_out)
         writer.writerow(["group_id", "size", "md5_hash", "file_path"])
 
-        with tqdm(total=len(rows), desc="Processing files", unit=" file(s)", dynamic_ncols=True) as pbar:
-            rows.sort(key=lambda r: r[0])  # Ensure sorted by size
+        with tqdm(total=hashable_files, desc="Hashing duplicate-size files", unit=" file(s)", dynamic_ncols=True) as pbar:
             for size, group in groupby(rows, key=lambda r: r[0]):
                 group_list = list(group)
+
                 if len(group_list) <= 1:
-                    pbar.update(len(group_list))
-                    continue
+                    continue  # Skip hashing for unique-size files
 
                 paths = [path for _, path in group_list]
                 md5_list = list(ThreadPoolExecutor().map(compute_md5_safe, paths))
                 hash_groups = defaultdict(list)
 
-                for (path, md5) in zip(paths, md5_list):
+                for path, md5 in zip(paths, md5_list):
                     if md5:
                         hash_groups[md5].append(path)
                     pbar.update(1)
