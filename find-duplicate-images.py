@@ -180,10 +180,12 @@ def stage3_find_duplicates(sorted_csv, log_file, output_file):
          open(output_file, "w", newline='', encoding='utf-8') as f_out:
 
         reader = csv.reader(f_in)
+        rows = [row for row in reader if len(row) >= 2 and row[1].strip()]
+        total_files = len(rows)
         writer = csv.writer(f_out)
         file_iter = iter(reader)
 
-        with tqdm(desc="Processing files", unit=" file(s)") as pbar:
+        with tqdm(total=total_files, desc="Processing files", unit=" file(s)", dynamic_ncols=True) as pbar:
             for size, group in groupby(file_iter, key=itemgetter(0)):
                 group_list = list(group)
                 paths = [row[1] for row in group_list]
