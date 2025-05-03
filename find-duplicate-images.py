@@ -106,11 +106,11 @@ def stage2_sort_csv(input_csv, sorted_csv):
     log_event("Starting Stage 2: Sorting by file size")
 
     ps_script = f"""
-    Import-Csv -Path '{input_csv}' -Header size,path |
-        Sort-Object {{ [int64]$_.size }} |
-        ForEach-Object {{ "{{0}},{1}".format($_.size, $_.path) }} |
-        Set-Content -Path '{sorted_csv}'
-    """
+        Import-Csv -Path '{input_csv}' -Header size,path |
+            Sort-Object {{ [int64]$_.size }} |
+            ForEach-Object {{ "$(${{_.size}}),$(${{_.path}})" }} |
+            Set-Content -Path '{sorted_csv}'
+        """
 
     try:
         subprocess.run(["powershell", "-Command", ps_script], check=True)
