@@ -4,12 +4,36 @@ import hashlib
 import argparse
 import logging
 import subprocess
+import json
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import groupby
 from operator import itemgetter
 from datetime import datetime
 from tqdm import tqdm  # Import tqdm for the progress bar
+
+def load_checkpoint(path):
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_checkpoint(path, stage_name, args):
+    data = {
+        "completed_stage": stage_name,
+        "folder": args.folder,
+        "output": args.output,
+        "temp": args.temp,
+        "sorted": args.sorted
+    }
+    try:
+        with open(path, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logging.warning(f"Failed to save checkpoint: {e}")
 
 def is_safe_path(base, target):
     base = os.path.abspath(base)
@@ -199,6 +223,9 @@ def main():
     parser.add_argument("--output", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-output.csv", help="Output CSV (overwritten)")
     parser.add_argument("--temp", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-temp.csv", help="Temp file for raw file list")
     parser.add_argument("--sorted", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-sorted.csv", help="Sorted file list path")
+    parser.add_argument("--checkpoint", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-checkpoint.json", help="Checkpoint file to track completed stages")
+    parser.add_argument("--restart", action="store_true", help="Force restart from Stage 1 and ignore checkpoint")
+
     args = parser.parse_args()
 
     args.folder = os.path.abspath(args.folder)
@@ -212,18 +239,68 @@ def main():
 
     log_event("Duplicate detection script started")
 
+    success = False  # Track if all stages complete
+    checkpoint = load_checkpoint(args.checkpoint) if args.restart else {}
+
+    if args.restart:
+        log_event("Restart requested by user.")
+
+        if not checkpoint:
+            log_event("Checkpoint file not found or invalid. Cannot resume.")
+            print("No valid checkpoint found — cannot resume.")
+            return
+
+        # Override CLI args from checkpoint — EXCEPT log
+        args.folder = checkpoint.get("folder", args.folder)
+        args.output = checkpoint.get("output", args.output)
+        args.temp = checkpoint.get("temp", args.temp)
+        args.sorted = checkpoint.get("sorted", args.sorted)
+        # args.log is left as-is to allow overriding
+
+        stage_map = {
+            None: "Stage 1",
+            "stage1": "Stage 2",
+            "stage2": "Stage 3",
+            "stage3": "Already completed — nothing to do"
+        }
+        resume_stage = checkpoint.get("completed_stage")
+        resume_text = stage_map.get(resume_stage, "Unknown stage")
+        log_event(f"Resuming from: {resume_text}")
+        print(f"➡️  Restart requested — resuming from: {resume_text}")
+
+        if resume_stage == "stage3":
+            log_event("All stages already completed. Nothing to resume.")
+            print("✅ All stages were already completed — nothing to do.")
+            return
+        
+    # If no restart requested, delete any stale intermediate files at startup
+    if not args.restart:
+        for f in [args.temp, args.sorted, args.checkpoint]:
+            if os.path.exists(f):
+                os.remove(f)
+                log_event(f"Deleted stale file at startup (no restart): {f}")
+
     try:
-        stage1_list_files(args.folder, args.temp)
-        stage2_sort_csv(args.temp, args.sorted)
-        stage3_find_duplicates(args.sorted, args.log, args.output)
+        if args.restart or checkpoint.get("completed_stage") is None:
+            stage1_list_files(args.folder, args.temp)
+            save_checkpoint(args.checkpoint, "stage1")
+
+        if args.restart or checkpoint.get("completed_stage") in [None, "stage1"]:
+            stage2_sort_csv(args.temp, args.sorted)
+            save_checkpoint(args.checkpoint, "stage2")
+
+        if args.restart or checkpoint.get("completed_stage") in [None, "stage1", "stage2"]:
+            stage3_find_duplicates(args.sorted, args.log, args.output)
+            save_checkpoint(args.checkpoint, "stage3")
+
+        success = True  # All stages succeeded
+
     finally:
-        # Delete temporary and sorted files after successful completion
-        if os.path.exists(args.temp):
-            os.remove(args.temp)
-            log_event(f"Deleted temporary file: {args.temp}")
-        if os.path.exists(args.sorted):
-            os.remove(args.sorted)
-            log_event(f"Deleted sorted file: {args.sorted}")
+        if success:
+            for f in [args.temp, args.sorted, args.checkpoint]:
+                if os.path.exists(f):
+                    os.remove(f)
+                    log_event(f"Deleted file after successful run: {f}")
 
     log_event("Duplicate detection script completed")
 
