@@ -172,6 +172,9 @@ Write-Log "UnknownsFolder: $UnknownsFolder" -isDebug
 Write-Log "DryRun: $DryRun" -isDebug
 Write-Log "MoveUnknowns: $MoveUnknowns" -isDebug
 
+# Get the total number of files to process
+$totalFiles = (Get-ChildItem -Path $FolderPath -File -Recurse).Count
+
 # Recursive file scanning with streaming
 Write-Log "Discovering and processing files in folder: $FolderPath" -isDebug
 $processedFiles = 0
@@ -179,8 +182,8 @@ $processedFiles = 0
 Get-ChildItem -Path $FolderPath -File -Recurse | ForEach-Object {
     $file = $_
     $processedFiles++
-    $percentComplete = [math]::Round(($processedFiles / ($processedFiles + 1)) * 100, 2) # Approximation for progress
-    Write-Progress -Activity "Processing Files" -Status "Processing file $processedFiles" -PercentComplete $percentComplete
+    $percentComplete = [math]::Round(($processedFiles / $totalFiles) * 100, 2) # Correct calculation
+    Write-Progress -Activity "Processing Files" -Status "Processing file $processedFiles of $totalFiles" -PercentComplete $percentComplete
 
     if ($Debug) { Write-Host "Processing file: $($file.FullName)" }
     Write-Log "Processing file: $($file.FullName)" -isDebug
