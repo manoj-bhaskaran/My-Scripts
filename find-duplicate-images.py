@@ -121,26 +121,39 @@ def stage1_list_files(folder, out_csv):
 
 def stage2_sort_csv(input_csv, sorted_csv):
     """
-    Sorts a CSV file by file size using PowerShell.
+    Sorts a CSV file by file size using native Python.
 
     Args:
         input_csv (str): The path to the input CSV file.
         sorted_csv (str): The path to the output sorted CSV file.
     """
-    log_event("Starting Stage 2: Sorting by file size")
-
-    ps_script = f"""
-        Import-Csv -Path '{input_csv}' -Header size,path |
-            Sort-Object {{ [int64]$_.size }} |
-            ForEach-Object {{ "$(${{_.size}}),$(${{_.path}})" }} |
-            Set-Content -Path '{sorted_csv}'
-        """
+    log_event("Starting Stage 2: Sorting by file size (Python)")
 
     try:
-        subprocess.run(["powershell", "-Command", ps_script], check=True)
+        with open(input_csv, newline='', encoding='utf-8') as f_in:
+            reader = csv.reader(f_in)
+            rows = []
+            for row in reader:
+                if len(row) < 2:
+                    logging.warning(f"Skipping malformed row in input: {row}")
+                    continue
+                try:
+                    size = int(row[0])
+                    path = row[1]
+                    rows.append((size, path))
+                except ValueError as ve:
+                    logging.warning(f"Skipping row with invalid size: {row} ({ve})")
+
+        rows.sort()  # Sorts by size (first element of tuple)
+
+        with open(sorted_csv, "w", newline='', encoding='utf-8') as f_out:
+            writer = csv.writer(f_out)
+            writer.writerows(rows)
+
         log_event(f"Completed Stage 2: Sorted list written to {sorted_csv}")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"PowerShell sort failed: {e}")
+
+    except Exception as e:
+        logging.error(f"Python sort failed: {e}")
         raise
 
 def stage3_find_duplicates(sorted_csv, log_file, output_file):
@@ -304,7 +317,7 @@ def main():
                     log_event(f"Deleted file after successful run: {f}")
         elif success and args.keepfiles:
             log_event("Intermediate files retained as per user request.")
-            
+
     log_event("Duplicate detection script completed")
 
 if __name__ == "__main__":
