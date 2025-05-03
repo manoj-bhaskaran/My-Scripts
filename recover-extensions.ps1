@@ -105,6 +105,10 @@ function Get-FileExtension {
     param([string]$filePath)
 
     # Open the file and read the first 12 bytes
+    if (-not (Test-Path -Path $filePath)) {
+        Write-Log "File not found for signature analysis: $filePath"
+        return @{ Extension = $null; Hex = $null }
+    }
     $fileStream = [System.IO.File]::OpenRead($filePath)
     $buffer = New-Object byte[] 12
     $bytesRead = $fileStream.Read($buffer, 0, $buffer.Length)
@@ -235,7 +239,11 @@ Get-ChildItem -Path $FolderPath -File -Recurse | ForEach-Object {
 
         if ($MoveUnknowns -and -not $DryRun) {
             $destinationPath = Join-Path -Path $UnknownsFolder -ChildPath $file.Name
-            Move-Item -Path $file.FullName -Destination $destinationPath
+            if (Test-Path -Path $file.FullName) {
+                Move-Item -Path $file.FullName -Destination $destinationPath
+            } else {
+                Write-Log "Skipping move: File not found - $($file.FullName)"
+            }
             Write-Log "Moved $($file.Name) to $UnknownsFolder"
         }
     }
