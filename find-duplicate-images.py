@@ -8,6 +8,7 @@ from collections import defaultdict
 from itertools import groupby
 from operator import itemgetter
 from datetime import datetime
+from tqdm import tqdm  # Import tqdm for the progress bar
 
 def is_safe_path(base, target):
     base = os.path.abspath(base)
@@ -55,19 +56,28 @@ def stage1_list_files(folder, out_csv):
         out_csv (str): The path to the output CSV file.
     """
     log_event("Starting Stage 1: File listing")
+
+    # Count total files for progress bar
+    total_files = sum(len(files) for _, _, files in os.walk(folder))
+
     with open(out_csv, "w", newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        for root, _, files in os.walk(folder):
-            for file in files:
-                path = os.path.join(root, file)
-                if not is_safe_path(folder, path):
-                    logging.warning(f"Skipping unsafe path: {path}")
-                    continue 
-                try:
-                    size = os.path.getsize(path)
-                    writer.writerow([size, path])
-                except Exception as e:
-                    logging.warning(f"Skipping file {path}: {e}")
+        with tqdm(total=total_files, desc="Processing files", unit="file") as pbar:
+            for root, _, files in os.walk(folder):
+                for file in files:
+                    path = os.path.join(root, file)
+                    if not is_safe_path(folder, path):
+                        logging.warning(f"Skipping unsafe path: {path}")
+                        pbar.update(1)
+                        continue
+                    try:
+                        size = os.path.getsize(path)
+                        writer.writerow([size, path])
+                    except Exception as e:
+                        logging.warning(f"Skipping file {path}: {e}")
+                    finally:
+                        pbar.update(1)
+
     log_event(f"Completed Stage 1: File list written to {out_csv}")
 
 def stage2_sort_csv(input_csv, sorted_csv):
