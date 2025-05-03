@@ -136,7 +136,7 @@ def stage3_find_duplicates(sorted_csv, log_file, output_file):
         writer = csv.writer(f_out)
         file_iter = iter(reader)
 
-        with tqdm(desc="Processing files", unit="file") as pbar:
+        with tqdm(desc="Processing files", unit=" file(s)") as pbar:
             for size, group in groupby(file_iter, key=itemgetter(0)):
                 group_list = list(group)
                 paths = [row[1] for row in group_list]
