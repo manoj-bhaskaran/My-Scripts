@@ -225,6 +225,7 @@ def main():
     parser.add_argument("--sorted", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-sorted.csv", help="Sorted file list path")
     parser.add_argument("--checkpoint", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-checkpoint.json", help="Checkpoint file to track completed stages")
     parser.add_argument("--restart", action="store_true", help="Force restart from Stage 1 and ignore checkpoint")
+    parser.add_argument("--keepfiles", action="store_true", help="Retain intermediate and checkpoint files even after successful completion")
 
     args = parser.parse_args()
 
@@ -296,12 +297,14 @@ def main():
         success = True  # All stages succeeded
 
     finally:
-        if success:
+        if success and not args.keepfiles:
             for f in [args.temp, args.sorted, args.checkpoint]:
                 if os.path.exists(f):
                     os.remove(f)
                     log_event(f"Deleted file after successful run: {f}")
-
+        elif success and args.keepfiles:
+            log_event("Intermediate files retained as per user request.")
+            
     log_event("Duplicate detection script completed")
 
 if __name__ == "__main__":
