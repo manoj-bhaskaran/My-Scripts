@@ -283,15 +283,15 @@ def main():
     try:
         if args.restart or checkpoint.get("completed_stage") is None:
             stage1_list_files(args.folder, args.temp)
-            save_checkpoint(args.checkpoint, "stage1")
+            save_checkpoint(args.checkpoint, "stage1", args)
 
         if args.restart or checkpoint.get("completed_stage") in [None, "stage1"]:
             stage2_sort_csv(args.temp, args.sorted)
-            save_checkpoint(args.checkpoint, "stage2")
+            save_checkpoint(args.checkpoint, "stage2", args)
 
         if args.restart or checkpoint.get("completed_stage") in [None, "stage1", "stage2"]:
             stage3_find_duplicates(args.sorted, args.log, args.output)
-            save_checkpoint(args.checkpoint, "stage3")
+            save_checkpoint(args.checkpoint, "stage3", args)
 
         success = True  # All stages succeeded
 
