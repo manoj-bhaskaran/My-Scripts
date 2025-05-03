@@ -69,7 +69,7 @@ def stage1_list_files(folder, out_csv):
 
     with open(out_csv, "w", newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        with tqdm(desc="Processing files", unit="file") as pbar:
+        with tqdm(total=0, desc="Processing files", unit="file", dynamic_ncols=True)
             for path in fast_walk(folder):
                 if not is_safe_path(folder, path):
                     logging.warning(f"Skipping unsafe path: {path}")
