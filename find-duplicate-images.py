@@ -118,29 +118,33 @@ def stage3_find_duplicates(sorted_csv, log_file, output_file):
         reader = csv.reader(f)
         sorted_rows = list(reader)
 
+    total_files = len(sorted_rows)  # Total number of files to process
     duplicate_sets = 0
 
     with open(output_file, "w", newline='', encoding="utf-8") as out_csv:
         writer = csv.writer(out_csv)
 
-        for size, group in groupby(sorted_rows, key=itemgetter(0)):
-            group = list(group)
-            if len(group) <= 1:
-                continue
+        with tqdm(total=total_files, desc="Processing files", unit="file") as pbar:
+            for size, group in groupby(sorted_rows, key=itemgetter(0)):
+                group = list(group)
+                if len(group) <= 1:
+                    pbar.update(len(group))  # Update progress for non-duplicate groups
+                    continue
 
-            hash_groups = defaultdict(list)
-            for _, path in group:
-                md5 = compute_md5(path)
-                if md5:
-                    hash_groups[md5].append(path)
+                hash_groups = defaultdict(list)
+                for _, path in group:
+                    md5 = compute_md5(path)
+                    if md5:
+                        hash_groups[md5].append(path)
+                    pbar.update(1)  # Update progress for each file processed
 
-            for h, paths in hash_groups.items():
-                if len(paths) > 1:
-                    duplicate_sets += 1
-                    logging.info(f"Duplicate group {duplicate_sets}: {len(paths)} files")
-                    for p in paths:
-                        logging.info(f"  {p}")
-                        writer.writerow([duplicate_sets, p])
+                for h, paths in hash_groups.items():
+                    if len(paths) > 1:
+                        duplicate_sets += 1
+                        logging.info(f"Duplicate group {duplicate_sets}: {len(paths)} files")
+                        for p in paths:
+                            logging.info(f"  {p}")
+                            writer.writerow([duplicate_sets, p])
 
     log_event(f"Completed Stage 3: {duplicate_sets} duplicate groups found")
     log_event(f"Duplicate list saved to {output_file}")
