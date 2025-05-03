@@ -5,7 +5,7 @@ import argparse
 import logging
 import subprocess
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import groupby
 from operator import itemgetter
 from datetime import datetime
@@ -60,7 +60,7 @@ def fast_walk(folder):
 
 def stage1_list_files(folder, out_csv):
     """
-    Lists all files in a folder and writes their sizes and paths to a CSV file.
+    Lists all files in a folder and writes their sizes and paths to a CSV file using parallel threads.
 
     Args:
         folder (str): The folder to scan for files.
@@ -68,20 +68,29 @@ def stage1_list_files(folder, out_csv):
     """
     log_event("Starting Stage 1: File listing")
 
-    with open(out_csv, "w", newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        with tqdm(total=0, desc="Processing files", unit=" file(s)", dynamic_ncols=True) as pbar:
-            for path in fast_walk(folder):
-                if not is_safe_path(folder, path):
-                    logging.warning(f"Skipping unsafe path: {path}")
-                    pbar.update(1)
-                    continue
-                try:
-                    size = os.path.getsize(path)
-                    writer.writerow([size, path])
-                except Exception as e:
-                    logging.warning(f"Skipping file {path}: {e}")
-                finally:
+    paths = list(fast_walk(folder))
+
+    def get_size_safe(path):
+        if not is_safe_path(folder, path):
+            logging.warning(f"Skipping unsafe path: {path}")
+            return None
+        try:
+            size = os.path.getsize(path)
+            return (size, path)
+        except Exception as e:
+            logging.warning(f"Skipping file {path}: {e}")
+            return None
+
+    with open(out_csv, "w", newline='', encoding='utf-8') as f_out:
+        writer = csv.writer(f_out)
+
+        with ThreadPoolExecutor() as executor:
+            futures = {executor.submit(get_size_safe, path): path for path in paths}
+            with tqdm(total=len(futures), desc="Processing files", unit=" file(s)", dynamic_ncols=True) as pbar:
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result:
+                        writer.writerow(result)
                     pbar.update(1)
 
     log_event(f"Completed Stage 1: File list written to {out_csv}")
@@ -98,8 +107,8 @@ def stage2_sort_csv(input_csv, sorted_csv):
 
     ps_script = f"""
     Import-Csv -Path '{input_csv}' -Header size,path |
-        Sort-Object { [int64]$_.size } |
-        ForEach-Object {{ "$($_.size),$($_.path)" }} |
+        Sort-Object {{ [int64]$_.size }} |
+        ForEach-Object {{ "{{0}},{1}".format($_.size, $_.path) }} |
         Set-Content -Path '{sorted_csv}'
     """
 
