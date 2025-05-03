@@ -188,7 +188,9 @@ def stage3_find_duplicates(sorted_csv, log_file, output_file):
         with tqdm(total=total_files, desc="Processing files", unit=" file(s)", dynamic_ncols=True) as pbar:
             for size, group in groupby(file_iter, key=itemgetter(0)):
                 group_list = list(group)
-                paths = [row[1] for row in group_list]
+                size = int(size)  # 'size' comes from groupby key, still a string here
+                path_size_pairs = [(row[1], size) for row in group_list]  # row[1] = path
+
                 pbar.total = (pbar.total or 0) + len(paths)
 
                 if len(paths) <= 1:
@@ -197,17 +199,22 @@ def stage3_find_duplicates(sorted_csv, log_file, output_file):
 
                 hash_groups = defaultdict(list)
                 with ThreadPoolExecutor() as executor:
+                    paths = [path for path, _ in path_size_pairs]
                     md5_list = list(executor.map(compute_md5_safe, paths))
+                    for (path, size), md5 in zip(path_size_pairs, md5_list):
+                        if md5:
+                            hash_groups[md5].append((path, size))
 
                 for path, md5 in zip(paths, md5_list):
                     if md5:
                         hash_groups[md5].append(path)
                     pbar.update(1)
 
-                for md5, dup_paths in hash_groups.items():
-                    if len(dup_paths) > 1:
+                for md5, path_size_list in hash_groups.items():
+                    if len(path_size_list) > 1:
                         duplicate_sets += 1
-                        writer.writerows([[duplicate_sets, path] for path in dup_paths])
+                        for path, size in path_size_list:
+                            writer.writerow([duplicate_sets, size, md5, path])
 
     log_event(f"Completed Stage 3: {duplicate_sets} duplicate groups found")
     log_event(f"Duplicate list saved to {output_file}")
