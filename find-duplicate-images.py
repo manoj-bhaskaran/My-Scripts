@@ -5,6 +5,7 @@ import argparse
 import logging
 import subprocess
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from itertools import groupby
 from operator import itemgetter
 from datetime import datetime
@@ -13,7 +14,7 @@ from tqdm import tqdm  # Import tqdm for the progress bar
 def is_safe_path(base, target):
     base = os.path.abspath(base)
     target = os.path.abspath(target)
-    return os.path.commonprefix([base, target]) == base
+    return os.path.commonpath([base]) == os.path.commonpath([base, target])
 
 def log_event(message):
     """
@@ -97,7 +98,7 @@ def stage2_sort_csv(input_csv, sorted_csv):
 
     ps_script = f"""
     Import-Csv -Path '{input_csv}' -Header size,path |
-        Sort-Object {{ [int]$_.size }} |
+        Sort-Object { [int64]$_.size } |
         ForEach-Object {{ "$($_.size),$($_.path)" }} |
         Set-Content -Path '{sorted_csv}'
     """
