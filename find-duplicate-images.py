@@ -109,42 +109,51 @@ def stage3_find_duplicates(sorted_csv, log_file, output_file):
     Identifies duplicate files by hashing and writes the results to a CSV file.
 
     Args:
-        sorted_csv (str): The path to the sorted CSV file.
-        log_file (str): The path to the log file.
-        output_file (str): The path to the output CSV file for duplicate files.
+        sorted_csv (str): Path to the sorted CSV file (by size).
+        log_file (str): Path to the log file (used by logging, assumed globally configured).
+        output_file (str): Path to the output CSV where duplicate files will be written.
     """
     log_event("Starting Stage 3: Hashing and duplicate detection")
-    with open(sorted_csv, newline='', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        sorted_rows = list(reader)
 
-    total_files = len(sorted_rows)  # Total number of files to process
+    def compute_md5_safe(path):
+        try:
+            return compute_md5(path)
+        except Exception as e:
+            logging.warning(f"Hashing failed for {path}: {e}")
+            return None
+
     duplicate_sets = 0
 
-    with open(output_file, "w", newline='', encoding="utf-8") as out_csv:
-        writer = csv.writer(out_csv)
+    with open(sorted_csv, newline='', encoding='utf-8') as f_in, \
+         open(output_file, "w", newline='', encoding='utf-8') as f_out:
 
-        with tqdm(total=total_files, desc="Processing files", unit="file") as pbar:
-            for size, group in groupby(sorted_rows, key=itemgetter(0)):
-                group = list(group)
-                if len(group) <= 1:
-                    pbar.update(len(group))  # Update progress for non-duplicate groups
+        reader = csv.reader(f_in)
+        writer = csv.writer(f_out)
+        file_iter = iter(reader)
+
+        with tqdm(desc="Processing files", unit="file") as pbar:
+            for size, group in groupby(file_iter, key=itemgetter(0)):
+                group_list = list(group)
+                paths = [row[1] for row in group_list]
+                pbar.total = (pbar.total or 0) + len(paths)
+
+                if len(paths) <= 1:
+                    pbar.update(len(paths))
                     continue
 
                 hash_groups = defaultdict(list)
-                for _, path in group:
-                    md5 = compute_md5(path)
+                with ThreadPoolExecutor() as executor:
+                    md5_list = list(executor.map(compute_md5_safe, paths))
+
+                for path, md5 in zip(paths, md5_list):
                     if md5:
                         hash_groups[md5].append(path)
-                    pbar.update(1)  # Update progress for each file processed
+                    pbar.update(1)
 
-                for h, paths in hash_groups.items():
-                    if len(paths) > 1:
+                for md5, dup_paths in hash_groups.items():
+                    if len(dup_paths) > 1:
                         duplicate_sets += 1
-                        logging.info(f"Duplicate group {duplicate_sets}: {len(paths)} files")
-                        for p in paths:
-                            logging.info(f"  {p}")
-                            writer.writerow([duplicate_sets, p])
+                        writer.writerows([[duplicate_sets, path] for path in dup_paths])
 
     log_event(f"Completed Stage 3: {duplicate_sets} duplicate groups found")
     log_event(f"Duplicate list saved to {output_file}")
