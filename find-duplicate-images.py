@@ -47,6 +47,16 @@ def compute_md5(file_path):
         logging.warning(f"Error hashing {file_path}: {e}")
         return None
 
+def fast_walk(folder):
+    for entry in os.scandir(folder):
+        try:
+            if entry.is_dir(follow_symlinks=False):
+                yield from fast_walk(entry.path)
+            elif entry.is_file(follow_symlinks=False):
+                yield entry.path
+        except Exception as e:
+            logging.warning(f"Error accessing {entry.path}: {e}")
+
 def stage1_list_files(folder, out_csv):
     """
     Lists all files in a folder and writes their sizes and paths to a CSV file.
@@ -57,26 +67,21 @@ def stage1_list_files(folder, out_csv):
     """
     log_event("Starting Stage 1: File listing")
 
-    # Count total files for progress bar
-    total_files = sum(len(files) for _, _, files in os.walk(folder))
-
     with open(out_csv, "w", newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        with tqdm(total=total_files, desc="Processing files", unit="file") as pbar:
-            for root, _, files in os.walk(folder):
-                for file in files:
-                    path = os.path.join(root, file)
-                    if not is_safe_path(folder, path):
-                        logging.warning(f"Skipping unsafe path: {path}")
-                        pbar.update(1)
-                        continue
-                    try:
-                        size = os.path.getsize(path)
-                        writer.writerow([size, path])
-                    except Exception as e:
-                        logging.warning(f"Skipping file {path}: {e}")
-                    finally:
-                        pbar.update(1)
+        with tqdm(desc="Processing files", unit="file") as pbar:
+            for path in fast_walk(folder):
+                if not is_safe_path(folder, path):
+                    logging.warning(f"Skipping unsafe path: {path}")
+                    pbar.update(1)
+                    continue
+                try:
+                    size = os.path.getsize(path)
+                    writer.writerow([size, path])
+                except Exception as e:
+                    logging.warning(f"Skipping file {path}: {e}")
+                finally:
+                    pbar.update(1)
 
     log_event(f"Completed Stage 1: File list written to {out_csv}")
 
