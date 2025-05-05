@@ -531,37 +531,99 @@ function RedistributeFilesInTarget {
         [int]$FilesPerFolderLimit,
         [switch]$ShowProgress,
         [int]$UpdateFrequency,
-        [string]$DeleteMode,         # Added DeleteMode parameter
-        [ref]$FilesToDelete,         # Added FilesToDelete parameter 
-        [ref]$GlobalFileCounter,     # Reference to a global file counter
-        [int]$TotalFiles             # Total number of files to process
+        [string]$DeleteMode,
+        [ref]$FilesToDelete,
+        [ref]$GlobalFileCounter,
+        [int]$TotalFiles
     )
 
-    # Get all files in the target folder and its subfolders
-    $allFiles = Get-ChildItem -Path $TargetFolder -Recurse -File
+    # Step 1: Build initial folder file count map
     $folderFilesMap = @{}
-
     foreach ($subfolder in $Subfolders) {
         $folderFilesMap[$subfolder] = (Get-ChildItem -Path $subfolder -File).Count
     }
 
-    # Redistribute files in the target folder (not in subfolders) regardless of limit
+    # Step 2: Redistribute files from root of target folder (not subfolders)
     LogMessage -Message "Redistributing files from target folder $TargetFolder to subfolders..."
     $rootFiles = Get-ChildItem -Path $TargetFolder -File
-    DistributeFilesToSubfolders -Files $rootFiles -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter -TotalFiles $TotalFiles
 
-    LogMessage -Message "File redistribution completed: Processed $($GlobalFileCounter.Value) of $TotalFiles files in the target folder."
+    if ($rootFiles.Count -gt 0) {
+        $eligibleTargets = $folderFilesMap.GetEnumerator() |
+            Where-Object { $_.Value -lt $FilesPerFolderLimit } |
+            ForEach-Object { $_.Key }
 
-    foreach ($file in $allFiles) {
-        $folder = $file.DirectoryName
-        $currentFileCount = $folderFilesMap[$folder]
+        if ($eligibleTargets.Count -eq 0) {
+            # Create a new subfolder using Get-RandomFileName
+            $randomName = Get-RandomFileName
+            $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
+            New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
+            LogMessage -Message "Created new target subfolder: $newFolder for redistribution from root folder."
 
-        if ($currentFileCount -gt $FilesPerFolderLimit) {
-            LogMessage -Message "Renaming and redistributing files from folder: $folder"
-            DistributeFilesToSubfolders -Files @($file) -Subfolders $Subfolders -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter -TotalFiles $TotalFiles
-            $folderFilesMap[$folder]--
+            # Update maps
+            $eligibleTargets = @($newFolder)
+            $Subfolders += $newFolder
+            $folderFilesMap[$newFolder] = 0
+        }
+
+        DistributeFilesToSubfolders -Files $rootFiles `
+            -Subfolders $eligibleTargets `
+            -Limit $FilesPerFolderLimit `
+            -ShowProgress:$ShowProgress `
+            -UpdateFrequency:$UpdateFrequency `
+            -DeleteMode $DeleteMode `
+            -FilesToDelete $FilesToDelete `
+            -GlobalFileCounter $GlobalFileCounter `
+            -TotalFiles $TotalFiles
+    }
+
+    # Step 3: Identify overloaded folders and select random files for redistribution
+    $filesToRedistributeMap = @{}
+
+    foreach ($folder in $folderFilesMap.Keys) {
+        $fileCount = $folderFilesMap[$folder]
+        if ($fileCount -gt $FilesPerFolderLimit) {
+            $excess = $fileCount - $FilesPerFolderLimit
+            $overloadedFiles = Get-ChildItem -Path $folder -File | Get-Random -Count $excess
+            $filesToRedistributeMap[$folder] = $overloadedFiles
+            LogMessage -Message "Folder $folder is overloaded by $excess file(s), queuing for redistribution."
         }
     }
+
+    # Step 4: Redistribute files from overloaded folders, excluding the source folder from targets
+    foreach ($sourceFolder in $filesToRedistributeMap.Keys) {
+        $sourceFiles = $filesToRedistributeMap[$sourceFolder]
+
+        $eligibleTargets = $folderFilesMap.GetEnumerator() |
+            Where-Object {
+                $_.Key -ne $sourceFolder -and $_.Value -lt $FilesPerFolderLimit
+            } |
+            ForEach-Object { $_.Key }
+
+        if ($eligibleTargets.Count -eq 0) {
+            # Create a new subfolder using Get-RandomFileName
+            $randomName = Get-RandomFileName
+            $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
+            New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
+            LogMessage -Message "Created new target subfolder: $newFolder for redistribution from overloaded folder $sourceFolder."
+
+            # Update maps
+            $eligibleTargets = @($newFolder)
+            $Subfolders += $newFolder
+            $folderFilesMap[$newFolder] = 0
+        }
+
+        DistributeFilesToSubfolders -Files $sourceFiles `
+            -Subfolders $eligibleTargets `
+            -Limit $FilesPerFolderLimit `
+            -ShowProgress:$ShowProgress `
+            -UpdateFrequency:$UpdateFrequency `
+            -DeleteMode $DeleteMode `
+            -FilesToDelete $FilesToDelete `
+            -GlobalFileCounter $GlobalFileCounter `
+            -TotalFiles $TotalFiles
+    }
+
+    LogMessage -Message "File redistribution completed: Processed $($GlobalFileCounter.Value) of $TotalFiles files in the target folder."
 }
 
 function SaveState {
