@@ -3,14 +3,16 @@ import csv
 import hashlib
 import argparse
 import logging
-import subprocess
 import json
-from collections import defaultdict
+import random
+import shutil
+import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import groupby
-from operator import itemgetter
-from datetime import datetime
 from tqdm import tqdm  # Import tqdm for the progress bar
+from collections import defaultdict
+from logging.handlers import QueueHandler, QueueListener
+from threading import Lock
 
 def load_checkpoint(path):
     if not os.path.exists(path):
@@ -30,8 +32,10 @@ def save_checkpoint(path, stage_name, args):
         "sorted": args.sorted
     }
     try:
-        with open(path, 'w') as f:
+        tmp_path = path + ".tmp"
+        with open(tmp_path, 'w') as f:
             json.dump(data, f, indent=2)
+        os.replace(tmp_path, path)
     except Exception as e:
         logging.warning(f"Failed to save checkpoint: {e}")
 
@@ -41,15 +45,6 @@ def is_safe_path(base, target):
     return os.path.commonpath([base]) == os.path.commonpath([base, target])
 
 def log_event(message):
-    """
-    Logs an event with a timestamp.
-
-    Args:
-        message (str): The message to log.
-    """
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    full_message = f"[{timestamp}] {message}"
-    print(full_message)
     logging.info(message)
 
 def compute_md5(file_path):
@@ -177,24 +172,21 @@ def stage3_find_duplicates(sorted_csv, log_file, output_file):
 
         reader = csv.reader(f_in)
         rows = [(int(size), path) for size, path in reader if size and path.strip()]
-       
-        # Pre-count how many files will actually be hashed
-        from collections import defaultdict
-        size_counts = defaultdict(int)
-        for size, _ in rows:
-            size_counts[size] += 1
-        hashable_files = sum(count for count in size_counts.values() if count > 1)
 
         writer = csv.writer(f_out)
         writer.writerow(["group_id", "size", "md5_hash", "file_path"])
 
-        with tqdm(total=hashable_files, desc="Hashing duplicate-size files", unit=" file(s)", dynamic_ncols=True) as pbar:
-            for size, group in groupby(rows, key=lambda r: r[0]):
-                group_list = list(group)
+        # Group rows by size first and keep only those groups with >1 file
+        grouped_rows = []
+        for size, group in groupby(rows, key=lambda r: r[0]):
+            group_list = list(group)
+            if len(group_list) > 1:
+                grouped_rows.append((size, group_list))
 
-                if len(group_list) <= 1:
-                    continue  # Skip hashing for unique-size files
+        total_files_to_hash = sum(len(group_list) for _, group_list in grouped_rows)
 
+        with tqdm(total=total_files_to_hash, desc="Hashing files", unit=" file(s)", dynamic_ncols=True) as pbar:
+            for size, group_list in grouped_rows:
                 paths = [path for _, path in group_list]
                 md5_list = list(ThreadPoolExecutor().map(compute_md5_safe, paths))
                 hash_groups = defaultdict(list)
@@ -202,7 +194,7 @@ def stage3_find_duplicates(sorted_csv, log_file, output_file):
                 for path, md5 in zip(paths, md5_list):
                     if md5:
                         hash_groups[md5].append(path)
-                    pbar.update(1)
+                    pbar.update(1)  # one update per hashed file
 
                 for md5, dup_paths in hash_groups.items():
                     if len(dup_paths) > 1:
@@ -212,6 +204,78 @@ def stage3_find_duplicates(sorted_csv, log_file, output_file):
 
     log_event(f"Completed Stage 3: {duplicate_sets} duplicate groups found")
     log_event(f"Duplicate list saved to {output_file}")
+
+def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
+    """
+    Deletes or moves duplicate files, retaining one file per group.
+
+    Args:
+        dup_csv (str): Path to CSV file with duplicate information.
+        dryrun (bool): If True, only preview deletions.
+        backup_folder (str): If set, move files there instead of deleting.
+    """
+
+    lock = Lock()
+    deleted_count = 0
+
+    log_event("Starting duplicate cleanup")
+
+    if not os.path.exists(dup_csv):
+        raise FileNotFoundError(f"Cannot perform deletion — stage3 output not found: {dup_csv}")
+
+    with open(dup_csv, newline='', encoding='utf-8') as f_in:
+        reader = csv.DictReader(f_in)
+        grouped = defaultdict(list)
+
+        for row in reader:
+            grouped[row["group_id"]].append(row["file_path"])
+
+    deleted_count = 0
+    skipped_groups = 0
+
+    total_files = sum(len(files) - 1 for files in grouped.values() if len(files) > 1)
+
+    def delete_or_move_file(file_path, retained):
+        nonlocal deleted_count
+        if file_path == retained:
+            return
+        if dryrun:
+            log_event(f"[DRYRUN] Would delete: {file_path}")
+        else:
+            try:
+                if backup_folder:
+                    os.makedirs(backup_folder, exist_ok=True)
+                    dest = os.path.join(backup_folder, os.path.basename(file_path))
+                    shutil.move(file_path, dest)
+                    log_event(f"Moved: {file_path} → {dest}")
+                else:
+                    os.remove(file_path)
+                    log_event(f"Deleted: {file_path}")
+                with lock:
+                    deleted_count += 1
+            except Exception as e:
+                logging.warning(f"Failed to delete/move {file_path}: {e}")
+
+    with tqdm(total=total_files, desc="Deleting duplicates", unit=" file(s)", dynamic_ncols=True) as pbar:
+        with ThreadPoolExecutor() as executor:
+            futures = []
+            for group_id, files in grouped.items():
+                if len(files) <= 1:
+                    skipped_groups += 1
+                    continue
+
+                retained = random.choice(files)
+                for f in files:
+                    futures.append(executor.submit(delete_or_move_file, f, retained))
+
+            for future in as_completed(futures):
+                pbar.update(1)
+
+    log_event(f"Duplicate cleanup completed. Retained one file per group.")
+    if dryrun:
+        log_event(f"[DRYRUN] Total groups: {len(grouped)}, Skipped (1 file only): {skipped_groups}, Files that would be deleted: {deleted_count}")
+    else:
+        log_event(f"Deleted/Moved {deleted_count} files from {len(grouped)} duplicate groups")
 
 def main():
     """
@@ -242,17 +306,37 @@ def main():
     parser.add_argument("--checkpoint", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-checkpoint.json", help="Checkpoint file to track completed stages")
     parser.add_argument("--restart", action="store_true", help="Force restart from Stage 1 and ignore checkpoint")
     parser.add_argument("--keepfiles", action="store_true", help="Retain intermediate and checkpoint files even after successful completion")
+    parser.add_argument("--delete", action="store_true", help="Delete duplicates after Stage 3 (retains one per group)")
+    parser.add_argument("--dryrun", action="store_true", help="Preview deletions without making changes")
+    parser.add_argument("--backup-folder", type=str, help="Move duplicates here instead of deleting (optional)")
+
 
     args = parser.parse_args()
 
     args.folder = os.path.abspath(args.folder)
+    args.temp = os.path.abspath(args.temp)
+    args.sorted = os.path.abspath(args.sorted)
+    args.output = os.path.abspath(args.output)
+    args.checkpoint = os.path.abspath(args.checkpoint)
+    if args.backup_folder:
+        args.backup_folder = os.path.abspath(args.backup_folder)
         
-    logging.basicConfig(
-        filename=args.log,
-        level=logging.INFO,
-        filemode='a',
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
+    # --- Queue-based logging setup ---
+    log_queue = queue.Queue()
+
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+    file_handler = logging.FileHandler(args.log)
+    file_handler.setFormatter(formatter)
+
+    listener = QueueListener(log_queue, file_handler)
+
+    queue_handler = QueueHandler(log_queue)
+    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().handlers = [queue_handler]
+
+    listener.start()
+    log_event("Logging system initialized with queue handler.")
 
     log_event("Duplicate detection script started")
 
@@ -278,18 +362,25 @@ def main():
             None: "Stage 1",
             "stage1": "Stage 2",
             "stage2": "Stage 3",
-            "stage3": "Already completed — nothing to do"
-        }
+            "stage3": "Deletion Stage" if args.delete else "Already completed — nothing to do",
+            "delete": "Already completed — nothing to do"
+        }     
+
         resume_stage = checkpoint.get("completed_stage")
         resume_text = stage_map.get(resume_stage, "Unknown stage")
         log_event(f"Resuming from: {resume_text}")
         print(f"➡️  Restart requested — resuming from: {resume_text}")
 
-        if resume_stage == "stage3":
+        if resume_stage == "stage3" and not args.delete:
             log_event("All stages already completed. Nothing to resume.")
-            print("✅ All stages were already completed — nothing to do.")
+            print("✅ All stages already completed — nothing to do.")
             return
-        
+
+        elif resume_stage == "delete":
+            log_event("All stages including deletion already completed. Nothing to resume.")
+            print("✅ All stages including deletion already completed — nothing to do.")
+            return
+   
     # If no restart requested, delete any stale intermediate files at startup
     if not args.restart:
         for f in [args.temp, args.sorted, args.checkpoint]:
@@ -297,22 +388,51 @@ def main():
                 os.remove(f)
                 log_event(f"Deleted stale file at startup (no restart): {f}")
 
+    if args.restart and args.delete:
+        if not os.path.exists(args.output):
+            msg = f"❌ Cannot perform deletion on restart — stage3 output not found: {args.output}"
+            log_event(msg)
+            print(msg)
+            return
+
     try:
         completed_stage = checkpoint.get("completed_stage") if args.restart else None
 
         if completed_stage is None:
-            stage1_list_files(args.folder, args.temp)
-            save_checkpoint(args.checkpoint, "stage1", args)
-            completed_stage = "stage1"
+            try:
+                stage1_list_files(args.folder, args.temp)
+                completed_stage = "stage1"
+                save_checkpoint(args.checkpoint, "stage1", args)
+            except Exception as e:
+                log_event(f"Stage 1 failed: {e}")
+                raise
 
         if completed_stage == "stage1":
-            stage2_sort_csv(args.temp, args.sorted)
-            save_checkpoint(args.checkpoint, "stage2", args)
-            completed_stage = "stage2"
+            try:
+                stage2_sort_csv(args.temp, args.sorted)
+                completed_stage = "stage2"
+                save_checkpoint(args.checkpoint, "stage2", args)
+            except Exception as e:
+                log_event(f"Stage 2 failed: {e}")
+                raise
 
         if completed_stage == "stage2":
-            stage3_find_duplicates(args.sorted, args.log, args.output)
-            save_checkpoint(args.checkpoint, "stage3", args)
+            try:
+                stage3_find_duplicates(args.sorted, args.log, args.output)
+                completed_stage = "stage3"
+                save_checkpoint(args.checkpoint, "stage3", args)
+            except Exception as e:
+                log_event(f"Stage 3 failed: {e}")
+                raise
+
+        if args.delete:
+            try:
+                delete_duplicates(args.output, dryrun=args.dryrun, backup_folder=args.backup_folder)
+                completed_stage = "delete"
+                save_checkpoint(args.checkpoint, "delete", args)
+            except FileNotFoundError as e:
+                log_event(f"❌ {e}")
+                return
 
         success = True
 
@@ -324,6 +444,9 @@ def main():
                     log_event(f"Deleted file after successful run: {f}")
         elif success and args.keepfiles:
             log_event("Intermediate files retained as per user request.")
+
+        # Stop the log listener thread
+        listener.stop()
 
     log_event("Duplicate detection script completed")
 
