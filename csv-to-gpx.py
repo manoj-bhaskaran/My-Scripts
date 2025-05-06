@@ -28,7 +28,6 @@ import os
 
 # Load SRTM elevation data
 elevation_data = srtm.get_data()
-elevation_data.load()  # Preload if desired
 
 def get_elevation(lat, lon):
     """Fetch elevation or fallback if unavailable."""
