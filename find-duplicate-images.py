@@ -49,7 +49,6 @@ def log_event(message):
     """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     full_message = f"[{timestamp}] {message}"
-    print(full_message)
     logging.info(message)
 
 def compute_md5(file_path):
