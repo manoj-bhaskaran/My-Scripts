@@ -109,6 +109,7 @@ if __name__ == "__main__":
     bounds = calculate_bounding_box(input_csv)
     if not os.path.exists(srtm_tif) or not is_coverage_sufficient(srtm_tif, bounds):
         print(f"Clipping fresh SRTM data for bounds: {bounds}")
+        elevation.use('eio')
         elevation.clip(bounds=bounds, output=srtm_tif)
     else:
         print(f"Existing SRTM file covers the bounding box: {srtm_tif}")
