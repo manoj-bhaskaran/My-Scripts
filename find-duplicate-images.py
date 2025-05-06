@@ -240,31 +240,35 @@ def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
     deleted_count = 0
     skipped_groups = 0
 
-    for group_id, files in grouped.items():
-        if len(files) <= 1:
-            skipped_groups += 1
-            continue
+    total_files = sum(len(files) - 1 for files in grouped.values() if len(files) > 1)
 
-        retained = random.choice(files)
-        for f in files:
-            if f == retained:
+    with tqdm(total=total_files, desc="Deleting duplicates", unit=" file(s)", dynamic_ncols=True) as pbar:
+        for group_id, files in grouped.items():
+            if len(files) <= 1:
+                skipped_groups += 1
                 continue
 
-            if dryrun:
-                log_event(f"[DRYRUN] Would delete: {f}")
-            else:
-                try:
-                    if backup_folder:
-                        os.makedirs(backup_folder, exist_ok=True)
-                        dest = os.path.join(backup_folder, os.path.basename(f))
-                        shutil.move(f, dest)
-                        log_event(f"Moved: {f} → {dest}")
-                    else:
-                        os.remove(f)
-                        log_event(f"Deleted: {f}")
-                    deleted_count += 1
-                except Exception as e:
-                    logging.warning(f"Failed to delete/move {f}: {e}")
+            retained = random.choice(files)
+            for f in files:
+                if f == retained:
+                    continue
+
+                if dryrun:
+                    log_event(f"[DRYRUN] Would delete: {f}")
+                else:
+                    try:
+                        if backup_folder:
+                            os.makedirs(backup_folder, exist_ok=True)
+                            dest = os.path.join(backup_folder, os.path.basename(f))
+                            shutil.move(f, dest)
+                            log_event(f"Moved: {f} → {dest}")
+                        else:
+                            os.remove(f)
+                            log_event(f"Deleted: {f}")
+                        deleted_count += 1
+                    except Exception as e:
+                        logging.warning(f"Failed to delete/move {f}: {e}")
+                pbar.update(1)
 
     log_event(f"Duplicate cleanup completed. Retained one file per group.")
     if dryrun:
