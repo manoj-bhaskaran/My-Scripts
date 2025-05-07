@@ -1,6 +1,7 @@
 from __future__ import print_function
 from googleapiclient.errors import HttpError
 from google_drive_auth import authenticate_and_get_drive_service
+from google.auth.credentials import Credentials
 from tqdm import tqdm
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -34,7 +35,11 @@ def get_root_files(service):
         if not page_token:
             break
 
-def delete_file(service, file, retries=3):
+from googleapiclient.discovery import build
+
+def delete_file(creds, file, retries=3):
+    # Build a new Drive service for this thread
+    service = build('drive', 'v3', credentials=creds)
     for attempt in range(retries):
         try:
             service.files().delete(fileId=file['id']).execute()
@@ -50,6 +55,8 @@ def main():
     log_with_timestamp("Authenticating and starting process...")
     service = authenticate_and_get_drive_service()
 
+    creds = service._http.credentials  # Extract the creds from the service
+
     log_with_timestamp("Fetching file list...")
     files_to_delete = list(get_root_files(service))
     total_files = len(files_to_delete)
@@ -58,7 +65,9 @@ def main():
     deleted_count = 0
     with tqdm(total=total_files, desc="Deleting files", unit="file") as pbar:
         with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-            futures = {executor.submit(delete_file, service, file): file for file in files_to_delete}
+            futures = {
+                executor.submit(delete_file, creds, file): file for file in files_to_delete
+            }
             for future in as_completed(futures):
                 if future.result():
                     deleted_count += 1
