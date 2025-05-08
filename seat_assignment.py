@@ -76,7 +76,7 @@ def allocate_seats(excel_path):
             subteam, tech = assigned[seat]
         else:
             subteam, tech = "Unassigned", ""
-        output.append((int(seat), subteam, tech))
+        output.append((int(float(seat)), subteam, tech))
 
     output_df = pd.DataFrame(output, columns=["Seat No", "Subteam", "Technology"])
     output_df = output_df.sort_values(by="Seat No")
