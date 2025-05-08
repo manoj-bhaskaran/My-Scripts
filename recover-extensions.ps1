@@ -3,7 +3,9 @@
 This PowerShell script recovers file extensions for files that have lost their extensions. It scans a specified folder, determines the file type based on the file's signature (first few bytes), and appends the appropriate extension to the file name. The script logs all actions for future reference.
 
 .DESCRIPTION
-The script iterates through each file in the specified folder and checks if the file already has an extension. If the file does not have an extension, it reads the first few bytes to determine the file type and appends the appropriate extension. The script supports common file signatures for PNG and JPEG files. It logs each action taken, including files skipped, renamed, and those with unknown extensions.
+The script iterates through each file in the specified folder and checks if the file already has an extension. If the file does not have an extension, it reads the first few bytes to determine the file type and appends the appropriate extension. The script supports common file signatures for PNG, JPEG, and other file types. It logs each action taken, including files skipped, renamed, and those with unknown extensions.
+
+The script uses a **batch logging mechanism** to improve performance by reducing frequent disk writes. Log entries are stored in memory and written to disk periodically or at the end of the script.
 
 .PARAMETER LogFilePath
 Optional. Specifies the path to the log file where actions are recorded. Defaults to "C:\Users\manoj\Documents\Scripts\recover-extensions.log".
@@ -22,6 +24,9 @@ Optional. If specified, files with unrecognized extensions are moved to the Unkn
 
 .PARAMETER Debug
 Optional. If specified, debug messages are logged and displayed in the console.
+
+.PARAMETER LogWriteIntervalSeconds
+Optional. Specifies the interval (in seconds) after which the log buffer is written to disk. Defaults to 5 seconds.
 
 .EXAMPLES
 To recover file extensions in the default folder and log the actions:
@@ -43,38 +48,48 @@ To enable debug logging:
 Script Workflow:
 1. **Initialization**:
    - Defines the log file path, target folder path, and unknowns folder path using the provided parameters or defaults to the specified paths.
+   - Initializes a log buffer to store log entries in memory.
 
 2. **File Extension Detection**:
    - Reads the first few bytes of each file to determine its type based on common file signatures (e.g., PNG, JPEG).
+   - For file types requiring more than 8 bytes (e.g., WEBP), additional bytes are read only when necessary.
 
 3. **File Processing**:
    - Iterates through each file in the target folder.
    - Skips files that already have an extension.
    - Appends the correct extension to files without an extension based on their detected file type.
    - Moves files with unrecognized extensions to the unknowns folder if specified.
-   - Logs each action (skipped, renamed, moved, unknown extension).
+   - Logs each action (skipped, renamed, moved, unknown extension) to the log buffer.
 
-4. **Summary Logging**:
+4. **Batch Logging**:
+   - Log entries are stored in memory and written to disk periodically based on the `LogWriteIntervalSeconds` parameter or when the buffer reaches a certain size.
+   - At the end of the script, any remaining log entries in the buffer are written to disk.
+
+5. **Summary Logging**:
    - Logs a summary of all actions taken (files skipped, renamed, moved, and unknown extensions).
    - In dry run mode, logs actions without renaming or moving files and provides a detailed summary.
 
 Limitations:
-- The script currently supports common file signatures for PNG and JPEG files.
+- The script currently supports common file signatures for PNG, JPEG, and other file types.
 - Additional file signatures can be added to the `Get-FileExtension` function as needed.
 - Ensure you have the necessary permissions to read, write, and rename files in the target directory.
 #>
 
-# Add Debug parameter to the script
 param(
     [string]$FolderPath = "C:\Users\manoj\OneDrive\Desktop\New folder",
     [string]$LogFilePath = "C:\Users\manoj\Documents\Scripts\recover-extensions-log.txt",
     [string]$UnknownsFolder = "C:\Users\manoj\OneDrive\Desktop\UnidentifiedFiles",
     [switch]$DryRun,
     [switch]$MoveUnknowns,
-    [switch]$Debug
+    [switch]$Debug,
+    [int]$LogWriteIntervalSeconds = 5 # Interval to write logs to disk
 )
 
-# Update Write-Log to handle debug messages without using Write-Host
+# Initialize an array to hold log messages
+$LogBuffer = @()
+$LastLogWriteTime = Get-Date
+
+# Update Write-Log to add messages to the buffer
 function Write-Log {
     param(
         [string]$message,
@@ -85,19 +100,32 @@ function Write-Log {
         return
     }
 
-    # Check if log file exists, and create it if it doesn't
-    if (-not (Test-Path -Path $LogFilePath)) {
-        New-Item -ItemType File -Path $LogFilePath -Force | Out-Null
-    }
-
-    # Get current timestamp
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-
-    # Prepare log entry
     $logEntry = if ($isDebug) { "$timestamp - DEBUG: $message" } else { "$timestamp - $message" }
 
-    # Write log entry to the log file
-    Add-Content -Path $LogFilePath -Value $logEntry
+    # Add the log entry to the buffer
+    $global:LogBuffer += $logEntry
+
+    # Check if it's time to write the buffer to disk
+    if ((Get-Date -Subtract $global:LastLogWriteTime).TotalSeconds -ge $LogWriteIntervalSeconds) {
+        _WriteLogBufferToFile
+    }
+}
+
+# Function to write the log buffer to the file
+function _WriteLogBufferToFile {
+    if ($global:LogBuffer.Count -gt 0) {
+        # Check if log file exists, and create it if it doesn't
+        if (-not (Test-Path -Path $LogFilePath)) {
+            New-Item -ItemType File -Path $LogFilePath -Force | Out-Null
+        }
+        # Write all messages in the buffer to the log file
+        Add-Content -Path $LogFilePath -Value $global:LogBuffer
+        # Clear the buffer
+        $global:LogBuffer = @()
+        # Update the last write time
+        $global:LastLogWriteTime = Get-Date
+    }
 }
 
 # Modify Get-FileExtension to read additional bytes only when needed
@@ -116,15 +144,15 @@ function Get-FileExtension {
 
     # Match common file signatures that can be identified with 8 bytes or less
     $extension = switch -regex ($hex) {
-        '^89504E47' { ".png" }  # PNG signature (4 bytes)
-        '^FFD8FF' { ".jpg" }  # JPEG signatures (3 bytes)
-        '^49492A00' { ".tiff" }  # TIFF signature (4 bytes)
-        '^4D4D002(A|B)' { ".tiff" }  # TIFF signatures (4 bytes)
-        '^6674797068656963' { ".heic" }  # HEIC signature (8 bytes)
-        '^6674797061766966' { ".avif" }  # AVIF signature (8 bytes)
-        '^474946383761' { ".gif" }  # GIF87a signature (6 bytes)
-        '^474946383961' { ".gif" }  # GIF89a signature (6 bytes)
-        '^424D' { ".bmp" }  # BMP signature (2 bytes)
+        '^89504E47' { ".png" }   # PNG signature (4 bytes)
+        '^FFD8FF' { ".jpg" }   # JPEG signatures (3 bytes)
+        '^49492A00' { ".tiff" }   # TIFF signature (4 bytes)
+        '^4D4D002(A|B)' { ".tiff" }   # TIFF signatures (4 bytes)
+        '^6674797068656963' { ".heic" }   # HEIC signature (8 bytes)
+        '^6674797061766966' { ".avif" }   # AVIF signature (8 bytes)
+        '^474946383761' { ".gif" }   # GIF87a signature (6 bytes)
+        '^474946383961' { ".gif" }   # GIF89a signature (6 bytes)
+        '^424D' { ".bmp" }   # BMP signature (2 bytes)
         default { $null }
     }
 
@@ -182,6 +210,7 @@ Write-Log "LogFilePath: $LogFilePath" -isDebug
 Write-Log "UnknownsFolder: $UnknownsFolder" -isDebug
 Write-Log "DryRun: $DryRun" -isDebug
 Write-Log "MoveUnknowns: $MoveUnknowns" -isDebug
+Write-Log "LogWriteIntervalSeconds: $LogWriteIntervalSeconds" -isDebug
 
 # Get the total number of files to process
 $totalFiles = (Get-ChildItem -Path $FolderPath -File -Recurse).Count
@@ -261,6 +290,9 @@ Get-ChildItem -Path $FolderPath -File -Recurse | ForEach-Object {
         }
     }
 }
+
+# Write any remaining logs in the buffer at the end of the script
+_WriteLogBufferToFile
 
 # Clear the progress bar after processing is complete
 Write-Progress -Activity "Processing Files" -Status "Completed" -Completed
