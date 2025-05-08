@@ -28,10 +28,6 @@ def allocate_seats(excel_path):
                 G.add_edge(seat, adj_seat)
                 G.add_edge(adj_seat, seat)
 
-    for seat in assigned:
-        if seat not in G:
-            G.add_node(seat)
-
     # Step 2: Find connected seat clusters
     clusters = sorted(list(nx.connected_components(G)), key=len, reverse=True)
 
@@ -45,6 +41,9 @@ def allocate_seats(excel_path):
         assigned[seat] = (subteam, tech)
         used_seats.add(seat)
 
+    for seat in assigned:
+        if seat not in G:
+            G.add_node(seat)
     # Step 4: Assign teams to clusters (largest teams first)
     teams_sorted = teams_df.sort_values(by="Count", ascending=False)
     for _, row in teams_sorted.iterrows():
