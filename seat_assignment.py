@@ -87,15 +87,11 @@ def allocate_seats(excel_path):
     out_path = os.path.splitext(excel_path)[0] + "-allocation-output.xlsx"
     try:
 
+        # Always delete the output file and create fresh
         if os.path.exists(out_path):
-            book = load_workbook(out_path)
-            if sheet_name in book.sheetnames:
-                std = book[sheet_name]
-                book.remove(std)
-                book.save(out_path)
+            os.remove(out_path)
 
-        with pd.ExcelWriter(out_path, engine='openpyxl', mode='a' if os.path.exists(out_path) else 'w') as writer:
-            output_df.to_excel(writer, sheet_name=sheet_name, index=False)
+        output_df.to_excel(out_path, sheet_name=sheet_name, index=False)
 
     except FileNotFoundError:
         output_df.to_excel(out_path, sheet_name=sheet_name, index=False)
