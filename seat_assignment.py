@@ -52,20 +52,31 @@ def allocate_seats(excel_path):
         for cluster in clusters:
             free = [s for s in cluster if s not in used_seats]
             if len(free) >= count:
-                for seat in free[:count]:
-                    if seat in assigned:
-                        continue  # skip already assigned (e.g., fixed) seats
-                    assigned[seat] = (subteam, tech)
-                    used_seats.add(seat)
-                placed = True
-                break
+                assigned_count = 0
+                for seat in free:
+                    if seat not in assigned:  # Do NOT overwrite fixed or previously assigned seats
+                        assigned[seat] = (subteam, tech)
+                        used_seats.add(seat)
+                        assigned_count += 1
+                        if assigned_count >= count:
+                            break
+                if assigned_count >= count:
+                    placed = True
+                    break
+
         if not placed:
             # Try disjointed seats
             free_anywhere = [s for s in G.nodes if s not in used_seats]
             if len(free_anywhere) >= count:
-                for seat in free_anywhere[:count]:
-                    assigned[seat] = (subteam, tech)
-                    used_seats.add(seat)
+                fallback_assigned = 0
+                for seat in free_anywhere:
+                    if seat not in assigned:
+                        assigned[seat] = (subteam, tech)
+                        used_seats.add(seat)
+                        fallback_assigned += 1
+                        if fallback_assigned >= count:
+                            break
+
                 print(f"⚠️ Assigned {count} disjointed seats for {subteam} ({tech})")
             else:
                 print(f"❌ Not enough seats available for {subteam} ({tech}) — need {count}, found {len(free_anywhere)}")
