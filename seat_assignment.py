@@ -1,4 +1,3 @@
-# Final complete seat assignment script with all discussed improvements:
 import pandas as pd
 import networkx as nx
 import sys
@@ -53,7 +52,7 @@ def allocate_seats(excel_path):
         if seat not in G:
             G.add_node(seat)
 
-    # Step 4: Assign teams to clusters (largest teams first), with weighted scoring
+    # Step 4: Assign teams to clusters (largest teams first), with weighted scoring and tie-breaking
     teams_sorted = teams_df.sort_values(by="Count", ascending=False)
     for _, row in teams_sorted.iterrows():
         subteam = row['Subteam']
@@ -63,6 +62,7 @@ def allocate_seats(excel_path):
 
         best_cluster = None
         best_score = -1
+        best_min_seat = float('inf')
 
         for cluster in clusters:
             free = [s for s in cluster if s not in assigned]
@@ -72,20 +72,22 @@ def allocate_seats(excel_path):
             subteam_matches = sum(1 for s in cluster if s in assigned and assigned[s][0] == subteam)
             tech_matches = sum(1 for s in cluster if s in assigned and assigned[s][1] == tech)
             score = (subteam_matches * 10) + tech_matches
+            min_free_seat = min([int(s) for s in free]) if free else float('inf')
 
-            if score > best_score:
+            if score > best_score or (score == best_score and min_free_seat < best_min_seat):
                 best_score = score
+                best_min_seat = min_free_seat
                 best_cluster = cluster
 
         if best_cluster:
+            free_seats = sorted([s for s in best_cluster if s not in assigned], key=lambda x: int(x))
             assigned_count = 0
-            for seat in best_cluster:
-                if seat not in assigned:
-                    assigned[seat] = (subteam, tech)
-                    used_seats.add(seat)
-                    assigned_count += 1
-                    if assigned_count >= count:
-                        break
+            for seat in free_seats:
+                assigned[seat] = (subteam, tech)
+                used_seats.add(seat)
+                assigned_count += 1
+                if assigned_count >= count:
+                    break
             placed = True
 
         if not placed:
@@ -93,7 +95,7 @@ def allocate_seats(excel_path):
             free_anywhere = [s for s in G.nodes if s not in assigned]
             if len(free_anywhere) >= count:
                 fallback_assigned = 0
-                for seat in free_anywhere:
+                for seat in sorted(free_anywhere, key=lambda x: int(x)):
                     if seat not in assigned:
                         assigned[seat] = (subteam, tech)
                         used_seats.add(seat)
