@@ -41,9 +41,9 @@ Write-Host "Installing dependencies from requirements.txt..."
 
 # Build Python argument list
 $ArgsList = @(
-    "--folder", "`"$FolderPath`"",
-    "--log", "`"$LogFilePath`"",
-    "--unknowns", "`"$UnknownsFolder`"",
+    "--folder", $FolderPath,
+    "--log", $LogFilePath,
+    "--unknowns", $UnknownsFolder,
     "--log-interval", "$LogWriteIntervalSeconds"
 )
 if ($DryRun) { $ArgsList += "--dryrun" }
