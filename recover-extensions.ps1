@@ -162,8 +162,7 @@ $unknownSignatures = @{ }
 $extensionSummary = @{ }
 
 # Debug log for script start
-if ($Debug) { Write-Host "Script started. Processing folder: $FolderPath" }
-Write-Log "Script started. Processing folder: $FolderPath" -isDebug
+if ($Debug) { Write-Log "Script started. Processing folder: $FolderPath" -isDebug }
 
 # Debug log for folder path
 Write-Log "Starting script with FolderPath: $FolderPath" -isDebug
@@ -185,7 +184,6 @@ Get-ChildItem -Path $FolderPath -File -Recurse | ForEach-Object {
     $percentComplete = [math]::Round(($processedFiles / $totalFiles) * 100, 2) # Correct calculation
     Write-Progress -Activity "Processing Files" -Status "Processing file $processedFiles of $totalFiles" -PercentComplete $percentComplete
 
-    if ($Debug) { Write-Host "Processing file: $($file.FullName)" }
     Write-Log "Processing file: $($file.FullName)" -isDebug
 
     # Skip files that already have an extension
