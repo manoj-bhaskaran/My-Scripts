@@ -21,12 +21,16 @@ def allocate_seats(excel_path):
     # Step 1: Build bidirectional seat adjacency graph
     G = nx.Graph()
     for _, row in adj_df.iterrows():
-        seat = str(row['Seat No']).strip()
+        seat = str(int(float(row['Seat No']))).strip()
         for adj in row[1:]:
             if pd.notna(adj):
                 adj_seat = str(adj).strip()
                 G.add_edge(seat, adj_seat)
                 G.add_edge(adj_seat, seat)
+
+    for seat in assigned:
+        if seat not in G:
+            G.add_node(seat)
 
     # Step 2: Find connected seat clusters
     clusters = sorted(list(nx.connected_components(G)), key=len, reverse=True)
