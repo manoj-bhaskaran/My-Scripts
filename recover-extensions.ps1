@@ -100,39 +100,51 @@ function Write-Log {
     Add-Content -Path $LogFilePath -Value $logEntry
 }
 
-# Modify Get-FileExtension to return both extension and hex signature
+# Modify Get-FileExtension to read additional bytes only when needed
 function Get-FileExtension {
     param([string]$filePath)
 
-    # Open the file and read the first 12 bytes
+    # Open the file and read the first 8 bytes
     if (-not (Test-Path -Path $filePath)) {
         Write-Log "File not found for signature analysis: $filePath"
         return @{ Extension = $null; Hex = $null }
     }
     $fileStream = [System.IO.File]::OpenRead($filePath)
-    $buffer = New-Object byte[] 12
+    $buffer = New-Object byte[] 8
     $bytesRead = $fileStream.Read($buffer, 0, $buffer.Length)
-    $fileStream.Close()
-
-    # Convert bytes to hex string
     $hex = [BitConverter]::ToString($buffer[0..($bytesRead - 1)]) -replace '-'
 
-    # Match common file signatures and return the extension
+    # Match common file signatures that can be identified with 8 bytes or less
     $extension = switch -regex ($hex) {
         '^89504E47' { ".png" }  # PNG signature (4 bytes)
-        '^FFD8FF(DB|E0|E1|E2|EE)' { ".jpg" }  # JPEG signatures (4 bytes)
-        '^49492A00' { ".tiff" } # TIFF signature (4 bytes)
-        '^4D4D002(A|B)' { ".tiff" } # TIFF signatures (4 bytes)
-        '^49492800' { ".tiff" } # TIFF signature (4 bytes)
-        '^492049'   { ".tiff" } # TIFF 3-byte signature
-        '^6674797068656963' { ".heic" } # HEIC signature (8 bytes)
-        '^6674797061766966' { ".avif" } # AVIF signature (8 bytes)
+        '^FFD8FF' { ".jpg" }  # JPEG signatures (3 bytes)
+        '^49492A00' { ".tiff" }  # TIFF signature (4 bytes)
+        '^4D4D002(A|B)' { ".tiff" }  # TIFF signatures (4 bytes)
+        '^6674797068656963' { ".heic" }  # HEIC signature (8 bytes)
+        '^6674797061766966' { ".avif" }  # AVIF signature (8 bytes)
         '^474946383761' { ".gif" }  # GIF87a signature (6 bytes)
         '^474946383961' { ".gif" }  # GIF89a signature (6 bytes)
         '^424D' { ".bmp" }  # BMP signature (2 bytes)
-        '^52494646.{8}57454250' { ".webp" } # WEBP signature (RIFF + WEBP in bytes 9-12)
         default { $null }
     }
+
+    # If the extension is still null, check for partial matches that require more bytes
+    if (-not $extension -and $hex -match '^52494646') {  # Partial match for RIFF (WEBP)
+        # Read additional bytes to confirm WEBP signature
+        $additionalBuffer = New-Object byte[] 4
+        $additionalBytesRead = $fileStream.Read($additionalBuffer, 0, $additionalBuffer.Length)
+        $additionalHex = [BitConverter]::ToString($additionalBuffer[0..($additionalBytesRead - 1)]) -replace '-'
+
+        # Combine the initial and additional hex values
+        $hex += $additionalHex
+
+        # Check for WEBP signature
+        if ($hex -match '^52494646.{8}57454250') {
+            $extension = ".webp"
+        }
+    }
+
+    $fileStream.Close()
 
     return @{ Extension = $extension; Hex = $hex }
 }
