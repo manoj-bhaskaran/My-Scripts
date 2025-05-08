@@ -1,11 +1,12 @@
+# Final complete seat assignment script with all discussed improvements:
 import pandas as pd
 import networkx as nx
 import sys
 import os
-from openpyxl import load_workbook
-from openpyxl.utils.exceptions import InvalidFileException
 
 def allocate_seats(excel_path):
+    from openpyxl.utils.exceptions import InvalidFileException
+
     if not os.path.exists(excel_path):
         print(f"❌ File not found: {excel_path}")
         return
@@ -21,12 +22,18 @@ def allocate_seats(excel_path):
     # Step 1: Build bidirectional seat adjacency graph
     G = nx.Graph()
     for _, row in adj_df.iterrows():
-        seat = str(int(float(row['Seat No']))).strip()
+        try:
+            seat = str(int(float(row['Seat No']))).strip()
+        except:
+            continue
         for adj in row[1:]:
             if pd.notna(adj):
-                adj_seat = str(adj).strip()
-                G.add_edge(seat, adj_seat)
-                G.add_edge(adj_seat, seat)
+                try:
+                    adj_seat = str(int(float(adj))).strip()
+                    G.add_edge(seat, adj_seat)
+                    G.add_edge(adj_seat, seat)
+                except:
+                    continue
 
     # Step 2: Find connected seat clusters
     clusters = sorted(list(nx.connected_components(G)), key=len, reverse=True)
@@ -35,16 +42,18 @@ def allocate_seats(excel_path):
     assigned = {}
     used_seats = set()
     for _, row in fixed_df.iterrows():
-        seat = str(row['Seat No']).strip()
+        seat = str(int(float(row['Seat No']))).strip()
         subteam = row['Subteam']
         tech = row['Technology']
         assigned[seat] = (subteam, tech)
         used_seats.add(seat)
 
+    # Ensure fixed seats exist in graph
     for seat in assigned:
         if seat not in G:
             G.add_node(seat)
-    # Step 4: Assign teams to clusters (largest teams first)
+
+    # Step 4: Assign teams to clusters (largest teams first), with weighted scoring
     teams_sorted = teams_df.sort_values(by="Count", ascending=False)
     for _, row in teams_sorted.iterrows():
         subteam = row['Subteam']
@@ -52,24 +61,36 @@ def allocate_seats(excel_path):
         count = int(row['Count'])
         placed = False
 
+        best_cluster = None
+        best_score = -1
+
         for cluster in clusters:
-            free = [s for s in cluster if s not in used_seats]
-            if len(free) >= count:
-                assigned_count = 0
-                for seat in free:
-                    if seat not in assigned:  # Do NOT overwrite fixed or previously assigned seats
-                        assigned[seat] = (subteam, tech)
-                        used_seats.add(seat)
-                        assigned_count += 1
-                        if assigned_count >= count:
-                            break
-                if assigned_count >= count:
-                    placed = True
-                    break
+            free = [s for s in cluster if s not in assigned]
+            if len(free) < count:
+                continue
+
+            subteam_matches = sum(1 for s in cluster if s in assigned and assigned[s][0] == subteam)
+            tech_matches = sum(1 for s in cluster if s in assigned and assigned[s][1] == tech)
+            score = (subteam_matches * 10) + tech_matches
+
+            if score > best_score:
+                best_score = score
+                best_cluster = cluster
+
+        if best_cluster:
+            assigned_count = 0
+            for seat in best_cluster:
+                if seat not in assigned:
+                    assigned[seat] = (subteam, tech)
+                    used_seats.add(seat)
+                    assigned_count += 1
+                    if assigned_count >= count:
+                        break
+            placed = True
 
         if not placed:
             # Try disjointed seats
-            free_anywhere = [s for s in G.nodes if s not in used_seats]
+            free_anywhere = [s for s in G.nodes if s not in assigned]
             if len(free_anywhere) >= count:
                 fallback_assigned = 0
                 for seat in free_anywhere:
@@ -79,7 +100,6 @@ def allocate_seats(excel_path):
                         fallback_assigned += 1
                         if fallback_assigned >= count:
                             break
-
                 print(f"⚠️ Assigned {count} disjointed seats for {subteam} ({tech})")
             else:
                 print(f"❌ Not enough seats available for {subteam} ({tech}) — need {count}, found {len(free_anywhere)}")
@@ -96,18 +116,13 @@ def allocate_seats(excel_path):
     output_df = pd.DataFrame(output, columns=["Seat No", "Subteam", "Technology"])
     output_df = output_df.sort_values(by="Seat No")
 
-    # Step 6: Export to Excel (delete sheet if exists)
+    # Step 6: Export to Excel (overwrite file if exists)
     sheet_name = "Allocation"
     out_path = os.path.splitext(excel_path)[0] + "-allocation-output.xlsx"
-    try:
 
-        # Always delete the output file and create fresh
+    try:
         if os.path.exists(out_path):
             os.remove(out_path)
-
-        output_df.to_excel(out_path, sheet_name=sheet_name, index=False)
-
-    except FileNotFoundError:
         output_df.to_excel(out_path, sheet_name=sheet_name, index=False)
     except InvalidFileException:
         print(f"❌ Invalid Excel file: {out_path}")
