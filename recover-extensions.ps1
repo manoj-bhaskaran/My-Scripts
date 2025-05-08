@@ -36,8 +36,8 @@ if (-not (Test-Path $VenvPython)) {
 
 # Install/update dependencies
 Write-Host "Installing dependencies from requirements.txt..."
-& $VenvPython -m pip install --upgrade pip
-& $VenvPython -m pip install -r $RequirementsFile
+& $VenvPython -m pip install --upgrade pip *> $null
+& $VenvPython -m pip install -r $RequirementsFile *> $null
 
 # Build Python argument list
 $ArgsList = @(
