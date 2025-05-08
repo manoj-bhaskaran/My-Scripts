@@ -10,3 +10,5 @@ google-api-python-client
 oauth2client
 tqdm
 srtm; python_version < "3.11"
+networkx
+openpyxl
