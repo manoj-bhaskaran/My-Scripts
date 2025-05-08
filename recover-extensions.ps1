@@ -1,78 +1,14 @@
 <#
 .SYNOPSIS
-This PowerShell script recovers file extensions for files that have lost their extensions. It scans a specified folder, determines the file type based on the file's signature (first few bytes), and appends the appropriate extension to the file name. The script logs all actions for future reference.
+Wrapper to run recover_extensions.py from C:\Users\manoj\Documents\Scripts
 
 .DESCRIPTION
-The script iterates through each file in the specified folder and checks if the file already has an extension. If the file does not have an extension, it reads the first few bytes to determine the file type and appends the appropriate extension. The script supports common file signatures for PNG, JPEG, and other file types. It logs each action taken, including files skipped, renamed, and those with unknown extensions.
+This PowerShell script ensures the Python environment is set up and runs recover_extensions.py
+with matching parameters. The Python virtual environment is created (if not already present),
+and required packages are installed from requirements.txt.
 
-The script uses a **batch logging mechanism** to improve performance by reducing frequent disk writes. Log entries are stored in memory and written to disk periodically or at the end of the script.
-
-.PARAMETER LogFilePath
-Optional. Specifies the path to the log file where actions are recorded. Defaults to "C:\Users\manoj\Documents\Scripts\recover-extensions.log".
-
-.PARAMETER FolderPath
-Optional. Specifies the path to the folder containing the files to be processed. Defaults to "C:\Users\manoj\OneDrive\Desktop\New folder".
-
-.PARAMETER UnknownsFolder
-Optional. Specifies the path to the folder where files with unrecognized extensions are moved. Defaults to "C:\Users\manoj\OneDrive\Desktop\UnidentifiedFiles".
-
-.PARAMETER DryRun
-Optional. If specified, no changes are made to the files or folders. Actions are logged but not executed.
-
-.PARAMETER MoveUnknowns
-Optional. If specified, files with unrecognized extensions are moved to the UnknownsFolder. If not specified, these files are not moved.
-
-.PARAMETER Debug
-Optional. If specified, debug messages are logged and displayed in the console.
-
-.PARAMETER LogWriteIntervalSeconds
-Optional. Specifies the interval (in seconds) after which the log buffer is written to disk. Defaults to 5 seconds.
-
-.EXAMPLES
-To recover file extensions in the default folder and log the actions:
-.\recover-extensions.ps1
-
-To recover file extensions in a custom folder and log the actions:
-.\recover-extensions.ps1 -FolderPath "C:\Custom\Path"
-
-To perform a dry run without renaming files:
-.\recover-extensions.ps1 -DryRun
-
-To move files with unrecognized extensions to a specific folder:
-.\recover-extensions.ps1 -MoveUnknowns
-
-To enable debug logging:
-.\recover-extensions.ps1 -Debug
-
-.NOTES
-Script Workflow:
-1. **Initialization**:
-   - Defines the log file path, target folder path, and unknowns folder path using the provided parameters or defaults to the specified paths.
-   - Initializes a log buffer to store log entries in memory.
-
-2. **File Extension Detection**:
-   - Reads the first few bytes of each file to determine its type based on common file signatures (e.g., PNG, JPEG).
-   - For file types requiring more than 8 bytes (e.g., WEBP), additional bytes are read only when necessary.
-
-3. **File Processing**:
-   - Iterates through each file in the target folder.
-   - Skips files that already have an extension.
-   - Appends the correct extension to files without an extension based on their detected file type.
-   - Moves files with unrecognized extensions to the unknowns folder if specified.
-   - Logs each action (skipped, renamed, moved, unknown extension) to the log buffer.
-
-4. **Batch Logging**:
-   - Log entries are stored in memory and written to disk periodically based on the `LogWriteIntervalSeconds` parameter or when the buffer reaches a certain size.
-   - At the end of the script, any remaining log entries in the buffer are written to disk.
-
-5. **Summary Logging**:
-   - Logs a summary of all actions taken (files skipped, renamed, moved, and unknown extensions).
-   - In dry run mode, logs actions without renaming or moving files and provides a detailed summary.
-
-Limitations:
-- The script currently supports common file signatures for PNG, JPEG, and other file types.
-- Additional file signatures can be added to the `Get-FileExtension` function as needed.
-- Ensure you have the necessary permissions to read, write, and rename files in the target directory.
+.PARAMETERS
+Same as the Python script: FolderPath, LogFilePath, UnknownsFolder, DryRun, MoveUnknowns, Debug, LogWriteIntervalSeconds
 #>
 
 param(
@@ -82,273 +18,38 @@ param(
     [switch]$DryRun,
     [switch]$MoveUnknowns,
     [switch]$Debug,
-    [int]$LogWriteIntervalSeconds = 5 # Interval to write logs to disk
+    [int]$LogWriteIntervalSeconds = 5
 )
 
-# Initialize an array to hold log messages
-$LogBuffer = @()
-$LastLogWriteTime = Get-Date
+# Fixed script paths
+$BaseDir = "C:\Users\manoj\Documents\Scripts"
+$PythonScript = Join-Path $BaseDir "recover_extensions.py"
+$RequirementsFile = Join-Path $BaseDir "requirements.txt"
+$VenvDir = Join-Path $BaseDir ".venv"
+$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 
-# Update Write-Log to add messages to the buffer
-function Write-Log {
-    param(
-        [string]$message,
-        [switch]$isDebug
-    )
-
-    if ($isDebug -and -not $Debug) {
-        return
-    }
-
-    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    $logEntry = if ($isDebug) { "$timestamp - DEBUG: $message" } else { "$timestamp - $message" }
-
-    # Add the log entry to the buffer
-    $global:LogBuffer += $logEntry
-
-    # Check if it's time to write the buffer to disk
-    if ((Get-Date -Subtract $global:LastLogWriteTime).TotalSeconds -ge $LogWriteIntervalSeconds) {
-        _WriteLogBufferToFile
-    }
+# Create virtual environment if needed
+if (-not (Test-Path $VenvPython)) {
+    Write-Host "Creating virtual environment..."
+    python -m venv $VenvDir
 }
 
-# Function to write the log buffer to the file
-function _WriteLogBufferToFile {
-    if ($global:LogBuffer.Count -gt 0) {
-        # Check if log file exists, and create it if it doesn't
-        if (-not (Test-Path -Path $LogFilePath)) {
-            New-Item -ItemType File -Path $LogFilePath -Force | Out-Null
-        }
-        # Write all messages in the buffer to the log file
-        Add-Content -Path $LogFilePath -Value $global:LogBuffer
-        # Clear the buffer
-        $global:LogBuffer = @()
-        # Update the last write time
-        $global:LastLogWriteTime = Get-Date
-    }
-}
+# Install/update dependencies
+Write-Host "Installing dependencies from requirements.txt..."
+& $VenvPython -m pip install --upgrade pip *> $null
+& $VenvPython -m pip install -r $RequirementsFile *> $null
 
-# Modify Get-FileExtension to read additional bytes only when needed
-function Get-FileExtension {
-    param([string]$filePath)
+# Build Python argument list
+$ArgsList = @(
+    "--folder", $FolderPath,
+    "--log", $LogFilePath,
+    "--unknowns", $UnknownsFolder,
+    "--log-interval", "$LogWriteIntervalSeconds"
+)
+if ($DryRun) { $ArgsList += "--dryrun" }
+if ($MoveUnknowns) { $ArgsList += "--move-unknowns" }
+if ($Debug) { $ArgsList += "--debug" }
 
-    # Open the file and read the first 8 bytes
-    if (-not (Test-Path -Path $filePath)) {
-        Write-Log "File not found for signature analysis: $filePath"
-        return @{ Extension = $null; Hex = $null }
-    }
-    $fileStream = [System.IO.File]::OpenRead($filePath)
-    $buffer = New-Object byte[] 8
-    $bytesRead = $fileStream.Read($buffer, 0, $buffer.Length)
-    $hex = [BitConverter]::ToString($buffer[0..($bytesRead - 1)]) -replace '-'
-
-    # Match common file signatures that can be identified with 8 bytes or less
-    $extension = switch -regex ($hex) {
-        '^89504E47' { ".png" }   # PNG signature (4 bytes)
-        '^FFD8FF' { ".jpg" }   # JPEG signatures (3 bytes)
-        '^49492A00' { ".tiff" }   # TIFF signature (4 bytes)
-        '^4D4D002(A|B)' { ".tiff" }   # TIFF signatures (4 bytes)
-        '^6674797068656963' { ".heic" }   # HEIC signature (8 bytes)
-        '^6674797061766966' { ".avif" }   # AVIF signature (8 bytes)
-        '^474946383761' { ".gif" }   # GIF87a signature (6 bytes)
-        '^474946383961' { ".gif" }   # GIF89a signature (6 bytes)
-        '^424D' { ".bmp" }   # BMP signature (2 bytes)
-        default { $null }
-    }
-
-    # If the extension is still null, check for partial matches that require more bytes
-    if (-not $extension -and $hex -match '^52494646') {  # Partial match for RIFF (WEBP)
-        # Read additional bytes to confirm WEBP signature
-        $additionalBuffer = New-Object byte[] 4
-        $additionalBytesRead = $fileStream.Read($additionalBuffer, 0, $additionalBuffer.Length)
-        $additionalHex = [BitConverter]::ToString($additionalBuffer[0..($additionalBytesRead - 1)]) -replace '-'
-
-        # Combine the initial and additional hex values
-        $hex += $additionalHex
-
-        # Check for WEBP signature
-        if ($hex -match '^52494646.{8}57454250') {
-            $extension = ".webp"
-        }
-    }
-
-    $fileStream.Close()
-
-    return @{ Extension = $extension; Hex = $hex }
-}
-
-# Check if the input folder exists
-if (-not (Test-Path -Path $FolderPath)) {
-    $errorMessage = "ERROR: The specified folder '$FolderPath' does not exist."
-    Write-Error $errorMessage
-    Write-Log $errorMessage
-    exit 1
-}
-
-# Ensure the unknowns folder exists if not in dry run mode and moving unknowns is enabled
-if ($MoveUnknowns -and -not $DryRun -and -not (Test-Path -Path $UnknownsFolder)) {
-    New-Item -ItemType Directory -Path $UnknownsFolder -Force | Out-Null
-    Write-Log "Created unknowns folder at $UnknownsFolder"
-}
-
-# Initialize counters
-$skippedCount = 0
-$renamedCount = 0
-$unknownCount = 0
-$extensionCounts = @{ }
-$unknownSignatures = @{ }
-
-# Initialize a dictionary to count files by extension
-$extensionSummary = @{ }
-
-# Debug log for script start
-if ($Debug) { Write-Log "Script started. Processing folder: $FolderPath" -isDebug }
-
-# Debug log for folder path
-Write-Log "Starting script with FolderPath: $FolderPath" -isDebug
-Write-Log "LogFilePath: $LogFilePath" -isDebug
-Write-Log "UnknownsFolder: $UnknownsFolder" -isDebug
-Write-Log "DryRun: $DryRun" -isDebug
-Write-Log "MoveUnknowns: $MoveUnknowns" -isDebug
-Write-Log "LogWriteIntervalSeconds: $LogWriteIntervalSeconds" -isDebug
-
-# Get the total number of files to process
-$totalFiles = (Get-ChildItem -Path $FolderPath -File -Recurse).Count
-
-# Recursive file scanning with streaming
-Write-Log "Discovering and processing files in folder: $FolderPath" -isDebug
-$processedFiles = 0
-
-Get-ChildItem -Path $FolderPath -File -Recurse | ForEach-Object {
-    $file = $_
-    $processedFiles++
-    $percentComplete = [math]::Round(($processedFiles / $totalFiles) * 100, 2) # Correct calculation
-    Write-Progress -Activity "Processing Files" -Status "Processing file $processedFiles of $totalFiles" -PercentComplete $percentComplete
-
-    Write-Log "Processing file: $($file.FullName)" -isDebug
-
-    # Skip files that already have an extension
-    if ($file.Extension) {
-        Write-Log "File already has an extension: $($file.Extension)" -isDebug
-        Write-Log "Skipping $($file.Name), already has extension."
-        $skippedCount++
-
-        # Increment the count for the extension
-        if (-not $extensionSummary.ContainsKey($file.Extension)) {
-            $extensionSummary[$file.Extension] = 0
-        }
-        $extensionSummary[$file.Extension]++
-
-        return
-    }
-
-    # If no extension, try to recover it
-    $fileInfo = Get-FileExtension -filePath $file.FullName
-    $extension = $fileInfo.Extension
-    $hex = $fileInfo.Hex
-    Write-Log "Detected extension $extension for file $($file.Name)" -isDebug
-
-    if ($extension -and $extension.StartsWith(".")) {
-        Write-Log "Detected valid extension: $extension for file: $($file.Name)" -isDebug
-
-        # Update extension count
-        if (-not $extensionCounts.ContainsKey($extension)) {
-            $extensionCounts[$extension] = 0
-        }
-        $extensionCounts[$extension]++
-
-        if (-not $DryRun) {
-            $fileNameWithoutExtension = [System.IO.Path]::GetFileNameWithoutExtension($file.FullName)
-            $newFileName = $fileNameWithoutExtension + $extension
-            $newFullFilePath = [System.IO.Path]::Combine($file.DirectoryName, $newFileName)
-
-            Rename-Item -Path $file.FullName -NewName $newFullFilePath
-            Write-Log "Renamed $($file.Name) to $($newFileName)"
-            $renamedCount++
-        }
-    } else {
-        Write-Log "Unknown extension detected for file: $($file.Name)" -isDebug
-
-        if ($hex) {
-            if (-not $unknownSignatures.ContainsKey($hex)) {
-                $unknownSignatures[$hex] = 0
-            }
-            $unknownSignatures[$hex]++
-        }
-        Write-Log "Could not determine extension for $($file.Name). Hex: $hex"
-
-        $unknownCount++
-
-        if ($MoveUnknowns -and -not $DryRun) {
-            $destinationPath = Join-Path -Path $UnknownsFolder -ChildPath $file.Name
-            if (Test-Path -Path $file.FullName) {
-                Move-Item -Path $file.FullName -Destination $destinationPath
-            } else {
-                Write-Log "Skipping move: File not found - $($file.FullName)"
-            }
-            Write-Log "Moved $($file.Name) to $UnknownsFolder"
-        }
-    }
-}
-
-# Write any remaining logs in the buffer at the end of the script
-_WriteLogBufferToFile
-
-# Clear the progress bar after processing is complete
-Write-Progress -Activity "Processing Files" -Status "Completed" -Completed
-
-# Debug log for summary
-Write-Log "Script completed. Generating summary." -isDebug
-
-# Update dry run summary to include identified extensions and total files processed
-if ($DryRun) {
-    $identifiedExtensions = $extensionCounts.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }
-    $unknownExtensions = $unknownSignatures.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }
-
-    $identifiedExtensionsMessage = if ($identifiedExtensions) { $identifiedExtensions -join ", " } else { "None" }
-    $unknownExtensionsMessage = if ($unknownExtensions) { $unknownExtensions -join ", " } else { "None" }
-
-    $totalFilesProcessed = $skippedCount + $renamedCount + $unknownCount
-    $summaryMessage = "Dry Run Summary: Processed $totalFilesProcessed file(s). Skipped $skippedCount file(s), Identified extensions: $identifiedExtensionsMessage, Unknown extensions: $unknownExtensionsMessage."
-    Write-Log $summaryMessage
-    Write-Host $summaryMessage
-} else {
-    # Update non-dry run summary to include identified extensions and unknown hex signatures
-    $totalFilesProcessed = $skippedCount + $renamedCount + $unknownCount
-    $summaryMessage = "Summary: Processed $totalFilesProcessed file(s). Skipped $skippedCount file(s), Renamed $renamedCount file(s), Unknown extension for $unknownCount file(s)."
-    Write-Log $summaryMessage
-    Write-Host $summaryMessage
-
-    # Include identified extensions and their counts
-    if ($extensionCounts.Count -gt 0) {
-        $identifiedExtensionsMessage = $extensionCounts.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" } | Out-String
-        $formattedIdentifiedExtensionsMessage = $identifiedExtensionsMessage -replace "\n", "`n"
-        Write-Log "Identified extensions and counts:`n$formattedIdentifiedExtensionsMessage"
-        Write-Host "Identified extensions and counts:`n$formattedIdentifiedExtensionsMessage"
-    } else {
-        Write-Log "No identified extensions."
-        Write-Host "No identified extensions."
-    }
-
-    # Include unknown hex signatures and their counts
-    if ($unknownSignatures.Count -gt 0) {
-        $unknownSignaturesMessage = $unknownSignatures.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" } | Out-String
-        $formattedUnknownSignaturesMessage = $unknownSignaturesMessage -replace "\n", "`n"
-        Write-Log "Unknown hex signatures and counts:`n$formattedUnknownSignaturesMessage"
-        Write-Host "Unknown hex signatures and counts:`n$formattedUnknownSignaturesMessage"
-    } else {
-        Write-Log "No unknown hex signatures."
-        Write-Host "No unknown hex signatures."
-    }
-
-    # Summary of files grouped by extension
-    if ($extensionSummary.Count -gt 0) {
-        $extensionSummaryMessage = $extensionSummary.GetEnumerator() | ForEach-Object { "Extension $($_.Key): $($_.Value) file(s)" } | Out-String
-        $formattedSummaryMessage = $extensionSummaryMessage -replace "\n", "`n"
-        Write-Log "Summary of files with extensions:`n$formattedSummaryMessage"
-        Write-Host "Summary of files with extensions:`n$formattedSummaryMessage"
-    } else {
-        Write-Log "No files with extensions to summarize."
-        Write-Host "No files with extensions to summarize."
-    }
-}
+# Execute the script
+Write-Host "Running Python script..."
+& $VenvPython $PythonScript @ArgsList
