@@ -262,22 +262,32 @@ def _count_hashable_files(grouped_rows):
 
     return sum(len(group_list) for _, group_list in grouped_rows)
 
-def _hash_and_write_duplicates(grouped_rows, output_file, total_files):
+def _hash_and_write_duplicates(grouped_rows, output_file, total_files, skip_sizes=None, starting_group_id=1):
     """
-    Hashes files in each size-based group and writes duplicate entries to the output CSV.
+    Hashes files in each size-based group and appends new duplicate entries to the output CSV.
+
+    This function supports resumability by allowing selective skipping of already-processed file sizes
+    and continuing from a specified group ID.
 
     Args:
         grouped_rows (List[Tuple[int, List[Tuple[int, str]]]]):
-            List of groups of files with the same size, where each group is a tuple:
+            List of groups of files with the same size. Each group is a tuple:
             - file size (int)
             - list of (size, file_path) tuples
 
         output_file (str): Path to the CSV file where detected duplicate records will be written.
-        total_files (int): Total number of files that will be hashed (used for progress bar).
+        total_files (int): Total number of files considered for hashing (used for progress bar).
+        skip_sizes (Set[int], optional): Set of file sizes to skip (already processed). Defaults to empty set.
+        starting_group_id (int, optional): Group ID to begin from when writing new duplicate groups. Defaults to 1.
 
-    Writes:
-        CSV output with columns: group_id, size, md5_hash, file_path — only for groups with duplicates.
+    Behavior:
+        - Skips groups with sizes in `skip_sizes`.
+        - Appends to `output_file` if it already exists, writing only new entries.
+        - Each output row includes: group_id, size, md5_hash, file_path.
     """
+
+    if skip_sizes is None:
+        skip_sizes = set()
 
     def compute_md5_safe(path):
         """
@@ -296,13 +306,19 @@ def _hash_and_write_duplicates(grouped_rows, output_file, total_files):
             logging.warning(f"Hashing failed for {path}: {e}")
             return None
 
-    with open(output_file, "w", newline='', encoding='utf-8') as f_out:
+    open_mode = "a" if os.path.exists(output_file) else "w"
+    with open(output_file, open_mode, newline='', encoding='utf-8') as f_out:
         writer = csv.writer(f_out)
-        writer.writerow(["group_id", "size", "md5_hash", "file_path"])
+        if open_mode == "w":
+            writer.writerow(["group_id", "size", "md5_hash", "file_path"])
 
-        duplicate_sets = 0
+        duplicate_sets = starting_group_id - 1
         with tqdm(total=total_files, desc="Hashing files", unit=" file(s)", dynamic_ncols=True) as pbar:
             for size, group_list in grouped_rows:
+                if size in skip_sizes:
+                    pbar.update(len(group_list))
+                    continue
+
                 paths = [path for _, path in group_list]
                 md5_list = list(ThreadPoolExecutor().map(compute_md5_safe, paths))
 
@@ -318,20 +334,32 @@ def _hash_and_write_duplicates(grouped_rows, output_file, total_files):
                         for path in dup_paths:
                             writer.writerow([duplicate_sets, size, md5, path])
 
-        log_event(f"Completed Stage 3: {duplicate_sets} duplicate groups found")
+        log_event(f"Completed Stage 3: {duplicate_sets - starting_group_id + 1} new duplicate groups found")
 
-def stage3_find_duplicates(sorted_csv, output_file):
+def stage3_find_duplicates(sorted_csv, output_file, is_restart=False):
     """
     Identifies duplicate files by hashing and writes the results to a CSV file.
-    Output format: group_id, size, md5_hash, file_path
+
+    If is_restart is True, previously processed hashes in the output file are skipped.
+
+    Args:
+        sorted_csv (str): Path to the sorted file list CSV.
+        output_file (str): Path to the output CSV file for duplicates.
+        is_restart (bool): Whether the script is resuming from a checkpoint.
     """
     log_event("Starting Stage 3: Hashing and duplicate detection")
 
     grouped_rows = _read_sorted_csv(sorted_csv)
     total_files_to_hash = _count_hashable_files(grouped_rows)
-    _hash_and_write_duplicates(grouped_rows, output_file, total_files_to_hash)
 
-    log_event(f"Completed Stage 3: Duplicate list saved to {output_file}")
+    if is_restart and os.path.exists(output_file):
+        starting_group_id, skip_sizes = _load_completed_hashes(output_file)
+    else:
+        starting_group_id, skip_sizes = 1, set()
+        
+    _hash_and_write_duplicates(grouped_rows, output_file, total_files_to_hash, skip_sizes, starting_group_id)
+
+    log_event(f"Completed Stage 3: Duplicate list updated in {output_file}")
 
 def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
     """
@@ -541,7 +569,7 @@ def run_pipeline(args, checkpoint):
             save_checkpoint(args.checkpoint, "stage2", args)
 
         if completed_stage == "stage2":
-            stage3_find_duplicates(args.sorted, args.output)
+            stage3_find_duplicates(args.sorted, args.output, is_restart=args.restart)
             completed_stage = "stage3"
             save_checkpoint(args.checkpoint, "stage3", args)
 
@@ -581,6 +609,33 @@ def final_cleanup(success, args):
 
     # Stop logging listener
     args._log_listener.stop()
+
+def _load_completed_hashes(output_file):
+    """
+    Loads already processed duplicate groups from a previous Stage 3 output CSV.
+
+    Args:
+        output_file (str): Path to Stage 3 output file (if exists).
+
+    Returns:
+        Tuple[int, Set[int]]: The next group_id to use and set of already processed file sizes.
+    """
+    if not os.path.exists(output_file):
+        return 1, set()  # fresh start
+
+    completed_sizes = set()
+    max_group_id = 0
+
+    with open(output_file, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                completed_sizes.add(int(row["size"]))
+                max_group_id = max(max_group_id, int(row["group_id"]))
+            except Exception:
+                continue  # skip malformed lines
+
+    return max_group_id + 1, completed_sizes
 
 def main():
     """
