@@ -151,13 +151,39 @@ def stage2_sort_csv(input_csv, sorted_csv):
         logging.error(f"Python sort failed: {e}")
         raise
 
-def stage3_find_duplicates(sorted_csv, log_file, output_file):
+def _read_sorted_csv(sorted_csv):
     """
-    Identifies duplicate files by hashing and writes the results to a CSV file.
-    Output format: group_id, size, md5_hash, file_path
-    """
-    log_event("Starting Stage 3: Hashing and duplicate detection")
+    Reads the sorted CSV and returns a list of duplicate candidate groups.
 
+    Each group is a tuple of:
+        (size, group_list), where:
+            - size (int): The file size
+            - group_list (List[Tuple[int, str]]): List of (size, file_path) tuples
+
+    Only sizes with more than one file are included.
+    """
+
+    with open(sorted_csv, newline='', encoding='utf-8') as f_in:
+        reader = csv.reader(f_in)
+        rows = [(int(size), path) for size, path in reader if size and path.strip()]
+
+    grouped_rows = []
+    for size, group in groupby(rows, key=lambda r: r[0]):
+        group_list = list(group)
+        if len(group_list) > 1:
+            grouped_rows.append((size, group_list))
+    return grouped_rows
+
+def _count_hashable_files(grouped_rows):
+    """
+    Counts total number of files that need to be hashed.
+    """
+    return sum(len(group_list) for _, group_list in grouped_rows)
+
+def _hash_and_write_duplicates(grouped_rows, output_file, total_files):
+    """
+    Computes hashes for grouped files and writes duplicates to output.
+    """
     def compute_md5_safe(path):
         try:
             return compute_md5(path)
@@ -165,36 +191,21 @@ def stage3_find_duplicates(sorted_csv, log_file, output_file):
             logging.warning(f"Hashing failed for {path}: {e}")
             return None
 
-    duplicate_sets = 0
-
-    with open(sorted_csv, newline='', encoding='utf-8') as f_in, \
-         open(output_file, "w", newline='', encoding='utf-8') as f_out:
-
-        reader = csv.reader(f_in)
-        rows = [(int(size), path) for size, path in reader if size and path.strip()]
-
+    with open(output_file, "w", newline='', encoding='utf-8') as f_out:
         writer = csv.writer(f_out)
         writer.writerow(["group_id", "size", "md5_hash", "file_path"])
 
-        # Group rows by size first and keep only those groups with >1 file
-        grouped_rows = []
-        for size, group in groupby(rows, key=lambda r: r[0]):
-            group_list = list(group)
-            if len(group_list) > 1:
-                grouped_rows.append((size, group_list))
-
-        total_files_to_hash = sum(len(group_list) for _, group_list in grouped_rows)
-
-        with tqdm(total=total_files_to_hash, desc="Hashing files", unit=" file(s)", dynamic_ncols=True) as pbar:
+        duplicate_sets = 0
+        with tqdm(total=total_files, desc="Hashing files", unit=" file(s)", dynamic_ncols=True) as pbar:
             for size, group_list in grouped_rows:
                 paths = [path for _, path in group_list]
                 md5_list = list(ThreadPoolExecutor().map(compute_md5_safe, paths))
-                hash_groups = defaultdict(list)
 
+                hash_groups = defaultdict(list)
                 for path, md5 in zip(paths, md5_list):
                     if md5:
                         hash_groups[md5].append(path)
-                    pbar.update(1)  # one update per hashed file
+                    pbar.update(1)
 
                 for md5, dup_paths in hash_groups.items():
                     if len(dup_paths) > 1:
@@ -202,8 +213,20 @@ def stage3_find_duplicates(sorted_csv, log_file, output_file):
                         for path in dup_paths:
                             writer.writerow([duplicate_sets, size, md5, path])
 
-    log_event(f"Completed Stage 3: {duplicate_sets} duplicate groups found")
-    log_event(f"Duplicate list saved to {output_file}")
+        log_event(f"Completed Stage 3: {duplicate_sets} duplicate groups found")
+
+def stage3_find_duplicates(sorted_csv, output_file):
+    """
+    Identifies duplicate files by hashing and writes the results to a CSV file.
+    Output format: group_id, size, md5_hash, file_path
+    """
+    log_event("Starting Stage 3: Hashing and duplicate detection")
+
+    grouped_rows = _read_sorted_csv(sorted_csv)
+    total_files_to_hash = _count_hashable_files(grouped_rows)
+    _hash_and_write_duplicates(grouped_rows, output_file, total_files_to_hash)
+
+    log_event(f"Completed Stage 3: Duplicate list saved to {output_file}")
 
 def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
     """
@@ -418,7 +441,7 @@ def main():
 
         if completed_stage == "stage2":
             try:
-                stage3_find_duplicates(args.sorted, args.log, args.output)
+                stage3_find_duplicates(args.sorted, args.output)
                 completed_stage = "stage3"
                 save_checkpoint(args.checkpoint, "stage3", args)
             except Exception as e:
