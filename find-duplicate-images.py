@@ -15,6 +15,16 @@ from logging.handlers import QueueHandler, QueueListener
 from threading import Lock
 
 def load_checkpoint(path):
+    """
+    Loads the checkpoint file if it exists and returns the stored state information.
+
+    Args:
+        path (str): Path to the checkpoint JSON file.
+
+    Returns:
+        dict: Checkpoint metadata if available, otherwise an empty dictionary.
+    """
+
     if not os.path.exists(path):
         return {}
     try:
@@ -24,6 +34,23 @@ def load_checkpoint(path):
         return {}
 
 def save_checkpoint(path, stage_name, args):
+    """
+    Saves the current pipeline state to a checkpoint file in JSON format.
+
+    Args:
+        path (str): Destination path for the checkpoint file.
+        stage_name (str): The current completed stage name (e.g., "stage1", "stage2").
+        args (argparse.Namespace): Command-line arguments containing folder paths and file locations.
+
+    Notes:
+        The following keys are saved:
+        - completed_stage: The last successfully completed stage
+        - folder: The folder being scanned
+        - output: The final output file for duplicates
+        - temp: The temporary file for raw file list
+        - sorted: The sorted file list path
+    """
+
     data = {
         "completed_stage": stage_name,
         "folder": args.folder,
@@ -40,11 +67,29 @@ def save_checkpoint(path, stage_name, args):
         logging.warning(f"Failed to save checkpoint: {e}")
 
 def is_safe_path(base, target):
+    """
+    Ensures that the target path is within the given base directory to prevent directory traversal.
+
+    Args:
+        base (str): The base directory path.
+        target (str): The path to validate.
+
+    Returns:
+        bool: True if the target path is safely contained within the base directory; False otherwise.
+    """
+
     base = os.path.abspath(base)
     target = os.path.abspath(target)
     return os.path.commonpath([base]) == os.path.commonpath([base, target])
 
 def log_event(message):
+    """
+    Logs an informational message using the configured logging system.
+
+    Args:
+        message (str): The message to be logged.
+    """
+
     logging.info(message)
 
 def compute_md5(file_path):
@@ -68,6 +113,16 @@ def compute_md5(file_path):
         return None
 
 def fast_walk(folder):
+    """
+    Recursively scans the given folder and yields file paths.
+
+    Args:
+        folder (str): The root folder to scan.
+
+    Yields:
+        str: Absolute path to each regular file found, excluding symlinks and inaccessible directories.
+    """
+
     for entry in os.scandir(folder):
         try:
             if entry.is_dir(follow_symlinks=False):
@@ -79,11 +134,20 @@ def fast_walk(folder):
 
 def stage1_list_files(folder, out_csv):
     """
-    Lists all files in a folder and writes their sizes and paths to a CSV file using parallel threads.
+    Lists all regular files in the given folder and writes their sizes and paths to a CSV file.
 
     Args:
         folder (str): The folder to scan for files.
-        out_csv (str): The path to the output CSV file.
+        out_csv (str): Path to the output CSV file.
+
+    Output Format:
+        The CSV will contain two columns (no header):
+            - size (in bytes)
+            - absolute file path
+        One row per file.
+
+    Notes:
+        Uses parallel threads to speed up size computation.
     """
     log_event("Starting Stage 1: File listing")
 
@@ -116,11 +180,19 @@ def stage1_list_files(folder, out_csv):
 
 def stage2_sort_csv(input_csv, sorted_csv):
     """
-    Sorts a CSV file by file size using native Python.
+    Sorts a CSV file of file sizes and paths in ascending order by file size.
 
     Args:
-        input_csv (str): The path to the input CSV file.
-        sorted_csv (str): The path to the output sorted CSV file.
+        input_csv (str): Path to the input CSV file from Stage 1.
+        sorted_csv (str): Path to the output CSV file containing sorted entries.
+
+    Input Format:
+        CSV with two columns (no header):
+            - size (int)
+            - absolute file path
+
+    Output Format:
+        CSV with the same structure, sorted in ascending order of file size.
     """
     log_event("Starting Stage 2: Sorting by file size (Python)")
 
@@ -176,15 +248,48 @@ def _read_sorted_csv(sorted_csv):
 
 def _count_hashable_files(grouped_rows):
     """
-    Counts total number of files that need to be hashed.
+    Counts the total number of files that need to be hashed based on grouped file size duplicates.
+
+    Args:
+        grouped_rows (List[Tuple[int, List[Tuple[int, str]]]]):
+            A list of groups where each group is a tuple of:
+            - file size (int)
+            - list of (size, file path) tuples with the same size
+
+    Returns:
+        int: Count of files to be hashed across all duplicate candidate groups.
     """
+
     return sum(len(group_list) for _, group_list in grouped_rows)
 
 def _hash_and_write_duplicates(grouped_rows, output_file, total_files):
     """
-    Computes hashes for grouped files and writes duplicates to output.
+    Hashes files in each size-based group and writes duplicate entries to the output CSV.
+
+    Args:
+        grouped_rows (List[Tuple[int, List[Tuple[int, str]]]]):
+            List of groups of files with the same size, where each group is a tuple:
+            - file size (int)
+            - list of (size, file_path) tuples
+
+        output_file (str): Path to the CSV file where detected duplicate records will be written.
+        total_files (int): Total number of files that will be hashed (used for progress bar).
+
+    Writes:
+        CSV output with columns: group_id, size, md5_hash, file_path — only for groups with duplicates.
     """
+
     def compute_md5_safe(path):
+        """
+        Safely computes the MD5 hash of a file, suppressing and logging any exceptions.
+
+        Args:
+            path (str): Path to the file to hash.
+
+        Returns:
+            str or None: MD5 hash of the file, or None if an error occurred during hashing.
+        """
+
         try:
             return compute_md5(path)
         except Exception as e:
@@ -300,6 +405,183 @@ def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
     else:
         log_event(f"Deleted/Moved {deleted_count} files from {len(grouped)} duplicate groups")
 
+def parse_arguments():
+    """
+    Parses command-line arguments provided to the script.
+
+    Returns:
+        argparse.Namespace: Object containing parsed CLI arguments such as folder paths,
+        logging configuration, and stage control options.
+    """
+
+    parser = argparse.ArgumentParser(description="Efficient duplicate file detector (staged method).")
+    parser.add_argument("--folder", type=str, default="D:\\users\\Manoj\\Documents\\FIFA 07\\elib", help="Folder to scan")
+    parser.add_argument("--log", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-log.log", help="Log file path (appends)")
+    parser.add_argument("--output", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-output.csv", help="Output CSV (overwritten)")
+    parser.add_argument("--temp", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-temp.csv", help="Temp file for raw file list")
+    parser.add_argument("--sorted", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-sorted.csv", help="Sorted file list path")
+    parser.add_argument("--checkpoint", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-checkpoint.json", help="Checkpoint file to track completed stages")
+    parser.add_argument("--restart", action="store_true", help="Force restart from Stage 1 and ignore checkpoint")
+    parser.add_argument("--keepfiles", action="store_true", help="Retain intermediate and checkpoint files even after successful completion")
+    parser.add_argument("--delete", action="store_true", help="Delete duplicates after Stage 3 (retains one per group)")
+    parser.add_argument("--dryrun", action="store_true", help="Preview deletions without making changes")
+    parser.add_argument("--backup-folder", type=str, help="Move duplicates here instead of deleting (optional)")
+    args = parser.parse_args()
+
+    args.folder = os.path.abspath(args.folder)
+    args.temp = os.path.abspath(args.temp)
+    args.sorted = os.path.abspath(args.sorted)
+    args.output = os.path.abspath(args.output)
+    args.checkpoint = os.path.abspath(args.checkpoint)
+    if args.backup_folder:
+        args.backup_folder = os.path.abspath(args.backup_folder)
+
+    return args
+
+def prepare_environment(args):
+    """
+    Prepares the runtime environment by configuring the logging system and
+    deleting any stale intermediate files if not resuming from a checkpoint.
+
+    Args:
+        args (argparse.Namespace): Parsed command-line arguments.
+    """
+
+    # Queue-based logging setup
+    log_queue = queue.Queue()
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler = logging.FileHandler(args.log)
+    file_handler.setFormatter(formatter)
+
+    listener = QueueListener(log_queue, file_handler)
+    queue_handler = QueueHandler(log_queue)
+    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().handlers = [queue_handler]
+    listener.start()
+
+    args._log_listener = listener  # attach to args for later stopping
+    log_event("Logging system initialized with queue handler.")
+
+    if not args.restart:
+        for f in [args.temp, args.sorted, args.checkpoint]:
+            if os.path.exists(f):
+                os.remove(f)
+                log_event(f"Deleted stale file at startup (no restart): {f}")
+
+def handle_restart(args):
+    """
+    Handles restart logic by reading the checkpoint file, restoring relevant arguments,
+    and determining the stage to resume from. Also prints resume status to the console.
+
+    Args:
+        args (argparse.Namespace): Parsed command-line arguments.
+
+    Returns:
+        dict or None: Checkpoint dictionary if valid for resuming; None if resume is not possible.
+    """
+
+    checkpoint = load_checkpoint(args.checkpoint)
+
+    if not checkpoint:
+        log_event("Checkpoint file not found or invalid. Cannot resume.")
+        print("No valid checkpoint found — cannot resume.")
+        return None
+
+    log_event("Restart requested by user.")
+    args.folder = checkpoint.get("folder", args.folder)
+    args.output = checkpoint.get("output", args.output)
+    args.temp = checkpoint.get("temp", args.temp)
+    args.sorted = checkpoint.get("sorted", args.sorted)
+
+    stage_map = {
+        None: "Stage 1",
+        "stage1": "Stage 2",
+        "stage2": "Stage 3",
+        "stage3": "Deletion Stage" if args.delete else "Already completed — nothing to do",
+        "delete": "Already completed — nothing to do"
+    }
+
+    resume_stage = checkpoint.get("completed_stage")
+    log_event(f"Resuming from: {stage_map.get(resume_stage, 'Unknown stage')}")
+    print(f"➡️  Restart requested — resuming from: {stage_map.get(resume_stage)}")
+
+    if resume_stage == "stage3" and not args.delete:
+        print("✅ All stages already completed — nothing to do.")
+        return None
+    elif resume_stage == "delete":
+        print("✅ All stages including deletion already completed — nothing to do.")
+        return None
+
+    return checkpoint
+
+def run_pipeline(args, checkpoint):
+    """
+    Executes the staged pipeline: file listing, sorting, duplicate detection, and optional deletion.
+
+    Args:
+        args (argparse.Namespace): Parsed command-line arguments.
+        checkpoint (dict): Checkpoint metadata indicating completed stage (or empty for fresh run).
+
+    Returns:
+        bool: Indicates whether the pipeline stages executed successfully (True) or failed (False).
+    """
+
+    success = False
+    completed_stage = checkpoint.get("completed_stage") if args.restart else None
+
+    try:
+        if completed_stage is None:
+            stage1_list_files(args.folder, args.temp)
+            completed_stage = "stage1"
+            save_checkpoint(args.checkpoint, "stage1", args)
+
+        if completed_stage == "stage1":
+            stage2_sort_csv(args.temp, args.sorted)
+            completed_stage = "stage2"
+            save_checkpoint(args.checkpoint, "stage2", args)
+
+        if completed_stage == "stage2":
+            stage3_find_duplicates(args.sorted, args.output)
+            completed_stage = "stage3"
+            save_checkpoint(args.checkpoint, "stage3", args)
+
+        if args.delete:
+            if not os.path.exists(args.output):
+                log_event(f"❌ Cannot perform deletion — stage3 output not found: {args.output}")
+                print(f"❌ Cannot perform deletion — stage3 output not found: {args.output}")
+                return False
+
+            delete_duplicates(args.output, dryrun=args.dryrun, backup_folder=args.backup_folder)
+            save_checkpoint(args.checkpoint, "delete", args)
+
+        success = True
+        return success
+
+    except Exception as e:
+        log_event(f"Pipeline execution failed: {e}")
+        raise
+
+def final_cleanup(success, args):
+    """
+    Performs final cleanup tasks after successful execution, including deletion of
+    intermediate files (if not retained) and stopping the logging listener thread.
+
+    Args:
+        success (bool): Indicates whether the pipeline completed without errors.
+        args (argparse.Namespace): Parsed command-line arguments.
+    """
+
+    if success and not args.keepfiles:
+        for f in [args.temp, args.sorted, args.checkpoint]:
+            if os.path.exists(f):
+                os.remove(f)
+                log_event(f"Deleted file after successful run: {f}")
+    elif success and args.keepfiles:
+        log_event("Intermediate files retained as per user request.")
+
+    # Stop logging listener
+    args._log_listener.stop()
+
 def main():
     """
     Main function to execute the duplicate file detection script.
@@ -320,156 +602,19 @@ def main():
         --sorted : str (optional, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-sorted.csv")
             The path to the sorted file list generated during the process.
     """
-    parser = argparse.ArgumentParser(description="Efficient duplicate file detector (staged method).")
-    parser.add_argument("--folder", type=str, default="D:\\users\\Manoj\\Documents\\FIFA 07\\elib", help="Folder to scan")
-    parser.add_argument("--log", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-log.log", help="Log file path (appends)")
-    parser.add_argument("--output", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-output.csv", help="Output CSV (overwritten)")
-    parser.add_argument("--temp", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-temp.csv", help="Temp file for raw file list")
-    parser.add_argument("--sorted", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-sorted.csv", help="Sorted file list path")
-    parser.add_argument("--checkpoint", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-checkpoint.json", help="Checkpoint file to track completed stages")
-    parser.add_argument("--restart", action="store_true", help="Force restart from Stage 1 and ignore checkpoint")
-    parser.add_argument("--keepfiles", action="store_true", help="Retain intermediate and checkpoint files even after successful completion")
-    parser.add_argument("--delete", action="store_true", help="Delete duplicates after Stage 3 (retains one per group)")
-    parser.add_argument("--dryrun", action="store_true", help="Preview deletions without making changes")
-    parser.add_argument("--backup-folder", type=str, help="Move duplicates here instead of deleting (optional)")
-
-
-    args = parser.parse_args()
-
-    args.folder = os.path.abspath(args.folder)
-    args.temp = os.path.abspath(args.temp)
-    args.sorted = os.path.abspath(args.sorted)
-    args.output = os.path.abspath(args.output)
-    args.checkpoint = os.path.abspath(args.checkpoint)
-    if args.backup_folder:
-        args.backup_folder = os.path.abspath(args.backup_folder)
-        
-    # --- Queue-based logging setup ---
-    log_queue = queue.Queue()
-
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
-    file_handler = logging.FileHandler(args.log)
-    file_handler.setFormatter(formatter)
-
-    listener = QueueListener(log_queue, file_handler)
-
-    queue_handler = QueueHandler(log_queue)
-    logging.getLogger().setLevel(logging.INFO)
-    logging.getLogger().handlers = [queue_handler]
-
-    listener.start()
-    log_event("Logging system initialized with queue handler.")
+    args = parse_arguments()
+    prepare_environment(args)
 
     log_event("Duplicate detection script started")
 
-    success = False  # Track if all stages complete
-    checkpoint = load_checkpoint(args.checkpoint) if args.restart else {}
-
+    checkpoint = {}
     if args.restart:
-        log_event("Restart requested by user.")
-
-        if not checkpoint:
-            log_event("Checkpoint file not found or invalid. Cannot resume.")
-            print("No valid checkpoint found — cannot resume.")
+        checkpoint = handle_restart(args)
+        if checkpoint is None:
             return
 
-        # Override CLI args from checkpoint — EXCEPT log
-        args.folder = checkpoint.get("folder", args.folder)
-        args.output = checkpoint.get("output", args.output)
-        args.temp = checkpoint.get("temp", args.temp)
-        args.sorted = checkpoint.get("sorted", args.sorted)
-        # args.log is left as-is to allow overriding
-
-        stage_map = {
-            None: "Stage 1",
-            "stage1": "Stage 2",
-            "stage2": "Stage 3",
-            "stage3": "Deletion Stage" if args.delete else "Already completed — nothing to do",
-            "delete": "Already completed — nothing to do"
-        }     
-
-        resume_stage = checkpoint.get("completed_stage")
-        resume_text = stage_map.get(resume_stage, "Unknown stage")
-        log_event(f"Resuming from: {resume_text}")
-        print(f"➡️  Restart requested — resuming from: {resume_text}")
-
-        if resume_stage == "stage3" and not args.delete:
-            log_event("All stages already completed. Nothing to resume.")
-            print("✅ All stages already completed — nothing to do.")
-            return
-
-        elif resume_stage == "delete":
-            log_event("All stages including deletion already completed. Nothing to resume.")
-            print("✅ All stages including deletion already completed — nothing to do.")
-            return
-   
-    # If no restart requested, delete any stale intermediate files at startup
-    if not args.restart:
-        for f in [args.temp, args.sorted, args.checkpoint]:
-            if os.path.exists(f):
-                os.remove(f)
-                log_event(f"Deleted stale file at startup (no restart): {f}")
-
-    if args.restart and args.delete:
-        if not os.path.exists(args.output):
-            msg = f"❌ Cannot perform deletion on restart — stage3 output not found: {args.output}"
-            log_event(msg)
-            print(msg)
-            return
-
-    try:
-        completed_stage = checkpoint.get("completed_stage") if args.restart else None
-
-        if completed_stage is None:
-            try:
-                stage1_list_files(args.folder, args.temp)
-                completed_stage = "stage1"
-                save_checkpoint(args.checkpoint, "stage1", args)
-            except Exception as e:
-                log_event(f"Stage 1 failed: {e}")
-                raise
-
-        if completed_stage == "stage1":
-            try:
-                stage2_sort_csv(args.temp, args.sorted)
-                completed_stage = "stage2"
-                save_checkpoint(args.checkpoint, "stage2", args)
-            except Exception as e:
-                log_event(f"Stage 2 failed: {e}")
-                raise
-
-        if completed_stage == "stage2":
-            try:
-                stage3_find_duplicates(args.sorted, args.output)
-                completed_stage = "stage3"
-                save_checkpoint(args.checkpoint, "stage3", args)
-            except Exception as e:
-                log_event(f"Stage 3 failed: {e}")
-                raise
-
-        if args.delete:
-            try:
-                delete_duplicates(args.output, dryrun=args.dryrun, backup_folder=args.backup_folder)
-                completed_stage = "delete"
-                save_checkpoint(args.checkpoint, "delete", args)
-            except FileNotFoundError as e:
-                log_event(f"❌ {e}")
-                return
-
-        success = True
-
-    finally:
-        if success and not args.keepfiles:
-            for f in [args.temp, args.sorted, args.checkpoint]:
-                if os.path.exists(f):
-                    os.remove(f)
-                    log_event(f"Deleted file after successful run: {f}")
-        elif success and args.keepfiles:
-            log_event("Intermediate files retained as per user request.")
-
-        # Stop the log listener thread
-        listener.stop()
+    success = run_pipeline(args, checkpoint)
+    final_cleanup(success, args)
 
     log_event("Duplicate detection script completed")
 
