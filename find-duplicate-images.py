@@ -14,6 +14,8 @@ from collections import defaultdict
 from logging.handlers import QueueHandler, QueueListener
 from threading import Lock
 
+FILE_UNIT = " file(s)"
+
 def load_checkpoint(path):
     """
     Loads the checkpoint file if it exists and returns the stored state information.
@@ -169,7 +171,7 @@ def stage1_list_files(folder, out_csv):
 
         with ThreadPoolExecutor() as executor:
             futures = {executor.submit(get_size_safe, path): path for path in paths}
-            with tqdm(total=len(futures), desc="Processing files", unit=" file(s)", dynamic_ncols=True) as pbar:
+            with tqdm(total=len(futures), desc="Processing files", unit=FILE_UNIT, dynamic_ncols=True) as pbar:
                 for future in as_completed(futures):
                     result = future.result()
                     if result:
@@ -313,7 +315,7 @@ def _hash_and_write_duplicates(grouped_rows, output_file, total_files, skip_size
             writer.writerow(["group_id", "size", "md5_hash", "file_path"])
 
         duplicate_sets = starting_group_id - 1
-        with tqdm(total=total_files, desc="Hashing files", unit=" file(s)", dynamic_ncols=True) as pbar:
+        with tqdm(total=total_files, desc="Hashing files", unit=FILE_UNIT, dynamic_ncols=True) as pbar:
             for size, group_list in grouped_rows:
                 if size in skip_sizes:
                     pbar.update(len(group_list))
@@ -412,7 +414,7 @@ def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
             except Exception as e:
                 logging.warning(f"Failed to delete/move {file_path}: {e}")
 
-    with tqdm(total=total_files, desc="Deleting duplicates", unit=" file(s)", dynamic_ncols=True) as pbar:
+    with tqdm(total=total_files, desc="Deleting duplicates", unit=FILE_UNIT, dynamic_ncols=True) as pbar:
         with ThreadPoolExecutor() as executor:
             futures = []
             for group_id, files in grouped.items():
