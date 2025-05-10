@@ -463,7 +463,7 @@ def log_final_summary(total_groups, deleted_count, dryrun):
     """
 
     action = "would be deleted" if dryrun else "Deleted/Moved"
-    log_event(f"Duplicate cleanup completed. Retained one file per group.")
+    log_event("Duplicate cleanup completed. Retained one file per group.")
     log_event(f"[{action}] {deleted_count} files from {total_groups} duplicate groups.")
 
 def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
