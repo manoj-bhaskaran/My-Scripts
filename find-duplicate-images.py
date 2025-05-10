@@ -363,77 +363,131 @@ def stage3_find_duplicates(sorted_csv, output_file, is_restart=False):
 
     log_event(f"Completed Stage 3: Duplicate list updated in {output_file}")
 
-def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
+def read_csv_groups(dup_csv):
     """
-    Deletes or moves duplicate files, retaining one file per group.
+    Reads duplicate file information from a CSV and groups files by their group ID.
 
     Args:
-        dup_csv (str): Path to CSV file with duplicate information.
-        dryrun (bool): If True, only preview deletions.
-        backup_folder (str): If set, move files there instead of deleting.
+        dup_csv (str): Path to CSV file containing duplicate file information.
+
+    Returns:
+        dict: A dictionary where keys are group IDs and values are lists of file paths.
     """
 
-    lock = Lock()
-    deleted_count = 0
-
-    log_event("Starting duplicate cleanup")
-
-    if not os.path.exists(dup_csv):
-        raise FileNotFoundError(f"Cannot perform deletion — stage3 output not found: {dup_csv}")
-
+    grouped = defaultdict(list)
     with open(dup_csv, newline='', encoding='utf-8') as f_in:
         reader = csv.DictReader(f_in)
-        grouped = defaultdict(list)
-
         for row in reader:
             grouped[row["group_id"]].append(row["file_path"])
+    return grouped
+
+def process_duplicates(grouped, dryrun, backup_folder, total_files):
+    """
+    Processes duplicate files by either deleting or moving them.
+
+    Args:
+        grouped (dict): Dictionary of duplicate file groups.
+        dryrun (bool): If True, performs a preview without actual deletions.
+        backup_folder (str, optional): Destination folder to move duplicate files instead of deleting.
+        total_files (int): Total number of duplicate files to process.
+
+    Returns:
+        int: Count of deleted or moved files.
+    """
 
     deleted_count = 0
     skipped_groups = 0
 
+    with tqdm(total=total_files, desc="Deleting duplicates", unit=FILE_UNIT, dynamic_ncols=True) as pbar, \
+         ThreadPoolExecutor() as executor:
+
+        futures = []
+        for files in grouped.values():
+            if len(files) <= 1:
+                skipped_groups += 1
+                continue
+            
+            retained = random.choice(files)
+            futures += [executor.submit(delete_or_move_file, f, retained, dryrun, backup_folder) for f in files]
+
+        for future in as_completed(futures):
+            deleted_count += future.result()
+            pbar.update(1)
+
+    return deleted_count
+
+def delete_or_move_file(file_path, retained, dryrun, backup_folder):
+    """
+    Deletes or moves a duplicate file unless it is the retained file.
+
+    Args:
+        file_path (str): Path of the file to delete or move.
+        retained (str): Path of the file chosen to be kept.
+        dryrun (bool): If True, performs a preview without actual deletions.
+        backup_folder (str, optional): Destination folder to move duplicate files instead of deleting.
+
+    Returns:
+        int: 1 if file was deleted/moved, 0 otherwise.
+    """
+
+    if file_path == retained:
+        return 0
+
+    if dryrun:
+        log_event(f"[DRYRUN] Would delete: {file_path}")
+    else:
+        try:
+            if backup_folder:
+                os.makedirs(backup_folder, exist_ok=True)
+                shutil.move(file_path, os.path.join(backup_folder, os.path.basename(file_path)))
+                log_event(f"Moved: {file_path} → {backup_folder}")
+            else:
+                os.remove(file_path)
+                log_event(f"Deleted: {file_path}")
+            return 1
+        except Exception as e:
+            logging.warning(f"Failed to delete/move {file_path}: {e}")
+            return 0
+
+def log_final_summary(total_groups, deleted_count, dryrun):
+    """
+    Logs the final summary of the duplicate cleanup process.
+
+    Args:
+        total_groups (int): Number of duplicate groups processed.
+        deleted_count (int): Total number of deleted or moved files.
+        dryrun (bool): If True, logs a preview of what would have been deleted.
+
+    Returns:
+        None
+    """
+
+    action = "would be deleted" if dryrun else "Deleted/Moved"
+    log_event(f"Duplicate cleanup completed. Retained one file per group.")
+    log_event(f"[{action}] {deleted_count} files from {total_groups} duplicate groups.")
+
+def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
+    """
+    Deletes or moves duplicate files while retaining one file per group.
+
+    Args:
+        dup_csv (str): Path to CSV file containing duplicate file information.
+        dryrun (bool): If True, performs a preview without actual deletions.
+        backup_folder (str, optional): Destination folder to move duplicate files instead of deleting.
+
+    Returns:
+        None
+    """
+
+    if not os.path.exists(dup_csv):
+        raise FileNotFoundError(f"Cannot perform deletion — stage3 output not found: {dup_csv}")
+
+    grouped = read_csv_groups(dup_csv)
     total_files = sum(len(files) - 1 for files in grouped.values() if len(files) > 1)
 
-    def delete_or_move_file(file_path, retained):
-        nonlocal deleted_count
-        if file_path == retained:
-            return
-        if dryrun:
-            log_event(f"[DRYRUN] Would delete: {file_path}")
-        else:
-            try:
-                if backup_folder:
-                    os.makedirs(backup_folder, exist_ok=True)
-                    dest = os.path.join(backup_folder, os.path.basename(file_path))
-                    shutil.move(file_path, dest)
-                    log_event(f"Moved: {file_path} → {dest}")
-                else:
-                    os.remove(file_path)
-                    log_event(f"Deleted: {file_path}")
-                with lock:
-                    deleted_count += 1
-            except Exception as e:
-                logging.warning(f"Failed to delete/move {file_path}: {e}")
+    deleted_count = process_duplicates(grouped, dryrun, backup_folder, total_files)
 
-    with tqdm(total=total_files, desc="Deleting duplicates", unit=FILE_UNIT, dynamic_ncols=True) as pbar:
-        with ThreadPoolExecutor() as executor:
-            futures = []
-            for group_id, files in grouped.items():
-                if len(files) <= 1:
-                    skipped_groups += 1
-                    continue
-
-                retained = random.choice(files)
-                for f in files:
-                    futures.append(executor.submit(delete_or_move_file, f, retained))
-
-            for future in as_completed(futures):
-                pbar.update(1)
-
-    log_event(f"Duplicate cleanup completed. Retained one file per group.")
-    if dryrun:
-        log_event(f"[DRYRUN] Total groups: {len(grouped)}, Skipped (1 file only): {skipped_groups}, Files that would be deleted: {deleted_count}")
-    else:
-        log_event(f"Deleted/Moved {deleted_count} files from {len(grouped)} duplicate groups")
+    log_final_summary(len(grouped), deleted_count, dryrun)
 
 def parse_arguments():
     """
