@@ -4,7 +4,7 @@ $cutoffDate = (Get-Date).AddDays(-7)
 
 # Get all drives that have $Recycle.Bin
 $drives = Get-PSDrive -PSProvider FileSystem | Where-Object {
-    Test-Path "$($_.Root)$Recycle.Bin"
+    Test-Path "$($_.Root)`$Recycle.Bin"
 }
 
 foreach ($drive in $drives) {
