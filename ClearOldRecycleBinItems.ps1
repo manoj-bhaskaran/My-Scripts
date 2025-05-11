@@ -1,23 +1,25 @@
+# Get all local drives that contain $Recycle.Bin
+$recycleDrives = Get-PSDrive -PSProvider FileSystem | Where-Object {
+    Test-Path "$($_.Root)\$Recycle.Bin"
+}
+
 # Get current user SID
 $userSID = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-
-# List of drives to scan for Recycle Bin contents
-$drives = @("C", "D")
 $cutoffDate = (Get-Date).AddDays(-7)
 
-foreach ($drive in $drives) {
-    $recyclePath = "$drive`:\$Recycle.Bin\$userSID"
+foreach ($drive in $recycleDrives) {
+    $basePath = Join-Path $drive.Root '$Recycle.Bin'
+    $userRecycleBin = Join-Path $basePath $userSID
 
-    if (-not (Test-Path $recyclePath)) {
-        Write-Warning "Recycle Bin path not found on $drive"
+    if (-not (Test-Path $userRecycleBin)) {
+        Write-Warning "Recycle Bin path not found for user on $($drive.Name)"
         continue
     }
 
-    Write-Host "`nScanning: $recyclePath"
+    Write-Host "`nScanning: $userRecycleBin"
 
-    Get-ChildItem -Path $recyclePath -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+    Get-ChildItem -Path $userRecycleBin -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
         try {
-            # Compare using LastWriteTime (can also try CreationTime if needed)
             if ($_.LastWriteTime -lt $cutoffDate) {
                 Write-Host "Deleting: $($_.FullName)"
                 Remove-Item $_.FullName -Force -Recurse -ErrorAction Stop
