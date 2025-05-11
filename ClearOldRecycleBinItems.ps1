@@ -1,18 +1,28 @@
-# Get the current date
-$currentDate = Get-Date
+# Get all local drives that contain $Recycle.Bin
+$recycleDrives = Get-PSDrive -PSProvider FileSystem | Where-Object {
+    Test-Path "$($_.Root)\`$Recycle.Bin"
+}
 
-# Get all items in the Recycle Bin
-$recycleBinItems = New-Object -ComObject Shell.Application
-$recycleBin = $recycleBinItems.Namespace(10).Items()
+# Get current user SID
+$userSID = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$cutoffDate = (Get-Date).AddDays(-7)
 
-# Iterate over each item in the Recycle Bin
-foreach ($item in $recycleBin) {
-    # Get the file's deletion date
-    $deletionDate = $item.ExtendedProperty("System.Recycle.DateDeleted")
+foreach ($drive in $recycleDrives) {
+    $basePath = Join-Path $drive.Root '$Recycle.Bin'
+    $userRecycleBin = Join-Path $basePath $userSID
 
-    # Check if the file is older than one week
-    if ($deletionDate -lt ($currentDate.AddDays(-7))) {
-        # Delete the item
-        $item.InvokeVerb("delete")
+    if (-not (Test-Path $userRecycleBin)) {
+        Write-Warning "Recycle Bin path not found for user on $($drive.Name)"
+        continue
+    }
+
+    Get-ChildItem -Path $userRecycleBin -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            if ($_.LastWriteTime -lt $cutoffDate) {
+                Remove-Item $_.FullName -Force -Recurse -ErrorAction Stop
+            }
+        } catch {
+            Write-Warning "Failed to delete '$($_.FullName)': $($_.Exception.Message)"
+        }
     }
 }
