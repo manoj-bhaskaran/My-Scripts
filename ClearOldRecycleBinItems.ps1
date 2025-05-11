@@ -1,6 +1,6 @@
 # Get all local drives that contain $Recycle.Bin
 $recycleDrives = Get-PSDrive -PSProvider FileSystem | Where-Object {
-    Test-Path "$($_.Root)\$Recycle.Bin"
+    Test-Path "$($_.Root)\`$Recycle.Bin"
 }
 
 # Get current user SID
