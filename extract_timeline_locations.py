@@ -3,8 +3,8 @@ import re
 
 def extract_lat_lon(point_str):
     """
-    Extracts latitude and longitude as floats from a string formatted like:
-    "12.9041725°, 77.6034251°"
+    Extracts latitude and longitude from '12.9041725°, 77.6034251°' format.
+    Handles unicode degree symbols (\u00b0).
     """
     match = re.match(r"(-?\d+(?:\.\d+)?)°,\s*(-?\d+(?:\.\d+)?)°", point_str)
     if match:
