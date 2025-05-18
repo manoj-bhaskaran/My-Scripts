@@ -55,7 +55,10 @@ try {
         Wait-ServiceStatus -ServiceName $service_name -DesiredStatus 'Running' -MaxWaitTime $max_wait_time
     }
 
-    & $pg_dump_path --dbname=postgresql://${user}:${password}@localhost/$dbname --file=$backup_file --format=custom *>&1 | Out-File -FilePath $log_file -Append
+    $PlainPassword = (New-Object System.Management.Automation.PSCredential($user, $password)).GetNetworkCredential().Password
+    $EscapedPassword = [System.Web.HttpUtility]::UrlEncode($PlainPassword)
+
+    & $pg_dump_path --dbname="postgresql://${user}:${EscapedPassword}@localhost/${dbname}" --file=$backup_file --format=custom *>&1 | Out-File -FilePath $log_file -Append
     if ($LASTEXITCODE -eq 0) {
         "$(Get-Date): ${dbname}: Backup completed successfully: $backup_file" | Out-File -FilePath $log_file -Append
     } else {
