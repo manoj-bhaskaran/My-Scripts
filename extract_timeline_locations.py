@@ -21,24 +21,26 @@ def parse_timeline_json(filepath):
 
     rows = []
     for segment in data.get("semanticSegments", []):
-        # Try direct list of points
-        timeline_path = segment.get("timelinePath")
-        if isinstance(timeline_path, list):
-            for entry in timeline_path:
-                time = entry.get("time")
-                point = entry.get("point")
-                lat, lon = extract_lat_lon(point) if point else (None, None)
-                if time and lat is not None and lon is not None:
-                    rows.append({
-                        "timestamp": time,
-                        "latitude": lat,
-                        "longitude": lon,
-                        "elevation": None,
-                        "accuracy": None,
-                        "activity_type": None,
-                        "confidence": None,
-                        "source": "timelinePath"
-                    })
+        print("DEBUG timelinePath:", json.dumps(segment.get("timelinePath"), indent=2))
+        for segment in data.get("semanticSegments", []):
+            # Try direct list of points
+            timeline_path = segment.get("timelinePath")
+            if isinstance(timeline_path, list):
+                for entry in timeline_path:
+                    time = entry.get("time")
+                    point = entry.get("point")
+                    lat, lon = extract_lat_lon(point) if point else (None, None)
+                    if time and lat is not None and lon is not None:
+                        rows.append({
+                            "timestamp": time,
+                            "latitude": lat,
+                            "longitude": lon,
+                            "elevation": None,
+                            "accuracy": None,
+                            "activity_type": None,
+                            "confidence": None,
+                            "source": "timelinePath"
+                        })
         # Handle rawSignals (position and activity)
         for signal in segment.get("rawSignals", []):
             row = {
