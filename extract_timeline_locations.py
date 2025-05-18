@@ -77,7 +77,7 @@ def main():
     """
     Main function to extract and print Google Timeline location data.
     """
-    input_file = "timeline.json"  # Update if needed
+    input_file = "E:\My Drive\Google Maps Timeline\Timeline.json"  # Update if needed
     records = parse_timeline_json(input_file)
 
     for r in records:
