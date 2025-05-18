@@ -1,14 +1,3 @@
-"""
-extract_timeline_locations.py
-
-This script parses a Google Timeline JSON file containing semanticSegments
-with timelinePath and rawSignals data. It extracts timestamp, latitude, 
-longitude, and additional metadata like elevation, accuracy, activity type, 
-and confidence (if available), and prints the extracted values in a readable format.
-
-Intended for further use such as insertion into a PostgreSQL table or export.
-"""
-
 import json
 import re
 
@@ -16,12 +5,6 @@ def extract_lat_lon(point_str):
     """
     Extracts latitude and longitude as floats from a string formatted like:
     "12.9041725°, 77.6034251°"
-
-    Args:
-        point_str (str): The coordinate string from JSON.
-
-    Returns:
-        tuple: (latitude, longitude) as floats if parsing is successful, otherwise (None, None).
     """
     match = re.match(r"(-?\d+(?:\.\d+)?)°,\s*(-?\d+(?:\.\d+)?)°", point_str)
     if match:
@@ -30,39 +13,33 @@ def extract_lat_lon(point_str):
 
 def parse_timeline_json(filepath):
     """
-    Parses the Google Timeline JSON file and extracts structured location data
-    from both timelinePath and rawSignals entries within each semanticSegment.
-
-    Args:
-        filepath (str): Path to the input JSON file.
-
-    Returns:
-        list[dict]: A list of dictionaries, each representing one location record with keys:
-                    timestamp, latitude, longitude, elevation, accuracy, activity_type, confidence, source
+    Parses Google Timeline JSON, extracting timelinePath and rawSignals data.
+    Returns a list of structured dictionaries.
     """
     with open(filepath, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
     rows = []
     for segment in data.get("semanticSegments", []):
-        # Extract from timelinePath
-        for entry in segment.get("timelinePath", []):
-            time = entry.get("time")
-            point = entry.get("point")
-            lat, lon = extract_lat_lon(point) if point else (None, None)
-            if time and lat is not None and lon is not None:
-                rows.append({
-                    "timestamp": time,
-                    "latitude": lat,
-                    "longitude": lon,
-                    "elevation": None,
-                    "accuracy": None,
-                    "activity_type": None,
-                    "confidence": None,
-                    "source": "timelinePath"
-                })
-
-        # Extract from rawSignals
+        # Try direct list of points
+        timeline_path = segment.get("timelinePath")
+        if isinstance(timeline_path, list):
+            for entry in timeline_path:
+                time = entry.get("time")
+                point = entry.get("point")
+                lat, lon = extract_lat_lon(point) if point else (None, None)
+                if time and lat is not None and lon is not None:
+                    rows.append({
+                        "timestamp": time,
+                        "latitude": lat,
+                        "longitude": lon,
+                        "elevation": None,
+                        "accuracy": None,
+                        "activity_type": None,
+                        "confidence": None,
+                        "source": "timelinePath"
+                    })
+        # Handle rawSignals (position and activity)
         for signal in segment.get("rawSignals", []):
             row = {
                 "timestamp": None,
@@ -98,11 +75,9 @@ def parse_timeline_json(filepath):
 
 def main():
     """
-    Main entry point of the script.
-    Loads and parses the JSON file, and prints out available location records
-    in a human-readable format.
+    Main function to extract and print Google Timeline location data.
     """
-    input_file = "E:\My Drive\Google Maps Timeline\Timeline.json"  # Replace with your actual file path
+    input_file = "timeline.json"  # Update if needed
     records = parse_timeline_json(input_file)
 
     for r in records:
