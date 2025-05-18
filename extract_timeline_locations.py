@@ -3,13 +3,24 @@ import re
 
 def extract_lat_lon(point_str):
     """
-    Extracts latitude and longitude from '12.9041725°, 77.6034251°' format.
-    Handles unicode degree symbols (\u00b0).
+    Extract latitude and longitude from strings like:
+    "12.9041725°, 77.6034251°"
     """
+    if not isinstance(point_str, str):
+        print("⚠️ point_str is not a string:", point_str)
+        return None, None
+
+    # Explicitly match the actual degree character (Unicode U+00B0)
     match = re.match(r"(-?\d+(?:\.\d+)?)°,\s*(-?\d+(?:\.\d+)?)°", point_str)
-    if match:
+    if not match:
+        print("❌ Regex failed to match point:", point_str)
+        return None, None
+
+    try:
         return float(match.group(1)), float(match.group(2))
-    return None, None
+    except Exception as e:
+        print("⚠️ Failed to convert lat/lon:", e)
+        return None, None
 
 def parse_timeline_json(filepath):
     """
