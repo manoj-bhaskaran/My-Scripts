@@ -56,7 +56,7 @@ try {
     }
 
     $PlainPassword = (New-Object System.Management.Automation.PSCredential($user, $password)).GetNetworkCredential().Password
-    $EscapedPassword = [System.Web.HttpUtility]::UrlEncode($PlainPassword)
+    $EscapedPassword = [System.Net.WebUtility]::UrlEncode($PlainPassword)
 
     & $pg_dump_path --dbname="postgresql://${user}:${EscapedPassword}@localhost/${dbname}" --file=$backup_file --format=custom *>&1 | Out-File -FilePath $log_file -Append
     if ($LASTEXITCODE -eq 0) {
