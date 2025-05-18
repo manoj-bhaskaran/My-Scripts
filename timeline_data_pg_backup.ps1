@@ -1,6 +1,6 @@
-# Parameters for gnucash_db backup
-$dbname = "gnucash_db"
-$backup_folder = "D:\pgbackup\gnucash_db"
+# Parameters for timeline_data backup
+$dbname = "timeline_data"
+$backup_folder = "D:\pgbackup\timeline_data"
 $log_folder = "D:\pgbackup\logs"
 $user = "backup_user"
 $password = Get-Content "C:\Users\manoj\Documents\Scripts\pgbackup_user\pgbackup_user_pwd.txt" | ConvertTo-SecureString
