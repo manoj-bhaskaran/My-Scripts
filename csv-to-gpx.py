@@ -10,20 +10,12 @@ Usage:
 """
 
 import csv
-import srtm
 import argparse
 import os
 from xml.etree.ElementTree import Element, SubElement, ElementTree, tostring
 from datetime import datetime
 import xml.dom.minidom
-
-# Get elevation data provider
-elevation_data = srtm.get_data()
-
-def get_elevation(lat, lon):
-    """Get elevation or return None if unavailable."""
-    elevation = elevation_data.get_elevation(lat, lon)
-    return elevation if elevation is not None and elevation > -1000 else None
+from elevation import get_elevation  # <-- Import from new module
 
 def csv_to_gpx(input_csv, output_gpx):
     """Convert CSV to GPX file with elevation and pretty print."""
