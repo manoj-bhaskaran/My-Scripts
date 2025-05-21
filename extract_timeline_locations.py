@@ -49,21 +49,18 @@ def main():
                 timeline_path_count += 1
 
         # --- rawSignals ---
-        print(f"🔍 Found {len(segment.get('rawSignals', []))} rawSignals in this segment")
-        for signal in segment.get("rawSignals", []):
-            if LIMIT_OUTPUT and rawsignals_count >= MAX_RAWSIGNALS:
-                break
+        # Process top-level rawSignals
+    for signal in data.get("rawSignals", []):
+        if LIMIT_OUTPUT and rawsignals_count >= MAX_RAWSIGNALS:
+            break
 
-            if "position" in signal:
-                print(f"🧭 rawSignal has position: {signal['position'].get('LatLng')}")
-                position = signal["position"]
-                time = position.get("timestamp")
-                lat, lon = extract_lat_lon(position.get("LatLng", ""))
-                if lat is not None and lon is not None:
-                    print(f"[rawSignals]  time: {time}, lat: {lat}, lon: {lon}")
-                    rawsignals_count += 1
-            else:
-                print(f"📎 Skipping rawSignal (no position): {list(signal.keys())}")
+        if "position" in signal:
+            position = signal["position"]
+            time = position.get("timestamp")
+            lat, lon = extract_lat_lon(position.get("LatLng", ""))
+            if lat is not None and lon is not None:
+                print(f"[rawSignals]  time: {time}, lat: {lat}, lon: {lon}")
+                rawsignals_count += 1
 
     # ✅ Optional: show limit notice
     if LIMIT_OUTPUT:
