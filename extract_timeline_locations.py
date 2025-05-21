@@ -1,9 +1,10 @@
 import json
 import re
 
-# 🔧 Switch: Set to True to print only first 100 records
+# 🔧 Output limits
 LIMIT_OUTPUT = True
-MAX_RECORDS = 100
+MAX_TIMELINE_PATH = 100
+MAX_RAWSIGNALS = 100
 
 def extract_lat_lon(point_str):
     """
@@ -13,10 +14,8 @@ def extract_lat_lon(point_str):
     if not isinstance(point_str, str):
         return None, None
 
-    # Replace encoded degree symbol if needed (extra safe)
     point_str = point_str.replace("\u00b0", "°").strip()
 
-    # Match "lat°, lon°" using Unicode degree symbol
     match = re.match(r"(-?\d+(?:\.\d+)?)°,\s*(-?\d+(?:\.\d+)?)°", point_str)
     if not match:
         return None, None
@@ -32,22 +31,39 @@ def main():
     with open(input_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
-    count = 0
+    timeline_path_count = 0
+    rawsignals_count = 0
+
     for segment in data.get("semanticSegments", []):
-        for point_entry in segment.get("timelinePath", []):
-            time = point_entry.get("time")
-            point = point_entry.get("point")
+        # --- timelinePath ---
+        for entry in segment.get("timelinePath", []):
+            if LIMIT_OUTPUT and timeline_path_count >= MAX_TIMELINE_PATH:
+                break
+
+            time = entry.get("time")
+            point = entry.get("point")
             lat, lon = extract_lat_lon(point)
+
             if lat is not None and lon is not None:
-                print(f"time: {time}, lat: {lat}, lon: {lon}")
-            else:
-                print(f"⚠️  Failed to parse point: {point}")
+                print(f"[timelinePath] time: {time}, lat: {lat}, lon: {lon}")
+                timeline_path_count += 1
 
+        # --- rawSignals ---
+        for signal in segment.get("rawSignals", []):
+            if rawsignals_count >= MAX_RAWSIGNALS and LIMIT_OUTPUT:
+                break
 
-            count += 1
-            if LIMIT_OUTPUT and count >= MAX_RECORDS:
-                print(f"\n🔔 Stopped after {MAX_RECORDS} records (LIMIT_OUTPUT = True)")
-                return
+            position = signal.get("position")
+            if position:
+                time = position.get("timestamp")
+                lat, lon = extract_lat_lon(position.get("LatLng", ""))
+                if lat is not None and lon is not None:
+                    print(f"[rawSignals]  time: {time}, lat: {lat}, lon: {lon}")
+                    rawsignals_count += 1
+
+    # ✅ Optional: show limit notice
+    if LIMIT_OUTPUT:
+        print(f"\n✅ Printed {timeline_path_count} timelinePath entries and {rawsignals_count} rawSignals entries (LIMIT_OUTPUT = True)")
 
 if __name__ == "__main__":
     main()
