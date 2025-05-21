@@ -50,11 +50,11 @@ def main():
 
         # --- rawSignals ---
         for signal in segment.get("rawSignals", []):
-            if rawsignals_count >= MAX_RAWSIGNALS and LIMIT_OUTPUT:
+            if LIMIT_OUTPUT and rawsignals_count >= MAX_RAWSIGNALS:
                 break
 
-            position = signal.get("position")
-            if position:
+            if "position" in signal:
+                position = signal["position"]
                 time = position.get("timestamp")
                 lat, lon = extract_lat_lon(position.get("LatLng", ""))
                 if lat is not None and lon is not None:
