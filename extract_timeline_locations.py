@@ -57,10 +57,17 @@ def main():
         if "position" in signal:
             position = signal["position"]
             time = position.get("timestamp")
-            lat, lon = extract_lat_lon(position.get("LatLng", ""))
+            latlng = position.get("LatLng", "")
+            accuracy = position.get("accuracyMeters")  # NEW
+
+            lat, lon = extract_lat_lon(latlng)
             if lat is not None and lon is not None:
-                print(f"[rawSignals]  time: {time}, lat: {lat}, lon: {lon}")
+                if accuracy is not None:
+                    print(f"[rawSignals]  time: {time}, lat: {lat}, lon: {lon}, accuracy: {accuracy}m")
+                else:
+                    print(f"[rawSignals]  time: {time}, lat: {lat}, lon: {lon}")
                 rawsignals_count += 1
+
 
     # ✅ Optional: show limit notice
     if LIMIT_OUTPUT:
