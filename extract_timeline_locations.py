@@ -127,7 +127,26 @@ for rec in records:
 # Step 6: Print results
 count = 0
 for rec in records:
-    prefix = f"[{rec.get('source', 'unknown')}]"
+    count = 0
+raw_signals_printed = 0
+place_visits_printed = 0
+
+for rec in records:
+    source = rec.get('source', 'unknown')
+
+    # Check print limits
+    if LIMIT_OUTPUT:
+        if count >= MAX_OUTPUT_RECORDS and raw_signals_printed >= 10 and place_visits_printed >= 5:
+            break
+
+    # Update counters for rawSignals and placeVisit
+    if source == "rawSignals":
+        raw_signals_printed += 1
+    elif source == "placeVisit":
+        place_visits_printed += 1
+
+    # Print the record
+    prefix = f"[{source}]"
     print(f"{prefix} time: {rec['timestamp']}, lat: {rec['latitude']}, lon: {rec['longitude']}", end="")
 
     if rec["accuracy"] is not None:
@@ -139,5 +158,4 @@ for rec in records:
     print()
 
     count += 1
-    if LIMIT_OUTPUT and count >= MAX_OUTPUT_RECORDS:
-        break
+
