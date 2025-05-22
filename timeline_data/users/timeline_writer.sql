@@ -10,6 +10,8 @@ BEGIN
    END IF;
 END
 $$;
+-- Allow only timeline_writer to connect to this
+GRANT CONNECT ON DATABASE timeline_data TO timeline_writer;
 
 -- Grant minimal required privileges
 GRANT USAGE ON SCHEMA timeline TO timeline_writer;
