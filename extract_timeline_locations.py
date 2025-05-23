@@ -4,6 +4,7 @@ import argparse
 import psycopg2
 from datetime import datetime
 from psycopg2.extras import execute_values
+from elevation import get_elevation
 
 # Database connection configuration
 DB_PARAMS = {
@@ -167,6 +168,72 @@ def insert_records_into_postgres(records, stats):
 
     except psycopg2.OperationalError as e:
         print(f"❌ Database connection failed: {e}")
+
+def get_last_elevation_timestamp():
+    try:
+        with psycopg2.connect(**DB_PARAMS) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT last_processed_timestamp
+                    FROM timeline.control
+                    WHERE control_key = 'elevation_main'
+                """)
+                row = cur.fetchone()
+                return row[0] if row else None
+    except psycopg2.OperationalError as e:
+        print(f"❌ Failed to read elevation control timestamp: {e}")
+        return None
+
+def update_last_elevation_timestamp(ts):
+    try:
+        with psycopg2.connect(**DB_PARAMS) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO timeline.control (control_key, last_processed_timestamp)
+                    VALUES ('elevation_main', %s)
+                    ON CONFLICT (control_key)
+                    DO UPDATE SET last_processed_timestamp = EXCLUDED.last_processed_timestamp
+                """, (ts,))
+            conn.commit()
+    except psycopg2.OperationalError as e:
+        print(f"❌ Failed to update elevation control timestamp: {e}")
+
+def fetch_records_missing_elevation(last_ts=None):
+    query = """
+        SELECT location_id, timestamp, latitude, longitude
+        FROM timeline.locations
+        WHERE elevation IS NULL
+    """
+    params = []
+    if last_ts:
+        query += " AND timestamp >= %s"
+        params.append(last_ts)
+
+    query += " ORDER BY timestamp"
+
+    with psycopg2.connect(**DB_PARAMS) as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchall()
+
+def update_elevations(records):
+    updated = 0
+    latest_ts = None
+    with psycopg2.connect(**DB_PARAMS) as conn:
+        with conn.cursor() as cur:
+            for location_id, ts, lat, lon in records:
+                elevation = get_elevation(lat, lon)
+                if elevation is not None:
+                    cur.execute("""
+                        UPDATE timeline.locations
+                        SET elevation = %s
+                        WHERE location_id = %s
+                    """, (elevation, location_id))
+                    updated += 1
+                    if latest_ts is None or ts > latest_ts:
+                        latest_ts = ts
+        conn.commit()
+    return updated, latest_ts
 
 def main(input_file, reprocess):
     """
@@ -337,6 +404,26 @@ def main(input_file, reprocess):
     # Step 6: Insert final records into PostgreSQL
     # Skip duplicates unless the new record has more complete metadata
     insert_records_into_postgres(records, stats)
+
+    if args.reprocess_elevation:
+        last_ts = None
+        print("🔁 Reprocessing all elevation records")
+    else:
+        last_ts = get_last_elevation_timestamp()
+        if last_ts:
+            print(f"▶️ Processing elevation updates from {last_ts.isoformat()}")
+        else:
+            print("▶️ No previous elevation timestamp, processing all missing elevations")
+
+    records = fetch_records_missing_elevation(last_ts)
+    updated_count, latest_ts = update_elevations(records)
+
+    print(f"✅ Elevation updated for {updated_count} records.")
+
+    if latest_ts:
+        update_last_elevation_timestamp(latest_ts)
+        print(f"🕒 Elevation last processed timestamp updated to {latest_ts.isoformat()}")
+
     print("\n📊 Summary:")
     for k, v in stats.items():
         print(f"{k}: {v}")
@@ -353,6 +440,11 @@ if __name__ == "__main__":
         "--reprocess", 
         action="store_true", 
         help="Reprocess all records regardless of last processed timestamp"
+    )
+    parser.add_argument(
+        "--reprocess-elevation",
+        action="store_true",
+        help="Force reprocessing of all elevation values regardless of control timestamp"
     )
     args = parser.parse_args()
     main(args.input_file, args.reprocess)
