@@ -67,7 +67,11 @@ def update_last_processed_timestamp(ts):
     except psycopg2.OperationalError as e:
         print(f"❌ Database connection failed while updating control: {e}")
 
-def insert_records_into_postgres(records):
+def insert_records_into_postgres(records, stats):
+    stats["records_inserted"] = 0
+    stats["records_replaced"] = 0
+    stats["records_skipped_due_to_existing_richer"] = 0
+
     try:
         with psycopg2.connect(**DB_PARAMS) as conn:
             with conn.cursor() as cur:
@@ -88,9 +92,13 @@ def insert_records_into_postgres(records):
                             "confidence": existing[3]
                         }
                         if count_optional_fields(rec) <= count_optional_fields(existing_dict):
+                            stats["records_skipped_due_to_existing_richer"] += 1
                             continue
                         else:
                             cur.execute("DELETE FROM timeline.locations WHERE timestamp = %s", (rec["datetime"],))
+                            stats["records_replaced"] += 1
+                    else:
+                        stats["records_inserted"] += 1
                     cur.execute("""
                         INSERT INTO timeline.locations (
                             timestamp, latitude, longitude,
@@ -118,18 +126,20 @@ def insert_records_into_postgres(records):
 
 def main(input_file):
     stats = {
-        "timelinePath_read": 0,
-        "timelinePath_skipped": 0,
-        "timelinePath_processed": 0,
-        "rawSignals_read": 0,
-        "rawSignals_skipped": 0,
-        "rawSignals_processed": 0,
-        "placeVisit_read": 0,
-        "placeVisit_skipped": 0,
-        "placeVisit_processed": 0,
-        "activity_ranges_total": 0,
-        "records_enriched": 0
-    }
+    "timelinePath_read": 0,
+    "timelinePath_skipped": 0,
+    "timelinePath_processed": 0,
+    "rawSignals_read": 0,
+    "rawSignals_skipped": 0,
+    "rawSignals_processed": 0,
+    "placeVisit_read": 0,
+    "placeVisit_skipped": 0,
+    "placeVisit_processed": 0,
+    "activity_ranges_total": 0,
+    "records_enriched": 0,
+    "records_not_enriched_due_to_no_match": 0,
+    "records_invalid_format": 0
+}
 
     last_processed = get_last_processed_timestamp()
     if last_processed:
@@ -186,6 +196,8 @@ def main(input_file):
                     records.append({"datetime": dt, "latitude": lat, "longitude": lon})
                 else:
                     stats["timelinePath_skipped"] += 1
+            else:
+                stats["records_invalid_format"] += 1
 
     for signal in data.get("rawSignals", []):
         if "position" in signal:
@@ -205,6 +217,8 @@ def main(input_file):
                     })
                 else:
                     stats["rawSignals_skipped"] += 1
+            else:
+                stats["records_invalid_format"] += 1
 
     for segment in data.get("semanticSegments", []):
         visit = segment.get("visit")
@@ -232,24 +246,29 @@ def main(input_file):
                         })
                     else:
                         stats["placeVisit_skipped"] += 1
+                else:
+                    stats["records_invalid_format"] += 1
 
     for rec in records:
         if rec.get("activity_type"):
             continue
         ts = rec["datetime"]
+        matched = False
         for act in activity_ranges:
             if act["start_time"] <= ts <= act["end_time"]:
                 rec["activity_type"] = act["activity_type"]
                 rec["confidence"] = act["confidence"]
                 stats["records_enriched"] += 1
+                matched = True
                 break
+        if not matched:
+            stats["records_not_enriched_due_to_no_match"] += 1
 
-    insert_records_into_postgres(records)
+    insert_records_into_postgres(records, stats)
     print("\n📊 Summary:")
     for k, v in stats.items():
         print(f"{k}: {v}")
     print(f"Total records processed for DB insert: {len(records)}")
-    print("✅ Finished processing timeline data.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract and enrich Google Maps Timeline data.")
