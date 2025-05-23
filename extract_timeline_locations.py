@@ -344,7 +344,11 @@ def main(input_file, reprocess):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract and enrich Google Maps Timeline data.")
-    parser.add_argument("--input_file", required=True, help="Path to the JSON timeline file")
+    parser.add_argument(
+        "--input_file",
+        default=r"G:\My Drive\Google Maps Timeline\Timeline.json",
+        help="Path to the JSON timeline file (default: G:\My Drive\Google Maps Timeline\Timeline.json)"
+    )
     parser.add_argument(
         "--reprocess", 
         action="store_true", 
