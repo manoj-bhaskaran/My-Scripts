@@ -15,12 +15,30 @@ DB_PARAMS = {
 }
 
 def count_optional_fields(rec):
+    """
+    Counts the number of non-null optional fields (accuracy, elevation, activity_type, confidence) in a record.
+
+    Args:
+        rec (dict): A record dictionary.
+
+    Returns:
+        int: Number of optional fields that are not None.
+    """
     return sum(
         rec.get(field) is not None
         for field in ["accuracy", "elevation", "activity_type", "confidence"]
     )
 
 def extract_lat_lon(point_str):
+    """
+    Extracts latitude and longitude from a string of the form '12.34°, 56.78°'.
+
+    Args:
+        point_str (str): A string representing latitude and longitude with degree symbols.
+
+    Returns:
+        tuple[float, float] or (None, None): Parsed (latitude, longitude) if successful.
+    """
     if not isinstance(point_str, str):
         return None, None
     point_str = point_str.replace("\u00b0", "°").strip()
@@ -33,12 +51,24 @@ def extract_lat_lon(point_str):
         return None, None
 
 def datetime_from_iso(ts):
+    """
+    Safely parses an ISO 8601 timestamp string into a datetime object.
+
+    Returns:
+        datetime or None: Parsed datetime if valid, otherwise None.
+    """
     try:
         return datetime.fromisoformat(ts)
     except (ValueError, TypeError):
         return None
 
 def get_last_processed_timestamp():
+    """
+    Fetches the last processed timestamp from the control table in PostgreSQL.
+
+    Returns:
+        datetime or None: The last processed timestamp if available, otherwise None.
+    """
     try:
         with psycopg2.connect(**DB_PARAMS) as conn:
             with conn.cursor() as cur:
@@ -54,6 +84,12 @@ def get_last_processed_timestamp():
         return None
 
 def update_last_processed_timestamp(ts):
+    """
+    Updates or inserts the last processed timestamp in the control table.
+
+    Args:
+        ts (datetime): The new timestamp to store.
+    """
     try:
         with psycopg2.connect(**DB_PARAMS) as conn:
             with conn.cursor() as cur:
@@ -68,6 +104,14 @@ def update_last_processed_timestamp(ts):
         print(f"❌ Database connection failed while updating control: {e}")
 
 def insert_records_into_postgres(records, stats):
+    """
+    Inserts timeline records into the PostgreSQL database.
+    If a record with the same timestamp exists, it is replaced only if the new record has more complete data.
+
+    Args:
+        records (list[dict]): Timeline records to insert.
+        stats (dict): Dictionary to collect stats about inserted, replaced, or skipped records.
+    """
     stats["records_inserted"] = 0
     stats["records_replaced"] = 0
     stats["records_skipped_due_to_existing_richer"] = 0
@@ -125,6 +169,14 @@ def insert_records_into_postgres(records, stats):
         print(f"❌ Database connection failed: {e}")
 
 def main(input_file, reprocess):
+    """
+    Main logic to load Google Maps timeline data, filter based on last processed timestamp (unless --reprocess is used),
+    parse all known record types, enrich with activity data, and insert into the database.
+
+    Args:
+        input_file (str): Path to the JSON file.
+        reprocess (bool): If True, ignores last processed timestamp and processes all data.
+    """
     stats = {
     "timelinePath_read": 0,
     "timelinePath_skipped": 0,
@@ -165,9 +217,13 @@ def main(input_file, reprocess):
         print(f"❌ JSON parsing error: {e}")
         return
 
+    # List of extracted location records (to be inserted later)
+    # Each record contains datetime, lat/lon, and optionally accuracy, elevation, etc.
     records = []
     activity_ranges = []
 
+    # Step 1: Extract activity time ranges for later enrichment
+    # These are used to tag location points with inferred activity type
     for segment in data.get("semanticSegments", []):
         activity = segment.get("activity")
         if activity:
@@ -186,6 +242,7 @@ def main(input_file, reprocess):
                 activity_ranges.append(activity_record)
                 stats["activity_ranges_total"] += 1
 
+    # Step 2: Extract GPS points from timelinePath entries
     for segment in data.get("semanticSegments", []):
         for entry in segment.get("timelinePath", []):
             stats["timelinePath_read"] += 1
@@ -193,6 +250,8 @@ def main(input_file, reprocess):
             point = entry.get("point")
             lat, lon = extract_lat_lon(point)
             dt = datetime_from_iso(time)
+            # Skip invalid or outdated entries
+            # Append valid entries with lat/lon/timestamp
             if dt and lat is not None and lon is not None:
                 if not last_processed or dt >= last_processed:
                     stats["timelinePath_processed"] += 1
@@ -202,6 +261,7 @@ def main(input_file, reprocess):
             else:
                 stats["records_invalid_format"] += 1
 
+    # Step 3: Extract raw signal locations (usually from WiFi/GPS sources)
     for signal in data.get("rawSignals", []):
         if "position" in signal:
             stats["rawSignals_read"] += 1
@@ -209,6 +269,7 @@ def main(input_file, reprocess):
             time = position.get("timestamp")
             lat, lon = extract_lat_lon(position.get("LatLng", ""))
             dt = datetime_from_iso(time)
+            # Only process valid raw signal points with usable lat/lon and timestamp
             if dt and lat is not None and lon is not None:
                 if not last_processed or dt >= last_processed:
                     stats["rawSignals_processed"] += 1
@@ -223,6 +284,8 @@ def main(input_file, reprocess):
             else:
                 stats["records_invalid_format"] += 1
 
+    # Step 4: Extract place visit records with approximate start/end points
+    # Each visit produces 2 records (start and end)
     for segment in data.get("semanticSegments", []):
         visit = segment.get("visit")
         if visit:
@@ -252,11 +315,15 @@ def main(input_file, reprocess):
                 else:
                     stats["records_invalid_format"] += 1
 
+    # Step 5: Enrich records without activity_type using activity_ranges
+    # Match each point's timestamp to a known activity window if possible
     for rec in records:
         if rec.get("activity_type"):
             continue
         ts = rec["datetime"]
         matched = False
+        # Use the first matching activity range to annotate the point
+        # If no match is found, record this in stats
         for act in activity_ranges:
             if act["start_time"] <= ts <= act["end_time"]:
                 rec["activity_type"] = act["activity_type"]
@@ -267,6 +334,8 @@ def main(input_file, reprocess):
         if not matched:
             stats["records_not_enriched_due_to_no_match"] += 1
 
+    # Step 6: Insert final records into PostgreSQL
+    # Skip duplicates unless the new record has more complete metadata
     insert_records_into_postgres(records, stats)
     print("\n📊 Summary:")
     for k, v in stats.items():
