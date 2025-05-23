@@ -68,9 +68,6 @@ def update_last_processed_timestamp(ts):
         print(f"❌ Database connection failed while updating control: {e}")
 
 def insert_records_into_postgres(records):
-    if records:
-        latest = max(r["datetime"] for r in records)
-        update_last_processed_timestamp(latest)
     try:
         with psycopg2.connect(**DB_PARAMS) as conn:
             with conn.cursor() as cur:
@@ -111,11 +108,35 @@ def insert_records_into_postgres(records):
                         rec["longitude"], rec["latitude"]
                     ))
             conn.commit()
+            if records:
+                latest = max(r["datetime"] for r in records)
+                update_last_processed_timestamp(latest)
+                print(f"🕒 Last processed timestamp updated to: {latest.isoformat()}")
+
     except psycopg2.OperationalError as e:
         print(f"❌ Database connection failed: {e}")
 
 def main(input_file):
+    stats = {
+        "timelinePath_read": 0,
+        "timelinePath_skipped": 0,
+        "timelinePath_processed": 0,
+        "rawSignals_read": 0,
+        "rawSignals_skipped": 0,
+        "rawSignals_processed": 0,
+        "placeVisit_read": 0,
+        "placeVisit_skipped": 0,
+        "placeVisit_processed": 0,
+        "activity_ranges_total": 0,
+        "records_enriched": 0
+    }
+
     last_processed = get_last_processed_timestamp()
+    if last_processed:
+        print(f"▶️ Starting processing from {last_processed.isoformat()}")
+    else:
+        print("▶️ Starting full processing (no prior timestamp found)")
+
     try:
         with open(input_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -150,51 +171,67 @@ def main(input_file):
                 if confidence is not None:
                     activity_record["confidence"] = int(confidence * 100)
                 activity_ranges.append(activity_record)
+                stats["activity_ranges_total"] += 1
 
     for segment in data.get("semanticSegments", []):
         for entry in segment.get("timelinePath", []):
+            stats["timelinePath_read"] += 1
             time = entry.get("time")
             point = entry.get("point")
             lat, lon = extract_lat_lon(point)
             dt = datetime_from_iso(time)
-            if dt and lat is not None and lon is not None and (not last_processed or dt >= last_processed):
-                records.append({"datetime": dt, "latitude": lat, "longitude": lon})
+            if dt and lat is not None and lon is not None:
+                if not last_processed or dt >= last_processed:
+                    stats["timelinePath_processed"] += 1
+                    records.append({"datetime": dt, "latitude": lat, "longitude": lon})
+                else:
+                    stats["timelinePath_skipped"] += 1
 
     for signal in data.get("rawSignals", []):
         if "position" in signal:
+            stats["rawSignals_read"] += 1
             position = signal["position"]
             time = position.get("timestamp")
             lat, lon = extract_lat_lon(position.get("LatLng", ""))
             dt = datetime_from_iso(time)
-            if dt and lat is not None and lon is not None and (not last_processed or dt >= last_processed):
-                records.append({
-                    "datetime": dt,
-                    "latitude": lat,
-                    "longitude": lon,
-                    "accuracy": position.get("accuracyMeters"),
-                })
+            if dt and lat is not None and lon is not None:
+                if not last_processed or dt >= last_processed:
+                    stats["rawSignals_processed"] += 1
+                    records.append({
+                        "datetime": dt,
+                        "latitude": lat,
+                        "longitude": lon,
+                        "accuracy": position.get("accuracyMeters"),
+                    })
+                else:
+                    stats["rawSignals_skipped"] += 1
 
     for segment in data.get("semanticSegments", []):
         visit = segment.get("visit")
         if visit:
             for key in ("startTime", "endTime"):
+                stats["placeVisit_read"] += 1
                 time = segment.get(key)
                 location = visit.get("topCandidate", {}).get("placeLocation", {})
                 point = location.get("latLng")
                 lat, lon = extract_lat_lon(point)
                 dt = datetime_from_iso(time)
-                if dt and lat is not None and lon is not None and (not last_processed or dt >= last_processed):
-                    prob = visit.get("topCandidate", {}).get("probability")
-                    confidence = int(prob * 100) if prob is not None else None
-                    records.append({
-                        "datetime": dt,
-                        "latitude": lat,
-                        "longitude": lon,
-                        "accuracy": None,
-                        "elevation": None,
-                        "activity_type": "PLACE_VISIT",
-                        "confidence": confidence
-                    })
+                if dt and lat is not None and lon is not None:
+                    if not last_processed or dt >= last_processed:
+                        stats["placeVisit_processed"] += 1
+                        prob = visit.get("topCandidate", {}).get("probability")
+                        confidence = int(prob * 100) if prob is not None else None
+                        records.append({
+                            "datetime": dt,
+                            "latitude": lat,
+                            "longitude": lon,
+                            "accuracy": None,
+                            "elevation": None,
+                            "activity_type": "PLACE_VISIT",
+                            "confidence": confidence
+                        })
+                    else:
+                        stats["placeVisit_skipped"] += 1
 
     for rec in records:
         if rec.get("activity_type"):
@@ -204,9 +241,15 @@ def main(input_file):
             if act["start_time"] <= ts <= act["end_time"]:
                 rec["activity_type"] = act["activity_type"]
                 rec["confidence"] = act["confidence"]
+                stats["records_enriched"] += 1
                 break
 
     insert_records_into_postgres(records)
+    print("\n📊 Summary:")
+    for k, v in stats.items():
+        print(f"{k}: {v}")
+    print(f"Total records processed for DB insert: {len(records)}")
+    print("✅ Finished processing timeline data.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract and enrich Google Maps Timeline data.")
