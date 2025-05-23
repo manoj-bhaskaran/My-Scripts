@@ -180,10 +180,9 @@ def main(input_file, reprocess):
                 activity_record = {
                     "start_time": start_time,
                     "end_time": end_time,
-                    "activity_type": act_type
+                    "activity_type": act_type,
+                    "confidence": int(confidence * 100) if confidence is not None else None
                 }
-                if confidence is not None:
-                    activity_record["confidence"] = int(confidence * 100)
                 activity_ranges.append(activity_record)
                 stats["activity_ranges_total"] += 1
 
