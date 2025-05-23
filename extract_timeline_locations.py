@@ -38,7 +38,39 @@ def datetime_from_iso(ts):
     except (ValueError, TypeError):
         return None
 
+def get_last_processed_timestamp():
+    try:
+        with psycopg2.connect(**DB_PARAMS) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT last_processed_timestamp
+                    FROM timeline.control
+                    WHERE control_key = 'timeline_main'
+                """)
+                row = cur.fetchone()
+                return row[0] if row else None
+    except psycopg2.OperationalError as e:
+        print(f"❌ Database connection failed while reading control: {e}")
+        return None
+
+def update_last_processed_timestamp(ts):
+    try:
+        with psycopg2.connect(**DB_PARAMS) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO timeline.control (control_key, last_processed_timestamp)
+                    VALUES ('timeline_main', %s)
+                    ON CONFLICT (control_key)
+                    DO UPDATE SET last_processed_timestamp = EXCLUDED.last_processed_timestamp
+                """, (ts,))
+            conn.commit()
+    except psycopg2.OperationalError as e:
+        print(f"❌ Database connection failed while updating control: {e}")
+
 def insert_records_into_postgres(records):
+    if records:
+        latest = max(r["datetime"] for r in records)
+        update_last_processed_timestamp(latest)
     try:
         with psycopg2.connect(**DB_PARAMS) as conn:
             with conn.cursor() as cur:
@@ -83,6 +115,7 @@ def insert_records_into_postgres(records):
         print(f"❌ Database connection failed: {e}")
 
 def main(input_file):
+    last_processed = get_last_processed_timestamp()
     try:
         with open(input_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -122,7 +155,7 @@ def main(input_file):
             point = entry.get("point")
             lat, lon = extract_lat_lon(point)
             dt = datetime_from_iso(time)
-            if dt and lat is not None and lon is not None:
+            if dt and lat is not None and lon is not None and (not last_processed or dt >= last_processed):
                 records.append({"datetime": dt, "latitude": lat, "longitude": lon})
 
     for signal in data.get("rawSignals", []):
