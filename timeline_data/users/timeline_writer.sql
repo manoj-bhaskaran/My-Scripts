@@ -17,3 +17,4 @@ GRANT CONNECT ON DATABASE timeline_data TO timeline_writer;
 GRANT USAGE ON SCHEMA timeline TO timeline_writer;
 GRANT SELECT, INSERT, DELETE ON timeline.locations TO timeline_writer;
 GRANT SELECT, INSERT, UPDATE ON timeline.control to timeline_writer;
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE timeline.locations_location_id_seq TO timeline_writer;
