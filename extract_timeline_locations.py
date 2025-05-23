@@ -216,24 +216,26 @@ def fetch_records_missing_elevation(last_ts=None):
             cur.execute(query, params)
             return cur.fetchall()
 
-def update_elevations(records):
-    updated = 0
+def update_elevations(records, elevation_stats):
     latest_ts = None
     with psycopg2.connect(**DB_PARAMS) as conn:
         with conn.cursor() as cur:
             for location_id, ts, lat, lon in records:
+                elevation_stats["records_considered"] += 1
                 elevation = get_elevation(lat, lon)
-                if elevation is not None:
-                    cur.execute("""
-                        UPDATE timeline.locations
-                        SET elevation = %s
-                        WHERE location_id = %s
-                    """, (elevation, location_id))
-                    updated += 1
-                    if latest_ts is None or ts > latest_ts:
-                        latest_ts = ts
+                if elevation is None:
+                    elevation_stats["records_skipped_due_to_null_elevation"] += 1
+                    continue
+                cur.execute("""
+                    UPDATE timeline.locations
+                    SET elevation = %s
+                    WHERE location_id = %s
+                """, (elevation, location_id))
+                elevation_stats["records_updated"] += 1
+                if latest_ts is None or ts > latest_ts:
+                    latest_ts = ts
         conn.commit()
-    return updated, latest_ts
+    return latest_ts
 
 def main(input_file, reprocess):
     """
@@ -405,6 +407,12 @@ def main(input_file, reprocess):
     # Skip duplicates unless the new record has more complete metadata
     insert_records_into_postgres(records, stats)
 
+    elevation_stats = {
+        "records_considered": 0,
+        "records_skipped_due_to_null_elevation": 0,
+        "records_updated": 0
+    }
+
     if args.reprocess_elevation:
         last_ts = None
         print("🔁 Reprocessing all elevation records")
@@ -416,7 +424,7 @@ def main(input_file, reprocess):
             print("▶️ No previous elevation timestamp, processing all missing elevations")
 
     records = fetch_records_missing_elevation(last_ts)
-    updated_count, latest_ts = update_elevations(records)
+    updated_count, latest_ts = update_elevations(records, elevation_stats)
 
     print(f"✅ Elevation updated for {updated_count} records.")
 
@@ -428,6 +436,10 @@ def main(input_file, reprocess):
     for k, v in stats.items():
         print(f"{k}: {v}")
     print(f"Total records processed for DB insert: {len(records)}")
+
+    print("\n📊 Elevation Processing Summary:")
+    for k, v in elevation_stats.items():
+        print(f"{k}: {v}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract and enrich Google Maps Timeline data.")
