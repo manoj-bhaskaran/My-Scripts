@@ -274,7 +274,7 @@ def update_elevations(records, elevation_stats):
         conn.commit()
     return latest_ts
 
-def main(input_file, reprocess):
+def main(input_file, reprocess, reprocess_elevation):
     """
         Main logic to process Google Maps timeline data and update elevation in the database.
 
@@ -460,7 +460,7 @@ def main(input_file, reprocess):
 
     # Step 7: Elevation enrichment phase
     # Fetch records with missing elevation, optionally skipping previously processed ones
-    if args.reprocess_elevation:
+    if reprocess_elevation:
         last_ts = None
         print("🔁 Reprocessing all elevation records")
     else:
@@ -471,9 +471,7 @@ def main(input_file, reprocess):
             print("▶️ No previous elevation timestamp, processing all missing elevations")
 
     records = fetch_records_missing_elevation(last_ts)
-    latest_ts = update_elevations(elevation_records, elevation_stats)
-
-    print(f"✅ Elevation updated for {updated_count} records.")
+    latest_ts = update_elevations(records, elevation_stats)
 
     if latest_ts:
         update_last_elevation_timestamp(latest_ts)
@@ -488,7 +486,6 @@ def main(input_file, reprocess):
     print("\n📊 Elevation Processing Summary:")
     for k, v in elevation_stats.items():
         print(f"{k}: {v}")
-    print(f"✅ Elevation updated for {elevation_stats['records_updated']} records.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract and enrich Google Maps Timeline data.")
@@ -508,4 +505,4 @@ if __name__ == "__main__":
         help="Force reprocessing of all elevation values regardless of control timestamp"
     )
     args = parser.parse_args()
-    main(args.input_file, args.reprocess)
+    main(args.input_file, args.reprocess, args.reprocess_elevation)
