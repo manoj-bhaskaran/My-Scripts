@@ -124,7 +124,7 @@ def insert_records_into_postgres(records, stats):
     except psycopg2.OperationalError as e:
         print(f"❌ Database connection failed: {e}")
 
-def main(input_file):
+def main(input_file, reprocess):
     stats = {
     "timelinePath_read": 0,
     "timelinePath_skipped": 0,
@@ -142,7 +142,11 @@ def main(input_file):
 }
 
     last_processed = get_last_processed_timestamp()
-    if last_processed:
+    if reprocess:
+        last_processed = None
+    if reprocess:
+        print("🔁 Reprocessing all records (ignoring last processed timestamp)")
+    elif last_processed:
         print(f"▶️ Starting processing from {last_processed.isoformat()}")
     else:
         print("▶️ Starting full processing (no prior timestamp found)")
@@ -273,5 +277,10 @@ def main(input_file):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract and enrich Google Maps Timeline data.")
     parser.add_argument("--input_file", required=True, help="Path to the JSON timeline file")
+    parser.add_argument(
+        "--reprocess", 
+        action="store_true", 
+        help="Reprocess all records regardless of last processed timestamp"
+    )
     args = parser.parse_args()
-    main(args.input_file)
+    main(args.input_file, args.reprocess)
