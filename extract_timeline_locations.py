@@ -141,13 +141,15 @@ def main(input_file):
             top = activity.get("topCandidate", {})
             act_type = top.get("type")
             confidence = top.get("probability")
-            if start_time and end_time and act_type and confidence is not None:
-                activity_ranges.append({
+            if start_time and end_time and act_type and (not last_processed or end_time >= last_processed):
+                activity_record = {
                     "start_time": start_time,
                     "end_time": end_time,
-                    "activity_type": act_type,
-                    "confidence": int(confidence * 100)
-                })
+                    "activity_type": act_type
+                }
+                if confidence is not None:
+                    activity_record["confidence"] = int(confidence * 100)
+                activity_ranges.append(activity_record)
 
     for segment in data.get("semanticSegments", []):
         for entry in segment.get("timelinePath", []):
@@ -164,13 +166,12 @@ def main(input_file):
             time = position.get("timestamp")
             lat, lon = extract_lat_lon(position.get("LatLng", ""))
             dt = datetime_from_iso(time)
-            if dt and lat is not None and lon is not None:
+            if dt and lat is not None and lon is not None and (not last_processed or dt >= last_processed):
                 records.append({
                     "datetime": dt,
                     "latitude": lat,
                     "longitude": lon,
                     "accuracy": position.get("accuracyMeters"),
-                    "elevation": position.get("altitudeMeters")
                 })
 
     for segment in data.get("semanticSegments", []):
@@ -182,8 +183,9 @@ def main(input_file):
                 point = location.get("latLng")
                 lat, lon = extract_lat_lon(point)
                 dt = datetime_from_iso(time)
-                if dt and lat is not None and lon is not None:
-                    confidence = int(visit.get("topCandidate", {}).get("probability", 0.0) * 100)
+                if dt and lat is not None and lon is not None and (not last_processed or dt >= last_processed):
+                    prob = visit.get("topCandidate", {}).get("probability")
+                    confidence = int(prob * 100) if prob is not None else None
                     records.append({
                         "datetime": dt,
                         "latitude": lat,
