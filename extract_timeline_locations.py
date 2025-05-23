@@ -471,7 +471,7 @@ def main(input_file, reprocess):
             print("▶️ No previous elevation timestamp, processing all missing elevations")
 
     records = fetch_records_missing_elevation(last_ts)
-    updated_count, latest_ts = update_elevations(records, elevation_stats)
+    latest_ts = update_elevations(elevation_records, elevation_stats)
 
     print(f"✅ Elevation updated for {updated_count} records.")
 
@@ -488,6 +488,7 @@ def main(input_file, reprocess):
     print("\n📊 Elevation Processing Summary:")
     for k, v in elevation_stats.items():
         print(f"{k}: {v}")
+    print(f"✅ Elevation updated for {elevation_stats['records_updated']} records.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract and enrich Google Maps Timeline data.")
