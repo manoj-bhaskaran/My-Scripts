@@ -170,6 +170,12 @@ def insert_records_into_postgres(records, stats):
         print(f"❌ Database connection failed: {e}")
 
 def get_last_elevation_timestamp():
+    """
+        Fetches the last processed timestamp for elevation updates from the control table.
+
+        Returns:
+            datetime or None: The most recent timestamp recorded for elevation, or None if not set.
+    """
     try:
         with psycopg2.connect(**DB_PARAMS) as conn:
             with conn.cursor() as cur:
@@ -185,6 +191,12 @@ def get_last_elevation_timestamp():
         return None
 
 def update_last_elevation_timestamp(ts):
+    """
+        Updates the control table with the latest timestamp processed for elevation data.
+
+        Args:
+            ts (datetime): The timestamp to store as last processed for elevation.
+    """
     try:
         with psycopg2.connect(**DB_PARAMS) as conn:
             with conn.cursor() as cur:
@@ -199,11 +211,22 @@ def update_last_elevation_timestamp(ts):
         print(f"❌ Failed to update elevation control timestamp: {e}")
 
 def fetch_records_missing_elevation(last_ts=None):
+    """
+        Fetches timeline records that have no elevation data.
+        If a last processed timestamp is provided, only records after that timestamp are returned.
+
+        Args:
+            last_ts (datetime or None): Lower bound timestamp filter. If None, all missing elevation records are returned.
+
+        Returns:
+            list of tuples: Each tuple contains (location_id, timestamp, latitude, longitude).
+    """
     query = """
         SELECT location_id, timestamp, latitude, longitude
         FROM timeline.locations
         WHERE elevation IS NULL
     """
+    # Build query to fetch records missing elevation (optionally filter by timestamp)
     params = []
     if last_ts:
         query += " AND timestamp >= %s"
@@ -217,20 +240,34 @@ def fetch_records_missing_elevation(last_ts=None):
             return cur.fetchall()
 
 def update_elevations(records, elevation_stats):
+    """
+        Updates elevation values in the database for the given timeline records using SRTM elevation data.
+
+        Args:
+            records (list of tuples): Timeline records missing elevation (location_id, timestamp, latitude, longitude).
+            elevation_stats (dict): Dictionary to accumulate statistics about the elevation update process.
+
+        Returns:
+            datetime or None: The latest timestamp successfully updated, or None if no updates were made.
+    """
+    # Track the latest timestamp seen for updating the control table
     latest_ts = None
     with psycopg2.connect(**DB_PARAMS) as conn:
         with conn.cursor() as cur:
             for location_id, ts, lat, lon in records:
                 elevation_stats["records_considered"] += 1
                 elevation = get_elevation(lat, lon)
+                # Skip record if elevation could not be retrieved
                 if elevation is None:
                     elevation_stats["records_skipped_due_to_null_elevation"] += 1
                     continue
+                # Perform the elevation update in the database
                 cur.execute("""
                     UPDATE timeline.locations
                     SET elevation = %s
                     WHERE location_id = %s
                 """, (elevation, location_id))
+                # Update stats and track the most recent timestamp
                 elevation_stats["records_updated"] += 1
                 if latest_ts is None or ts > latest_ts:
                     latest_ts = ts
@@ -239,12 +276,20 @@ def update_elevations(records, elevation_stats):
 
 def main(input_file, reprocess):
     """
-    Main logic to load Google Maps timeline data, filter based on last processed timestamp (unless --reprocess is used),
-    parse all known record types, enrich with activity data, and insert into the database.
+        Main logic to process Google Maps timeline data and update elevation in the database.
 
-    Args:
-        input_file (str): Path to the JSON file.
-        reprocess (bool): If True, ignores last processed timestamp and processes all data.
+        This includes:
+        - Reading and parsing the input JSON file.
+        - Filtering records based on last processed timestamp (unless --reprocess is used).
+        - Extracting timelinePath, rawSignals, and placeVisit entries.
+        - Enriching location records with activity type based on activity segments.
+        - Inserting new or improved location records into the timeline.locations table.
+        - Optionally updating elevation for records missing elevation (based on --reprocess-elevation flag and control timestamp).
+
+        Args:
+            input_file (str): Path to the JSON timeline export file.
+            reprocess (bool): If True, processes all timeline data regardless of control timestamp.
+            reprocess_elevation (bool): If True, processes all missing elevation data regardless of elevation control timestamp.
     """
     stats = {
     "timelinePath_read": 0,
@@ -413,6 +458,8 @@ def main(input_file, reprocess):
         "records_updated": 0
     }
 
+    # Step 7: Elevation enrichment phase
+    # Fetch records with missing elevation, optionally skipping previously processed ones
     if args.reprocess_elevation:
         last_ts = None
         print("🔁 Reprocessing all elevation records")
@@ -437,6 +484,7 @@ def main(input_file, reprocess):
         print(f"{k}: {v}")
     print(f"Total records processed for DB insert: {len(records)}")
 
+    # Print elevation update statistics
     print("\n📊 Elevation Processing Summary:")
     for k, v in elevation_stats.items():
         print(f"{k}: {v}")
