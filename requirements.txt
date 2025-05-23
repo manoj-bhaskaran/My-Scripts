@@ -12,3 +12,4 @@ tqdm
 srtm; python_version < "3.11"
 networkx
 openpyxl
+import psycopg2

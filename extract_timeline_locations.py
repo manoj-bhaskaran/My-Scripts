@@ -1,175 +1,180 @@
 import json
 import re
 import argparse
+import psycopg2
 from datetime import datetime
+from psycopg2.extras import execute_values
 
-# Constants
-DEFAULT_INPUT_FILE = r"G:\My Drive\Google Maps Timeline\timeline.json"
-LIMIT_OUTPUT = True
-MAX_OUTPUT_RECORDS = 200
+# Database connection configuration
+DB_PARAMS = {
+    'host': 'localhost',
+    'port': 5432,
+    'dbname': 'timeline_data',
+    'user': 'timeline_writer',
+    # Password is read from .pgpass; do not include it here
+}
 
-# --- Helper functions ---
-def datetime_from_iso(ts):
-    """Convert ISO timestamp to datetime object."""
-    try:
-        return datetime.fromisoformat(ts)
-    except Exception:
-        return None
+def count_optional_fields(rec):
+    return sum(
+        rec.get(field) is not None
+        for field in ["accuracy", "elevation", "activity_type", "confidence"]
+    )
 
 def extract_lat_lon(point_str):
-    """Extract (lat, lon) from strings like '12.9041°, 77.6034°'."""
     if not isinstance(point_str, str):
         return None, None
     point_str = point_str.replace("\u00b0", "°").strip()
     match = re.match(r"(-?\d+(?:\.\d+)?)°,\s*(-?\d+(?:\.\d+)?)°", point_str)
-    if match:
-        try:
-            return float(match.group(1)), float(match.group(2))
-        except ValueError:
-            return None, None
-    return None, None
+    if not match:
+        return None, None
+    try:
+        return float(match.group(1)), float(match.group(2))
+    except ValueError:
+        return None, None
 
-# --- Argument parsing ---
-parser = argparse.ArgumentParser(description="Extract and enrich Google Maps Timeline data.")
-parser.add_argument("--input_file", default=DEFAULT_INPUT_FILE, help="Path to the JSON timeline file")
-args = parser.parse_args()
+def datetime_from_iso(ts):
+    try:
+        return datetime.fromisoformat(ts)
+    except (ValueError, TypeError):
+        return None
 
-# --- Load and validate input JSON ---
-try:
-    with open(args.input_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-except FileNotFoundError:
-    print(f"❌ File not found: {args.input_file}")
-    exit(1)
-except json.JSONDecodeError as e:
-    print(f"❌ JSON parsing error: {e}")
-    exit(1)
+def insert_records_into_postgres(records):
+    try:
+        with psycopg2.connect(**DB_PARAMS) as conn:
+            with conn.cursor() as cur:
+                for rec in records:
+                    if not rec.get("datetime") or rec.get("latitude") is None or rec.get("longitude") is None:
+                        continue
+                    cur.execute("""
+                        SELECT accuracy, elevation, activity_type, confidence
+                        FROM timeline.locations
+                        WHERE timestamp = %s
+                    """, (rec["datetime"],))
+                    existing = cur.fetchone()
+                    if existing:
+                        existing_dict = {
+                            "accuracy": existing[0],
+                            "elevation": existing[1],
+                            "activity_type": existing[2],
+                            "confidence": existing[3]
+                        }
+                        if count_optional_fields(rec) <= count_optional_fields(existing_dict):
+                            continue
+                        else:
+                            cur.execute("DELETE FROM timeline.locations WHERE timestamp = %s", (rec["datetime"],))
+                    cur.execute("""
+                        INSERT INTO timeline.locations (
+                            timestamp, latitude, longitude,
+                            elevation, accuracy, activity_type, confidence,
+                            location
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s,
+                            ST_SetSRID(ST_MakePoint(%s, %s), 4326)
+                        )
+                    """, (
+                        rec["datetime"], rec["latitude"], rec["longitude"],
+                        rec.get("elevation"),
+                        rec.get("accuracy"),
+                        rec.get("activity_type"),
+                        rec.get("confidence"),
+                        rec["longitude"], rec["latitude"]
+                    ))
+            conn.commit()
+    except psycopg2.OperationalError as e:
+        print(f"❌ Database connection failed: {e}")
 
-if "semanticSegments" not in data:
-    print("⚠️ Warning: 'semanticSegments' key missing.")
-if "rawSignals" not in data:
-    print("⚠️ Warning: 'rawSignals' key missing.")
+def main(input_file):
+    try:
+        with open(input_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if "semanticSegments" not in data:
+            print("⚠️ Warning: 'semanticSegments' key missing.")
+        if "rawSignals" not in data:
+            print("⚠️ Warning: 'rawSignals' key missing.")
+    except FileNotFoundError:
+        print(f"❌ File not found: {input_file}")
+        return
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON parsing error: {e}")
+        return
 
-records = []
-activity_ranges = []
+    records = []
+    activity_ranges = []
 
-# --- Step 1: Extract time-based activity segments ---
-for segment in data.get("semanticSegments", []):
-    activity = segment.get("activity")
-    if activity:
-        start_time = datetime_from_iso(segment.get("startTime"))
-        end_time = datetime_from_iso(segment.get("endTime"))
-        top = activity.get("topCandidate", {})
-        act_type = top.get("type")
-        confidence = top.get("probability")
-        if start_time and end_time and act_type and confidence is not None:
-            activity_ranges.append({
-                "start_time": start_time,
-                "end_time": end_time,
-                "activity_type": act_type,
-                "confidence": int(confidence * 100)
-            })
+    for segment in data.get("semanticSegments", []):
+        activity = segment.get("activity")
+        if activity:
+            start_time = datetime_from_iso(segment.get("startTime"))
+            end_time = datetime_from_iso(segment.get("endTime"))
+            top = activity.get("topCandidate", {})
+            act_type = top.get("type")
+            confidence = top.get("probability")
+            if start_time and end_time and act_type and confidence is not None:
+                activity_ranges.append({
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "activity_type": act_type,
+                    "confidence": int(confidence * 100)
+                })
 
-# --- Step 2: Extract timelinePath points ---
-for segment in data.get("semanticSegments", []):
-    for entry in segment.get("timelinePath", []):
-        time_str = entry.get("time")
-        dt = datetime_from_iso(time_str)
-        lat, lon = extract_lat_lon(entry.get("point", ""))
-        if dt and lat is not None and lon is not None:
-            records.append({
-                "datetime": dt,
-                "latitude": lat,
-                "longitude": lon,
-                "elevation": None,
-                "accuracy": None,
-                "activity_type": None,
-                "confidence": None,
-                "source": "timelinePath"
-            })
+    for segment in data.get("semanticSegments", []):
+        for entry in segment.get("timelinePath", []):
+            time = entry.get("time")
+            point = entry.get("point")
+            lat, lon = extract_lat_lon(point)
+            dt = datetime_from_iso(time)
+            if dt and lat is not None and lon is not None:
+                records.append({"datetime": dt, "latitude": lat, "longitude": lon})
 
-# --- Step 3: Extract rawSignals > position points ---
-for signal in data.get("rawSignals", []):
-    pos = signal.get("position")
-    if pos:
-        time_str = pos.get("timestamp")
-        dt = datetime_from_iso(time_str)
-        lat, lon = extract_lat_lon(pos.get("LatLng", ""))
-        if dt and lat is not None and lon is not None:
-            records.append({
-                "datetime": dt,
-                "latitude": lat,
-                "longitude": lon,
-                "elevation": pos.get("altitudeMeters"),
-                "accuracy": pos.get("accuracyMeters"),
-                "activity_type": None,
-                "confidence": None,
-                "source": "rawSignals"
-            })
-
-# --- Step 4: Extract place visit segments ---
-for segment in data.get("semanticSegments", []):
-    visit = segment.get("visit")
-    if visit:
-        top = visit.get("topCandidate", {})
-        loc_str = top.get("placeLocation", {}).get("latLng")
-        lat, lon = extract_lat_lon(loc_str)
-        confidence = top.get("probability")
-        conf_pct = int(confidence * 100) if confidence is not None else None
-
-        for time_key in ["startTime", "endTime"]:
-            time_str = segment.get(time_key)
-            dt = datetime_from_iso(time_str)
-            if time_str and dt and lat is not None and lon is not None:
+    for signal in data.get("rawSignals", []):
+        if "position" in signal:
+            position = signal["position"]
+            time = position.get("timestamp")
+            lat, lon = extract_lat_lon(position.get("LatLng", ""))
+            dt = datetime_from_iso(time)
+            if dt and lat is not None and lon is not None:
                 records.append({
                     "datetime": dt,
                     "latitude": lat,
                     "longitude": lon,
-                    "elevation": None,
-                    "accuracy": None,
-                    "activity_type": "PLACE_VISIT",
-                    "confidence": conf_pct,
-                    "source": "placeVisit"
+                    "accuracy": position.get("accuracyMeters"),
+                    "elevation": position.get("altitudeMeters")
                 })
 
-# --- Step 5: Enrich records with activity type based on timestamp ---
-for rec in records:
-    if rec["activity_type"] is not None:
-        continue
-    ts = rec["datetime"]
-    for act in activity_ranges:
-        if act["start_time"] <= ts <= act["end_time"]:
-            rec["activity_type"] = act["activity_type"]
-            rec["confidence"] = act["confidence"]
-            break
+    for segment in data.get("semanticSegments", []):
+        visit = segment.get("visit")
+        if visit:
+            for key in ("startTime", "endTime"):
+                time = segment.get(key)
+                location = visit.get("topCandidate", {}).get("placeLocation", {})
+                point = location.get("latLng")
+                lat, lon = extract_lat_lon(point)
+                dt = datetime_from_iso(time)
+                if dt and lat is not None and lon is not None:
+                    confidence = int(visit.get("topCandidate", {}).get("probability", 0.0) * 100)
+                    records.append({
+                        "datetime": dt,
+                        "latitude": lat,
+                        "longitude": lon,
+                        "accuracy": None,
+                        "elevation": None,
+                        "activity_type": "PLACE_VISIT",
+                        "confidence": confidence
+                    })
 
-# --- Step 6: Print output, ensuring minimum counts for some sources ---
-count = 0
-raw_signals_printed = 0
-place_visits_printed = 0
+    for rec in records:
+        if rec.get("activity_type"):
+            continue
+        ts = rec["datetime"]
+        for act in activity_ranges:
+            if act["start_time"] <= ts <= act["end_time"]:
+                rec["activity_type"] = act["activity_type"]
+                rec["confidence"] = act["confidence"]
+                break
 
-for rec in records:
-    source = rec.get("source", "unknown")
+    insert_records_into_postgres(records)
 
-    if LIMIT_OUTPUT:
-        if count >= MAX_OUTPUT_RECORDS and raw_signals_printed >= 10 and place_visits_printed >= 5:
-            break
-
-    if source == "rawSignals":
-        raw_signals_printed += 1
-    elif source == "placeVisit":
-        place_visits_printed += 1
-
-    prefix = f"[{source}]"
-    ts = rec["datetime"].isoformat()
-    print(f"{prefix} time: {ts}, lat: {rec['latitude']}, lon: {rec['longitude']}", end="")
-
-    if rec["accuracy"] is not None:
-        print(f", accuracy: {rec['accuracy']}m", end="")
-    if rec["elevation"] is not None:
-        print(f", elevation: {rec['elevation']}m", end="")
-    if rec["activity_type"]:
-        print(f", activity: {rec['activity_type']} ({rec['confidence']}%)", end="")
-    print()
-
-    count += 1
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Extract and enrich Google Maps Timeline data.")
+    parser.add_argument("--input_file", required=True, help="Path to the JSON timeline file")
+    args = parser.parse_args()
+    main(args.input_file)
