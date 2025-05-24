@@ -672,6 +672,7 @@ def main(input_file, reprocess, reprocess_elevation):
     enrich_with_activities(records, activity_ranges, stats)
     insert_records_into_postgres(records, stats)
     handle_elevation_enrichment(reprocess_elevation)
+    run_vacuum_analyze_if_supported()
     print_summary(stats)
 
 if __name__ == "__main__":
