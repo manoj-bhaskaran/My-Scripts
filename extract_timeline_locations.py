@@ -15,6 +15,10 @@ DB_PARAMS = {
     # Password is read from .pgpass; do not include it here
 }
 
+# Time window for near-duplicate records
+# This is used to filter out records that are too close in time
+NEAR_DUPLICATE_WINDOW_SECONDS = 30
+
 def count_optional_fields(rec):
     """
     Counts the number of non-null optional fields (accuracy, elevation, activity_type, confidence) in a record.
@@ -116,6 +120,8 @@ def insert_records_into_postgres(records, stats):
     stats["records_inserted"] = 0
     stats["records_replaced"] = 0
     stats["records_skipped_due_to_existing_richer"] = 0
+    stats["records_skipped_near_duplicate"] = 0
+    stats["records_replaced_near_duplicate"] = 0
 
     try:
         with psycopg2.connect(**DB_PARAMS) as conn:
@@ -123,6 +129,33 @@ def insert_records_into_postgres(records, stats):
                 for rec in records:
                     if not rec.get("datetime") or rec.get("latitude") is None or rec.get("longitude") is None:
                         continue
+                    # Check for near-duplicate (same lat/lon within configured time window)
+                    cur.execute(f"""
+                        SELECT location_id, accuracy, elevation, activity_type, confidence
+                        FROM timeline.locations
+                        WHERE latitude = %s AND longitude = %s
+                        AND timestamp BETWEEN %s - INTERVAL '{NEAR_DUPLICATE_WINDOW_SECONDS}'
+                                        AND %s + INTERVAL '{NEAR_DUPLICATE_WINDOW_SECONDS}'
+                        LIMIT 1;
+                    """, (rec["latitude"], rec["longitude"], rec["datetime"], rec["datetime"]))
+
+                    near_dup = cur.fetchone()
+                    if near_dup:
+                        existing_dict = {
+                            "accuracy": near_dup[1],
+                            "elevation": near_dup[2],
+                            "activity_type": near_dup[3],
+                            "confidence": near_dup[4]
+                        }
+                        if count_optional_fields(rec) > count_optional_fields(existing_dict):
+                            # Replace near-duplicate with richer record
+                            cur.execute("DELETE FROM timeline.locations WHERE location_id = %s", (near_dup[0],))
+                            stats["records_replaced_near_duplicate"] += 1
+                            # fall through to insert below
+                        else:
+                            stats["records_skipped_near_duplicate"] += 1
+                            continue
+
                     cur.execute("""
                         SELECT accuracy, elevation, activity_type, confidence
                         FROM timeline.locations
