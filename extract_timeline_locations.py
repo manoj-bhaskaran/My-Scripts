@@ -611,12 +611,11 @@ def print_summary(stats):
     for k, v in stats.items():
         print(f"{k}: {v}")
 
-def run_vacuum_analyze_if_supported(conn, cur):
+def run_vacuum_analyze_if_supported(cur):
     """
     Executes VACUUM ANALYZE on the timeline.locations table if the PostgreSQL version supports the MAINTAIN privilege.
 
     Args:
-        conn (psycopg2.connection): Active PostgreSQL database connection.
         cur (psycopg2.cursor): Cursor object for executing SQL commands.
 
     Returns:
@@ -675,7 +674,8 @@ def main(input_file, reprocess, reprocess_elevation):
     handle_elevation_enrichment(reprocess_elevation)
     try:
         with psycopg2.connect(**DB_PARAMS) as conn:
-            run_vacuum_analyze_if_supported(conn, "timeline.locations")
+            with conn.cursor() as cur:
+                run_vacuum_analyze_if_supported(cur)
     except psycopg2.OperationalError as e:
         print(f"⚠️ Skipping VACUUM ANALYZE due to DB connection issue: {e}")
     print_summary(stats)
