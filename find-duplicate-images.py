@@ -580,7 +580,7 @@ def handle_restart(args):
     args.temp = checkpoint.get("temp", args.temp)
     args.sorted = checkpoint.get("sorted", args.sorted)
 
-    print(f"➡️  Restarting with files:")
+    print("➡️ Restarting with files:")
     print(f"    📄 Temp file   : {args.temp}")
     print(f"    📄 Sorted file : {args.sorted}")
     print(f"    📄 Output file : {args.output}")
