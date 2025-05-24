@@ -483,7 +483,6 @@ def main(input_file, reprocess, reprocess_elevation):
 
     records = fetch_records_missing_elevation(last_ts)
     elevation_records_to_process = fetch_records_missing_elevation(last_ts) # Renamed variable for clarity
-    print(f"DEBUG: {len(elevation_records_to_process)} records found missing elevation.")
     latest_ts = update_elevations(elevation_records_to_process, elevation_stats)
 
     if latest_ts:
