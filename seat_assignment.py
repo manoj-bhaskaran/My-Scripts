@@ -2,135 +2,212 @@ import pandas as pd
 import networkx as nx
 import sys
 import os
+from collections import namedtuple
+
+ADJACENCY_SHEET = 'Adjacency'
+TEAMS_SHEET = 'Teams'
+FIXED_SHEET = 'Fixed'
+AssignedDetails = namedtuple('AssignedDetails', ['subteam', 'technology'])
 
 def allocate_seats(excel_path):
-    from openpyxl.utils.exceptions import InvalidFileException
-
+    """
+    Main function to allocate seats based on adjacency, team requirements, and fixed assignments.
+    Generates a new Excel file with the final allocation.
+    
+    Args:
+        excel_path (str): Path to the input Excel file containing the required sheets.
+    """
     if not os.path.exists(excel_path):
         print(f"❌ File not found: {excel_path}")
         return
 
-    # Load input sheets
-    adj_df = pd.read_excel(excel_path, sheet_name='Adjacency')
-    teams_df = pd.read_excel(excel_path, sheet_name='Teams')
-    try:
-        fixed_df = pd.read_excel(excel_path, sheet_name='Fixed', dtype=str)
-    except Exception:
-        fixed_df = pd.DataFrame(columns=['Seat No', 'Subteam', 'Technology'])
+    adj_df, teams_df, fixed_df = load_input_data(excel_path)
+    G = build_seat_graph(adj_df)
+    assigned, used_seats = assign_fixed_seats(G, fixed_df)
+    clusters = get_seat_clusters(G)
+    assign_teams_to_clusters(G, teams_df, assigned, used_seats, clusters)
+    export_seat_allocation(excel_path, G, assigned)
 
-    # Step 1: Build bidirectional seat adjacency graph
+def load_input_data(excel_path):
+    """
+    Loads the input sheets from the Excel file.
+
+    Returns:
+        tuple: DataFrames for adjacency, teams, and fixed seat assignments.
+    """
+    required_columns = {
+        'Adjacency': ['Seat No'],
+        'Teams': ['Subteam', 'Technology', 'Count'],
+        'Fixed': ['Seat No', 'Subteam', 'Technology']
+    }
+    adj_df = pd.read_excel(excel_path, sheet_name=ADJACENCY_SHEET)
+    teams_df = pd.read_excel(excel_path, sheet_name=TEAMS_SHEET)
+    fixed_df = pd.read_excel(excel_path, sheet_name=FIXED_SHEET, dtype=str)
+    for name, df in zip(['Adjacency', 'Teams', 'Fixed'], [adj_df, teams_df, fixed_df]):
+        missing = [col for col in required_columns[name] if col not in df.columns]
+        if missing:
+            raise ValueError(f"❌ Missing required columns in {name} sheet: {', '.join(missing)}")
+    return adj_df, teams_df, fixed_df
+
+def build_seat_graph(adj_df):
+    """
+    Constructs a bidirectional graph of seat adjacencies.
+
+    Args:
+        adj_df (DataFrame): Adjacency data.
+
+    Returns:
+        networkx.Graph: Graph of seat connections.
+    """
     G = nx.Graph()
     for _, row in adj_df.iterrows():
-        try:
-            seat = str(int(float(row['Seat No']))).strip()
-        except:
-            continue
-        for adj in row[1:]:
-            if pd.notna(adj):
-                try:
-                    adj_seat = str(int(float(adj))).strip()
+        seat = parse_seat(row['Seat No'])
+        if seat:
+            for adj in row[1:]:
+                adj_seat = parse_seat(adj)
+                if adj_seat:
                     G.add_edge(seat, adj_seat)
-                    G.add_edge(adj_seat, seat)
-                except:
-                    continue
+    return G
 
-    # Step 2: Find connected seat clusters
-    clusters = sorted(list(nx.connected_components(G)), key=len, reverse=True)
+def parse_seat(value):
+    """
+    Safely parses a seat number to a string, ensuring it's a valid integer representation.
+    
+    Args:
+        value: Input seat value.
 
-    # Step 3: Assign fixed seats
+    Returns:
+        str or None: Parsed seat number or None if invalid.
+    """
+    if pd.isna(value) or not str(value).strip():
+        return None
+    try:
+        return str(int(value)).strip()
+    except (ValueError, TypeError):
+        print(f"⚠️ Warning: Could not parse seat value '{value}'. Skipping.")
+        return None
+
+def assign_fixed_seats(G, fixed_df):
+    """
+    Assigns fixed seats and ensures they are included in the graph.
+
+    Args:
+        G (Graph): Seat graph.
+        fixed_df (DataFrame): Fixed seat assignments.
+
+    Returns:
+        tuple: Assigned dict and set of used seats.
+    """
     assigned = {}
     used_seats = set()
     for _, row in fixed_df.iterrows():
-        seat = str(int(float(row['Seat No']))).strip()
+        seat = parse_seat(row['Seat No'])
         subteam = row['Subteam']
         tech = row['Technology']
-        assigned[seat] = (subteam, tech)
-        used_seats.add(seat)
+        if seat:
+            assigned[seat] = AssignedDetails(subteam, tech)
+            used_seats.add(seat)
+            if seat not in G:
+                G.add_node(seat)
+    return assigned, used_seats
 
-    # Ensure fixed seats exist in graph
-    for seat in assigned:
-        if seat not in G:
-            G.add_node(seat)
+def get_seat_clusters(G):
+    """
+    Finds clusters of connected seats in the graph.
 
-    # Step 4: Assign teams to clusters (largest teams first), with weighted scoring and tie-breaking
+    Args:
+        G (Graph): Seat graph.
+
+    Returns:
+        list: Sorted list of connected components.
+    """
+    return sorted(nx.connected_components(G), key=len, reverse=True)
+
+def assign_teams_to_clusters(G, teams_df, assigned, used_seats, clusters):
+    """
+    Assigns teams to clusters, trying to maximize adjacency and group integrity.
+
+    Args:
+        G (Graph): Seat graph.
+        teams_df (DataFrame): Team count and metadata.
+        assigned (dict): Current seat assignments.
+        used_seats (set): Used seat IDs.
+        clusters (list): List of seat clusters.
+    """
     teams_sorted = teams_df.sort_values(by="Count", ascending=False)
     for _, row in teams_sorted.iterrows():
-        subteam = row['Subteam']
-        tech = row['Technology']
-        count = int(row['Count'])
-        placed = False
+        subteam, tech, count = row['Subteam'], row['Technology'], int(row['Count'])
+        if not try_assign_to_best_cluster(clusters, assigned, subteam, tech, count):
+            assign_disjointed(G, assigned, subteam, tech, count)
 
-        best_cluster = None
-        best_score = -1
-        best_min_seat = float('inf')
+def try_assign_to_best_cluster(clusters, assigned, subteam, tech, count):
+    """
+    Attempts to place a team into the best-fit cluster based on score.
 
-        for cluster in clusters:
-            free = [s for s in cluster if s not in assigned]
-            if len(free) < count:
-                continue
+    Returns:
+        bool: True if assignment successful, else False.
+    """
+    best_cluster, best_score, best_min_seat = None, -1, float('inf')
+    for cluster in clusters:
+        free = [s for s in cluster if s not in assigned]
+        if len(free) < count:
+            continue
+        score = compute_score(cluster, assigned, subteam, tech)
+        # Tie-breaker: prefer the cluster with the lowest seat number for deterministic output
+        min_seat = min(map(int, free)) if free else float('inf')
+        if score > best_score or (score == best_score and min_seat < best_min_seat):
+            best_score, best_min_seat, best_cluster = score, min_seat, cluster
+    if best_cluster:
+        assign_seats(sorted((s for s in best_cluster if s not in assigned), key=int), assigned, subteam, tech, count)
+        return True
+    return False
 
-            subteam_matches = sum(1 for s in cluster if s in assigned and assigned[s][0] == subteam)
-            tech_matches = sum(1 for s in cluster if s in assigned and assigned[s][1] == tech)
-            score = (subteam_matches * 10) + tech_matches
-            min_free_seat = min([int(s) for s in free]) if free else float('inf')
+def compute_score(cluster, assigned, subteam, tech):
+    """
+    Computes weighted score based on matching subteams and technology.
 
-            if score > best_score or (score == best_score and min_free_seat < best_min_seat):
-                best_score = score
-                best_min_seat = min_free_seat
-                best_cluster = cluster
+    Returns:
+        int: Score.
+    """
+    subteam_matches = sum(1 for s in cluster if s in assigned and assigned[s][0] == subteam)
+    tech_matches = sum(1 for s in cluster if s in assigned and assigned[s][1] == tech)
+    return subteam_matches * 10 + tech_matches
 
-        if best_cluster:
-            free_seats = sorted([s for s in best_cluster if s not in assigned], key=lambda x: int(x))
-            assigned_count = 0
-            for seat in free_seats:
-                assigned[seat] = (subteam, tech)
-                used_seats.add(seat)
-                assigned_count += 1
-                if assigned_count >= count:
-                    break
-            placed = True
+def assign_seats(seats, assigned, subteam, tech, count):
+    """
+    Assigns a fixed number of seats.
 
-        if not placed:
-            # Try disjointed seats
-            free_anywhere = [s for s in G.nodes if s not in assigned]
-            if len(free_anywhere) >= count:
-                fallback_assigned = 0
-                for seat in sorted(free_anywhere, key=lambda x: int(x)):
-                    if seat not in assigned:
-                        assigned[seat] = (subteam, tech)
-                        used_seats.add(seat)
-                        fallback_assigned += 1
-                        if fallback_assigned >= count:
-                            break
-                print(f"⚠️ Assigned {count} disjointed seats for {subteam} ({tech})")
-            else:
-                print(f"❌ Not enough seats available for {subteam} ({tech}) — need {count}, found {len(free_anywhere)}")
+    Args:
+        seats (list): List of seat IDs.
+    """
+    for seat in seats[:count]:
+        assigned[seat] = AssignedDetails(subteam, tech)
 
-    # Step 5: Create final output, sorted by seat number
-    output = []
-    for seat in G.nodes:
-        if seat in assigned:
-            subteam, tech = assigned[seat]
-        else:
-            subteam, tech = "Unassigned", ""
-        output.append((int(float(seat)), subteam, tech))
+def assign_disjointed(G, assigned, subteam, tech, count):
+    """
+    Fallback seat assignment for disjointed, non-adjacent seating.
+    """
+    free = sorted((s for s in G.nodes if s not in assigned and s.isdigit()), key=int)
+    if len(free) >= count:
+        assign_seats(free, assigned, subteam, tech, count)
+        print(f"⚠️ Assigned {count} disjointed seats for {subteam} ({tech})")
+    else:
+        print(f"❌ Not enough seats available for {subteam} ({tech}) — need {count}, found {len(free)}")
 
-    output_df = pd.DataFrame(output, columns=["Seat No", "Subteam", "Technology"])
-    output_df = output_df.sort_values(by="Seat No")
-
-    # Step 6: Export to Excel (overwrite file if exists)
-    sheet_name = "Allocation"
+def export_seat_allocation(excel_path, G, assigned):
+    """
+    Writes the final seat allocation to a new Excel file.
+    """
+    output = [(int(seat), *assigned.get(seat, ("Unassigned", ""))) for seat in G.nodes if seat.isdigit()]
+    df = pd.DataFrame(output, columns=["Seat No", "Subteam", "Technology"]).sort_values(by="Seat No")
     out_path = os.path.splitext(excel_path)[0] + "-allocation-output.xlsx"
-
     try:
         if os.path.exists(out_path):
             os.remove(out_path)
-        output_df.to_excel(out_path, sheet_name=sheet_name, index=False)
-    except InvalidFileException:
-        print(f"❌ Invalid Excel file: {out_path}")
-        return
-
-    print(f"✅ Seat allocation written to sheet '{sheet_name}' in {out_path}")
+        df.to_excel(out_path, sheet_name="Allocation", index=False)
+        print(f"✅ Seat allocation written to sheet 'Allocation' in {out_path}")
+    except Exception as e:
+        print(f"❌ Error writing Excel file: {out_path} ({e})")
 
 # Entry point
 if __name__ == "__main__":
