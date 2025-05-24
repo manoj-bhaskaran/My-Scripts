@@ -511,35 +511,61 @@ def extract_place_visits(data, last_processed, stats):
     Returns:
         list[dict]: List of place visit records with datetime, latitude, longitude, and other fields.
     """
+    def parse_visit_segment(segment, key):
+        """
+        Parses a single place visit segment from the timeline data for a given time key.
+
+        Args:
+            segment (dict): A semantic segment containing visit information.
+            key (str): The time key to extract, either "startTime" or "endTime".
+
+        Returns:
+            dict or None: A dictionary representing a single place visit record if valid and within the processing window,
+                        otherwise None.
+
+        Side Effects:
+            Updates the 'stats' dictionary with counts for read, skipped, processed, and invalid records.
+        """
+        stats["placeVisit_read"] += 1
+
+        visit = segment.get("visit")
+        if not visit:
+            return None
+
+        time = segment.get(key)
+        dt = datetime_from_iso(time)
+        location = visit.get("topCandidate", {}).get("placeLocation", {})
+        lat, lon = extract_lat_lon(location.get("latLng"))
+
+        if not (dt and lat is not None and lon is not None):
+            stats["records_invalid_format"] += 1
+            return None
+
+        if last_processed and dt < last_processed:
+            stats["placeVisit_skipped"] += 1
+            return None
+
+        stats["placeVisit_processed"] += 1
+        prob = visit.get("topCandidate", {}).get("probability")
+        confidence = int(prob * 100) if prob is not None else None
+
+        return {
+            "datetime": dt,
+            "latitude": lat,
+            "longitude": lon,
+            "accuracy": None,
+            "elevation": None,
+            "activity_type": "PLACE_VISIT",
+            "confidence": confidence
+        }
+
     records = []
     for segment in data.get("semanticSegments", []):
-        visit = segment.get("visit")
-        if visit:
-            for key in ("startTime", "endTime"):
-                stats["placeVisit_read"] += 1
-                time = segment.get(key)
-                location = visit.get("topCandidate", {}).get("placeLocation", {})
-                point = location.get("latLng")
-                lat, lon = extract_lat_lon(point)
-                dt = datetime_from_iso(time)
-                if dt and lat is not None and lon is not None:
-                    if not last_processed or dt >= last_processed:
-                        stats["placeVisit_processed"] += 1
-                        prob = visit.get("topCandidate", {}).get("probability")
-                        confidence = int(prob * 100) if prob is not None else None
-                        records.append({
-                            "datetime": dt,
-                            "latitude": lat,
-                            "longitude": lon,
-                            "accuracy": None,
-                            "elevation": None,
-                            "activity_type": "PLACE_VISIT",
-                            "confidence": confidence
-                        })
-                    else:
-                        stats["placeVisit_skipped"] += 1
-                else:
-                    stats["records_invalid_format"] += 1
+        for key in ("startTime", "endTime"):
+            record = parse_visit_segment(segment, key)
+            if record:
+                records.append(record)
+
     return records
 
 def enrich_with_activities(records, activity_ranges, stats):
