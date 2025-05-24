@@ -611,6 +611,30 @@ def print_summary(stats):
     for k, v in stats.items():
         print(f"{k}: {v}")
 
+def run_vacuum_analyze_if_supported(conn, cur):
+    """
+    Executes VACUUM ANALYZE on the timeline.locations table if the PostgreSQL version supports the MAINTAIN privilege.
+
+    Args:
+        conn (psycopg2.connection): Active PostgreSQL database connection.
+        cur (psycopg2.cursor): Cursor object for executing SQL commands.
+
+    Returns:
+        None
+    """
+    try:
+        cur.execute("SHOW server_version;")
+        version_str = cur.fetchone()[0]
+        major_version = int(version_str.split('.')[0])
+
+        if major_version >= 15:
+            print("⚙️  Running VACUUM ANALYZE on timeline.locations...")
+            cur.execute("VACUUM ANALYZE timeline.locations;")
+        else:
+            print(f"⚠️  VACUUM ANALYZE skipped: PostgreSQL version {version_str} does not support MAINTAIN privilege.")
+    except Exception as e:
+        print(f"❌ Could not run VACUUM ANALYZE: {e}")
+
 def main(input_file, reprocess, reprocess_elevation):
     """
     Main entry point for processing Google Maps Timeline data.
