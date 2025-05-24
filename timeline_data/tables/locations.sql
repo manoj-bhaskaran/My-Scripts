@@ -19,7 +19,7 @@ CREATE INDEX idx_locations_timestamp ON timeline.locations (timestamp);
 -- Create a spatial index on the location column for efficient spatial queries
 CREATE INDEX idx_locations_location ON timeline.locations USING GIST (location);
 
-# Create a composite index on latitude and longitude for efficient geospatial queries
+-- Create a composite index on latitude and longitude for efficient geospatial queries
 CREATE INDEX idx_locations_latitude_longitude
 ON timeline.locations (latitude, longitude);
 
