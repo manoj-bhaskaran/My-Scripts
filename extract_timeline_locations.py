@@ -343,6 +343,12 @@ def update_elevations(records, elevation_stats):
     return latest_ts
 
 def initialize_stats():
+    """
+    Initializes and returns a dictionary to track statistics for timeline data processing.
+
+    Returns:
+        dict: A dictionary with counters for various processing statistics.
+    """
     return {
         "timelinePath_read": 0,
         "timelinePath_skipped": 0,
@@ -360,6 +366,14 @@ def initialize_stats():
     }
 
 def print_start_message(last_processed, reprocess):
+    """
+    Prints a message indicating the start of processing, including whether reprocessing is enabled
+    and the last processed timestamp if available.
+
+    Args:
+        last_processed (datetime or None): The last processed timestamp, or None if not set.
+        reprocess (bool): Whether all records will be reprocessed.
+    """
     if reprocess:
         print("🔁 Reprocessing all records (ignoring last processed timestamp)")
     elif last_processed:
@@ -368,6 +382,15 @@ def print_start_message(last_processed, reprocess):
         print("▶️ Starting full processing (no prior timestamp found)")
 
 def load_json(input_file):
+    """
+    Loads and parses a JSON file containing Google Maps Timeline data.
+
+    Args:
+        input_file (str): Path to the JSON file.
+
+    Returns:
+        dict or None: Parsed JSON data as a dictionary, or None if loading fails.
+    """
     try:
         with open(input_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -383,6 +406,17 @@ def load_json(input_file):
     return None
 
 def extract_activity_ranges(data, last_processed, stats):
+    """
+    Extracts activity ranges from semantic segments in the timeline data.
+
+    Args:
+        data (dict): Parsed timeline JSON data.
+        last_processed (datetime or None): Lower bound timestamp filter.
+        stats (dict): Dictionary to accumulate statistics.
+
+    Returns:
+        list[dict]: List of activity range dictionaries with start/end times, type, and confidence.
+    """
     ranges = []
     for segment in data.get("semanticSegments", []):
         activity = segment.get("activity")
@@ -403,6 +437,17 @@ def extract_activity_ranges(data, last_processed, stats):
     return ranges
 
 def extract_timeline_path(data, last_processed, stats):
+    """
+    Extracts timeline path records from semantic segments in the timeline data.
+
+    Args:
+        data (dict): Parsed timeline JSON data.
+        last_processed (datetime or None): Lower bound timestamp filter.
+        stats (dict): Dictionary to accumulate statistics.
+
+    Returns:
+        list[dict]: List of timeline path records with datetime, latitude, and longitude.
+    """
     records = []
     for segment in data.get("semanticSegments", []):
         for entry in segment.get("timelinePath", []):
@@ -422,6 +467,17 @@ def extract_timeline_path(data, last_processed, stats):
     return records
 
 def extract_raw_signals(data, last_processed, stats):
+    """
+    Extracts raw signal records from the timeline data.
+
+    Args:
+        data (dict): Parsed timeline JSON data.
+        last_processed (datetime or None): Lower bound timestamp filter.
+        stats (dict): Dictionary to accumulate statistics.
+
+    Returns:
+        list[dict]: List of raw signal records with datetime, latitude, longitude, and accuracy.
+    """
     records = []
     for signal in data.get("rawSignals", []):
         if "position" in signal:
@@ -446,6 +502,17 @@ def extract_raw_signals(data, last_processed, stats):
     return records
 
 def extract_place_visits(data, last_processed, stats):
+    """
+    Extracts place visit records from semantic segments in the timeline data.
+
+    Args:
+        data (dict): Parsed timeline JSON data.
+        last_processed (datetime or None): Lower bound timestamp filter.
+        stats (dict): Dictionary to accumulate statistics.
+
+    Returns:
+        list[dict]: List of place visit records with datetime, latitude, longitude, and other fields.
+    """
     records = []
     for segment in data.get("semanticSegments", []):
         visit = segment.get("visit")
@@ -478,6 +545,14 @@ def extract_place_visits(data, last_processed, stats):
     return records
 
 def enrich_with_activities(records, activity_ranges, stats):
+    """
+    Enriches timeline records with activity type and confidence based on activity ranges.
+
+    Args:
+        records (list[dict]): Timeline records to enrich.
+        activity_ranges (list[dict]): List of activity ranges with start/end times and activity info.
+        stats (dict): Dictionary to accumulate statistics.
+    """
     for rec in records:
         if rec.get("activity_type"):
             continue
@@ -494,6 +569,12 @@ def enrich_with_activities(records, activity_ranges, stats):
             stats["records_not_enriched_due_to_no_match"] += 1
 
 def handle_elevation_enrichment(reprocess_elevation):
+    """
+    Handles the process of enriching timeline records with elevation data.
+
+    Args:
+        reprocess_elevation (bool): If True, reprocesses all elevation data regardless of control timestamp.
+    """
     elevation_stats = {
         "records_considered": 0,
         "records_skipped_due_to_null_elevation": 0,
@@ -511,6 +592,12 @@ def handle_elevation_enrichment(reprocess_elevation):
         print(f"{k}: {v}")
 
 def print_summary(stats):
+    """
+    Prints a summary of processing statistics.
+
+    Args:
+        stats (dict): Dictionary containing statistics to print.
+    """
     print("\n📊 Summary:")
     for k, v in stats.items():
         print(f"{k}: {v}")
