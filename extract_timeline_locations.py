@@ -241,37 +241,48 @@ def fetch_records_missing_elevation(last_ts=None):
 
 def update_elevations(records, elevation_stats):
     """
-        Updates elevation values in the database for the given timeline records using SRTM elevation data.
+    Updates elevation values in the database for the given timeline records using SRTM elevation data.
 
-        Args:
-            records (list of tuples): Timeline records missing elevation (location_id, timestamp, latitude, longitude).
-            elevation_stats (dict): Dictionary to accumulate statistics about the elevation update process.
+    Args:
+        records (list of tuples): Timeline records missing elevation (location_id, timestamp, latitude, longitude).
+        elevation_stats (dict): Dictionary to accumulate statistics about the elevation update process.
 
-        Returns:
-            datetime or None: The latest timestamp successfully updated, or None if no updates were made.
+    Returns:
+        datetime or None: The latest timestamp successfully updated, or None if no updates were made.
     """
-    # Track the latest timestamp seen for updating the control table
     latest_ts = None
-    with psycopg2.connect(**DB_PARAMS) as conn:
-        with conn.cursor() as cur:
-            for location_id, ts, lat, lon in records:
-                elevation_stats["records_considered"] += 1
-                elevation = get_elevation(lat, lon)
-                # Skip record if elevation could not be retrieved
-                if elevation is None:
-                    elevation_stats["records_skipped_due_to_null_elevation"] += 1
-                    continue
-                # Perform the elevation update in the database
-                cur.execute("""
-                    UPDATE timeline.locations
-                    SET elevation = %s
-                    WHERE location_id = %s
-                """, (elevation, location_id))
-                # Update stats and track the most recent timestamp
-                elevation_stats["records_updated"] += 1
-                if latest_ts is None or ts > latest_ts:
-                    latest_ts = ts
-        conn.commit()
+
+    if not records:
+        return None  # nothing to do
+
+    try:
+        with psycopg2.connect(**DB_PARAMS) as conn:
+            with conn.cursor() as cur:
+                for location_id, ts, lat, lon in records:
+                    elevation_stats["records_considered"] += 1
+
+                    elevation = get_elevation(lat, lon)
+
+                    if elevation is None:
+                        elevation_stats["records_skipped_due_to_null_elevation"] += 1
+                        continue
+
+                    cur.execute("""
+                        UPDATE timeline.locations
+                        SET elevation = %s
+                        WHERE location_id = %s
+                    """, (elevation, location_id))
+
+                    elevation_stats["records_updated"] += 1
+
+                    if latest_ts is None or ts > latest_ts:
+                        latest_ts = ts
+
+            conn.commit()
+    except psycopg2.OperationalError as e:
+        print(f"❌ Database connection failed during elevation update: {e}")
+        return None
+
     return latest_ts
 
 def main(input_file, reprocess, reprocess_elevation):
@@ -471,7 +482,9 @@ def main(input_file, reprocess, reprocess_elevation):
             print("▶️ No previous elevation timestamp, processing all missing elevations")
 
     records = fetch_records_missing_elevation(last_ts)
-    latest_ts = update_elevations(records, elevation_stats)
+    elevation_records_to_process = fetch_records_missing_elevation(last_ts) # Renamed variable for clarity
+    print(f"DEBUG: {len(elevation_records_to_process)} records found missing elevation.")
+    latest_ts = update_elevations(elevation_records_to_process, elevation_stats)
 
     if latest_ts:
         update_last_elevation_timestamp(latest_ts)
