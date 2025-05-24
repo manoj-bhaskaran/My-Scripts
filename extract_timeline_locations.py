@@ -646,6 +646,7 @@ def main(input_file, reprocess, reprocess_elevation):
     - Enriches records with activity type.
     - Inserts deduplicated and enriched records into the database.
     - Optionally enriches elevation data using SRTM.
+    - Runs a VACUUM ANALYZE if supported by the PostgreSQL version.
 
     Args:
         input_file (str): Path to the Google Timeline JSON file.
@@ -672,7 +673,11 @@ def main(input_file, reprocess, reprocess_elevation):
     enrich_with_activities(records, activity_ranges, stats)
     insert_records_into_postgres(records, stats)
     handle_elevation_enrichment(reprocess_elevation)
-    run_vacuum_analyze_if_supported()
+    try:
+        with psycopg2.connect(**DB_PARAMS) as conn:
+            run_vacuum_analyze_if_supported(conn, "timeline.locations")
+    except psycopg2.OperationalError as e:
+        print(f"⚠️ Skipping VACUUM ANALYZE due to DB connection issue: {e}")
     print_summary(stats)
 
 if __name__ == "__main__":
