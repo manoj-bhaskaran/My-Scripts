@@ -2,6 +2,12 @@ import pandas as pd
 import networkx as nx
 import sys
 import os
+from collections import namedtuple
+
+ADJACENCY_SHEET = 'Adjacency'
+TEAMS_SHEET = 'Teams'
+FIXED_SHEET = 'Fixed'
+AssignedDetails = namedtuple('AssignedDetails', ['subteam', 'technology'])
 
 def allocate_seats(excel_path):
     """
@@ -29,12 +35,18 @@ def load_input_data(excel_path):
     Returns:
         tuple: DataFrames for adjacency, teams, and fixed seat assignments.
     """
-    adj_df = pd.read_excel(excel_path, sheet_name='Adjacency')
-    teams_df = pd.read_excel(excel_path, sheet_name='Teams')
-    try:
-        fixed_df = pd.read_excel(excel_path, sheet_name='Fixed', dtype=str)
-    except Exception:
-        fixed_df = pd.DataFrame(columns=['Seat No', 'Subteam', 'Technology'])
+    required_columns = {
+        'Adjacency': ['Seat No'],
+        'Teams': ['Subteam', 'Technology', 'Count'],
+        'Fixed': ['Seat No', 'Subteam', 'Technology']
+    }
+    adj_df = pd.read_excel(excel_path, sheet_name=ADJACENCY_SHEET)
+    teams_df = pd.read_excel(excel_path, sheet_name=TEAMS_SHEET)
+    fixed_df = pd.read_excel(excel_path, sheet_name=FIXED_SHEET, dtype=str)
+    for name, df in zip(['Adjacency', 'Teams', 'Fixed'], [adj_df, teams_df, fixed_df]):
+        missing = [col for col in required_columns[name] if col not in df.columns]
+        if missing:
+            raise ValueError(f"❌ Missing required columns in {name} sheet: {', '.join(missing)}")
     return adj_df, teams_df, fixed_df
 
 def build_seat_graph(adj_df):
@@ -59,17 +71,20 @@ def build_seat_graph(adj_df):
 
 def parse_seat(value):
     """
-    Safely parses a seat number from various formats.
-
+    Safely parses a seat number to a string, ensuring it's a valid integer representation.
+    
     Args:
         value: Input seat value.
 
     Returns:
         str or None: Parsed seat number or None if invalid.
     """
+    if pd.isna(value) or not str(value).strip():
+        return None
     try:
-        return str(int(float(value))).strip()
-    except:
+        return str(int(value)).strip()
+    except (ValueError, TypeError):
+        print(f"⚠️ Warning: Could not parse seat value '{value}'. Skipping.")
         return None
 
 def assign_fixed_seats(G, fixed_df):
@@ -87,8 +102,10 @@ def assign_fixed_seats(G, fixed_df):
     used_seats = set()
     for _, row in fixed_df.iterrows():
         seat = parse_seat(row['Seat No'])
+        subteam = row['Subteam']
+        tech = row['Technology']
         if seat:
-            assigned[seat] = (row['Subteam'], row['Technology'])
+            assigned[seat] = AssignedDetails(subteam, tech)
             used_seats.add(seat)
             if seat not in G:
                 G.add_node(seat)
@@ -136,6 +153,7 @@ def try_assign_to_best_cluster(clusters, assigned, subteam, tech, count):
         if len(free) < count:
             continue
         score = compute_score(cluster, assigned, subteam, tech)
+        # Tie-breaker: prefer the cluster with the lowest seat number for deterministic output
         min_seat = min(map(int, free)) if free else float('inf')
         if score > best_score or (score == best_score and min_seat < best_min_seat):
             best_score, best_min_seat, best_cluster = score, min_seat, cluster
@@ -163,7 +181,7 @@ def assign_seats(seats, assigned, subteam, tech, count):
         seats (list): List of seat IDs.
     """
     for seat in seats[:count]:
-        assigned[seat] = (subteam, tech)
+        assigned[seat] = AssignedDetails(subteam, tech)
 
 def assign_disjointed(G, assigned, subteam, tech, count):
     """
