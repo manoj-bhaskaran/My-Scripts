@@ -29,6 +29,8 @@ def count_optional_fields(rec):
     Returns:
         int: Number of optional fields that are not None.
     """
+    # Count how many of the optional metadata fields are populated in a record.
+    # Used to determine whether a new record is "richer" than an existing one.
     return sum(
         rec.get(field) is not None
         for field in ["accuracy", "elevation", "activity_type", "confidence"]
@@ -147,6 +149,8 @@ def insert_records_into_postgres(records, stats):
                         continue
 
                     # Step 1: Check for near-duplicate based on lat/lon and ±time window
+                    # Check for nearby record with same lat/lon within ±30 seconds.
+                    # If found, only keep new record if it has more optional fields filled (i.e., it's richer).
                     cur.execute("""
                         SELECT location_id, accuracy, elevation, activity_type, confidence
                         FROM timeline.locations
@@ -177,6 +181,8 @@ def insert_records_into_postgres(records, stats):
                             continue  # Skip to next record
                     else:
                         # Step 2: Check for exact timestamp match
+                        # Check for existing record with exact same timestamp (could be different location).
+                        # Again, only replace if new record has more metadata.
                         cur.execute("""
                             SELECT accuracy, elevation, activity_type, confidence
                             FROM timeline.locations
@@ -321,6 +327,7 @@ def update_elevations(records, elevation_stats):
                     elevation = get_elevation(lat, lon)
 
                     if elevation is None:
+                        # Skip updating if elevation could not be determined from SRTM data.
                         elevation_stats["records_skipped_due_to_null_elevation"] += 1
                         continue
 
@@ -553,6 +560,8 @@ def enrich_with_activities(records, activity_ranges, stats):
         activity_ranges (list[dict]): List of activity ranges with start/end times and activity info.
         stats (dict): Dictionary to accumulate statistics.
     """
+    # Enrich records with inferred activity type by matching timestamp to known activity windows.
+    # First match wins. If no match, activity remains None.
     for rec in records:
         if rec.get("activity_type"):
             continue
