@@ -396,7 +396,6 @@ def process_duplicates(grouped, dryrun, backup_folder, total_files):
     """
 
     deleted_count = 0
-    skipped_groups = 0
 
     with tqdm(total=total_files, desc="Deleting duplicates", unit=FILE_UNIT, dynamic_ncols=True) as pbar, \
          ThreadPoolExecutor() as executor:
@@ -404,7 +403,6 @@ def process_duplicates(grouped, dryrun, backup_folder, total_files):
         futures = []
         for files in grouped.values():
             if len(files) <= 1:
-                skipped_groups += 1
                 continue
             
             retained = random.choice(files)
