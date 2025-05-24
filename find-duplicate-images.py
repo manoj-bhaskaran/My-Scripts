@@ -461,8 +461,13 @@ def log_final_summary(total_groups, deleted_count, dryrun):
     """
 
     action = "would be deleted" if dryrun else "Deleted/Moved"
-    log_event("Duplicate cleanup completed. Retained one file per group.")
-    log_event(f"[{action}] {deleted_count} files from {total_groups} duplicate groups.")
+    if total_groups == 0 or deleted_count == 0:
+        log_event("✅ No duplicates found. All files are unique.")
+        print("✅ No duplicates found. All files are unique.")
+    else:
+        log_event("Duplicate cleanup completed. Retained one file per group.")
+        log_event(f"[{action}] {deleted_count} files from {total_groups} duplicate groups.")
+        print(f"[{action}] {deleted_count} files from {total_groups} duplicate groups.")
 
 def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
     """
@@ -545,7 +550,7 @@ def prepare_environment(args):
     log_event("Logging system initialized with queue handler.")
 
     if not args.restart:
-        for f in [args.temp, args.sorted, args.checkpoint]:
+        for f in [args.temp, args.sorted, args.checkpoint, args.output]:
             if os.path.exists(f):
                 os.remove(f)
                 log_event(f"Deleted stale file at startup (no restart): {f}")
@@ -574,6 +579,11 @@ def handle_restart(args):
     args.output = checkpoint.get("output", args.output)
     args.temp = checkpoint.get("temp", args.temp)
     args.sorted = checkpoint.get("sorted", args.sorted)
+
+    print(f"➡️  Restarting with files:")
+    print(f"    📄 Temp file   : {args.temp}")
+    print(f"    📄 Sorted file : {args.sorted}")
+    print(f"    📄 Output file : {args.output}")
 
     stage_map = {
         None: "Stage 1",
