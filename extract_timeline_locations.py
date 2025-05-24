@@ -5,6 +5,7 @@ import psycopg2
 from datetime import datetime
 from psycopg2.extras import execute_values
 from elevation import get_elevation
+from contextlib import contextmanager
 
 # Database connection configuration
 DB_PARAMS = {
@@ -18,6 +19,33 @@ DB_PARAMS = {
 # Time window for near-duplicate records
 # This is used to filter out records that are too close in time
 NEAR_DUPLICATE_WINDOW_SECONDS = 30
+
+@contextmanager
+def get_db_cursor():
+    """
+    Context manager that yields a PostgreSQL connection and cursor.
+    Automatically commits on successful exit and handles cleanup.
+    Raises errors for upstream handling.
+    """
+    conn = None
+    cur = None
+    try:
+        conn = psycopg2.connect(**DB_PARAMS)
+        cur = conn.cursor()
+        yield conn, cur
+        conn.commit()  # ✅ Commit only if everything went fine
+    except psycopg2.OperationalError as e:
+        print(f"❌ Database connection failed: {e}")
+        raise
+    except Exception:
+        if conn:
+            conn.rollback()  # 🔁 Roll back on any unexpected error
+        raise
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 def count_optional_fields(rec):
     """
@@ -76,19 +104,14 @@ def get_last_processed_timestamp():
     Returns:
         datetime or None: The last processed timestamp if available, otherwise None.
     """
-    try:
-        with psycopg2.connect(**DB_PARAMS) as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT last_processed_timestamp
-                    FROM timeline.control
-                    WHERE control_key = 'timeline_main'
-                """)
-                row = cur.fetchone()
-                return row[0] if row else None
-    except psycopg2.OperationalError as e:
-        print(f"❌ Database connection failed while reading control: {e}")
-        return None
+    with get_db_cursor() as (_, cur):
+        cur.execute("""
+            SELECT last_processed_timestamp
+            FROM timeline.control
+            WHERE control_key = 'timeline_main'
+        """)
+        row = cur.fetchone()
+        return row[0] if row else None
 
 def update_last_processed_timestamp(ts):
     """
@@ -97,18 +120,13 @@ def update_last_processed_timestamp(ts):
     Args:
         ts (datetime): The new timestamp to store.
     """
-    try:
-        with psycopg2.connect(**DB_PARAMS) as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO timeline.control (control_key, last_processed_timestamp)
-                    VALUES ('timeline_main', %s)
-                    ON CONFLICT (control_key)
-                    DO UPDATE SET last_processed_timestamp = EXCLUDED.last_processed_timestamp
-                """, (ts,))
-            conn.commit()
-    except psycopg2.OperationalError as e:
-        print(f"❌ Database connection failed while updating control: {e}")
+    with get_db_cursor() as (_, cur):
+        cur.execute("""
+            INSERT INTO timeline.control (control_key, last_processed_timestamp)
+            VALUES ('timeline_main', %s)
+            ON CONFLICT (control_key)
+            DO UPDATE SET last_processed_timestamp = EXCLUDED.last_processed_timestamp
+        """, (ts,))
 
 def insert_records_into_postgres(records, stats):
     """
@@ -141,137 +159,119 @@ def insert_records_into_postgres(records, stats):
 
     interval_str = f"{NEAR_DUPLICATE_WINDOW_SECONDS} seconds"
 
-    try:
-        with psycopg2.connect(**DB_PARAMS) as conn:
-            with conn.cursor() as cur:
-                for rec in records:
-                    if not rec.get("datetime") or rec.get("latitude") is None or rec.get("longitude") is None:
+    if not records:
+        return
+
+    with get_db_cursor() as (_, cur):
+        for rec in records:
+            if not rec.get("datetime") or rec.get("latitude") is None or rec.get("longitude") is None:
+                continue
+
+            # Step 1: Check for near-duplicate based on lat/lon and ±time window
+            cur.execute("""
+                SELECT location_id, accuracy, elevation, activity_type, confidence
+                FROM timeline.locations
+                WHERE latitude = %s AND longitude = %s
+                AND timestamp BETWEEN %s - INTERVAL %s
+                                    AND %s + INTERVAL %s
+                LIMIT 1
+            """, (
+                rec["latitude"], rec["longitude"],
+                rec["datetime"], interval_str,
+                rec["datetime"], interval_str
+            ))
+
+            near_dup = cur.fetchone()
+            if near_dup:
+                existing_dict = {
+                    "accuracy": near_dup[1],
+                    "elevation": near_dup[2],
+                    "activity_type": near_dup[3],
+                    "confidence": near_dup[4]
+                }
+                if count_optional_fields(rec) > count_optional_fields(existing_dict):
+                    cur.execute("DELETE FROM timeline.locations WHERE location_id = %s", (near_dup[0],))
+                    stats["records_replaced_near_duplicate"] += 1
+                else:
+                    stats["records_skipped_near_duplicate"] += 1
+                    continue  # Skip to next record
+            else:
+                # Step 2: Check for exact timestamp match
+                cur.execute("""
+                    SELECT accuracy, elevation, activity_type, confidence
+                    FROM timeline.locations
+                    WHERE timestamp = %s
+                """, (rec["datetime"],))
+                existing = cur.fetchone()
+                if existing:
+                    existing_dict = {
+                        "accuracy": existing[0],
+                        "elevation": existing[1],
+                        "activity_type": existing[2],
+                        "confidence": existing[3]
+                    }
+                    if count_optional_fields(rec) <= count_optional_fields(existing_dict):
+                        stats["records_skipped_due_to_existing_richer"] += 1
                         continue
-
-                    # Step 1: Check for near-duplicate based on lat/lon and ±time window
-                    # Check for nearby record with same lat/lon within ±30 seconds.
-                    # If found, only keep new record if it has more optional fields filled (i.e., it's richer).
-                    cur.execute("""
-                        SELECT location_id, accuracy, elevation, activity_type, confidence
-                        FROM timeline.locations
-                        WHERE latitude = %s AND longitude = %s
-                        AND timestamp BETWEEN %s - INTERVAL %s
-                                         AND %s + INTERVAL %s
-                        LIMIT 1
-                    """, (
-                        rec["latitude"], rec["longitude"],
-                        rec["datetime"], interval_str,
-                        rec["datetime"], interval_str
-                    ))
-
-                    near_dup = cur.fetchone()
-                    if near_dup:
-                        existing_dict = {
-                            "accuracy": near_dup[1],
-                            "elevation": near_dup[2],
-                            "activity_type": near_dup[3],
-                            "confidence": near_dup[4]
-                        }
-                        if count_optional_fields(rec) > count_optional_fields(existing_dict):
-                            # Replace near-duplicate
-                            cur.execute("DELETE FROM timeline.locations WHERE location_id = %s", (near_dup[0],))
-                            stats["records_replaced_near_duplicate"] += 1
-                        else:
-                            stats["records_skipped_near_duplicate"] += 1
-                            continue  # Skip to next record
                     else:
-                        # Step 2: Check for exact timestamp match
-                        # Check for existing record with exact same timestamp (could be different location).
-                        # Again, only replace if new record has more metadata.
-                        cur.execute("""
-                            SELECT accuracy, elevation, activity_type, confidence
-                            FROM timeline.locations
-                            WHERE timestamp = %s
-                        """, (rec["datetime"],))
-                        existing = cur.fetchone()
-                        if existing:
-                            existing_dict = {
-                                "accuracy": existing[0],
-                                "elevation": existing[1],
-                                "activity_type": existing[2],
-                                "confidence": existing[3]
-                            }
-                            if count_optional_fields(rec) <= count_optional_fields(existing_dict):
-                                stats["records_skipped_due_to_existing_richer"] += 1
-                                continue
-                            else:
-                                cur.execute("DELETE FROM timeline.locations WHERE timestamp = %s", (rec["datetime"],))
-                                stats["records_replaced"] += 1
-                        else:
-                            stats["records_inserted"] += 1
+                        cur.execute("DELETE FROM timeline.locations WHERE timestamp = %s", (rec["datetime"],))
+                        stats["records_replaced"] += 1
+                else:
+                    stats["records_inserted"] += 1
 
-                    # Step 3: Insert the new or richer record
-                    cur.execute("""
-                        INSERT INTO timeline.locations (
-                            timestamp, latitude, longitude,
-                            elevation, accuracy, activity_type, confidence,
-                            location
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s,
-                            ST_SetSRID(ST_MakePoint(%s, %s), 4326)
-                        )
-                    """, (
-                        rec["datetime"], rec["latitude"], rec["longitude"],
-                        rec.get("elevation"),
-                        rec.get("accuracy"),
-                        rec.get("activity_type"),
-                        rec.get("confidence"),
-                        rec["longitude"], rec["latitude"]
-                    ))
+            # Step 3: Insert the new or richer record
+            cur.execute("""
+                INSERT INTO timeline.locations (
+                    timestamp, latitude, longitude,
+                    elevation, accuracy, activity_type, confidence,
+                    location
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s,
+                    ST_SetSRID(ST_MakePoint(%s, %s), 4326)
+                )
+            """, (
+                rec["datetime"], rec["latitude"], rec["longitude"],
+                rec.get("elevation"),
+                rec.get("accuracy"),
+                rec.get("activity_type"),
+                rec.get("confidence"),
+                rec["longitude"], rec["latitude"]
+            ))
 
-            conn.commit()
-            if records:
-                latest = max(r["datetime"] for r in records)
-                update_last_processed_timestamp(latest)
-                print(f"🕒 Last processed timestamp updated to: {latest.isoformat()}")
-
-    except psycopg2.OperationalError as e:
-        print(f"❌ Database connection failed: {e}")
+    # Update control timestamp once at the end
+    latest = max(r["datetime"] for r in records)
+    update_last_processed_timestamp(latest)
+    print(f"🕒 Last processed timestamp updated to: {latest.isoformat()}")
 
 def get_last_elevation_timestamp():
     """
-        Fetches the last processed timestamp for elevation updates from the control table.
+    Fetches the last processed timestamp for elevation updates from the control table.
 
-        Returns:
-            datetime or None: The most recent timestamp recorded for elevation, or None if not set.
+    Returns:
+        datetime or None: The most recent timestamp recorded for elevation, or None if not set.
     """
-    try:
-        with psycopg2.connect(**DB_PARAMS) as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT last_processed_timestamp
-                    FROM timeline.control
-                    WHERE control_key = 'elevation_main'
-                """)
-                row = cur.fetchone()
-                return row[0] if row else None
-    except psycopg2.OperationalError as e:
-        print(f"❌ Failed to read elevation control timestamp: {e}")
-        return None
+    with get_db_cursor() as (_, cur):
+        cur.execute("""
+            SELECT last_processed_timestamp
+            FROM timeline.control
+            WHERE control_key = 'elevation_main'
+        """)
+        row = cur.fetchone()
+        return row[0] if row else None
 
 def update_last_elevation_timestamp(ts):
     """
-        Updates the control table with the latest timestamp processed for elevation data.
+    Updates the control table with the latest timestamp processed for elevation data.
 
-        Args:
-            ts (datetime): The timestamp to store as last processed for elevation.
+    Args:
+        ts (datetime): The timestamp to store as last processed for elevation.
     """
-    try:
-        with psycopg2.connect(**DB_PARAMS) as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO timeline.control (control_key, last_processed_timestamp)
-                    VALUES ('elevation_main', %s)
-                    ON CONFLICT (control_key)
-                    DO UPDATE SET last_processed_timestamp = EXCLUDED.last_processed_timestamp
-                """, (ts,))
-            conn.commit()
-    except psycopg2.OperationalError as e:
-        print(f"❌ Failed to update elevation control timestamp: {e}")
+    with get_db_cursor() as (conn, cur):
+        cur.execute("""
+            INSERT INTO timeline.control (control_key, last_processed_timestamp)
+            VALUES ('elevation_main', %s)
+            ON CONFLICT (control_key)
+            DO UPDATE SET last_processed_timestamp = EXCLUDED.last_processed_timestamp
+        """, (ts,))
 
 def fetch_records_missing_elevation(last_ts=None):
     """
@@ -297,10 +297,9 @@ def fetch_records_missing_elevation(last_ts=None):
 
     query += " ORDER BY timestamp"
 
-    with psycopg2.connect(**DB_PARAMS) as conn:
-        with conn.cursor() as cur:
-            cur.execute(query, params)
-            return cur.fetchall()
+    with get_db_cursor() as (_, cur):
+        cur.execute(query, params)
+        return cur.fetchall()
 
 def update_elevations(records, elevation_stats):
     """
@@ -314,38 +313,30 @@ def update_elevations(records, elevation_stats):
         datetime or None: The latest timestamp successfully updated, or None if no updates were made.
     """
     latest_ts = None
-
     if not records:
         return None  # nothing to do
 
-    try:
-        with psycopg2.connect(**DB_PARAMS) as conn:
-            with conn.cursor() as cur:
-                for location_id, ts, lat, lon in records:
-                    elevation_stats["records_considered"] += 1
+    with get_db_cursor() as (_, cur):
+        for location_id, ts, lat, lon in records:
+            elevation_stats["records_considered"] += 1
 
-                    elevation = get_elevation(lat, lon)
+            elevation = get_elevation(lat, lon)
 
-                    if elevation is None:
-                        # Skip updating if elevation could not be determined from SRTM data.
-                        elevation_stats["records_skipped_due_to_null_elevation"] += 1
-                        continue
+             # Skip updating if elevation could not be determined from SRTM data.
+            if elevation is None:
+                elevation_stats["records_skipped_due_to_null_elevation"] += 1
+                continue
 
-                    cur.execute("""
-                        UPDATE timeline.locations
-                        SET elevation = %s
-                        WHERE location_id = %s
-                    """, (elevation, location_id))
+            cur.execute("""
+                UPDATE timeline.locations
+                SET elevation = %s
+                WHERE location_id = %s
+            """, (elevation, location_id))
 
-                    elevation_stats["records_updated"] += 1
+            elevation_stats["records_updated"] += 1
 
-                    if latest_ts is None or ts > latest_ts:
-                        latest_ts = ts
-
-            conn.commit()
-    except psycopg2.OperationalError as e:
-        print(f"❌ Database connection failed during elevation update: {e}")
-        return None
+            if latest_ts is None or ts > latest_ts:
+                latest_ts = ts
 
     return latest_ts
 
@@ -611,6 +602,29 @@ def print_summary(stats):
     for k, v in stats.items():
         print(f"{k}: {v}")
 
+def run_vacuum_analyze_if_supported():
+    """
+    Executes VACUUM ANALYZE on the timeline.locations table if the PostgreSQL version supports the MAINTAIN privilege.
+
+    Uses the get_db_cursor context manager to handle DB connection and cleanup.
+
+    Returns:
+        None
+    """
+    with get_db_cursor() as (_, cur):
+        cur.execute("SHOW server_version;")
+        version_str = cur.fetchone()[0]
+
+        # Extract major version number (handles formats like '17.3', '17beta1', etc.)
+        match = re.match(r"(\d+)", version_str)
+        major_version = int(match.group(1)) if match else 0
+
+        if major_version >= 15:
+            print("⚙️  Running VACUUM ANALYZE on timeline.locations...")
+            cur.execute("VACUUM ANALYZE timeline.locations;")
+        else:
+            print(f"⚠️  VACUUM ANALYZE skipped: PostgreSQL version {version_str} does not support MAINTAIN privilege.")
+
 def main(input_file, reprocess, reprocess_elevation):
     """
     Main entry point for processing Google Maps Timeline data.
@@ -622,6 +636,7 @@ def main(input_file, reprocess, reprocess_elevation):
     - Enriches records with activity type.
     - Inserts deduplicated and enriched records into the database.
     - Optionally enriches elevation data using SRTM.
+    - Runs a VACUUM ANALYZE if supported by the PostgreSQL version.
 
     Args:
         input_file (str): Path to the Google Timeline JSON file.
@@ -648,6 +663,7 @@ def main(input_file, reprocess, reprocess_elevation):
     enrich_with_activities(records, activity_ranges, stats)
     insert_records_into_postgres(records, stats)
     handle_elevation_enrichment(reprocess_elevation)
+    run_vacuum_analyze_if_supported()
     print_summary(stats)
 
 if __name__ == "__main__":

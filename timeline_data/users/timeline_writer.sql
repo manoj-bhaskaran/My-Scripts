@@ -18,3 +18,4 @@ GRANT USAGE ON SCHEMA timeline TO timeline_writer;
 GRANT SELECT, INSERT, UPDATE, DELETE ON timeline.locations TO timeline_writer;
 GRANT SELECT, INSERT, UPDATE ON timeline.control to timeline_writer;
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE timeline.locations_location_id_seq TO timeline_writer;
+GRANT MAINTAIN ON timeline.locations TO timeline_writer;
