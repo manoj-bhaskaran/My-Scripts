@@ -4,6 +4,8 @@ import sys
 import os
 from collections import namedtuple
 
+# Constants
+SEAT_NO_COL = 'Seat No'
 ADJACENCY_SHEET = 'Adjacency'
 TEAMS_SHEET = 'Teams'
 FIXED_SHEET = 'Fixed'
@@ -36,9 +38,9 @@ def load_input_data(excel_path):
         tuple: DataFrames for adjacency, teams, and fixed seat assignments.
     """
     required_columns = {
-        'Adjacency': ['Seat No'],
+        'Adjacency': [SEAT_NO_COL],
         'Teams': ['Subteam', 'Technology', 'Count'],
-        'Fixed': ['Seat No', 'Subteam', 'Technology']
+        'Fixed': [SEAT_NO_COL, 'Subteam', 'Technology']
     }
     adj_df = pd.read_excel(excel_path, sheet_name=ADJACENCY_SHEET)
     teams_df = pd.read_excel(excel_path, sheet_name=TEAMS_SHEET)
@@ -61,7 +63,7 @@ def build_seat_graph(adj_df):
     """
     G = nx.Graph()
     for _, row in adj_df.iterrows():
-        seat = parse_seat(row['Seat No'])
+        seat = parse_seat(row[SEAT_NO_COL])
         if seat:
             for adj in row[1:]:
                 adj_seat = parse_seat(adj)
@@ -101,7 +103,7 @@ def assign_fixed_seats(G, fixed_df):
     assigned = {}
     used_seats = set()
     for _, row in fixed_df.iterrows():
-        seat = parse_seat(row['Seat No'])
+        seat = parse_seat(row[SEAT_NO_COL])
         subteam = row['Subteam']
         tech = row['Technology']
         if seat:
@@ -199,7 +201,7 @@ def export_seat_allocation(excel_path, G, assigned):
     Writes the final seat allocation to a new Excel file.
     """
     output = [(int(seat), *assigned.get(seat, ("Unassigned", ""))) for seat in G.nodes if seat.isdigit()]
-    df = pd.DataFrame(output, columns=["Seat No", "Subteam", "Technology"]).sort_values(by="Seat No")
+    df = pd.DataFrame(output, columns=[SEAT_NO_COL, "Subteam", "Technology"]).sort_values(by="Seat No")
     out_path = os.path.splitext(excel_path)[0] + "-allocation-output.xlsx"
     try:
         if os.path.exists(out_path):
