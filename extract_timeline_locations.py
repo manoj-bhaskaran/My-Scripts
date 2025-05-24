@@ -111,11 +111,25 @@ def update_last_processed_timestamp(ts):
 def insert_records_into_postgres(records, stats):
     """
     Inserts timeline records into the PostgreSQL database.
-    If a record with the same timestamp exists, it is replaced only if the new record has more complete data.
+
+    Each record is evaluated in two steps:
+
+    1. Near-Duplicate Check:
+    - If a record with the same latitude and longitude is found within ±N seconds of the new record's timestamp,
+        it is considered a near-duplicate.
+    - If the new record has more non-null optional fields (accuracy, elevation, activity_type, confidence),
+        the near-duplicate is deleted and replaced.
+    - Otherwise, the new record is skipped.
+
+    2. Exact Timestamp Check:
+    - If no near-duplicate was found, the function checks if a record exists with the same timestamp.
+    - If found and the new record is richer, it replaces the old one.
+    - If found but not richer, it is skipped.
+    - If no match is found, the new record is inserted.
 
     Args:
         records (list[dict]): Timeline records to insert.
-        stats (dict): Dictionary to collect stats about inserted, replaced, or skipped records.
+        stats (dict): Dictionary to accumulate statistics on inserted, replaced, skipped, and duplicate records.
     """
     stats["records_inserted"] = 0
     stats["records_replaced"] = 0
@@ -123,21 +137,28 @@ def insert_records_into_postgres(records, stats):
     stats["records_skipped_near_duplicate"] = 0
     stats["records_replaced_near_duplicate"] = 0
 
+    interval_str = f"{NEAR_DUPLICATE_WINDOW_SECONDS} seconds"
+
     try:
         with psycopg2.connect(**DB_PARAMS) as conn:
             with conn.cursor() as cur:
                 for rec in records:
                     if not rec.get("datetime") or rec.get("latitude") is None or rec.get("longitude") is None:
                         continue
-                    # Check for near-duplicate (same lat/lon within configured time window)
-                    cur.execute(f"""
+
+                    # Step 1: Check for near-duplicate based on lat/lon and ±time window
+                    cur.execute("""
                         SELECT location_id, accuracy, elevation, activity_type, confidence
                         FROM timeline.locations
                         WHERE latitude = %s AND longitude = %s
-                        AND timestamp BETWEEN %s - INTERVAL '{NEAR_DUPLICATE_WINDOW_SECONDS}'
-                                        AND %s + INTERVAL '{NEAR_DUPLICATE_WINDOW_SECONDS}'
-                        LIMIT 1;
-                    """, (rec["latitude"], rec["longitude"], rec["datetime"], rec["datetime"]))
+                        AND timestamp BETWEEN %s - INTERVAL %s
+                                         AND %s + INTERVAL %s
+                        LIMIT 1
+                    """, (
+                        rec["latitude"], rec["longitude"],
+                        rec["datetime"], interval_str,
+                        rec["datetime"], interval_str
+                    ))
 
                     near_dup = cur.fetchone()
                     if near_dup:
@@ -148,35 +169,37 @@ def insert_records_into_postgres(records, stats):
                             "confidence": near_dup[4]
                         }
                         if count_optional_fields(rec) > count_optional_fields(existing_dict):
-                            # Replace near-duplicate with richer record
+                            # Replace near-duplicate
                             cur.execute("DELETE FROM timeline.locations WHERE location_id = %s", (near_dup[0],))
                             stats["records_replaced_near_duplicate"] += 1
-                            # fall through to insert below
                         else:
                             stats["records_skipped_near_duplicate"] += 1
-                            continue
-
-                    cur.execute("""
-                        SELECT accuracy, elevation, activity_type, confidence
-                        FROM timeline.locations
-                        WHERE timestamp = %s
-                    """, (rec["datetime"],))
-                    existing = cur.fetchone()
-                    if existing:
-                        existing_dict = {
-                            "accuracy": existing[0],
-                            "elevation": existing[1],
-                            "activity_type": existing[2],
-                            "confidence": existing[3]
-                        }
-                        if count_optional_fields(rec) <= count_optional_fields(existing_dict):
-                            stats["records_skipped_due_to_existing_richer"] += 1
-                            continue
-                        else:
-                            cur.execute("DELETE FROM timeline.locations WHERE timestamp = %s", (rec["datetime"],))
-                            stats["records_replaced"] += 1
+                            continue  # Skip to next record
                     else:
-                        stats["records_inserted"] += 1
+                        # Step 2: Check for exact timestamp match
+                        cur.execute("""
+                            SELECT accuracy, elevation, activity_type, confidence
+                            FROM timeline.locations
+                            WHERE timestamp = %s
+                        """, (rec["datetime"],))
+                        existing = cur.fetchone()
+                        if existing:
+                            existing_dict = {
+                                "accuracy": existing[0],
+                                "elevation": existing[1],
+                                "activity_type": existing[2],
+                                "confidence": existing[3]
+                            }
+                            if count_optional_fields(rec) <= count_optional_fields(existing_dict):
+                                stats["records_skipped_due_to_existing_richer"] += 1
+                                continue
+                            else:
+                                cur.execute("DELETE FROM timeline.locations WHERE timestamp = %s", (rec["datetime"],))
+                                stats["records_replaced"] += 1
+                        else:
+                            stats["records_inserted"] += 1
+
+                    # Step 3: Insert the new or richer record
                     cur.execute("""
                         INSERT INTO timeline.locations (
                             timestamp, latitude, longitude,
@@ -193,6 +216,7 @@ def insert_records_into_postgres(records, stats):
                         rec.get("confidence"),
                         rec["longitude"], rec["latitude"]
                     ))
+
             conn.commit()
             if records:
                 latest = max(r["datetime"] for r in records)
