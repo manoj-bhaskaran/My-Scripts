@@ -318,42 +318,24 @@ def update_elevations(records, elevation_stats):
 
     return latest_ts
 
-def main(input_file, reprocess, reprocess_elevation):
-    """
-        Main logic to process Google Maps timeline data and update elevation in the database.
+def initialize_stats():
+    return {
+        "timelinePath_read": 0,
+        "timelinePath_skipped": 0,
+        "timelinePath_processed": 0,
+        "rawSignals_read": 0,
+        "rawSignals_skipped": 0,
+        "rawSignals_processed": 0,
+        "placeVisit_read": 0,
+        "placeVisit_skipped": 0,
+        "placeVisit_processed": 0,
+        "activity_ranges_total": 0,
+        "records_enriched": 0,
+        "records_not_enriched_due_to_no_match": 0,
+        "records_invalid_format": 0
+    }
 
-        This includes:
-        - Reading and parsing the input JSON file.
-        - Filtering records based on last processed timestamp (unless --reprocess is used).
-        - Extracting timelinePath, rawSignals, and placeVisit entries.
-        - Enriching location records with activity type based on activity segments.
-        - Inserting new or improved location records into the timeline.locations table.
-        - Optionally updating elevation for records missing elevation (based on --reprocess-elevation flag and control timestamp).
-
-        Args:
-            input_file (str): Path to the JSON timeline export file.
-            reprocess (bool): If True, processes all timeline data regardless of control timestamp.
-            reprocess_elevation (bool): If True, processes all missing elevation data regardless of elevation control timestamp.
-    """
-    stats = {
-    "timelinePath_read": 0,
-    "timelinePath_skipped": 0,
-    "timelinePath_processed": 0,
-    "rawSignals_read": 0,
-    "rawSignals_skipped": 0,
-    "rawSignals_processed": 0,
-    "placeVisit_read": 0,
-    "placeVisit_skipped": 0,
-    "placeVisit_processed": 0,
-    "activity_ranges_total": 0,
-    "records_enriched": 0,
-    "records_not_enriched_due_to_no_match": 0,
-    "records_invalid_format": 0
-}
-
-    last_processed = get_last_processed_timestamp()
-    if reprocess:
-        last_processed = None
+def print_start_message(last_processed, reprocess):
     if reprocess:
         print("🔁 Reprocessing all records (ignoring last processed timestamp)")
     elif last_processed:
@@ -361,6 +343,7 @@ def main(input_file, reprocess, reprocess_elevation):
     else:
         print("▶️ Starting full processing (no prior timestamp found)")
 
+def load_json(input_file):
     try:
         with open(input_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -368,20 +351,15 @@ def main(input_file, reprocess, reprocess_elevation):
             print("⚠️ Warning: 'semanticSegments' key missing.")
         if "rawSignals" not in data:
             print("⚠️ Warning: 'rawSignals' key missing.")
+        return data
     except FileNotFoundError:
         print(f"❌ File not found: {input_file}")
-        return
     except json.JSONDecodeError as e:
         print(f"❌ JSON parsing error: {e}")
-        return
+    return None
 
-    # List of extracted location records (to be inserted later)
-    # Each record contains datetime, lat/lon, and optionally accuracy, elevation, etc.
-    records = []
-    activity_ranges = []
-
-    # Step 1: Extract activity time ranges for later enrichment
-    # These are used to tag location points with inferred activity type
+def extract_activity_ranges(data, last_processed, stats):
+    ranges = []
     for segment in data.get("semanticSegments", []):
         activity = segment.get("activity")
         if activity:
@@ -391,16 +369,17 @@ def main(input_file, reprocess, reprocess_elevation):
             act_type = top.get("type")
             confidence = top.get("probability")
             if start_time and end_time and act_type and (not last_processed or end_time >= last_processed):
-                activity_record = {
+                ranges.append({
                     "start_time": start_time,
                     "end_time": end_time,
                     "activity_type": act_type,
                     "confidence": int(confidence * 100) if confidence is not None else None
-                }
-                activity_ranges.append(activity_record)
+                })
                 stats["activity_ranges_total"] += 1
+    return ranges
 
-    # Step 2: Extract GPS points from timelinePath entries
+def extract_timeline_path(data, last_processed, stats):
+    records = []
     for segment in data.get("semanticSegments", []):
         for entry in segment.get("timelinePath", []):
             stats["timelinePath_read"] += 1
@@ -408,8 +387,6 @@ def main(input_file, reprocess, reprocess_elevation):
             point = entry.get("point")
             lat, lon = extract_lat_lon(point)
             dt = datetime_from_iso(time)
-            # Skip invalid or outdated entries
-            # Append valid entries with lat/lon/timestamp
             if dt and lat is not None and lon is not None:
                 if not last_processed or dt >= last_processed:
                     stats["timelinePath_processed"] += 1
@@ -418,8 +395,10 @@ def main(input_file, reprocess, reprocess_elevation):
                     stats["timelinePath_skipped"] += 1
             else:
                 stats["records_invalid_format"] += 1
+    return records
 
-    # Step 3: Extract raw signal locations (usually from WiFi/GPS sources)
+def extract_raw_signals(data, last_processed, stats):
+    records = []
     for signal in data.get("rawSignals", []):
         if "position" in signal:
             stats["rawSignals_read"] += 1
@@ -427,7 +406,6 @@ def main(input_file, reprocess, reprocess_elevation):
             time = position.get("timestamp")
             lat, lon = extract_lat_lon(position.get("LatLng", ""))
             dt = datetime_from_iso(time)
-            # Only process valid raw signal points with usable lat/lon and timestamp
             if dt and lat is not None and lon is not None:
                 if not last_processed or dt >= last_processed:
                     stats["rawSignals_processed"] += 1
@@ -441,9 +419,10 @@ def main(input_file, reprocess, reprocess_elevation):
                     stats["rawSignals_skipped"] += 1
             else:
                 stats["records_invalid_format"] += 1
+    return records
 
-    # Step 4: Extract place visit records with approximate start/end points
-    # Each visit produces 2 records (start and end)
+def extract_place_visits(data, last_processed, stats):
+    records = []
     for segment in data.get("semanticSegments", []):
         visit = segment.get("visit")
         if visit:
@@ -472,16 +451,14 @@ def main(input_file, reprocess, reprocess_elevation):
                         stats["placeVisit_skipped"] += 1
                 else:
                     stats["records_invalid_format"] += 1
+    return records
 
-    # Step 5: Enrich records without activity_type using activity_ranges
-    # Match each point's timestamp to a known activity window if possible
+def enrich_with_activities(records, activity_ranges, stats):
     for rec in records:
         if rec.get("activity_type"):
             continue
         ts = rec["datetime"]
         matched = False
-        # Use the first matching activity range to annotate the point
-        # If no match is found, record this in stats
         for act in activity_ranges:
             if act["start_time"] <= ts <= act["end_time"]:
                 rec["activity_type"] = act["activity_type"]
@@ -492,45 +469,66 @@ def main(input_file, reprocess, reprocess_elevation):
         if not matched:
             stats["records_not_enriched_due_to_no_match"] += 1
 
-    # Step 6: Insert final records into PostgreSQL
-    # Skip duplicates unless the new record has more complete metadata
-    insert_records_into_postgres(records, stats)
-
+def handle_elevation_enrichment(reprocess_elevation):
     elevation_stats = {
         "records_considered": 0,
         "records_skipped_due_to_null_elevation": 0,
         "records_updated": 0
     }
-
-    # Step 7: Elevation enrichment phase
-    # Fetch records with missing elevation, optionally skipping previously processed ones
-    if reprocess_elevation:
-        last_ts = None
-        print("🔁 Reprocessing all elevation records")
-    else:
-        last_ts = get_last_elevation_timestamp()
-        if last_ts:
-            print(f"▶️ Processing elevation updates from {last_ts.isoformat()}")
-        else:
-            print("▶️ No previous elevation timestamp, processing all missing elevations")
-
+    last_ts = None if reprocess_elevation else get_last_elevation_timestamp()
     records = fetch_records_missing_elevation(last_ts)
-    elevation_records_to_process = fetch_records_missing_elevation(last_ts) # Renamed variable for clarity
-    latest_ts = update_elevations(elevation_records_to_process, elevation_stats)
-
+    latest_ts = update_elevations(records, elevation_stats)
     if latest_ts:
         update_last_elevation_timestamp(latest_ts)
         print(f"🕒 Elevation last processed timestamp updated to {latest_ts.isoformat()}")
 
-    print("\n📊 Summary:")
-    for k, v in stats.items():
-        print(f"{k}: {v}")
-    print(f"Total records processed for DB insert: {len(records)}")
-
-    # Print elevation update statistics
     print("\n📊 Elevation Processing Summary:")
     for k, v in elevation_stats.items():
         print(f"{k}: {v}")
+
+def print_summary(stats):
+    print("\n📊 Summary:")
+    for k, v in stats.items():
+        print(f"{k}: {v}")
+
+def main(input_file, reprocess, reprocess_elevation):
+    """
+    Main entry point for processing Google Maps Timeline data.
+
+    This function orchestrates the following:
+    - Loads the input JSON file.
+    - Applies last processed timestamp filtering unless overridden.
+    - Extracts and parses GPS points, raw signals, and place visits.
+    - Enriches records with activity type.
+    - Inserts deduplicated and enriched records into the database.
+    - Optionally enriches elevation data using SRTM.
+
+    Args:
+        input_file (str): Path to the Google Timeline JSON file.
+        reprocess (bool): If True, bypasses last processed timestamp filtering.
+        reprocess_elevation (bool): If True, reprocesses elevation data regardless of control timestamp.
+    """
+    stats = initialize_stats()
+    last_processed = None if reprocess else get_last_processed_timestamp()
+    print_start_message(last_processed, reprocess)
+
+    data = load_json(input_file)
+    if data is None:
+        return
+
+    activity_ranges = extract_activity_ranges(data, last_processed, stats)
+
+    # Merge all record types from the data
+    records = (
+        extract_timeline_path(data, last_processed, stats) +
+        extract_raw_signals(data, last_processed, stats) +
+        extract_place_visits(data, last_processed, stats)
+    )
+
+    enrich_with_activities(records, activity_ranges, stats)
+    insert_records_into_postgres(records, stats)
+    handle_elevation_enrichment(reprocess_elevation)
+    print_summary(stats)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract and enrich Google Maps Timeline data.")
