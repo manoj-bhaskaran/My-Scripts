@@ -212,10 +212,6 @@ def convert_file(file_name, output_format):
         if not files:
             raise RuntimeError("No files found in export task result.")
 
-        files = export_status["result"].get("files", [])
-        if not files:
-            raise RuntimeError("No files found in export task result.")
-
         download_url = files[0]["url"]
         logging.info(f"File converted successfully. Download URL: {download_url}")
         print(f"File converted successfully. Download URL: {download_url}")  # PowerShell needs this
