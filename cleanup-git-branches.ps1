@@ -65,6 +65,10 @@ Param (
     [string]$LogFile = "C:\Users\manoj\Documents\Scripts\cleanup-git-branches.log"
 )
 
+if ($Silent) {
+    $env:GIT_TERMINAL_PROMPT = "0"
+}
+
 function Log {
     param (
         [string]$Message,
@@ -112,7 +116,16 @@ try {
 
     # Fetch and prune stale remote tracking branches
     Log "🔄 Fetching and pruning remote branches from '$RemoteName'..."
-    git fetch $RemoteName --prune
+    if ($Silent) {
+        try {
+            git fetch $RemoteName --prune --quiet 2>&1 | Out-Null
+        } catch {
+            Log "Fetch failed silently: $($_.Exception.Message)" "ERROR"
+        }
+    } else {
+        Log "🔄 Fetching and pruning remote branches from '$RemoteName'..." "INFO"
+        git fetch $RemoteName --prune
+    }
 
     # Get the current branch
     $currentBranch = git rev-parse --abbrev-ref HEAD
