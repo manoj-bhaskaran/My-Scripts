@@ -61,7 +61,7 @@ function Test-BackupPath {
 }
 
 function Test-Rclone {
-    $rcloneCheck = & rclone about "`"$RcloneRemote`"" 2>&1
+    $rcloneCheck = & rclone about $RcloneRemote 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Log "Rclone Google Drive validation failed: $rcloneCheck" "ERROR"
         exit 1
