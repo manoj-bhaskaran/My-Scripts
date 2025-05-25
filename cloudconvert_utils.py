@@ -81,7 +81,7 @@ def upload_file(file_name):
 
     except (requests.exceptions.RequestException, KeyError, IndexError, ValueError) as e:
         logging.error(f"Error during file upload: {e}")
-        raise Exception(f"Error during file upload: {e}")
+        raise RuntimeError(f"Error during file upload: {e}") from e
 
 # Function to create a conversion task
 def create_conversion_task(api_key, output_format):
