@@ -2,14 +2,17 @@
 .SYNOPSIS
     Identifies and deletes obsolete (fully merged) local Git branches and their corresponding remote branches.
     
-    Supports dry-run mode, customizable remote names and exclusion lists, and the ability to operate from a specified
-    Git repository root directory without altering the user's current working location.
+    Supports dry-run mode, customizable remote names, exclusion lists, retention of recently merged branches,
+    and the ability to operate from a specified Git repository root without altering the user's current working location.
 
 .DESCRIPTION
     This script automates the cleanup of local Git branches that have already been merged into the current branch,
-    and optionally deletes the corresponding remote branches. It supports a dry-run mode, customizable remote names,
-    and an exclusion list of branches that should never be deleted. The script can also be run against a specified
-    Git repository path without requiring the user to be in that directory.
+    and optionally deletes the corresponding remote branches. It supports:
+    - Dry-run mode to simulate cleanup without making changes.
+    - Customizable remote names (e.g., origin, upstream).
+    - An exclusion list of branches that should never be deleted.
+    - A retention policy to preserve a specified number of recently merged branches.
+    - Operation from a specified Git repository directory, restoring the user's original location on completion.
 
 .PARAMETER RemoteName
     The name of the remote repository. Default is 'origin'.
@@ -24,6 +27,9 @@
     The path to the root directory of a Git repository to operate in. If specified, the script temporarily switches
     to that directory for execution and returns to the original location afterward.
 
+.PARAMETER KeepRecent
+    The number of most recently active merged branches to retain (based on latest commit time). Default is 10.
+
 .EXAMPLE
     .\cleanup-git-branches.ps1
 
@@ -32,12 +38,16 @@
 
 .EXAMPLE
     .\cleanup-git-branches.ps1 -WorkingDirectory "D:\Projects\myrepo" -DryRun
+
+.EXAMPLE
+    .\cleanup-git-branches.ps1 -KeepRecent 5
 #>
 Param (
     [string]$RemoteName = "origin",
     [switch]$DryRun,
     [string[]]$ExcludeBranches = @("main", "master"),
-    [string]$WorkingDirectory = ""
+    [string]$WorkingDirectory = "",
+    [int]$KeepRecent = 10
 )
 
 # Save current location
@@ -69,10 +79,32 @@ try {
     # Get the current branch
     $currentBranch = git rev-parse --abbrev-ref HEAD
 
-    # Get merged branches, excluding current and explicitly excluded branches
-    $obsoleteBranches = git branch --merged |
+    # Step 1: Get all merged branches, trim and clean
+    $mergedBranches = git branch --merged |
         ForEach-Object { $_.Trim().Replace("* ", "") } |
         Where-Object { $_ -ne $currentBranch -and ($ExcludeBranches -notcontains $_) }
+
+    # Step 2: Get last commit timestamp for each branch
+    $branchInfoList = foreach ($branch in $mergedBranches) {
+        $timestamp = git log -1 --format=%ct $branch 2>$null
+        if ($timestamp) {
+            [PSCustomObject]@{
+                Name      = $branch
+                Timestamp = [int64]$timestamp
+            }
+        }
+    }
+
+    # Step 3: Sort by timestamp descending, take top N to keep
+    $branchesToKeep = $branchInfoList |
+        Sort-Object Timestamp -Descending |
+        Select-Object -First $KeepRecent |
+        Select-Object -ExpandProperty Name
+
+    # Step 4: Filter out branches to keep
+    $obsoleteBranches = $branchInfoList |
+        Where-Object { $branchesToKeep -notcontains $_.Name } |
+        Select-Object -ExpandProperty Name
 
     if (-not $obsoleteBranches) {
         Write-Output "🎉 No obsolete branches found (already merged into '$currentBranch')."
