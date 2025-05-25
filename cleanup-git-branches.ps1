@@ -123,7 +123,6 @@ try {
             Log "Fetch failed silently: $($_.Exception.Message)" "ERROR"
         }
     } else {
-        Log "🔄 Fetching and pruning remote branches from '$RemoteName'..." "INFO"
         git fetch $RemoteName --prune
     }
 
