@@ -686,24 +686,25 @@ def run_vacuum_analyze_if_supported():
     """
     Executes VACUUM ANALYZE on the timeline.locations table if the PostgreSQL version supports the MAINTAIN privilege.
 
-    Uses the get_db_cursor context manager to handle DB connection and cleanup.
+    This function connects to the database with autocommit enabled to ensure VACUUM can run outside a transaction.
 
     Returns:
         None
     """
     try:
-        with psycopg2.connect(**DB_PARAMS) as conn:
-            conn.autocommit = True  # 🔑 Required for VACUUM
-            with conn.cursor() as cur:
-                cur.execute("SHOW server_version;")
-                version_str = cur.fetchone()[0]
-                major_version = int(version_str.split('.')[0])
+        conn = psycopg2.connect(**DB_PARAMS)
+        conn.autocommit = True  # Must be set immediately
+        with conn.cursor() as cur:
+            cur.execute("SHOW server_version;")
+            version_str = cur.fetchone()[0]
+            major_version = int(version_str.split('.')[0])
 
-                if major_version >= 15:
-                    print("⚙️  Running VACUUM ANALYZE on timeline.locations...")
-                    cur.execute("VACUUM ANALYZE timeline.locations;")
-                else:
-                    print(f"⚠️  VACUUM ANALYZE skipped: PostgreSQL version {version_str} does not support MAINTAIN privilege.")
+            if major_version >= 15:
+                print("⚙️  Running VACUUM ANALYZE on timeline.locations...")
+                cur.execute("VACUUM ANALYZE timeline.locations;")
+            else:
+                print(f"⚠️  VACUUM ANALYZE skipped: PostgreSQL version {version_str} does not support MAINTAIN privilege.")
+        conn.close()
     except Exception as e:
         print(f"❌ Could not run VACUUM ANALYZE: {e}")
 
