@@ -4,6 +4,16 @@ import logging
 import requests
 import urllib.parse
 import argparse
+import time
+
+# Constants for retry logic
+max_retries = 60  # Total 5 minutes if delay is 5 seconds
+retry_delay = 5   # Seconds
+
+# Constants for task names
+IMPORT_TASK = "import-my-file"
+CONVERT_TASK = "convert-my-file"
+EXPORT_TASK = "export-my-file"
 
 # Set up logging
 def setup_logging(debug=False):
@@ -47,7 +57,9 @@ def create_upload_task(api_key):
 # Function to handle file upload
 def handle_file_upload(file_name, upload_url, parameters):
     encoded_file_name = urllib.parse.quote(file_name)
-    parameters["key"] = parameters["key"].replace("${filename}", encoded_file_name)
+    # use local_parameters in requests.post
+    local_parameters = parameters.copy()
+    local_parameters["key"] = local_parameters["key"].replace("${filename}", encoded_file_name)
 
     logging.debug(f"Upload URL: {upload_url}")
     logging.debug(f"Upload parameters: {parameters}")
@@ -74,7 +86,6 @@ def upload_file(file_name):
         parameters = upload_task["result"]["form"]["parameters"]
         upload_response = handle_file_upload(file_name, upload_url, parameters)
 
-        result_message = f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
         result_message = f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
         logging.info(result_message)
         print(result_message)  # Print the result for PowerShell to capture
@@ -135,7 +146,7 @@ def check_task_status(api_key, task_id):
 # Function to handle conversion
 def convert_file(file_name, output_format):
     logging.debug(f"Starting conversion process for file: {file_name} to format: {output_format}")
-    
+
     try:
         api_key = authenticate()
         conversion_task = create_conversion_task(api_key, output_format)
@@ -146,48 +157,77 @@ def convert_file(file_name, output_format):
             logging.error("Unexpected type for conversion_task['tasks']")
             raise ValueError("Expected list but found different type in conversion_task['tasks']")
 
-        # Find the required task in the list
-        upload_task = next((task for task in tasks if task.get("name") == "import-my-file"), None)
+        # Find and execute upload
+        upload_task = next((task for task in tasks if task.get("name") == IMPORT_TASK), None)
         if not upload_task:
-            raise ValueError("Task 'import-my-file' not found in conversion_task['tasks']")
-
+            raise ValueError(f"Task '{IMPORT_TASK}' not found in conversion_task['tasks']")
         handle_file_upload(file_name, upload_task["result"]["form"]["url"], upload_task["result"]["form"]["parameters"])
 
-        # Check conversion status
-        convert_task = next((task for task in tasks if task.get("name") == "convert-my-file"), None)
+        # Poll for convert task
+        convert_task = next((task for task in tasks if task.get("name") == CONVERT_TASK), None)
         if not convert_task:
-            raise ValueError("Task 'convert-my-file' not found in conversion_task['tasks']")
+            raise ValueError(f"Task '{CONVERT_TASK}' not found in conversion_task['tasks']")
         convert_task_id = convert_task["id"]
 
-        status = check_task_status(api_key, convert_task_id)
-        logging.debug(f"Check task status response: {status}")
-        if isinstance(status, list):
-            logging.error("Unexpected list type found in status")
-            raise ValueError("Expected dictionary but found list in status")
-        logging.info(f"Conversion status: {status['status']}")
+        try:
+            for i in range(max_retries):
+                status = check_task_status(api_key, convert_task_id)
+                logging.info(f"Conversion status: {status['status']} (attempt {i+1}/{max_retries})")
+                if status["status"] == "finished":
+                    break
+                elif status["status"] == "error":
+                    logging.error(f"Conversion failed: {status.get('message', 'No error message provided.')}")
+                    raise RuntimeError("CloudConvert conversion task failed.")
+                time.sleep(retry_delay)
+            else:
+                raise RuntimeError(f"CloudConvert conversion task timed out after {max_retries * retry_delay} seconds.")
+        except (requests.exceptions.RequestException, KeyError, IndexError) as e:
+            logging.error(f"Error while polling conversion task: {e}")
+            raise RuntimeError("Polling for conversion task failed.") from e
 
-        if status["status"] == "finished":
-            export_task = next((task for task in tasks if task.get("name") == "export-my-file"), None)
-            if not export_task:
-                raise ValueError("Task 'export-my-file' not found in conversion_task['tasks']")
-            export_task_id = export_task["id"]
+        # Poll for export task
+        export_task = next((task for task in tasks if task.get("name") == EXPORT_TASK), None)
+        if not export_task:
+            raise ValueError(f"Task '{EXPORT_TASK}' not found in conversion_task['tasks']")
+        export_task_id = export_task["id"]
 
-            export_status = check_task_status(api_key, export_task_id)
-            logging.info(f"Export status: {export_status['status']}")
-            if export_status["status"] == "finished":
-                download_url = export_status["result"]["files"][0]["url"]
-                logging.info(f"File converted successfully. Download URL: {download_url}")
-                print(f"File converted successfully. Download URL: {download_url}")  # Print the result for PowerShell to capture
+        try:
+            for i in range(max_retries):
+                export_status = check_task_status(api_key, export_task_id)
+                logging.info(f"Export status: {export_status['status']} (attempt {i+1}/{max_retries})")
+                if export_status["status"] == "finished":
+                    break
+                elif export_status["status"] == "error":
+                    logging.error(f"Export failed: {export_status.get('message', 'No error message provided.')}")
+                    raise RuntimeError("CloudConvert export task failed.")
+                time.sleep(retry_delay)
+            else:
+                raise RuntimeError(f"Export task timed out after {max_retries * retry_delay} seconds.")
+        except (requests.exceptions.RequestException, KeyError, IndexError) as e:
+            logging.error(f"Error while polling export task: {e}")
+            raise RuntimeError("Polling for export task failed.") from e
 
-    except (requests.exceptions.RequestException, KeyError, IndexError, ValueError) as e:
+        # Retrieve file
+        files = export_status["result"].get("files", [])
+        if not files:
+            raise RuntimeError("No files found in export task result.")
+
+        files = export_status["result"].get("files", [])
+        if not files:
+            raise RuntimeError("No files found in export task result.")
+
+        download_url = files[0]["url"]
+        logging.info(f"File converted successfully. Download URL: {download_url}")
+        print(f"File converted successfully. Download URL: {download_url}")  # PowerShell needs this
+
+    except (requests.exceptions.RequestException, KeyError, IndexError, ValueError, RuntimeError) as e:
         logging.error(f"Error during file conversion: {e}")
-        raise RuntimeError(f"Error during file conversion: {e}")
+        raise RuntimeError(f"Error during file conversion: {e}") from e
 
 # Function to parse command-line arguments
 def parse_arguments():
 
-    print("Raw sys.argv:", sys.argv)  # Debug print
-
+    logging.debug(f"Raw sys.argv: {sys.argv}")
     parser = argparse.ArgumentParser(description='Upload and convert a file using CloudConvert.')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging.')
     parser.add_argument('file_name', type=str, help='The name of the file to be uploaded and converted.')
