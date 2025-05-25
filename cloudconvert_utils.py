@@ -5,6 +5,7 @@ import requests
 import urllib.parse
 import argparse
 import time
+from typing import Dict, Any, Tuple
 
 # Constants for retry logic
 max_retries = 60  # Total 5 minutes if delay is 5 seconds
@@ -19,12 +20,12 @@ EXPORT_TASK = "export-my-file"
 CLOUDCONVERT_API_BASE = "https://api.cloudconvert.com/v2"
 
 # Set up logging
-def setup_logging(debug=False):
+def setup_logging(debug: bool = False) -> None:
     level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(level=level, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Function to retrieve and validate the API key
-def authenticate():
+def authenticate() -> str:
     logging.debug("Attempting to retrieve CloudConvert API key from environment variables.")
     api_key = os.getenv("CLOUDCONVERT_PROD")
     if not api_key:
@@ -34,7 +35,7 @@ def authenticate():
     return api_key
 
 # Function to create an upload task
-def create_upload_task(api_key):
+def create_upload_task(api_key: str) -> Dict[str, Any]:
     url = f"{CLOUDCONVERT_API_BASE}/jobs"
     payload = {
         "tasks": {
@@ -58,10 +59,11 @@ def create_upload_task(api_key):
     return response.json()["data"]["tasks"][0]
 
 # Function to handle file upload
-def handle_file_upload(file_name, upload_url, parameters):
+def handle_file_upload(file_name: str, upload_url: str, parameters: Dict[str, str]) -> requests.Response:
     encoded_file_name = urllib.parse.quote(file_name)
     # use local_parameters in requests.post
     local_parameters = parameters.copy()
+    # Replace placeholder in 'key' with actual file name, as expected by CloudConvert API
     local_parameters["key"] = local_parameters["key"].replace("${filename}", encoded_file_name)
 
     logging.debug(f"Upload URL: {upload_url}")
@@ -78,7 +80,11 @@ def handle_file_upload(file_name, upload_url, parameters):
     return upload_response
 
 # Function to upload a file
-def upload_file(file_name):
+def upload_file(file_name: str) -> None:
+    """
+    Uploads a file to CloudConvert using a standalone upload-only job.
+    Useful for testing or when only uploading without conversion.
+    """
     logging.debug(f"Starting file upload process for file: {file_name}")
     
     try:
@@ -98,21 +104,21 @@ def upload_file(file_name):
         raise RuntimeError(f"Error during file upload: {e}") from e
 
 # Function to create a conversion task
-def create_conversion_task(api_key, output_format):
+def create_conversion_task(api_key: str, output_format: str) -> Dict[str, Any]:
     url = "https://api.cloudconvert.com/v2/jobs"
     payload = {
         "tasks": {
-            "import-my-file": {
+            IMPORT_TASK: {
                 "operation": "import/upload"
             },
-            "convert-my-file": {
+            CONVERT_TASK: {
                 "operation": "convert",
-                "input": "import-my-file",
+                "input": IMPORT_TASK,
                 "output_format": output_format
             },
-            "export-my-file": {
+            EXPORT_TASK: {
                 "operation": "export/url",
-                "input": "convert-my-file"
+                "input": CONVERT_TASK
             }
         }
     }
@@ -131,7 +137,7 @@ def create_conversion_task(api_key, output_format):
     return response.json()["data"]
 
 # Function to check the status of a task
-def check_task_status(api_key, task_id):
+def check_task_status(api_key: str, task_id: str) -> Dict[str, Any]:
     url = f"{CLOUDCONVERT_API_BASE}/tasks/{task_id}"
     headers = {
         "Authorization": f"Bearer {api_key}"
@@ -147,7 +153,7 @@ def check_task_status(api_key, task_id):
     return response.json()["data"]
 
 # Function to handle conversion
-def convert_file(file_name, output_format):
+def convert_file(file_name: str, output_format: str) -> None:
     logging.debug(f"Starting conversion process for file: {file_name} to format: {output_format}")
 
     try:
@@ -180,7 +186,7 @@ def convert_file(file_name, output_format):
                     break
                 elif status["status"] == "error":
                     logging.error(f"Conversion failed: {status.get('message', 'No error message provided.')}")
-                    raise RuntimeError("CloudConvert conversion task failed.")
+                    raise RuntimeError(f"CloudConvert conversion task failed: {status.get('message', 'No error message provided.')}")
                 time.sleep(retry_delay)
             else:
                 raise RuntimeError(f"CloudConvert conversion task timed out after {max_retries * retry_delay} seconds.")
@@ -202,7 +208,7 @@ def convert_file(file_name, output_format):
                     break
                 elif export_status["status"] == "error":
                     logging.error(f"Export failed: {export_status.get('message', 'No error message provided.')}")
-                    raise RuntimeError("CloudConvert export task failed.")
+                    raise RuntimeError(f"CloudConvert export task failed: {status.get('message', 'No error message provided.')}")
                 time.sleep(retry_delay)
             else:
                 raise RuntimeError(f"Export task timed out after {max_retries * retry_delay} seconds.")
@@ -217,15 +223,14 @@ def convert_file(file_name, output_format):
 
         download_url = files[0]["url"]
         logging.info(f"File converted successfully. Download URL: {download_url}")
-        print(f"File converted successfully. Download URL: {download_url}")  # PowerShell needs this
+        print(f"File converted successfully. Download URL: {download_url}")  # For PowerShell capture
 
     except (requests.exceptions.RequestException, KeyError, IndexError, ValueError, RuntimeError) as e:
         logging.error(f"Error during file conversion: {e}")
         raise RuntimeError(f"Error during file conversion: {e}") from e
 
 # Function to parse command-line arguments
-def parse_arguments():
-
+def parse_arguments() -> Tuple[bool, str, str]:
     logging.debug(f"Raw sys.argv: {sys.argv}")
     parser = argparse.ArgumentParser(description='Upload and convert a file using CloudConvert.')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging.')
@@ -237,15 +242,18 @@ def parse_arguments():
     return args.debug, args.file_name, args.output_format
 
 # Main function to be called
-def main():
+def main() -> None:
     debug, file_name, output_format = parse_arguments()
     setup_logging(debug)
     try:
         convert_file(file_name, output_format)
+        sys.exit(0)  # Success
     except RuntimeError as e:
         logging.error(f"Runtime error: {e}")
+        sys.exit(1)
     except Exception as e:
         logging.error(f"Unexpected error: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
