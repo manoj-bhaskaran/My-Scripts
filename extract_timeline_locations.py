@@ -136,9 +136,9 @@ def insert_records_into_postgres(records, stats):
 
     1. Near-Duplicate Check:
     - If a record with the same latitude and longitude is found within ±N seconds of the new record's timestamp,
-        it is considered a near-duplicate.
+      it is considered a near-duplicate.
     - If the new record has more non-null optional fields (accuracy, elevation, activity_type, confidence),
-        the near-duplicate is deleted and replaced.
+      the near-duplicate is deleted and replaced.
     - Otherwise, the new record is skipped.
 
     2. Exact Timestamp Check:
@@ -151,14 +151,15 @@ def insert_records_into_postgres(records, stats):
         records (list[dict]): Timeline records to insert.
         stats (dict): Dictionary to accumulate statistics on inserted, replaced, skipped, and duplicate records.
     """
-    stats["records_inserted"] = 0
-    stats["records_replaced"] = 0
-    stats["records_skipped_due_to_existing_richer"] = 0
-    stats["records_skipped_near_duplicate"] = 0
-    stats["records_replaced_near_duplicate"] = 0
+    stats.update({
+        "records_inserted": 0,
+        "records_replaced": 0,
+        "records_skipped_due_to_existing_richer": 0,
+        "records_skipped_near_duplicate": 0,
+        "records_replaced_near_duplicate": 0
+    })
 
     interval_str = f"{NEAR_DUPLICATE_WINDOW_SECONDS} seconds"
-
     if not records:
         return
 
@@ -167,80 +168,133 @@ def insert_records_into_postgres(records, stats):
             if not rec.get("datetime") or rec.get("latitude") is None or rec.get("longitude") is None:
                 continue
 
-            # Step 1: Check for near-duplicate based on lat/lon and ±time window
-            cur.execute("""
-                SELECT location_id, accuracy, elevation, activity_type, confidence
-                FROM timeline.locations
-                WHERE latitude = %s AND longitude = %s
-                AND timestamp BETWEEN %s - INTERVAL %s
-                                    AND %s + INTERVAL %s
-                LIMIT 1
-            """, (
-                rec["latitude"], rec["longitude"],
-                rec["datetime"], interval_str,
-                rec["datetime"], interval_str
-            ))
+            if check_near_duplicate(rec, cur, interval_str, stats):
+                continue
+            if check_exact_timestamp_duplicate(rec, cur, stats):
+                continue
 
-            near_dup = cur.fetchone()
-            if near_dup:
-                existing_dict = {
-                    "accuracy": near_dup[1],
-                    "elevation": near_dup[2],
-                    "activity_type": near_dup[3],
-                    "confidence": near_dup[4]
-                }
-                if count_optional_fields(rec) > count_optional_fields(existing_dict):
-                    cur.execute("DELETE FROM timeline.locations WHERE location_id = %s", (near_dup[0],))
-                    stats["records_replaced_near_duplicate"] += 1
-                else:
-                    stats["records_skipped_near_duplicate"] += 1
-                    continue  # Skip to next record
-            else:
-                # Step 2: Check for exact timestamp match
-                cur.execute("""
-                    SELECT accuracy, elevation, activity_type, confidence
-                    FROM timeline.locations
-                    WHERE timestamp = %s
-                """, (rec["datetime"],))
-                existing = cur.fetchone()
-                if existing:
-                    existing_dict = {
-                        "accuracy": existing[0],
-                        "elevation": existing[1],
-                        "activity_type": existing[2],
-                        "confidence": existing[3]
-                    }
-                    if count_optional_fields(rec) <= count_optional_fields(existing_dict):
-                        stats["records_skipped_due_to_existing_richer"] += 1
-                        continue
-                    else:
-                        cur.execute("DELETE FROM timeline.locations WHERE timestamp = %s", (rec["datetime"],))
-                        stats["records_replaced"] += 1
-                else:
-                    stats["records_inserted"] += 1
+            perform_insert(rec, cur)
+            stats["records_inserted"] += 1
 
-            # Step 3: Insert the new or richer record
-            cur.execute("""
-                INSERT INTO timeline.locations (
-                    timestamp, latitude, longitude,
-                    elevation, accuracy, activity_type, confidence,
-                    location
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s,
-                    ST_SetSRID(ST_MakePoint(%s, %s), 4326)
-                )
-            """, (
-                rec["datetime"], rec["latitude"], rec["longitude"],
-                rec.get("elevation"),
-                rec.get("accuracy"),
-                rec.get("activity_type"),
-                rec.get("confidence"),
-                rec["longitude"], rec["latitude"]
-            ))
-
-    # Update control timestamp once at the end
     latest = max(r["datetime"] for r in records)
     update_last_processed_timestamp(latest)
     print(f"🕒 Last processed timestamp updated to: {latest.isoformat()}")
+
+
+def check_near_duplicate(rec, cur, interval_str, stats):
+    """
+    Checks if a near-duplicate record exists in the database and decides whether to replace it.
+
+    A near-duplicate is defined as a record with the same latitude and longitude within ±N seconds
+    of the current record's timestamp.
+
+    - If a near-duplicate exists and the new record is richer (has more non-null optional fields),
+        the existing record is deleted.
+    - If the near-duplicate exists but the new record is not richer, it is skipped.
+
+    Args:
+        rec (dict): The timeline record to evaluate.
+        cur (psycopg2.cursor): Active database cursor.
+        interval_str (str): SQL interval string for the time window.
+        stats (dict): Dictionary to update counts for skipped and replaced near-duplicates.
+
+    Returns:
+        bool: True if the record should be skipped due to a non-richer near-duplicate.
+                False if no near-duplicate or the new record is richer.
+    """    
+    cur.execute("""
+        SELECT location_id, accuracy, elevation, activity_type, confidence
+        FROM timeline.locations
+        WHERE latitude = %s AND longitude = %s
+        AND timestamp BETWEEN %s - INTERVAL %s
+                        AND %s + INTERVAL %s
+        LIMIT 1
+    """, (rec["latitude"], rec["longitude"], rec["datetime"], interval_str, rec["datetime"], interval_str))
+
+    near_dup = cur.fetchone()
+    if near_dup:
+        existing = {
+            "accuracy": near_dup[1],
+            "elevation": near_dup[2],
+            "activity_type": near_dup[3],
+            "confidence": near_dup[4]
+        }
+        if count_optional_fields(rec) > count_optional_fields(existing):
+            cur.execute("DELETE FROM timeline.locations WHERE location_id = %s", (near_dup[0],))
+            stats["records_replaced_near_duplicate"] += 1
+            return False
+        else:
+            stats["records_skipped_near_duplicate"] += 1
+            return True
+    return False
+
+
+def check_exact_timestamp_duplicate(rec, cur, stats):
+    """
+    Checks if a record already exists in the database with the exact same timestamp.
+
+    - If such a record exists and has more or equal non-null optional fields than the new record,
+      the new record is skipped.
+    - If the new record is richer, the existing one is deleted.
+
+    Args:
+        rec (dict): The timeline record to evaluate.
+        cur (psycopg2.cursor): Active database cursor.
+        stats (dict): Dictionary to update counts for skipped and replaced timestamp duplicates.
+
+    Returns:
+        bool: True if the record should be skipped due to a non-richer timestamp match.
+              False if the record is unique or should replace the existing one.
+    """
+    cur.execute("""
+        SELECT accuracy, elevation, activity_type, confidence
+        FROM timeline.locations
+        WHERE timestamp = %s
+    """, (rec["datetime"],))
+    existing = cur.fetchone()
+    if existing:
+        existing_dict = {
+            "accuracy": existing[0],
+            "elevation": existing[1],
+            "activity_type": existing[2],
+            "confidence": existing[3]
+        }
+        if count_optional_fields(rec) > count_optional_fields(existing_dict):
+            cur.execute("DELETE FROM timeline.locations WHERE timestamp = %s", (rec["datetime"],))
+            stats["records_replaced"] += 1
+            return False
+        else:
+            stats["records_skipped_due_to_existing_richer"] += 1
+            return True
+    return False
+
+
+def perform_insert(rec, cur):
+    """
+    Inserts the given timeline record into the database.
+
+    This function assumes that the record has already passed all duplicate and richness checks.
+
+    Args:
+        rec (dict): The timeline record to insert.
+        cur (psycopg2.cursor): Active database cursor.
+    """
+    cur.execute("""
+        INSERT INTO timeline.locations (
+            timestamp, latitude, longitude,
+            elevation, accuracy, activity_type, confidence,
+            location
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s,
+            ST_SetSRID(ST_MakePoint(%s, %s), 4326)
+        )
+    """, (
+        rec["datetime"], rec["latitude"], rec["longitude"],
+        rec.get("elevation"),
+        rec.get("accuracy"),
+        rec.get("activity_type"),
+        rec.get("confidence"),
+        rec["longitude"], rec["latitude"]
+    ))
 
 def get_last_elevation_timestamp():
     """
@@ -632,24 +686,27 @@ def run_vacuum_analyze_if_supported():
     """
     Executes VACUUM ANALYZE on the timeline.locations table if the PostgreSQL version supports the MAINTAIN privilege.
 
-    Uses the get_db_cursor context manager to handle DB connection and cleanup.
+    This function connects to the database with autocommit enabled to ensure VACUUM can run outside a transaction.
 
     Returns:
         None
     """
-    with get_db_cursor() as (_, cur):
-        cur.execute("SHOW server_version;")
-        version_str = cur.fetchone()[0]
+    try:
+        conn = psycopg2.connect(**DB_PARAMS)
+        conn.autocommit = True  # Must be set immediately
+        with conn.cursor() as cur:
+            cur.execute("SHOW server_version;")
+            version_str = cur.fetchone()[0]
+            major_version = int(version_str.split('.')[0])
 
-        # Extract major version number (handles formats like '17.3', '17beta1', etc.)
-        match = re.match(r"(\d+)", version_str)
-        major_version = int(match.group(1)) if match else 0
-
-        if major_version >= 15:
-            print("⚙️  Running VACUUM ANALYZE on timeline.locations...")
-            cur.execute("VACUUM ANALYZE timeline.locations;")
-        else:
-            print(f"⚠️  VACUUM ANALYZE skipped: PostgreSQL version {version_str} does not support MAINTAIN privilege.")
+            if major_version >= 15:
+                print("⚙️  Running VACUUM ANALYZE on timeline.locations...")
+                cur.execute("VACUUM ANALYZE timeline.locations;")
+            else:
+                print(f"⚠️  VACUUM ANALYZE skipped: PostgreSQL version {version_str} does not support MAINTAIN privilege.")
+        conn.close()
+    except Exception as e:
+        print(f"❌ Could not run VACUUM ANALYZE: {e}")
 
 def main(input_file, reprocess, reprocess_elevation):
     """
