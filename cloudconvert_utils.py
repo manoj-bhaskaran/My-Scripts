@@ -15,6 +15,9 @@ IMPORT_TASK = "import-my-file"
 CONVERT_TASK = "convert-my-file"
 EXPORT_TASK = "export-my-file"
 
+# Base URL for CloudConvert API
+CLOUDCONVERT_API_BASE = "https://api.cloudconvert.com/v2"
+
 # Set up logging
 def setup_logging(debug=False):
     level = logging.DEBUG if debug else logging.INFO
@@ -32,7 +35,7 @@ def authenticate():
 
 # Function to create an upload task
 def create_upload_task(api_key):
-    url = "https://api.cloudconvert.com/v2/jobs"
+    url = f"{CLOUDCONVERT_API_BASE}/jobs"
     payload = {
         "tasks": {
             "upload_task": {
@@ -129,7 +132,7 @@ def create_conversion_task(api_key, output_format):
 
 # Function to check the status of a task
 def check_task_status(api_key, task_id):
-    url = f"https://api.cloudconvert.com/v2/tasks/{task_id}"
+    url = f"{CLOUDCONVERT_API_BASE}/tasks/{task_id}"
     headers = {
         "Authorization": f"Bearer {api_key}"
     }
@@ -239,8 +242,10 @@ def main():
     setup_logging(debug)
     try:
         convert_file(file_name, output_format)
+    except RuntimeError as e:
+        logging.error(f"Runtime error: {e}")
     except Exception as e:
-        logging.error(f"Unhandled exception: {e}")
+        logging.error(f"Unexpected error: {e}")
 
 if __name__ == "__main__":
     main()
