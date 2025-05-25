@@ -19,13 +19,26 @@ EXPORT_TASK = "export-my-file"
 # Base URL for CloudConvert API
 CLOUDCONVERT_API_BASE = "https://api.cloudconvert.com/v2"
 
-# Set up logging
 def setup_logging(debug: bool = False) -> None:
+    """
+    Configures the logging level and format.
+
+    Args:
+        debug (bool): If True, sets logging level to DEBUG. Defaults to INFO.
+    """
     level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(level=level, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Function to retrieve and validate the API key
 def authenticate() -> str:
+    """
+    Retrieves the CloudConvert API key from the environment.
+
+    Returns:
+        str: The API key.
+
+    Raises:
+        ValueError: If the environment variable is not set.
+    """
     logging.debug("Attempting to retrieve CloudConvert API key from environment variables.")
     api_key = os.getenv("CLOUDCONVERT_PROD")
     if not api_key:
@@ -34,8 +47,19 @@ def authenticate() -> str:
     logging.debug("API key successfully retrieved.")
     return api_key
 
-# Function to create an upload task
 def create_upload_task(api_key: str) -> Dict[str, Any]:
+    """
+    Creates a CloudConvert job with a single upload task.
+
+    Args:
+        api_key (str): The CloudConvert API key.
+
+    Returns:
+        Dict[str, Any]: The task dictionary containing upload instructions.
+
+    Raises:
+        requests.exceptions.RequestException: If the API request fails.
+    """
     url = f"{CLOUDCONVERT_API_BASE}/jobs"
     payload = {
         "tasks": {
@@ -58,8 +82,21 @@ def create_upload_task(api_key: str) -> Dict[str, Any]:
 
     return response.json()["data"]["tasks"][0]
 
-# Function to handle file upload
 def handle_file_upload(file_name: str, upload_url: str, parameters: Dict[str, str]) -> requests.Response:
+    """
+    Uploads a file to CloudConvert using the given upload URL and parameters.
+
+    Args:
+        file_name (str): The path to the file to upload.
+        upload_url (str): The CloudConvert upload URL.
+        parameters (Dict[str, str]): Parameters including the upload key.
+
+    Returns:
+        requests.Response: The HTTP response object.
+
+    Raises:
+        RuntimeError: If the upload request fails.
+    """ 
     encoded_file_name = urllib.parse.quote(file_name)
     # use local_parameters in requests.post
     local_parameters = parameters.copy()
@@ -82,11 +119,15 @@ def handle_file_upload(file_name: str, upload_url: str, parameters: Dict[str, st
     logging.info(f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}")
     return upload_response
 
-# Function to upload a file
 def upload_file(file_name: str) -> None:
     """
-    Uploads a file to CloudConvert using a standalone upload-only job.
-    Useful for testing or when only uploading without conversion.
+    Performs a standalone upload of a file using a dedicated CloudConvert upload job.
+
+    Args:
+        file_name (str): The path to the file to upload.
+
+    Raises:
+        RuntimeError: If any step in the upload process fails.
     """
     logging.debug(f"Starting file upload process for file: {file_name}")
     
@@ -106,9 +147,21 @@ def upload_file(file_name: str) -> None:
         logging.error(f"Error during file upload: {e}")
         raise RuntimeError(f"Error during file upload: {e}") from e
 
-# Function to create a conversion task
 def create_conversion_task(api_key: str, output_format: str) -> Dict[str, Any]:
-    url = "https://api.cloudconvert.com/v2/jobs"
+    """
+    Creates a CloudConvert job for uploading, converting, and exporting a file.
+
+    Args:
+        api_key (str): The CloudConvert API key.
+        output_format (str): Desired output format (e.g., 'pdf', 'jpg').
+
+    Returns:
+        Dict[str, Any]: The job definition returned by the API.
+
+    Raises:
+        requests.exceptions.RequestException: If the API request fails.
+    """
+    url = f"{CLOUDCONVERT_API_BASE}/jobs"
     payload = {
         "tasks": {
             IMPORT_TASK: {
@@ -139,8 +192,20 @@ def create_conversion_task(api_key: str, output_format: str) -> Dict[str, Any]:
 
     return response.json()["data"]
 
-# Function to check the status of a task
 def check_task_status(api_key: str, task_id: str) -> Dict[str, Any]:
+    """
+    Checks the status of a CloudConvert task.
+
+    Args:
+        api_key (str): The CloudConvert API key.
+        task_id (str): The ID of the task to check.
+
+    Returns:
+        Dict[str, Any]: The task status response.
+
+    Raises:
+        requests.exceptions.RequestException: If the API request fails.
+    """
     url = f"{CLOUDCONVERT_API_BASE}/tasks/{task_id}"
     headers = {
         "Authorization": f"Bearer {api_key}"
@@ -155,10 +220,19 @@ def check_task_status(api_key: str, task_id: str) -> Dict[str, Any]:
 
     return response.json()["data"]
 
-# Function to handle conversion
 def convert_file(file_name: str, output_format: str) -> None:
-    logging.debug(f"Starting conversion process for file: {file_name} to format: {output_format}")
+    """
+    Converts a file using CloudConvert by uploading, polling conversion status,
+    and retrieving the final export URL.
 
+    Args:
+        file_name (str): Path to the source file.
+        output_format (str): Desired output format.
+
+    Raises:
+        RuntimeError: If any stage of the conversion process fails.
+    """
+    logging.debug(f"Starting conversion process for file: {file_name} to format: {output_format}")
     try:
         api_key = authenticate()
         conversion_task = create_conversion_task(api_key, output_format)
@@ -236,8 +310,16 @@ def convert_file(file_name: str, output_format: str) -> None:
         logging.error(f"Error during file conversion: {e}")
         raise RuntimeError(f"Error during file conversion: {e}") from e
 
-# Function to parse command-line arguments
 def parse_arguments() -> Tuple[bool, str, str]:
+    """
+    Parses command-line arguments for the script.
+
+    Returns:
+        Tuple[bool, str, str]: A tuple containing:
+            - debug (bool): Whether debug logging is enabled.
+            - file_name (str): The input file to be uploaded.
+            - output_format (str): The desired output format.
+    """
     logging.debug(f"Raw sys.argv: {sys.argv}")
     parser = argparse.ArgumentParser(description='Upload and convert a file using CloudConvert.')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging.')
@@ -248,8 +330,11 @@ def parse_arguments() -> Tuple[bool, str, str]:
     print(f"Parsed Arguments -> Debug: {args.debug}, File: {args.file_name}, Format: {args.output_format}")
     return args.debug, args.file_name, args.output_format
 
-# Main function to be called
 def main() -> None:
+    """
+    Main entry point for the script. Handles argument parsing, logging setup,
+    and file conversion, with appropriate exit codes.
+    """
     debug, file_name, output_format = parse_arguments()
     setup_logging(debug)
     try:
