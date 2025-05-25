@@ -72,9 +72,12 @@ def handle_file_upload(file_name: str, upload_url: str, parameters: Dict[str, st
     logging.debug(f"Attempting to upload file: {file_name}")
     with open(file_name, "rb") as file:
         files = {"file": file}
-        upload_response = requests.post(upload_url, data=parameters, files=files)
-
-        upload_response.raise_for_status()
+        try:
+            upload_response = requests.post(upload_url, data=local_parameters, files=files)
+            upload_response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error during file upload request: {e}")
+            raise RuntimeError(f"Failed to upload file '{file_name}' to CloudConvert.") from e
 
     logging.info(f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}")
     return upload_response
@@ -225,7 +228,11 @@ def convert_file(file_name: str, output_format: str) -> None:
         logging.info(f"File converted successfully. Download URL: {download_url}")
         print(f"File converted successfully. Download URL: {download_url}")  # For PowerShell capture
 
-    except (requests.exceptions.RequestException, KeyError, IndexError, ValueError, RuntimeError) as e:
+    except RuntimeError as e:
+        logging.error(f"Error during file conversion: {e}")
+        raise  # Re-raise as-is
+
+    except (requests.exceptions.RequestException, KeyError, IndexError, ValueError) as e:
         logging.error(f"Error during file conversion: {e}")
         raise RuntimeError(f"Error during file conversion: {e}") from e
 
