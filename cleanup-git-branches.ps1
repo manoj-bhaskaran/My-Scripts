@@ -2,17 +2,21 @@
 .SYNOPSIS
     Identifies and deletes obsolete (fully merged) local Git branches and their corresponding remote branches.
     
-    Supports dry-run mode, customizable remote names, exclusion lists, retention of recently merged branches,
-    and the ability to operate from a specified Git repository root without altering the user's current working location.
+    Supports dry-run mode, customizable remote names and exclusion lists, retention of recently merged branches,
+    silent execution with optional logging, and the ability to operate from a specified Git repository root
+    without altering the user's current working location.
 
 .DESCRIPTION
     This script automates the cleanup of local Git branches that have already been merged into the current branch,
     and optionally deletes the corresponding remote branches. It supports:
+
     - Dry-run mode to simulate cleanup without making changes.
     - Customizable remote names (e.g., origin, upstream).
     - An exclusion list of branches that should never be deleted.
     - A retention policy to preserve a specified number of recently merged branches.
     - Operation from a specified Git repository directory, restoring the user's original location on completion.
+    - Silent mode to suppress all console output and skip confirmation prompts.
+    - Logging to a file with timestamped entries for audit or review.
 
 .PARAMETER RemoteName
     The name of the remote repository. Default is 'origin'.
@@ -30,6 +34,12 @@
 .PARAMETER KeepRecent
     The number of most recently active merged branches to retain (based on latest commit time). Default is 10.
 
+.PARAMETER Silent
+    If specified, suppresses all output to the console and skips the confirmation prompt. Logging to file will still occur if -LogFile is set.
+
+.PARAMETER LogFile
+    The path to a file where all actions, warnings, and errors will be logged with timestamps. If omitted, no file logging occurs.
+
 .EXAMPLE
     .\cleanup-git-branches.ps1
 
@@ -40,15 +50,43 @@
     .\cleanup-git-branches.ps1 -WorkingDirectory "D:\Projects\myrepo" -DryRun
 
 .EXAMPLE
-    .\cleanup-git-branches.ps1 -KeepRecent 5
+    .\cleanup-git-branches.ps1 -KeepRecent 5 -LogFile "D:\Logs\branch-cleanup.log"
+
+.EXAMPLE
+    .\cleanup-git-branches.ps1 -Silent -LogFile "C:\logs\cleanup.log"
 #>
 Param (
     [string]$RemoteName = "origin",
     [switch]$DryRun,
     [string[]]$ExcludeBranches = @("main", "master"),
     [string]$WorkingDirectory = "",
-    [int]$KeepRecent = 10
+    [int]$KeepRecent = 10,
+    [switch]$Silent,
+    [string]$LogFile = "C:\Users\manoj\Documents\Scripts\cleanup-git-branches.log"
 )
+
+function Log {
+    param (
+        [string]$Message,
+        [ValidateSet("INFO", "WARN", "ERROR", "DEBUG")]
+        [string]$Level = "INFO"
+    )
+
+    $timestamped = "$([DateTime]::Now.ToString('s')) [$Level] $Message"
+
+    if (-not $Silent) {
+        switch ($Level) {
+            "INFO"  { Write-Output  $Message }
+            "WARN"  { Write-Warning $Message }
+            "ERROR" { Write-Error   $Message }
+            "DEBUG" { Write-Verbose $Message }
+        }
+    }
+
+    if ($LogFile) {
+        $timestamped | Out-File -FilePath $LogFile -Append -Encoding utf8
+    }
+}
 
 # Save current location
 $originalLocation = Get-Location
@@ -56,24 +94,24 @@ $originalLocation = Get-Location
 # If WorkingDirectory is specified, validate and switch to it
 if ($WorkingDirectory -ne "") {
     if (-not (Test-Path $WorkingDirectory)) {
-        Write-Error "❌ The specified working directory '$WorkingDirectory' does not exist."
+        Log "❌ The specified working directory '$WorkingDirectory' does not exist." "ERROR"
         exit 1
     }
 
     Set-Location $WorkingDirectory
-    Write-Output "📁 Changed working directory to '$WorkingDirectory'"
+    Log "📁 Changed working directory to '$WorkingDirectory'"
 }
 
 # At this point, current location is either original or switched to WorkingDirectory
 if (-not (Test-Path ".git")) {
-    Write-Error "❌ This script must be run from a Git repository root, or provide a valid -WorkingDirectory."
+    Log "❌ This script must be run from a Git repository root, or provide a valid -WorkingDirectory." "ERROR"
     exit 1
 }
 
 try {
 
     # Fetch and prune stale remote tracking branches
-    Write-Output "🔄 Fetching and pruning remote branches from '$RemoteName'..."
+    Log "🔄 Fetching and pruning remote branches from '$RemoteName'..."
     git fetch $RemoteName --prune
 
     # Get the current branch
@@ -107,45 +145,45 @@ try {
         Select-Object -ExpandProperty Name
 
     if (-not $obsoleteBranches) {
-        Write-Output "🎉 No obsolete branches found (already merged into '$currentBranch')."
+        Log "🎉 No obsolete branches found (already merged into '$currentBranch')." "WARN"
         return
     }
 
     # Display remote URL for context
     $remoteUrl = git config --get remote.$RemoteName.url
     if ($remoteUrl) {
-        Write-Output "`nℹ️ Remote '$RemoteName' URL: $remoteUrl"
+        Log "`nℹ️ Remote '$RemoteName' URL: $remoteUrl"
     } else {
-        Write-Warning "⚠️ Could not retrieve URL for remote '$RemoteName'"
+        Log "⚠️ Could not retrieve URL for remote '$RemoteName'" "WARN"
     }
 
     # Display branches to be cleaned
-    Write-Output "`n🧹 The following branches are merged and can be deleted:"
-    $obsoleteBranches | ForEach-Object { Write-Output " - $_" }
+    Log "`n🧹 The following branches are merged and can be deleted:"
+    $obsoleteBranches | ForEach-Object { Log " - $_" "INFO"}
 
-    if (-not $DryRun) {
-        # Ask for confirmation only in non-dry-run mode
+    if (-not $DryRun -and -not $Silent) {
         $confirmation = Read-Host "`n❓ Do you want to delete these branches locally and remotely? (y/N)"
         if (-not ($confirmation.ToLower().StartsWith("y"))) {
-            Write-Output "❌ Cleanup aborted."
+            Log "❌ Cleanup aborted." "INFO"
             return
         }
-    } else {
-        Write-Output "`n💡 Dry run enabled — no changes will be made."
+    } elseif (-not $DryRun -and $Silent) {
+        # Proceed without prompt
+        Log "🔇 Silent mode active — proceeding without confirmation." "INFO"
     }
 
     # Process branches
     foreach ($branch in $obsoleteBranches) {
-        Write-Verbose "🔍 Processing branch: $branch"
+        Log "🔍 Processing branch: $branch"
 
         if ($DryRun) {
-            Write-Output "💡 Would delete local branch '$branch'"
+            Log "💡 Would delete local branch '$branch'"
         } else {
             try {
-                Write-Output "🗑️ Deleting local branch '$branch'..."
+                Log "🗑️ Deleting local branch '$branch'..."
                 git branch -d $branch
             } catch {
-                Write-Warning "⚠️ Could not delete local branch '$branch': $_"
+                Log "⚠️ Could not delete local branch '$branch': $_" "WARN"
                 continue
             }
         }
@@ -154,13 +192,13 @@ try {
         git ls-remote --exit-code --heads $RemoteName $branch > $null 2>&1
         if ($LASTEXITCODE -eq 0) {
             if ($DryRun) {
-                Write-Output "💡 Would delete remote branch '$RemoteName/$branch'"
+                Log "💡 Would delete remote branch '$RemoteName/$branch'"
             } else {
-                Write-Output "🗑️ Deleting remote branch '$RemoteName/$branch'..."
+                Log "🗑️ Deleting remote branch '$RemoteName/$branch'..."
                 git push $RemoteName --delete $branch
             }
         } else {
-            Write-Output "ℹ️ Remote branch '$RemoteName/$branch' does not exist."
+            Log "ℹ️ Remote branch '$RemoteName/$branch' does not exist." "WARN"
         }
     }
 }
@@ -169,8 +207,8 @@ finally {
     # Always return to original location
     if ($WorkingDirectory -ne "") {
         Set-Location $originalLocation
-        Write-Output "`n📍 Returned to original directory: $originalLocation"
-}
+        Log "`n📍 Returned to original directory: $originalLocation"
+    }
 }
 
-Write-Output "`n✅ Cleanup complete."
+Log "`n✅ Cleanup complete."
