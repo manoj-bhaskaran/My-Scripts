@@ -43,6 +43,7 @@ Param (
 # Save current location
 $originalLocation = Get-Location
 
+# If WorkingDirectory is specified, validate and switch to it
 if ($WorkingDirectory -ne "") {
     if (-not (Test-Path $WorkingDirectory)) {
         Write-Error "❌ The specified working directory '$WorkingDirectory' does not exist."
@@ -50,23 +51,16 @@ if ($WorkingDirectory -ne "") {
     }
 
     Set-Location $WorkingDirectory
-
-    if (-not (Test-Path ".git")) {
-        Write-Error "❌ '$WorkingDirectory' is not a valid Git repository."
-        Set-Location $originalLocation
-        exit 1
-    }
-
     Write-Output "📁 Changed working directory to '$WorkingDirectory'"
 }
 
-try {
+# At this point, current location is either original or switched to WorkingDirectory
+if (-not (Test-Path ".git")) {
+    Write-Error "❌ This script must be run from a Git repository root, or provide a valid -WorkingDirectory."
+    exit 1
+}
 
-    # Ensure we're inside a Git repo
-    if (-not (Test-Path ".git")) {
-        Write-Error "This script must be run from the root of a Git repository."
-        exit 1
-    }
+try {
 
     # Fetch and prune stale remote tracking branches
     Write-Output "🔄 Fetching and pruning remote branches from '$RemoteName'..."
@@ -82,7 +76,7 @@ try {
 
     if (-not $obsoleteBranches) {
         Write-Output "🎉 No obsolete branches found (already merged into '$currentBranch')."
-        exit 0
+        return
     }
 
     # Display remote URL for context
@@ -102,7 +96,7 @@ try {
         $confirmation = Read-Host "`n❓ Do you want to delete these branches locally and remotely? (y/N)"
         if (-not ($confirmation.ToLower().StartsWith("y"))) {
             Write-Output "❌ Cleanup aborted."
-            exit 1
+            return
         }
     } else {
         Write-Output "`n💡 Dry run enabled — no changes will be made."
