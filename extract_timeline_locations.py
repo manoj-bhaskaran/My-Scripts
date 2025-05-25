@@ -691,19 +691,21 @@ def run_vacuum_analyze_if_supported():
     Returns:
         None
     """
-    with get_db_cursor() as (_, cur):
-        cur.execute("SHOW server_version;")
-        version_str = cur.fetchone()[0]
+    try:
+        with psycopg2.connect(**DB_PARAMS) as conn:
+            conn.autocommit = True  # 🔑 Required for VACUUM
+            with conn.cursor() as cur:
+                cur.execute("SHOW server_version;")
+                version_str = cur.fetchone()[0]
+                major_version = int(version_str.split('.')[0])
 
-        # Extract major version number (handles formats like '17.3', '17beta1', etc.)
-        match = re.match(r"(\d+)", version_str)
-        major_version = int(match.group(1)) if match else 0
-
-        if major_version >= 15:
-            print("⚙️  Running VACUUM ANALYZE on timeline.locations...")
-            cur.execute("VACUUM ANALYZE timeline.locations;")
-        else:
-            print(f"⚠️  VACUUM ANALYZE skipped: PostgreSQL version {version_str} does not support MAINTAIN privilege.")
+                if major_version >= 15:
+                    print("⚙️  Running VACUUM ANALYZE on timeline.locations...")
+                    cur.execute("VACUUM ANALYZE timeline.locations;")
+                else:
+                    print(f"⚠️  VACUUM ANALYZE skipped: PostgreSQL version {version_str} does not support MAINTAIN privilege.")
+    except Exception as e:
+        print(f"❌ Could not run VACUUM ANALYZE: {e}")
 
 def main(input_file, reprocess, reprocess_elevation):
     """
