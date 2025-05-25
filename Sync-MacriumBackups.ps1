@@ -35,7 +35,7 @@
 #>
 param(
     [string]$SourcePath = "E:\Macrium Backups",
-    [string]$RcloneRemote = "gdrive",
+    [string]$RcloneRemote = "gdrive:",
     [string]$LogFile = "C:\Users\manoj\Documents\Scripts\Sync-MacriumBackups.log",
     [int]$MaxChunkMB = 2048,
     [string]$PreferredSSID = "ManojNew_5G",
