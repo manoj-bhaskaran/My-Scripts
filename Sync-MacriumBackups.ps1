@@ -1,50 +1,45 @@
 <#
 .SYNOPSIS
-    Syncs Macrium Reflect backup files from an external HDD to Google Drive using rclone with validations and dynamic tuning.
+    Syncs Macrium Reflect backup files from an external HDD to Google Drive using rclone, with dynamic tuning, validations, and configurable WiFi/network logic.
 
 .DESCRIPTION
-    This script automates the synchronization of Macrium backup files stored on an external HDD (e.g., "E:\Macrium Backups") to a specified Google Drive remote using rclone.
-    
-    Key features:
-    - Validates presence of the backup source path.
-    - Verifies internet connectivity and ensures connection to a preferred WiFi network (e.g., "ManojNew_5G").
-    - Attempts to switch to the preferred WiFi if not currently connected.
-    - Validates rclone remote connectivity.
-    - Dynamically calculates optimal --drive-chunk-size based on available system memory.
-    - Appends logs to a single persistent log file.
-    - Uses rclone's recommended options for performance and reliability.
-    - Logs key events, errors, and decisions throughout execution.
+    This script automates the synchronization of Macrium backup files from a local path (typically an external HDD)
+    to a specified Google Drive remote using rclone.
+
+    Features:
+    - Validates the source path, Google Drive remote, and internet connectivity.
+    - Dynamically selects an optimal --drive-chunk-size based on available memory.
+    - Supports configurable preferred and fallback WiFi SSIDs for prioritised connection.
+    - Automatically attempts to switch to the preferred WiFi network if it's available but not connected.
+    - Handles paths and remote names with spaces via proper quoting.
+    - Avoids mixing rclone --progress output with log file content to preserve log readability.
+    - Appends to a single persistent log file for auditability.
+
+.PARAMETER PreferredSSID
+    The WiFi SSID to prioritise when connecting. The script will attempt to switch to this if not currently connected.
+
+.PARAMETER FallbackSSID
+    The secondary WiFi SSID to use if the preferred is not available.
 
 .PARAMETER SourcePath
     The local path to the Macrium backup folder. Default: "E:\Macrium Backups".
 
 .PARAMETER RcloneRemote
-    The rclone remote name to sync to. Default: "gdrive".
+    The rclone remote (and optional path) to sync to. Can include spaces. Example: "gdrive:Macrium Backups".
 
 .PARAMETER LogFile
-    Full path to the log file where execution details will be appended. Default: "C:\Users\<User>\Documents\Scripts\Sync-MacriumBackups.log".
+    Full path to the log file where execution details are appended. Default: "$env:USERPROFILE\Documents\Scripts\Sync-MacriumBackups.log".
 
 .PARAMETER MaxChunkMB
-    Maximum chunk size (in MB) to be used for rclone uploads. Actual chunk size is dynamically selected based on available memory. Default: 2048.
-
-.NOTES
-    Requires rclone to be installed and the specified remote to be configured.
-    Requires WiFi profiles for both ManojNew_5G and ManojNew to be pre-saved on the system.
-    For best results, run this script after Macrium Reflect has completed its backup job.
-
-.EXAMPLE
-    .\Sync-MacriumBackups.ps1
-
-    Runs the sync using default source path, rclone remote, and log file location.
-
-.EXAMPLE
-    .\Sync-MacriumBackups.ps1 -SourcePath "F:\Backups" -RcloneRemote "gdrive:Macrium" -LogFile "D:\Logs\macrium-sync.log" -MaxChunkMB 1024
+    The upper limit (in MB) for dynamically calculated rclone --drive-chunk-size. Default: 2048.
 #>
 param(
     [string]$SourcePath = "E:\Macrium Backups",
     [string]$RcloneRemote = "gdrive",
     [string]$LogFile = "C:\Users\manoj\Documents\Scripts\Sync-MacriumBackups.log",
-    [int]$MaxChunkMB = 2048
+    [int]$MaxChunkMB = 2048,
+    [string]$PreferredSSID = "ManojNew_5G",
+    [string]$FallbackSSID  = "ManojNew"
 )
 
 function Write-Log {
@@ -66,57 +61,55 @@ function Test-BackupPath {
 }
 
 function Test-Rclone {
-    $rcloneCheck = & rclone about $RcloneRemote 2>&1
+    $rcloneCheck = & rclone about "`"$RcloneRemote`"" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Log "Rclone Google Drive validation failed: $rcloneCheck" "ERROR"
         exit 1
     }
-    Write-Log "Validated Google Drive remote '$RcloneRemote'"
+    Write-Log "Validated Google Drive remote "`"$RcloneRemote`"""
 }
 
 function Test-Network {
-    $preferred = "ManojNew_5G"
-    $fallback = "ManojNew"
 
     # Step 1: Get current SSID
     $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
 
-    if ($currentSSID -eq $preferred) {
+    if ($currentSSID -eq $PreferredSSID) {
         Write-Log "Connected to preferred network '$preferred'"
-    } elseif ($currentSSID -eq $fallback) {
+    } elseif ($currentSSID -eq $FallbackSSID) {
         # Try to switch to preferred if available
         $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
-        if ($availableNetworks -match $preferred) {
-            Write-Log "Switching from '$fallback' to preferred network '$preferred'"
-            netsh wlan connect name=$preferred
-            Start-Sleep -Seconds 5
+        if ($availableNetworks -match $PreferredSSID) {
+            Write-Log "Switching from '$FallbackSSID' to preferred network '$PreferredSSID'"
+            netsh wlan connect name=$PreferredSSID
+            Start-Sleep -Seconds 10
             $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
-            if ($currentSSID -eq $preferred) {
-                Write-Log "Switched successfully to '$preferred'"
+            if ($currentSSID -eq $PreferredSSID) {
+                Write-Log "Switched successfully to '$PreferredSSIDd'"
             } else {
-                Write-Log "Failed to switch to '$preferred'. Continuing on '$fallback'" "WARNING"
+                Write-Log "Failed to switch to '$PreferredSSID'. Continuing on '$FallbackSSID'" "WARNING"
             }
         } else {
-            Write-Log "Preferred network '$preferred' not available. Staying on '$fallback'"
+            Write-Log "Preferred network '$PreferredSSID' not available. Staying on '$FallbackSSID'"
         }
     } else {
-        Write-Log "Not connected to either '$preferred' or '$fallback'. Trying to connect..."
+        Write-Log "Not connected to either '$PreferredSSID' or '$FallbackSSID'. Trying to connect..."
 
         $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
-        if ($availableNetworks -match $preferred) {
-            Write-Log "Connecting to preferred network '$preferred'"
-            netsh wlan connect name=$preferred
-        } elseif ($availableNetworks -match $fallback) {
-            Write-Log "Connecting to fallback network '$fallback'"
-            netsh wlan connect name=$fallback
+        if ($availableNetworks -match $PreferredSSID) {
+            Write-Log "Connecting to preferred network '$PreferredSSID'"
+            netsh wlan connect name=$PreferredSSID
+        } elseif ($availableNetworks -match $FallbackSSID) {
+            Write-Log "Connecting to fallback network '$FallbackSSID'"
+            netsh wlan connect name=$FallbackSSID
         } else {
-            Write-Log "Neither '$preferred' nor '$fallback' WiFi networks are available." "ERROR"
+            Write-Log "Neither '$PreferredSSID' nor '$FallbackSSID' WiFi networks are available." "ERROR"
             exit 1
         }
 
         Start-Sleep -Seconds 10
         $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
-        if ($currentSSID -ne $preferred -and $currentSSID -ne $fallback) {
+        if ($currentSSID -ne $PreferredSSID -and $currentSSID -ne $FallbackSSID) {
             Write-Log "Failed to connect to preferred or fallback WiFi networks." "ERROR"
             exit 1
         }
@@ -157,11 +150,10 @@ function Get-ChunkSize {
 function Sync-Backups {
     $chunkSize = Get-ChunkSize
     $rcloneArgs = @(
-        "sync", "`"$SourcePath`"", "$RcloneRemote",
+        "sync", "`"$SourcePath`"", "`"$RcloneRemote`"",
         "--drive-chunk-size", $chunkSize,
         "--drive-use-trash=false",
         "--delete-before",
-        "--progress",
         "--verbose",
         "--retries", "5",
         "--low-level-retries", "10",
