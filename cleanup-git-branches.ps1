@@ -71,7 +71,7 @@ try {
 
     # Get merged branches, excluding current and explicitly excluded branches
     $obsoleteBranches = git branch --merged |
-        ForEach-Object { $_.Trim() } |
+        ForEach-Object { $_.Trim().Replace("* ", "") } |
         Where-Object { $_ -ne $currentBranch -and ($ExcludeBranches -notcontains $_) }
 
     if (-not $obsoleteBranches) {
