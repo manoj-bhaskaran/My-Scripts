@@ -75,7 +75,7 @@ function Test-Network {
     $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
 
     if ($currentSSID -eq $PreferredSSID) {
-        Write-Log "Connected to preferred network '$preferred'"
+        Write-Log "Connected to preferred network '$PreferredSSID'"
     } elseif ($currentSSID -eq $FallbackSSID) {
         # Try to switch to preferred if available
         $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
@@ -150,7 +150,7 @@ function Get-ChunkSize {
 function Sync-Backups {
     $chunkSize = Get-ChunkSize
     $rcloneArgs = @(
-        "sync", "`"$SourcePath`"", "`"$RcloneRemote`"",
+        "sync", $SourcePath, $RcloneRemote,
         "--drive-chunk-size", $chunkSize,
         "--drive-use-trash=false",
         "--delete-before",
