@@ -105,7 +105,7 @@ function Test-Network {
             Start-Sleep -Seconds 10
             $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
             if ($currentSSID -eq $PreferredSSID) {
-                Write-Log "Switched successfully to '$PreferredSSIDd'"
+                Write-Log "Switched successfully to '$PreferredSSID'"
             } else {
                 Write-Log "Failed to switch to '$PreferredSSID'. Continuing on '$FallbackSSID'" "WARNING"
             }
