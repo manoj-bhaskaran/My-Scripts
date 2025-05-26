@@ -14,6 +14,7 @@
     - Handles paths and remote names with spaces via proper quoting.
     - Avoids mixing rclone --progress output with log file content to preserve log readability.
     - Appends to a single persistent log file for auditability.
+    - Provides an optional -Interactive switch to enable rclone's --progress bar when running manually.
 
 .PARAMETER PreferredSSID
     The WiFi SSID to prioritise when connecting. The script will attempt to switch to this if not currently connected.
@@ -32,6 +33,19 @@
 
 .PARAMETER MaxChunkMB
     The upper limit (in MB) for dynamically calculated rclone --drive-chunk-size. Default: 2048.
+
+.PARAMETER Interactive
+    Optional switch. When enabled, rclone will display a live progress bar and more interactive feedback on the console. This is intended for manual use and disables log redirection of the progress meter.
+
+.EXAMPLE
+    .\Sync-MacriumBackups.ps1
+
+    Runs the sync using default source path, remote, and logging settings in non-interactive mode.
+
+.EXAMPLE
+    .\Sync-MacriumBackups.ps1 -Interactive
+
+    Runs the sync with rclone --progress output shown on the console, suitable for manual invocation.
 #>
 param(
     [string]$SourcePath = "E:\Macrium Backups",
@@ -39,7 +53,8 @@ param(
     [string]$LogFile = "C:\Users\manoj\Documents\Scripts\Sync-MacriumBackups.log",
     [int]$MaxChunkMB = 2048,
     [string]$PreferredSSID = "ManojNew_5G",
-    [string]$FallbackSSID  = "ManojNew"
+    [string]$FallbackSSID  = "ManojNew",
+    [switch]$Interactive
 )
 
 function Write-Log {
@@ -154,11 +169,18 @@ function Sync-Backups {
         "--drive-chunk-size", $chunkSize,
         "--drive-use-trash=false",
         "--delete-before",
-        "--log-level=INFO",         # Not --verbose
         "--retries", "5",
         "--low-level-retries", "10",
         "--timeout", "5m"
     )
+
+    # Adjust logging based on mode
+    if ($Interactive) {
+        $rcloneArgs += "--progress"
+        $rcloneArgs += "--log-level=INFO"  # keep log messages for clarity
+    } else {
+        $rcloneArgs += "--log-level=INFO"
+    }
     Write-Log "Starting sync with chunk size: $chunkSize"
     & rclone @rcloneArgs *>> $LogFile
     if ($LASTEXITCODE -eq 0) {
