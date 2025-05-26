@@ -154,7 +154,7 @@ function Sync-Backups {
         "--drive-chunk-size", $chunkSize,
         "--drive-use-trash=false",
         "--delete-before",
-        "--verbose",
+        "--log-level=INFO",         # Not --verbose
         "--retries", "5",
         "--low-level-retries", "10",
         "--timeout", "5m"
