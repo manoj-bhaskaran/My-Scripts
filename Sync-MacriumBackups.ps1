@@ -64,7 +64,12 @@ function Write-Log {
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $entry = "$timestamp [$Level] $Message"
+
     Add-Content -Path $LogFile -Value $entry
+
+    if ($Interactive) {
+        Write-Host $entry
+    }
 }
 
 function Test-BackupPath {
@@ -182,7 +187,13 @@ function Sync-Backups {
         $rcloneArgs += "--log-level=INFO"
     }
     Write-Log "Starting sync with chunk size: $chunkSize"
-    & rclone @rcloneArgs *>> $LogFile
+    if ($Interactive) {
+        Write-Log "Running rclone in interactive mode (output goes to console)"
+        & rclone @rcloneArgs
+    } else {
+        Write-Log "Running rclone in non-interactive mode (output redirected to log)"
+        & rclone @rcloneArgs *>> $LogFile
+    }
     if ($LASTEXITCODE -eq 0) {
         Write-Log "Sync completed successfully"
     } else {
