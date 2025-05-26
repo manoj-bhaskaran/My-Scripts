@@ -14,6 +14,7 @@
     - Handles paths and remote names with spaces via proper quoting.
     - Avoids mixing rclone --progress output with log file content to preserve log readability.
     - Appends to a single persistent log file for auditability.
+    - Provides an optional -Interactive switch to enable rclone's --progress bar when running manually.
 
 .PARAMETER PreferredSSID
     The WiFi SSID to prioritise when connecting. The script will attempt to switch to this if not currently connected.
@@ -32,6 +33,19 @@
 
 .PARAMETER MaxChunkMB
     The upper limit (in MB) for dynamically calculated rclone --drive-chunk-size. Default: 2048.
+
+.PARAMETER Interactive
+    Optional switch. When enabled, rclone will display a live progress bar and more interactive feedback on the console. This is intended for manual use and disables log redirection of the progress meter.
+
+.EXAMPLE
+    .\Sync-MacriumBackups.ps1
+
+    Runs the sync using default source path, remote, and logging settings in non-interactive mode.
+
+.EXAMPLE
+    .\Sync-MacriumBackups.ps1 -Interactive
+
+    Runs the sync with rclone --progress output shown on the console, suitable for manual invocation.
 #>
 param(
     [string]$SourcePath = "E:\Macrium Backups",
@@ -39,7 +53,8 @@ param(
     [string]$LogFile = "C:\Users\manoj\Documents\Scripts\Sync-MacriumBackups.log",
     [int]$MaxChunkMB = 2048,
     [string]$PreferredSSID = "ManojNew_5G",
-    [string]$FallbackSSID  = "ManojNew"
+    [string]$FallbackSSID  = "ManojNew",
+    [switch]$Interactive
 )
 
 function Write-Log {
@@ -49,7 +64,12 @@ function Write-Log {
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $entry = "$timestamp [$Level] $Message"
+
     Add-Content -Path $LogFile -Value $entry
+
+    if ($Interactive) {
+        Write-Host $entry
+    }
 }
 
 function Test-BackupPath {
@@ -85,7 +105,7 @@ function Test-Network {
             Start-Sleep -Seconds 10
             $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
             if ($currentSSID -eq $PreferredSSID) {
-                Write-Log "Switched successfully to '$PreferredSSIDd'"
+                Write-Log "Switched successfully to '$PreferredSSID'"
             } else {
                 Write-Log "Failed to switch to '$PreferredSSID'. Continuing on '$FallbackSSID'" "WARNING"
             }
@@ -154,13 +174,26 @@ function Sync-Backups {
         "--drive-chunk-size", $chunkSize,
         "--drive-use-trash=false",
         "--delete-before",
-        "--verbose",
         "--retries", "5",
         "--low-level-retries", "10",
         "--timeout", "5m"
     )
+
+    # Adjust logging based on mode
+    if ($Interactive) {
+        $rcloneArgs += "--progress"
+        $rcloneArgs += "--log-level=INFO"  # keep log messages for clarity
+    } else {
+        $rcloneArgs += "--log-level=INFO"
+    }
     Write-Log "Starting sync with chunk size: $chunkSize"
-    & rclone @rcloneArgs *>> $LogFile
+    if ($Interactive) {
+        Write-Log "Running rclone in interactive mode (output goes to console)"
+        & rclone @rcloneArgs
+    } else {
+        Write-Log "Running rclone in non-interactive mode (output redirected to log)"
+        & rclone @rcloneArgs *>> $LogFile
+    }
     if ($LASTEXITCODE -eq 0) {
         Write-Log "Sync completed successfully"
     } else {
