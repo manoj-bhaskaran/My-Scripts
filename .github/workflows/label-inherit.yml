@@ -1,0 +1,45 @@
+name: Auto Label Inheritance from Parent Issue
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  inherit-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (not needed but required syntactically)
+        uses: actions/checkout@v4
+
+      - name: Run label inheritance
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          REPO_OWNER: ${{ github.event.repository.owner.login }}
+        run: |
+          curl -s -H "Authorization: bearer $GH_TOKEN" -X POST https://api.github.com/graphql \
+          -d @- <<EOF | jq '.'
+          {
+            "query": "query GetParentIssue(\$owner: String!, \$repo: String!, \$issueNumber: Int!) { repository(owner: \$owner, name: \$repo) { issue(number: \$issueNumber) { trackedByIssues(first: 1) { nodes { number labels(first: 20) { nodes { name } } } } } } }",
+            "variables": {
+              "owner": "${REPO_OWNER}",
+              "repo": "${REPO_NAME}",
+              "issueNumber": $ISSUE_NUMBER
+            }
+          }
+          EOF > parent.json
+
+          PARENT_NUMBER=$(jq -r '.data.repository.issue.trackedByIssues.nodes[0].number' parent.json)
+          if [ "$PARENT_NUMBER" = "null" ]; then
+            echo "No parent issue found. Skipping."
+            exit 0
+          fi
+
+          LABELS=$(jq -r '.data.repository.issue.trackedByIssues.nodes[0].labels.nodes[].name' parent.json | jq -R . | jq -s .)
+          echo "Inheriting labels from #$PARENT_NUMBER to current issue #$ISSUE_NUMBER: $LABELS"
+
+          curl -X POST -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues/${ISSUE_NUMBER}/labels \
+            -d "{\"labels\": $LABELS}"
