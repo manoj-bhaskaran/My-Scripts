@@ -18,25 +18,25 @@ jobs:
           REPO_NAME: ${{ github.event.repository.name }}
           REPO_OWNER: ${{ github.event.repository.owner.login }}
         run: |
-          echo "{\"query\": \"query GetParentIssue(\$owner: String!, \$repo: String!, \$issueNumber: Int!) { repository(owner: \$owner, name: \$repo) { issue(number: \$issueNumber) { trackedByIssues(first: 1) { nodes { number labels(first: 20) { nodes { name } } } } } } }\", \"variables\": {\"owner\": \"${REPO_OWNER}\", \"repo\": \"${REPO_NAME}\", \"issueNumber\": ${ISSUE_NUMBER}}}" > payload.json
+          echo "{\"query\": \"query GetParentTrackingIssue(\$owner: String!, \$repo: String!, \$issueNumber: Int!) { repository(owner: \$owner, name: \$repo) { issue(number: \$issueNumber) { trackedInIssues(first: 1) { nodes { number labels(first: 20) { nodes { name } } } } } } }\", \"variables\": {\"owner\": \"${REPO_OWNER}\", \"repo\": \"${REPO_NAME}\", \"issueNumber\": ${ISSUE_NUMBER}}}" > payload.json
 
-          echo "Querying for parent of issue #${ISSUE_NUMBER}..."
+          echo "Querying for parent (tracking) issue of #${ISSUE_NUMBER}..."
           curl -s -H "Authorization: bearer $GH_TOKEN" -X POST https://api.github.com/graphql \
             -d @payload.json | tee parent.json
 
-          PARENT_NUMBER=$(jq -r '.data.repository.issue.trackedByIssues.nodes[0].number' parent.json)
+          PARENT_NUMBER=$(jq -r '.data.repository.issue.trackedInIssues.nodes[0].number' parent.json)
           if [ "$PARENT_NUMBER" = "null" ] || [ -z "$PARENT_NUMBER" ]; then
-            echo "No parent issue found. Skipping."
+            echo "No tracking (parent) issue found. Skipping."
             exit 0
           fi
 
-          LABELS=$(jq -r '.data.repository.issue.trackedByIssues.nodes[0].labels.nodes[].name' parent.json | jq -R . | jq -s .)
+          LABELS=$(jq -r '.data.repository.issue.trackedInIssues.nodes[0].labels.nodes[].name' parent.json | jq -R . | jq -s .)
           if [ "$LABELS" = "[]" ]; then
             echo "No labels found on parent issue #$PARENT_NUMBER. Skipping."
             exit 0
           fi
 
-          echo "Inheriting labels from #$PARENT_NUMBER to issue #$ISSUE_NUMBER: $LABELS"
+          echo "Inheriting labels from parent issue #$PARENT_NUMBER to issue #$ISSUE_NUMBER: $LABELS"
 
           curl -X POST -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
