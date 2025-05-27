@@ -4,6 +4,9 @@ on:
   issues:
     types: [opened]
 
+permissions:
+    contents: read
+
 jobs:
   inherit-labels:
     runs-on: ubuntu-latest
