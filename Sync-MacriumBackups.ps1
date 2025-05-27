@@ -215,8 +215,8 @@ if (-not (Test-Path $logDir)) {
 # Execution Flow
 try {
     Write-Log "Starting Macrium backup sync script"
-    # Prevent sleep
-    [SleepControl.PowerMgmt]::SetThreadExecutionState([uint32]0x80000003) | Out-Null
+    # Prevent sleep & display timeout
+    [SleepControl.PowerMgmt]::SetThreadExecutionState([uint32]"0x80000003") | Out-Null
     Write-Log "System sleep and display timeout temporarily disabled"
 
     # Main execution
@@ -226,8 +226,8 @@ try {
     Sync-Backups
 }
 finally {
-    # Always restore
-    [SleepControl.PowerMgmt]::SetThreadExecutionState([uint32]0x80000000) | Out-Null
+    # Restore normal sleep behavior
+    [SleepControl.PowerMgmt]::SetThreadExecutionState([uint32]"0x80000000") | Out-Null
     Write-Log "System sleep and display timeout restored"
     Write-Log "Script execution completed"
 }
