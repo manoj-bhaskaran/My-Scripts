@@ -11,32 +11,75 @@ jobs:
   inherit-labels:
     runs-on: ubuntu-latest
     steps:
-      - name: Run label inheritance
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Set up environment
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          echo "GH_TOKEN=$GH_TOKEN" >> $GITHUB_ENV
+
+      - name: Get parent issue and inherit labels
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           REPO_NAME: ${{ github.event.repository.name }}
           REPO_OWNER: ${{ github.event.repository.owner.login }}
         run: |
-          echo "{\"query\": \"query GetParentTrackingIssue(\$owner: String!, \$repo: String!, \$issueNumber: Int!) { repository(owner: \$owner, name: \$repo) { issue(number: \$issueNumber) { trackedInIssues(first: 1) { nodes { number labels(first: 20) { nodes { name } } } } } } }\", \"variables\": {\"owner\": \"${REPO_OWNER}\", \"repo\": \"${REPO_NAME}\", \"issueNumber\": ${ISSUE_NUMBER}}}" > payload.json
+          echo "Fetching internal ID of issue #$ISSUE_NUMBER..."
 
-          echo "Querying for parent (tracking) issue of #${ISSUE_NUMBER}..."
-          curl -s -H "Authorization: bearer $GH_TOKEN" -X POST https://api.github.com/graphql \
-            -d @payload.json | tee parent.json
+          ISSUE_ID=$(gh api graphql -f owner="$REPO_OWNER" -f repository="$REPO_NAME" -F number="$ISSUE_NUMBER" -f query='
+            query ($owner: String!, $repository: String!, $number: Int!) {
+              repository(owner: $owner, name: $repository) {
+                issue(number: $number) {
+                  id
+                }
+              }
+            }' --jq '.data.repository.issue.id')
 
-          PARENT_NUMBER=$(jq -r '.data.repository.issue.trackedInIssues.nodes[0].number' parent.json)
+          if [ -z "$ISSUE_ID" ]; then
+            echo "❌ Failed to get issue ID for #$ISSUE_NUMBER"
+            exit 1
+          fi
+
+          echo "🔍 Issue node ID: $ISSUE_ID"
+
+          echo "Querying for parent issue using GraphQL preview headers..."
+          PARENT_JSON=$(gh api graphql \
+            -H "GraphQL-Features: sub_issues,issue_types" \
+            -f issueId="$ISSUE_ID" \
+            -f query='
+              query($issueId: ID!) {
+                node(id: $issueId) {
+                  ... on Issue {
+                    parent {
+                      number
+                      labels(first: 20) {
+                        nodes {
+                          name
+                        }
+                      }
+                    }
+                  }
+                }
+              }')
+
+          echo "$PARENT_JSON" | tee parent.json
+
+          PARENT_NUMBER=$(echo "$PARENT_JSON" | jq -r '.data.node.parent.number')
           if [ "$PARENT_NUMBER" = "null" ] || [ -z "$PARENT_NUMBER" ]; then
-            echo "No tracking (parent) issue found. Skipping."
+            echo "⚠️ No parent issue found. Skipping label inheritance."
             exit 0
           fi
 
-          LABELS=$(jq -r '.data.repository.issue.trackedInIssues.nodes[0].labels.nodes[].name' parent.json | jq -R . | jq -s .)
+          LABELS=$(echo "$PARENT_JSON" | jq -r '.data.node.parent.labels.nodes[].name' | jq -R . | jq -s .)
           if [ "$LABELS" = "[]" ]; then
-            echo "No labels found on parent issue #$PARENT_NUMBER. Skipping."
+            echo "ℹ️ Parent issue has no labels. Nothing to inherit."
             exit 0
           fi
 
-          echo "Inheriting labels from parent issue #$PARENT_NUMBER to issue #$ISSUE_NUMBER: $LABELS"
+          echo "✅ Inheriting labels from parent issue #$PARENT_NUMBER: $LABELS"
 
           curl -X POST -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
