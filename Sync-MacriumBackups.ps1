@@ -57,6 +57,11 @@ param(
     [switch]$Interactive
 )
 
+Add-Type -Namespace SleepControl -Name PowerMgmt -MemberDefinition @"
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern uint SetThreadExecutionState(uint esFlags);
+"@ -Language CSharp
+
 function Write-Log {
     param (
         [string]$Message,
@@ -208,9 +213,21 @@ if (-not (Test-Path $logDir)) {
 }
 
 # Execution Flow
-Write-Log "========== Starting Macrium Backup Sync =========="
-Test-BackupPath
-Test-Rclone
-Test-Network
-Sync-Backups
-Write-Log "========== Sync Operation Ended =========="
+try {
+    Write-Log "Starting Macrium backup sync script"
+    # Prevent sleep & display timeout
+    [SleepControl.PowerMgmt]::SetThreadExecutionState([uint32]"0x80000003") | Out-Null
+    Write-Log "System sleep and display timeout temporarily disabled"
+
+    # Main execution
+    Test-BackupPath
+    Test-Rclone
+    Test-Network
+    Sync-Backups
+}
+finally {
+    # Restore normal sleep behavior
+    [SleepControl.PowerMgmt]::SetThreadExecutionState([uint32]"0x80000000") | Out-Null
+    Write-Log "System sleep and display timeout restored"
+    Write-Log "Script execution completed"
+}
