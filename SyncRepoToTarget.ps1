@@ -14,7 +14,7 @@
     The destination path where files should be mirrored.
 
 .NOTES
-    Author: Your Name
+    Author: Manoj Bhaskaran
     Version: 1.0
 #>
 
