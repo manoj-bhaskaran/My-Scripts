@@ -94,16 +94,26 @@ function Test-Ignored {
     return $false
 }
 
-# Copy only files modified in the latest commit, excluding .gitignore and ignored files
+# Copy only files modified in the latest commit, preserving directory structure
 $modifiedFiles | ForEach-Object {
-    $sourceFilePath = Join-Path -Path $repoPath -ChildPath $_
+    $relativePath = $_
+    $sourceFilePath = Join-Path -Path $repoPath -ChildPath $relativePath
 
     # Only copy if the source file exists and is not in .gitignore
-    if ((Test-Path $sourceFilePath) -and !(Test-Ignored $_)) {
+    if ((Test-Path $sourceFilePath) -and !(Test-Ignored $relativePath)) {
 
         Log-Message "Processing modified file: $sourceFilePath"
-        Copy-Item -Path $sourceFilePath -Destination $destinationFolder -Force
-        Log-Message "Copied file $sourceFilePath to $destinationFolder"
+
+        $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $relativePath
+        $destinationDir = Split-Path -Path $destinationFilePath -Parent
+
+        if (-not (Test-Path $destinationDir)) {
+            New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+        }
+
+        Copy-Item -Path $sourceFilePath -Destination $destinationFilePath -Force
+        Log-Message "Copied file $sourceFilePath to $destinationFilePath"
+
     } else {
         Log-Message "File $sourceFilePath is ignored or does not exist"
     }
