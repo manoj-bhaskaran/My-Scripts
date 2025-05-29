@@ -1,3 +1,23 @@
+<#
+.SYNOPSIS
+    Post-commit Git hook PowerShell script to copy committed files to a staging directory while preserving directory structure.
+
+.DESCRIPTION
+    This script is invoked by a Git post-commit hook. It processes the list of modified and deleted files from the latest commit and performs the following:
+    - Copies modified files from the repository to a destination folder, preserving their relative directory structure.
+    - Deletes files from the destination folder if they were deleted in the commit.
+    - Honors .gitignore rules using Git's check-ignore command.
+    - Logs actions and errors to a specified log file.
+
+.PARAMETER Verbose
+    Switch to enable verbose output to the console for debugging and tracing operations.
+
+.NOTES
+    Author: Your Name
+    Version: 1.0
+    Last Updated: YYYY-MM-DD
+#>
+
 param (
     [switch]$Verbose
 )
@@ -8,6 +28,20 @@ $destinationFolder = "C:\Users\manoj\Documents\Scripts"
 $logFile = "C:\Users\manoj\Documents\Scripts\git-post-action.log"
 
 # Function to log messages with timestamps and source identifier
+<#
+.SYNOPSIS
+    Logs a message to a file with a timestamp and optional console output.
+
+.DESCRIPTION
+    This function formats a message with a timestamp and optional source label, writes it to the configured log file, and optionally prints it to the console when verbose mode is enabled.
+
+.PARAMETER message
+    The message string to be logged.
+
+.PARAMETER source
+    The source label to tag the message origin in the log. Defaults to "post-commit".
+#>
+
 function Write-Message {
     param (
         [string]$message,
@@ -46,6 +80,16 @@ if ($Verbose) {
 }
 
 # Function to check if a file matches any ignored patterns
+<#
+.SYNOPSIS
+    Checks if a file is ignored by Git based on .gitignore rules.
+
+.DESCRIPTION
+    This function uses Git's check-ignore command to determine whether a file should be excluded from processing based on .gitignore rules in the repository.
+
+.PARAMETER relativePath
+    The path to the file relative to the repository root.
+#>
 function Test-Ignored {
     param (
         [string]$relativePath
@@ -84,7 +128,7 @@ $modifiedFiles | ForEach-Object {
     }
 }
 
-# Move deleted files to the Recycle Bin
+# Permanently delete files in the destination folder that were deleted in the commit
 $deletedFiles | ForEach-Object {
     $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $_
 
