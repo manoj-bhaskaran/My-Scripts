@@ -1,3 +1,23 @@
+<#
+.SYNOPSIS
+    Post-commit Git hook PowerShell script to copy committed files to a staging directory while preserving directory structure.
+
+.DESCRIPTION
+    This script is invoked by a Git post-commit hook. It processes the list of modified and deleted files from the latest commit and performs the following:
+    - Copies modified files from the repository to a destination folder, preserving their relative directory structure.
+    - Deletes files from the destination folder if they were deleted in the commit.
+    - Honors .gitignore rules using Git's check-ignore command.
+    - Logs actions and errors to a specified log file.
+
+.PARAMETER Verbose
+    Switch to enable verbose output to the console for debugging and tracing operations.
+
+.NOTES
+    Author: Your Name
+    Version: 1.0
+    Last Updated: YYYY-MM-DD
+#>
+
 param (
     [switch]$Verbose
 )
@@ -8,7 +28,21 @@ $destinationFolder = "C:\Users\manoj\Documents\Scripts"
 $logFile = "C:\Users\manoj\Documents\Scripts\git-post-action.log"
 
 # Function to log messages with timestamps and source identifier
-function Log-Message {
+<#
+.SYNOPSIS
+    Logs a message to a file with a timestamp and optional console output.
+
+.DESCRIPTION
+    This function formats a message with a timestamp and optional source label, writes it to the configured log file, and optionally prints it to the console when verbose mode is enabled.
+
+.PARAMETER message
+    The message string to be logged.
+
+.PARAMETER source
+    The source label to tag the message origin in the log. Defaults to "post-commit".
+#>
+
+function Write-Message {
     param (
         [string]$message,
         [string]$source = "post-commit"
@@ -21,7 +55,7 @@ function Log-Message {
     }
 }
 
-Log-Message "Script execution started."
+Write-Message "Script execution started."
 
 if ($Verbose) {
     Write-Host "Verbose mode enabled"
@@ -45,83 +79,71 @@ if ($Verbose) {
     $deletedFiles | ForEach-Object { Write-Host $_ }
 }
 
-# Read .gitignore file
-$gitignorePath = Join-Path -Path $repoPath -ChildPath ".gitignore"
-$ignoredPatterns = @()
-
-# Check if .gitignore exists and read its contents
-if (Test-Path $gitignorePath) {
-    $ignoredPatterns = Get-Content -Path $gitignorePath
-
-    if ($Verbose) {
-        Write-Host "Ignored Patterns:" -ForegroundColor Yellow
-        $ignoredPatterns | ForEach-Object { Write-Host $_ }
-    }
-} else {
-    if ($Verbose) {
-        Write-Host ".gitignore file not found"
-    }
-}
-
 # Function to check if a file matches any ignored patterns
+<#
+.SYNOPSIS
+    Checks if a file is ignored by Git based on .gitignore rules.
+
+.DESCRIPTION
+    This function uses Git's check-ignore command to determine whether a file should be excluded from processing based on .gitignore rules in the repository.
+
+.PARAMETER relativePath
+    The path to the file relative to the repository root.
+#>
 function Test-Ignored {
     param (
-        [string]$fileName
+        [string]$relativePath
     )
-
-    if ($Verbose) {
-        Write-Host "Checking if file $fileName is ignored" -ForegroundColor Cyan
-    }
-
-    # Check if the file is .gitignore itself
-    if ($fileName -eq ".gitignore") {
-        if ($Verbose) {
-            Write-Host "File is .gitignore itself, ignoring" -ForegroundColor Cyan
-        }
-        return $true
-    }
-
-    # Check against patterns in .gitignore
-    foreach ($pattern in $ignoredPatterns) {
-        # Use -like for wildcard matching, if applicable
-        if ($fileName -like $pattern) {
-            if ($Verbose) {
-                Write-Host "File $fileName matches pattern $pattern, ignoring" -ForegroundColor Cyan
-            }
-            return $true
-        }
-    }
-    return $false
+    $result = git -C $repoPath check-ignore "$relativePath" 2>$null
+    return -not [string]::IsNullOrWhiteSpace($result)
 }
 
-# Copy only files modified in the latest commit, excluding .gitignore and ignored files
+# Copy only files modified in the latest commit, preserving directory structure
 $modifiedFiles | ForEach-Object {
-    $sourceFilePath = Join-Path -Path $repoPath -ChildPath $_
+    $relativePath = $_
+    $sourceFilePath = Join-Path -Path $repoPath -ChildPath $relativePath
 
     # Only copy if the source file exists and is not in .gitignore
-    if ((Test-Path $sourceFilePath) -and !(Test-Ignored $_)) {
+    if ((Test-Path $sourceFilePath) -and !(Test-Ignored $relativePath)) {
 
-        Log-Message "Processing modified file: $sourceFilePath"
-        Copy-Item -Path $sourceFilePath -Destination $destinationFolder -Force
-        Log-Message "Copied file $sourceFilePath to $destinationFolder"
+        Write-Message "Processing modified file: $sourceFilePath"
+
+        $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $relativePath
+        $destinationDir = Split-Path -Path $destinationFilePath -Parent
+
+        if (-not (Test-Path $destinationDir)) {
+            New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+        }
+
+        try {
+            Copy-Item -Path $sourceFilePath -Destination $destinationFilePath -Force
+            Write-Message "Copied file $sourceFilePath to $destinationFilePath"
+        } catch {
+            Write-Message ("Failed to copy {0}: {1}" -f $sourceFilePath, $_.Exception.Message)
+        }
     } else {
-        Log-Message "File $sourceFilePath is ignored or does not exist"
+        Write-Message "File $sourceFilePath is ignored or does not exist"
     }
 }
 
-# Move deleted files to the Recycle Bin
+# Permanently delete files in the destination folder that were deleted in the commit
 $deletedFiles | ForEach-Object {
     $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $_
 
-    Log-Message "Processing deleted file: $destinationFilePath"
+    Write-Message "Processing deleted file: $destinationFilePath"
 
     # Only move to Recycle Bin if the file exists in the destination and is not ignored
     if ((Test-Path $destinationFilePath) -and -not (Test-Ignored $_)) {
-        Log-Message "Removing file $destinationFilePath"
-        Remove-Item -Path $destinationFilePath -Recurse -Confirm:$false -ErrorAction SilentlyContinue
+        Write-Message "Removing file $destinationFilePath"
+        try {
+            Remove-Item -Path $destinationFilePath -Recurse -Confirm:$false -Force
+            Write-Message "Deleted file $destinationFilePath"
+        } catch {
+            Write-Message ("Failed to delete {0}: {1}" -f $destinationFilePath, $_.Exception.Message)
+        }
     } else {
-        Log-Message "File $destinationFilePath is ignored or does not exist in the destination folder"
+        Write-Message "File $destinationFilePath is ignored or does not exist in the destination folder"
     }
 }
 
-Log-Message "Script execution completed."
+Write-Message "Script execution completed."
