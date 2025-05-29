@@ -8,7 +8,7 @@ $destinationFolder = "C:\Users\manoj\Documents\Scripts"
 $logFile = "C:\Users\manoj\Documents\Scripts\git-post-action.log"
 
 # Function to log messages with timestamps and source identifier
-function Log-Message {
+function Write-Message {
     param (
         [string]$message,
         [string]$source = "post-commit"
@@ -21,7 +21,7 @@ function Log-Message {
     }
 }
 
-Log-Message "Script execution started."
+Write-Message "Script execution started."
 
 if ($Verbose) {
     Write-Host "Verbose mode enabled"
@@ -66,32 +66,11 @@ if (Test-Path $gitignorePath) {
 # Function to check if a file matches any ignored patterns
 function Test-Ignored {
     param (
-        [string]$fileName
+        [string]$relativePath
     )
 
-    if ($Verbose) {
-        Write-Host "Checking if file $fileName is ignored" -ForegroundColor Cyan
-    }
-
-    # Check if the file is .gitignore itself
-    if ($fileName -eq ".gitignore") {
-        if ($Verbose) {
-            Write-Host "File is .gitignore itself, ignoring" -ForegroundColor Cyan
-        }
-        return $true
-    }
-
-    # Check against patterns in .gitignore
-    foreach ($pattern in $ignoredPatterns) {
-        # Use -like for wildcard matching, if applicable
-        if ($fileName -like $pattern) {
-            if ($Verbose) {
-                Write-Host "File $fileName matches pattern $pattern, ignoring" -ForegroundColor Cyan
-            }
-            return $true
-        }
-    }
-    return $false
+    $ignoreCheck = git -C $repoPath check-ignore "$relativePath" 2>$null
+    return -not [string]::IsNullOrWhiteSpace($ignoreCheck)
 }
 
 # Copy only files modified in the latest commit, preserving directory structure
@@ -102,7 +81,7 @@ $modifiedFiles | ForEach-Object {
     # Only copy if the source file exists and is not in .gitignore
     if ((Test-Path $sourceFilePath) -and !(Test-Ignored $relativePath)) {
 
-        Log-Message "Processing modified file: $sourceFilePath"
+        Write-Message "Processing modified file: $sourceFilePath"
 
         $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $relativePath
         $destinationDir = Split-Path -Path $destinationFilePath -Parent
@@ -111,11 +90,16 @@ $modifiedFiles | ForEach-Object {
             New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
         }
 
-        Copy-Item -Path $sourceFilePath -Destination $destinationFilePath -Force
-        Log-Message "Copied file $sourceFilePath to $destinationFilePath"
+        try {
+            Copy-Item -Path $sourceFilePath -Destination $destinationFilePath -Force
+            Write-Message "Copied file $sourceFilePath to $destinationFilePath"
+        } catch {
+            Write-Message ("Failed to copy {0}: {1}" -f $sourceFilePath, $_)
 
+            # Optional rollback logic here
+        }
     } else {
-        Log-Message "File $sourceFilePath is ignored or does not exist"
+        Write-Message "File $sourceFilePath is ignored or does not exist"
     }
 }
 
@@ -123,15 +107,20 @@ $modifiedFiles | ForEach-Object {
 $deletedFiles | ForEach-Object {
     $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $_
 
-    Log-Message "Processing deleted file: $destinationFilePath"
+    Write-Message "Processing deleted file: $destinationFilePath"
 
     # Only move to Recycle Bin if the file exists in the destination and is not ignored
     if ((Test-Path $destinationFilePath) -and -not (Test-Ignored $_)) {
-        Log-Message "Removing file $destinationFilePath"
-        Remove-Item -Path $destinationFilePath -Recurse -Confirm:$false -ErrorAction SilentlyContinue
+        Write-Message "Removing file $destinationFilePath"
+        try {
+            Remove-Item -Path $destinationFilePath -Recurse -Confirm:$false -Force
+            Write-Message "Deleted file $destinationFilePath"
+        } catch {
+                
+        }
     } else {
-        Log-Message "File $destinationFilePath is ignored or does not exist in the destination folder"
+        Write-Message "File $destinationFilePath is ignored or does not exist in the destination folder"
     }
 }
 
-Log-Message "Script execution completed."
+Write-Message "Script execution completed."
