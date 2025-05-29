@@ -119,9 +119,7 @@ $modifiedFiles | ForEach-Object {
             Copy-Item -Path $sourceFilePath -Destination $destinationFilePath -Force
             Write-Message "Copied file $sourceFilePath to $destinationFilePath"
         } catch {
-            Write-Message ("Failed to copy {0}: {1}" -f $sourceFilePath, $_)
-
-            # Optional rollback logic here
+            Write-Message ("Failed to copy {0}: {1}" -f $sourceFilePath, $_.Exception.Message)
         }
     } else {
         Write-Message "File $sourceFilePath is ignored or does not exist"
