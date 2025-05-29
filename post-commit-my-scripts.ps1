@@ -45,32 +45,13 @@ if ($Verbose) {
     $deletedFiles | ForEach-Object { Write-Host $_ }
 }
 
-# Read .gitignore file
-$gitignorePath = Join-Path -Path $repoPath -ChildPath ".gitignore"
-$ignoredPatterns = @()
-
-# Check if .gitignore exists and read its contents
-if (Test-Path $gitignorePath) {
-    $ignoredPatterns = Get-Content -Path $gitignorePath
-
-    if ($Verbose) {
-        Write-Host "Ignored Patterns:" -ForegroundColor Yellow
-        $ignoredPatterns | ForEach-Object { Write-Host $_ }
-    }
-} else {
-    if ($Verbose) {
-        Write-Host ".gitignore file not found"
-    }
-}
-
 # Function to check if a file matches any ignored patterns
 function Test-Ignored {
     param (
         [string]$relativePath
     )
-
-    $ignoreCheck = git -C $repoPath check-ignore "$relativePath" 2>$null
-    return -not [string]::IsNullOrWhiteSpace($ignoreCheck)
+    $result = git -C $repoPath check-ignore "$relativePath" 2>$null
+    return -not [string]::IsNullOrWhiteSpace($result)
 }
 
 # Copy only files modified in the latest commit, preserving directory structure
@@ -116,7 +97,7 @@ $deletedFiles | ForEach-Object {
             Remove-Item -Path $destinationFilePath -Recurse -Confirm:$false -Force
             Write-Message "Deleted file $destinationFilePath"
         } catch {
-                
+            Write-Message ("Failed to delete {0}: {1}" -f $destinationFilePath, $_.Exception.Message)
         }
     } else {
         Write-Message "File $destinationFilePath is ignored or does not exist in the destination folder"
