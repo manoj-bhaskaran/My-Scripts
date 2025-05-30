@@ -13,3 +13,4 @@ srtm; python_version < "3.11"
 networkx
 openpyxl
 psycopg2
+pytz
