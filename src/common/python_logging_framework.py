@@ -1,3 +1,20 @@
+"""
+python_logging_framework.py
+
+A reusable Python logging framework module compliant with the Cross-Platform Logging Specification.
+
+This module provides structured and plain-text logging support with consistent formatting,
+support for optional metadata, fallback mechanisms, and configurable log output.
+
+Key Features:
+- Millisecond-precision timestamps in IST
+- Support for both plain text and JSON log formats
+- Script-level log identification
+- Console and file handlers with fallback
+- Optional metadata validation
+- Configurable log level, output directory, and propagation
+
+"""
 
 import logging
 import os
