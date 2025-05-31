@@ -64,9 +64,9 @@ Get-ScheduledTask | Where-Object {
         $commandNode = $xmlDoc.SelectSingleNode("//t:Exec/t:Command", $nsMgr)
         $argumentsNode = $xmlDoc.SelectSingleNode("//t:Exec/t:Arguments", $nsMgr)
 
-        # Using null-coalescing with -or "" for safety against null nodes
-        $originalCommand = $commandNode?.InnerText -or ""
-        $originalArguments = $argumentsNode?.InnerText -or ""
+        # *** CORRECTED: Explicitly check for null before accessing InnerText ***
+        $originalCommand = if ($commandNode) { $commandNode.InnerText } else { "" }
+        $originalArguments = if ($argumentsNode) { $argumentsNode.InnerText } else { "" }
 
         # Node presence checks and colored output
         if (-not $commandNode) {
@@ -97,11 +97,12 @@ Get-ScheduledTask | Where-Object {
                     $modified = $true
                 }
 
-                if ($originalArguments -and $originalArguments -match $pattern) { # Added -and $originalArguments for safety
+                # Ensure arguments node exists before trying to match
+                if ($originalArguments -and $originalArguments -match $pattern) {
                     $filename = Split-Path -Leaf $originalArguments
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
                     $argumentsNode.InnerText = $originalArguments -ireplace $pattern, $newPath
-                    $modified = $true
+                    $modified = true
                 }
             }
         }
