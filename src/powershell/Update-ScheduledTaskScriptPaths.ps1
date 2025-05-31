@@ -106,10 +106,14 @@ Get-ScheduledTask | Where-Object {
         if ($modified) {
             $outPath = Join-Path $outputDir "$taskName.xml"
             try {
-                $writer = [System.IO.StreamWriter]::new($outPath, $false, [System.Text.Encoding]::UTF8)
+                # *** FIX: Explicitly create a UTF8Encoding object that does NOT emit a BOM ***
+                $utf8NoBomEncoding = New-Object System.Text.UTF8Encoding($false) # The $false parameter means 'do not emit BOM'
+
+                # Use this custom encoding object with StreamWriter
+                $writer = [System.IO.StreamWriter]::new($outPath, $false, $utf8NoBomEncoding)
                 $xmlDoc.Save($writer)
                 $writer.Dispose()
-                Write-Host "✅ Updated and exported: $taskName" -ForegroundColor Green
+                Write-Host "✅ Updated and exported: $taskName (UTF-8 No BOM)" -ForegroundColor Green
             }
             catch {
                 Write-Warning "⚠ Failed to write task XML for ${fullTaskName}: $($_.Exception.Message)"
