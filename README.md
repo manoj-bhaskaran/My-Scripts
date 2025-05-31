@@ -27,6 +27,7 @@ This repository is organised into logical directories to enhance discoverability
     * `src/powershell/`: PowerShell scripts for various tasks, including system administration and automation.
     * `src/python/`: Python scripts for data processing, specialised image processing, and other utility functions.
     * `src/batch/`: Batch scripts for common command-line operations.
+    * `src/sql/`: SQL query files, organised by the specific external database they target (e.g., `gnucash_db`).
     * `src/common/`: Shared modules or functions used across different scripts (e.g., a common logging framework).
 * `docs/`: Comprehensive documentation, usage guides, and any architectural notes.
 * `config/`: Configuration files used by various scripts.
