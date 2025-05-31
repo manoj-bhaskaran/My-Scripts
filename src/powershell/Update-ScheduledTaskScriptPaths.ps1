@@ -85,24 +85,20 @@ Get-ScheduledTask | Where-Object {
 
         foreach ($ext in $extensionMap.Keys) {
             foreach ($root in @($targetRoot1, $targetRoot2)) {
-                # Ensure the regex pattern is case-insensitive and handles quotes correctly
-                # Re-added (?i) and corrected quote escaping for the pattern string
                 $pattern = '(?i)\"?' + [regex]::Escape($root) + '\\.*' + [regex]::Escape($ext) + '\"?'
 
                 if ($originalCommand -match $pattern) {
                     $filename = Split-Path -Leaf $originalCommand
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
-                    # Using -ireplace for case-insensitive replacement
                     $commandNode.InnerText = $originalCommand -ireplace $pattern, $newPath
-                    $modified = $true
+                    $modified = $true # <--- FIX: Changed 'true' to $true
                 }
 
-                # Ensure arguments node exists before trying to match
                 if ($originalArguments -and $originalArguments -match $pattern) {
                     $filename = Split-Path -Leaf $originalArguments
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
                     $argumentsNode.InnerText = $originalArguments -ireplace $pattern, $newPath
-                    $modified = true
+                    $modified = $true # <--- FIX: Changed 'true' to $true
                 }
             }
         }
