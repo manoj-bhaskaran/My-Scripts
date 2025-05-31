@@ -59,6 +59,13 @@ Get-ScheduledTask | Where-Object {
         $commandNode = $xmlDoc.SelectSingleNode("//Exec/Command")
         $argumentsNode = $xmlDoc.SelectSingleNode("//Exec/Arguments")
 
+        if (-not $commandNode) {
+            Write-Warning "⚠ Command node missing in task: $fullTaskName"
+        }
+        if (-not $argumentsNode) {
+            Write-Host "ℹ Arguments node missing in task: $fullTaskName"
+        }
+
         $originalCommand = $commandNode.InnerText
         $originalArguments = $argumentsNode.InnerText
         Write-Host "🔧 Command:   $originalCommand"
