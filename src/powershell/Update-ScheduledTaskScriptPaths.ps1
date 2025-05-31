@@ -56,6 +56,8 @@ Get-ScheduledTask | Where-Object {
     try {
         $xml = Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath
         $execNode = $xml.Task.Actions.Exec
+        Write-Host "🔧 Command:   $($execNode.Command)"
+        Write-Host "🔧 Arguments: $($execNode.Arguments)"
         $modified = $false
 
         foreach ($ext in $extensionMap.Keys) {
