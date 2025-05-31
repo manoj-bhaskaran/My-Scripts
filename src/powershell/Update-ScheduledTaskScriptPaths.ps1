@@ -26,9 +26,9 @@
     - Uses Export-ScheduledTask for exporting
     - Parses XML using XPath for full Exec node visibility
     - Handles regex path matching with subfolder tolerance
-    - Ensures UTF-8 export using StreamWriter
+    - Ensures UTF-8 export using StreamWriter and proper Dispose
     - Writes detailed status messages per task
-
+    - Validates presence of nodes before accessing them
 #>
 
 $targetRoot1 = "C:\Users\manoj\Documents\Scripts"
@@ -53,12 +53,10 @@ Get-ScheduledTask | Where-Object {
     $fullTaskName = "$taskPath$taskName"
     Write-Host "🔍 Scanning task: $fullTaskName"
 
-        try {
-        $taskFullName = "$taskPath$taskName"
-        $xmlRaw = schtasks /Query /TN $taskFullName /XML 2>$null
-
+    try {
+        $xmlRaw = schtasks /Query /TN $fullTaskName /XML 2>$null
         if (-not $xmlRaw) {
-            Write-Warning "⚠ Failed to export task XML: $taskFullName"
+            Write-Warning "⚠ Failed to export task XML: $fullTaskName"
             return
         }
 
@@ -72,11 +70,10 @@ Get-ScheduledTask | Where-Object {
         $argumentsNode = $xmlDoc.SelectSingleNode("//t:Exec/t:Arguments", $nsMgr)
 
         if (-not $commandNode) {
-            Write-Warning "⚠ Command node missing in task: $taskFullName"
+            Write-Warning "⚠ Command node missing in task: $fullTaskName"
         }
-
         if (-not $argumentsNode) {
-            Write-Host "ℹ Arguments node missing in task: $taskFullName"
+            Write-Host "ℹ Arguments node missing in task: $fullTaskName"
         }
 
         $originalCommand = $commandNode?.InnerText
@@ -90,14 +87,14 @@ Get-ScheduledTask | Where-Object {
             foreach ($root in @($targetRoot1, $targetRoot2)) {
                 $pattern = [regex]::Escape($root) + '.*"?' + [regex]::Escape($ext) + '"?'
 
-                if ($originalCommand -match $pattern) {
+                if ($originalCommand -and $originalCommand -match $pattern) {
                     $filename = Split-Path -Leaf $originalCommand
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
                     $commandNode.InnerText = $originalCommand -replace $pattern, $newPath
                     $modified = $true
                 }
 
-                if ($originalArguments -match $pattern) {
+                if ($originalArguments -and $originalArguments -match $pattern) {
                     $filename = Split-Path -Leaf $originalArguments
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
                     $argumentsNode.InnerText = $originalArguments -replace $pattern, $newPath
@@ -115,14 +112,13 @@ Get-ScheduledTask | Where-Object {
                 Write-Host "✅ Updated and exported: $taskName" -ForegroundColor Green
             }
             catch {
-                Write-Warning "⚠ Failed to write task XML for ${taskFullName}: $($_.Exception.Message)"
+                Write-Warning "⚠ Failed to write task XML for ${fullTaskName}: $($_.Exception.Message)"
             }
-        }
-        else {
+        } else {
             Write-Host "ℹ No changes needed for: $taskName" -ForegroundColor Gray
         }
     }
     catch {
-        Write-Warning "⚠ Failed to write task XML: $($_.Exception.Message)"
+        Write-Warning "⚠ Failed to process task: $fullTaskName ($($_.Exception.Message))"
     }
 }
