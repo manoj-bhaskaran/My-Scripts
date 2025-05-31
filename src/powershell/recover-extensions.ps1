@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Wrapper to run recover_extensions.py from C:\Users\manoj\Documents\Scripts
+Wrapper to run recover_extensions.py from C:\Users\manoj\Documents\Scripts\src\python
 
 .DESCRIPTION
 This PowerShell script ensures the Python environment is set up and runs recover_extensions.py
@@ -22,7 +22,7 @@ param(
 )
 
 # Fixed script paths
-$BaseDir = "C:\Users\manoj\Documents\Scripts"
+$BaseDir = "C:\Users\manoj\Documents\Scripts\src\python"
 $PythonScript = Join-Path $BaseDir "recover_extensions.py"
 $RequirementsFile = Join-Path $BaseDir "requirements.txt"
 $VenvDir = Join-Path $BaseDir ".venv"

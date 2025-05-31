@@ -147,7 +147,7 @@ Post-Processing:
 
 Prerequisites:
 - Ensure permissions for reading and writing in both source and target directories.
-- The random name generator script should be located at: `C:\Users\manoj\Documents\Scripts\randomname.ps1`.
+- The random name generator script should be located at: `C:\Users\manoj\Documents\Scripts\src\powershell\randomname.ps1`.
 
 Limitations:
 - The script does not handle nested directories in the source folder; only top-level files are processed.
@@ -158,7 +158,7 @@ param(
     [string]$TargetFolder = "D:\users\manoj\Documents\FIFA 07\elib",
     [int]$FilesPerFolderLimit = 20000,
     [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor-log.txt",
-    [string]$StateFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor-State.json",
+    [string]$StateFilePath = "C:\users\manoj\Documents\Scripts\temp\FileDistributor-State.json",
     [switch]$Restart,
     [switch]$ShowProgress = $false,
     [int]$UpdateFrequency = 100, # Default: 100 files
@@ -234,7 +234,7 @@ if ($Help) {
 
     Write-Host "`nNOTES" -ForegroundColor Yellow
     Write-Host "Ensure permissions for reading and writing in both source and target directories." -ForegroundColor White
-    Write-Host "The random name generator script should be located at: 'C:\Users\manoj\Documents\Scripts\randomname.ps1'." -ForegroundColor White
+    Write-Host "The random name generator script should be located at: 'C:\Users\manoj\Documents\Scripts\src\powershell\randomname.ps1'." -ForegroundColor White
 
     exit
 }
@@ -244,7 +244,7 @@ $script:Warnings = 0
 $script:Errors = 0
 
 # Define the script directory
-$ScriptDirectory = "C:\Users\manoj\Documents\Scripts"
+$ScriptDirectory = "C:\Users\manoj\Documents\Scripts\src\powershell"
 
 # Function to log messages
 function LogMessage {
