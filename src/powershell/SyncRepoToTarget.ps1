@@ -45,7 +45,7 @@ $robocopyCmd = @(
     "$SourceRepo",
     "$TargetDirectory",
     "/E", "/PURGE",
-    "/XD", "venv", "Google Drive JSON", "Handle",
+    "/XD", "venv", "Google Drive JSON", "Handle", "temp",
     "/XF", "*.txt", "*.log",
     "/R:1", "/W:1",
     "/NFL", "/NDL", "/NP", "/NJH", "/NJS"

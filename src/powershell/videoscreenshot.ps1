@@ -97,7 +97,7 @@ $maxVideosToProcess = $VideoLimit    # Maximum number of videos to process in a 
 
 # Define paths
 $logFilePath = "$SaveFolder\processed_videos.log"  # Path to the log file
-$pythonScriptPath = "C:\Users\manoj\Documents\Scripts\crop_colours.py"
+$pythonScriptPath = "C:\Users\manoj\Documents\Scripts\src\python\crop_colours.py"
 
 # Enable Debugging Messages if -Debug is passed
 if ($Debug.IsPresent) {
