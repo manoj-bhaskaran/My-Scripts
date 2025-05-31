@@ -7,7 +7,7 @@
 
     It exports updated task definitions that reflect corrected script paths under a refactored folder structure.
     You can manually re-import the modified XML files using Register-ScheduledTask or schtasks /Create.
-    
+
     This script scans non-system scheduled tasks and updates references to scripts located in:
         - C:\Users\manoj\Documents\Scripts
         - D:\My Scripts
@@ -84,10 +84,13 @@ Get-ScheduledTask | Where-Object {
 
         if ($modified) {
             $outPath = Join-Path $outputDir "$taskName.xml"
-            $writer = New-Object System.IO.StreamWriter($outPath, $false, [System.Text.Encoding]::UTF8)
-            $xml.Save($writer)
-            $writer.Close()
-
+            $writer = $null
+            try {
+                $writer = New-Object System.IO.StreamWriter($outPath, $false, [System.Text.Encoding]::UTF8)
+                $xml.Save($writer)
+            } finally {
+                if ($writer) { $writer.Close() }
+            }
             Write-Host "✅ Updated and exported: $taskName" -ForegroundColor Green
         }
     }
