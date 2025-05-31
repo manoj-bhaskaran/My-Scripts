@@ -63,16 +63,16 @@ Get-ScheduledTask | Where-Object {
 
             foreach ($root in @($targetRoot1, $targetRoot2)) {
                 $escapedRoot = [regex]::Escape($root)
-                $pattern = "$escapedRoot\\.*$extEscaped"
+                $pattern = "(?i)" + $escapedRoot + "\\.*" + $extEscaped
 
-                if ($execNode.Command -match "(?i)$pattern") {
+                if ($execNode.Command -match $pattern) {
                     $filename = Split-Path -Leaf $execNode.Command
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
                     $execNode.Command = $execNode.Command -replace $pattern, $newPath
                     $modified = $true
                 }
 
-                if ($execNode.Arguments -match "(?i)$pattern") {
+                if ($execNode.Arguments -match $pattern) {
                     $filename = Split-Path -Leaf $execNode.Arguments
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
                     $execNode.Arguments = $execNode.Arguments -replace $pattern, $newPath
