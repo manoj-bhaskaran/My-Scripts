@@ -26,9 +26,8 @@
     - Uses Export-ScheduledTask instead of schtasks.exe
     - Safely updates Command and Arguments fields separately
     - Handles regex path matching with subfolder tolerance
-    - Ensures UTF-8 export without re-reading files
-    - Always cleans up resources
-
+    - Ensures UTF-8 export using proper StreamWriter disposal
+    - Always cleans up resources with try/catch/finally
 #>
 
 $targetRoot1 = "C:\Users\manoj\Documents\Scripts"
@@ -55,8 +54,6 @@ Get-ScheduledTask | Where-Object {
     try {
         $xml = Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath
         $execNode = $xml.Task.Actions.Exec
-        $originalCommand = $execNode.Command
-        $originalArguments = $execNode.Arguments
         $modified = $false
 
         foreach ($ext in $extensionMap.Keys) {
@@ -66,17 +63,17 @@ Get-ScheduledTask | Where-Object {
                 $escapedRoot = [regex]::Escape($root)
                 $pattern = "$escapedRoot\\.*$extEscaped"
 
-                if ($originalCommand -match $pattern) {
-                    $filename = Split-Path -Leaf $originalCommand
+                if ($execNode.Command -match $pattern) {
+                    $filename = Split-Path -Leaf $execNode.Command
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
-                    $execNode.Command = $originalCommand -replace $pattern, $newPath
+                    $execNode.Command = $execNode.Command -replace $pattern, $newPath
                     $modified = $true
                 }
 
-                if ($originalArguments -match $pattern) {
-                    $filename = Split-Path -Leaf $originalArguments
+                if ($execNode.Arguments -match $pattern) {
+                    $filename = Split-Path -Leaf $execNode.Arguments
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
-                    $execNode.Arguments = $originalArguments -replace $pattern, $newPath
+                    $execNode.Arguments = $execNode.Arguments -replace $pattern, $newPath
                     $modified = $true
                 }
             }
@@ -86,18 +83,15 @@ Get-ScheduledTask | Where-Object {
             $outPath = Join-Path $outputDir "$taskName.xml"
             $writer = $null
             try {
-                $writer = $null
-                try {
-                    $writer = New-Object System.IO.StreamWriter($outPath, $false, [System.Text.Encoding]::UTF8)
-                    $xml.Save($writer)
-                } finally {
-                    if ($writer) { $writer.Dispose() }
-                }
-            } catch {
+                $writer = New-Object System.IO.StreamWriter($outPath, $false, [System.Text.Encoding]::UTF8)
+                $xml.Save($writer)
+            }
+            catch {
                 Write-Warning "⚠ Failed to write task XML for ${fullTaskName}: $($_.Exception.Message)"
                 return
-            } finally {
-                if ($writer) { $writer.Close() }
+            }
+            finally {
+                if ($writer) { $writer.Dispose() }
             }
             Write-Host "✅ Updated and exported: $taskName" -ForegroundColor Green
         }
