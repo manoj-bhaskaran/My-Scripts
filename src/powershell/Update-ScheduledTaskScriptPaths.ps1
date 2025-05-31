@@ -71,7 +71,7 @@ Get-ScheduledTask | Where-Object {
 
             foreach ($root in @($targetRoot1, $targetRoot2)) {
                 $escapedRoot = [regex]::Escape($root)
-                $pattern = "(?i)\"?$escapedRoot\\.*$extEscaped\"?"
+                $pattern = "(?i)\"?" + [regex]::Escape($root) + "\\.*" + [regex]::Escape($ext) + "\"?"
 
                 if ($originalCommand -match $pattern) {
                     $filename = Split-Path -Leaf $originalCommand
