@@ -1,8 +1,13 @@
 <#
 .SYNOPSIS
-    Updates script paths in Windows Task Scheduler tasks and exports the modified definitions as UTF-8 encoded XML files.
+    Scans scheduled tasks and exports updated definitions with modified script paths as UTF-8 XML files.
 
 .DESCRIPTION
+    This script does NOT directly modify live scheduled tasks.
+
+    It exports updated task definitions that reflect corrected script paths under a refactored folder structure.
+    You can manually re-import the modified XML files using Register-ScheduledTask or schtasks /Create.
+    
     This script scans non-system scheduled tasks and updates references to scripts located in:
         - C:\Users\manoj\Documents\Scripts
         - D:\My Scripts
