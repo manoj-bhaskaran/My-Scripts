@@ -23,11 +23,12 @@
 
 .NOTES
     Implements improvements:
-    - Uses Export-ScheduledTask instead of schtasks.exe
-    - Safely updates Command and Arguments fields separately
+    - Uses Export-ScheduledTask for exporting
+    - Parses XML using XPath for full Exec node visibility
     - Handles regex path matching with subfolder tolerance
-    - Ensures UTF-8 export using proper StreamWriter disposal
-    - Always cleans up resources with try/catch/finally
+    - Ensures UTF-8 export using StreamWriter
+    - Writes detailed status messages per task
+
 #>
 
 $targetRoot1 = "C:\Users\manoj\Documents\Scripts"
@@ -50,14 +51,21 @@ Get-ScheduledTask | Where-Object {
     $taskName = $_.TaskName
     $taskPath = $_.TaskPath
     $fullTaskName = "$taskPath$taskName"
-
-    Write-Host "🔍 Scanning task: $fullTaskName" -ForegroundColor Cyan
+    Write-Host "🔍 Scanning task: $fullTaskName"
 
     try {
-        $xml = Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath
-        $execNode = $xml.Task.Actions.Exec
-        Write-Host "🔧 Command:   $($execNode.Command)"
-        Write-Host "🔧 Arguments: $($execNode.Arguments)"
+        $xmlRaw = Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath
+        $xmlDoc = New-Object System.Xml.XmlDocument
+        $xmlDoc.LoadXml($xmlRaw.OuterXml)
+
+        $commandNode = $xmlDoc.SelectSingleNode("//Exec/Command")
+        $argumentsNode = $xmlDoc.SelectSingleNode("//Exec/Arguments")
+
+        $originalCommand = $commandNode.InnerText
+        $originalArguments = $argumentsNode.InnerText
+        Write-Host "🔧 Command:   $originalCommand"
+        Write-Host "🔧 Arguments: $originalArguments"
+
         $modified = $false
 
         foreach ($ext in $extensionMap.Keys) {
@@ -65,19 +73,19 @@ Get-ScheduledTask | Where-Object {
 
             foreach ($root in @($targetRoot1, $targetRoot2)) {
                 $escapedRoot = [regex]::Escape($root)
-                $pattern = "(?i)" + $escapedRoot + "\\.*" + $extEscaped
+                $pattern = "(?i)\"?$escapedRoot\\.*$extEscaped\"?"
 
-                if ($execNode.Command -match $pattern) {
-                    $filename = Split-Path -Leaf $execNode.Command
+                if ($originalCommand -match $pattern) {
+                    $filename = Split-Path -Leaf $originalCommand
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
-                    $execNode.Command = $execNode.Command -replace $pattern, $newPath
+                    $commandNode.InnerText = $originalCommand -replace $pattern, $newPath
                     $modified = $true
                 }
 
-                if ($execNode.Arguments -match $pattern) {
-                    $filename = Split-Path -Leaf $execNode.Arguments
+                if ($originalArguments -match $pattern) {
+                    $filename = Split-Path -Leaf $originalArguments
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
-                    $execNode.Arguments = $execNode.Arguments -replace $pattern, $newPath
+                    $argumentsNode.InnerText = $originalArguments -replace $pattern, $newPath
                     $modified = $true
                 }
             }
@@ -85,22 +93,18 @@ Get-ScheduledTask | Where-Object {
 
         if ($modified) {
             $outPath = Join-Path $outputDir "$taskName.xml"
-            $writer = $null
             try {
-                $writer = New-Object System.IO.StreamWriter($outPath, $false, [System.Text.Encoding]::UTF8)
-                $xml.Save($writer)
+                $writer = [System.IO.StreamWriter]::new($outPath, $false, [System.Text.Encoding]::UTF8)
+                $xmlDoc.Save($writer)
+                $writer.Dispose()
+                Write-Host "✅ Updated and exported: $taskName" -ForegroundColor Green
             }
             catch {
                 Write-Warning "⚠ Failed to write task XML for ${fullTaskName}: $($_.Exception.Message)"
-                return
             }
-            finally {
-                if ($writer) { $writer.Dispose() }
-            }
-            Write-Host "✅ Updated and exported: $taskName" -ForegroundColor Green
         }
         else {
-            Write-Host "ℹ No changes needed for: $taskName" -ForegroundColor DarkGray
+            Write-Host "ℹ No changes needed for: $taskName" -ForegroundColor Gray
         }
     }
     catch {
