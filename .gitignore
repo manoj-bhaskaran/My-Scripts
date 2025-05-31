@@ -6,3 +6,4 @@ venv
 .venv
 /.tmp.driveupload
 timeline_data/users/passwords
+__pycache__
