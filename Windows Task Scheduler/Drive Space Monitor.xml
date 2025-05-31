@@ -1,27 +1,23 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Date>2025-05-18T15:18:07.8294334</Date>
+    <Date>2024-12-22T22:37:35.675479</Date>
     <Author>LENOVOLAPTOP\manoj</Author>
-    <Description>Weekly backup for PostgreSQL timeline_data and cleanup old backups</Description>
-    <URI>\PostgreSQL timeline_data Backup</URI>
+    <Description>Monitor space in Google Drive and clear trash if required</Description>
+    <URI>\Drive Space Monitor</URI>
   </RegistrationInfo>
   <Principals>
     <Principal id="Author">
       <UserId>S-1-5-21-2349606454-1635163391-2052929288-1001</UserId>
-      <LogonType>InteractiveToken</LogonType>
+      <LogonType>Password</LogonType>
       <RunLevel>HighestAvailable</RunLevel>
     </Principal>
   </Principals>
   <Settings>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>true</StopIfGoingOnBatteries>
-    <ExecutionTimeLimit>PT4H</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT2H</ExecutionTimeLimit>
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <RestartOnFailure>
-      <Count>3</Count>
-      <Interval>PT5M</Interval>
-    </RestartOnFailure>
     <StartWhenAvailable>true</StartWhenAvailable>
     <IdleSettings>
       <StopOnIdleEnd>true</StopOnIdleEnd>
@@ -30,20 +26,38 @@
   </Settings>
   <Triggers>
     <CalendarTrigger>
-      <StartBoundary>2025-05-18T18:00:00</StartBoundary>
-      <RandomDelay>PT1H</RandomDelay>
+      <StartBoundary>2024-12-22T07:00:00</StartBoundary>
+      <Repetition>
+        <Interval>PT2H</Interval>
+        <Duration>P1D</Duration>
+      </Repetition>
       <ScheduleByWeek>
         <WeeksInterval>1</WeeksInterval>
         <DaysOfWeek>
           <Sunday />
+          <Saturday />
+        </DaysOfWeek>
+      </ScheduleByWeek>
+    </CalendarTrigger>
+    <CalendarTrigger>
+      <StartBoundary>2025-02-11T08:00:00</StartBoundary>
+      <ScheduleByWeek>
+        <WeeksInterval>1</WeeksInterval>
+        <DaysOfWeek>
+          <Monday />
+          <Tuesday />
+          <Wednesday />
+          <Thursday />
+          <Friday />
         </DaysOfWeek>
       </ScheduleByWeek>
     </CalendarTrigger>
   </Triggers>
   <Actions Context="Author">
     <Exec>
-      <Command>powershell</Command>
-      <Arguments>-File C:\Users\manoj\Documents\Scripts\src\powershell\timeline_data_pg_backup.ps1"</Arguments>
+      <Command>"D:\My Scripts\venv\Scripts\python.exe"</Command>
+      <Arguments>C:\Users\manoj\Documents\Scripts\src\python\drive_space_monitor.py --threshold 80 --threshold 80</Arguments>
+      <WorkingDirectory>C:\users\manoj\Documents\Scripts</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
