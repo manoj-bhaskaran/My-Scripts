@@ -54,7 +54,7 @@ function Sync-ScheduledTasksFromXml {
 
         try {
             # Read the XML content into an XML document object
-            [xml]$xmlDoc = Get-Content -Path $xmlFile.FullName | Out-String
+            [xml]$xmlDoc = Get-Content -Path $xmlFile.FullName -Encoding UTF8 | Out-String
 
             # Initialize XmlNamespaceManager for XPath queries (essential for task XML)
             $nsMgr = New-Object System.Xml.XmlNamespaceManager($xmlDoc.NameTable)
