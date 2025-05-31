@@ -54,7 +54,14 @@ Get-ScheduledTask | Where-Object {
     Write-Host "🔍 Scanning task: $fullTaskName"
 
     try {
-        $xmlDoc = [xml](Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath).Xml
+        $exported = Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction Stop
+
+        if ($null -eq $exported.Xml) {
+            Write-Warning "⚠ Exported task lacks .Xml property: $fullTaskName"
+            return
+        }
+
+        $xmlDoc = [xml]$exported.Xml
 
         $commandNode = $xmlDoc.SelectSingleNode("//Exec/Command")
         $argumentsNode = $xmlDoc.SelectSingleNode("//Exec/Arguments")
