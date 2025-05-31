@@ -56,12 +56,12 @@ Get-ScheduledTask | Where-Object {
     try {
         $exported = Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction Stop
 
-        if ($null -eq $exported.Xml) {
-            Write-Warning "⚠ Exported task lacks .Xml property: $fullTaskName"
-            return
+        if ($null -eq $exported) {
+            Write-Warning "⚠ Exported task is null: $fullTaskName"
+            continue
         }
 
-        $xmlDoc = [xml]$exported.Xml
+        $xmlDoc = [xml]$exported
 
         $commandNode = $xmlDoc.SelectSingleNode("//Exec/Command")
         $argumentsNode = $xmlDoc.SelectSingleNode("//Exec/Arguments")
