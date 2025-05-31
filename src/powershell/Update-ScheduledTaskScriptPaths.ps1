@@ -88,7 +88,7 @@ Get-ScheduledTask | Where-Object {
 
         foreach ($ext in $extensionMap.Keys) {
             foreach ($root in @($targetRoot1, $targetRoot2)) {
-                $pattern = [regex]::Escape($root) + ".*\"?" + [regex]::Escape($ext) + "\"?"
+                $pattern = [regex]::Escape($root) + '.*"?' + [regex]::Escape($ext) + '"?'
 
                 if ($originalCommand -match $pattern) {
                     $filename = Split-Path -Leaf $originalCommand
