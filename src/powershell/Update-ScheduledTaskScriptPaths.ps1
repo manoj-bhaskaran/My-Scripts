@@ -86,8 +86,16 @@ Get-ScheduledTask | Where-Object {
             $outPath = Join-Path $outputDir "$taskName.xml"
             $writer = $null
             try {
-                $writer = New-Object System.IO.StreamWriter($outPath, $false, [System.Text.Encoding]::UTF8)
-                $xml.Save($writer)
+                $writer = $null
+                try {
+                    $writer = New-Object System.IO.StreamWriter($outPath, $false, [System.Text.Encoding]::UTF8)
+                    $xml.Save($writer)
+                } finally {
+                    if ($writer) { $writer.Dispose() }
+                }
+            } catch {
+                Write-Warning "⚠ Failed to write task XML for ${fullTaskName}: $($_.Exception.Message)"
+                return
             } finally {
                 if ($writer) { $writer.Close() }
             }
