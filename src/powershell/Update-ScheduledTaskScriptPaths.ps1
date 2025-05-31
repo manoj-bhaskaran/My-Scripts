@@ -53,51 +53,54 @@ Get-ScheduledTask | Where-Object {
     $fullTaskName = "$taskPath$taskName"
     Write-Host "🔍 Scanning task: $fullTaskName"
 
-    try {
-        $exported = Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction Stop
+        try {
+        $taskFullName = "$taskPath$taskName"
+        $xmlRaw = schtasks /Query /TN $taskFullName /XML 2>$null
 
-        if ($null -eq $exported) {
-            Write-Warning "⚠ Exported task is null: $fullTaskName"
-            continue
+        if (-not $xmlRaw) {
+            Write-Warning "⚠ Failed to export task XML: $taskFullName"
+            return
         }
 
-        $xmlDoc = [xml]$exported
+        $xmlDoc = New-Object System.Xml.XmlDocument
+        $xmlDoc.LoadXml($xmlRaw)
 
-        $commandNode = $xmlDoc.SelectSingleNode("//Exec/Command")
-        $argumentsNode = $xmlDoc.SelectSingleNode("//Exec/Arguments")
+        $nsMgr = New-Object System.Xml.XmlNamespaceManager($xmlDoc.NameTable)
+        $nsMgr.AddNamespace("t", "http://schemas.microsoft.com/windows/2004/02/mit/task")
+
+        $commandNode = $xmlDoc.SelectSingleNode("//t:Exec/t:Command", $nsMgr)
+        $argumentsNode = $xmlDoc.SelectSingleNode("//t:Exec/t:Arguments", $nsMgr)
 
         if (-not $commandNode) {
-            Write-Warning "⚠ Command node missing in task: $fullTaskName"
-        }
-        if (-not $argumentsNode) {
-            Write-Host "ℹ Arguments node missing in task: $fullTaskName"
+            Write-Warning "⚠ Command node missing in task: $taskFullName"
         }
 
-        $originalCommand = $commandNode.InnerText
-        $originalArguments = $argumentsNode.InnerText
+        if (-not $argumentsNode) {
+            Write-Host "ℹ Arguments node missing in task: $taskFullName"
+        }
+
+        $originalCommand = $commandNode?.InnerText
+        $originalArguments = $argumentsNode?.InnerText
         Write-Host "🔧 Command:   $originalCommand"
         Write-Host "🔧 Arguments: $originalArguments"
 
         $modified = $false
 
         foreach ($ext in $extensionMap.Keys) {
-            $extEscaped = [regex]::Escape($ext)
-
             foreach ($root in @($targetRoot1, $targetRoot2)) {
-                $escapedRoot = [regex]::Escape($root)
-                $pattern = '(?i)"?' + $escapedRoot + '\\.*' + $extEscaped + '"?'
+                $pattern = [regex]::Escape($root) + ".*\"?" + [regex]::Escape($ext) + "\"?"
 
                 if ($originalCommand -match $pattern) {
                     $filename = Split-Path -Leaf $originalCommand
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
-                    $commandNode.InnerText = $originalCommand -ireplace $pattern, $newPath
+                    $commandNode.InnerText = $originalCommand -replace $pattern, $newPath
                     $modified = $true
                 }
 
                 if ($originalArguments -match $pattern) {
                     $filename = Split-Path -Leaf $originalArguments
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
-                    $argumentsNode.InnerText = $originalArguments -ireplace $pattern, $newPath
+                    $argumentsNode.InnerText = $originalArguments -replace $pattern, $newPath
                     $modified = $true
                 }
             }
@@ -112,7 +115,7 @@ Get-ScheduledTask | Where-Object {
                 Write-Host "✅ Updated and exported: $taskName" -ForegroundColor Green
             }
             catch {
-                Write-Warning "⚠ Failed to write task XML for ${fullTaskName}: $($_.Exception.Message)"
+                Write-Warning "⚠ Failed to write task XML for ${taskFullName}: $($_.Exception.Message)"
             }
         }
         else {
@@ -120,6 +123,6 @@ Get-ScheduledTask | Where-Object {
         }
     }
     catch {
-        Write-Warning "⚠ Failed to process task: $fullTaskName ($($_.Exception.Message))"
+        Write-Warning "⚠ Failed to write task XML: $($_.Exception.Message)"
     }
 }
