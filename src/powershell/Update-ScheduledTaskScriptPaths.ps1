@@ -23,9 +23,9 @@
 
 .NOTES
     Implements improvements:
-    - Uses Export-ScheduledTask for exporting
-    - Parses XML using XPath for full Exec node visibility
-    - Handles regex path matching with subfolder tolerance
+    - Uses Export-ScheduledTask for exporting (Reverted to this for robustness)
+    - Parses XML using XPath with NamespaceManager for full Exec node visibility
+    - Handles regex path matching with subfolder tolerance and optional quotes
     - Ensures UTF-8 export using StreamWriter and proper Dispose
     - Writes detailed status messages per task
     - Validates presence of nodes before accessing them
@@ -51,17 +51,12 @@ Get-ScheduledTask | Where-Object {
     $taskName = $_.TaskName
     $taskPath = $_.TaskPath
     $fullTaskName = "$taskPath$taskName"
-    Write-Host "🔍 Scanning task: $fullTaskName"
+    Write-Host "🔍 Scanning task: $fullTaskName" -ForegroundColor Cyan
 
     try {
-        $xmlRaw = schtasks /Query /TN $fullTaskName /XML 2>$null
-        if (-not $xmlRaw) {
-            Write-Warning "⚠ Failed to export task XML: $fullTaskName"
-            return
-        }
-
-        $xmlDoc = New-Object System.Xml.XmlDocument
-        $xmlDoc.LoadXml($xmlRaw)
+        # *** REVERTED TO EXPORT-SCHEDULEDTASK ***
+        # This is generally more reliable and idiomatic PowerShell
+        [xml]$xmlDoc = Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction Stop
 
         $nsMgr = New-Object System.Xml.XmlNamespaceManager($xmlDoc.NameTable)
         $nsMgr.AddNamespace("t", "http://schemas.microsoft.com/windows/2004/02/mit/task")
@@ -69,35 +64,43 @@ Get-ScheduledTask | Where-Object {
         $commandNode = $xmlDoc.SelectSingleNode("//t:Exec/t:Command", $nsMgr)
         $argumentsNode = $xmlDoc.SelectSingleNode("//t:Exec/t:Arguments", $nsMgr)
 
+        # Using null-coalescing with -or "" for safety against null nodes
+        $originalCommand = $commandNode?.InnerText -or ""
+        $originalArguments = $argumentsNode?.InnerText -or ""
+
+        # Node presence checks and colored output
         if (-not $commandNode) {
-            Write-Warning "⚠ Command node missing in task: $fullTaskName"
+            Write-Host "⚠ Command node missing in task: $fullTaskName (Skipping modifications for this task)" -ForegroundColor Yellow
+            # If no command node, no point in processing further for this task
+            return
         }
         if (-not $argumentsNode) {
-            Write-Host "ℹ Arguments node missing in task: $fullTaskName"
+            Write-Host "ℹ Arguments node missing in task: $fullTaskName" -ForegroundColor DarkGray
         }
 
-        $originalCommand = $commandNode?.InnerText
-        $originalArguments = $argumentsNode?.InnerText
-        Write-Host "🔧 Command:   $originalCommand"
-        Write-Host "🔧 Arguments: $originalArguments"
+        Write-Host "🔧 Command:   $originalCommand" -ForegroundColor DarkYellow
+        Write-Host "🔧 Arguments: $originalArguments" -ForegroundColor DarkYellow
 
         $modified = $false
 
         foreach ($ext in $extensionMap.Keys) {
             foreach ($root in @($targetRoot1, $targetRoot2)) {
-                $pattern = [regex]::Escape($root) + '.*"?' + [regex]::Escape($ext) + '"?'
+                # Ensure the regex pattern is case-insensitive and handles quotes correctly
+                # Re-added (?i) and corrected quote escaping for the pattern string
+                $pattern = '(?i)\"?' + [regex]::Escape($root) + '\\.*' + [regex]::Escape($ext) + '\"?'
 
-                if ($originalCommand -and $originalCommand -match $pattern) {
+                if ($originalCommand -match $pattern) {
                     $filename = Split-Path -Leaf $originalCommand
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
-                    $commandNode.InnerText = $originalCommand -replace $pattern, $newPath
+                    # Using -ireplace for case-insensitive replacement
+                    $commandNode.InnerText = $originalCommand -ireplace $pattern, $newPath
                     $modified = $true
                 }
 
-                if ($originalArguments -and $originalArguments -match $pattern) {
+                if ($originalArguments -and $originalArguments -match $pattern) { # Added -and $originalArguments for safety
                     $filename = Split-Path -Leaf $originalArguments
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
-                    $argumentsNode.InnerText = $originalArguments -replace $pattern, $newPath
+                    $argumentsNode.InnerText = $originalArguments -ireplace $pattern, $newPath
                     $modified = $true
                 }
             }
@@ -119,6 +122,7 @@ Get-ScheduledTask | Where-Object {
         }
     }
     catch {
+        # Catch any errors during Export-ScheduledTask or XML processing
         Write-Warning "⚠ Failed to process task: $fullTaskName ($($_.Exception.Message))"
     }
 }
