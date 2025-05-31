@@ -51,6 +51,8 @@ Get-ScheduledTask | Where-Object {
     $taskPath = $_.TaskPath
     $fullTaskName = "$taskPath$taskName"
 
+    Write-Host "🔍 Scanning task: $fullTaskName" -ForegroundColor Cyan
+
     try {
         $xml = Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath
         $execNode = $xml.Task.Actions.Exec
@@ -94,6 +96,9 @@ Get-ScheduledTask | Where-Object {
                 if ($writer) { $writer.Dispose() }
             }
             Write-Host "✅ Updated and exported: $taskName" -ForegroundColor Green
+        }
+        else {
+            Write-Host "ℹ No changes needed for: $taskName" -ForegroundColor DarkGray
         }
     }
     catch {
