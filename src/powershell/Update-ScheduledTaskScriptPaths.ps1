@@ -54,9 +54,7 @@ Get-ScheduledTask | Where-Object {
     Write-Host "🔍 Scanning task: $fullTaskName"
 
     try {
-        $xmlRaw = Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath
-        $xmlDoc = New-Object System.Xml.XmlDocument
-        $xmlDoc.LoadXml($xmlRaw.OuterXml)
+        [xml]$xmlDoc = Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath
 
         $commandNode = $xmlDoc.SelectSingleNode("//Exec/Command")
         $argumentsNode = $xmlDoc.SelectSingleNode("//Exec/Arguments")
@@ -78,14 +76,14 @@ Get-ScheduledTask | Where-Object {
                 if ($originalCommand -match $pattern) {
                     $filename = Split-Path -Leaf $originalCommand
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
-                    $commandNode.InnerText = $originalCommand -replace $pattern, $newPath
+                    $commandNode.InnerText = $originalCommand -ireplace $pattern, $newPath
                     $modified = $true
                 }
 
                 if ($originalArguments -match $pattern) {
                     $filename = Split-Path -Leaf $originalArguments
                     $newPath = Join-Path (Join-Path $root $extensionMap[$ext]) $filename
-                    $argumentsNode.InnerText = $originalArguments -replace $pattern, $newPath
+                    $argumentsNode.InnerText = $originalArguments -ireplace $pattern, $newPath
                     $modified = $true
                 }
             }
