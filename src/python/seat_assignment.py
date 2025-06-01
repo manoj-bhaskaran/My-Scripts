@@ -1,4 +1,5 @@
 import pandas as pd
+import python_logging_framework as plog
 import networkx as nx
 import sys
 import os
@@ -20,7 +21,7 @@ def allocate_seats(excel_path):
         excel_path (str): Path to the input Excel file containing the required sheets.
     """
     if not os.path.exists(excel_path):
-        print(f"❌ File not found: {excel_path}")
+        plog.log_error(f"❌ File not found: {excel_path}")
         return
 
     adj_df, teams_df, fixed_df = load_input_data(excel_path)
@@ -86,7 +87,7 @@ def parse_seat(value):
     try:
         return str(int(value)).strip()
     except (ValueError, TypeError):
-        print(f"⚠️ Warning: Could not parse seat value '{value}'. Skipping.")
+        plog.log_warning(f"⚠️ Warning: Could not parse seat value '{value}'. Skipping.")
         return None
 
 def assign_fixed_seats(G, fixed_df):
@@ -192,9 +193,9 @@ def assign_disjointed(G, assigned, subteam, tech, count):
     free = sorted((s for s in G.nodes if s not in assigned and s.isdigit()), key=int)
     if len(free) >= count:
         assign_seats(free, assigned, subteam, tech, count)
-        print(f"⚠️ Assigned {count} disjointed seats for {subteam} ({tech})")
+        plog.log_warning(f"⚠️ Assigned {count} disjointed seats for {subteam} ({tech})")
     else:
-        print(f"❌ Not enough seats available for {subteam} ({tech}) — need {count}, found {len(free)}")
+        plog.log_error(f"❌ Not enough seats available for {subteam} ({tech}) — need {count}, found {len(free)}")
 
 def export_seat_allocation(excel_path, G, assigned):
     """
@@ -207,13 +208,15 @@ def export_seat_allocation(excel_path, G, assigned):
         if os.path.exists(out_path):
             os.remove(out_path)
         df.to_excel(out_path, sheet_name="Allocation", index=False)
-        print(f"✅ Seat allocation written to sheet 'Allocation' in {out_path}")
+        plog.log_info(f"✅ Seat allocation written to sheet 'Allocation' in {out_path}")
     except Exception as e:
-        print(f"❌ Error writing Excel file: {out_path} ({e})")
+        plog.log_error(f"❌ Error writing Excel file: {out_path} ({e})")
 
 # Entry point
 if __name__ == "__main__":
+    plog.initialise_logger(log_file_path="auto", level="INFO")
+
     if len(sys.argv) < 2:
-        print("Usage: python allocate_seats.py <input_excel_file>")
+        plog.log_info("Usage: python allocate_seats.py <input_excel_file>")
     else:
         allocate_seats(sys.argv[1])
