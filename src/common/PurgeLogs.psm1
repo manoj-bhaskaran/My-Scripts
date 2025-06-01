@@ -1,3 +1,10 @@
+# Import the PowerShellLoggingFramework module with error handling
+try {
+    Import-Module -Name .\PowerShellLoggingFramework.psm1 -Force -ErrorAction Stop
+} catch {
+    throw "Failed to import PowerShellLoggingFramework.psm1: $($_.Exception.Message)"
+}
+
 function ConvertTo-Bytes {
 <#
 .SYNOPSIS
@@ -57,18 +64,15 @@ function Clear-LogFile {
 .PARAMETER DryRun
     Do not perform any changes, but simulate the operation.
 
-.PARAMETER Verbose
-    Emit verbose output via logging framework.
-
 .NOTES
     - Only one strategy is applied per run
     - If none of the parameters are specified, no action is taken
+    - Uses PowerShellLoggingFramework for logging
 #>
     [CmdletBinding(SupportsShouldProcess = $true)]
     param (
         [Parameter(Mandatory)]
         [string]$LogFilePath,
-
         [int]$RetentionDays,
         [int]$MaxSizeMB,
         [string]$TruncateIfLarger,
@@ -80,8 +84,8 @@ function Clear-LogFile {
         throw "Log file not found: $LogFilePath"
     }
 
-    $verboseSet = $PSCmdlet.MyInvocation.BoundParameters['Verbose']
-    Initialize-Logger -ScriptName "purge_logs.ps1" -Verbose:$verboseSet
+    # Initialize the logger with the script name
+    Initialize-Logger -ScriptName "purge_logs.ps1" -LogLevel 20
 
     # Validate
     if ($PSBoundParameters.ContainsKey("RetentionDays") -and $RetentionDays -lt 0) {
@@ -99,7 +103,7 @@ function Clear-LogFile {
 
     # RetentionDays strategy
     if ($PSBoundParameters.ContainsKey("RetentionDays")) {
-        Write-LogMessage -Level "INFO" -Message "Applying RetentionDays strategy" -Metadata @{
+        Write-LogInfo -Message "Applying RetentionDays strategy" -Metadata @{
             RetentionDays = $RetentionDays
             FileName = $LogFilePath
         }
@@ -126,7 +130,7 @@ function Clear-LogFile {
                 $retainedLines.Add($_)
             }
         } catch {
-            Write-LogMessage -Level "ERROR" -Message "Failed to read log file: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
+            Write-LogError -Message "Failed to read log file: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
             return
         }
 
@@ -134,12 +138,12 @@ function Clear-LogFile {
             try {
                 $retainedLines | Set-Content -Path $LogFilePath -Encoding UTF8
             } catch {
-                Write-LogMessage -Level "ERROR" -Message "Failed to write updated log: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
+                Write-LogError -Message "Failed to write updated log: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
                 return
             }
         }
 
-        Write-LogMessage -Level "INFO" -Message "Retention purge completed" -Metadata @{
+        Write-LogInfo -Message "Retention purge completed" -Metadata @{
             FileName     = $LogFilePath
             TotalLines   = $lineCount
             PurgedLines  = $purgedCount
@@ -152,7 +156,7 @@ function Clear-LogFile {
 
     # MaxSizeMB strategy
     elseif ($PSBoundParameters.ContainsKey("MaxSizeMB")) {
-        Write-LogMessage -Level "INFO" -Message "Applying MaxSizeMB strategy" -Metadata @{
+        Write-LogInfo -Message "Applying MaxSizeMB strategy" -Metadata @{
             MaxSizeMB = $MaxSizeMB
             FileName  = $LogFilePath
         }
@@ -161,7 +165,7 @@ function Clear-LogFile {
         try {
             $lines = Get-Content $LogFilePath
         } catch {
-            Write-LogMessage -Level "ERROR" -Message "Failed to read file: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
+            Write-LogError -Message "Failed to read file: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
             return
         }
 
@@ -181,12 +185,12 @@ function Clear-LogFile {
             try {
                 $trimmed | Set-Content $LogFilePath -Encoding UTF8
             } catch {
-                Write-LogMessage -Level "ERROR" -Message "Failed to write trimmed file: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
+                Write-LogError -Message "Failed to write trimmed file: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
                 return
             }
         }
 
-        Write-LogMessage -Level "WARNING" -Message "Log file trimmed to fit MaxSizeMB" -Metadata @{
+        Write-LogWarning -Message "Log file trimmed to fit MaxSizeMB" -Metadata @{
             FileName      = $LogFilePath
             RetainedLines = $trimmed.Count
             FinalSizeMB   = [math]::Round($size / 1MB, 2)
@@ -203,18 +207,18 @@ function Clear-LogFile {
                 try {
                     Clear-Content -Path $LogFilePath -Force
                 } catch {
-                    Write-LogMessage -Level "ERROR" -Message "Truncate failed: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
+                    Write-LogError -Message "Truncate failed: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
                     return
                 }
             }
-            Write-LogMessage -Level "WARNING" -Message "Log file truncated due to size threshold" -Metadata @{
+            Write-LogWarning -Message "Log file truncated due to size threshold" -Metadata @{
                 FileName      = $LogFilePath
                 CurrentSizeMB = [math]::Round($currentSize / 1MB, 2)
                 ThresholdMB   = [math]::Round($thresholdBytes / 1MB, 2)
                 DryRun        = $DryRun.IsPresent
             }
         } else {
-            Write-LogMessage -Level "INFO" -Message "No truncation needed; file under threshold" -Metadata @{
+            Write-LogInfo -Message "No truncation needed; file under threshold" -Metadata @{
                 FileName      = $LogFilePath
                 CurrentSizeMB = [math]::Round($currentSize / 1MB, 2)
                 ThresholdMB   = [math]::Round($thresholdBytes / 1MB, 2)
@@ -229,11 +233,11 @@ function Clear-LogFile {
             try {
                 Clear-Content -Path $LogFilePath -Force
             } catch {
-                Write-LogMessage -Level "ERROR" -Message "Failed to truncate log file: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
+                Write-LogError -Message "Failed to truncate log file: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
                 return
             }
         }
-        Write-LogMessage -Level "WARNING" -Message "Log file forcefully truncated" -Metadata @{
+        Write-LogWarning -Message "Log file forcefully truncated" -Metadata @{
             FileName = $LogFilePath
             DryRun   = $DryRun.IsPresent
         }
@@ -241,5 +245,5 @@ function Clear-LogFile {
     }
 
     # Nothing matched
-    Write-LogMessage -Level "INFO" -Message "No strategy applied. No valid parameters specified." -Metadata @{ FileName = $LogFilePath }
+    Write-LogInfo -Message "No strategy applied. No valid parameters specified." -Metadata @{ FileName = $LogFilePath }
 }

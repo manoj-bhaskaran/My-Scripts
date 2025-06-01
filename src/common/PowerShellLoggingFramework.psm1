@@ -63,10 +63,12 @@ function Initialize-Logger {
     param (
         [string]$resolvedLogDir = "$PSScriptRoot/../../logs",
         [string]$ScriptName = $null,
-        [int]$LogLevel = 20
+        [int]$LogLevel = 20,
+        [switch]$JsonFormat
     )
 
     $Global:LogConfig.LogLevel = $LogLevel
+    $Global:LogConfig.JsonFormat = $JsonFormat.IsPresent
     $Global:LogConfig.ScriptName = if ($ScriptName) { $ScriptName } else { $MyInvocation.ScriptName }
 
     $callerScriptPath = (Get-PSCallStack)[1].ScriptName
@@ -118,7 +120,7 @@ function Get-TimezoneAbbreviation {
     }
 }
 
-$Global:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration")
+$Global:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration", "DryRun", "TotalLines", "PurgedLines", "Retained", "FinalSizeMB", "CurrentSizeMB", "ThresholdMB")
 
 function Test-MetadataKeys {
 <#
