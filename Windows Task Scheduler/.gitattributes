@@ -1,1 +1,1 @@
-*.xml diff=utf16xml text working-tree-encoding=UTF-16LE eol=CRLF
+*.xml diff=utf16xml text working-tree-encoding=UTF-16 eol=CRLF
