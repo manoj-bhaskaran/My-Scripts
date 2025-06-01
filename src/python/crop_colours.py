@@ -31,7 +31,7 @@ import argparse
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import gc
-import logging
+import python_logging_framework as plog
 
 # Constants for thresholds
 BLACK_THRESHOLD = 50
@@ -53,16 +53,6 @@ croppingProgressInterval = args.cropping_progress
 # Define the cropped images folder
 cropped_folder = os.path.join(folder_path, "Cropped Images")
 os.makedirs(cropped_folder, exist_ok=True)
-
-# Set up logging
-log_file_path = "C:\\Users\\manoj\\Documents\\Scripts\\crop_colours.log"
-logging.basicConfig(
-    filename=log_file_path, 
-    level=logging.INFO, 
-    format='%(asctime)s : %(message)s', 
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger()
 
 def load_image(image_path):
     """
@@ -127,7 +117,7 @@ def crop_and_save_image(image_path, cropped_file_path):
         
         # Check if the image is entirely black or white (no cropping needed)
         if left == 0 and right == gray.shape[1] and top == 0 and bottom == gray.shape[0]:
-            logger.info(f"Skipped {os.path.basename(image_path)}: Entirely black or white")
+            plog.info(f"Skipped {os.path.basename(image_path)}: Entirely black or white")
             return  # Skip saving for this image
         
         cropped_image = original[top:bottom, left:right]  # Crop width-wise and height-wise
@@ -173,17 +163,17 @@ with ThreadPoolExecutor() as executor:
             cropped_file_path = future.result()
             cropped_count += 1
             message = f"Cropped and saved {filename} in 'Cropped Images' folder"
-            logger.info(message)
+            plog.info(message)
             
             # Print progress message after every `croppingProgressInterval` images
             if cropped_count % croppingProgressInterval == 0:
                 progress_message = f"Cropped {cropped_count} images so far"
-                logger.info(progress_message)
+                plog.info(progress_message)
         except Exception as exc:
             error_message = f"{filename} generated an exception: {exc}"
-            logger.error(error_message)
+            plog.error(error_message)
 
 # Final completion message
 completion_message = f"Cropping complete! Processed {cropped_count} images in total."
-logger.info(completion_message)
+plog.info(completion_message)
 print(completion_message)

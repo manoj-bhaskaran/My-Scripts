@@ -3,37 +3,14 @@ Google Drive Storage Monitor Script
 
 This script monitors the storage usage of a Google Drive account and clears the trash
 if the usage exceeds a specified threshold. It logs the storage usage details and actions
-performed to a log file.
+performed to a log file using the standard cross-platform logging framework.
 """
 
 import os
-import logging
 import argparse
 from googleapiclient.errors import HttpError
-from google_drive_auth import authenticate_and_get_drive_service  # Import the reusable authentication function
-
-# Define the directory and filename for the log file
-log_directory = 'C:/users/manoj/Documents/Scripts'
-log_filename = 'drive_monitor.log'
-
-# Ensure the directory exists
-if not os.path.exists(log_directory):
-    os.makedirs(log_directory)
-
-def setup_logging(debug):
-    """
-    Sets up logging for the script.
-
-    Args:
-        debug (bool): If True, enables debug-level logging. Otherwise, info-level logging is used.
-    """
-    log_file_path = os.path.join(log_directory, log_filename)
-    logging_level = logging.DEBUG if debug else logging.INFO
-    logging.basicConfig(
-        filename=log_file_path,
-        level=logging_level,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
+from google_drive_auth import authenticate_and_get_drive_service
+import python_logging_framework as plog  # Uses standardised logging framework
 
 def format_size(bytes_size):
     """
@@ -67,7 +44,7 @@ def get_storage_usage(service):
     """
     try:
         about = service.about().get(fields="storageQuota").execute()
-        logging.debug(f"Storage quota data: {about}")
+        plog.log_debug(f"Storage quota data: {about}")
 
         usage_in_drive = int(about['storageQuota'].get('usageInDrive', 0))
         usage_in_drive_trash = int(about['storageQuota'].get('usageInDriveTrash', 0))
@@ -79,10 +56,10 @@ def get_storage_usage(service):
         readable_total_usage = format_size(total_usage)
         readable_limit = format_size(limit)
 
-        logging.info(f"Current storage usage: {readable_total_usage} / {readable_limit} ({usage_percentage:.2f}%)")
+        plog.log_info(f"Current storage usage: {readable_total_usage} / {readable_limit} ({usage_percentage:.2f}%)")
         return usage_percentage, total_usage, limit
     except HttpError as error:
-        logging.error(f"An error occurred: {error}")
+        plog.log_error(f"An error occurred: {error}")
         return None, None, None
 
 def clear_trash(service):
@@ -94,9 +71,9 @@ def clear_trash(service):
     """
     try:
         service.files().emptyTrash().execute()
-        logging.info("Trash cleared successfully.")
+        plog.log_info("Trash cleared successfully.")
     except HttpError as error:
-        logging.error(f"An error occurred: {error}")
+        plog.log_error(f"An error occurred: {error}")
 
 def main(debug, threshold):
     """
@@ -106,8 +83,9 @@ def main(debug, threshold):
         debug (bool): If True, enables debug-level logging.
         threshold (float): Threshold percentage for storage usage.
     """
-    setup_logging(debug)
-    logging.info(f"Using threshold: {threshold}%")
+    plog.initialise_logger(log_file_path="auto", level="DEBUG" if debug else "INFO")
+    plog.log_info(f"Using threshold: {threshold}%")
+
     service = authenticate_and_get_drive_service()
     usage_percentage, usage, limit = get_storage_usage(service)
 
@@ -116,14 +94,23 @@ def main(debug, threshold):
         readable_limit = format_size(limit)
 
         if usage_percentage > threshold:
-            logging.info(f"Storage usage exceeds {threshold}%: {usage_percentage:.2f}% ({readable_total_usage} of {readable_limit}). Clearing trash.")
+            plog.log_info(
+                f"Storage usage exceeds {threshold}%: {usage_percentage:.2f}% "
+                f"({readable_total_usage} of {readable_limit}). Clearing trash."
+            )
             clear_trash(service)
 
             new_usage_percentage, new_usage, _ = get_storage_usage(service)
             readable_new_usage = format_size(new_usage)
-            logging.info(f"Storage usage after trash clearance: {new_usage_percentage:.2f}% ({readable_new_usage} of {readable_limit}).")
+            plog.log_info(
+                f"Storage usage after trash clearance: {new_usage_percentage:.2f}% "
+                f"({readable_new_usage} of {readable_limit})."
+            )
         else:
-            logging.info(f"Storage usage is within limits: {usage_percentage:.2f}% ({readable_total_usage} of {readable_limit}).")
+            plog.log_info(
+                f"Storage usage is within limits: {usage_percentage:.2f}% "
+                f"({readable_total_usage} of {readable_limit})."
+            )
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Google Drive Storage Monitor')

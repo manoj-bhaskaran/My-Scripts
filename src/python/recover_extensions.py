@@ -13,7 +13,6 @@ The script iterates through each file in the specified folder and checks if the 
 - --dryrun: If specified, does not rename or move files
 - --move-unknowns: If specified, moves unrecognized files
 - --debug: Enables debug logging
-- --log-interval: Log write interval in seconds (default: 5)
 
 .EXAMPLES
 python recover_extensions.py --folder "/path/to/files" --dryrun
@@ -23,13 +22,13 @@ python recover_extensions.py --move-unknowns --debug
 import re
 import time
 import argparse
-import logging
+import python_logging_framework as plog
 from pathlib import Path
-from threading import Lock
 from collections import defaultdict
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Dictionary mapping compiled regex patterns of file signatures (magic numbers) to file extensions.
 SIGNATURES = {
     re.compile(r"^89504E47"): ".png",
     re.compile(r"^FFD8FF"): ".jpg",
@@ -41,38 +40,21 @@ SIGNATURES = {
     re.compile(r"^474946383961"): ".gif",
     re.compile(r"^424D"): ".bmp",
 }
+# Pattern for WEBP files, which require more than 8 bytes to identify.
 WEBP_PATTERN = re.compile(r"^52494646.{8}57454250")
 
-log_lock = Lock()
-log_buffer = []
-last_log_time = time.time()
-
-
-def setup_logging(logfile):
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s", handlers=[logging.FileHandler(logfile), logging.StreamHandler()])
-
-
-def write_log(message, debug=False):
-    global last_log_time
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    line = f"{timestamp} - {'DEBUG: ' if debug else ''}{message}"
-    with log_lock:
-        log_buffer.append(line)
-        if time.time() - last_log_time >= args.log_interval:
-            flush_log()
-
-
-def flush_log():
-    global log_buffer, last_log_time
-    with log_lock:
-        if log_buffer:
-            with open(args.log, "a", encoding="utf-8") as f:
-                f.write("\n".join(log_buffer) + "\n")
-            log_buffer.clear()
-            last_log_time = time.time()
-
-
 def get_file_extension(filepath):
+    """
+    Determines the file extension based on the file's signature (magic number).
+
+    Args:
+        filepath (Path): Path to the file to check.
+
+    Returns:
+        tuple: (extension (str or None), hex signature (str or None))
+            - extension: The determined file extension (e.g., '.png'), or None if unknown.
+            - hex signature: The hexadecimal string of the file's header bytes.
+    """
     try:
         with open(filepath, "rb") as f:
             initial = f.read(8)
@@ -82,6 +64,7 @@ def get_file_extension(filepath):
                 if pattern.match(header):
                     return ext, header
 
+            # Special handling for WEBP files, which require more than 8 bytes.
             if header.startswith("52494646"):
                 additional = f.read(4)
                 header += additional.hex().upper()
@@ -90,11 +73,21 @@ def get_file_extension(filepath):
 
         return None, header
     except Exception as e:
-        write_log(f"Error reading file {filepath}: {e}")
+        plog.log_info(f"Error reading file {filepath}: {e}")
         return None, None
 
-
 def process_file(file_path):
+    """
+    Processes a single file: determines if it needs an extension, renames or moves it if necessary,
+    and collects statistics about the operation.
+
+    Args:
+        file_path (Path): The file to process.
+
+    Returns:
+        dict: Statistics about the operation, including counts of skipped, renamed, unknown files,
+              and dictionaries of identified extensions, existing extensions, and unknown hex signatures.
+    """
     local_stats = {
         'skipped': 0,
         'renamed': 0,
@@ -103,10 +96,11 @@ def process_file(file_path):
         'extensions': defaultdict(int),
         'hex': defaultdict(int),
     }
-    write_log(f"Processing file: {file_path}", debug=args.debug)
+    plog.log_debug(f"Processing file: {file_path}")
 
+    # Skip files that already have an extension.
     if file_path.suffix:
-        write_log(f"Skipping {file_path.name}, already has extension.")
+        plog.log_info(f"Skipping {file_path.name}, already has extension.")
         local_stats['skipped'] += 1
         local_stats['extensions'][file_path.suffix.lower()] += 1
         return local_stats
@@ -114,48 +108,60 @@ def process_file(file_path):
     ext, hex_sig = get_file_extension(file_path)
 
     if ext:
+        # Extension identified, attempt to rename.
         local_stats['identified'][ext] += 1
         if not args.dryrun:
             new_path = file_path.with_name(file_path.stem + ext)
             try:
                 file_path.rename(new_path)
-                write_log(f"Renamed {file_path.name} to {new_path.name}")
+                plog.log_info(f"Renamed {file_path.name} to {new_path.name}")
                 local_stats['renamed'] += 1
             except Exception as e:
-                write_log(f"Failed to rename {file_path}: {e}")
+                plog.log_info(f"Failed to rename {file_path}: {e}")
     else:
+        # Unknown extension, optionally move to unknowns folder.
         local_stats['unknown'] += 1
         local_stats['hex'][hex_sig] += 1
-        write_log(f"Unknown extension for {file_path.name}. Hex: {hex_sig}")
+        plog.log_info(f"Unknown extension for {file_path.name}. Hex: {hex_sig}")
 
         if args.move_unknowns and not args.dryrun:
             dest = Path(args.unknowns) / file_path.name
             try:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 file_path.rename(dest)
-                write_log(f"Moved {file_path.name} to {dest}")
+                plog.log_info(f"Moved {file_path.name} to {dest}")
             except Exception as e:
-                write_log(f"Failed to move {file_path.name}: {e}")
+                plog.log_info(f"Failed to move {file_path.name}: {e}")
 
     return local_stats
 
-
 if __name__ == "__main__":
+    """
+    Main entry point for the script. Parses arguments, initializes logging, scans the target folder,
+    processes files in parallel, and prints/logs a summary of the results.
+    """
     parser = argparse.ArgumentParser(description="Recover file extensions based on file signature")
-    parser.add_argument("--folder", default="C:/Users/manoj/OneDrive/Desktop/New folder")
-    parser.add_argument("--log", default="C:/Users/manoj/Documents/Scripts/recover-extensions-log.txt")
-    parser.add_argument("--unknowns", default="C:/Users/manoj/OneDrive/Desktop/UnidentifiedFiles")
-    parser.add_argument("--dryrun", action="store_true")
-    parser.add_argument("--move-unknowns", action="store_true")
-    parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--log-interval", type=int, default=5)
+    parser.add_argument("--folder", default="C:/Users/manoj/OneDrive/Desktop/New folder",
+                        help="Folder containing files to process (default: ./input)")
+    parser.add_argument("--log", default="C:/Users/manoj/Documents/Scripts/recover-extensions-log.txt",
+                        help="Path to the log file (default: ./recover-extensions.log)")
+    parser.add_argument("--unknowns", default="C:/Users/manoj/OneDrive/Desktop/UnidentifiedFiles",
+                        help="Folder to move unrecognized files (default: ./unknowns)")
+    parser.add_argument("--dryrun", action="store_true",
+                        help="If specified, does not rename or move files")
+    parser.add_argument("--move-unknowns", action="store_true",
+                        help="If specified, moves unrecognized files")
+    parser.add_argument("--debug", action="store_true",
+                        help="Enables debug logging")
     args = parser.parse_args()
 
-    setup_logging(args.log)
+    plog.initialise_logger(log_file_path=args.log, level="DEBUG" if args.debug else "INFO")
+
+    # Recursively collect all files in the specified folder.
     all_files = list(Path(args.folder).rglob("*"))
     files = [f for f in all_files if f.is_file()]
 
-    write_log(f"Starting scan of {len(files)} file(s) in {args.folder}", debug=args.debug)
+    plog.log_debug(f"Starting scan of {len(files)} file(s) in {args.folder}")
     combined_stats = {
         'skipped': 0,
         'renamed': 0,
@@ -165,6 +171,7 @@ if __name__ == "__main__":
         'hex': defaultdict(int),
     }
 
+    # Process files in parallel using ThreadPoolExecutor.
     with ThreadPoolExecutor() as executor:
         futures = {executor.submit(process_file, f): f for f in files}
         for future in tqdm(as_completed(futures), total=len(futures), desc="Processing files", unit="file"):
@@ -176,14 +183,14 @@ if __name__ == "__main__":
                     for key, val in result[k].items():
                         combined_stats[k][key] += val
 
-    flush_log()
-
+    # Print and log a summary of the results.
     total = combined_stats['skipped'] + combined_stats['renamed'] + combined_stats['unknown']
     summary = f"Processed {total} file(s). Skipped: {combined_stats['skipped']}, Renamed: {combined_stats['renamed']}, Unknown: {combined_stats['unknown']}"
     print(summary)
-    write_log(summary)
+    plog.log_info(summary)
 
+    # If debug is enabled, log detailed statistics.
     if args.debug:
-        write_log(f"Identified extensions: {dict(combined_stats['identified'])}")
-        write_log(f"Unknown hex signatures: {dict(combined_stats['hex'])}")
-        write_log(f"Existing extensions: {dict(combined_stats['extensions'])}")
+        plog.log_info(f"Identified extensions: {dict(combined_stats['identified'])}")
+        plog.log_info(f"Unknown hex signatures: {dict(combined_stats['hex'])}")
+        plog.log_info(f"Existing extensions: {dict(combined_stats['extensions'])}")

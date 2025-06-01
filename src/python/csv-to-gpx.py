@@ -12,10 +12,11 @@ Usage:
 import csv
 import argparse
 import os
-from xml.etree.ElementTree import Element, SubElement, ElementTree, tostring
+from xml.etree.ElementTree import Element, SubElement, tostring
 from datetime import datetime
 import xml.dom.minidom
-from elevation import get_elevation  # <-- Import from new module
+from elevation import get_elevation
+import python_logging_framework as plog
 
 def csv_to_gpx(input_csv, output_gpx):
     """Convert CSV to GPX file with elevation and pretty print."""
@@ -54,7 +55,7 @@ def csv_to_gpx(input_csv, output_gpx):
     with open(output_gpx, 'w', encoding='utf-8') as f:
         f.write(pretty_xml)
 
-    print(f"GPX file with elevation written: {output_gpx}")
+    plog.log_info(f"GPX file with elevation written: {output_gpx}", metadata={"output_file": output_gpx})
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert CSV to GPX with elevation (Windows-compatible).")
@@ -67,4 +68,6 @@ if __name__ == "__main__":
     input_csv = os.path.join(args.input_folder, args.input_file)
     output_gpx = os.path.join(args.output_folder, args.output_file)
 
+    plog.initialise_logger(log_file_path="auto", level="INFO")
     csv_to_gpx(input_csv, output_gpx)
+    plog.log_info("CSV to GPX conversion completed successfully.")
