@@ -6,6 +6,7 @@ from datetime import datetime
 from psycopg2.extras import execute_values
 from elevation import get_elevation
 from contextlib import contextmanager
+import python_logging_framework as plog
 
 # Database connection configuration
 DB_PARAMS = {
@@ -178,7 +179,7 @@ def insert_records_into_postgres(records, stats):
 
     latest = max(r["datetime"] for r in records)
     update_last_processed_timestamp(latest)
-    print(f"🕒 Last processed timestamp updated to: {latest.isoformat()}")
+    plog.log_info(f"🕒 Last processed timestamp updated to: {latest.isoformat()}")
 
 
 def check_near_duplicate(rec, cur, interval_str, stats):
@@ -427,11 +428,11 @@ def print_start_message(last_processed, reprocess):
         reprocess (bool): Whether all records will be reprocessed.
     """
     if reprocess:
-        print("🔁 Reprocessing all records (ignoring last processed timestamp)")
+        plog.log_info("🔁 Reprocessing all records (ignoring last processed timestamp)")
     elif last_processed:
-        print(f"▶️ Starting processing from {last_processed.isoformat()}")
+        plog.log_info(f"▶️ Starting processing from {last_processed.isoformat()}")
     else:
-        print("▶️ Starting full processing (no prior timestamp found)")
+        plog.log_info("▶️ Starting full processing (no prior timestamp found)")
 
 def load_json(input_file):
     """
@@ -447,14 +448,14 @@ def load_json(input_file):
         with open(input_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
         if "semanticSegments" not in data:
-            print("⚠️ Warning: 'semanticSegments' key missing.")
+            plog.log_warning("⚠️ Warning: 'semanticSegments' key missing.")
         if "rawSignals" not in data:
-            print("⚠️ Warning: 'rawSignals' key missing.")
+            plog.log_warning("⚠️ Warning: 'rawSignals' key missing.")
         return data
     except FileNotFoundError:
-        print(f"❌ File not found: {input_file}")
+        plog.log_error(f"❌ File not found: {input_file}")
     except json.JSONDecodeError as e:
-        print(f"❌ JSON parsing error: {e}")
+        plog.log_error(f"❌ JSON parsing error: {e}")
     return None
 
 def extract_activity_ranges(data, last_processed, stats):
@@ -665,7 +666,7 @@ def handle_elevation_enrichment(reprocess_elevation):
     latest_ts = update_elevations(records, elevation_stats)
     if latest_ts:
         update_last_elevation_timestamp(latest_ts)
-        print(f"🕒 Elevation last processed timestamp updated to {latest_ts.isoformat()}")
+        plog.log_info(f"🕒 Elevation last processed timestamp updated to {latest_ts.isoformat()}")
 
     print("\n📊 Elevation Processing Summary:")
     for k, v in elevation_stats.items():
@@ -700,15 +701,16 @@ def run_vacuum_analyze_if_supported():
             major_version = int(version_str.split('.')[0])
 
             if major_version >= 15:
-                print("⚙️  Running VACUUM ANALYZE on timeline.locations...")
+                plog.log_info("⚙️  Running VACUUM ANALYZE on timeline.locations...")
                 cur.execute("VACUUM ANALYZE timeline.locations;")
             else:
-                print(f"⚠️  VACUUM ANALYZE skipped: PostgreSQL version {version_str} does not support MAINTAIN privilege.")
+                plog.log_warning(f"⚠️  VACUUM ANALYZE skipped: PostgreSQL version {version_str} does not support MAINTAIN privilege.")
         conn.close()
     except Exception as e:
-        print(f"❌ Could not run VACUUM ANALYZE: {e}")
+        plog.log_error(f"❌ Could not run VACUUM ANALYZE: {e}")
 
 def main(input_file, reprocess, reprocess_elevation):
+    plog.initialise_logger(log_file_path=\"auto\", level=\"INFO\")
     """
     Main entry point for processing Google Maps Timeline data.
 
