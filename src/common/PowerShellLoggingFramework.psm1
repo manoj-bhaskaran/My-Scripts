@@ -10,6 +10,8 @@ $Global:LogConfig = @{
     JsonFormat   = $false  # Set to $true to enable JSON structured logging
 }
 
+$Global:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration")
+
 function Initialize-Logger {
 <#
 .SYNOPSIS
@@ -116,6 +118,26 @@ function Get-TimezoneAbbreviation {
     }
 }
 
+$Global:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration")
+
+function Test-MetadataKeys {
+<#
+.SYNOPSIS
+    Tests metadata keys against the recommended standard list and warns on non-standard keys.
+.DESCRIPTION
+    Checks user-provided metadata against the standard list of recommended keys
+    and emits warnings for unrecognized keys.
+.PARAMETER Metadata
+    The hashtable of metadata passed to a log function.
+#>
+    param([hashtable]$Metadata)
+
+    foreach ($key in $Metadata.Keys) {
+        if ($Global:RecommendedMetadataKeys -notcontains $key) {
+            Write-Warning "Unrecognized metadata key: '$key'. Consider standardizing it if applicable."
+        }
+    }
+}
 function Write-Log {
 <#
 .SYNOPSIS
@@ -143,6 +165,8 @@ function Write-Log {
 
 .NOTES
     Should not be called directly; use Write-LogInfo, Write-LogError, etc.
+    Optional metadata is validated against a recommended list. A warning is shown if an unrecognized 
+    key is used.
 #>
     param (
         [string]$Level,
@@ -159,6 +183,7 @@ function Write-Log {
     $scriptName = $Global:LogConfig.ScriptName
     $hostName = $env:COMPUTERNAME
     $metaStr = if ($Metadata.Count -gt 0) {
+        Test-MetadataKeys -Metadata $Metadata
         $Metadata.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } -join ' '
     } else {
         ""
