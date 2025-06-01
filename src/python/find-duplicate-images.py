@@ -2,6 +2,7 @@ import os
 import csv
 import hashlib
 import argparse
+import python_logging_framework as plog
 import logging
 import json
 import random
@@ -66,7 +67,7 @@ def save_checkpoint(path, stage_name, args):
             json.dump(data, f, indent=2)
         os.replace(tmp_path, path)
     except Exception as e:
-        logging.warning(f"Failed to save checkpoint: {e}")
+        plog.log_warning(f"Failed to save checkpoint: {e}")
 
 def is_safe_path(base, target):
     """
@@ -83,16 +84,6 @@ def is_safe_path(base, target):
     base = os.path.abspath(base)
     target = os.path.abspath(target)
     return os.path.commonpath([base]) == os.path.commonpath([base, target])
-
-def log_event(message):
-    """
-    Logs an informational message using the configured logging system.
-
-    Args:
-        message (str): The message to be logged.
-    """
-
-    logging.info(message)
 
 def compute_md5(file_path):
     """
@@ -111,7 +102,7 @@ def compute_md5(file_path):
                 hash_md5.update(chunk)
         return hash_md5.hexdigest()
     except Exception as e:
-        logging.warning(f"Error hashing {file_path}: {e}")
+        plog.log_warning(f"Error hashing {file_path}: {e}")
         return None
 
 def fast_walk(folder):
@@ -132,7 +123,7 @@ def fast_walk(folder):
             elif entry.is_file(follow_symlinks=False):
                 yield entry.path
         except Exception as e:
-            logging.warning(f"Error accessing {entry.path}: {e}")
+            plog.log_warning(f"Error accessing {entry.path}: {e}")
 
 def stage1_list_files(folder, out_csv):
     """
@@ -151,19 +142,19 @@ def stage1_list_files(folder, out_csv):
     Notes:
         Uses parallel threads to speed up size computation.
     """
-    log_event("Starting Stage 1: File listing")
+    plog.log_info("Starting Stage 1: File listing")
 
     paths = list(fast_walk(folder))
 
     def get_size_safe(path):
         if not is_safe_path(folder, path):
-            logging.warning(f"Skipping unsafe path: {path}")
+            plog.log_warning(f"Skipping unsafe path: {path}")
             return None
         try:
             size = os.path.getsize(path)
             return (size, path)
         except Exception as e:
-            logging.warning(f"Skipping file {path}: {e}")
+            plog.log_warning(f"Skipping file {path}: {e}")
             return None
 
     with open(out_csv, "w", newline='', encoding='utf-8') as f_out:
@@ -178,7 +169,7 @@ def stage1_list_files(folder, out_csv):
                         writer.writerow(result)
                     pbar.update(1)
 
-    log_event(f"Completed Stage 1: File list written to {out_csv}")
+    plog.log_info(f"Completed Stage 1: File list written to {out_csv}")
 
 def stage2_sort_csv(input_csv, sorted_csv):
     """
@@ -196,7 +187,7 @@ def stage2_sort_csv(input_csv, sorted_csv):
     Output Format:
         CSV with the same structure, sorted in ascending order of file size.
     """
-    log_event("Starting Stage 2: Sorting by file size (Python)")
+    plog.log_info("Starting Stage 2: Sorting by file size (Python)")
 
     try:
         with open(input_csv, newline='', encoding='utf-8') as f_in:
@@ -204,14 +195,14 @@ def stage2_sort_csv(input_csv, sorted_csv):
             rows = []
             for row in reader:
                 if len(row) < 2:
-                    logging.warning(f"Skipping malformed row in input: {row}")
+                    plog.log_warning(f"Skipping malformed row in input: {row}")
                     continue
                 try:
                     size = int(row[0])
                     path = row[1]
                     rows.append((size, path))
                 except ValueError as ve:
-                    logging.warning(f"Skipping row with invalid size: {row} ({ve})")
+                    plog.log_warning(f"Skipping row with invalid size: {row} ({ve})")
 
         rows.sort()  # Sorts by size (first element of tuple)
 
@@ -219,10 +210,10 @@ def stage2_sort_csv(input_csv, sorted_csv):
             writer = csv.writer(f_out)
             writer.writerows(rows)
 
-        log_event(f"Completed Stage 2: Sorted list written to {sorted_csv}")
+        plog.log_info(f"Completed Stage 2: Sorted list written to {sorted_csv}")
 
     except Exception as e:
-        logging.error(f"Python sort failed: {e}")
+        plog.log_error(f"Python sort failed: {e}")
         raise
 
 def _read_sorted_csv(sorted_csv):
@@ -310,7 +301,7 @@ def _hash_and_write_duplicates(grouped_rows, output_file, total_files, skip_size
         try:
             return compute_md5(path)
         except Exception as e:
-            logging.warning(f"Hashing failed for {path}: {e}")
+            plog.log_warning(f"Hashing failed for {path}: {e}")
             return None
 
     def process_group(size, group_list, group_id_start, writer, pbar):
@@ -366,7 +357,7 @@ def _hash_and_write_duplicates(grouped_rows, output_file, total_files, skip_size
                 group_id += new_sets
                 total_new_sets += new_sets
 
-    log_event(f"Completed Stage 3: {total_new_sets} new duplicate groups found")
+    plog.log_info(f"Completed Stage 3: {total_new_sets} new duplicate groups found")
 
 def stage3_find_duplicates(sorted_csv, output_file, is_restart=False):
     """
@@ -379,7 +370,7 @@ def stage3_find_duplicates(sorted_csv, output_file, is_restart=False):
         output_file (str): Path to the output CSV file for duplicates.
         is_restart (bool): Whether the script is resuming from a checkpoint.
     """
-    log_event("Starting Stage 3: Hashing and duplicate detection")
+    plog.log_info("Starting Stage 3: Hashing and duplicate detection")
 
     grouped_rows = _read_sorted_csv(sorted_csv)
     total_files_to_hash = _count_hashable_files(grouped_rows)
@@ -391,7 +382,7 @@ def stage3_find_duplicates(sorted_csv, output_file, is_restart=False):
         
     _hash_and_write_duplicates(grouped_rows, output_file, total_files_to_hash, skip_sizes, starting_group_id)
 
-    log_event(f"Completed Stage 3: Duplicate list updated in {output_file}")
+    plog.log_info(f"Completed Stage 3: Duplicate list updated in {output_file}")
 
 def read_csv_groups(dup_csv):
     """
@@ -462,19 +453,19 @@ def delete_or_move_file(file_path, retained, dryrun, backup_folder):
         return 0
 
     if dryrun:
-        log_event(f"[DRYRUN] Would delete: {file_path}")
+        plog.log_info(f"[DRYRUN] Would delete: {file_path}")
     else:
         try:
             if backup_folder:
                 os.makedirs(backup_folder, exist_ok=True)
                 shutil.move(file_path, os.path.join(backup_folder, os.path.basename(file_path)))
-                log_event(f"Moved: {file_path} → {backup_folder}")
+                plog.log_info(f"Moved: {file_path} → {backup_folder}")
             else:
                 os.remove(file_path)
-                log_event(f"Deleted: {file_path}")
+                plog.log_info(f"Deleted: {file_path}")
             return 1
         except Exception as e:
-            logging.warning(f"Failed to delete/move {file_path}: {e}")
+            plog.log_warning(f"Failed to delete/move {file_path}: {e}")
             return 0
 
 def log_final_summary(total_groups, deleted_count, dryrun):
@@ -492,11 +483,11 @@ def log_final_summary(total_groups, deleted_count, dryrun):
 
     action = "would be deleted" if dryrun else "Deleted/Moved"
     if total_groups == 0 or deleted_count == 0:
-        log_event("✅ No duplicates found. All files are unique.")
+        plog.log_info("✅ No duplicates found. All files are unique.")
         print("✅ No duplicates found. All files are unique.")
     else:
-        log_event("Duplicate cleanup completed. Retained one file per group.")
-        log_event(f"[{action}] {deleted_count} files from {total_groups} duplicate groups.")
+        plog.log_info("Duplicate cleanup completed. Retained one file per group.")
+        plog.log_info(f"[{action}] {deleted_count} files from {total_groups} duplicate groups.")
         print(f"[{action}] {deleted_count} files from {total_groups} duplicate groups.")
 
 def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
@@ -577,13 +568,13 @@ def prepare_environment(args):
     listener.start()
 
     args._log_listener = listener  # attach to args for later stopping
-    log_event("Logging system initialized with queue handler.")
+    plog.log_info("Logging system initialized with queue handler.")
 
     if not args.restart:
         for f in [args.temp, args.sorted, args.checkpoint, args.output]:
             if os.path.exists(f):
                 os.remove(f)
-                log_event(f"Deleted stale file at startup (no restart): {f}")
+                plog.log_info(f"Deleted stale file at startup (no restart): {f}")
 
 def handle_restart(args):
     """
@@ -600,11 +591,11 @@ def handle_restart(args):
     checkpoint = load_checkpoint(args.checkpoint)
 
     if not checkpoint:
-        log_event("Checkpoint file not found or invalid. Cannot resume.")
+        plog.log_info("Checkpoint file not found or invalid. Cannot resume.")
         print("No valid checkpoint found — cannot resume.")
         return None
 
-    log_event("Restart requested by user.")
+    plog.log_info("Restart requested by user.")
     args.folder = checkpoint.get("folder", args.folder)
     args.output = checkpoint.get("output", args.output)
     args.temp = checkpoint.get("temp", args.temp)
@@ -624,7 +615,7 @@ def handle_restart(args):
     }
 
     resume_stage = checkpoint.get("completed_stage")
-    log_event(f"Resuming from: {stage_map.get(resume_stage, 'Unknown stage')}")
+    plog.log_info(f"Resuming from: {stage_map.get(resume_stage, 'Unknown stage')}")
     print(f"➡️  Restart requested — resuming from: {stage_map.get(resume_stage)}")
 
     if resume_stage == "stage3" and not args.delete:
@@ -668,7 +659,7 @@ def run_pipeline(args, checkpoint):
             save_checkpoint(args.checkpoint, "stage3", args)
 
         if args.delete and not os.path.exists(args.output):
-            log_event(f"❌ Cannot perform deletion — stage3 output not found: {args.output}")
+            plog.log_info(f"❌ Cannot perform deletion — stage3 output not found: {args.output}")
             print(f"❌ Cannot perform deletion — stage3 output not found: {args.output}")
             return False
 
@@ -679,7 +670,7 @@ def run_pipeline(args, checkpoint):
         return success
 
     except Exception as e:
-        log_event(f"Pipeline execution failed: {e}")
+        plog.log_info(f"Pipeline execution failed: {e}")
         raise
 
 def final_cleanup(success, args):
@@ -696,9 +687,9 @@ def final_cleanup(success, args):
         for f in [args.temp, args.sorted, args.checkpoint]:
             if os.path.exists(f):
                 os.remove(f)
-                log_event(f"Deleted file after successful run: {f}")
+                plog.log_info(f"Deleted file after successful run: {f}")
     elif success and args.keepfiles:
-        log_event("Intermediate files retained as per user request.")
+        plog.log_info("Intermediate files retained as per user request.")
 
     # Stop logging listener
     args._log_listener.stop()
@@ -731,6 +722,7 @@ def _load_completed_hashes(output_file):
     return max_group_id + 1, completed_sizes
 
 def main():
+    plog.initialise_logger(log_file_path="auto", level="INFO")
     """
     Main function to execute the duplicate file detection script.
 
@@ -753,7 +745,7 @@ def main():
     args = parse_arguments()
     prepare_environment(args)
 
-    log_event("Duplicate detection script started")
+    plog.log_info("Duplicate detection script started")
 
     checkpoint = {}
     if args.restart:
@@ -764,7 +756,7 @@ def main():
     success = run_pipeline(args, checkpoint)
     final_cleanup(success, args)
 
-    log_event("Duplicate detection script completed")
+    plog.log_info("Duplicate detection script completed")
 
 if __name__ == "__main__":
     main()
