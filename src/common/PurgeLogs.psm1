@@ -64,28 +64,86 @@ function Clear-LogFile {
 .PARAMETER DryRun
     Do not perform any changes, but simulate the operation.
 
+.PARAMETER ScriptName
+    The name of the script generating the logs. If not provided or empty, the name of the calling script
+    (including its extension, e.g., 'caller.ps1') is used, with spaces replaced by underscores.
+    If the calling script cannot be determined, defaults to "unknown".
+
+.PARAMETER LogLevel
+    Numeric log level for the logging framework. Valid values:
+        10 - DEBUG
+        20 - INFO (default)
+        30 - WARNING
+        40 - ERROR
+        50 - CRITICAL
+
+.PARAMETER LogDirectory
+    The directory where log files are written. If not specified, defaults to <script_root_dir>/logs.
+
+.PARAMETER JsonFormat
+    Enable JSON structured logging instead of plain-text format.
+
+.PARAMETER ConsoleOutput
+    Specifies console output behavior. Options:
+        None    - Never write to console
+        Always  - Write to both file and console
+        OnError - Write to console only if file write fails (default)
+
+.EXAMPLE
+    Clear-LogFile -LogFilePath "C:\Logs\test.log" -RetentionDays 30
+    Purges log entries older than 30 days, logging to a file named after the calling script
+    (e.g., caller_powershell_2025-06-01.log).
+
+.EXAMPLE
+    Clear-LogFile -LogFilePath "C:\Logs\test.log" -MaxSizeMB 10 -ScriptName "custom.ps1" -JsonFormat
+    Trims the log to 10MB, logging in JSON format to custom_powershell_2025-06-01.log.
+
 .NOTES
     - Only one strategy is applied per run
     - If none of the parameters are specified, no action is taken
     - Uses PowerShellLoggingFramework for logging
 #>
     [CmdletBinding(SupportsShouldProcess = $true)]
-    param (
+param (
         [Parameter(Mandatory)]
         [string]$LogFilePath,
         [int]$RetentionDays,
         [int]$MaxSizeMB,
         [string]$TruncateIfLarger,
         [switch]$TruncateLog,
-        [switch]$DryRun
+        [switch]$DryRun,
+        [ValidatePattern('^[^<>:\/\\|?*\s]+$')]
+        [string]$ScriptName = "",
+        [ValidateSet(10, 20, 30, 40, 50)]
+        [int]$LogLevel = 20,
+        [string]$LogDirectory,
+        [switch]$JsonFormat,
+        [ValidateSet('None', 'Always', 'OnError')]
+        [string]$ConsoleOutput = 'OnError'
     )
 
     if (!(Test-Path $LogFilePath)) {
         throw "Log file not found: $LogFilePath"
     }
 
-    # Initialize the logger with the script name
-    Initialize-Logger -ScriptName "purge_logs.ps1" -LogLevel 20
+    $callerScriptPath = (Get-PSCallStack)[1].ScriptName
+    $resolvedScriptName = if ($ScriptName) { 
+        $ScriptName -replace '\s+', '_' 
+    } else {
+        if ($callerScriptPath) { 
+            ([IO.Path]::GetFileName($callerScriptPath)) -replace '\s+', '_' 
+        } else { 
+            "unknown" 
+        }
+    }
+    $params = @{
+        ScriptName = $resolvedScriptName
+        LogLevel = $LogLevel
+    }
+    if ($PSBoundParameters.ContainsKey('LogDirectory')) { $params['LogDirectory'] = $LogDirectory }
+    if ($PSBoundParameters.ContainsKey('JsonFormat')) { $params['JsonFormat'] = $JsonFormat }
+    if ($PSBoundParameters.ContainsKey('ConsoleOutput')) { $params['ConsoleOutput'] = $ConsoleOutput }
+    Initialize-Logger @params
 
     # Validate
     if ($PSBoundParameters.ContainsKey("RetentionDays") -and $RetentionDays -lt 0) {
