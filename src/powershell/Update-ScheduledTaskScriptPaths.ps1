@@ -123,7 +123,7 @@ Get-ScheduledTask | Where-Object {
                 $escapedRoot = [regex]::Escape($root)
                 $escapedExt = [regex]::Escape($ext)
                 # Matches either "root\anything.ext" or root\anything.ext
-                $pattern = "(?i)(\""?)$escapedRoot\\.*?$escapedExt(\"\"?)" # Capture optional quotes
+                $pattern = "(?i)(""?)$escapedRoot\\.*?$escapedExt(""?)" # Capture optional quotes
 
                 # Check and modify Command node
                 if ($originalCommand -match $pattern) {
@@ -138,7 +138,7 @@ Get-ScheduledTask | Where-Object {
                     if ($commandNode.InnerText -ne $newCommand) {
                         $commandNode.InnerText = $newCommand
                         $modified = $true
-                        Write-Host "🔄 Updated Command path for $taskName: '$newCommand'" -ForegroundColor Magenta
+                        Write-Host "🔄 Updated Command path for ${taskName}: '$newCommand'" -ForegroundColor Magenta
                     }
                 }
 
@@ -154,7 +154,7 @@ Get-ScheduledTask | Where-Object {
                     if ($argumentsNode.InnerText -ne $newArguments) {
                         $argumentsNode.InnerText = $newArguments
                         $modified = $true
-                        Write-Host "🔄 Updated Arguments path for $taskName: '$newArguments'" -ForegroundColor Magenta
+                        Write-Host "🔄 Updated Arguments path for ${taskName}: '$newArguments'" -ForegroundColor Magenta
                     }
                 }
             }
