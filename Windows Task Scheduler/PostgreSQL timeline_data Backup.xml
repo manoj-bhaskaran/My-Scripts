@@ -52,7 +52,7 @@
   <Actions Context="Author">
     <Exec>
       <Command>powershell</Command>
-      <Arguments>-File "C:\Users\manoj\Documents\Scripts\timeline_data_pg_backup.ps1"</Arguments>
+      <Arguments>-File "C:\Users\manoj\Documents\Scripts\src\powershell\timeline_data_pg_backup.ps1"</Arguments>
     </Exec>
   </Actions>
 </Task>
