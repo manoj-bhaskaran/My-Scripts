@@ -3,14 +3,16 @@
 # Logging module conforming to cross-platform specification
 ############################################################
 
-$Global:LogConfig = @{
+$script:LogConfig = @{
     ScriptName   = $MyInvocation.MyCommand.Name
     LogLevel     = 20  # INFO by default
     LogFilePath  = $null
     JsonFormat   = $false  # Set to $true to enable JSON structured logging
+    ConsoleOutput = 'OnError'  # Default: No console output unless specified
 }
 
-$Global:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration")
+$script:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration")
+$script:HasWarnedFileFailure = $false
 
 function Initialize-Logger {
 <#
@@ -18,7 +20,7 @@ function Initialize-Logger {
     Initializes the logging framework for the current PowerShell script.
 
 .DESCRIPTION
-    Sets up global logging configuration including the log directory, log level, and script name.
+    Sets up module-scoped logging configuration including the log directory, log level, and script name.
     Ensures the log directory exists and determines the correct log file name based on the script
     and the current date, following the standardised logging specification.
     The default log directory is automatically resolved relative to the invoking script’s path 
@@ -30,7 +32,11 @@ function Initialize-Logger {
     If not specified, defaults to <script_root_dir>/logs, inferred from the caller's script path.
 
 .PARAMETER ScriptName
-    The name of the script generating the logs. If not provided, the invoking script's name is used.
+    The name of the script generating the logs. If provided, spaces are replaced with underscores to comply
+    with the logging specification. If not provided or empty, the name of the calling script (including its
+    extension, e.g., 'caller.ps1') is used, derived from the call stack with spaces replaced by underscores.
+    If the calling script cannot be determined, defaults to "unknown". The extension is stripped in the
+    final log file name per the specification (e.g., 'caller_powershell_YYYY-MM-DD.log').
 
 .PARAMETER LogLevel
     Numeric log level to control which log messages are written. Lower values include more detail.
@@ -45,15 +51,21 @@ function Initialize-Logger {
     Switch to enable JSON structured logging instead of plain-text format.
     If $true, log entries will be output as single-line JSON objects per log line.
 
-.EXAMPLE
-    Initialize-Logger -LogDirectory "D:\Logs" -ScriptName "backup.ps1" -LogLevel 10
+.PARAMETER ConsoleOutput
+    Specifies console output behavior. Optional. Options:
+        None    - Never write to console
+        Always  - Write to both file and console
+        OnError - Write to console only if file write fails (default)
 
-    Initializes logging to D:\Logs\backup_powershell_YYYY-MM-DD.log with DEBUG level.
+.EXAMPLE
+    Initialize-Logger -LogDirectory "D:\Logs" -ScriptName "backup.ps1" -LogLevel 10 -ConsoleOutput Always
+
+    Initializes logging to D:\Logs\backup_powershell_YYYY-MM-DD.log with DEBUG level and console output always enabled.
 
 .EXAMPLE
     Initialize-Logger
 
-    Initializes logging to the default ../../logs folder using the current script name and INFO level.
+    Initializes logging to the default ../../logs folder using the current script name, INFO level, and no console output.
 
 .NOTES
     Log files are created in the format: <script_name>_powershell_<YYYY-MM-DD>.log
@@ -61,32 +73,45 @@ function Initialize-Logger {
     When enabled, JSON logging includes keys: timestamp, level, script, host, pid, message, metadata.
 #>
     param (
-        [string]$resolvedLogDir = "$PSScriptRoot/../../logs",
-        [string]$ScriptName = $null,
+        [string]$LogDirectory = "$PSScriptRoot/../../logs",
+        [ValidatePattern('^[^<>:\/\\|?*\s]+$')]
+        [string]$ScriptName = "",
+        [ValidateSet(10, 20, 30, 40, 50)]
         [int]$LogLevel = 20,
-        [switch]$JsonFormat
+        [switch]$JsonFormat,
+        [ValidateSet('None', 'Always', 'OnError')]
+        [string]$ConsoleOutput = 'OnError'
     )
 
-    $Global:LogConfig.LogLevel = $LogLevel
-    $Global:LogConfig.JsonFormat = $JsonFormat.IsPresent
-    $Global:LogConfig.ScriptName = if ($ScriptName) { $ScriptName } else { $MyInvocation.ScriptName }
-
+    $script:LogConfig.LogLevel = $LogLevel
+    $script:LogConfig.JsonFormat = $JsonFormat.IsPresent
+    $script:LogConfig.ConsoleOutput = $ConsoleOutput
     $callerScriptPath = (Get-PSCallStack)[1].ScriptName
+    $script:LogConfig.ScriptName = if ($ScriptName) { 
+        $ScriptName -replace '\s+', '_'
+    } else {
+        if ($callerScriptPath) { 
+            ([IO.Path]::GetFileName($callerScriptPath)) -replace '\s+', '_'
+        } else { 
+            "unknown" 
+        }
+    }
     $callerScriptRoot = Split-Path -Path $callerScriptPath -Parent
-    $resolvedLogDir = if ($resolvedLogDir) { $resolvedLogDir } else { Join-Path (Split-Path $callerScriptRoot -Parent) "logs" }
-    $Global:LogConfig.LogDirectory = $resolvedLogDir
+    $LogDirectory = if ($LogDirectory) { $LogDirectory } else { Join-Path (Split-Path $callerScriptRoot -Parent) "logs" }
+    $script:LogConfig.LogDirectory = $LogDirectory
+    $script:HasWarnedFileFailure = $false
 
-
-    if (-not (Test-Path $resolvedLogDir)) {
-        New-Item -Path $resolvedLogDir -ItemType Directory -Force | Out-Null
+    if (-not (Test-Path $LogDirectory)) {
+        New-Item -Path $LogDirectory -ItemType Directory -Force | Out-Null
     }
 
     $dateStr = (Get-Date -Format 'yyyy-MM-dd')
-    $scriptBase = [IO.Path]::GetFileNameWithoutExtension($Global:LogConfig.ScriptName)
-    $logFile = Join-Path $resolvedLogDir "${scriptBase}_powershell_$dateStr.log"
+    $scriptBase = [IO.Path]::GetFileNameWithoutExtension($script:LogConfig.ScriptName)
+    $logFile = Join-Path $LogDirectory "${scriptBase}_powershell_$dateStr.log"
 
-    $Global:LogConfig.LogFilePath = $logFile
+    $script:LogConfig.LogFilePath = $logFile
 }
+
 function Get-TimezoneAbbreviation {
 <#
 .SYNOPSIS
@@ -110,7 +135,6 @@ function Get-TimezoneAbbreviation {
 .NOTES
     Expand the switch block for broader support of additional timezones as needed.
     Used by the logging framework to format timestamps per specification.
-
 #>
     $tz = [System.TimeZoneInfo]::Local
     switch ($tz.Id) {
@@ -120,7 +144,7 @@ function Get-TimezoneAbbreviation {
     }
 }
 
-$Global:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration", "DryRun", "TotalLines", "PurgedLines", "Retained", "FinalSizeMB", "CurrentSizeMB", "ThresholdMB")
+$script:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration", "DryRun", "TotalLines", "PurgedLines", "Retained", "FinalSizeMB", "CurrentSizeMB", "ThresholdMB")
 
 function Test-MetadataKeys {
 <#
@@ -135,11 +159,12 @@ function Test-MetadataKeys {
     param([hashtable]$Metadata)
 
     foreach ($key in $Metadata.Keys) {
-        if ($Global:RecommendedMetadataKeys -notcontains $key) {
+        if ($script:RecommendedMetadataKeys -notcontains $key) {
             Write-Warning "Unrecognized metadata key: '$key'. Consider standardizing it if applicable."
         }
     }
 }
+
 function Write-Log {
 <#
 .SYNOPSIS
@@ -148,16 +173,19 @@ function Write-Log {
 .DESCRIPTION
     Formats a log entry based on timestamp, level, script name, host, process ID,
     message, and optional metadata. Writes to the configured log file or
-    falls back to standard output if file writing fails.
+    falls back to console output if file writing fails.
     If JSON format is enabled, logs are written as compressed single-line JSON for structured ingestion.
     If writing to the log file fails (e.g., due to permissions or disk space), a warning is issued via 
     Write-Warning, and the log is written to the console as a fallback.
 
-.PARAMETER Level
-    The textual name of the log level (e.g., INFO, ERROR).
-
 .PARAMETER NumericLevel
-    The numeric representation of the log level.
+    The numeric representation of the log level. Valid values:
+        10 - DEBUG
+        20 - INFO
+        30 - WARNING
+        40 - ERROR
+        50 - CRITICAL
+    The textual level (e.g., 'INFO') is derived from this value for log output.
 
 .PARAMETER Message
     The message to include in the log entry.
@@ -169,20 +197,30 @@ function Write-Log {
     Should not be called directly; use Write-LogInfo, Write-LogError, etc.
     Optional metadata is validated against a recommended list. A warning is shown if an unrecognized 
     key is used.
+    The log level text (e.g., 'INFO', 'ERROR') is derived from NumericLevel to ensure consistency.
 #>
     param (
-        [string]$Level,
+        [ValidateSet(10, 20, 30, 40, 50)]
         [int]$NumericLevel,
         [string]$Message,
         [hashtable]$Metadata = @{}
     )
 
-    if ($NumericLevel -lt $Global:LogConfig.LogLevel) {
+    if ($NumericLevel -lt $script:LogConfig.LogLevel) {
         return
     }
 
+    $Level = switch ($NumericLevel) {
+        10 { 'DEBUG' }
+        20 { 'INFO' }
+        30 { 'WARNING' }
+        40 { 'ERROR' }
+        50 { 'CRITICAL' }
+        default { throw "Invalid NumericLevel: $NumericLevel" }
+    }
+
     $timestamp = (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + " " + (Get-TimezoneAbbreviation)
-    $scriptName = $Global:LogConfig.ScriptName
+    $scriptName = $script:LogConfig.ScriptName
     $hostName = $env:COMPUTERNAME
     $metaStr = if ($Metadata.Count -gt 0) {
         Test-MetadataKeys -Metadata $Metadata
@@ -191,7 +229,7 @@ function Write-Log {
         ""
     }
 
-    if ($Global:LogConfig.JsonFormat) {
+    if ($script:LogConfig.JsonFormat) {
         $logObject = [PSCustomObject]@{
             timestamp = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffK")
             level     = $Level
@@ -207,10 +245,20 @@ function Write-Log {
         if ($metaStr) { $logLine += " [$metaStr]" }
     }
 
+   $writeToConsole = $false
     try {
-        Add-Content -Path $Global:LogConfig.LogFilePath -Value $logLine -Encoding UTF8
+        Add-Content -Path $script:LogConfig.LogFilePath -Value $logLine -Encoding UTF8
     } catch {
-        Write-Warning "Failed to write to log file '$($Global:LogConfig.LogFilePath)': $_"
+        if (-not $script:HasWarnedFileFailure) {
+            Write-Warning "Failed to write to log file '$($script:LogConfig.LogFilePath)': $_"
+            $script:HasWarnedFileFailure = $true
+        }
+        if ($script:LogConfig.ConsoleOutput -in 'OnError', 'Always') {
+            $writeToConsole = $true
+        }
+    }
+
+    if ($script:LogConfig.ConsoleOutput -eq 'Always' -or $writeToConsole) {
         Write-Output $logLine
     }
 }
@@ -228,7 +276,7 @@ function Write-LogDebug {
     Optional key-value metadata.
 #>
     param($Message, [hashtable]$Metadata = @{})
-    Write-Log -Level 'DEBUG' -NumericLevel 10 -Message $Message -Metadata $Metadata
+    Write-Log -NumericLevel 10 -Message $Message -Metadata $Metadata
 }
 
 function Write-LogInfo {
@@ -243,7 +291,7 @@ function Write-LogInfo {
     Optional key-value metadata.
 #>
     param($Message, [hashtable]$Metadata = @{})
-    Write-Log -Level 'INFO' -NumericLevel 20 -Message $Message -Metadata $Metadata
+    Write-Log -NumericLevel 20 -Message $Message -Metadata $Metadata
 }
 
 function Write-LogWarning {
@@ -258,7 +306,7 @@ function Write-LogWarning {
     Optional key-value metadata.
 #>
     param($Message, [hashtable]$Metadata = @{})
-    Write-Log -Level 'WARNING' -NumericLevel 30 -Message $Message -Metadata $Metadata
+    Write-Log -NumericLevel 30 -Message $Message -Metadata $Metadata
 }
 
 function Write-LogError {
@@ -273,7 +321,7 @@ function Write-LogError {
     Optional key-value metadata.
 #>
     param($Message, [hashtable]$Metadata = @{})
-    Write-Log -Level 'ERROR' -NumericLevel 40 -Message $Message -Metadata $Metadata
+    Write-Log -NumericLevel 40 -Message $Message -Metadata $Metadata
 }
 
 function Write-LogCritical {
@@ -288,5 +336,5 @@ function Write-LogCritical {
     Optional key-value metadata.
 #>
     param($Message, [hashtable]$Metadata = @{})
-    Write-Log -Level 'CRITICAL' -NumericLevel 50 -Message $Message -Metadata $Metadata
+    Write-Log -NumericLevel 50 -Message $Message -Metadata $Metadata
 }
