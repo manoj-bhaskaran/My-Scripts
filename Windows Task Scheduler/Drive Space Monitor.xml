@@ -56,7 +56,7 @@
   <Actions Context="Author">
     <Exec>
       <Command>"D:\My Scripts\venv\Scripts\python.exe"</Command>
-      <Arguments>C:\Users\manoj\Documents\Scripts\src\python\drive_space_monitor.py --threshold 80 --threshold 80</Arguments>
+      <Arguments>C:\Users\manoj\Documents\Scripts\src\python\drive_space_monitor.py --threshold 80</Arguments>
       <WorkingDirectory>C:\users\manoj\Documents\Scripts</WorkingDirectory>
     </Exec>
   </Actions>

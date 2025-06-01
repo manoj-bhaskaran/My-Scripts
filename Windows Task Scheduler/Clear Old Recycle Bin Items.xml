@@ -39,7 +39,7 @@
   <Actions Context="Author">
     <Exec>
       <Command>powershell.exe</Command>
-      <Arguments>-ExecutionPolicy Bypass -File C:\Users\manoj\Documents\Scripts\src\powershell\ClearOldRecycleBinItems.ps1</Arguments>
+      <Arguments>-ExecutionPolicy Bypass -File "C:\Users\manoj\Documents\Scripts\src\powershell\ClearOldRecycleBinItems.ps1</Arguments>
     </Exec>
   </Actions>
 </Task>
