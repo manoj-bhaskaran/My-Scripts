@@ -9,7 +9,6 @@ try {
     $LogFileDir = Split-Path -Parent $LogFilePath
     if (!(Test-Path $LogFileDir)) {
         New-Item -Path $LogFileDir -ItemType Directory -Force
-        Write-Output "Created log directory: $LogFileDir" | Out-File $ErrorLogPath -Append
     }
 
     # Append a log header with the date
@@ -36,13 +35,11 @@ try {
 
     # Add a footer to the log
     Add-Content -Path $LogFilePath -Value "Log Ended: $(Get-Date)`r`n`r`n"
-    Write-Output "Script completed successfully" | Out-File $ErrorLogPath -Append
     exit 0
 } catch {
     $ErrorMessage = $_.Exception.Message
     $ErrorDetails = $_.Exception | Out-String
     $ErrorOutput = "Error: $ErrorMessage`r`nDetails: $ErrorDetails`r`n"
-    Write-Output $ErrorOutput | Out-File $ErrorLogPath -Append
     if (Test-Path $LogFilePath) {
         Add-Content -Path $LogFilePath -Value $ErrorOutput
     }
