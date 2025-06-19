@@ -1,22 +1,10 @@
 # Delete old download files from the Downloads folder
-
-Start-Transcript -Path "C:\Temp\DeleteOldDownloadsTranscript.log" -Append -Force
-
 $FolderPath = "C:\Users\manoj\Downloads"
 $Days = 14
 $CurrentDate = Get-Date
 $LogFilePath = "C:\Users\manoj\Documents\Scripts\DeletedDownloadsLog.txt"
-$ErrorLogPath = "C:\Temp\DeleteOldDownloadsError.log"
 
 try {
-    # Test log file path access
-    Write-Output "Testing log path: $LogFilePath" | Out-File $ErrorLogPath -Append
-    if (Test-Path $LogFilePath) {
-        Write-Output "Log file exists" | Out-File $ErrorLogPath -Append
-    } else {
-        Write-Output "Log file does not exist" | Out-File $ErrorLogPath -Append
-    }
-
     # Ensure the log file directory exists
     $LogFileDir = Split-Path -Parent $LogFilePath
     if (!(Test-Path $LogFileDir)) {
@@ -59,6 +47,4 @@ try {
         Add-Content -Path $LogFilePath -Value $ErrorOutput
     }
     exit 1
-} finally {
-    Stop-Transcript
 }
