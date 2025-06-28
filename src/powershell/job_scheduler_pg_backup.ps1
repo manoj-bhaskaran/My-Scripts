@@ -16,7 +16,7 @@
     - The .pgpass file must have restricted permissions (accessible only to the Task Scheduler service account).
     - The Task Scheduler service account must have write access to the backup folder.
 .EXAMPLE
-    powershell.exe -File .\job_scheduler_backup.ps1
+    powershell.exe -File .\job_scheduler_pg_backup.ps1
     Runs the script to back up the job_scheduler database, creating a backup in ..\..\backups\job_scheduler and logging to 
     a timestamped log file in the same folder.
 .NOTES
