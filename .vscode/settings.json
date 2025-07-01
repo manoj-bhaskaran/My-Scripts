@@ -1,5 +1,9 @@
 {
     "python.analysis.extraPaths": [
         "./src/common"
-    ]
+    ],
+    "sonarlint.connectedMode.project": {
+        "connectionId": "manoj-bhaskaran",
+        "projectKey": "manoj-bhaskaran_My-Scripts"
+    }
 }
