@@ -6,4 +6,9 @@ venv
 .venv
 /.tmp.driveupload
 timeline_data/users/passwords
-__pycache__
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
