@@ -34,8 +34,7 @@
 # Uses .pgpass for secure password management with backup_user
 
 # Get the script's directory for relative path calculations
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-
+$ScriptDir = if ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { "C:\Users\manoj\Documents\Scripts\src\powershell" }
 # Configuration
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $DatabaseName = "job_scheduler"
