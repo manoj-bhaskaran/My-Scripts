@@ -4,12 +4,12 @@
 .DESCRIPTION
     This script performs a backup of the `job_scheduler` PostgreSQL database, designed for execution via Windows Task Scheduler. 
     It uses the `backup_user` account with a `.pgpass` file for secure password management and logs all operations to a timestamped 
-    log file with a standardized timestamp format `[YYYYMMDD-HHMMSS]`. The script uses the `PostgresBackup` PowerShell module (version 1.0.2 or higher) 
+    log file with a standardized timestamp format `[YYYYMMDD-HHMMSS]`. The script uses the `PostgresBackup` PowerShell module (version 1.0.3 or higher) 
     and writes all log entries directly to the timestamped log file in chronological order. The script ensures the backup directory exists and sets 
     appropriate exit codes for Task Scheduler (0 for success, 1 for failure).
 .PREREQUISITES
     - PostgreSQL and `pg_dump` (version 17 or compatible) installed at `D:\Program Files\PostgreSQL\17\bin\pg_dump.exe`.
-    - `PostgresBackup` module (version 1.0.2 or higher) installed at `C:\Program Files\WindowsPowerShell\Modules\PostgresBackup\1.0.2\PostgresBackup.psm1` with a manifest (`PostgresBackup.psd1`).
+    - `PostgresBackup` module (version 1.0.3 or higher) installed at `C:\Program Files\WindowsPowerShell\Modules\PostgresBackup\1.0.3\PostgresBackup.psm1` with a manifest (`PostgresBackup.psd1`).
     - A `.pgpass` file configured for `backup_user` at `%APPDATA%\postgresql\pgpass.conf` (e.g., 
       `C:\Users\<ServiceAccount>\AppData\Roaming\postgresql\pgpass.conf`) with the entry:
       `localhost:5432:job_scheduler:backup_user:<password>`
@@ -54,7 +54,7 @@ $OutputFolder = "D:\pgbackup\job_scheduler"
 $LogFile = Join-Path $OutputFolder "job_scheduler_backup_$Timestamp.log"
 $User = "backup_user"
 $ModuleBasePath = "C:\Program Files\WindowsPowerShell\Modules\PostgresBackup"
-$ModuleVersion = "1.0.2"
+$ModuleVersion = "1.0.3"
 $ModulePath = Join-Path $ModuleBasePath "$ModuleVersion\PostgresBackup.psm1"
 $ManifestPath = Join-Path $ModuleBasePath "$ModuleVersion\PostgresBackup.psd1"
 
@@ -78,22 +78,71 @@ try {
     exit 1
 }
 
+# Function to validate module content
+function Test-ModuleContent {
+    param (
+        [string]$ModulePath
+    )
+    try {
+        $moduleContent = Get-Content -Path $ModulePath -Raw
+        $hasLogFileParam = $moduleContent -match '\[Parameter\(Mandatory=\$true\)]\s*\[string\]\$log_file'
+        $hasCorrectTimestamp = $moduleContent -match '\$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"'
+        return $hasLogFileParam -and $hasCorrectTimestamp
+    } catch {
+        Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Failed to read module content at `$ModulePath`: $_" -ErrorAction Stop
+        return $false
+    }
+}
+
+# Function to validate log file entries
+function Test-LogEntries {
+    param (
+        [string]$LogFile
+    )
+    try {
+        $logContent = Get-Content -Path $LogFile
+        $malformedEntries = $logContent | Where-Object { $_ -match '\[\s*\d\s*\d\s*\d\s*\d\s*-\s*\d\s*\d\s*\d\s*\d\s*\]' }
+        if ($malformedEntries) {
+            Add-Content -Path $LogFile -Value "[$Timestamp] WARNING: Malformed log entries detected with spaces in timestamps:" -ErrorAction Stop
+            $malformedEntries | ForEach-Object { Add-Content -Path $LogFile -Value "[$Timestamp] Malformed entry: $_" -ErrorAction Stop }
+        }
+    } catch {
+        Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Failed to validate log entries in `$LogFile`: $_" -ErrorAction Stop
+    }
+}
+
 # Import PostgresBackup module and verify version
 try {
     Import-Module PostgresBackup -MinimumVersion $ModuleVersion -Force -ErrorAction Stop
     $module = Get-Module PostgresBackup
     Add-Content -Path $LogFile -Value "[$Timestamp] PostgresBackup module (version $($module.Version)) imported successfully" -ErrorAction Stop
+    # Verify module content
+    if (-not (Test-ModuleContent -ModulePath $ModulePath)) {
+        Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: PostgresBackup module at `$ModulePath` does not support log_file parameter or correct timestamp format" -ErrorAction Stop
+        exit 1
+    }
 } catch {
     $modulePaths = $env:PSModulePath -split ";"
     $availableModules = Get-Module -ListAvailable PostgresBackup | ForEach-Object { "Version $($_.Version) at $($_.ModuleBase)" }
     $errorDetails = "[$Timestamp] ERROR: Failed to import PostgresBackup module (version $ModuleVersion or higher required). Module paths searched: $($modulePaths -join ', '). Available versions: $(if ($availableModules) { $availableModules -join ', ' } else { 'None' })."
     
-    # Check if module file exists
+    # Check versioned directory
+    $versionedDir = Join-Path $ModuleBasePath $ModuleVersion
+    if (Test-Path $versionedDir) {
+        $errorDetails += " Versioned directory found at `$versionedDir`."
+    } else {
+        $errorDetails += " Versioned directory not found at `$versionedDir`. Ensure module is deployed correctly."
+    }
+    
+    # Check module file
     if (Test-Path $ModulePath) {
         try {
             $moduleContent = Get-Content -Path $ModulePath -Head 20 -ErrorAction Stop
             $versionLine = $moduleContent | Where-Object { $_ -match "Version: (\d+\.\d+\.\d+)" }
             $errorDetails += " Module file found at `$ModulePath`. Version comment: $(if ($versionLine) { $versionLine } else { 'Not found' })."
+            if (-not (Test-ModuleContent -ModulePath $ModulePath)) {
+                $errorDetails += " Module does not support log_file parameter or correct timestamp format."
+            }
         } catch {
             $errorDetails += " Module file found at `$ModulePath`, but failed to read content: $_."
         }
@@ -101,7 +150,7 @@ try {
         $errorDetails += " Module file not found at `$ModulePath`."
     }
     
-    # Check if manifest exists
+    # Check manifest
     if (Test-Path $ManifestPath) {
         try {
             $manifestContent = Import-PowerShellDataFile -Path $ManifestPath -ErrorAction Stop
@@ -118,13 +167,17 @@ try {
     $errorDetails += " Error: $_"
     Add-Content -Path $LogFile -Value $errorDetails -ErrorAction Stop
     
-    # Fallback: Attempt to load module explicitly from ModulePath
+    # Fallback: Attempt to load module explicitly
     if (Test-Path $ModulePath) {
         try {
             Import-Module $ModulePath -Force -ErrorAction Stop
             $module = Get-Module PostgresBackup
             $manifestVersion = if ($module.Version -eq "0.0") { "Unknown (no valid manifest or version 0.0)" } else { $module.Version }
-            Add-Content -Path $LogFile -Value "[$Timestamp] WARNING: Loaded PostgresBackup module (version $manifestVersion) from `$ModulePath`, but version $ModuleVersion or higher is required for correct timestamp format and log_file parameter support" -ErrorAction Stop
+            Add-Content -Path $LogFile -Value "[$Timestamp] WARNING: Loaded PostgresBackup module (version $manifestVersion) from `$ModulePath`, but version $ModuleVersion or higher with log_file parameter is required" -ErrorAction Stop
+            if (-not (Test-ModuleContent -ModulePath $ModulePath)) {
+                Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Fallback PostgresBackup module at `$ModulePath` does not support log_file parameter or correct timestamp format" -ErrorAction Stop
+                exit 1
+            }
         } catch {
             Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Fallback import of PostgresBackup module from `$ModulePath` failed: $_" -ErrorAction Stop
             exit 1
@@ -153,12 +206,16 @@ try {
     Backup-PostgresDatabase -dbname $DatabaseName -backup_folder $OutputFolder -log_file $LogFile -user $User -retention_days 90 -min_backups 3
     if ($LASTEXITCODE -eq 0) {
         Add-Content -Path $LogFile -Value "[$Timestamp] Backup completed successfully" -ErrorAction Stop
+        # Validate log entries
+        Test-LogEntries -LogFile $LogFile
         exit 0
     } else {
         Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Backup failed with exit code $LASTEXITCODE" -ErrorAction Stop
+        Test-LogEntries -LogFile $LogFile
         exit 1
     }
 } catch {
     Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Backup failed: $_" -ErrorAction Stop
+    Test-LogEntries -LogFile $LogFile
     exit 1
 }

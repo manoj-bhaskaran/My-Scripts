@@ -9,8 +9,8 @@
     Switch to enable verbose output to the console for debugging.
 
 .NOTES
-    Author: Manoj Bhaskaran
-    Version: 1.3
+    Author: Manoj
+    Version: 1.4
     Last Updated: 2025-08-16
 #>
 
@@ -77,9 +77,11 @@ function Test-ModuleContent {
     )
     try {
         $moduleContent = Get-Content -Path $ModulePath -Raw
-        return $moduleContent -match '\[Parameter\(Mandatory=\$true\)]\s*\[string\]\$log_file'
+        $hasLogFileParam = $moduleContent -match '\[Parameter\(Mandatory=\$true\)]\s*\[string\]\$log_file'
+        $hasCorrectTimestamp = $moduleContent -match '\$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"'
+        return $hasLogFileParam -and $hasCorrectTimestamp
     } catch {
-        Write-Message "ERROR: Failed to read module content at ${ModulePath}: $_"
+        Write-Message "ERROR: Failed to read module content at $ModulePath: $_"
         return $false
     }
 }
@@ -101,7 +103,7 @@ function Update-ModuleManifest {
 
         # Validate module content
         if (-not (Test-ModuleContent -ModulePath $ModulePath)) {
-            Write-Message "ERROR: Module at $ModulePath does not support log_file parameter, required for version $version"
+            Write-Message "ERROR: Module at $ModulePath does not support log_file parameter or correct timestamp format (yyyyMMdd-HHmmss)"
             return
         }
 
@@ -120,12 +122,12 @@ function Update-ModuleManifest {
             -ModuleVersion $version `
             -RootModule ([System.IO.Path]::GetFileName($DestinationPath)) `
             -FunctionsToExport @('Backup-PostgresDatabase') `
-            -Author "Manoj Bhaskaran" `
+            -Author "Your Name or Team" `
             -Description "PowerShell module for backing up PostgreSQL databases" `
             -CompatiblePSEditions @("Desktop", "Core")
         Write-Message "Created/updated manifest at $manifestPath for version $version"
     } catch {
-        Write-Message "ERROR: Failed to create/update manifest for ${ModulePath}: $_"
+        Write-Message "ERROR: Failed to create/update manifest for $ModulePath: $_"
     }
 }
 
