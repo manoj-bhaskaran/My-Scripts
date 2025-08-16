@@ -13,10 +13,10 @@
       C:\Users\<ServiceAccount>\AppData\Roaming\postgresql\pgpass.conf) with the entry:
       localhost:5432:job_scheduler:backup_user:<password>
     - The .pgpass file must have restricted permissions (accessible only to the Task Scheduler service account).
-    - The Task Scheduler service account must have write access to the backup folder.
+    - The Task Scheduler service account must have write access to the backup folder (D:\pgbackup\job_scheduler).
 .EXAMPLE
     powershell.exe -File .\job_scheduler_pg_backup.ps1
-    Runs the script to back up the job_scheduler database, creating a backup in ..\..\backups\job_scheduler and logging to 
+    Runs the script to back up the job_scheduler database, creating a backup in D:\pgbackup\job_scheduler and logging to 
     a timestamped log file in the same folder.
 .NOTES
     - Logs are written to a timestamped file (job_scheduler_backup_YYYYMMDD-HHMMSS.log) and to backup_log.txt in the backup folder.
@@ -33,23 +33,47 @@
 # Designed for Windows Task Scheduler, logs all output to a file
 # Uses .pgpass for secure password management with backup_user
 
-# Get the script's directory for relative path calculations
-$ScriptDir = if ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { "C:\Users\manoj\Documents\Scripts\src\powershell" }
+# Get the script's directory for logging purposes
+$ScriptDir = if ($MyInvocation.MyCommand.Path) { 
+    Split-Path -Parent $MyInvocation.MyCommand.Path 
+} elseif ($PSScriptRoot) {
+    $PSScriptRoot
+} else {
+    Get-Location | Select-Object -ExpandProperty Path
+}
+
+if (-not $ScriptDir) {
+    Write-Error "ERROR: Unable to determine script directory"
+    exit 1
+}
+
 # Configuration
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $DatabaseName = "job_scheduler"
-$OutputFolder = Join-Path $ScriptDir "..\..\backups\job_scheduler"
+$OutputFolder = "D:\pgbackup\job_scheduler"
 $LogFile = Join-Path $OutputFolder "job_scheduler_backup_$Timestamp.log"
 $LogFolder = $OutputFolder  # Match log_folder to backup_folder for PostgresBackup module
 $User = "backup_user"
 
-# Ensure backup directory exists
-if (-not (Test-Path $OutputFolder)) {
-    New-Item -ItemType Directory -Path $OutputFolder -Force | Out-Null
+# Validate and create backup directory
+if (-not (Test-Path $OutputFolder -PathType Container)) {
+    try {
+        New-Item -ItemType Directory -Path $OutputFolder -Force -ErrorAction Stop | Out-Null
+    } catch {
+        Write-Error "ERROR: Cannot create backup directory '$OutputFolder': $_"
+        exit 1
+    }
 }
 
 # Log script start
-Add-Content -Path $LogFile -Value "[$Timestamp] Starting job_scheduler backup"
+try {
+    Add-Content -Path $LogFile -Value "[$Timestamp] Starting job_scheduler backup" -ErrorAction Stop
+    Add-Content -Path $LogFile -Value "[$Timestamp] Script directory: $ScriptDir"
+    Add-Content -Path $LogFile -Value "[$Timestamp] Backup directory: $OutputFolder"
+} catch {
+    Write-Error "ERROR: Cannot write to log file '$LogFile': $_"
+    exit 1
+}
 
 # Import PostgresBackup module
 try {
