@@ -328,7 +328,7 @@ if ($mergeBase) {
     }
 }
 
-if ($Verbose) {
+if ($script:IsVerbose) {
     Write-Host "Modified Files (merge):" -ForegroundColor Green
     $modifiedFiles | ForEach-Object { Write-Host $_ }
     Write-Host "Deleted Files (merge):" -ForegroundColor Red

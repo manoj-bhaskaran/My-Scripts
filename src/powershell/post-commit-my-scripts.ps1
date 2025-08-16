@@ -323,7 +323,7 @@ if ($hasParent) {
     $deletedFiles  = @()
 }
 
-if ($Verbose) {
+if ($script:IsVerbose) {
     Write-Host "Modified Files:" -ForegroundColor Green
     $modifiedFiles | ForEach-Object { Write-Host $_ }
     Write-Host "Deleted Files:" -ForegroundColor Red
