@@ -4,7 +4,7 @@
 .DESCRIPTION
     The PostgresBackup module provides functionality to back up PostgreSQL databases using pg_dump. It manages the PostgreSQL service, creates custom-format backups, and handles retention policies to remove old or zero-byte backups. The module is designed for use in scripts executed via Windows Task Scheduler, with support for secure password management via .pgpass files. All log entries use the [YYYYMMDD-HHMMSS] timestamp format for consistency.
 .NOTES
-    Version: 1.0.3
+    Version: 1.0.4
     Date: 2025-08-16
     License: Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
     Requires: 
