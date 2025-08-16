@@ -1,21 +1,17 @@
 <#
 .SYNOPSIS
-    Post-commit Git hook PowerShell script to copy committed files to a staging directory while preserving directory structure.
+    Post-commit Git hook PowerShell script to copy committed files to a staging directory and update module manifests.
 
 .DESCRIPTION
-    This script is invoked by a Git post-commit hook. It processes the list of modified and deleted files from the latest commit and performs the following:
-    - Copies modified files from the repository to a destination folder, preserving their relative directory structure.
-    - Deletes files from the destination folder if they were deleted in the commit.
-    - Honors .gitignore rules using Git's check-ignore command.
-    - Logs actions and errors to a specified log file.
+    This script is invoked by a Git post-commit hook. It processes modified and deleted files from the latest commit, copies them to a destination folder, and updates module manifests for modified PowerShell modules in versioned directories.
 
 .PARAMETER Verbose
-    Switch to enable verbose output to the console for debugging and tracing operations.
+    Switch to enable verbose output to the console for debugging.
 
 .NOTES
-    Author: Your Name
-    Version: 1.0
-    Last Updated: YYYY-MM-DD
+    Author: Manoj Bhaskaran
+    Version: 1.2
+    Last Updated: 2025-08-16
 #>
 
 param (
@@ -28,20 +24,6 @@ $destinationFolder = "C:\Users\manoj\Documents\Scripts"
 $logFile = "C:\Users\manoj\Documents\Scripts\git-post-action.log"
 
 # Function to log messages with timestamps and source identifier
-<#
-.SYNOPSIS
-    Logs a message to a file with a timestamp and optional console output.
-
-.DESCRIPTION
-    This function formats a message with a timestamp and optional source label, writes it to the configured log file, and optionally prints it to the console when verbose mode is enabled.
-
-.PARAMETER message
-    The message string to be logged.
-
-.PARAMETER source
-    The source label to tag the message origin in the log. Defaults to "post-commit".
-#>
-
 function Write-Message {
     param (
         [string]$message,
@@ -80,16 +62,6 @@ if ($Verbose) {
 }
 
 # Function to check if a file matches any ignored patterns
-<#
-.SYNOPSIS
-    Checks if a file is ignored by Git based on .gitignore rules.
-
-.DESCRIPTION
-    This function uses Git's check-ignore command to determine whether a file should be excluded from processing based on .gitignore rules in the repository.
-
-.PARAMETER relativePath
-    The path to the file relative to the repository root.
-#>
 function Test-Ignored {
     param (
         [string]$relativePath
@@ -98,16 +70,53 @@ function Test-Ignored {
     return -not [string]::IsNullOrWhiteSpace($result)
 }
 
-# Copy only files modified in the latest commit, preserving directory structure
+# Function to update or create module manifest
+function Update-ModuleManifest {
+    param (
+        [string]$ModulePath,
+        [string]$DestinationPath
+    )
+    try {
+        $moduleContent = Get-Content -Path $ModulePath -Head 20
+        $versionLine = $moduleContent | Where-Object { $_ -match "Version: (\d+\.\d+\.\d+)" }
+        $version = if ($versionLine) { $matches[1] } else { "1.0.0" }
+        $moduleName = [System.IO.Path]::GetFileNameWithoutExtension($ModulePath)
+        $versionedDestDir = Join-Path -Path (Split-Path (Split-Path $DestinationPath -Parent) -Parent) -ChildPath $version
+        $versionedModulePath = Join-Path -Path $versionedDestDir -ChildPath ([System.IO.Path]::GetFileName($DestinationPath))
+        $manifestPath = Join-Path -Path $versionedDestDir -ChildPath "$moduleName.psd1"
+
+        Write-Message "Updating manifest for module at $ModulePath (version $version)"
+
+        if (-not (Test-Path $versionedDestDir)) {
+            New-Item -Path $versionedDestDir -ItemType Directory -Force | Out-Null
+            Write-Message "Created versioned module directory: $versionedDestDir"
+        }
+
+        # Copy module file to versioned directory
+        Copy-Item -Path $ModulePath -Destination $versionedModulePath -Force
+        Write-Message "Copied module file to $versionedModulePath"
+
+        New-ModuleManifest `
+            -Path $manifestPath `
+            -ModuleVersion $version `
+            -RootModule ([System.IO.Path]::GetFileName($DestinationPath)) `
+            -FunctionsToExport @('Backup-PostgresDatabase') `
+            -Author "Your Name or Team" `
+            -Description "PowerShell module for backing up PostgreSQL databases" `
+            -CompatiblePSEditions @("Desktop", "Core")
+        Write-Message "Created/updated manifest at $manifestPath for version $version"
+    } catch {
+        Write-Message "ERROR: Failed to create/update manifest for ${ModulePath}: $_"
+    }
+}
+
+# Copy modified files, preserving directory structure
 $modifiedFiles | ForEach-Object {
     $relativePath = $_
     $sourceFilePath = Join-Path -Path $repoPath -ChildPath $relativePath
 
-    # Only copy if the source file exists and is not in .gitignore
     if ((Test-Path $sourceFilePath) -and !(Test-Ignored $relativePath)) {
-
         Write-Message "Processing modified file: $sourceFilePath"
-
         $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $relativePath
         $destinationDir = Split-Path -Path $destinationFilePath -Parent
 
@@ -118,6 +127,11 @@ $modifiedFiles | ForEach-Object {
         try {
             Copy-Item -Path $sourceFilePath -Destination $destinationFilePath -Force
             Write-Message "Copied file $sourceFilePath to $destinationFilePath"
+
+            # Update manifest if this is a module file
+            if ($relativePath -like "*PostgresBackup.psm1") {
+                Update-ModuleManifest -ModulePath $sourceFilePath -DestinationPath $destinationFilePath
+            }
         } catch {
             Write-Message ("Failed to copy {0}: {1}" -f $sourceFilePath, $_.Exception.Message)
         }
@@ -126,13 +140,11 @@ $modifiedFiles | ForEach-Object {
     }
 }
 
-# Permanently delete files in the destination folder that were deleted in the commit
+# Delete files in the destination folder that were deleted in the commit
 $deletedFiles | ForEach-Object {
     $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $_
-
     Write-Message "Processing deleted file: $destinationFilePath"
 
-    # Only move to Recycle Bin if the file exists in the destination and is not ignored
     if ((Test-Path $destinationFilePath) -and -not (Test-Ignored $_)) {
         Write-Message "Removing file $destinationFilePath"
         try {
