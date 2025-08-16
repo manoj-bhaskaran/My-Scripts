@@ -4,7 +4,7 @@
 .DESCRIPTION
     The PostgresBackup module provides functionality to back up PostgreSQL databases using pg_dump. It manages the PostgreSQL service, creates custom-format backups, and handles retention policies to remove old or zero-byte backups. The module is designed for use in scripts executed via Windows Task Scheduler, with support for secure password management via .pgpass files. All log entries use the [YYYYMMDD-HHMMSS] timestamp format for consistency.
 .NOTES
-    Version: 1.0.1
+    Version: 1.0.2
     Date: 2025-08-16
     License: Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
     Requires: 
@@ -23,13 +23,13 @@ $max_wait_time = 15                                              # Maximum secon
 .SYNOPSIS
     Backs up a PostgreSQL database using pg_dump and manages backup retention.
 .DESCRIPTION
-    This function performs a backup of a specified PostgreSQL database using the pg_dump utility in custom format. It ensures the PostgreSQL service is running, creates a backup file, and applies retention policies to delete old or zero-byte backups. Logs are written to a specified log file with timestamps in [YYYYMMDD-HHMMSS] format.
+    This function performs a backup of a specified PostgreSQL database using the pg_dump utility in custom format. It ensures the PostgreSQL service is running, creates a backup file, and applies retention policies to delete old or zero-byte backups. Logs are written to the specified log file with timestamps in [YYYYMMDD-HHMMSS] format.
 .PARAMETER dbname
     The name of the PostgreSQL database to back up (e.g., job_scheduler).
 .PARAMETER backup_folder
     The directory where backup files are stored (e.g., D:\pgbackup\job_scheduler).
-.PARAMETER log_folder
-    The directory where log files are stored (e.g., D:\pgbackup\job_scheduler).
+.PARAMETER log_file
+    The file where log entries are written (e.g., D:\pgbackup\job_scheduler\job_scheduler_backup_YYYYMMDD-HHMMSS.log).
 .PARAMETER user
     The PostgreSQL user for authentication (e.g., backup_user).
 .PARAMETER password
@@ -39,12 +39,12 @@ $max_wait_time = 15                                              # Maximum secon
 .PARAMETER min_backups
     The minimum number of recent backups to retain (default: 3), preventing deletion of recent backups.
 .EXAMPLE
-    Backup-PostgresDatabase -dbname "job_scheduler" -backup_folder "D:\pgbackup\job_scheduler" -log_folder "D:\pgbackup\job_scheduler" -user "backup_user" -password (ConvertTo-SecureString "" -AsPlainText -Force) -retention_days 90 -min_backups 3
-    Backs up the job_scheduler database, storing the backup and log in the specified folder, using .pgpass for authentication.
+    Backup-PostgresDatabase -dbname "job_scheduler" -backup_folder "D:\pgbackup\job_scheduler" -log_file "D:\pgbackup\job_scheduler\job_scheduler_backup_20250816-144334.log" -user "backup_user" -password (ConvertTo-SecureString "" -AsPlainText -Force) -retention_days 90 -min_backups 3
+    Backs up the job_scheduler database, storing the backup and logging to the specified file, using .pgpass for authentication.
 .NOTES
     - Ensure pg_dump is accessible at the specified $pg_dump_path.
     - The function exits with code 1 on failure, 0 on success.
-    - Logs are appended to backup_log.txt in the log_folder with timestamps in [YYYYMMDD-HHMMSS] format.
+    - Logs are appended to the specified log_file with timestamps in [YYYYMMDD-HHMMSS] format.
 #>
 function Backup-PostgresDatabase {
     param (
@@ -53,7 +53,7 @@ function Backup-PostgresDatabase {
         [Parameter(Mandatory=$true)]
         [string]$backup_folder,
         [Parameter(Mandatory=$true)]
-        [string]$log_folder,
+        [string]$log_file,
         [Parameter(Mandatory=$true)]
         [string]$user,
         [Parameter(Mandatory=$false)]
@@ -64,16 +64,18 @@ function Backup-PostgresDatabase {
         [int]$min_backups = 3
     )
 
-    # Generate timestamped backup and log file names
+    # Generate timestamped backup file name
     $date = Get-Date -Format "yyyy-MM-dd"
     $time = Get-Date -Format "HH-mm-ss"
     $backup_file = "$backup_folder\${dbname}_backup_${date}_${time}.backup"
-    $log_file = "$log_folder\backup_log.txt"
 
-    # Ensure backup and log directories exist
+    # Ensure backup directory exists
     if (!(Test-Path -Path $backup_folder)) {
         New-Item -Path $backup_folder -ItemType Directory -Force | Out-Null
     }
+
+    # Ensure log file directory exists
+    $log_folder = Split-Path -Parent $log_file
     if (!(Test-Path -Path $log_folder)) {
         New-Item -Path $log_folder -ItemType Directory -Force | Out-Null
     }

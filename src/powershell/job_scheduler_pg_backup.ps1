@@ -4,11 +4,12 @@
 .DESCRIPTION
     This script performs a backup of the job_scheduler PostgreSQL database, designed for execution via Windows Task Scheduler. 
     It uses the backup_user account with a .pgpass file for secure password management and logs all operations to a timestamped 
-    log file. The script uses the PostgresBackup PowerShell module and consolidates all logging into a single timestamped log file.
-    The script ensures the backup directory exists and sets appropriate exit codes for Task Scheduler (0 for success, 1 for failure).
+    log file with a standardized timestamp format [YYYYMMDD-HHMMSS]. The script uses the PostgresBackup PowerShell module (version 1.0.2 or higher) 
+    and writes all log entries directly to the timestamped log file in chronological order. The script ensures the backup directory exists and sets 
+    appropriate exit codes for Task Scheduler (0 for success, 1 for failure).
 .PREREQUISITES
     - PostgreSQL and pg_dump (version 17 or compatible) installed at D:\Program Files\PostgreSQL\17\bin\pg_dump.exe.
-    - PostgresBackup module installed at C:\Program Files\WindowsPowerShell\Modules\PostgresBackup\PostgresBackup.psm1.
+    - PostgresBackup module (version 1.0.2 or higher) installed at C:\Program Files\WindowsPowerShell\Modules\PostgresBackup\PostgresBackup.psm1.
     - A .pgpass file configured for backup_user at %APPDATA%\postgresql\pgpass.conf (e.g., 
       C:\Users\<ServiceAccount>\AppData\Roaming\postgresql\pgpass.conf) with the entry:
       localhost:5432:job_scheduler:backup_user:<password>
@@ -18,7 +19,7 @@
     powershell.exe -File .\job_scheduler_pg_backup.ps1
     Runs the script to back up the job_scheduler database, creating a backup and log file in D:\pgbackup\job_scheduler.
 .NOTES
-    - Logs are written to a timestamped file (job_scheduler_backup_YYYYMMDD-HHMMSS.log) in the backup folder.
+    - Logs are written to a timestamped file (job_scheduler_backup_YYYYMMDD-HHMMSS.log) in the backup folder with timestamps in [YYYYMMDD-HHMMSS] format, in chronological order.
     - The script relies on .pgpass for authentication, as the PostgresBackup module supports empty passwords.
     - Exit codes: 0 (success), 1 (failure).
     - The PostgresBackup module replaces the previous pg_backup_common.ps1 dependency to eliminate path issues.
@@ -51,7 +52,6 @@ $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $DatabaseName = "job_scheduler"
 $OutputFolder = "D:\pgbackup\job_scheduler"
 $LogFile = Join-Path $OutputFolder "job_scheduler_backup_$Timestamp.log"
-$LogFolder = $OutputFolder  # Match log_folder to backup_folder for PostgresBackup module
 $User = "backup_user"
 
 # Validate and create backup directory
@@ -74,75 +74,33 @@ try {
     exit 1
 }
 
-# Import PostgresBackup module
+# Import PostgresBackup module and verify version
 try {
-    Import-Module PostgresBackup -ErrorAction Stop
-    Add-Content -Path $LogFile -Value "[$Timestamp] PostgresBackup module imported successfully"
+    Import-Module PostgresBackup -MinimumVersion 1.0.2 -Force -ErrorAction Stop
+    $module = Get-Module PostgresBackup
+    Add-Content -Path $LogFile -Value "[$Timestamp] PostgresBackup module (version $($module.Version)) imported successfully" -ErrorAction Stop
 } catch {
-    Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Failed to import PostgresBackup module: $_"
+    Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Failed to import PostgresBackup module (version 1.0.2 or higher required): $_" -ErrorAction Stop
     exit 1
 }
 
 # Verify Backup-PostgresDatabase function is available
 if (-not (Get-Command -Name Backup-PostgresDatabase -ErrorAction SilentlyContinue)) {
-    Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Backup-PostgresDatabase function not found in PostgresBackup module"
+    Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Backup-PostgresDatabase function not found in PostgresBackup module" -ErrorAction Stop
     exit 1
 }
 
-# Run the backup and consolidate logs
+# Run the backup
 try {
-    Backup-PostgresDatabase -dbname $DatabaseName -backup_folder $OutputFolder -log_folder $LogFolder -user $User -retention_days 90 -min_backups 3
+    Backup-PostgresDatabase -dbname $DatabaseName -backup_folder $OutputFolder -log_file $LogFile -user $User -retention_days 90 -min_backups 3
     if ($LASTEXITCODE -eq 0) {
-        Add-Content -Path $LogFile -Value "[$Timestamp] Backup completed successfully"
-        # Check for and append contents of backup_log.txt, then delete it
-        $ModuleLogFile = Join-Path $LogFolder "backup_log.txt"
-        if (Test-Path $ModuleLogFile) {
-            try {
-                $ModuleLogContent = Get-Content -Path $ModuleLogFile -ErrorAction Stop
-                if ($ModuleLogContent) {
-                    Add-Content -Path $LogFile -Value "[$Timestamp] PostgresBackup module log entries:"
-                    Add-Content -Path $LogFile -Value $ModuleLogContent
-                }
-                Remove-Item -Path $ModuleLogFile -Force -ErrorAction Stop
-            } catch {
-                Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Failed to process module log file '$ModuleLogFile': $_"
-                exit 1
-            }
-        }
+        Add-Content -Path $LogFile -Value "[$Timestamp] Backup completed successfully" -ErrorAction Stop
         exit 0
     } else {
-        Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Backup failed with exit code $LASTEXITCODE"
-        # Append module log if it exists
-        $ModuleLogFile = Join-Path $LogFolder "backup_log.txt"
-        if (Test-Path $ModuleLogFile) {
-            try {
-                $ModuleLogContent = Get-Content -Path $ModuleLogFile -ErrorAction Stop
-                if ($ModuleLogContent) {
-                    Add-Content -Path $LogFile -Value "[$Timestamp] PostgresBackup module log entries:"
-                    Add-Content -Path $LogFile -Value $ModuleLogContent
-                }
-                Remove-Item -Path $ModuleLogFile -Force -ErrorAction Stop
-            } catch {
-                Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Failed to process module log file '$ModuleLogFile': $_"
-            }
-        }
+        Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Backup failed with exit code $LASTEXITCODE" -ErrorAction Stop
         exit 1
     }
 } catch {
-    Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Backup failed: $_"
-    # Append module log if it exists
-    $ModuleLogFile = Join-Path $LogFolder "backup_log.txt"
-    if (Test-Path $ModuleLogFile) {
-        try {
-            $ModuleLogContent = Get-Content -Path $ModuleLogFile -ErrorAction Stop
-            if ($ModuleLogContent) {
-                Add-Content -Path $LogFile -Value "[$Timestamp] PostgresBackup module log entries:"
-                Add-Content -Path $LogFile -Value $ModuleLogContent
-            }
-            Remove-Item -Path $ModuleLogFile -Force -ErrorAction Stop
-        } catch {
-            Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Failed to process module log file '$ModuleLogFile': $_"
-        }
-    }
+    Add-Content -Path $LogFile -Value "[$Timestamp] ERROR: Backup failed: $_" -ErrorAction Stop
     exit 1
 }
