@@ -31,6 +31,12 @@
 [CmdletBinding()]
 param ()
 
+# Initialize early so functions can read it safely
+$script:IsVerbose = $false
+if ($PSBoundParameters.ContainsKey('Verbose') -or $VerbosePreference -eq 'Continue') {
+    $script:IsVerbose = $true
+}
+
 # ==============================================================================================
 # Configuration
 # ==============================================================================================
