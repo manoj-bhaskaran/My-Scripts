@@ -1,143 +1,180 @@
 <#
 .SYNOPSIS
-    Post-merge Git hook PowerShell script to pull changes and deploy PowerShell modules to versioned directories.
+    Post-commit Git hook PowerShell script to copy committed files to a staging directory and update module manifests.
 
 .DESCRIPTION
-    This script pulls the latest changes from the main branch, compares files, and deploys PowerShell modules listed in module-deployment-config.txt to versioned directories based on their version comments.
+    This script is invoked by a Git post-commit hook. It processes modified and deleted files from the latest commit, copies them to a destination folder, and updates module manifests for modified PowerShell modules in versioned directories.
 
-.PARAMETER localRepoPath
-    Path to the local Git repository.
-.PARAMETER compareDirectory
-    Path to the directory to compare files with.
-.PARAMETER targetDirectory
-    Path to the directory where newer files will be copied.
+.PARAMETER Verbose
+    Switch to enable verbose output to the console for debugging.
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 1.1
+    Version: 1.3
     Last Updated: 2025-08-16
 #>
 
+param (
+    [switch]$Verbose
+)
+
 # Define paths
-$localRepoPath = "D:\My Scripts"
-$compareDirectory = "C:\Users\manoj\Documents\Scripts"
-$targetDirectory = "C:\Users\manoj\Documents\Scripts"
+$repoPath = "D:\My Scripts"
+$destinationFolder = "C:\Users\manoj\Documents\Scripts"
 $logFile = "C:\Users\manoj\Documents\Scripts\git-post-action.log"
 
 # Function to log messages with timestamps and source identifier
-function Write-Log {
+function Write-Message {
     param (
         [string]$message,
-        [string]$source = "post-merge"
+        [string]$source = "post-commit"
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "[$timestamp][$source] $message"
     Add-Content -Path $logFile -Value $logEntry
-    Write-Host $logEntry
-}
-
-Write-Log "Script execution started."
-
-# Pull the latest changes from the main branch
-Write-Log "Pulling latest changes from the main branch..."
-Set-Location -Path $localRepoPath
-git pull origin main | ForEach-Object { Write-Log $_ }
-
-# Function to compare and copy newer files
-function Compare-And-Copy {
-    param (
-        [string]$source,
-        [string]$destination,
-        [string]$target
-    )
-
-    Get-ChildItem -Path $source -Recurse | ForEach-Object {
-        $relativePath = $_.FullName.Substring($source.Length)
-        $compareFilePath = Join-Path $destination $relativePath
-        $targetFilePath = Join-Path $target $relativePath
-
-        if (-not (Test-Path -Path $compareFilePath)) {
-            Write-Log "New file: $relativePath"
-            Copy-Item -Path $_.FullName -Destination $targetFilePath -Force
-            Write-Log "Copied new file $relativePath to $target"
-        } elseif ((Get-Item -Path $_.FullName).LastWriteTime -gt (Get-Item -Path $compareFilePath).LastWriteTime) {
-            Write-Log "Updated file: $relativePath"
-            Copy-Item -Path $_.FullName -Destination $targetFilePath -Force
-            Write-Log "Copied updated file $relativePath to $target"
-        }
+    if ($Verbose) {
+        Write-Host $logEntry
     }
 }
 
-# Compare and copy newer files
-Write-Log "Comparing files and copying newer ones to target directory..."
-Compare-And-Copy -source $localRepoPath -destination $compareDirectory -target $targetDirectory
+Write-Message "Script execution started."
 
-# Function to get module version from .psm1 file
-function Get-ModuleVersion {
+if ($Verbose) {
+    Write-Host "Verbose mode enabled"
+    Write-Host "Repository Path: $repoPath"
+    Write-Host "Destination Folder: $destinationFolder"
+}
+
+# Get list of modified files in the latest commit (excluding deletions)
+$modifiedFiles = git -C $repoPath diff-tree --no-commit-id --name-only -r HEAD --diff-filter=ACMRT
+
+if ($Verbose) {
+    Write-Host "Modified Files:" -ForegroundColor Green
+    $modifiedFiles | ForEach-Object { Write-Host $_ }
+}
+
+# Get list of deleted files in the latest commit
+$deletedFiles = git -C $repoPath diff-tree --no-commit-id --name-only -r HEAD --diff-filter=D
+
+if ($Verbose) {
+    Write-Host "Deleted Files:" -ForegroundColor Red
+    $deletedFiles | ForEach-Object { Write-Host $_ }
+}
+
+# Function to check if a file matches any ignored patterns
+function Test-Ignored {
+    param (
+        [string]$relativePath
+    )
+    $result = git -C $repoPath check-ignore "$relativePath" 2>$null
+    return -not [string]::IsNullOrWhiteSpace($result)
+}
+
+# Function to validate module content
+function Test-ModuleContent {
     param (
         [string]$ModulePath
     )
     try {
+        $moduleContent = Get-Content -Path $ModulePath -Raw
+        return $moduleContent -match '\[Parameter\(Mandatory=\$true\)]\s*\[string\]\$log_file'
+    } catch {
+        Write-Message "ERROR: Failed to read module content at ${ModulePath}: $_"
+        return $false
+    }
+}
+
+# Function to update or create module manifest
+function Update-ModuleManifest {
+    param (
+        [string]$ModulePath,
+        [string]$DestinationPath
+    )
+    try {
         $moduleContent = Get-Content -Path $ModulePath -Head 20
         $versionLine = $moduleContent | Where-Object { $_ -match "Version: (\d+\.\d+\.\d+)" }
-        return if ($versionLine) { $matches[1] } else { "1.0.0" }
-    } catch {
-        Write-Log "ERROR: Failed to read version from ${ModulePath}: $_"
-        return "1.0.0"
-    }
-}
+        $version = if ($versionLine) { $matches[1] } else { "1.0.0" }
+        $moduleName = [System.IO.Path]::GetFileNameWithoutExtension($ModulePath)
+        $versionedDestDir = Join-Path -Path (Split-Path (Split-Path $DestinationPath -Parent) -Parent) -ChildPath $version
+        $versionedModulePath = Join-Path -Path $versionedDestDir -ChildPath ([System.IO.Path]::GetFileName($DestinationPath))
+        $manifestPath = Join-Path -Path $versionedDestDir -ChildPath "$moduleName.psd1"
 
-# Deploy PowerShell modules listed in the configuration file
-Write-Log "Deploying PowerShell modules from module-deployment-config.txt..."
-$configPath = "D:\My Scripts\config\module-deployment-config.txt"
-
-if (-not (Test-Path $configPath)) {
-    Write-Log "WARNING: Module configuration file not found: $configPath. No modules to deploy."
-} else {
-    try {
-        $modules = Get-Content -Path $configPath
-        foreach ($module in $modules) {
-            if (-not $module.Trim()) { continue }
-            $moduleName, $sourcePath, $destinationPath = $module -split '\|'
-            Write-Log "Processing module: $moduleName"
-
-            if (-not (Test-Path $sourcePath)) {
-                Write-Log "ERROR: Source module file not found: $sourcePath. Skipping module."
-                continue
-            }
-
-            $version = Get-ModuleVersion -ModulePath $sourcePath
-            $versionedDestPath = Join-Path -Path (Split-Path $destinationPath -Parent) -ChildPath $version
-            $versionedModulePath = Join-Path -Path $versionedDestPath -ChildPath (Split-Path $destinationPath -Leaf)
-            $versionedManifestPath = Join-Path -Path $versionedDestPath -ChildPath "$moduleName.psd1"
-
-            if (-not (Test-Path $versionedDestPath)) {
-                New-Item -Path $versionedDestPath -ItemType Directory -Force | Out-Null
-                Write-Log "Created versioned module directory: $versionedDestPath"
-            }
-
-            Copy-Item -Path $sourcePath -Destination $versionedModulePath -Force
-            Write-Log "Successfully deployed $sourcePath to $versionedModulePath"
-
-            # Create/update manifest
-            New-ModuleManifest `
-                -Path $versionedManifestPath `
-                -ModuleVersion $version `
-                -RootModule (Split-Path $versionedModulePath -Leaf) `
-                -FunctionsToExport @('Backup-PostgresDatabase') `
-                -Author "Your Name or Team" `
-                -Description "PowerShell module for backing up PostgreSQL databases" `
-                -CompatiblePSEditions @("Desktop")
-            Write-Log "Created/updated manifest at $versionedManifestPath for version $version"
-
-            # Set permissions
-            icacls "$versionedDestPath" /grant "Users:(RX)" | Out-Null
-            Write-Log "Set read/execute permissions for Users on $versionedDestPath"
+        # Validate module content
+        if (-not (Test-ModuleContent -ModulePath $ModulePath)) {
+            Write-Message "ERROR: Module at $ModulePath does not support log_file parameter, required for version $version"
+            return
         }
-        Write-Log "Module deployment completed successfully"
+
+        Write-Message "Updating manifest for module at $ModulePath (version $version)"
+
+        if (-not (Test-Path $versionedDestDir)) {
+            New-Item -Path $versionedDestDir -ItemType Directory -Force | Out-Null
+            Write-Message "Created versioned module directory: $versionedDestDir"
+        }
+
+        Copy-Item -Path $ModulePath -Destination $versionedModulePath -Force
+        Write-Message "Copied module file to $versionedModulePath"
+
+        New-ModuleManifest `
+            -Path $manifestPath `
+            -ModuleVersion $version `
+            -RootModule ([System.IO.Path]::GetFileName($DestinationPath)) `
+            -FunctionsToExport @('Backup-PostgresDatabase') `
+            -Author "Manoj Bhaskaran" `
+            -Description "PowerShell module for backing up PostgreSQL databases" `
+            -CompatiblePSEditions @("Desktop", "Core")
+        Write-Message "Created/updated manifest at $manifestPath for version $version"
     } catch {
-        Write-Log "ERROR: Failed to deploy modules: $_"
+        Write-Message "ERROR: Failed to create/update manifest for ${ModulePath}: $_"
     }
 }
 
-Write-Log "Script execution completed."
+# Copy modified files, preserving directory structure
+$modifiedFiles | ForEach-Object {
+    $relativePath = $_
+    $sourceFilePath = Join-Path -Path $repoPath -ChildPath $relativePath
+
+    if ((Test-Path $sourceFilePath) -and !(Test-Ignored $relativePath)) {
+        Write-Message "Processing modified file: $sourceFilePath"
+        $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $relativePath
+        $destinationDir = Split-Path -Path $destinationFilePath -Parent
+
+        if (-not (Test-Path $destinationDir)) {
+            New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+        }
+
+        try {
+            Copy-Item -Path $sourceFilePath -Destination $destinationFilePath -Force
+            Write-Message "Copied file $sourceFilePath to $destinationFilePath"
+
+            # Update manifest if this is a module file
+            if ($relativePath -like "*PostgresBackup.psm1") {
+                Update-ModuleManifest -ModulePath $sourceFilePath -DestinationPath $destinationFilePath
+            }
+        } catch {
+            Write-Message ("Failed to copy {0}: {1}" -f $sourceFilePath, $_.Exception.Message)
+        }
+    } else {
+        Write-Message "File $sourceFilePath is ignored or does not exist"
+    }
+}
+
+# Delete files in the destination folder that were deleted in the commit
+$deletedFiles | ForEach-Object {
+    $destinationFilePath = Join-Path -Path $destinationFolder -ChildPath $_
+    Write-Message "Processing deleted file: $destinationFilePath"
+
+    if ((Test-Path $destinationFilePath) -and -not (Test-Ignored $_)) {
+        Write-Message "Removing file $destinationFilePath"
+        try {
+            Remove-Item -Path $destinationFilePath -Recurse -Confirm:$false -Force
+            Write-Message "Deleted file $destinationFilePath"
+        } catch {
+            Write-Message ("Failed to delete {0}: {1}" -f $destinationFilePath, $_.Exception.Message)
+        }
+    } else {
+        Write-Message "File $destinationFilePath is ignored or does not exist in the destination folder"
+    }
+}
+
+Write-Message "Script execution completed."

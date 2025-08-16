@@ -10,7 +10,7 @@
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 1.2
+    Version: 1.3
     Last Updated: 2025-08-16
 #>
 
@@ -70,6 +70,20 @@ function Test-Ignored {
     return -not [string]::IsNullOrWhiteSpace($result)
 }
 
+# Function to validate module content
+function Test-ModuleContent {
+    param (
+        [string]$ModulePath
+    )
+    try {
+        $moduleContent = Get-Content -Path $ModulePath -Raw
+        return $moduleContent -match '\[Parameter\(Mandatory=\$true\)]\s*\[string\]\$log_file'
+    } catch {
+        Write-Message "ERROR: Failed to read module content at ${ModulePath}: $_"
+        return $false
+    }
+}
+
 # Function to update or create module manifest
 function Update-ModuleManifest {
     param (
@@ -85,6 +99,12 @@ function Update-ModuleManifest {
         $versionedModulePath = Join-Path -Path $versionedDestDir -ChildPath ([System.IO.Path]::GetFileName($DestinationPath))
         $manifestPath = Join-Path -Path $versionedDestDir -ChildPath "$moduleName.psd1"
 
+        # Validate module content
+        if (-not (Test-ModuleContent -ModulePath $ModulePath)) {
+            Write-Message "ERROR: Module at $ModulePath does not support log_file parameter, required for version $version"
+            return
+        }
+
         Write-Message "Updating manifest for module at $ModulePath (version $version)"
 
         if (-not (Test-Path $versionedDestDir)) {
@@ -92,7 +112,6 @@ function Update-ModuleManifest {
             Write-Message "Created versioned module directory: $versionedDestDir"
         }
 
-        # Copy module file to versioned directory
         Copy-Item -Path $ModulePath -Destination $versionedModulePath -Force
         Write-Message "Copied module file to $versionedModulePath"
 
@@ -101,7 +120,7 @@ function Update-ModuleManifest {
             -ModuleVersion $version `
             -RootModule ([System.IO.Path]::GetFileName($DestinationPath)) `
             -FunctionsToExport @('Backup-PostgresDatabase') `
-            -Author "Your Name or Team" `
+            -Author "Manoj Bhaskaran" `
             -Description "PowerShell module for backing up PostgreSQL databases" `
             -CompatiblePSEditions @("Desktop", "Core")
         Write-Message "Created/updated manifest at $manifestPath for version $version"
