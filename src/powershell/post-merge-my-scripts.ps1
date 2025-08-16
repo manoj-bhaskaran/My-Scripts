@@ -22,12 +22,12 @@
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 2.5
+    Version: 2.6
     Last Updated: 2025-08-16
 #>
 
 [CmdletBinding()]
-param([switch]$Verbose)
+param()
 
 # ==============================================================================================
 # Configuration
@@ -53,7 +53,9 @@ function Write-Message {
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $line = "[{0}][{1}] {2}" -f $ts, $Source, $Message
     try { Add-Content -Path $script:LogFile -Value $line -Encoding utf8 -ErrorAction Stop } catch { Write-Host $line }
-    if ($PSBoundParameters.ContainsKey('Verbose') -or $Verbose -or $ToHost) { Write-Host $line }
+    if ($script:IsVerbose -or $ToHost) {
+        Write-Host $line
+    }
 }
 
 function New-DirectoryIfMissing {
@@ -295,7 +297,7 @@ function Deploy-ModuleFromConfig {
 
 Write-Message "post-merge script execution started."
 
-if ($Verbose) {
+if ($script:IsVerbose) {
     Write-Host "Verbose mode enabled"
     Write-Host ("Repository Path: {0}" -f $script:RepoPath)
     Write-Host ("Destination Folder (staging mirror): {0}" -f $script:DestinationFolder)
