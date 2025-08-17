@@ -22,44 +22,12 @@ This satisfies pg_backup_common.ps1 while keeping actual auth on .pgpass.
       - PostgresBackup module deployed/available on PSModulePath
       - .pgpass (or equivalent) if running with empty password
     Author: Manoj Bhaskaran
-    Last Updated: 2025-08-16
+    Last Updated: 2025-08-17
 #>
-[CmdletBinding()]
-param(
-    # Override defaults if needed when calling from Task Scheduler
-    [string]$Database       = 'job_scheduler',
-    [string]$BackupRoot     = 'D:\pgbackup\job_scheduler',          # where .backup files go
-    [string]$LogsRoot       = 'D:\pgbackup\job_scheduler\logs',      # where .log files go
-    [string]$UserName       = 'backup_user',                         # PG user
-    [int]   $RetentionDays  = 90,
-    [int]   $MinBackups     = 3,
-
-    # If you want to force a specific PostgresBackup version, set this (e.g., '1.0.4')
-    [string]$ModuleVersion
-)
 # === Preflight & Hardening (v1.6) ===
 $ErrorActionPreference = 'Stop'
 
 # Rich diagnostics on any unhandled terminating error
-trap {
-    try {
-        $e = $_.Exception
-        $msg = @(
-            "Backup FAILED.",
-            "Message: $($_.ToString())",
-            "Type: $($e.GetType().FullName)",
-            ("HResult: " + ('0x{0:X8}' -f $e.HResult)),
-            ("Inner: " + ($e.InnerException?.Message)),
-            ("ScriptStack: " + $_.ScriptStackTrace),
-            ("StackTrace: " + $e.StackTrace)
-        ) -join "`r`n"
-        Write-Error $msg
-    } catch {
-        Write-Error ("Backup FAILED. " + $_.ToString())
-    }
-    exit 2
-}
-
 # Resolve .pgpass and enforce explicit use via PGPASSFILE
 $PgPass = if ($env:PGPASSFILE) { $env:PGPASSFILE } else { Join-Path $env:APPDATA 'postgresql\pgpass.conf' }
 
@@ -83,6 +51,21 @@ try {
     Write-Warning "Could not inspect ACLs for .pgpass at '$PgPass': $($_.Exception.Message)"
 }
 # === End Preflight ===
+function Invoke-BackupMain {
+
+[CmdletBinding()]
+param(
+    # Override defaults if needed when calling from Task Scheduler
+    [string]$Database       = 'job_scheduler',
+    [string]$BackupRoot     = 'D:\pgbackup\job_scheduler',          # where .backup files go
+    [string]$LogsRoot       = 'D:\pgbackup\job_scheduler\logs',      # where .log files go
+    [string]$UserName       = 'backup_user',                         # PG user
+    [int]   $RetentionDays  = 90,
+    [int]   $MinBackups     = 3,
+
+    # If you want to force a specific PostgresBackup version, set this (e.g., '1.0.4')
+    [string]$ModuleVersion
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -157,5 +140,25 @@ try {
 } catch {
     # The module also logs failures to $LogFile; we still surface a clear status/exit code here.
     Write-HostInfo "ERROR: Backup failed: $_"
+    exit 1
+}
+}
+
+try {
+    Invoke-BackupMain
+    exit 0
+}
+catch {
+    $e = $_.Exception
+    $msg = @(
+        "Backup FAILED.",
+        "Message: $($_.ToString())",
+        "Type: $($e.GetType().FullName)",
+        ("HResult: " + ('0x{0:X8}' -f $e.HResult)),
+        ("Inner: " + ($e.InnerException?.Message)),
+        ("ScriptStack: " + $_.ScriptStackTrace),
+        ("StackTrace: " + $e.StackTrace)
+    ) -join "`r`n"
+    Write-Error $msg
     exit 1
 }
