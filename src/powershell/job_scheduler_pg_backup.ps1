@@ -1,4 +1,6 @@
 <#
+ .VERSION
+     1.6
 .SYNOPSIS
     Runs a PostgreSQL backup for the job_scheduler database via the PostgresBackup module.
 
@@ -13,16 +15,15 @@
 
 .NOTES
 
-    Authentication uses .pgpass for backup_user. A dummy invalid password is set via:
-        $DummyPassword = ConvertTo-SecureString "invalid" -AsPlainText -Force
-    This satisfies pg_backup_common.ps1 while keeping actual auth on .pgpass.
+Authentication uses .pgpass for backup_user. A dummy invalid password is set via:
+  $DummyPassword = ConvertTo-SecureString "invalid" -AsPlainText -Force
+This satisfies pg_backup_common.ps1 while keeping actual auth on .pgpass.
     Requires:
       - PostgresBackup module deployed/available on PSModulePath
       - .pgpass (or equivalent) if running with empty password
     Author: Manoj Bhaskaran
-    Last Updated: 2025-08-17
+    Last Updated: 2025-08-16
 #>
-
 [CmdletBinding()]
 param(
     # Override defaults if needed when calling from Task Scheduler
@@ -36,6 +37,52 @@ param(
     # If you want to force a specific PostgresBackup version, set this (e.g., '1.0.4')
     [string]$ModuleVersion
 )
+# === Preflight & Hardening (v1.6) ===
+$ErrorActionPreference = 'Stop'
+
+# Rich diagnostics on any unhandled terminating error
+trap {
+    try {
+        $e = $_.Exception
+        $msg = @(
+            "Backup FAILED.",
+            "Message: $($_.ToString())",
+            "Type: $($e.GetType().FullName)",
+            ("HResult: " + ('0x{0:X8}' -f $e.HResult)),
+            ("Inner: " + ($e.InnerException?.Message)),
+            ("ScriptStack: " + $_.ScriptStackTrace),
+            ("StackTrace: " + $e.StackTrace)
+        ) -join "`r`n"
+        Write-Error $msg
+    } catch {
+        Write-Error ("Backup FAILED. " + $_.ToString())
+    }
+    exit 2
+}
+
+# Resolve .pgpass and enforce explicit use via PGPASSFILE
+$PgPass = if ($env:PGPASSFILE) { $env:PGPASSFILE } else { Join-Path $env:APPDATA 'postgresql\pgpass.conf' }
+
+if (-not (Test-Path -LiteralPath $PgPass)) {
+    throw "Missing .pgpass at '$PgPass'. Create it or set PGPASSFILE to a valid path."
+}
+
+# Set PGPASSFILE explicitly so libpq uses the intended file
+$env:PGPASSFILE = $PgPass
+
+# ACL sanity warning (Windows): discourage wide-readable ACLs
+try {
+    $acl = Get-Acl -LiteralPath $PgPass
+    $bad = $acl.Access | Where-Object {
+        $_.IdentityReference -match 'Everyone|Users|Authenticated Users'
+    }
+    if ($bad) {
+        Write-Warning ("Suspicious ACLs on .pgpass: " + (($bad | Select-Object -ExpandProperty IdentityReference | Select-Object -Unique) -join ', ') + ". Restrict access to the current user for better security.")
+    }
+} catch {
+    Write-Warning "Could not inspect ACLs for .pgpass at '$PgPass': $($_.Exception.Message)"
+}
+# === End Preflight ===
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
