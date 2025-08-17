@@ -1,4 +1,6 @@
 <#
+ .VERSION
+     1.8
 .SYNOPSIS
     Runs a PostgreSQL backup for the job_scheduler database via the PostgresBackup module.
 
@@ -12,12 +14,43 @@
     - Returns exit code 0 on success, 1 on failure (Task Scheduler friendly).
 
 .NOTES
+
+    Authentication uses .pgpass for backup_user. ass.
     Requires:
       - PostgresBackup module deployed/available on PSModulePath
       - .pgpass (or equivalent) if running with empty password
     Author: Manoj Bhaskaran
-    Last Updated: 2025-08-16
+    Last Updated: 2025-08-17
 #>
+
+# === Preflight & Hardening (v1.6) ===
+$ErrorActionPreference = 'Stop'
+
+# Resolve .pgpass and enforce explicit use via PGPASSFILE
+$PgPass = if ($env:PGPASSFILE) { $env:PGPASSFILE } else { Join-Path $env:APPDATA 'postgresql\pgpass.conf' }
+
+if (-not (Test-Path -LiteralPath $PgPass)) {
+    throw "Missing .pgpass at '$PgPass'. Create it or set PGPASSFILE to a valid path."
+}
+
+# Set PGPASSFILE explicitly so libpq uses the intended file
+$env:PGPASSFILE = $PgPass
+
+# ACL sanity warning (Windows): discourage wide-readable ACLs
+try {
+    $acl = Get-Acl -LiteralPath $PgPass
+    $bad = $acl.Access | Where-Object {
+        $_.IdentityReference -match 'Everyone|Users|Authenticated Users'
+    }
+    if ($bad) {
+        Write-Warning ("Suspicious ACLs on .pgpass: " + (($bad | Select-Object -ExpandProperty IdentityReference | Select-Object -Unique) -join ', ') + ". Restrict access to the current user for better security.")
+    }
+} catch {
+    Write-Warning "Could not inspect ACLs for .pgpass at '$PgPass': $($_.Exception.Message)"
+}
+# === End Preflight ===
+
+function Invoke-BackupMain {
 
 [CmdletBinding()]
 param(
@@ -84,10 +117,6 @@ try {
     exit 1
 }
 
-# ----- Build password (empty → .pgpass auth) -----
-# Leave empty to rely on .pgpass; change here if you want to pass a real password.
-$SecurePwd = ConvertTo-SecureString '' -AsPlainText -Force
-
 # ----- Invoke backup -----
 try {
     Write-HostInfo "Starting backup via PostgresBackup::Backup-PostgresDatabase"
@@ -96,7 +125,6 @@ try {
         -backup_folder   $BackupRoot `
         -log_file        $LogFile `
         -user            $UserName `
-        -password        $SecurePwd `
         -retention_days  $RetentionDays `
         -min_backups     $MinBackups
 
@@ -106,5 +134,28 @@ try {
 } catch {
     # The module also logs failures to $LogFile; we still surface a clear status/exit code here.
     Write-HostInfo "ERROR: Backup failed: $_"
+    exit 1
+}
+}
+
+try {
+    Invoke-BackupMain
+    exit 0
+}
+catch {
+    $e = $_.Exception
+    $innerMsg = ''
+    if ($e -and $e.InnerException) { $innerMsg = $e.InnerException.Message }
+
+    $msg = @(
+        "Backup FAILED.",
+        "Message: $($_.ToString())",
+        "Type: $($e.GetType().FullName)",
+        ("HResult: " + ('0x{0:X8}' -f $e.HResult)),
+        ("Inner: " + $innerMsg),
+        ("ScriptStack: " + $_.ScriptStackTrace),
+        ("StackTrace: " + $e.StackTrace)
+    ) -join "`r`n"
+    Write-Error $msg
     exit 1
 }
