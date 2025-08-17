@@ -2,86 +2,98 @@ name: Auto Label Inheritance from Parent Issue
 
 on:
   issues:
-    types: [opened]
+    types: [opened, edited, reopened]
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   inherit-labels:
     runs-on: ubuntu-latest
+    env:
+      # Use GITHUB_TOKEN by default; optionally swap to a PAT stored as GH_TOKEN
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO_OWNER: ${{ github.repository_owner }}
+      REPO_NAME: ${{ github.event.repository.name }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+
     steps:
-      - name: Install jq
-        run: sudo apt-get install -y jq
-
-      - name: Set up environment
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+      - name: Preflight
         run: |
-          echo "GH_TOKEN=$GH_TOKEN" >> $GITHUB_ENV
+          set -euo pipefail
+          gh --version
+          echo "Repo: ${REPO_OWNER}/${REPO_NAME}"
+          echo "Issue: #${ISSUE_NUMBER}"
+          # Confirm CLI sees a token (no secrets printed)
+          gh auth status
 
-      - name: Get parent issue and inherit labels
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          REPO_NAME: ${{ github.event.repository.name }}
-          REPO_OWNER: ${{ github.event.repository.owner.login }}
+      - name: Find parent and inherit labels
         run: |
-          echo "Fetching internal ID of issue #$ISSUE_NUMBER..."
+          set -euo pipefail
 
-          ISSUE_ID=$(gh api graphql -f owner="$REPO_OWNER" -f repository="$REPO_NAME" -F number="$ISSUE_NUMBER" -f query='
-            query ($owner: String!, $repository: String!, $number: Int!) {
-              repository(owner: $owner, name: $repository) {
-                issue(number: $number) {
-                  id
+          echo "Fetching parent for issue #$ISSUE_NUMBER ..."
+          PARENT_NUMBER=$(gh api graphql \
+            -H "GraphQL-Features: sub_issues,issue_types" \
+            -f owner="$REPO_OWNER" -f repo="$REPO_NAME" -F number="$ISSUE_NUMBER" \
+            -f query='
+              query ($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  issue(number: $number) {
+                    parent { number }
+                  }
                 }
-              }
-            }' --jq '.data.repository.issue.id')
+              }' \
+            --jq '.data.repository.issue.parent.number // empty' || true)
 
-          if [ -z "$ISSUE_ID" ]; then
-            echo "❌ Failed to get issue ID for #$ISSUE_NUMBER"
+          if [ -z "$PARENT_NUMBER" ]; then
+            echo "ℹ️ No parent for issue #$ISSUE_NUMBER; nothing to inherit."
+            exit 0
+          fi
+
+          echo "🔗 Parent detected: #$PARENT_NUMBER"
+          echo "Fetching labels from parent #$PARENT_NUMBER ..."
+
+          LABELS_JSON=$(gh api graphql \
+            -H "GraphQL-Features: sub_issues,issue_types" \
+            -f owner="$REPO_OWNER" -f repo="$REPO_NAME" -F number="$PARENT_NUMBER" \
+            -f query='
+              query ($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  issue(number: $number) {
+                    labels(first: 100) { nodes { name } }
+                  }
+                }
+              }' \
+            --jq '[.data.repository.issue.labels.nodes[].name]')
+
+          echo "🧾 Labels to inherit: $LABELS_JSON"
+
+          if [ "$LABELS_JSON" = "[]" ]; then
+            echo "ℹ️ Parent has no labels; nothing to inherit."
+            exit 0
+          fi
+
+          echo "Applying labels to #$ISSUE_NUMBER ..."
+          http_status=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+            -X POST -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues/${ISSUE_NUMBER}/labels" \
+            -d "{\"labels\": ${LABELS_JSON}}")
+
+          if [ "$http_status" != "200" ] && [ "$http_status" != "201" ]; then
+            echo "❌ Failed to apply labels. HTTP $http_status"
+            cat /tmp/resp.json || true
             exit 1
           fi
 
-          echo "🔍 Issue node ID: $ISSUE_ID"
+          echo "✅ Applied labels to #$ISSUE_NUMBER: $LABELS_JSON"
 
-          echo "Querying for parent issue using GraphQL preview headers..."
-          PARENT_JSON=$(gh api graphql \
-            -H "GraphQL-Features: sub_issues,issue_types" \
-            -f issueId="$ISSUE_ID" \
-            -f query='
-              query($issueId: ID!) {
-                node(id: $issueId) {
-                  ... on Issue {
-                    parent {
-                      number
-                      labels(first: 20) {
-                        nodes {
-                          name
-                        }
-                      }
-                    }
-                  }
-                }
-              }')
-
-          echo "$PARENT_JSON" | tee parent.json
-
-          PARENT_NUMBER=$(echo "$PARENT_JSON" | jq -r '.data.node.parent.number')
-          if [ "$PARENT_NUMBER" = "null" ] || [ -z "$PARENT_NUMBER" ]; then
-            echo "⚠️ No parent issue found. Skipping label inheritance."
-            exit 0
-          fi
-
-          LABELS=$(echo "$PARENT_JSON" | jq -r '.data.node.parent.labels.nodes[].name' | jq -R . | jq -s .)
-          if [ "$LABELS" = "[]" ]; then
-            echo "ℹ️ Parent issue has no labels. Nothing to inherit."
-            exit 0
-          fi
-
-          echo "✅ Inheriting labels from parent issue #$PARENT_NUMBER: $LABELS"
-
-          curl -X POST -H "Authorization: token $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues/${ISSUE_NUMBER}/labels \
-            -d "{\"labels\": $LABELS}"
+      - name: 401 Diagnostics (runs only on failure)
+        if: failure()
+        run: |
+          echo "Troubleshooting 401 Bad credentials:"
+          echo "1) Ensure workflow has: permissions: issues: write"
+          echo "2) Ensure env.GH_TOKEN is set (using GITHUB_TOKEN or a PAT in secrets.GH_TOKEN)"
+          echo "3) If using a PAT, it needs scopes: repo, issues (and read:org if needed)"
+          echo "4) GraphQL header required: GraphQL-Features: sub_issues,issue_types"
