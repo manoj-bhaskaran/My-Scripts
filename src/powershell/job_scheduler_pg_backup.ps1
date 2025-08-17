@@ -15,9 +15,7 @@
 
 .NOTES
 
-Authentication uses .pgpass for backup_user. A dummy invalid password is set via:
-  $DummyPassword = ConvertTo-SecureString "invalid" -AsPlainText -Force
-This satisfies pg_backup_common.ps1 while keeping actual auth on .pgpass.
+    Authentication uses .pgpass for backup_user. ass.
     Requires:
       - PostgresBackup module deployed/available on PSModulePath
       - .pgpass (or equivalent) if running with empty password
