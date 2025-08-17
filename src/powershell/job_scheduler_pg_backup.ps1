@@ -12,6 +12,10 @@
     - Returns exit code 0 on success, 1 on failure (Task Scheduler friendly).
 
 .NOTES
+
+    Authentication uses .pgpass for backup_user. A dummy invalid password is set via:
+        $DummyPassword = ConvertTo-SecureString "invalid" -AsPlainText -Force
+    This satisfies pg_backup_common.ps1 while keeping actual auth on .pgpass.
     Requires:
       - PostgresBackup module deployed/available on PSModulePath
       - .pgpass (or equivalent) if running with empty password
@@ -86,7 +90,7 @@ try {
 
 # ----- Build password (empty → .pgpass auth) -----
 # Leave empty to rely on .pgpass; change here if you want to pass a real password.
-$SecurePwd = ConvertTo-SecureString '' -AsPlainText -Force
+$SecurePwd = ConvertTo-SecureString "invalid" -AsPlainText -Force
 
 # ----- Invoke backup -----
 try {
