@@ -20,7 +20,7 @@
       - PostgresBackup module deployed/available on PSModulePath
       - .pgpass (or equivalent) if running with empty password
     Author: Manoj Bhaskaran
-    Last Updated: 2025-08-16
+    Last Updated: 2025-08-17
 #>
 
 [CmdletBinding()]
