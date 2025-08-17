@@ -1,5 +1,5 @@
 <#PSScriptInfo
-.VERSION 1.2
+.VERSION 1.2.1
 #>
 
 <#
@@ -35,7 +35,7 @@
     If specified with -Recurse, deletes empty directories after file deletion (deepest-first).
 
 .PARAMETER PassThru
-    If specified, outputs a summary object with Candidates, Deleted, and Failed counts.
+    If specified, outputs a summary object with counts and ExitCode.
 
 .EXAMPLE
     # Dry run with WhatIf
@@ -56,14 +56,14 @@
     Exit codes:
       0 = Success (no failures)
       1 = Fatal script error
-      2 = Completed with file-deletion failures (see log)
+      2 = Completed with deletion failures (file and/or folder); see log
 
     Long paths:
       - PowerShell 7+ is long-path aware on modern Windows.
       - This script auto-applies \\?\ on Windows PowerShell 5.1 to avoid MAX_PATH issues.
 
     Logging:
-      - Appends UTF-8 lines with timestamps and INFO/ERROR levels.
+      - Appends UTF-8 lines with timestamps and INFO/ERROR/WARN/DEBUG.
       - Verifies deletion with Test-Path and records the result.
 #>
 
@@ -100,7 +100,7 @@ param(
 #region --- Setup & Utilities ---
 
 # Script version for logs (canonical version lives in PSScriptInfo header)
-$Script:Version = '1.2'
+$Script:Version = '1.2.1'
 
 # Detect legacy engine (Windows PowerShell 5.1) vs PowerShell 7+
 $script:IsLegacyPS = $PSVersionTable.PSVersion.Major -lt 6
@@ -214,60 +214,58 @@ try {
         $candidates = $candidates | Where-Object { $ExcludeExtensions -notcontains $_.Extension.ToLowerInvariant() }
     }
 
-    $total = ($candidates | Measure-Object).Count
+    $total   = ($candidates | Measure-Object).Count
+    $deleted = 0
+    $failed  = 0
+
+    $removedDirs = 0
+    $failedDirs  = 0
+
+    $inWhatIf = $WhatIfPreference -eq $true
+
     Write-Log ("Found {0} candidate file(s) older than {1} days (cutoff: {2})" -f $total, $Days, $cutoff.ToString('yyyy-MM-dd HH:mm:ss'))
 
     if ($total -eq 0) {
-        Write-Log "No files to delete. Exiting."
-        Write-Log "===== $scriptName ended ====="
-        if ($PassThru) {
-            [pscustomobject]@{ Candidates = 0; Deleted = 0; Failed = 0 }
-        }
-        exit 0
-    }
+        Write-Log "No files to delete."
+    } else {
+        foreach ($file in $candidates) {
+            $display = $file.FullName
+            $msg = "Deleting: {0} | Last Modified: {1}" -f $display, $file.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
+            Write-Log $msg
 
-    $deleted = 0
-    $failed  = 0
-    $inWhatIf = $WhatIfPreference -eq $true
-
-    foreach ($file in $candidates) {
-        $display = $file.FullName
-        $msg = "Deleting: {0} | Last Modified: {1}" -f $display, $file.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
-        Write-Log $msg
-
-        # Respect -WhatIf explicitly to avoid false "failures"
-        if ($inWhatIf) {
-            Write-Log ("WhatIf: Would delete: {0}" -f $display) 'DEBUG'
-            continue
-        }
-
-        if ($PSCmdlet.ShouldProcess($display, 'Remove file')) {
-            # Prepare a literal path that is safe for both PS 5.1 and 7+
-            $literalForOps = Get-ExtendedLiteralPath -Path $file.FullName
-
-            try {
-                # Optional: clear ReadOnly so -Force isn't the only lever
-                if ($file.Attributes -band [IO.FileAttributes]::ReadOnly) {
-                    try {
-                        Set-ItemProperty -LiteralPath $literalForOps -Name Attributes -Value ([IO.FileAttributes]::Normal) -ErrorAction SilentlyContinue
-                    } catch { }
-                }
-
-                # Perform deletion with hard error on failure
-                Remove-Item -LiteralPath $literalForOps -Force -ErrorAction Stop
-
-                # Verify removal
-                if (Test-Path -LiteralPath $literalForOps) {
-                    Write-Log ("FAILED (still exists after delete): {0}" -f $display) 'ERROR'
-                    $failed++
-                } else {
-                    Write-Log ("Deleted OK: {0}" -f $display)
-                    $deleted++
-                }
+            if ($inWhatIf) {
+                Write-Log ("WhatIf: Would delete: {0}" -f $display) 'DEBUG'
+                continue
             }
-            catch {
-                Write-Log ("FAILED: {0}`n  Error: {1}" -f $display, $_.Exception.Message) 'ERROR'
-                $failed++
+
+            if ($PSCmdlet.ShouldProcess($display, 'Remove file')) {
+                # Prepare a literal path that is safe for both PS 5.1 and 7+
+                $literalForOps = Get-ExtendedLiteralPath -Path $file.FullName
+
+                try {
+                    # Optional: clear ReadOnly so -Force isn't the only lever
+                    if ($file.Attributes -band [IO.FileAttributes]::ReadOnly) {
+                        try {
+                            Set-ItemProperty -LiteralPath $literalForOps -Name Attributes -Value ([IO.FileAttributes]::Normal) -ErrorAction SilentlyContinue
+                        } catch { }
+                    }
+
+                    # Perform deletion with hard error on failure
+                    Remove-Item -LiteralPath $literalForOps -Force -ErrorAction Stop
+
+                    # Verify removal
+                    if (Test-Path -LiteralPath $literalForOps) {
+                        Write-Log ("FAILED (still exists after delete): {0}" -f $display) 'ERROR'
+                        $failed++
+                    } else {
+                        Write-Log ("Deleted OK: {0}" -f $display)
+                        $deleted++
+                    }
+                }
+                catch {
+                    Write-Log ("FAILED: {0}`n  Error: {1}" -f $display, $_.Exception.Message) 'ERROR'
+                    $failed++
+                }
             }
         }
     }
@@ -287,39 +285,52 @@ try {
                 continue
             }
 
-            # Determine emptiness via .NET for reliability with long paths
-            $isEmpty = $false
+            # Determine emptiness via enumerator; log WARN on enumeration errors
+            $dirIsEmpty = $false
             try {
-                $isEmpty = -not ([System.IO.Directory]::EnumerateFileSystemEntries($dirPath) | Select-Object -First 1)
-            } catch {
-                $isEmpty = $false
+                $e = [System.IO.Directory]::EnumerateFileSystemEntries($dirPath).GetEnumerator()
+                $dirIsEmpty = -not $e.MoveNext()
+            }
+            catch {
+                Write-Log ("WARN: Unable to enumerate directory: {0}`n  Error: {1}" -f $dirDisplay, $_.Exception.Message) 'WARN'
+                $failedDirs++
+                $dirIsEmpty = $false
             }
 
-            if ($isEmpty -and $PSCmdlet.ShouldProcess($dirDisplay, 'Remove empty directory')) {
+            if ($dirIsEmpty -and $PSCmdlet.ShouldProcess($dirDisplay, 'Remove empty directory')) {
                 try {
                     Remove-Item -LiteralPath $dirPath -Force -ErrorAction Stop
                     Write-Log ("Removed empty folder: {0}" -f $dirDisplay)
+                    $removedDirs++
                 }
                 catch {
                     Write-Log ("FAILED to remove folder: {0}`n  Error: {1}" -f $dirDisplay, $_.Exception.Message) 'ERROR'
+                    $failedDirs++
                 }
             }
         }
     }
 
-    # Summary + optional PassThru object
-    Write-Log ("Summary: Candidates={0}, Deleted={1}, Failed={2}" -f $total, $deleted, $failed)
+    # Final summary + unified PassThru object and exit code
+    Write-Log ("Summary: Candidates={0}, Deleted={1}, Failed={2}, EmptyFoldersRemoved={3}, EmptyFolderFailures={4}" -f `
+        $total, $deleted, $failed, $removedDirs, $failedDirs)
     Write-Log "===== $scriptName ended ====="
+
+    $exitCode = if ( ($failed -gt 0) -or ($failedDirs -gt 0) ) { 2 } else { 0 }
 
     if ($PassThru) {
         [pscustomobject]@{
-            Candidates = $total
-            Deleted    = $deleted
-            Failed     = $failed
+            Version              = $Script:Version
+            Candidates           = $total
+            Deleted              = $deleted
+            Failed               = $failed
+            EmptyFoldersRemoved  = $removedDirs
+            EmptyFolderFailures  = $failedDirs
+            ExitCode             = $exitCode
         }
     }
 
-    if ($failed -gt 0) { exit 2 } else { exit 0 }
+    exit $exitCode
 }
 catch {
     Write-Log ("FATAL: {0}" -f $_.Exception.ToString()) 'ERROR'
