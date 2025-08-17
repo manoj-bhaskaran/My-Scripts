@@ -1,6 +1,6 @@
 <#
  .VERSION
-     1.6
+     1.7
 .SYNOPSIS
     Runs a PostgreSQL backup for the job_scheduler database via the PostgresBackup module.
 
@@ -24,10 +24,10 @@ This satisfies pg_backup_common.ps1 while keeping actual auth on .pgpass.
     Author: Manoj Bhaskaran
     Last Updated: 2025-08-17
 #>
+
 # === Preflight & Hardening (v1.6) ===
 $ErrorActionPreference = 'Stop'
 
-# Rich diagnostics on any unhandled terminating error
 # Resolve .pgpass and enforce explicit use via PGPASSFILE
 $PgPass = if ($env:PGPASSFILE) { $env:PGPASSFILE } else { Join-Path $env:APPDATA 'postgresql\pgpass.conf' }
 
@@ -51,6 +51,7 @@ try {
     Write-Warning "Could not inspect ACLs for .pgpass at '$PgPass': $($_.Exception.Message)"
 }
 # === End Preflight ===
+
 function Invoke-BackupMain {
 
 [CmdletBinding()]
@@ -150,12 +151,15 @@ try {
 }
 catch {
     $e = $_.Exception
+    $innerMsg = ''
+    if ($e -and $e.InnerException) { $innerMsg = $e.InnerException.Message }
+
     $msg = @(
         "Backup FAILED.",
         "Message: $($_.ToString())",
         "Type: $($e.GetType().FullName)",
         ("HResult: " + ('0x{0:X8}' -f $e.HResult)),
-        ("Inner: " + ($e.InnerException?.Message)),
+        ("Inner: " + $innerMsg),
         ("ScriptStack: " + $_.ScriptStackTrace),
         ("StackTrace: " + $e.StackTrace)
     ) -join "`r`n"
