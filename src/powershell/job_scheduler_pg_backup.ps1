@@ -1,6 +1,6 @@
 <#
  .VERSION
-     1.7
+     1.8
 .SYNOPSIS
     Runs a PostgreSQL backup for the job_scheduler database via the PostgresBackup module.
 
@@ -119,10 +119,6 @@ try {
     exit 1
 }
 
-# ----- Build password (empty → .pgpass auth) -----
-# Leave empty to rely on .pgpass; change here if you want to pass a real password.
-$SecurePwd = ConvertTo-SecureString "invalid" -AsPlainText -Force
-
 # ----- Invoke backup -----
 try {
     Write-HostInfo "Starting backup via PostgresBackup::Backup-PostgresDatabase"
@@ -131,7 +127,6 @@ try {
         -backup_folder   $BackupRoot `
         -log_file        $LogFile `
         -user            $UserName `
-        -password        $SecurePwd `
         -retention_days  $RetentionDays `
         -min_backups     $MinBackups
 
