@@ -1,10 +1,19 @@
 <#
 .SYNOPSIS
-    Fast Android → PC transfer via ADB (pull or TAR stream).
+    Fast Android → PC transfer via ADB (pull or TAR stream) with progress.
 
 .VERSION
     1.1.0
-    
+
+.CHANGELOG
+    1.1.0
+      - Added phone-side tar check (Test-PhoneTar).
+      - TAR mode: precompute remote size, show Write-Progress, log final TAR size.
+      - Pull mode: optional approximate progress via destination size polling (-ShowProgress).
+      - Minor robustness and messaging.
+    1.0.0
+      - Initial version with pull and tar modes, ADB and PC tar checks, help.
+
 .DESCRIPTION
     Copies files/folders from an Android phone (e.g., Samsung S23) to a Windows PC
     using Android Debug Bridge (ADB). This avoids MTP overhead and is much faster
@@ -44,11 +53,16 @@
       pull = adb pull <PhonePath> <Dest>
       tar  = adb exec-out tar -C <parent> -cf - <leaf>  | write .tar on PC, then extract
 
-.EXAMPLE
-    PS> .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/DCIM/Camera" -Dest "D:\Phone\Camera" -Mode tar
+.PARAMETER ShowProgress
+    If set:
+      - tar  : shows true size-based progress (bytes).
+      - pull : shows approximate progress by polling dest folder size (adds some overhead).
 
-    Streams the Camera folder as a single TAR to D:\Phone\Camera\android_YYYYMMDD_HHMMSS.tar
-    and then extracts it there.
+.EXAMPLE
+    PS> .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/DCIM/Camera" -Dest "D:\Phone\Camera" -Mode tar -ShowProgress
+
+    Streams the Camera folder as a single TAR to D:\Phone\Camera\android_YYYYMMDD_HHMMSS.tar,
+    shows progress, then extracts it there.
 
 .EXAMPLE
     PS> .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/Download" -Dest "C:\Users\me\Downloads\Phone" -Mode pull
@@ -122,7 +136,10 @@ param(
 
   [Parameter(Mandatory = $false)]
   [ValidateSet('pull','tar')]
-  [string]$Mode = 'tar'
+  [string]$Mode = 'tar',
+
+  [Parameter(Mandatory = $false)]
+  [switch]$ShowProgress
 )
 
 $ErrorActionPreference = 'Stop'
@@ -138,7 +155,7 @@ function Test-Adb {
   if (-not $adb) { throw "adb.exe not found. Install Platform-Tools and add to PATH." }
 }
 
-function Confirm-Adb {
+function Confirm-Device {
   <#
   .SYNOPSIS
       Confirms an authorized device is connected.
@@ -151,19 +168,74 @@ function Confirm-Adb {
   }
 }
 
-function Test-Tar {
+function Test-HostTar {
   <#
   .SYNOPSIS
-      Verifies tar.exe is available when Mode = tar.
+      Verifies tar.exe is available on Windows when Mode = tar.
   .OUTPUTS
       None. Throws if not found.
   #>
   if ($Mode -eq 'tar') {
     $tar = Get-Command tar -ErrorAction SilentlyContinue
     if (-not $tar) {
-      throw "tar.exe not found. Use Mode 'pull' or install tar and add it to PATH."
+      throw "Windows tar.exe not found. Use -Mode pull or install tar and add to PATH."
     }
   }
+}
+
+function Test-PhoneTar {
+  <#
+  .SYNOPSIS
+      Verifies phone-side tar (tar/toybox/busybox) is available when Mode = tar.
+  .OUTPUTS
+      None. Throws if not found.
+  #>
+  if ($Mode -ne 'tar') { return }
+  $cmd = 'sh -lc ''(tar --version >/dev/null 2>&1) || (toybox tar --help >/dev/null 2>&1) || (busybox tar --help >/dev/null 2>&1); echo $?'''
+  $rc = (adb shell $cmd).Trim()
+  if ($rc -ne '0') {
+    throw "Phone-side tar not found. Switch to -Mode pull."
+  }
+}
+
+function Get-RemoteSize {
+  <#
+  .SYNOPSIS
+      Returns total bytes for $PhonePath (best-effort, for progress).
+  .OUTPUTS
+      [Int64] total bytes (0 if unknown).
+  #>
+  param([string]$RemoteParent, [string]$RemoteLeaf)
+
+  $path = "$RemoteParent/$RemoteLeaf"
+  $cmd = @"
+sh -lc '
+(du -sb "$path" 2>/dev/null | awk "{print \$1}") ||
+(toybox du -b "$path" 2>/dev/null | awk "{print \$1}") ||
+(busybox du -s "$path" 2>/dev/null | awk "{print \$1*1024}") ||
+(find "$path" -type f -print0 2>/dev/null | xargs -0 stat -c %s 2>/dev/null | awk "{s+=\$1} END{print s}") ||
+echo 0
+'
+"@
+  try {
+    $bytes = [int64]((adb shell $cmd).Trim())
+    if ($bytes -lt 0) { return 0 } else { return $bytes }
+  } catch { return 0 }
+}
+
+function Get-LocalDirSize {
+  <#
+  .SYNOPSIS
+      Returns total bytes for a local directory (approx progress for pull).
+  .OUTPUTS
+      [Int64] total bytes (0 if unknown).
+  #>
+  param([string]$Path)
+  try {
+    $sum = (Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
+            Measure-Object -Property Length -Sum).Sum
+    return ([int64]($sum ? $sum : 0))
+  } catch { return 0 }
 }
 
 Write-Verbose "Destination: $Dest"
@@ -171,30 +243,81 @@ New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 
 # Pre-checks
 Test-Adb
-Confirm-Adb
-Test-Tar
+Confirm-Device
+Test-HostTar
+Test-PhoneTar
 
 if ($Mode -eq 'pull') {
   Write-Host "ADB pull `"$PhonePath`" → `"$Dest`""
-  adb pull "$PhonePath" "$Dest"
+  if ($ShowProgress) {
+    # Attempt an approximate progress bar
+    $parent = ([System.IO.Path]::GetDirectoryName($PhonePath.Replace('/','\'))).Replace('\','/')
+    if ([string]::IsNullOrEmpty($parent)) { $parent = "/" }
+    $leaf   = ([System.IO.Path]::GetFileName($PhonePath))
+    $totalBytes = Get-RemoteSize -RemoteParent $parent -RemoteLeaf $leaf
+
+    $destBefore = Get-LocalDirSize -Path $Dest
+
+    $proc = Start-Process adb -ArgumentList @('pull',"$PhonePath","$Dest") -NoNewWindow -PassThru
+    while (-not $proc.HasExited) {
+      Start-Sleep -Seconds 2
+      $cur = Get-LocalDirSize -Path $Dest
+      $written = [math]::Max(0, $cur - $destBefore)
+      if ($totalBytes -gt 0) {
+        $pct = [int](($written * 100.0) / $totalBytes)
+        Write-Progress -Activity "adb pull" -Status "$pct% ($([math]::Round($written/1MB)) / $([math]::Round($totalBytes/1MB)) MB)" -PercentComplete $pct
+      } else {
+        Write-Progress -Activity "adb pull" -Status "$([math]::Round($written/1MB)) MB copied (approx)" -PercentComplete 0
+      }
+    }
+    Write-Progress -Activity "adb pull" -Completed
+    if ($proc.ExitCode -ne 0) { throw "adb pull failed with exit code $($proc.ExitCode)." }
+    Write-Host "Pull complete."
+  } else {
+    adb pull "$PhonePath" "$Dest"
+  }
 }
 else {
   # TAR stream: pack on phone, write one file on PC, then extract
   $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
   $tarFile   = Join-Path $Dest ("android_{0}.tar" -f $timestamp)
 
-  Write-Host "Streaming TAR from `"$PhonePath`" → `"$tarFile`""
   # Split path into parent + leaf for tar -C
   $parent = ([System.IO.Path]::GetDirectoryName($PhonePath.Replace('/','\'))).Replace('\','/')
   if ([string]::IsNullOrEmpty($parent)) { $parent = "/" }
   $leaf   = ([System.IO.Path]::GetFileName($PhonePath))
 
-  # Run adb tar stream and write to tarFile
-  Start-Process adb -ArgumentList @('exec-out','tar','-C',"$parent",'-cf','-',$leaf) `
-    -RedirectStandardOutput $tarFile -NoNewWindow -Wait
+  $totalBytes = 0
+  if ($ShowProgress) {
+    $totalBytes = Get-RemoteSize -RemoteParent $parent -RemoteLeaf $leaf
+  }
+
+  Write-Host "Streaming TAR from `"$PhonePath`" → `"$tarFile`""
+  $proc = Start-Process adb -ArgumentList @('exec-out','tar','-C',"$parent",'-cf','-',$leaf) `
+           -RedirectStandardOutput $tarFile -NoNewWindow -PassThru
+
+  if ($ShowProgress) {
+    while (-not $proc.HasExited) {
+      Start-Sleep -Seconds 1
+      $cur = (Test-Path $tarFile) ? ((Get-Item $tarFile).Length) : 0
+      if ($totalBytes -gt 0) {
+        $pct = [int](($cur * 100.0) / $totalBytes)
+        Write-Progress -Activity "Streaming TAR" -Status "$pct% ($([math]::Round($cur/1MB)) / $([math]::Round($totalBytes/1MB)) MB)" -PercentComplete $pct
+      } else {
+        Write-Progress -Activity "Streaming TAR" -Status "$([math]::Round($cur/1MB)) MB written" -PercentComplete 0
+      }
+    }
+    Write-Progress -Activity "Streaming TAR" -Completed
+  } else {
+    $proc.WaitForExit()
+  }
+
+  if ($proc.ExitCode -ne 0) { throw "adb tar stream failed with exit code $($proc.ExitCode)." }
+
+  $finalSize = (Get-Item $tarFile).Length
+  Write-Host ("TAR complete. Size: {0:N0} bytes ({1} MB)" -f $finalSize, [math]::Round($finalSize/1MB))
 
   Write-Host "Extracting `"$tarFile`" → `"$Dest`""
   tar -xf $tarFile -C $Dest
-
   Write-Host "Done."
 }
