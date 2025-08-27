@@ -3,37 +3,23 @@
     Fast Android → PC transfer via ADB (pull or TAR stream) with progress, optional space checks, resume, and verification.
 
 .VERSION
-    1.3.2
+    1.3.3
 
 .CHANGELOG
+    1.3.3
+      - Reworked adb shell invocations: removed 'sh -lc' and $0 arg trick.
+      - Inline remote path via placeholder replacement to avoid quoting issues.
+      - Restored full comment-based help for all functions.
+      - Retained awk-free remote size logic (du/stat/find + shell arithmetic).
     1.3.2
-      - Removed awk usage from Get-RemoteSize; now uses du/stat/find with POSIX shell arithmetic.
-      - Hardened quoting when invoking adb shell (safer on toybox/busybox systems).
-      - Kept timestamped warnings using composite formatting to avoid $ts: parsing issues.
-      - Inlined remote path argument in adb shell calls to avoid analyzer "assigned but never used" warnings.
-
+      - Removed awk usage from Get-RemoteSize; POSIX shell arithmetic with du/stat/find.
+      - Hardened quoting; timestamped warnings; inlined remote path arg for analyzer.
     1.3.1
-      - Docs: Explicitly note TAR mode is not resumable; recommend pull+Resume for resumption.
-      - Logging: Timestamp Write-Warning and retry logs.
-      - Verification: Summarize -Verify results in a table (Local vs Remote counts & sizes).
-      - Performance: Reduced pull-mode progress polling to 5s (configurable via -ProgressIntervalSeconds).
-
+      - TAR mode explicitly documented as non-resumable; timestamped logs; -Verify table; 5s pull polling.
     1.3.0
-      - Added -Verify switch to log post-transfer file counts.
-      - Added Get-LocalFileCount and Get-RemoteFileCount helpers.
-      - Logged local (and remote estimate) after TAR extraction; mirrored for pull.
-
-    1.2.1
-      - Changed -PrecheckSpace to a standard switch (default false). Restored function-level help.
-
-    1.2.0
-      - Disk space precheck (-PrecheckSpace, -SpaceMarginPercent); pull resume; TAR retries/cleanup; -StreamTar.
-
-    1.1.0
-      - Phone-side tar check, progress for tar, optional progress for pull.
-
-    1.0.0
-      - Initial version.
+      - Added -Verify; file count helpers; verify logs for tar/pull.
+    1.2.x
+      - Space precheck, resumable pull, TAR retries/cleanup, -StreamTar, etc.
 
 .DESCRIPTION
     Copies files/folders from an Android phone (e.g., Samsung S23) to a Windows PC using ADB.
@@ -43,7 +29,7 @@
                Best option if you need best-effort resumption on interruption.
       - tar  : Uses 'adb exec-out tar' to stream contents as a single archive (to file or directly to extractor),
                then extracts on the PC. This is usually faster for many small files.
-               **Important:** TAR mode is **not resumable**. If interrupted, you must re-run the transfer.
+               **Important:** TAR mode is **not resumable**. If interrupted, re-run the transfer.
                For best-effort resume, use pull mode with -Resume.
 
 .PARAMETER PhonePath
@@ -54,12 +40,6 @@
       /sdcard/Pictures
       /sdcard/WhatsApp/Media/WhatsApp Images
       /sdcard/WhatsApp/Media/WhatsApp Video
-
-    Discover it with:
-      adb shell
-      ls /sdcard
-      ls /sdcard/DCIM
-      ls "/sdcard/WhatsApp/Media"
 
 .PARAMETER Dest
     PC destination folder (created if missing).
@@ -79,26 +59,23 @@
     Extra headroom for space checks (default 10). Applied to the computed required bytes.
 
 .PARAMETER Resume
-    Pull mode only: performs per-file copy and **skips** files already present with identical size.
-    Good for resuming interrupted transfers.
+    Pull mode only: per-file copy and **skip** existing files with identical size.
 
 .PARAMETER MaxRetries
-    Tar mode only: retry count for tar stream when writing to a temporary .tar (default 2).
+    Tar-to-file mode: retry count for tar stream (default 2).
 
 .PARAMETER StreamTar
-    Tar mode only: stream directly to extractor (adb exec-out ... | tar -xf -) to avoid creating a temporary .tar.
-    Reduces disk space requirement (no ~2x footprint), but progress is limited.
-    **Not resumable** if interrupted.
+    Tar mode: stream directly to extractor (adb exec-out ... | tar -xf -) to avoid creating a temporary .tar.
+    Reduces disk space requirement (no ~2x footprint). **Not resumable** if interrupted.
 
 .PARAMETER Verify
-    If set, prints a summary of file counts after transfer:
-      - Local count under the copied/extracted root.
-      - Best-effort remote count via adb (find|wc -l) for comparison.
-    Also prints local/remote sizes in MB (remote size known if computed).
+    If set, prints a summary table of file counts/sizes after transfer:
+      - Local count/size under copied/extracted root.
+      - Best-effort remote file count via adb (find|wc -l).
+      - Remote size if known.
 
 .PARAMETER ProgressIntervalSeconds
-    Polling interval (seconds) used when showing progress in pull mode (default 5).
-    Higher values reduce I/O overhead on very large trees.
+    Polling interval (seconds) for pull mode progress (default 5). Higher values reduce I/O overhead.
 
 .EXAMPLE
     .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/DCIM/Camera" -Dest "D:\Phone\Camera" -Mode tar -ShowProgress -PrecheckSpace -StreamTar -Verify
@@ -106,26 +83,10 @@
 .EXAMPLE
     .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/Download" -Dest "C:\Phone\Download" -Mode pull -Resume -ShowProgress -Verify
 
-.PREREQUISITES
-    1) Enable Developer Options → USB debugging on the phone.
-    2) Install Android Platform-Tools; add to PATH; verify:  adb version
-    3) Authorize this PC: connect via USB-C (USB 3.x), unlock phone, tap "Allow USB debugging".
-       Verify:  adb devices  → shows "<serial>  device"
-    4) Windows tar.exe (Win10/11) for Mode 'tar' (or install a compatible tar).
-    5) (Optional) Samsung USB driver if Device Manager shows issues.
-
-.TROUBLESHOOTING
-    - "unauthorized": toggle USB debugging OFF/ON; revoke USB debug authorizations; replug with a good cable/port.
-    - Tar mode fails: ensure phone-side tar available (toybox/busybox). Script checks and fails fast with guidance.
-    - Slow transfers: keep phone awake; prefer Mode 'tar' for many small files; ensure SSD destination and free space.
-
 .NOTES
     Works on Windows PowerShell 5.1 and PowerShell 7+.
     Uses approved verb naming (Test-/Confirm-/Get-).
     Author: Manoj Bhaskaran
-
-.LINK
-    Android Platform-Tools: https://developer.android.com/studio/releases/platform-tools
 #>
 
 [CmdletBinding()]
@@ -150,7 +111,11 @@ function Test-Adb {
 .SYNOPSIS
     Verifies adb.exe is available in PATH.
 .DESCRIPTION
-    Throws a terminating error if adb.exe is not found.
+    Uses Get-Command to locate 'adb'. Throws a terminating error if not found.
+.OUTPUTS
+    None. Throws on failure.
+.NOTES
+    Install Android SDK Platform-Tools and add its folder to PATH.
 #>
   $adb = Get-Command adb -ErrorAction SilentlyContinue
   if (-not $adb) { throw "adb.exe not found. Install Platform-Tools and add to PATH." }
@@ -161,8 +126,11 @@ function Confirm-Device {
 .SYNOPSIS
     Confirms an authorized Android device is connected.
 .DESCRIPTION
-    Runs 'adb devices' and ensures at least one line ends with 'device' status.
-    Throws if none are authorized.
+    Runs 'adb devices' and checks for a line ending with 'device'. If the device shows 'unauthorized' or nothing, throws guidance.
+.OUTPUTS
+    None. Throws on failure.
+.NOTES
+    Ensure the phone is unlocked and USB debugging is enabled/authorized.
 #>
   $out = adb devices | Select-String "device`$"
   if (-not $out) {
@@ -173,10 +141,11 @@ function Confirm-Device {
 function Test-HostTar {
 <#
 .SYNOPSIS
-    Verifies tar.exe on Windows when Mode = tar.
+    Verifies tar.exe is available on Windows when Mode = tar.
 .DESCRIPTION
-    Ensures 'tar' is available in PATH if TAR mode is selected.
-    Throws with guidance if not found.
+    Ensures 'tar' can be invoked from PATH; otherwise suggests switching to pull mode or installing tar.
+.OUTPUTS
+    None. Throws on failure if Mode = tar.
 #>
   if ($Mode -eq 'tar') {
     $tar = Get-Command tar -ErrorAction SilentlyContinue
@@ -191,11 +160,14 @@ function Test-PhoneTar {
 .SYNOPSIS
     Verifies phone-side tar availability for TAR mode.
 .DESCRIPTION
-    Checks for 'tar', 'toybox tar', or 'busybox tar' on the device.
-    Throws with guidance if none are available.
+    Attempts 'tar', then 'toybox tar', then 'busybox tar'. Returns success if any respond; otherwise throws.
+.OUTPUTS
+    None. Throws on failure if Mode = tar.
+.NOTES
+    Most modern Androids have toybox with tar.
 #>
   if ($Mode -ne 'tar') { return }
-  $cmd = 'sh -lc ''(tar --version >/dev/null 2>&1) || (toybox tar --help >/dev/null 2>&1) || (busybox tar --help >/dev/null 2>&1); echo $?'''
+  $cmd = "tar --version >/dev/null 2>&1 || toybox tar --help >/dev/null 2>&1 || busybox tar --help >/dev/null 2>&1; echo $?"
   $rc = (adb shell $cmd).Trim()
   if ($rc -ne '0') {
     throw "Phone-side tar not found. Switch to -Mode pull."
@@ -205,23 +177,27 @@ function Test-PhoneTar {
 function Get-RemoteSize {
 <#
 .SYNOPSIS
-    Returns total bytes for a remote (phone) path (best-effort, no awk).
+    Returns total bytes for a remote (phone) path (best-effort, awk-free).
 .DESCRIPTION
-    Tries du (native, toybox, busybox). Falls back to find+stat with POSIX shell arithmetic.
-.OUTPUTS
-    [Int64] Total size in bytes (0 if unknown/error).
+    Prefers 'du' (native/toybox/busybox). Falls back to summing file sizes via 'stat' in a find loop.
+    Avoids awk and avoids 'sh -lc' to prevent quoting issues on toybox shells.
 .PARAMETER RemoteParent
-    Parent directory of the phone path (POSIX).
+    Parent directory (POSIX path), e.g., /sdcard/DCIM.
 .PARAMETER RemoteLeaf
-    Leaf (file or directory) name of the phone path.
+    Leaf entry (file or directory), e.g., Camera.
+.OUTPUTS
+    [Int64] total size in bytes (0 if unknown/error).
+.NOTES
+    This may take time on very large trees when falling back to find+stat.
 #>
   param([string]$RemoteParent, [string]$RemoteLeaf)
 
-  $cmd = @'
-sh -lc '
-path="$0"
+  $remotePath = "$RemoteParent/$RemoteLeaf"
+  # Single-quoted here-string preserved; we inject the path by placeholder replacement to avoid escaping hell.
+  $script = @'
+path="__REMOTE_PATH__"
 
-# Prefer du; parse size safely using "set --"
+# Prefer du; parse first field with "set --" to avoid awk dependency
 if du -sb "$path" >/dev/null 2>&1; then
   set -- $(du -sb "$path"); echo "$1"; exit 0
 fi
@@ -232,7 +208,7 @@ if command -v busybox >/dev/null 2>&1 && busybox du -s "$path" >/dev/null 2>&1; 
   set -- $(busybox du -s "$path"); echo $(( $1 * 1024 )); exit 0
 fi
 
-# Fall back: sum file sizes with stat; try native stat, then toybox/busybox stat
+# Fall back: sum file sizes with stat
 sum=0
 if command -v stat >/dev/null 2>&1; then
   find "$path" -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
@@ -258,10 +234,9 @@ if command -v busybox >/dev/null 2>&1; then
   echo "$sum"; exit 0
 fi
 
-# Give up
 echo 0
-' -- "$RemoteParent/$RemoteLeaf"
 '@
+  $cmd = $script.Replace('__REMOTE_PATH__', $remotePath)
 
   try {
     $bytesText = (adb shell $cmd)
@@ -275,11 +250,11 @@ function Get-LocalDirSize {
 .SYNOPSIS
     Returns total bytes for a local directory (best-effort).
 .DESCRIPTION
-    Recursively sums file lengths under the given path.
-.OUTPUTS
-    [Int64] Total size in bytes (0 if error/none).
+    Recursively sums file lengths under the given path; ignores inaccessible files.
 .PARAMETER Path
-    Local directory path.
+    Local directory to scan.
+.OUTPUTS
+    [Int64] total size in bytes (0 if error/none).
 #>
   param([string]$Path)
   try {
@@ -293,10 +268,12 @@ function Get-DriveFreeBytes {
 <#
 .SYNOPSIS
     Returns free bytes on the drive containing the given local path.
-.OUTPUTS
-    [Int64] Free bytes.
+.DESCRIPTION
+    Resolves the path to its PSDrive and returns the Free property.
 .PARAMETER Path
-    Local path used to locate the drive.
+    Any local path on the target drive.
+.OUTPUTS
+    [Int64] free bytes.
 #>
   param([string]$Path)
   $resolved = (Resolve-Path -LiteralPath $Path).Path
@@ -307,11 +284,13 @@ function Get-DriveFreeBytes {
 function Split-RemotePath {
 <#
 .SYNOPSIS
-    Splits a POSIX path into parent and leaf for use with 'tar -C'.
-.OUTPUTS
-    [object[]] @($Parent, $Leaf)
+    Splits a POSIX path into parent and leaf (for tar -C usage).
+.DESCRIPTION
+    Converts to Windows-style temporarily to use .NET Path helpers, then normalizes back to POSIX.
 .PARAMETER PosixPath
-    The remote POSIX-style path (e.g., /sdcard/DCIM/Camera).
+    Remote POSIX path (e.g., /sdcard/DCIM/Camera).
+.OUTPUTS
+    [object[]] array: @($Parent, $Leaf)
 #>
   param([string]$PosixPath)
   $parent = ([System.IO.Path]::GetDirectoryName($PosixPath.Replace('/','\'))).Replace('\','/')
@@ -324,10 +303,12 @@ function Get-LocalFileCount {
 <#
 .SYNOPSIS
     Returns the number of files under a local path (recursive).
-.OUTPUTS
-    [Int64] count (0 if none/error).
+.DESCRIPTION
+    Counts regular files; suppresses access errors.
 .PARAMETER Path
     Local directory to scan.
+.OUTPUTS
+    [Int64] count (0 if none/error).
 #>
   param([string]$Path)
   try {
@@ -341,19 +322,19 @@ function Get-RemoteFileCount {
 .SYNOPSIS
     Best-effort count of remote (phone) files for a given path.
 .DESCRIPTION
-    Uses find | wc -l via sh/toybox/busybox. Returns 0 if unavailable.
-.OUTPUTS
-    [Int64] count (0 if unknown).
+    Uses find | wc -l via toybox/busybox if needed. Returns 0 if unavailable.
 .PARAMETER RemoteParent
-    Parent directory on the device.
+    Parent directory on the device (POSIX).
 .PARAMETER RemoteLeaf
     Leaf (file or directory) name on the device.
+.OUTPUTS
+    [Int64] count (0 if unknown).
 #>
   param([string]$RemoteParent, [string]$RemoteLeaf)
 
-  $cmd = @'
-sh -lc '
-path="$0"
+  $remotePath = "$RemoteParent/$RemoteLeaf"
+  $script = @'
+path="__REMOTE_PATH__"
 if command -v find >/dev/null 2>&1; then
   find "$path" -type f 2>/dev/null | wc -l
 elif command -v toybox >/dev/null 2>&1; then
@@ -363,8 +344,8 @@ elif command -v busybox >/dev/null 2>&1; then
 else
   echo 0
 fi
-' -- "$RemoteParent/$RemoteLeaf"
 '@
+  $cmd = $script.Replace('__REMOTE_PATH__', $remotePath)
 
   try {
     [int64]((adb shell $cmd).Trim())
@@ -380,7 +361,7 @@ Confirm-Device
 Test-HostTar
 Test-PhoneTar
 
-# Common path split & remote size (for progress and optional space checks)
+# Common path split & remote size (for progress/space checks)
 $parent, $leaf = Split-RemotePath -PosixPath $PhonePath
 $totalBytes = Get-RemoteSize -RemoteParent $parent -RemoteLeaf $leaf
 
@@ -401,7 +382,7 @@ if ($Mode -eq 'pull') {
   if ($Resume) {
     Write-Host "Resumable pull (skip existing): `"$PhonePath`" → `"$Dest`""
     # Build remote file list (size \t path)
-    $listCmd = "sh -lc 'find ""$PhonePath"" -type f -print0 2>/dev/null | xargs -0 stat -c ""%s`t%n"" 2>/dev/null'"
+    $listCmd = "find ""$PhonePath"" -type f -print0 2>/dev/null | xargs -0 stat -c ""%s`t%n"" 2>/dev/null"
     $raw = adb shell $listCmd
     $lines = @()
     if ($raw) { $lines = $raw -split "`r?`n" }
