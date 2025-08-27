@@ -3,28 +3,35 @@
     Fast Android → PC transfer via ADB (pull or TAR stream) with progress, optional space checks, resume, and verification.
 
 .VERSION
-    1.3.1
+    1.3.2
 
 .CHANGELOG
+    1.3.2
+      - Removed awk usage from Get-RemoteSize; now uses du/stat/find with POSIX shell arithmetic.
+      - Hardened quoting when invoking adb shell (safer on toybox/busybox systems).
+      - Kept timestamped warnings using composite formatting to avoid $ts: parsing issues.
+      - Inlined remote path argument in adb shell calls to avoid analyzer "assigned but never used" warnings.
+
     1.3.1
       - Docs: Explicitly note TAR mode is not resumable; recommend pull+Resume for resumption.
       - Logging: Timestamp Write-Warning and retry logs.
       - Verification: Summarize -Verify results in a table (Local vs Remote counts & sizes).
       - Performance: Reduced pull-mode progress polling to 5s (configurable via -ProgressIntervalSeconds).
+
     1.3.0
       - Added -Verify switch to log post-transfer file counts.
       - Added Get-LocalFileCount and Get-RemoteFileCount helpers.
       - Logged local (and remote estimate) after TAR extraction; mirrored for pull.
+
     1.2.1
-      - Changed -PrecheckSpace to a standard switch (default false).
-      - Restored and expanded function-level comment-based help.
+      - Changed -PrecheckSpace to a standard switch (default false). Restored function-level help.
+
     1.2.0
-      - Added disk space precheck (-PrecheckSpace, -SpaceMarginPercent).
-      - Pull mode resume (-Resume): skip existing files with same size.
-      - Tar mode resilience: -MaxRetries, cleanup of partial .tar.
-      - Optional streaming tar extraction (-StreamTar) to avoid temp .tar (saves space).
+      - Disk space precheck (-PrecheckSpace, -SpaceMarginPercent); pull resume; TAR retries/cleanup; -StreamTar.
+
     1.1.0
       - Phone-side tar check, progress for tar, optional progress for pull.
+
     1.0.0
       - Initial version.
 
@@ -198,13 +205,9 @@ function Test-PhoneTar {
 function Get-RemoteSize {
 <#
 .SYNOPSIS
-    Returns total bytes for a remote (phone) path (best-effort).
+    Returns total bytes for a remote (phone) path (best-effort, no awk).
 .DESCRIPTION
-    Attempts multiple strategies on the phone to compute total size:
-      - du -sb
-      - toybox du -b
-      - busybox du -s (×1024)
-      - find + stat sum (slowest)
+    Tries du (native, toybox, busybox). Falls back to find+stat with POSIX shell arithmetic.
 .OUTPUTS
     [Int64] Total size in bytes (0 if unknown/error).
 .PARAMETER RemoteParent
@@ -214,20 +217,57 @@ function Get-RemoteSize {
 #>
   param([string]$RemoteParent, [string]$RemoteLeaf)
 
-  $path = "$RemoteParent/$RemoteLeaf"
-  $cmd = @"
+  $cmd = @'
 sh -lc '
-(du -sb "$path" 2>/dev/null | awk "{print \$1}") ||
-(toybox du -b "$path" 2>/dev/null | awk "{print \$1}") ||
-(busybox du -s "$path" 2>/dev/null | awk "{print \$1*1024}") ||
-(find "$path" -type f -print0 2>/dev/null | xargs -0 stat -c %s 2>/dev/null | awk "{s+=\$1} END{print s}") ||
+path="$0"
+
+# Prefer du; parse size safely using "set --"
+if du -sb "$path" >/dev/null 2>&1; then
+  set -- $(du -sb "$path"); echo "$1"; exit 0
+fi
+if command -v toybox >/dev/null 2>&1 && toybox du -b "$path" >/dev/null 2>&1; then
+  set -- $(toybox du -b "$path"); echo "$1"; exit 0
+fi
+if command -v busybox >/dev/null 2>&1 && busybox du -s "$path" >/dev/null 2>&1; then
+  set -- $(busybox du -s "$path"); echo $(( $1 * 1024 )); exit 0
+fi
+
+# Fall back: sum file sizes with stat; try native stat, then toybox/busybox stat
+sum=0
+if command -v stat >/dev/null 2>&1; then
+  find "$path" -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
+    sz=$(stat -c %s "$f" 2>/dev/null || echo 0)
+    sum=$(( sum + ${sz:-0} ))
+  done
+  echo "$sum"; exit 0
+fi
+
+if command -v toybox >/dev/null 2>&1; then
+  find "$path" -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
+    sz=$(toybox stat -c %s "$f" 2>/dev/null || echo 0)
+    sum=$(( sum + ${sz:-0} ))
+  done
+  echo "$sum"; exit 0
+fi
+
+if command -v busybox >/dev/null 2>&1; then
+  find "$path" -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
+    sz=$(busybox stat -c %s "$f" 2>/dev/null || echo 0)
+    sum=$(( sum + ${sz:-0} ))
+  done
+  echo "$sum"; exit 0
+fi
+
+# Give up
 echo 0
-'
-"@
+' -- "$RemoteParent/$RemoteLeaf"
+'@
+
   try {
-    $bytes = [int64]((adb shell $cmd).Trim())
-    if ($bytes -lt 0) { return 0 } else { return $bytes }
-  } catch { return 0 }
+    $bytesText = (adb shell $cmd)
+    $bytes = [int64]($bytesText.Trim())
+    if ($bytes -lt 0) { 0 } else { $bytes }
+  } catch { 0 }
 }
 
 function Get-LocalDirSize {
@@ -245,8 +285,8 @@ function Get-LocalDirSize {
   try {
     $sum = (Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
             Measure-Object -Property Length -Sum).Sum
-    return ([int64]($sum ? $sum : 0))
-  } catch { return 0 }
+    [int64]($sum ? $sum : 0)
+  } catch { 0 }
 }
 
 function Get-DriveFreeBytes {
@@ -261,7 +301,7 @@ function Get-DriveFreeBytes {
   param([string]$Path)
   $resolved = (Resolve-Path -LiteralPath $Path).Path
   $drive = (Get-Item $resolved).PSDrive
-  return [int64]$drive.Free
+  [int64]$drive.Free
 }
 
 function Split-RemotePath {
@@ -269,7 +309,7 @@ function Split-RemotePath {
 .SYNOPSIS
     Splits a POSIX path into parent and leaf for use with 'tar -C'.
 .OUTPUTS
-    [object[]] An array: @($Parent, $Leaf)
+    [object[]] @($Parent, $Leaf)
 .PARAMETER PosixPath
     The remote POSIX-style path (e.g., /sdcard/DCIM/Camera).
 #>
@@ -277,7 +317,7 @@ function Split-RemotePath {
   $parent = ([System.IO.Path]::GetDirectoryName($PosixPath.Replace('/','\'))).Replace('\','/')
   if ([string]::IsNullOrEmpty($parent)) { $parent = "/" }
   $leaf = ([System.IO.Path]::GetFileName($PosixPath))
-  return @($parent, $leaf)
+  @($parent, $leaf)
 }
 
 function Get-LocalFileCount {
@@ -291,9 +331,9 @@ function Get-LocalFileCount {
 #>
   param([string]$Path)
   try {
-    return [int64]((Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
-                     Measure-Object).Count)
-  } catch { return 0 }
+    [int64]((Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
+              Measure-Object).Count)
+  } catch { 0 }
 }
 
 function Get-RemoteFileCount {
@@ -310,18 +350,25 @@ function Get-RemoteFileCount {
     Leaf (file or directory) name on the device.
 #>
   param([string]$RemoteParent, [string]$RemoteLeaf)
-  $path = "$RemoteParent/$RemoteLeaf"
-  $cmd = @"
+
+  $cmd = @'
 sh -lc '
-( find "$path" -type f 2>/dev/null | wc -l ) ||
-( toybox find "$path" -type f 2>/dev/null | wc -l ) ||
-( busybox find "$path" -type f 2>/dev/null | wc -l ) ||
-echo 0
-'
-"@
+path="$0"
+if command -v find >/dev/null 2>&1; then
+  find "$path" -type f 2>/dev/null | wc -l
+elif command -v toybox >/dev/null 2>&1; then
+  toybox find "$path" -type f 2>/dev/null | wc -l
+elif command -v busybox >/dev/null 2>&1; then
+  busybox find "$path" -type f 2>/dev/null | wc -l
+else
+  echo 0
+fi
+' -- "$RemoteParent/$RemoteLeaf"
+'@
+
   try {
-    return [int64]((adb shell $cmd).Trim())
-  } catch { return 0 }
+    [int64]((adb shell $cmd).Trim())
+  } catch { 0 }
 }
 
 Write-Verbose "Destination: $Dest"
@@ -535,7 +582,7 @@ else {
         if (Test-Path $tarFile) { Remove-Item $tarFile -Force -ErrorAction SilentlyContinue }
         if ($attempt -ge $MaxRetries) { throw "Tar mode failed after $MaxRetries attempts." }
         Start-Sleep 2
-        Write-Host    ("{0}: Retrying..." -f $ts)
+        Write-Host ("{0}: Retrying..." -f $ts)
       }
     }
   }
