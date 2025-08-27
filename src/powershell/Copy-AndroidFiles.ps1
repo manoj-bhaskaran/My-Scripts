@@ -3,23 +3,37 @@
     Fast Android → PC transfer via ADB (pull or TAR stream) with progress, optional space checks, resume, and verification.
 
 .VERSION
-    1.3.3
+    1.3.4
 
 .CHANGELOG
+    1.3.4
+      - Fix: phone-side tar detection (Test-PhoneTar) now uses `command -v tar` and accepts `tar --help`
+        instead of requiring `tar --version`. Falls back to `toybox tar` / `busybox tar`.
+        Resolves false negatives introduced in 1.3.3 on devices where `--version` isn’t supported.
+      - No behavior change to transfer logic; this only corrects the pre-flight check.
+    
     1.3.3
-      - Reworked adb shell invocations: removed 'sh -lc' and $0 arg trick.
-      - Inline remote path via placeholder replacement to avoid quoting issues.
-      - Restored full comment-based help for all functions.
-      - Retained awk-free remote size logic (du/stat/find + shell arithmetic).
+      - Reworked adb shell invocations: removed 'sh -lc' and $0 arg trick
+      - Inlined remote path via placeholder replacement to avoid quoting issues
+      - Restored full comment-based help for all functions
+      - Retained awk-free remote size logic (du/stat/find + shell arithmetic)
+    
     1.3.2
-      - Removed awk usage from Get-RemoteSize; POSIX shell arithmetic with du/stat/find.
-      - Hardened quoting; timestamped warnings; inlined remote path arg for analyzer.
+      - Removed awk usage from Get-RemoteSize; POSIX shell arithmetic with du/stat/find
+      - Hardened adb quoting; timestamped warnings (fixed `$ts:` parse issue)
+      - Inlined remote path arg to satisfy analyzers
+    
     1.3.1
-      - TAR mode explicitly documented as non-resumable; timestamped logs; -Verify table; 5s pull polling.
+      - Documented TAR mode as non-resumable; suggested pull+Resume for resumption
+      - Timestamped warnings/retries; verify summary table (Local vs Remote counts/sizes)
+      - Reduced pull progress polling to 5s (configurable)
+    
     1.3.0
-      - Added -Verify; file count helpers; verify logs for tar/pull.
+      - Added -Verify and local/remote file count helpers
+      - Logged local/remote summaries after TAR extraction and after pull
+    
     1.2.x
-      - Space precheck, resumable pull, TAR retries/cleanup, -StreamTar, etc.
+      - Added disk space precheck; resumable pull; TAR retries/cleanup; -StreamTar
 
 .DESCRIPTION
     Copies files/folders from an Android phone (e.g., Samsung S23) to a Windows PC using ADB.
@@ -160,15 +174,29 @@ function Test-PhoneTar {
 .SYNOPSIS
     Verifies phone-side tar availability for TAR mode.
 .DESCRIPTION
-    Attempts 'tar', then 'toybox tar', then 'busybox tar'. Returns success if any respond; otherwise throws.
+    Detects tar availability on the phone.
+    Prefers `command -v tar` (accepting --help if --version is unsupported),
+    then falls back to `toybox tar` and `busybox tar`.
 .OUTPUTS
     None. Throws on failure if Mode = tar.
-.NOTES
-    Most modern Androids have toybox with tar.
 #>
   if ($Mode -ne 'tar') { return }
-  $cmd = "tar --version >/dev/null 2>&1 || toybox tar --help >/dev/null 2>&1 || busybox tar --help >/dev/null 2>&1; echo $?"
-  $rc = (adb shell $cmd).Trim()
+
+  $script = @'
+if command -v tar >/dev/null 2>&1; then
+  # Some toybox/busybox tars don't support --version; --help usually exists.
+  tar --help >/dev/null 2>&1 || true
+  echo 0
+elif command -v toybox >/dev/null 2>&1 && toybox tar --help >/dev/null 2>&1; then
+  echo 0
+elif command -v busybox >/dev/null 2>&1 && busybox tar --help >/dev/null 2>&1; then
+  echo 0
+else
+  echo 1
+fi
+'@
+
+  $rc = (adb shell $script).Trim()
   if ($rc -ne '0') {
     throw "Phone-side tar not found. Switch to -Mode pull."
   }
