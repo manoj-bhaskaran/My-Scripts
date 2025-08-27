@@ -3,9 +3,14 @@
     Fast Android → PC transfer via ADB (pull or TAR stream) with progress, optional space checks, resume, and verification.
 
 .VERSION
-    1.3.4
+    1.3.5
 
 .CHANGELOG
+    1.3.5
+      - Robust adb shell delivery: normalize line endings and join multi-line scripts (Invoke-AdbSh) to avoid toybox/busybox parsing errors (e.g., “unexpected 'elif'”)
+      - Test-PhoneTar: prefer `command -v tar` with `--help` fallback; keep toybox/busybox fallback
+      - Hardened parsing of adb outputs to avoid null/empty Trim() crashes
+
     1.3.4
       - Fix: phone-side tar detection (Test-PhoneTar) now uses `command -v tar` and accepts `tar --help`
         instead of requiring `tar --version`. Falls back to `toybox tar` / `busybox tar`.
@@ -169,6 +174,30 @@ function Test-HostTar {
   }
 }
 
+function Invoke-AdbSh {
+<#
+.SYNOPSIS
+    Runs a shell script on the device safely from PowerShell.
+.DESCRIPTION
+    - Normalizes CRLF/CR to LF
+    - Collapses lines into one with '; ' to avoid toybox/busybox newline quirks
+    - Returns raw stdout (or empty string on error)
+.PARAMETER Script
+    The shell script text to execute on the device.
+.OUTPUTS
+    [string] Raw stdout from the device (may be empty if the command produces no output).
+#>
+  param([Parameter(Mandatory=$true)][string]$Script)
+
+  try {
+    $norm = ($Script -replace "`r`n","`n" -replace "`r","`n").Trim()
+    $one  = (($norm -split "`n") | ForEach-Object { $_.Trim() }) -join '; '
+    return (adb shell $one)
+  } catch {
+    return ""
+  }
+}
+
 function Test-PhoneTar {
 <#
 .SYNOPSIS
@@ -184,7 +213,6 @@ function Test-PhoneTar {
 
   $script = @'
 if command -v tar >/dev/null 2>&1; then
-  # Some toybox/busybox tars don't support --version; --help usually exists.
   tar --help >/dev/null 2>&1 || true
   echo 0
 elif command -v toybox >/dev/null 2>&1 && toybox tar --help >/dev/null 2>&1; then
@@ -196,7 +224,10 @@ else
 fi
 '@
 
-  $rc = (adb shell $script).Trim()
+  $rc = (Invoke-AdbSh $script).Trim()
+  if ([string]::IsNullOrEmpty($rc)) {
+    throw "Phone-side tar check failed (no response). Reconnect the device and try again."
+  }
   if ($rc -ne '0') {
     throw "Phone-side tar not found. Switch to -Mode pull."
   }
@@ -209,6 +240,7 @@ function Get-RemoteSize {
 .DESCRIPTION
     Prefers 'du' (native/toybox/busybox). Falls back to summing file sizes via 'stat' in a find loop.
     Avoids awk and avoids 'sh -lc' to prevent quoting issues on toybox shells.
+    Executed via Invoke-AdbSh to avoid line-ending parsing issues on toybox/busybox shells.
 .PARAMETER RemoteParent
     Parent directory (POSIX path), e.g., /sdcard/DCIM.
 .PARAMETER RemoteLeaf
@@ -267,10 +299,14 @@ echo 0
   $cmd = $script.Replace('__REMOTE_PATH__', $remotePath)
 
   try {
-    $bytesText = (adb shell $cmd)
-    $bytes = [int64]($bytesText.Trim())
-    if ($bytes -lt 0) { 0 } else { $bytes }
-  } catch { 0 }
+    $bytesText = Invoke-AdbSh $cmd
+    if ([string]::IsNullOrWhiteSpace($bytesText)) { return 0 }
+    $bytes = 0L
+    [void][int64]::TryParse($bytesText.Trim(), [ref]$bytes)
+    return $bytes
+  } catch {
+    return 0
+  }
 }
 
 function Get-LocalDirSize {
@@ -351,6 +387,7 @@ function Get-RemoteFileCount {
     Best-effort count of remote (phone) files for a given path.
 .DESCRIPTION
     Uses find | wc -l via toybox/busybox if needed. Returns 0 if unavailable.
+    Executed via Invoke-AdbSh to avoid line-ending parsing issues on toybox/busybox shells.
 .PARAMETER RemoteParent
     Parent directory on the device (POSIX).
 .PARAMETER RemoteLeaf
@@ -376,8 +413,14 @@ fi
   $cmd = $script.Replace('__REMOTE_PATH__', $remotePath)
 
   try {
-    [int64]((adb shell $cmd).Trim())
-  } catch { 0 }
+    $out = Invoke-AdbSh $cmd
+    if ([string]::IsNullOrWhiteSpace($out)) { return 0 }
+    $n = 0L
+    [void][int64]::TryParse($out.Trim(), [ref]$n)
+    return $n
+  } catch {
+    return 0
+  }
 }
 
 Write-Verbose "Destination: $Dest"
@@ -413,7 +456,7 @@ if ($Mode -eq 'pull') {
     $listCmd = "find ""$PhonePath"" -type f -print0 2>/dev/null | xargs -0 stat -c ""%s`t%n"" 2>/dev/null"
     $raw = adb shell $listCmd
     $lines = @()
-    if ($raw) { $lines = $raw -split "`r?`n" }
+    if ($raw) { $lines = $raw -split "\r?\n" }
 
     $count = 0; $copied = 0
     foreach ($line in $lines) {
