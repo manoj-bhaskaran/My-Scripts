@@ -3,13 +3,18 @@
     Fast Android → PC transfer via ADB (pull or TAR stream) with progress, optional space checks, resume, and verification.
 
 .VERSION
-    1.3.0
+    1.3.1
 
 .CHANGELOG
+    1.3.1
+      - Docs: Explicitly note TAR mode is not resumable; recommend pull+Resume for resumption.
+      - Logging: Timestamp Write-Warning and retry logs.
+      - Verification: Summarize -Verify results in a table (Local vs Remote counts & sizes).
+      - Performance: Reduced pull-mode progress polling to 5s (configurable via -ProgressIntervalSeconds).
     1.3.0
       - Added -Verify switch to log post-transfer file counts.
       - Added Get-LocalFileCount and Get-RemoteFileCount helpers.
-      - Log local count (and remote best-effort count) after TAR extraction; mirrored for pull.
+      - Logged local (and remote estimate) after TAR extraction; mirrored for pull.
     1.2.1
       - Changed -PrecheckSpace to a standard switch (default false).
       - Restored and expanded function-level comment-based help.
@@ -25,10 +30,14 @@
 
 .DESCRIPTION
     Copies files/folders from an Android phone (e.g., Samsung S23) to a Windows PC using ADB.
+
     Modes:
       - pull : Uses 'adb pull' to mirror the folder. Optional approximate progress; optional -Resume to skip existing files.
+               Best option if you need best-effort resumption on interruption.
       - tar  : Uses 'adb exec-out tar' to stream contents as a single archive (to file or directly to extractor),
                then extracts on the PC. This is usually faster for many small files.
+               **Important:** TAR mode is **not resumable**. If interrupted, you must re-run the transfer.
+               For best-effort resume, use pull mode with -Resume.
 
 .PARAMETER PhonePath
     Android path as seen by ADB (NOT Windows "This PC"). Examples:
@@ -72,12 +81,17 @@
 .PARAMETER StreamTar
     Tar mode only: stream directly to extractor (adb exec-out ... | tar -xf -) to avoid creating a temporary .tar.
     Reduces disk space requirement (no ~2x footprint), but progress is limited.
+    **Not resumable** if interrupted.
 
 .PARAMETER Verify
     If set, prints a summary of file counts after transfer:
       - Local count under the copied/extracted root.
       - Best-effort remote count via adb (find|wc -l) for comparison.
-    Note: counting large trees can take time.
+    Also prints local/remote sizes in MB (remote size known if computed).
+
+.PARAMETER ProgressIntervalSeconds
+    Polling interval (seconds) used when showing progress in pull mode (default 5).
+    Higher values reduce I/O overhead on very large trees.
 
 .EXAMPLE
     .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/DCIM/Camera" -Dest "D:\Phone\Camera" -Mode tar -ShowProgress -PrecheckSpace -StreamTar -Verify
@@ -118,7 +132,8 @@ param(
   [Parameter()] [switch]$Resume,
   [Parameter()] [int]$MaxRetries = 2,
   [Parameter()] [switch]$StreamTar,
-  [Parameter()] [switch]$Verify
+  [Parameter()] [switch]$Verify,
+  [Parameter()] [int]$ProgressIntervalSeconds = 5
 )
 
 $ErrorActionPreference = 'Stop'
@@ -376,7 +391,13 @@ if ($Mode -eq 'pull') {
     if ($Verify) {
       $localCount  = Get-LocalFileCount -Path $Dest
       $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
-      Write-Host ("Verify: local files = {0}{1}" -f $localCount, $(if ($remoteCount -gt 0) { " (remote≈$remoteCount)" } else { "" }))
+      $localSizeMB  = [math]::Round((Get-LocalDirSize -Path $Dest)/1MB)
+      $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes/1MB) } else { $null }
+      $rows = @(
+        [pscustomobject]@{ Scope='Local';  Files=$localCount;  SizeMB=$localSizeMB  }
+        [pscustomobject]@{ Scope='Remote'; Files=$remoteCount; SizeMB=$remoteSizeMB }
+      )
+      $rows | Format-Table -AutoSize | Out-String | Write-Host
       if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
         Write-Warning "Local file count < remote file count. Some files may be missing."
       }
@@ -388,7 +409,7 @@ if ($Mode -eq 'pull') {
       $destBefore = Get-LocalDirSize -Path $Dest
       $proc = Start-Process adb -ArgumentList @('pull',"$PhonePath","$Dest") -NoNewWindow -PassThru
       while (-not $proc.HasExited) {
-        Start-Sleep -Seconds 2
+        Start-Sleep -Seconds $ProgressIntervalSeconds
         $cur = Get-LocalDirSize -Path $Dest
         $written = [math]::Max(0, $cur - $destBefore)
         if ($totalBytes -gt 0) {
@@ -411,7 +432,13 @@ if ($Mode -eq 'pull') {
       $rootToCount = (Test-Path $verifyRoot) ? $verifyRoot : $Dest
       $localCount  = Get-LocalFileCount -Path $rootToCount
       $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
-      Write-Host ("Verify: local files = {0}{1}" -f $localCount, $(if ($remoteCount -gt 0) { " (remote≈$remoteCount)" } else { "" }))
+      $localSizeMB  = [math]::Round((Get-LocalDirSize -Path $rootToCount)/1MB)
+      $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes/1MB) } else { $null }
+      $rows = @(
+        [pscustomobject]@{ Scope='Local';  Files=$localCount;  SizeMB=$localSizeMB  }
+        [pscustomobject]@{ Scope='Remote'; Files=$remoteCount; SizeMB=$remoteSizeMB }
+      )
+      $rows | Format-Table -AutoSize | Out-String | Write-Host
       if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
         Write-Warning "Local file count < remote file count. Some files may be missing."
       }
@@ -434,7 +461,13 @@ else {
     if ($Verify) {
       $localCount  = Get-LocalFileCount -Path $Dest
       $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
-      Write-Host ("Verify: extracted files = {0}{1}" -f $localCount, $(if ($remoteCount -gt 0) { " (remote≈$remoteCount)" } else { "" }))
+      $localSizeMB  = [math]::Round((Get-LocalDirSize -Path $Dest)/1MB)
+      $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes/1MB) } else { $null }
+      $rows = @(
+        [pscustomobject]@{ Scope='Local';  Files=$localCount;  SizeMB=$localSizeMB  }
+        [pscustomobject]@{ Scope='Remote'; Files=$remoteCount; SizeMB=$remoteSizeMB }
+      )
+      $rows | Format-Table -AutoSize | Out-String | Write-Host
       if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
         Write-Warning "Extracted count < remote count. Some files may be missing."
       }
@@ -479,7 +512,13 @@ else {
         if ($Verify) {
           $localCount  = Get-LocalFileCount -Path $Dest
           $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
-          Write-Host ("Verify: extracted files = {0}{1}" -f $localCount, $(if ($remoteCount -gt 0) { " (remote≈$remoteCount)" } else { "" }))
+          $localSizeMB  = [math]::Round((Get-LocalDirSize -Path $Dest)/1MB)
+          $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes/1MB) } else { $null }
+          $rows = @(
+            [pscustomobject]@{ Scope='Local';  Files=$localCount;  SizeMB=$localSizeMB  }
+            [pscustomobject]@{ Scope='Remote'; Files=$remoteCount; SizeMB=$remoteSizeMB }
+          )
+          $rows | Format-Table -AutoSize | Out-String | Write-Host
           if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
             Write-Warning "Extracted count < remote count. Some files may be missing."
           }
@@ -491,11 +530,12 @@ else {
         break
       }
       catch {
-        Write-Warning $_
+        $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+        Write-Warning ("{0}: {1}" -f $ts, $_)
         if (Test-Path $tarFile) { Remove-Item $tarFile -Force -ErrorAction SilentlyContinue }
         if ($attempt -ge $MaxRetries) { throw "Tar mode failed after $MaxRetries attempts." }
         Start-Sleep 2
-        Write-Host "Retrying..."
+        Write-Host    ("{0}: Retrying..." -f $ts)
       }
     }
   }
