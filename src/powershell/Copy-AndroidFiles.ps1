@@ -1,55 +1,23 @@
 <#
 .SYNOPSIS
-    Fast Android → PC transfer via ADB (pull or TAR stream) with progress, optional space checks, resume, and verification.
-
-.VERSION
-    1.3.5
-
-.CHANGELOG
-    1.3.5
-      - Robust adb shell delivery: normalize line endings and join multi-line scripts (Invoke-AdbSh) to avoid toybox/busybox parsing errors (e.g., “unexpected 'elif'”)
-      - Test-PhoneTar: prefer `command -v tar` with `--help` fallback; keep toybox/busybox fallback
-      - Hardened parsing of adb outputs to avoid null/empty Trim() crashes
-
-    1.3.4
-      - Fix: phone-side tar detection (Test-PhoneTar) now uses `command -v tar` and accepts `tar --help`
-        instead of requiring `tar --version`. Falls back to `toybox tar` / `busybox tar`.
-        Resolves false negatives introduced in 1.3.3 on devices where `--version` isn’t supported.
-      - No behavior change to transfer logic; this only corrects the pre-flight check.
-    
-    1.3.3
-      - Reworked adb shell invocations: removed 'sh -lc' and $0 arg trick
-      - Inlined remote path via placeholder replacement to avoid quoting issues
-      - Restored full comment-based help for all functions
-      - Retained awk-free remote size logic (du/stat/find + shell arithmetic)
-    
-    1.3.2
-      - Removed awk usage from Get-RemoteSize; POSIX shell arithmetic with du/stat/find
-      - Hardened adb quoting; timestamped warnings (fixed `$ts:` parse issue)
-      - Inlined remote path arg to satisfy analyzers
-    
-    1.3.1
-      - Documented TAR mode as non-resumable; suggested pull+Resume for resumption
-      - Timestamped warnings/retries; verify summary table (Local vs Remote counts/sizes)
-      - Reduced pull progress polling to 5s (configurable)
-    
-    1.3.0
-      - Added -Verify and local/remote file count helpers
-      - Logged local/remote summaries after TAR extraction and after pull
-    
-    1.2.x
-      - Added disk space precheck; resumable pull; TAR retries/cleanup; -StreamTar
+    Fast Android → PC transfer via ADB (pull or TAR stream) with progress, optional space checks,
+    resume, verification, and optional debug logging.
 
 .DESCRIPTION
     Copies files/folders from an Android phone (e.g., Samsung S23) to a Windows PC using ADB.
 
     Modes:
-      - pull : Uses 'adb pull' to mirror the folder. Optional approximate progress; optional -Resume to skip existing files.
-               Best option if you need best-effort resumption on interruption.
-      - tar  : Uses 'adb exec-out tar' to stream contents as a single archive (to file or directly to extractor),
-               then extracts on the PC. This is usually faster for many small files.
+      - pull : Uses 'adb pull' to mirror the folder. Optional approximate progress; optional -Resume
+               to skip existing files. Best option if you need best-effort resumption on interruption.
+      - tar  : Uses 'adb exec-out tar' to stream contents as a single archive (to file or directly
+               to extractor), then extracts on the PC. This is usually faster for many small files.
                **Important:** TAR mode is **not resumable**. If interrupted, re-run the transfer.
                For best-effort resume, use pull mode with -Resume.
+
+    Optional Debugging:
+      - Use -DebugMode to log the exact adb shell command lines (via Invoke-AdbSh) and capture adb
+        stderr during long transfers. Safe for TAR streams (stdout is never logged in TAR mode) and
+        low-noise for pull mode.
 
 .PARAMETER PhonePath
     Android path as seen by ADB (NOT Windows "This PC"). Examples:
@@ -84,8 +52,9 @@
     Tar-to-file mode: retry count for tar stream (default 2).
 
 .PARAMETER StreamTar
-    Tar mode: stream directly to extractor (adb exec-out ... | tar -xf -) to avoid creating a temporary .tar.
-    Reduces disk space requirement (no ~2x footprint). **Not resumable** if interrupted.
+    Tar mode: stream directly to extractor (adb exec-out ... | tar -xf -) to avoid creating
+    a temporary .tar. Reduces disk space requirement (no ~2x footprint). **Not resumable**
+    if interrupted.
 
 .PARAMETER Verify
     If set, prints a summary table of file counts/sizes after transfer:
@@ -96,16 +65,123 @@
 .PARAMETER ProgressIntervalSeconds
     Polling interval (seconds) for pull mode progress (default 5). Higher values reduce I/O overhead.
 
-.EXAMPLE
-    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/DCIM/Camera" -Dest "D:\Phone\Camera" -Mode tar -ShowProgress -PrecheckSpace -StreamTar -Verify
+.PARAMETER DebugMode
+    Enables lightweight diagnostics for adb interactions:
+      - Logs the single-line shell sent to the device (via Invoke-AdbSh), including a small prefix
+        of stdout and its total length.
+      - Captures adb stderr for TAR-to-file mode, and both stdout/stderr for pull mode.
+      - Creates a timestamped log file under the destination folder (e.g., adb_debug_YYYYMMDD_HHMMSS.log)
+    Notes:
+      - No ADB_TRACE is enabled by default to avoid performance and privacy issues.
+      - Logs may include device serials and paths—review before sharing.
+
+.INPUTS
+    None. You cannot pipe input to this script.
+
+.OUTPUTS
+    None. Writes status/progress to the console. When -Verify is used, writes a summary table.
 
 .EXAMPLE
-    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/Download" -Dest "C:\Phone\Download" -Mode pull -Resume -ShowProgress -Verify
+    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/DCIM/Camera" -Dest "D:\Phone\Camera" -Mode tar `
+      -ShowProgress -PrecheckSpace -StreamTar -Verify
+
+.EXAMPLE
+    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/Download" -Dest "C:\Phone\Download" -Mode pull `
+      -Resume -ShowProgress -Verify
+
+.LINK
+    Android Platform-Tools: https://developer.android.com/studio/releases/platform-tools
 
 .NOTES
-    Works on Windows PowerShell 5.1 and PowerShell 7+.
-    Uses approved verb naming (Test-/Confirm-/Get-).
-    Author: Manoj Bhaskaran
+    VERSION
+      1.3.6
+
+    CHANGELOG
+      1.3.6
+        - Added optional DebugMode to aid troubleshooting without risking TAR corruption:
+            • Logs the exact single-line shell sent via Invoke-AdbSh (with short stdout prefix + length)
+            • Captures adb stderr for TAR-to-file and both stdout/stderr for pull mode
+            • No ADB_TRACE by default; minimal, safe, and low-noise
+        - Updated docs to describe DebugMode and log location/caveats
+
+      1.3.5
+        - Robust adb shell delivery: normalize line endings and join multi-line scripts (Invoke-AdbSh)
+          to avoid toybox/busybox parsing errors (e.g., “unexpected 'elif'”)
+        - Test-PhoneTar: prefer `command -v tar` with `--help` fallback; keep toybox/busybox fallback
+        - Hardened parsing of adb outputs to avoid null/empty Trim() crashes
+
+      1.3.4
+        - Fix: phone-side tar detection (Test-PhoneTar) now uses `command -v tar` and accepts `tar --help`
+          instead of requiring `tar --version`. Falls back to `toybox tar` / `busybox tar`.
+          Resolves false negatives introduced in 1.3.3 on devices where `--version` isn’t supported.
+        - No behavior change to transfer logic; this only corrects the pre-flight check.
+
+      1.3.3
+        - Reworked adb shell invocations: removed 'sh -lc' and $0 arg trick
+        - Inlined remote path via placeholder replacement to avoid quoting issues
+        - Restored full comment-based help for all functions
+        - Retained awk-free remote size logic (du/stat/find + shell arithmetic)
+
+      1.3.2
+        - Removed awk usage from Get-RemoteSize; POSIX shell arithmetic with du/stat/find
+        - Hardened adb quoting; timestamped warnings (fixed `$ts:` parse issue)
+        - Inlined remote path arg to satisfy analyzers
+
+      1.3.1
+        - Documented TAR mode as non-resumable; suggested pull+Resume for resumption
+        - Timestamped warnings/retries; verify summary table (Local vs Remote counts/sizes)
+        - Reduced pull progress polling to 5s (configurable)
+
+      1.3.0
+        - Added -Verify and local/remote file count helpers
+        - Logged local/remote summaries after TAR extraction and after pull
+
+      1.2.x
+        - Added disk space precheck; resumable pull; TAR retries/cleanup; -StreamTar
+
+    PREREQUISITES
+      1) Enable Developer Options on the phone
+           Settings → About phone → Software information → tap "Build number" 7 times.
+           Then open: Settings → Developer options.
+      2) Enable USB debugging
+           Settings → Developer options → USB debugging = ON.
+      3) Install Android Platform-Tools (ADB) on Windows
+           - Download the official "SDK Platform-Tools for Windows" ZIP from Google.
+           - Extract to a fixed path (e.g., C:\platform-tools).
+           - Add that folder to PATH.
+           - Verify in PowerShell:
+               adb version
+      4) Authorize this PC on the phone
+           - Connect via a good USB-C cable (prefer USB 3.x) and an SS/USB-3 port.
+           - Unlock the phone screen.
+           - When prompted “Allow USB debugging?”, tick "Always allow" and tap Allow.
+           - Verify:
+               adb devices
+             Expected: <serial>    device
+      5) Windows tar (for -Mode tar)
+           - Windows 10/11 include tar.exe.
+           - If missing, install a compatible tar or use -Mode pull.
+      6) Optional drivers
+           - If Device Manager shows issues, install the Samsung USB driver (or OEM driver).
+      7) Storage & space
+           - Ensure the destination drive has enough free space (use -PrecheckSpace for validation).
+           - For tar-to-file mode, you may need up to ~2× the source size (archive + extracted)
+             unless using -StreamTar.
+      8) (Optional) Debug logs
+           - With -DebugMode, a timestamped log is written under the destination folder.
+           - Logs may include device serials and paths; review before sharing.
+
+    TROUBLESHOOTING
+      - Ensure adb.exe is installed and in PATH (install Android SDK Platform-Tools).
+      - Ensure the phone is connected, unlocked, and USB debugging is enabled/authorized.
+      - If tar mode fails due to missing phone-side tar, switch to pull mode or install tar on the device.
+      - If adb pull is very slow, try tar mode (if phone-side tar is available).
+      - If interrupted during tar mode, re-run the transfer (not resumable). For resumable transfers, use pull mode with -Resume.
+      - Use -DebugMode to log adb interactions for troubleshooting.
+          * TAR mode: only stderr is logged (stdout is the binary .tar).
+          * Pull mode: both stdout and stderr are logged.
+      - /system/bin/sh parsing errors (e.g., “unexpected ';'”):
+          * Ensure you are on ≥ 1.3.5. The script uses Invoke-AdbSh to normalize line endings and flatten scripts.
 #>
 
 [CmdletBinding()]
@@ -120,10 +196,17 @@ param(
   [Parameter()] [int]$MaxRetries = 2,
   [Parameter()] [switch]$StreamTar,
   [Parameter()] [switch]$Verify,
-  [Parameter()] [int]$ProgressIntervalSeconds = 5
+  [Parameter()] [int]$ProgressIntervalSeconds = 5,
+  [Parameter()] [switch]$DebugMode
 )
 
 $ErrorActionPreference = 'Stop'
+
+$DebugLog = $null
+if ($DebugMode) {
+  $DebugLog = Join-Path ($Dest) ("adb_debug_{0}.log" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
+  Write-Host "Debug mode: logging to $DebugLog"
+}
 
 function Test-Adb {
 <#
@@ -180,7 +263,7 @@ function Invoke-AdbSh {
     Runs a shell script on the device safely from PowerShell.
 .DESCRIPTION
     - Normalizes CRLF/CR to LF
-    - Collapses lines into one with '; ' to avoid toybox/busybox newline quirks
+    - CCollapses non-empty lines into one with ‘; ’ and filters blank lines to avoid toybox/busybox newline quirks
     - Returns raw stdout (or empty string on error)
 .PARAMETER Script
     The shell script text to execute on the device.
@@ -190,10 +273,28 @@ function Invoke-AdbSh {
   param([Parameter(Mandatory=$true)][string]$Script)
 
   try {
-    $norm = ($Script -replace "`r`n","`n" -replace "`r","`n").Trim()
-    $one  = (($norm -split "`n") | ForEach-Object { $_.Trim() }) -join '; '
-    return (adb shell $one)
+    $norm  = ($Script -replace "`r`n","`n" -replace "`r","`n").Trim()
+    $lines = $norm -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+    $one   = ($lines -join '; ')
+
+    if ($DebugMode -and $DebugLog) {
+      Add-Content -Path $DebugLog -Value ("[{0}] adb shell << {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $one)
+    }
+
+    $out = adb shell $one
+
+    if ($DebugMode -and $DebugLog) {
+      $len = if ($out) { $out.Length } else { 0 }
+      # Log only a small prefix of stdout to avoid dumping huge binary/text
+      $prefix = if ($out -and $out.Length -gt 1000) { $out.Substring(0,1000) + '…' } else { $out }
+      Add-Content -Path $DebugLog -Value ("[{0}] stdout({1} chars): {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $len, $prefix)
+    }
+
+    return $out
   } catch {
+    if ($DebugMode -and $DebugLog) {
+      Add-Content -Path $DebugLog -Value ("[{0}] ERROR: {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $_)
+    }
     return ""
   }
 }
@@ -506,7 +607,10 @@ if ($Mode -eq 'pull') {
     Write-Host "ADB pull `"$PhonePath`" → `"$Dest`""
     if ($ShowProgress) {
       $destBefore = Get-LocalDirSize -Path $Dest
-      $proc = Start-Process adb -ArgumentList @('pull',"$PhonePath","$Dest") -NoNewWindow -PassThru
+      $proc = Start-Process adb -ArgumentList @('pull',"$PhonePath","$Dest") -NoNewWindow -PassThru `
+         -RedirectStandardError ($DebugMode ? $DebugLog : $null) `
+         -RedirectStandardOutput ($DebugMode ? $DebugLog : $null)
+
       while (-not $proc.HasExited) {
         Start-Sleep -Seconds $ProgressIntervalSeconds
         $cur = Get-LocalDirSize -Path $Dest
@@ -582,7 +686,9 @@ else {
         $attempt++
         Write-Host "Attempt $attempt of $MaxRetries — streaming TAR from `"$PhonePath`" → `"$tarFile`""
         $proc = Start-Process adb -ArgumentList @('exec-out','tar','-C',"$parent",'-cf','-',$leaf) `
-                 -RedirectStandardOutput $tarFile -NoNewWindow -PassThru
+         -RedirectStandardOutput $tarFile `
+         -RedirectStandardError ($DebugMode ? $DebugLog : $null) `
+         -NoNewWindow -PassThru
 
         if ($ShowProgress) {
           while (-not $proc.HasExited) {
