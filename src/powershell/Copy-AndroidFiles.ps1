@@ -94,9 +94,14 @@
 
 .NOTES
     VERSION
-      1.3.6
+      1.3.7
 
     CHANGELOG
+      1.3.7
+        - Fix: token-aware line joining in Invoke-AdbSh to avoid "then;" syntax errors on toybox sh
+        (preserves newlines around if/then/elif/else/fi, for/do/done, while/do/done, case/esac)
+        - Keeps DebugMode logging behavior; no functional changes to transfer logic
+
       1.3.6
         - Added optional DebugMode to aid troubleshooting without risking TAR corruption:
             • Logs the exact single-line shell sent via Invoke-AdbSh (with short stdout prefix + length)
@@ -263,7 +268,11 @@ function Invoke-AdbSh {
     Runs a shell script on the device safely from PowerShell.
 .DESCRIPTION
     - Normalizes CRLF/CR to LF
-    - CCollapses non-empty lines into one with ‘; ’ and filters blank lines to avoid toybox/busybox newline quirks
+    - Filters blank lines
+    - Joins lines with token awareness:
+        * Keeps a newline between control-structure boundaries (if/then/elif/else/fi, for/do/done,
+          while/do/done, until/do/done, case...esac) to avoid "then;" style syntax errors on toybox sh
+        * Uses "; " between ordinary statement lines
     - Returns raw stdout (or empty string on error)
 .PARAMETER Script
     The shell script text to execute on the device.
@@ -273,24 +282,47 @@ function Invoke-AdbSh {
   param([Parameter(Mandatory=$true)][string]$Script)
 
   try {
+    # Normalize EOLs and split
     $norm  = ($Script -replace "`r`n","`n" -replace "`r","`n").Trim()
     $lines = $norm -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
-    $one   = ($lines -join '; ')
+
+    # Build with awareness of POSIX sh control keywords
+    $out = New-Object System.Text.StringBuilder
+    $prev = $null
+    foreach ($l in $lines) {
+      $currStartsCtl = $l -match '^(elif|fi|done|esac|then|do|else)\b'
+      $prevEndsCtl   = $false
+      if ($null -ne $prev) {
+        $prevEndsCtl = $prev -match '\b(then|do|else)$'
+        }
+
+      if ($null -ne $prev) {
+        # If current starts with a control token OR previous ended with one, keep newline
+        if ($currStartsCtl -or $prevEndsCtl) {
+          [void]$out.Append("`n")
+        } else {
+          [void]$out.Append("; ")
+        }
+      }
+      [void]$out.Append($l)
+      $prev = $l
+    }
+
+    $one = $out.ToString()
 
     if ($DebugMode -and $DebugLog) {
       Add-Content -Path $DebugLog -Value ("[{0}] adb shell << {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $one)
     }
 
-    $out = adb shell $one
+    $result = adb shell $one
 
     if ($DebugMode -and $DebugLog) {
-      $len = if ($out) { $out.Length } else { 0 }
-      # Log only a small prefix of stdout to avoid dumping huge binary/text
-      $prefix = if ($out -and $out.Length -gt 1000) { $out.Substring(0,1000) + '…' } else { $out }
+      $len = if ($result) { $result.Length } else { 0 }
+      $prefix = if ($result -and $result.Length -gt 1000) { $result.Substring(0,1000) + '…' } else { $result }
       Add-Content -Path $DebugLog -Value ("[{0}] stdout({1} chars): {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $len, $prefix)
     }
 
-    return $out
+    return $result
   } catch {
     if ($DebugMode -and $DebugLog) {
       Add-Content -Path $DebugLog -Value ("[{0}] ERROR: {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $_)
