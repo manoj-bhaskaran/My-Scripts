@@ -3,8 +3,8 @@
     Fast Android → PC transfer via ADB (pull or TAR stream).
 
 .VERSION
-    1.0.0
-
+    1.1.0
+    
 .DESCRIPTION
     Copies files/folders from an Android phone (e.g., Samsung S23) to a Windows PC
     using Android Debug Bridge (ADB). This avoids MTP overhead and is much faster
@@ -104,6 +104,7 @@
 
 .NOTES
     Author: Manoj Bhaskaran
+    Date:   2025-07-28
     Works on: Windows 10/11, PowerShell 5.1 and 7+
     Requires: adb.exe in PATH; for Mode 'tar', tar.exe in PATH (usually built-in)
 
