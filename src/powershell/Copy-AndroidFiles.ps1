@@ -1,11 +1,15 @@
 <#
 .SYNOPSIS
-    Fast Android → PC transfer via ADB (pull or TAR stream) with progress, optional space checks, and resume.
+    Fast Android → PC transfer via ADB (pull or TAR stream) with progress, optional space checks, resume, and verification.
 
 .VERSION
-    1.2.1
+    1.3.0
 
 .CHANGELOG
+    1.3.0
+      - Added -Verify switch to log post-transfer file counts.
+      - Added Get-LocalFileCount and Get-RemoteFileCount helpers.
+      - Log local count (and remote best-effort count) after TAR extraction; mirrored for pull.
     1.2.1
       - Changed -PrecheckSpace to a standard switch (default false).
       - Restored and expanded function-level comment-based help.
@@ -69,11 +73,17 @@
     Tar mode only: stream directly to extractor (adb exec-out ... | tar -xf -) to avoid creating a temporary .tar.
     Reduces disk space requirement (no ~2x footprint), but progress is limited.
 
-.EXAMPLE
-    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/DCIM/Camera" -Dest "D:\Phone\Camera" -Mode tar -ShowProgress -PrecheckSpace -StreamTar
+.PARAMETER Verify
+    If set, prints a summary of file counts after transfer:
+      - Local count under the copied/extracted root.
+      - Best-effort remote count via adb (find|wc -l) for comparison.
+    Note: counting large trees can take time.
 
 .EXAMPLE
-    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/Download" -Dest "C:\Phone\Download" -Mode pull -Resume -ShowProgress
+    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/DCIM/Camera" -Dest "D:\Phone\Camera" -Mode tar -ShowProgress -PrecheckSpace -StreamTar -Verify
+
+.EXAMPLE
+    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/Download" -Dest "C:\Phone\Download" -Mode pull -Resume -ShowProgress -Verify
 
 .PREREQUISITES
     1) Enable Developer Options → USB debugging on the phone.
@@ -107,7 +117,8 @@ param(
   [Parameter()] [int]$SpaceMarginPercent = 10,
   [Parameter()] [switch]$Resume,
   [Parameter()] [int]$MaxRetries = 2,
-  [Parameter()] [switch]$StreamTar
+  [Parameter()] [switch]$StreamTar,
+  [Parameter()] [switch]$Verify
 )
 
 $ErrorActionPreference = 'Stop'
@@ -254,6 +265,50 @@ function Split-RemotePath {
   return @($parent, $leaf)
 }
 
+function Get-LocalFileCount {
+<#
+.SYNOPSIS
+    Returns the number of files under a local path (recursive).
+.OUTPUTS
+    [Int64] count (0 if none/error).
+.PARAMETER Path
+    Local directory to scan.
+#>
+  param([string]$Path)
+  try {
+    return [int64]((Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
+                     Measure-Object).Count)
+  } catch { return 0 }
+}
+
+function Get-RemoteFileCount {
+<#
+.SYNOPSIS
+    Best-effort count of remote (phone) files for a given path.
+.DESCRIPTION
+    Uses find | wc -l via sh/toybox/busybox. Returns 0 if unavailable.
+.OUTPUTS
+    [Int64] count (0 if unknown).
+.PARAMETER RemoteParent
+    Parent directory on the device.
+.PARAMETER RemoteLeaf
+    Leaf (file or directory) name on the device.
+#>
+  param([string]$RemoteParent, [string]$RemoteLeaf)
+  $path = "$RemoteParent/$RemoteLeaf"
+  $cmd = @"
+sh -lc '
+( find "$path" -type f 2>/dev/null | wc -l ) ||
+( toybox find "$path" -type f 2>/dev/null | wc -l ) ||
+( busybox find "$path" -type f 2>/dev/null | wc -l ) ||
+echo 0
+'
+"@
+  try {
+    return [int64]((adb shell $cmd).Trim())
+  } catch { return 0 }
+}
+
 Write-Verbose "Destination: $Dest"
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 
@@ -283,7 +338,7 @@ if ($Mode -eq 'pull') {
 
   if ($Resume) {
     Write-Host "Resumable pull (skip existing): `"$PhonePath`" → `"$Dest`""
-    # Build remote file list (size \t path); note: stat may not exist on all devices—this path assumes toybox/busybox.
+    # Build remote file list (size \t path)
     $listCmd = "sh -lc 'find ""$PhonePath"" -type f -print0 2>/dev/null | xargs -0 stat -c ""%s`t%n"" 2>/dev/null'"
     $raw = adb shell $listCmd
     $lines = @()
@@ -317,6 +372,15 @@ if ($Mode -eq 'pull') {
     }
     Write-Progress -Activity "Resumable adb pull" -Completed
     Write-Host "Resume pull complete. Files processed: $count, newly copied: $copied."
+
+    if ($Verify) {
+      $localCount  = Get-LocalFileCount -Path $Dest
+      $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
+      Write-Host ("Verify: local files = {0}{1}" -f $localCount, $(if ($remoteCount -gt 0) { " (remote≈$remoteCount)" } else { "" }))
+      if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
+        Write-Warning "Local file count < remote file count. Some files may be missing."
+      }
+    }
   }
   else {
     Write-Host "ADB pull `"$PhonePath`" → `"$Dest`""
@@ -340,6 +404,18 @@ if ($Mode -eq 'pull') {
       adb pull "$PhonePath" "$Dest"
     }
     Write-Host "Pull complete."
+
+    if ($Verify) {
+      # In bulk pull, adb creates a subfolder under Dest with the leaf name
+      $verifyRoot  = Join-Path $Dest $leaf
+      $rootToCount = (Test-Path $verifyRoot) ? $verifyRoot : $Dest
+      $localCount  = Get-LocalFileCount -Path $rootToCount
+      $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
+      Write-Host ("Verify: local files = {0}{1}" -f $localCount, $(if ($remoteCount -gt 0) { " (remote≈$remoteCount)" } else { "" }))
+      if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
+        Write-Warning "Local file count < remote file count. Some files may be missing."
+      }
+    }
   }
 
 }
@@ -354,6 +430,15 @@ else {
     $cmd = "adb exec-out tar -C '$parent' -cf - '$leaf' | tar -xf - -C '$Dest'"
     cmd /c $cmd | Out-Host
     Write-Host "Streaming tar extraction finished. Verify contents."
+
+    if ($Verify) {
+      $localCount  = Get-LocalFileCount -Path $Dest
+      $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
+      Write-Host ("Verify: extracted files = {0}{1}" -f $localCount, $(if ($remoteCount -gt 0) { " (remote≈$remoteCount)" } else { "" }))
+      if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
+        Write-Warning "Extracted count < remote count. Some files may be missing."
+      }
+    }
   }
   else {
     $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -390,6 +475,15 @@ else {
 
         Write-Host "Extracting `"$tarFile`" → `"$Dest`""
         tar -xf $tarFile -C $Dest
+
+        if ($Verify) {
+          $localCount  = Get-LocalFileCount -Path $Dest
+          $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
+          Write-Host ("Verify: extracted files = {0}{1}" -f $localCount, $(if ($remoteCount -gt 0) { " (remote≈$remoteCount)" } else { "" }))
+          if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
+            Write-Warning "Extracted count < remote count. Some files may be missing."
+          }
+        }
 
         # Cleanup
         Remove-Item $tarFile -Force
