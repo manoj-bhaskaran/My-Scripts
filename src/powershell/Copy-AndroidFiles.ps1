@@ -94,13 +94,23 @@
 
 .NOTES
     VERSION
-      1.3.7
+      1.3.8
 
     CHANGELOG
+      1.3.8
+        - Fixed Start-Process parameter handling in TAR-to-file and pull modes:
+            • Previously, -RedirectStandardError / -RedirectStandardOutput were passed $null
+              when -DebugMode was disabled, causing validation errors.
+            • Now uses conditional splatting so redirection keys are only set when DebugMode is on.
+        - Eliminates "Cannot validate argument on parameter 'RedirectStandardError'" errors when
+          running without DebugMode.
+
       1.3.7
-        - Fix: token-aware line joining in Invoke-AdbSh to avoid "then;" syntax errors on toybox sh
-        (preserves newlines around if/then/elif/else/fi, for/do/done, while/do/done, case/esac)
-        - Keeps DebugMode logging behavior; no functional changes to transfer logic
+        - Hardened Invoke-AdbSh:
+            • Rewrote multi-line collapsing to avoid extra semicolons
+            • Added deduplication of whitespace-only lines
+            • Standardized $null comparisons (left-hand side)
+        - Improves stability of phone-side script execution on toybox/busybox shells.
 
       1.3.6
         - Added optional DebugMode to aid troubleshooting without risking TAR corruption:
@@ -639,9 +649,17 @@ if ($Mode -eq 'pull') {
     Write-Host "ADB pull `"$PhonePath`" → `"$Dest`""
     if ($ShowProgress) {
       $destBefore = Get-LocalDirSize -Path $Dest
-      $proc = Start-Process adb -ArgumentList @('pull',"$PhonePath","$Dest") -NoNewWindow -PassThru `
-         -RedirectStandardError ($DebugMode ? $DebugLog : $null) `
-         -RedirectStandardOutput ($DebugMode ? $DebugLog : $null)
+      $sp = @{
+        FilePath     = 'adb'
+        ArgumentList = @('pull',"$PhonePath","$Dest")
+        NoNewWindow  = $true
+        PassThru     = $true
+        }
+        if ($DebugMode -and $DebugLog) {
+        $sp.RedirectStandardError = $DebugLog
+        $sp.RedirectStandardOutput = $DebugLog
+        }
+      $proc = Start-Process @sp
 
       while (-not $proc.HasExited) {
         Start-Sleep -Seconds $ProgressIntervalSeconds
@@ -717,10 +735,17 @@ else {
       try {
         $attempt++
         Write-Host "Attempt $attempt of $MaxRetries — streaming TAR from `"$PhonePath`" → `"$tarFile`""
-        $proc = Start-Process adb -ArgumentList @('exec-out','tar','-C',"$parent",'-cf','-',$leaf) `
-         -RedirectStandardOutput $tarFile `
-         -RedirectStandardError ($DebugMode ? $DebugLog : $null) `
-         -NoNewWindow -PassThru
+        $sp = @{
+            FilePath               = 'adb'
+            ArgumentList           = @('exec-out','tar','-C',"$parent",'-cf','-',$leaf)
+            RedirectStandardOutput = $tarFile
+            NoNewWindow            = $true
+            PassThru               = $true
+            }
+            if ($DebugMode -and $DebugLog) {
+            $sp.RedirectStandardError = $DebugLog
+            }
+        $proc = Start-Process @sp
 
         if ($ShowProgress) {
           while (-not $proc.HasExited) {
