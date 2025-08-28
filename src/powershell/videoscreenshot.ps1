@@ -77,10 +77,15 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.4
+  1.1.5
 
 CHANGELOG
-    1.1.4
+  1.1.5
+    - Docs: clarify time-limit checks in both capture loops (snapshot & GDI+) with brief
+        inline comments explaining $partial, loop break, and cleanup via finally/Stop-Vlc
+    - Behavior: no functional changes; readability/maintainability only
+
+  1.1.4
   - Docs: add full comment-based help to Stop-Vlc and Get-ScreenWithGDIPlus
     (.DESCRIPTION, .PARAMETER, .EXAMPLE) for Get-Help consistency
   - Inline comments: clarify main-loop validation logic (pre/post snapshot counts,
@@ -651,6 +656,9 @@ foreach ($video in $videos) {
         if ($UseVlcSnapshots) {
             # In snapshot mode we just wait for VLC to finish or time out
             while (-not $vlc.HasExited) {
+                # Time-limit guard: mark this run as partial and break.
+                # Stop-Vlc in 'finally' will handle process cleanup; later $ok gating
+                # ensures we DO NOT mark this video as processed when $partial is $true.
                 if ($TimeLimitSeconds -gt 0 -and ((New-TimeSpan -Start $started -End (Get-Date)).TotalSeconds -ge $TimeLimitSeconds)) {
                     Write-Message -Level Warn -Message "Time limit reached; stopping VLC."
                     $partial = $true
@@ -663,6 +671,8 @@ foreach ($video in $videos) {
             $frameIndex = 0
             $videoBase  = [IO.Path]::GetFileNameWithoutExtension($video.Name)
             while (-not $vlc.HasExited) {
+                # Same time-limit semantics as snapshot mode: set $partial and exit loop.
+                # Cleanup occurs in finally; outcome gating prevents 'processed' on partial runs.
                 if ($TimeLimitSeconds -gt 0 -and ((New-TimeSpan -Start $started -End (Get-Date)).TotalSeconds -ge $TimeLimitSeconds)) {
                     Write-Message -Level Warn -Message "Time limit reached; stopping capture."
                     $partial = $true
