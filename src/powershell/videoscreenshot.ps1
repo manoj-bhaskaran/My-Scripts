@@ -77,13 +77,19 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.5
+  1.1.6
 
 CHANGELOG
+  1.1.6
+  - Invoke-Cropper: call crop_colours.py v3.1.0 with:
+      --input <SaveFolder> --skip-bad-images --allow-empty --recurse
+    and forward --resume-file when provided.
+  - No other changes.
+
   1.1.5
-    - Docs: clarify time-limit checks in both capture loops (snapshot & GDI+) with brief
-        inline comments explaining $partial, loop break, and cleanup via finally/Stop-Vlc
-    - Behavior: no functional changes; readability/maintainability only
+  - Docs: inline comments clarifying time-limit/loop termination and final $ok conditions.
+  - Invoke-Cropper: (previous behavior; superseded by 1.1.6)
+  - Minor: keep stdout only in -Debug to avoid “assigned but not used” warnings.
 
   1.1.4
   - Docs: add full comment-based help to Stop-Vlc and Get-ScreenWithGDIPlus
@@ -510,6 +516,15 @@ Invoke-Cropper -PythonScriptPath .\src\python\crop_colours.py -SaveFolder .\Scre
 Invoke-Cropper -PythonScriptPath .\crop.py -SaveFolder .\Shots -ResumeFile resume.json
 #>
 function Invoke-Cropper {
+    <#
+    .SYNOPSIS
+    Runs the external Python cropper script.
+
+    .DESCRIPTION
+    Invokes crop_colours.py v3.1.0 with:
+      --input <SaveFolder> --skip-bad-images --allow-empty --recurse
+    and, if provided, --resume-file <ResumeFile> (relative paths resolved under SaveFolder).
+    #>
     param(
         [Parameter(Mandatory)][string]$PythonScriptPath,
         [Parameter(Mandatory)][string]$SaveFolder,
@@ -520,6 +535,7 @@ function Invoke-Cropper {
         throw "PythonScriptPath not found: $PythonScriptPath"
     }
 
+    # Build optional --resume-file (resolve relative path under SaveFolder)
     $resumeArg = @()
     if ($ResumeFile) {
         $resumePath = if ([System.IO.Path]::IsPathRooted($ResumeFile)) {
@@ -530,10 +546,20 @@ function Invoke-Cropper {
         if (-not (Test-Path -LiteralPath $resumePath)) {
             throw "Resume file not found: $resumePath"
         }
-        $resumeArg = @('--resume_file', "`"$resumePath`"")
+        # cropper v3.1.0 uses kebab-case --resume-file
+        $resumeArg = @('--resume-file', "`"$resumePath`"")
     }
 
-    $pyArgs = @("`"$PythonScriptPath`"", '--input', "`"$SaveFolder`"") + $resumeArg
+    # Required flags:
+    #   --input <SaveFolder> --skip-bad-images --allow-empty --recurse
+    $pyArgs = @(
+        "`"$PythonScriptPath`"",
+        '--input', "`"$SaveFolder`"",
+        '--skip-bad-images',
+        '--allow-empty',
+        '--recurse'
+    ) + $resumeArg
+
     Write-Debug ("Python args: " + ($pyArgs -join ' '))
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -547,36 +573,19 @@ function Invoke-Cropper {
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
     $null = $p.Start()
-    # Read stdout only when Debug is active; otherwise discard to avoid unused-variable warnings
+
+    # Only keep stdout when debugging; otherwise discard to avoid “assigned but unused”
     if ($DebugPreference -eq 'Continue') {
         $cropperStdout = $p.StandardOutput.ReadToEnd()
     } else {
         $null = $p.StandardOutput.ReadToEnd()
     }
-    $stderr = $p.StandardError.ReadToEnd()
+    $cropperStderr = $p.StandardError.ReadToEnd()
     $p.WaitForExit()
 
     if ($p.ExitCode -ne 0) {
-         if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "Cropper stderr (first attempt):`n$stderr" }
-         # One lightweight retry to handle transient issues (e.g., file locks)
-         Start-Sleep -Milliseconds 500
-         $p2 = New-Object System.Diagnostics.Process
-         $p2.StartInfo = $psi
-         $null = $p2.Start()
-         if ($DebugPreference -eq 'Continue') {
-             $cropperStdout2 = $p2.StandardOutput.ReadToEnd()
-         } else {
-             $null = $p2.StandardOutput.ReadToEnd()
-         }
-         $stderr2 = $p2.StandardError.ReadToEnd()
-         $p2.WaitForExit()
-         if ($p2.ExitCode -ne 0) {
-             Write-Message -Level Error -Message "Cropper failed (ExitCode=$($p2.ExitCode)). $stderr2"
-             throw "Cropper failed."
-         } else {
-             if ($DebugPreference -eq 'Continue') { Write-Debug "Cropper (retry) output:`n$cropperStdout2" }
-             Write-Message -Level Info -Message "Cropper finished successfully (after retry)."
-         }
+        Write-Message -Level Error -Message "Cropper failed (ExitCode=$($p.ExitCode)). $cropperStderr"
+        throw "Cropper failed."
     } else {
         if ($DebugPreference -eq 'Continue') { Write-Debug "Cropper output:`n$cropperStdout" }
         Write-Message -Level Info -Message "Cropper finished successfully."
