@@ -1,15 +1,16 @@
 <#
 .SYNOPSIS
     Renames *.jpeg to *.jpg and copies files from a source tree into
-    size-limited subfolders at the destination, with progress, robust
-    error handling, and a clear summary.
+    extension-based, size-limited subfolders at the destination, with
+    progress, robust error handling, deletion-after-copy, and a clear summary.
 
 .DESCRIPTION
     Typical use-cases:
       - Normalise image extensions (.jpeg → .jpg) across a large photo library.
-      - Copy a large set of files into "sharded" subfolders (e.g., 200 files
-        per folder) for easier browsing, backup, or transfer.
-      - Get reliable progress, input validation, and a final summary with totals.
+      - Copy a large set of files into "sharded" subfolders per extension for
+        easier browsing, backup, or transfer.
+      - Get reliable progress, input validation, and a final summary with totals
+        and elapsed time.
 
     What it does:
       1) Input validation and destination bootstrap (creates the destination).
@@ -17,9 +18,17 @@
          - Skips renaming if the resulting .jpg already exists.
          - Uses robust try/catch and tracks errors.
          - Optional progress via Write-Progress.
-      3) Copies all files (post-rename) into numbered subfolders at the destination,
-         each capped at FilesPerFolderLimit files (e.g., batch_0000, batch_0001, …).
-         - Continues creating new batch folders as limits are reached.
+         - Note: The .jpeg → .jpg renaming phase always evaluates .jpeg files
+           regardless of -IncludeExtensions (the extension filter applies only
+           to the copy phase).
+      3) Copies all files (post-rename) into per-extension subfolders at the
+         destination, each capped at FilesPerFolderLimit files (e.g.,
+         picconvert_<timestamp>_<ext>_<counter like 0000>).
+         - **Rule: .png files are ALWAYS skipped.**
+         - **Rule: .jpg files are copied only if the filename starts with 'img'
+           (case-sensitive).**
+         - Continues creating new subfolders as limits are reached.
+         - **Deletes the source file after a successful copy**.
          - Robust try/catch and error tracking; optional progress.
       4) Prints a comprehensive summary at the end:
          - Total files processed
@@ -27,31 +36,40 @@
          - Copied count
          - Number of directories created
          - Error count (and writes a detailed error log if any)
+         - Elapsed execution time
 
 .PARAMETER SourceDir
     Source directory to scan (recursively). Must exist.
 
 .PARAMETER DestDir
-    Destination directory. Will be created if missing. Batch subfolders
-    (batch_0000, batch_0001, ...) are created under this path.
+    Destination directory. Will be created if missing. Extension-based subfolders
+    are created under this path as:
+      picconvert_<RunStamp>_<extension>_<counter>
+    Example: picconvert_20250828_101530_jpg_0000
 
 .PARAMETER FilesPerFolderLimit
-    Maximum number of files per batch subfolder. Default: 2000.
+    Maximum number of files per extension subfolder. Default: 200.
     Use a positive integer. If 0 or less is supplied, the script treats it as unlimited.
 
 .PARAMETER ShowProgress
     If set, displays Write-Progress for the renaming and copying phases.
+    The progress bars are explicitly completed at the end of each phase.
 
 .PARAMETER IncludeExtensions
-    Optional list of file extensions to include (e.g., '.jpg','.jpeg','.png').
-    Defaults to all files when not supplied. Extensions are case-insensitive.
-    Note: .jpeg files are always considered for the rename phase, even if this
-    filter excludes them; the filter applies to the copy phase.
+    Optional list of file extensions to include for the **copy phase**
+    (e.g., '.jpg','.jpeg','.png','.heic'). Case-insensitive.
+      • **.jpeg files are ALWAYS considered for the rename phase**, regardless of
+        this filter.
+      • Copy phase still enforces the rules:
+          - Skip all .png
+          - For .jpg, only copy files whose names start with 'img' (case-sensitive)
+        even if these extensions are listed here.
 
 .PARAMETER LogFilePath
-    Optional path to a log file. If provided, detailed errors are also appended here.
+    Optional path to a log file. If provided, detailed errors are appended here.
     If omitted and errors occur, a file named 'picconvert_errors_yyyyMMdd_HHmmss.log'
-    will be created under DestDir.
+    will be created under DestDir. The path is validated and the directory is created
+    if missing.
 
 .INPUTS
     None. You cannot pipe input to this script.
@@ -64,22 +82,38 @@
 
 .EXAMPLE
     .\picconvert.ps1 -SourceDir "D:\Photos\2024" -DestDir "F:\Media\Photos" `
-      -FilesPerFolderLimit 1500 -IncludeExtensions '.jpg','.png' -ShowProgress
+      -FilesPerFolderLimit 150 -IncludeExtensions '.jpg','.heic' -ShowProgress -Verbose
 
 .NOTES
     VERSION
-      1.1.0
+      1.1.1
 
     CHANGELOG
+      1.1.1
+        - Enforce file rules during copy:
+            • Skip ALL .png files.
+            • For .jpg, only copy files whose names start with 'img' (case-sensitive).
+        - Extension-based subfoldering:
+            • picconvert_<RunStamp>_<extension>_<counter> (e.g., picconvert_20250828_101530_jpg_0000)
+        - Delete source file after successful copy (move semantics).
+        - Added explicit progress completion with Write-Progress -Completed.
+        - Validated LogFilePath (create directory if missing; probe writability).
+        - Added elapsed execution time to summary.
+        - Added verbose logging of per-file actions with -Verbose.
+        - Clarified documentation for IncludeExtensions vs .jpeg rename behavior.
+
       1.1.0
-        - Added param block with configurable Source/Dest/Limit (+ IncludeExtensions, LogFilePath).
+        - Added param block with configurable SourceDir, DestDir, FilesPerFolderLimit (default 200),
+          IncludeExtensions, and LogFilePath.
         - Implemented robust directory validation and auto-creation of DestDir.
-        - Added Write-Progress for rename and copy phases (toggle via -ShowProgress).
         - Introduced modular functions (Initialize-Directories, Get-SourceFiles, Rename-JpegFiles,
-          Start-Batch, Copy-FilesToBatches, Write-RunSummary).
-        - Comprehensive summary now shows totals, dirs created, and error count.
-        - Implemented structured error tracking and optional log file.
-        - Added thorough inline comments and PowerShell comment-based help.
+          Copy-FilesToBatches, Write-RunSummary).
+        - Renamed unapproved verb 'Ensure-Directories' → 'Initialize-Directories'.
+        - Added [CmdletBinding(SupportsShouldProcess=$true)] to functions using ShouldProcess.
+        - Added Write-Progress for rename and copy phases (toggle via -ShowProgress).
+        - Implemented structured error tracking with optional log file output.
+        - Comprehensive summary includes totals, directories created, and error count.
+        - Inline documentation/comments added; full comment-based help.
 
       1.0.0
         - Initial version (assumed baseline).
@@ -133,8 +167,11 @@ $script:RenamedCount = 0
 $script:CopiedCount  = 0
 $script:DirsCreated  = 0
 
-# Create a timestamp for logs
+# Create a timestamp for run + logs
 $script:RunStamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
+
+# Stopwatch for elapsed time
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
 
 # endregion ----------------------------------------------------------------------------------------
 
@@ -194,11 +231,12 @@ function Initialize-Directories {
 function Get-SourceFiles {
     <#
     .SYNOPSIS
-        Retrieves source files with optional extension filtering.
+        Retrieves source files with optional extension filtering for the copy phase.
     .PARAMETER SourceDir
         Root directory to enumerate.
     .PARAMETER IncludeExtensions
         Optional list of extensions (e.g., '.jpg','.png'). Case-insensitive.
+        Note: The .jpeg → .jpg rename phase always considers .jpeg, regardless of this filter.
     .OUTPUTS
         [System.IO.FileInfo[]]
     #>
@@ -228,9 +266,9 @@ function Rename-JpegFiles {
     .SYNOPSIS
         Renames .jpeg files to .jpg with robust error handling and optional progress.
     .PARAMETER Files
-        Files to evaluate for renaming.
+        Files to evaluate for renaming (typically only .jpeg).
     .PARAMETER ShowProgress
-        If set, shows Write-Progress.
+        If set, shows Write-Progress and completes it at the end.
     .OUTPUTS
         [int] Renamed count
     #>
@@ -240,7 +278,10 @@ function Rename-JpegFiles {
         [switch]$ShowProgress
     )
 
-    if (-not $Files -or $Files.Count -eq 0) { return 0 }
+    if (-not $Files -or $Files.Count -eq 0) {
+        if ($ShowProgress) { Write-Progress -Activity "Renaming .jpeg → .jpg" -Completed }
+        return 0
+    }
 
     $total = $Files.Count
     $i = 0
@@ -257,13 +298,14 @@ function Rename-JpegFiles {
             if ($f.Extension -ieq '.jpeg') {
                 $target = Join-Path -Path $f.DirectoryName -ChildPath ($f.BaseName + '.jpg')
                 if (Test-Path -LiteralPath $target) {
-                    Write-Warn "Skip rename; target exists: $target"
+                    Write-Verbose "Skip rename; target exists: $target"
                     continue
                 }
 
                 if ($PSCmdlet.ShouldProcess($f.FullName, "Rename to $target")) {
                     Rename-Item -LiteralPath $f.FullName -NewName ([System.IO.Path]::GetFileName($target)) -ErrorAction Stop
                     $script:RenamedCount++
+                    Write-Verbose "Renamed: $($f.FullName) -> $target"
                 }
             }
         } catch {
@@ -271,58 +313,26 @@ function Rename-JpegFiles {
         }
     }
 
-    return $script:RenamedCount
-}
-
-function Start-Batch {
-    <#
-    .SYNOPSIS
-        Ensures a batch folder exists (batch_####) and returns its path and current count.
-    .PARAMETER DestDir
-        Root destination directory.
-    .PARAMETER BatchIndex
-        Which batch number to create.
-    .OUTPUTS
-        [pscustomobject] @{ Path=..., Count=... }
-    #>
-    [CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='Low')]
-    param(
-        [Parameter(Mandatory=$true)][string]$DestDir,
-        [Parameter(Mandatory=$true)][int]$BatchIndex
-    )
-
-    $batchName = ('batch_{0:D4}' -f $BatchIndex)
-    $batchPath = Join-Path -Path $DestDir -ChildPath $batchName
-
-    if (-not (Test-Path -LiteralPath $batchPath -PathType Container)) {
-        if ($PSCmdlet.ShouldProcess($batchPath, "Create batch directory")) {
-            try {
-                New-Item -ItemType Directory -Path $batchPath -Force | Out-Null
-                $script:DirsCreated++
-                Write-Info "Created: $batchPath"
-            } catch {
-                throw "Failed to create batch folder '$batchPath': $($_.Exception.Message)"
-            }
-        }
+    if ($ShowProgress) {
+        Write-Progress -Activity "Renaming .jpeg → .jpg" -Completed
     }
 
-    # Count existing files in this batch to continue from there
-    $existingCount = (Get-ChildItem -LiteralPath $batchPath -File | Measure-Object).Count
-    return [pscustomobject]@{ Path = $batchPath; Count = $existingCount }
+    return $script:RenamedCount
 }
 
 function Copy-FilesToBatches {
     <#
     .SYNOPSIS
-        Copies files into size-limited batch folders with robust error handling and optional progress.
+        Copies files into per-extension, size-limited subfolders with robust error
+        handling and optional progress, then deletes the source file on success.
     .PARAMETER Files
         Files to copy.
     .PARAMETER DestDir
         Destination root directory.
     .PARAMETER FilesPerFolderLimit
-        Max files per batch folder (0 or less = unlimited).
+        Max files per extension subfolder (0 or less = unlimited).
     .PARAMETER ShowProgress
-        If set, shows Write-Progress.
+        If set, shows Write-Progress and completes it at the end.
     .OUTPUTS
         [int] Copied count
     #>
@@ -334,12 +344,14 @@ function Copy-FilesToBatches {
         [switch]$ShowProgress
     )
 
-    if (-not $Files -or $Files.Count -eq 0) { return 0 }
+    if (-not $Files -or $Files.Count -eq 0) {
+        if ($ShowProgress) { Write-Progress -Activity "Copying to batches" -Completed }
+        return 0
+    }
 
     $total = $Files.Count
     $i = 0
-    $batchIndex = 0
-    $batch = Start-Batch -DestDir $DestDir -BatchIndex $batchIndex
+    if (-not $script:ExtBatchState) { $script:ExtBatchState = @{} }
 
     foreach ($f in $Files) {
         $i++
@@ -350,22 +362,78 @@ function Copy-FilesToBatches {
         }
 
         try {
-            # Move to a new batch if limit reached (only when limit > 0)
-            if ($FilesPerFolderLimit -gt 0 -and $batch.Count -ge $FilesPerFolderLimit) {
-                $batchIndex++
-                $batch = Start-Batch -DestDir $DestDir -BatchIndex $batchIndex
+            $ext = $f.Extension.ToLowerInvariant()
+
+            # RULE 1: Skip all .png files
+            if ($ext -eq '.png') {
+                Write-Verbose "Skip PNG: $($f.FullName)"
+                continue
             }
 
-            $targetPath = Join-Path -Path $batch.Path -ChildPath $f.Name
+            # RULE 2: For .jpg, only allow names starting with 'img' (case-sensitive)
+            if ($ext -eq '.jpg') {
+                $nameOnly = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+                if ($nameOnly -cnotmatch '^img') {
+                    Write-Verbose "Skip JPG not starting with 'img': $($f.Name)"
+                    continue
+                }
+            }
 
-            if ($PSCmdlet.ShouldProcess($f.FullName, "Copy to $targetPath")) {
+            # Determine extension stem (without dot)
+            $extStem = ($ext.StartsWith('.')) ? $ext.Substring(1) : $ext
+
+            # Root folder for this extension
+            $extRoot = Join-Path -Path $DestDir -ChildPath ("picconvert_{0}_{1}" -f $script:RunStamp, $extStem)
+
+            # Per-extension state: Index (counter), Current (current dir), Count (files in current dir)
+            if (-not $script:ExtBatchState.ContainsKey($extStem)) {
+                $script:ExtBatchState[$extStem] = [pscustomobject]@{ Index = 0; Current = $null; Count = 0 }
+            }
+            $state = $script:ExtBatchState[$extStem]
+
+            # Ensure current extension folder exists
+            if (-not $state.Current) {
+                $state.Current = Join-Path -Path $extRoot -ChildPath ("{0}_{1:D4}" -f $extStem, $state.Index)
+                if (-not (Test-Path -LiteralPath $state.Current)) {
+                    if ($PSCmdlet.ShouldProcess($state.Current, "Create extension batch directory")) {
+                        New-Item -ItemType Directory -Path $state.Current -Force | Out-Null
+                        $script:DirsCreated++
+                        Write-Verbose "Created directory: $($state.Current)"
+                    }
+                }
+                $state.Count = (Get-ChildItem -LiteralPath $state.Current -File | Measure-Object).Count
+            }
+
+            # If limit reached (when > 0), roll to next folder
+            if ($FilesPerFolderLimit -gt 0 -and $state.Count -ge $FilesPerFolderLimit) {
+                $state.Index++
+                $state.Current = Join-Path -Path $extRoot -ChildPath ("{0}_{1:D4}" -f $extStem, $state.Index)
+                if (-not (Test-Path -LiteralPath $state.Current)) {
+                    if ($PSCmdlet.ShouldProcess($state.Current, "Create extension batch directory")) {
+                        New-Item -ItemType Directory -Path $state.Current -Force | Out-Null
+                        $script:DirsCreated++
+                        Write-Verbose "Created directory: $($state.Current)"
+                    }
+                }
+                $state.Count = 0
+            }
+
+            $targetPath = Join-Path -Path $state.Current -ChildPath $f.Name
+
+            if ($PSCmdlet.ShouldProcess($f.FullName, "Copy to $targetPath then delete source")) {
                 Copy-Item -LiteralPath $f.FullName -Destination $targetPath -Force -ErrorAction Stop
+                Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop
                 $script:CopiedCount++
-                $batch.Count++  # keep an in-memory counter to avoid repeated enumeration
+                $state.Count++
+                Write-Verbose "Copied+Deleted: $($f.FullName) -> $targetPath"
             }
         } catch {
-            Write-ErrTrack "Copy failed: '$($f.FullName)' → '$targetPath' : $($_.Exception.Message)"
+            Write-ErrTrack "Copy/Delete failed: '$($f.FullName)' : $($_.Exception.Message)"
         }
+    }
+
+    if ($ShowProgress) {
+        Write-Progress -Activity "Copying to batches" -Completed
     }
 
     return $script:CopiedCount
@@ -380,7 +448,7 @@ function Write-RunSummary {
     .PARAMETER Renamed
         How many .jpeg → .jpg renames occurred.
     .PARAMETER Copied
-        How many files were copied.
+        How many files were copied (and deleted from source).
     .PARAMETER DirsCreated
         How many directories were created in this run.
     .PARAMETER ErrCount
@@ -388,10 +456,13 @@ function Write-RunSummary {
     .PARAMETER DestDir
         Destination directory (used for default log creation).
     .PARAMETER LogFilePath
-        Optional explicit log file path.
+        Optional explicit log file path (validated/created if needed).
+    .PARAMETER Elapsed
+        [TimeSpan] The total execution time to display.
     .OUTPUTS
         None
     #>
+    [CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='Low')]
     param(
         [int]$TotalFiles,
         [int]$Renamed,
@@ -399,31 +470,49 @@ function Write-RunSummary {
         [int]$DirsCreated,
         [int]$ErrCount,
         [string]$DestDir,
-        [string]$LogFilePath
+        [string]$LogFilePath,
+        [TimeSpan]$Elapsed
     )
 
 @"
 ==================== SUMMARY ====================
 Total files processed : $TotalFiles
 Renamed (.jpeg→.jpg)  : $Renamed
-Copied                : $Copied
+Copied (then deleted) : $Copied
 Directories created   : $DirsCreated
 Errors                : $ErrCount
+Elapsed time          : {0:c}
 =================================================
-"@ | Write-Host
+"@ -f $Elapsed | Write-Host
 
     if ($ErrCount -gt 0) {
         try {
-            $logPath = $LogFilePath
-            if (-not $logPath) {
-                $logPath = Join-Path -Path $DestDir -ChildPath ("picconvert_errors_{0}.log" -f $script:RunStamp)
+            $resolvedLogPath = $LogFilePath
+            if (-not $resolvedLogPath) {
+                $resolvedLogPath = Join-Path -Path $DestDir -ChildPath ("picconvert_errors_{0}.log" -f $script:RunStamp)
             }
 
-            "[{0}] Error details (count={1})" -f (Get-Date), $ErrCount | Out-File -FilePath $logPath -Encoding UTF8
-            $script:ErrList | Out-File -FilePath $logPath -Append -Encoding UTF8
-            Write-Warn "Errors were logged to: $logPath"
+            # Ensure directory exists & is writable
+            $logDir = Split-Path -Path $resolvedLogPath -Parent
+            if (-not (Test-Path -LiteralPath $logDir -PathType Container)) {
+                if ($PSCmdlet.ShouldProcess($logDir, "Create log directory")) {
+                    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+                    $script:DirsCreated++
+                    Write-Verbose "Created log directory: $logDir"
+                }
+            }
+
+            # Writability probe
+            $probe = Join-Path $logDir ("._probe_{0}.tmp" -f [Guid]::NewGuid())
+            "probe" | Out-File -FilePath $probe -Encoding UTF8
+            Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+
+            # Write the actual log
+            "[{0}] Error details (count={1})" -f (Get-Date), $ErrCount | Out-File -FilePath $resolvedLogPath -Encoding UTF8
+            $script:ErrList | Out-File -FilePath $resolvedLogPath -Append -Encoding UTF8
+            Write-Warn "Errors were logged to: $resolvedLogPath"
         } catch {
-            Write-Warn "Failed to write error log: $($_.Exception.Message)"
+            Write-Warn "Failed to write error log to '$resolvedLogPath': $($_.Exception.Message)"
         }
     }
 }
@@ -433,7 +522,7 @@ Errors                : $ErrCount
 # region: Main ------------------------------------------------------------------------------------
 
 try {
-    Write-Info "Starting picconvert 1.1.0"
+    Write-Info "Starting picconvert 1.1.1"
     Initialize-Directories -SourceDir $SourceDir -DestDir $DestDir
 
     # Phase 1: Gather all source files (for rename); always include .jpeg in consideration
@@ -448,29 +537,32 @@ try {
         Write-Info "No .jpeg files found to rename."
     }
 
-    # Phase 2: Refresh file list post-rename for the copy phase
+    # Phase 2: Refresh file list post-rename for the copy phase (respect -IncludeExtensions here)
     $postRenameFiles = Get-SourceFiles -SourceDir $SourceDir -IncludeExtensions $IncludeExtensions
     $totalAfter = $postRenameFiles.Count
-    Write-Info "Files to copy after rename step: $totalAfter"
+    Write-Info "Files considered for copy after rename step: $totalAfter"
 
-    # Phase 3: Copy into batch folders
+    # Phase 3: Copy into per-extension subfolders (with rules and deletion)
     if ($totalAfter -gt 0) {
-        Write-Info "Copying files into batches under: $DestDir (Limit: $FilesPerFolderLimit)"
+        Write-Info "Copying files into extension-based subfolders under: $DestDir (Limit: $FilesPerFolderLimit)"
         [void](Copy-FilesToBatches -Files $postRenameFiles -DestDir $DestDir -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress)
     } else {
         Write-Info "No files found to copy."
     }
 
-    # Summary
+    # Stop timer and summarize
+    $sw.Stop()
     Write-RunSummary -TotalFiles $totalAfter `
                      -Renamed $script:RenamedCount `
                      -Copied $script:CopiedCount `
                      -DirsCreated $script:DirsCreated `
                      -ErrCount $script:ErrCount `
                      -DestDir $DestDir `
-                     -LogFilePath $LogFilePath
+                     -LogFilePath $LogFilePath `
+                     -Elapsed $sw.Elapsed
 
 } catch {
+    $sw.Stop()
     Write-ErrTrack "Fatal: $($_.Exception.Message)"
     Write-RunSummary -TotalFiles 0 `
                      -Renamed $script:RenamedCount `
@@ -478,7 +570,8 @@ try {
                      -DirsCreated $script:DirsCreated `
                      -ErrCount $script:ErrCount `
                      -DestDir $DestDir `
-                     -LogFilePath $LogFilePath
+                     -LogFilePath $LogFilePath `
+                     -Elapsed $sw.Elapsed
     exit 1
 }
 
