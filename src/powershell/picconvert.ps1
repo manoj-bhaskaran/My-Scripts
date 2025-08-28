@@ -7,49 +7,52 @@
 .DESCRIPTION
     Typical use-cases:
       - Normalise image extensions (.jpeg → .jpg) across a large photo library.
-      - Copy a large set of files into "sharded" subfolders per extension for
-        easier browsing, backup, or transfer.
-      - Get reliable progress, input validation, and a final summary with totals
-        and elapsed time.
+      - Copy a large set of files into per-extension subfolders for easier
+        browsing, backup, or transfer.
+      - Get reliable progress, input validation, and a final summary with totals,
+        per-extension counts, directory breakdown, and elapsed time.
 
-    What it does:
-      1) Input validation and destination bootstrap (creates the destination).
-      2) Renames files with a .jpeg extension to .jpg (case-insensitive).
-         - Skips renaming if the resulting .jpg already exists.
-         - Uses robust try/catch and tracks errors.
+    What it does (high-level flow):
+      1) Validates input and ensures destination exists.
+      2) Renames .jpeg → .jpg (case-insensitive).
+         - Skips if the target .jpg already exists.
+         - Robust try/catch and error tracking.
          - Optional progress via Write-Progress.
          - Note: The .jpeg → .jpg renaming phase always evaluates .jpeg files
            regardless of -IncludeExtensions (the extension filter applies only
            to the copy phase).
-      3) Copies all files (post-rename) into per-extension subfolders at the
-         destination, each capped at FilesPerFolderLimit files (e.g.,
-         picconvert_<timestamp>_<ext>_<counter like 0000>).
-         - **Rule: .png files are ALWAYS skipped.**
-         - **Rule: .jpg files are copied only if the filename starts with 'img'
-           (case-sensitive).**
-         - Continues creating new subfolders as limits are reached.
-         - **Deletes the source file after a successful copy**.
-         - Robust try/catch and error tracking; optional progress.
-      4) Prints a comprehensive summary at the end:
+      3) Copies all files (post-rename) into per-extension subfolders under DestDir:
+           <BatchPrefix>_<RunStamp>_<ext>\ <ext>_0000, <ext>_0001, ...
+         - **Rule:** Skip ALL .png files.
+         - **Rule:** Copy .jpg only if filename starts with 'img' (case-sensitive).
+         - Respects FilesPerFolderLimit (per subfolder); rolls to the next counter.
+         - **Deletes the source file after a successful copy** (move semantics).
+         - Robust try/catch and error tracking; optional progress; verbose logging.
+      4) Prints a comprehensive summary:
          - Total files processed
          - Renamed count (.jpeg → .jpg)
          - Copied count
-         - Number of directories created
+         - Per-extension copied counts
+         - Directories created (with breakdown: batch vs root/log)
          - Error count (and writes a detailed error log if any)
          - Elapsed execution time
 
 .PARAMETER SourceDir
-    Source directory to scan (recursively). Must exist.
+    Source directory to scan (recursively). Default:
+    C:\Users\manoj\OneDrive\Desktop\New folder
 
 .PARAMETER DestDir
-    Destination directory. Will be created if missing. Extension-based subfolders
-    are created under this path as:
-      picconvert_<RunStamp>_<extension>_<counter>
-    Example: picconvert_20250828_101530_jpg_0000
+    Destination directory. Will be created if missing. Default:
+    C:\Users\manoj\OneDrive\Desktop
 
 .PARAMETER FilesPerFolderLimit
     Maximum number of files per extension subfolder. Default: 200.
     Use a positive integer. If 0 or less is supplied, the script treats it as unlimited.
+
+.PARAMETER BatchPrefix
+    Prefix for the per-extension root folders. Default: 'picconvert'.
+      Example layout:
+        <BatchPrefix>_<RunStamp>_<ext>\ <ext>_0000, <ext>_0001, ...
 
 .PARAMETER ShowProgress
     If set, displays Write-Progress for the renaming and copying phases.
@@ -57,13 +60,14 @@
 
 .PARAMETER IncludeExtensions
     Optional list of file extensions to include for the **copy phase**
-    (e.g., '.jpg','.jpeg','.png','.heic'). Case-insensitive.
+    (e.g., '.jpg','.jpeg','.heic'). Case-insensitive.
       • **.jpeg files are ALWAYS considered for the rename phase**, regardless of
         this filter.
       • Copy phase still enforces the rules:
           - Skip all .png
           - For .jpg, only copy files whose names start with 'img' (case-sensitive)
         even if these extensions are listed here.
+      • Validation: only alphanumeric extensions are accepted (e.g., .jpg, .heic).
 
 .PARAMETER LogFilePath
     Optional path to a log file. If provided, detailed errors are appended here.
@@ -78,42 +82,38 @@
     None. Writes status/progress to the console and a summary at the end.
 
 .EXAMPLE
-    .\picconvert.ps1 -SourceDir "D:\Photos\Inbox" -DestDir "E:\Archive" -ShowProgress
+    .\picconvert.ps1 -ShowProgress
 
 .EXAMPLE
     .\picconvert.ps1 -SourceDir "D:\Photos\2024" -DestDir "F:\Media\Photos" `
-      -FilesPerFolderLimit 150 -IncludeExtensions '.jpg','.heic' -ShowProgress -Verbose
+      -FilesPerFolderLimit 150 -IncludeExtensions '.jpg','.heic' -BatchPrefix 'archive' `
+      -ShowProgress -Verbose
 
 .NOTES
     VERSION
-      1.1.1
+      1.1.2
 
     CHANGELOG
+      1.1.2
+        - Added per-extension copied counts to the summary.
+        - Split directory counters:
+            • BatchDirsCreated (per-extension folders)
+            • RootDirsCreated (DestDir, log dir)
+          Summary shows both and total.
+        - Introduced -BatchPrefix (default 'picconvert') to customise folder prefix.
+        - Validated IncludeExtensions entries (alphanumeric-only extensions).
+        - Restored defaults for SourceDir and DestDir to original paths.
+        - Retained:
+            • .png always skipped; .jpg copied only when name starts with 'img' (case-sensitive)
+            • Delete source file after successful copy (move semantics)
+            • Progress bars completed; elapsed time in summary; robust logging & error handling
+
       1.1.1
-        - Enforce file rules during copy:
-            • Skip ALL .png files.
-            • For .jpg, only copy files whose names start with 'img' (case-sensitive).
-        - Extension-based subfoldering:
-            • picconvert_<RunStamp>_<extension>_<counter> (e.g., picconvert_20250828_101530_jpg_0000)
-        - Delete source file after successful copy (move semantics).
-        - Added explicit progress completion with Write-Progress -Completed.
-        - Validated LogFilePath (create directory if missing; probe writability).
-        - Added elapsed execution time to summary.
-        - Added verbose logging of per-file actions with -Verbose.
-        - Clarified documentation for IncludeExtensions vs .jpeg rename behavior.
+        - Enforced .png skip and .jpg '^img' rule; extension-based foldering with counters.
+        - Delete-after-copy; progress completion; LogFilePath validation; elapsed time; verbose.
 
       1.1.0
-        - Added param block with configurable SourceDir, DestDir, FilesPerFolderLimit (default 200),
-          IncludeExtensions, and LogFilePath.
-        - Implemented robust directory validation and auto-creation of DestDir.
-        - Introduced modular functions (Initialize-Directories, Get-SourceFiles, Rename-JpegFiles,
-          Copy-FilesToBatches, Write-RunSummary).
-        - Renamed unapproved verb 'Ensure-Directories' → 'Initialize-Directories'.
-        - Added [CmdletBinding(SupportsShouldProcess=$true)] to functions using ShouldProcess.
-        - Added Write-Progress for rename and copy phases (toggle via -ShowProgress).
-        - Implemented structured error tracking with optional log file output.
-        - Comprehensive summary includes totals, directories created, and error count.
-        - Inline documentation/comments added; full comment-based help.
+        - Param block, input validation, modular functions, progress, structured summary.
 
       1.0.0
         - Initial version (assumed baseline).
@@ -123,26 +123,29 @@
       - Read access to SourceDir, write access to DestDir.
 
     TROUBLESHOOTING
-      - If the script reports "SourceDir not found", check the path and permissions.
-      - If copies fail due to access being denied, verify you have permission to read
-        source files and write to the destination drive.
+      - If "SourceDir not found", check the path and permissions.
+      - If copies fail due to access being denied, verify read/write permissions.
       - If existing .jpg prevents rename of .jpeg, the script logs and skips safely.
-      - For performance, avoid running antivirus scans on DestDir during heavy copies.
+      - For performance, avoid real-time AV scanning on DestDir during heavy copies.
 #>
 
 [CmdletBinding(SupportsShouldProcess=$true)]
 param(
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory=$false)]
     [ValidateNotNullOrEmpty()]
-    [string]$SourceDir,
+    [string]$SourceDir = "C:\Users\manoj\OneDrive\Desktop\New folder",
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory=$false)]
     [ValidateNotNullOrEmpty()]
-    [string]$DestDir,
+    [string]$DestDir   = "C:\Users\manoj\OneDrive\Desktop",
 
     [Parameter(Mandatory=$false)]
     [ValidateRange(0, 10000000)]
     [int]$FilesPerFolderLimit = 200,
+
+    [Parameter(Mandatory=$false)]
+    [ValidatePattern('^[A-Za-z0-9_-]+$')]
+    [string]$BatchPrefix = 'picconvert',
 
     [Parameter(Mandatory=$false)]
     [switch]$ShowProgress,
@@ -157,36 +160,42 @@ param(
 
 # region: Globals / State -------------------------------------------------------------------------
 
-# Fail fast inside try/catch blocks
 $ErrorActionPreference = 'Stop'
 
 # Counters and tracking
-$script:ErrList      = New-Object System.Collections.Generic.List[string]
-$script:ErrCount     = 0
-$script:RenamedCount = 0
-$script:CopiedCount  = 0
-$script:DirsCreated  = 0
+$script:ErrList          = New-Object System.Collections.Generic.List[string]
+$script:ErrCount         = 0
+$script:RenamedCount     = 0
+$script:CopiedCount      = 0
+$script:BatchDirsCreated = 0
+$script:RootDirsCreated  = 0
+$script:CopiedByExt      = @{}   # e.g., @{ "jpg" = 123; "heic" = 45 }
 
-# Create a timestamp for run + logs
+# Timestamp for naming
 $script:RunStamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
 
 # Stopwatch for elapsed time
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
+# Normalise/validate IncludeExtensions early (copy phase only)
+if ($IncludeExtensions) {
+    $norm = @()
+    foreach ($e in $IncludeExtensions) {
+        $candidate = ($e.StartsWith('.')) ? $e : ('.' + $e)
+        if ($candidate -notmatch '^\.[A-Za-z0-9]+$') {
+            throw "Invalid extension in -IncludeExtensions: '$e' (expected like .jpg, .heic)"
+        }
+        $norm += $candidate.ToLowerInvariant()
+    }
+    $IncludeExtensions = $norm | Select-Object -Unique
+}
+
 # endregion ----------------------------------------------------------------------------------------
 
 # region: Helpers ---------------------------------------------------------------------------------
 
-function Write-Info {
-    param([string]$Message)
-    Write-Host "[INFO] $Message"
-}
-
-function Write-Warn {
-    param([string]$Message)
-    Write-Warning $Message
-}
-
+function Write-Info { param([string]$Message) Write-Host "[INFO] $Message" }
+function Write-Warn { param([string]$Message) Write-Warning $Message }
 function Write-ErrTrack {
     param([string]$Message)
     $script:ErrCount++
@@ -219,7 +228,7 @@ function Initialize-Directories {
         if ($PSCmdlet.ShouldProcess($DestDir, "Create destination directory")) {
             try {
                 New-Item -ItemType Directory -Path $DestDir -Force | Out-Null
-                $script:DirsCreated++
+                $script:RootDirsCreated++
                 Write-Info "Created destination directory: $DestDir"
             } catch {
                 throw "Failed to create DestDir '$DestDir': $($_.Exception.Message)"
@@ -235,7 +244,7 @@ function Get-SourceFiles {
     .PARAMETER SourceDir
         Root directory to enumerate.
     .PARAMETER IncludeExtensions
-        Optional list of extensions (e.g., '.jpg','.png'). Case-insensitive.
+        Optional list of extensions (e.g., '.jpg','.heic'). Case-insensitive.
         Note: The .jpeg → .jpg rename phase always considers .jpeg, regardless of this filter.
     .OUTPUTS
         [System.IO.FileInfo[]]
@@ -248,13 +257,8 @@ function Get-SourceFiles {
     $files = Get-ChildItem -LiteralPath $SourceDir -File -Recurse
 
     if ($IncludeExtensions -and $IncludeExtensions.Count -gt 0) {
-        # Normalise extensions to lower-case and ensure they start with '.'
-        $normalized = $IncludeExtensions | ForEach-Object {
-            if ($_ -notmatch '^\.') { ".$_" } else { $_ }
-        } | ForEach-Object { $_.ToLowerInvariant() }
-
         $files = $files | Where-Object {
-            $normalized -contains $_.Extension.ToLowerInvariant()
+            $IncludeExtensions -contains $_.Extension.ToLowerInvariant()
         }
     }
 
@@ -365,10 +369,7 @@ function Copy-FilesToBatches {
             $ext = $f.Extension.ToLowerInvariant()
 
             # RULE 1: Skip all .png files
-            if ($ext -eq '.png') {
-                Write-Verbose "Skip PNG: $($f.FullName)"
-                continue
-            }
+            if ($ext -eq '.png') { Write-Verbose "Skip PNG: $($f.FullName)"; continue }
 
             # RULE 2: For .jpg, only allow names starting with 'img' (case-sensitive)
             if ($ext -eq '.jpg') {
@@ -383,7 +384,7 @@ function Copy-FilesToBatches {
             $extStem = ($ext.StartsWith('.')) ? $ext.Substring(1) : $ext
 
             # Root folder for this extension
-            $extRoot = Join-Path -Path $DestDir -ChildPath ("picconvert_{0}_{1}" -f $script:RunStamp, $extStem)
+            $extRoot = Join-Path -Path $DestDir -ChildPath ("{0}_{1}_{2}" -f $BatchPrefix, $script:RunStamp, $extStem)
 
             # Per-extension state: Index (counter), Current (current dir), Count (files in current dir)
             if (-not $script:ExtBatchState.ContainsKey($extStem)) {
@@ -397,7 +398,7 @@ function Copy-FilesToBatches {
                 if (-not (Test-Path -LiteralPath $state.Current)) {
                     if ($PSCmdlet.ShouldProcess($state.Current, "Create extension batch directory")) {
                         New-Item -ItemType Directory -Path $state.Current -Force | Out-Null
-                        $script:DirsCreated++
+                        $script:BatchDirsCreated++
                         Write-Verbose "Created directory: $($state.Current)"
                     }
                 }
@@ -411,7 +412,7 @@ function Copy-FilesToBatches {
                 if (-not (Test-Path -LiteralPath $state.Current)) {
                     if ($PSCmdlet.ShouldProcess($state.Current, "Create extension batch directory")) {
                         New-Item -ItemType Directory -Path $state.Current -Force | Out-Null
-                        $script:DirsCreated++
+                        $script:BatchDirsCreated++
                         Write-Verbose "Created directory: $($state.Current)"
                     }
                 }
@@ -425,6 +426,9 @@ function Copy-FilesToBatches {
                 Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop
                 $script:CopiedCount++
                 $state.Count++
+                # Per-extension count
+                if (-not $script:CopiedByExt.ContainsKey($extStem)) { $script:CopiedByExt[$extStem] = 0 }
+                $script:CopiedByExt[$extStem]++
                 Write-Verbose "Copied+Deleted: $($f.FullName) -> $targetPath"
             }
         } catch {
@@ -449,8 +453,10 @@ function Write-RunSummary {
         How many .jpeg → .jpg renames occurred.
     .PARAMETER Copied
         How many files were copied (and deleted from source).
-    .PARAMETER DirsCreated
-        How many directories were created in this run.
+    .PARAMETER BatchDirsCreated
+        How many per-extension directories were created.
+    .PARAMETER RootDirsCreated
+        How many root/log-related directories were created.
     .PARAMETER ErrCount
         Number of errors encountered.
     .PARAMETER DestDir
@@ -467,23 +473,34 @@ function Write-RunSummary {
         [int]$TotalFiles,
         [int]$Renamed,
         [int]$Copied,
-        [int]$DirsCreated,
+        [int]$BatchDirsCreated,
+        [int]$RootDirsCreated,
         [int]$ErrCount,
         [string]$DestDir,
         [string]$LogFilePath,
         [TimeSpan]$Elapsed
     )
 
+    $totalDirs = $BatchDirsCreated + $RootDirsCreated
+
 @"
 ==================== SUMMARY ====================
 Total files processed : $TotalFiles
 Renamed (.jpeg→.jpg)  : $Renamed
 Copied (then deleted) : $Copied
-Directories created   : $DirsCreated
+Directories created   : $totalDirs (batch=$BatchDirsCreated, root/log=$RootDirsCreated)
 Errors                : $ErrCount
 Elapsed time          : {0:c}
-=================================================
 "@ -f $Elapsed | Write-Host
+
+    if ($script:CopiedByExt.Count -gt 0) {
+        Write-Host "Per-extension copied counts:"
+        $script:CopiedByExt.GetEnumerator() | Sort-Object Key | ForEach-Object {
+            "{0,-10} : {1,8}" -f $_.Key, $_.Value | Write-Host
+        }
+    }
+
+    Write-Host "================================================="
 
     if ($ErrCount -gt 0) {
         try {
@@ -497,7 +514,7 @@ Elapsed time          : {0:c}
             if (-not (Test-Path -LiteralPath $logDir -PathType Container)) {
                 if ($PSCmdlet.ShouldProcess($logDir, "Create log directory")) {
                     New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-                    $script:DirsCreated++
+                    $script:RootDirsCreated++
                     Write-Verbose "Created log directory: $logDir"
                 }
             }
@@ -522,7 +539,7 @@ Elapsed time          : {0:c}
 # region: Main ------------------------------------------------------------------------------------
 
 try {
-    Write-Info "Starting picconvert 1.1.1"
+    Write-Info "Starting picconvert 1.1.2"
     Initialize-Directories -SourceDir $SourceDir -DestDir $DestDir
 
     # Phase 1: Gather all source files (for rename); always include .jpeg in consideration
@@ -555,7 +572,8 @@ try {
     Write-RunSummary -TotalFiles $totalAfter `
                      -Renamed $script:RenamedCount `
                      -Copied $script:CopiedCount `
-                     -DirsCreated $script:DirsCreated `
+                     -BatchDirsCreated $script:BatchDirsCreated `
+                     -RootDirsCreated $script:RootDirsCreated `
                      -ErrCount $script:ErrCount `
                      -DestDir $DestDir `
                      -LogFilePath $LogFilePath `
@@ -567,7 +585,8 @@ try {
     Write-RunSummary -TotalFiles 0 `
                      -Renamed $script:RenamedCount `
                      -Copied $script:CopiedCount `
-                     -DirsCreated $script:DirsCreated `
+                     -BatchDirsCreated $script:BatchDirsCreated `
+                     -RootDirsCreated $script:RootDirsCreated `
                      -ErrCount $script:ErrCount `
                      -DestDir $DestDir `
                      -LogFilePath $LogFilePath `
