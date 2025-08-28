@@ -22,7 +22,7 @@
     - CollisionPolicy (for overlapping paths and/or Flat mode):
         * Skip | Overwrite | Rename (default: Rename)
     - Progress bars for long runs (suppressed by -Quiet).
-    - End-of-run summary includes uncompressed bytes and total compressed zip bytes (savings).
+    - End-of-run summary includes uncompressed bytes, total compressed zip bytes, and compression ratio.
     - Robust error handling and diagnostics (WhatIf/Confirm; -Verbose); clearer message if an
       archive appears to be password-protected.
 
@@ -55,6 +55,10 @@
     in the source directory before deleting the source directory. Without this switch, the
     script will WARN and list remaining items instead of deleting.
 
+.PARAMETER MaxSafeNameLength
+    Optional maximum length for generated safe names (e.g., subfolder names derived from zip files).
+    0 (default) means no truncation. Use a positive value (e.g., 200) to cap names in edge cases.
+
 .PARAMETER Quiet
     Suppress non-essential console output and progress (summary still prints).
 
@@ -71,6 +75,10 @@
     .\Expand-ZipsAndClean.ps1 -DeleteSource -CleanNonZips
 
 .EXAMPLE
+    # Limit generated subfolder names to 200 characters (defensive)
+    .\Expand-ZipsAndClean.ps1 -MaxSafeNameLength 200
+
+.EXAMPLE
     # Dry run (no changes), show what would happen
     .\Expand-ZipsAndClean.ps1 -WhatIf
 
@@ -82,7 +90,7 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 1.1.0
+    Version  : 1.1.1
     Author   : Manoj Bhaskaran
     Requires : PowerShell 5.1 or 7+, Microsoft.PowerShell.Archive (Expand-Archive)
 
@@ -94,12 +102,16 @@
            for password-protected zips, unique subfolder naming if exists, parent
            writability check, optional -CleanNonZips, consistent summary printing,
            table summary, ms in duration, and expanded docs/FAQ.
+    1.1.1  Safety/UX updates: guard against same/overlapping source/destination,
+           optional MaxSafeNameLength, per-file move progress, compression ratio,
+           minor refactor to de-duplicate suffix logic, directory-based write probe,
+           docs for novices (optional features can be ignored), PS 5.1 note.
 
     ── Setup / Module check ─────────────────────────────────────────────────────
     Expand-Archive is provided by Microsoft.PowerShell.Archive.
-    • Check availability:
-        Get-Module -ListAvailable Microsoft.PowerShell.Archive
-    • If missing (PowerShell 7+):
+    • PowerShell 5.1: The module is included with Windows Management Framework 5.1.
+      (Install-Module is generally for PowerShell 7+. On 5.1 you normally already have it.)
+    • PowerShell 7+: If missing, install from PSGallery:
         Install-Module -Name Microsoft.PowerShell.Archive -Scope CurrentUser -Force
       (You may need: Set-PSRepository PSGallery -InstallationPolicy Trusted)
 
@@ -111,19 +123,23 @@
       “Enable Win32 long paths” = Enabled
     PowerShell 7+ and modern .NET improve long path handling, but this script is defensive.
 
+    ── Note for new users ───────────────────────────────────────────────────────
+    Optional features like ExtractMode and CollisionPolicy are advanced/optional.
+    For a simple run, you can just execute the script with no parameters.
+
 TROUBLESHOOTING & FAQ
     Q: Script seems to hang on large zips.
        A: Use -Verbose to monitor progress; consider running in PowerShell 7+ for better performance.
+
+    Q: Can I process password-protected zips?
+       A: Not supported by Expand-Archive. Use an external tool like 7-Zip for those archives.
 
     Q: I get errors mentioning long paths or path too long.
        A: Enable Long Path Support as noted above. Prefer PowerShell 7+. Keep destination close to drive root.
 
     Q: Extraction fails for one archive but others work.
-       A: Try -Verbose to inspect the failing file. The archive may be corrupted or password-protected.
-          Password-protected zips aren’t supported by Expand-Archive; the script will flag this.
-
-    Q: Files in separate zips collide (same names).
-       A: Use the default -ExtractMode PerArchiveSubfolder to keep each zip isolated.
+       A: Try -Verbose to inspect the failing file. The archive may be corrupted or password-protected;
+          the script flags likely password cases in the error.
 
     Q: I want to preview actions without changing files.
        A: Use -WhatIf (and optionally -Confirm for prompts).
@@ -157,6 +173,10 @@ param(
     [switch]$CleanNonZips,
 
     [Parameter()]
+    [ValidateRange(0, 32767)]
+    [int]$MaxSafeNameLength = 0,
+
+    [Parameter()]
     [switch]$Quiet
 )
 
@@ -167,8 +187,52 @@ function Write-Info {
     if (-not $Quiet) { Write-Host $Message }
 }
 
+function Get-FullPath {
+    param([Parameter(Mandatory)][string]$Path)
+    try {
+        return ([System.IO.Path]::GetFullPath($Path))
+    } catch {
+        return $Path
+    }
+}
+
+# Shared unique-suffix helper (works for files or directories)
+function Resolve-UniquePathCore {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][bool]$IsDirectory
+    )
+    $parent = Split-Path -Path $Path -Parent
+    $leaf   = Split-Path -Path $Path -Leaf
+    $base   = if ($IsDirectory) { $leaf } else { [System.IO.Path]::GetFileNameWithoutExtension($leaf) }
+    $ext    = if ($IsDirectory) { '' } else { [System.IO.Path]::GetExtension($leaf) }
+    $stamp  = (Get-Date -Format 'yyyyMMddHHmmss')
+    $i = 0
+    do {
+        $suffix   = if ($i -eq 0) { "_$stamp" } else { "_$stamp`_$i" }
+        $candidate = Join-Path $parent ($base + $suffix + $ext)
+        $i++
+    } while (Test-Path -LiteralPath $candidate)
+    return $candidate
+}
+
+function Resolve-UniquePath {
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $Path }
+    return (Resolve-UniquePathCore -Path $Path -IsDirectory:$false)
+}
+
+function Resolve-UniqueDirectoryPath {
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $Path }
+    return (Resolve-UniquePathCore -Path $Path -IsDirectory:$true)
+}
+
 function Get-SafeName {
-    param([Parameter(Mandatory)][string]$Name)
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [int]$MaxLength = 0
+    )
     $invalid = [System.IO.Path]::GetInvalidFileNameChars()
     $sb = [System.Text.StringBuilder]::new()
     foreach ($ch in $Name.ToCharArray()) {
@@ -176,38 +240,10 @@ function Get-SafeName {
     }
     $san = $sb.ToString().TrimEnd('.', ' ')
     if ([string]::IsNullOrWhiteSpace($san)) { $san = 'archive' }
+    if ($MaxLength -gt 0 -and $san.Length -gt $MaxLength) {
+        $san = $san.Substring(0, $MaxLength)
+    }
     return $san
-}
-
-function Resolve-UniquePath {
-    param([Parameter(Mandatory)][string]$Path)
-    $dir = Split-Path -Path $Path -Parent
-    $file = Split-Path -Path $Path -Leaf
-    $base = [System.IO.Path]::GetFileNameWithoutExtension($file)
-    $ext  = [System.IO.Path]::GetExtension($file)
-    $stamp = (Get-Date -Format 'yyyyMMddHHmmss')
-    $i = 0
-    do {
-        $suffix = if ($i -eq 0) { "_$stamp" } else { "_$stamp`_$i" }
-        $candidate = Join-Path $dir ($base + $suffix + $ext)
-        $i++
-    } while (Test-Path -LiteralPath $candidate)
-    return $candidate
-}
-
-function Resolve-UniqueDirectoryPath {
-    param([Parameter(Mandatory)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { return $Path }
-    $parent = Split-Path -Path $Path -Parent
-    $leaf   = Split-Path -Path $Path -Leaf
-    $stamp = (Get-Date -Format 'yyyyMMddHHmmss')
-    $i = 0
-    do {
-        $suffix = if ($i -eq 0) { "_$stamp" } else { "_$stamp`_$i" }
-        $candidate = Join-Path $parent ($leaf + $suffix)
-        $i++
-    } while (Test-Path -LiteralPath $candidate)
-    return $candidate
 }
 
 function Test-LongPathsEnabled {
@@ -258,7 +294,8 @@ function Expand-ZipSmart {
         [Parameter(Mandatory)][string]$ZipPath,
         [Parameter(Mandatory)][string]$DestinationRoot,
         [ValidateSet('PerArchiveSubfolder','Flat')][string]$ExtractMode = 'PerArchiveSubfolder',
-        [ValidateSet('Skip','Overwrite','Rename')][string]$CollisionPolicy = 'Rename'
+        [ValidateSet('Skip','Overwrite','Rename')][string]$CollisionPolicy = 'Rename',
+        [int]$SafeNameMaxLen = 0
     )
 
     if (-not (Test-Path -LiteralPath $DestinationRoot)) {
@@ -266,7 +303,7 @@ function Expand-ZipSmart {
     }
 
     $baseName   = [System.IO.Path]::GetFileNameWithoutExtension($ZipPath)
-    $safeSub    = Get-SafeName -Name $baseName
+    $safeSub    = Get-SafeName -Name $baseName -MaxLength $SafeNameMaxLen
     $movedCount = 0
 
     try {
@@ -334,28 +371,41 @@ function Move-Zips-ToParent {
         throw "Parent directory not found: $parent"
     }
 
-    # quick writability check (skip if WhatIf)
+    # Writability probe using an empty directory (skip if WhatIf)
     if (-not $WhatIfPreference) {
-        $testFile = Join-Path $parent ("._write_test_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
+        $probe = Join-Path $parent ("._write_test_{0}" -f ([guid]::NewGuid().ToString('N')))
         try {
-            "" | Out-File -LiteralPath $testFile -Encoding ascii -NoNewline
-            Remove-Item -LiteralPath $testFile -Force
+            New-Item -ItemType Directory -Path $probe -Force | Out-Null
+            Remove-Item -LiteralPath $probe -Recurse -Force
         } catch {
             throw "Parent directory is not writable: $parent"
         }
     }
 
+    $zipsToMove = @(Get-ChildItem -LiteralPath $SourceDir -Filter *.zip -File)
+    $total = $zipsToMove.Count
+    $idx = 0
     $moved = 0
     $bytes = [int64]0
-    Get-ChildItem -LiteralPath $SourceDir -Filter *.zip -File | ForEach-Object {
-        $target = Join-Path $parent $_.Name
+
+    foreach ($zf in $zipsToMove) {
+        $idx++
+        if (-not $Quiet) {
+            $pct = [int](($idx) / [math]::Max(1,$total) * 100)
+            Write-Progress -Activity "Moving zip files to parent" -Status "$idx / $total : $($zf.Name)" -PercentComplete $pct
+        }
+
+        $target = Join-Path $parent $zf.Name
         if (Test-Path -LiteralPath $target) {
             $target = Resolve-UniquePath -Path $target
         }
-        Move-Item -LiteralPath $_.FullName -Destination $target
+        Move-Item -LiteralPath $zf.FullName -Destination $target
         $moved++
-        $bytes += $_.Length
+        $bytes += $zf.Length
     }
+
+    if (-not $Quiet) { Write-Progress -Activity "Moving zip files to parent" -Completed }
+
     [pscustomobject]@{ Count = $moved; Bytes = $bytes; Destination = $parent }
 }
 
@@ -375,6 +425,25 @@ $totalCompressedZipBytes  = [int64]0
 $moveSummary              = [pscustomobject]@{ Count = 0; Bytes = 0; Destination = "" }
 
 try {
+    # Guard: same/overlapping paths (prevent destructive/undefined behaviors)
+    $srcFull = Get-FullPath -Path $SourceDirectory
+    $dstFull = Get-FullPath -Path $DestinationDirectory
+
+    if ($srcFull -eq $dstFull) {
+        throw "Source and destination cannot be the same: $srcFull"
+    }
+
+    # Add trailing backslash for containment tests
+    $srcWithSep = if ($srcFull.EndsWith('\')) { $srcFull } else { $srcFull + '\' }
+    $dstWithSep = if ($dstFull.EndsWith('\')) { $dstFull } else { $dstFull + '\' }
+
+    if ($dstWithSep.StartsWith($srcWithSep, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Destination cannot be inside the source directory."
+    }
+    if ($srcWithSep.StartsWith($dstWithSep, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Source cannot be inside the destination directory."
+    }
+
     if (-not (Test-Path -LiteralPath $SourceDirectory)) {
         throw "Source directory not found: $SourceDirectory"
     }
@@ -408,7 +477,7 @@ try {
 
                 if ($PSCmdlet.ShouldProcess($zip.FullName, "Extract")) {
                     $stats = Get-ZipFileStats -ZipPath $zip.FullName
-                    $filesFromZip = Expand-ZipSmart -ZipPath $zip.FullName -DestinationRoot $DestinationDirectory -ExtractMode $ExtractMode -CollisionPolicy $CollisionPolicy
+                    $filesFromZip = Expand-ZipSmart -ZipPath $zip.FullName -DestinationRoot $DestinationDirectory -ExtractMode $ExtractMode -CollisionPolicy $CollisionPolicy -SafeNameMaxLen $MaxSafeNameLength
                     $totalFilesExtracted     += ( ($filesFromZip -is [int]) ? $filesFromZip : $stats.FileCount )
                     $totalUncompressedBytes  += $stats.UncompressedBytes
                     $totalCompressedZipBytes += $stats.CompressedBytes
@@ -430,13 +499,7 @@ try {
     # Move zips to parent
     try {
         if ($PSCmdlet.ShouldProcess($SourceDirectory, "Move .zip files to parent")) {
-            if (-not $Quiet) {
-                Write-Progress -Activity "Moving zip files to parent" -Status "Preparing..." -PercentComplete 0
-            }
             $moveSummary = Move-Zips-ToParent -SourceDir $SourceDirectory
-            if (-not $Quiet) {
-                Write-Progress -Activity "Moving zip files to parent" -Completed
-            }
         }
     } catch {
         $msg = "Moving .zip files to parent failed: $($_.Exception.Message)"
@@ -491,6 +554,11 @@ function Format-Bytes {
 }
 
 # Always print a summary (even if no zips)
+$compressionRatio = if ($totalCompressedZipBytes -gt 0) {
+    # Show as multiplier, e.g., 3.27x uncompressed vs compressed
+    "{0:N2}x" -f ($totalUncompressedBytes / [double]$totalCompressedZipBytes)
+} else { "n/a" }
+
 $summary = [pscustomobject]@{
     SourceDirectory          = $SourceDirectory
     DestinationDirectory     = $DestinationDirectory
@@ -501,6 +569,7 @@ $summary = [pscustomobject]@{
     FilesExtracted           = $totalFilesExtracted
     TotalUncompressedBytes   = $totalUncompressedBytes
     TotalCompressedZipBytes  = $totalCompressedZipBytes
+    CompressionRatio         = $compressionRatio
     ZipsMoved                = ($moveSummary.Count)
     ZipsMovedBytes           = ($moveSummary.Bytes)
     ZipsMovedTo              = ($moveSummary.Destination)
@@ -516,6 +585,7 @@ $summary |
         ZipsFound, ZipsProcessed, FilesExtracted,
         @{n='TotalUncompressed'; e={ Format-Bytes $_.TotalUncompressedBytes }},
         @{n='TotalCompressedZips'; e={ Format-Bytes $_.TotalCompressedZipBytes }},
+        CompressionRatio,
         ZipsMoved, @{n='ZipsMovedBytes'; e={ Format-Bytes $_.ZipsMovedBytes }},
         ZipsMovedTo, Errors, Duration |
     Format-Table -AutoSize
