@@ -1,309 +1,486 @@
 <#
 .SYNOPSIS
-This PowerShell script processes video files from a specified source folder, takes screenshots at regular intervals, and then crops the screenshots using a Python script. It also supports a cropping-only mode to skip video processing and screenshot capturing, and directly crop the images. In cropping-only mode, it can resume processing from a specified file name.
+Captures video frames from VLC or the desktop and (optionally) runs a Python cropper.
 
 .DESCRIPTION
-The script allows for configurable parameters, such as the maximum number of videos to process in a single run and the time limit for processing videos. Additionally, it supports command-line parameters to override these default values and handles interrupts gracefully. The script can also be run in a cropping-only mode, skipping video processing and screenshot capturing if the screenshots have already been taken. When running in cropping-only mode, it can resume processing from a specified file name.
+Plays each video file via VLC and saves periodic screenshots to a target folder.
+Two capture approaches are supported:
+  1) Desktop capture via GDI+ (default) – generic, no VLC filters required.
+  2) VLC scene snapshots (opt-in via -UseVlcSnapshots) – captures only the video frame.
+
+Major behaviours and safeguards:
+  - Time limit: if reached, capture stops, VLC is terminated cleanly, and the video is
+    NOT logged as processed (prevents false “processed” state).
+  - Process cleanup: VLC is closed or killed on all exit paths (normal, time/video limit, error).
+  - Exit codes: non-zero VLC exit codes are treated as failures and not logged as processed.
+  - Paths: Python cropper script path is parameterised; defaults relative to this script.
+  - Resume file validation: in -CropOnly mode, the resume file must exist or the script errors.
+  - Startup monitoring: waits up to VlcStartupTimeoutSeconds for VLC to initialise.
 
 .PARAMETER SourceFolder
-Mandatory unless in CropOnly mode. Specifies the path to the source folder containing the video files to be processed.
+Folder containing input videos. Recurses by default.
 
 .PARAMETER SaveFolder
-Optional. Specifies the path to the folder where screenshots will be saved.
+Destination folder for screenshots. Default: <script>\Screenshots
 
-.PARAMETER TimeLimit
-Optional. Specifies the maximum time in minutes for processing videos in a single run. Defaults to 0 (no time limit) if not provided. This parameter is ignored in cropping-only mode.
+.PARAMETER FramesPerSecond
+Approx. capture rate for screenshots (GDI+ mode). Default: 1.
+
+.PARAMETER TimeLimitSeconds
+Maximum capture time per video. 0 = unlimited. Default: 0.
 
 .PARAMETER VideoLimit
-Optional. Specifies the maximum number of videos to process in a single run. Defaults to 0 (no limit) if not provided. This parameter is ignored in cropping-only mode.
+Maximum number of videos to process this run. 0 = unlimited. Default: 0.
+
+.PARAMETER Debug
+Enables verbose debug tracing via Write-Debug.
 
 .PARAMETER CropOnly
-Activates cropping-only mode, skipping video processing and screenshot capturing. Any settings for -TimeLimit and -VideoLimit are ignored in this mode.
+Skips video playback and runs the Python cropper only.
 
 .PARAMETER ResumeFile
-Works in cropping-only mode to specify the file name from which to resume cropping. This parameter is ignored if cropping-only mode (-CropOnly) is not specified.
+Name or path of a previously saved frame list (or other cropper resume file).
+Validated when -CropOnly is used.
 
-.EXAMPLES
-To run the script with the default values:
-.\videoscreenshot.ps1 -SourceFolder "C:\Source"
+.PARAMETER PythonScriptPath
+Path to the Python cropper script. Defaults to src\python\crop_colours.py
+under the current script folder.
 
-To specify a time limit of 15 minutes and a video limit of 10:
-.\videoscreenshot.ps1 -SourceFolder "C:\Source" -TimeLimit 15 -VideoLimit 10
+.PARAMETER ProcessedLogPath
+Path to the text file tracking processed videos. Default: <script>\processed_videos.log
 
-To run the script in cropping-only mode, ignoring video-related parameters:
-.\videoscreenshot.ps1 -CropOnly -SaveFolder "C:\Save"
+.PARAMETER UseVlcSnapshots
+Use VLC scene filter for frame capture instead of desktop GDI+ capture.
 
-To run the script in cropping-only mode and resume cropping from a specific file:
-.\videoscreenshot.ps1 -CropOnly -SaveFolder "C:\Save" -ResumeFile "Screenshot_20231116180000.png"
+.PARAMETER VlcStartupTimeoutSeconds
+Seconds to wait for VLC to start before considering it failed. Default: 10.
+
+.INPUTS
+None. You cannot pipe input to this script.
+
+.OUTPUTS
+None. Writes status/progress to the console and log files.
+
+.EXAMPLE
+.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
+  -FramesPerSecond 2 -TimeLimitSeconds 600 -Debug
+
+.EXAMPLE
+.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
+  -UseVlcSnapshots -TimeLimitSeconds 300
+
+.EXAMPLE
+.\videoscreenshot.ps1 -CropOnly -ResumeFile "resume_list.txt"
 
 .NOTES
-Script Workflow:
-1. Initialization:
-   - Configurable delays, time limits, and video limits are set.
-   - Source folder, save path, cropped images path, log file path, and Python script path are defined.
-   - Command-line parameters are parsed to override default values, if provided.
-   - The -CropOnly parameter is parsed to determine if the script should skip video processing.
-   - The -ResumeFile parameter is parsed to specify the file name to resume from in cropping-only mode.
+AUTHOR
+  Manoj Bhaskaran
 
-2. Prerequisite Checks:
-   - The script checks if the source folder exists.
-   - It verifies if VLC Media Player is installed and available in the system path.
-   - It checks if the Python cropping script exists.
+VERSION
+  1.1.0
 
-3. Setup:
-   - Save and cropped directories are created if they do not exist.
-   - The log file is checked to determine if it is a fresh start. If so, existing screenshots are cleared (unless in cropping-only mode).
+CHANGELOG
+  1.1.0
+  - Fix: Time-limit now terminates VLC and prevents false “processed” logging.
+  - Fix: VLC is closed/killed on all exit paths via a central finally cleanup.
+  - Fix: Non-zero VLC exit codes mark the video as failed (not processed).
+  - Add: Parameterised PythonScriptPath; defaults relative to the script root.
+  - Add: Validate -ResumeFile in -CropOnly mode.
+  - Add: Startup timeout for VLC; improved debug tracing.
+  - Add: Optional -UseVlcSnapshots mode (VLC scene filter) to avoid full-screen capture.
+  - Doc: Converted to strict comment-based help for Get-Help compatibility.
 
-4. Interrupt Handling:
-   - Interrupt handling logic has been removed for simplicity.
+PREREQUISITES
+  - VLC installed and in PATH (vlc.exe).
+  - Python available if running the cropper; cropper script present.
 
-5. Video Processing:
-   - All video files in the source folder are listed.
-   - Processed videos are filtered out, and the remaining videos are processed.
-   - Screenshots are taken at regular intervals until the time limit or video limit is reached, or an interrupt signal is received.
-
-6. Cropping Mode (if -CropOnly is provided):
-   - The script skips video processing and screenshot capturing.
-   - The Python cropping script is called to crop the screenshots from the specified directory.
-   - If the -ResumeFile parameter is provided, the script resumes cropping from the specified file, skipping files until it reaches this file name.
-
-7. Error Handling and Cleanup:
-   - Any errors during processing are logged.
-   - VLC processes are terminated if still running after an error or interrupt.
-
-8. Python Script Execution:
-   - The Python script is called to crop the screenshots. If in cropping-only mode, it only processes the existing screenshots. If the -ResumeFile parameter is provided, it resumes cropping from the specified file.
-
-9. Completion:
-   - The script logs the completion of processing and deletes the log file if all videos are processed.
+TROUBLESHOOTING
+  - Blank images: ensure VLC can decode the file; try -UseVlcSnapshots.
+  - VLC not starting: increase -VlcStartupTimeoutSeconds; verify codecs.
+  - Crop-only errors: check -ResumeFile path; ensure Python & script path are correct.
 #>
 
-# Parse command-line arguments
-param (
-    [string]$SourceFolder,
-    [string]$SaveFolder = "C:\Users\manoj\OneDrive\Desktop\Screenshots",
-    [int]$TimeLimit = 0,
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $false)]
+    [string]$SourceFolder = (Join-Path $PSScriptRoot 'videos'),
+
+    [Parameter(Mandatory = $false)]
+    [string]$SaveFolder = (Join-Path $PSScriptRoot 'Screenshots'),
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 60)]
+    [int]$FramesPerSecond = 1,
+
+    [Parameter(Mandatory = $false)]
+    [int]$TimeLimitSeconds = 0,
+
+    [Parameter(Mandatory = $false)]
     [int]$VideoLimit = 0,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Debug,
+
+    [Parameter(Mandatory = $false)]
     [switch]$CropOnly,
+
+    [Parameter(Mandatory = $false)]
     [string]$ResumeFile,
-    [switch]$Debug  # Add a custom Debug switch
+
+    [Parameter(Mandatory = $false)]
+    [string]$PythonScriptPath = (Join-Path $PSScriptRoot 'src\python\crop_colours.py'),
+
+    [Parameter(Mandatory = $false)]
+    [string]$ProcessedLogPath = (Join-Path $PSScriptRoot 'processed_videos.log'),
+
+    [Parameter(Mandatory = $false)]
+    [switch]$UseVlcSnapshots,
+
+    [Parameter(Mandatory = $false)]
+    [int]$VlcStartupTimeoutSeconds = 10
 )
 
-# Configurable parameters
-$initialDelay = 200          # Time to wait for VLC to open (milliseconds)
-$screenshotInterval = 500    # Interval between screenshots (milliseconds)
-$timeLimitInMinutes = $TimeLimit     # Maximum time limit for processing videos (default value in minutes)
-$maxVideosToProcess = $VideoLimit    # Maximum number of videos to process in a single run (default value)
+# region Utilities
 
-# Define paths
-$logFilePath = "$SaveFolder\processed_videos.log"  # Path to the log file
-$pythonScriptPath = "C:\Users\manoj\Documents\Scripts\src\python\crop_colours.py"
-
-# Enable Debugging Messages if -Debug is passed
-if ($Debug.IsPresent) {
-    $DebugPreference = "Continue"
-}
-
-# Helper function to log messages with timestamps
+<#
+.SYNOPSIS
+Simple structured console logging.
+.DESCRIPTION
+Writes coloured, prefixed messages for Info/Warn/Error with optional timestamps.
+.PARAMETER Level
+Log level: Info, Warn, Error.
+.PARAMETER Message
+Message text.
+.EXAMPLE
+Write-Message -Level Info -Message "Starting capture..."
+#>
 function Write-Message {
-    param ([string]$message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Output "[$timestamp] $message"
-}
-
-# Validate the source folder unless in CropOnly mode
-if (-not $CropOnly -and -not (Test-Path -Path $SourceFolder)) {
-    Write-Message "Error: Source folder does not exist. Please check the path: $SourceFolder"
-    exit 1
-}
-
-# Validate or create the save folder in Standard mode
-if (-not $CropOnly) {
-    if (-not (Test-Path -Path $SaveFolder)) {
-        Write-Message "Save folder does not exist. Creating it: $SaveFolder"
-        New-Item -ItemType Directory -Force -Path $SaveFolder | Out-Null
+    param(
+        [ValidateSet('Info','Warn','Error')]
+        [string]$Level = 'Info',
+        [Parameter(Mandatory)][string]$Message
+    )
+    $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    switch ($Level) {
+        'Info'  { Write-Host "[$ts] [INFO ] $Message" -ForegroundColor Cyan }
+        'Warn'  { Write-Host "[$ts] [WARN ] $Message" -ForegroundColor Yellow }
+        'Error' { Write-Host "[$ts] [ERROR] $Message" -ForegroundColor Red }
     }
-} elseif (-not (Test-Path -Path $SaveFolder)) {
-    Write-Message "Error: Save path does not exist: $SaveFolder"
-    exit 1
 }
 
-if (-not (Get-Command "vlc.exe" -ErrorAction SilentlyContinue)) {
-    Write-Message "Error: VLC Media Player is not installed or not in the system path."
-    exit
+# Ensure destination directories exist
+New-Item -ItemType Directory -Path $SaveFolder -Force | Out-Null
+New-Item -ItemType File -Path $ProcessedLogPath -Force | Out-Null
+
+# Expand debug preference if requested
+if ($Debug) { $DebugPreference = 'Continue' }
+
+# Load assemblies needed for GDI+ capture (PS7 on Windows supports System.Drawing)
+Add-Type -AssemblyName System.Drawing | Out-Null
+Add-Type -AssemblyName System.Windows.Forms | Out-Null
+
+# endregion Utilities
+
+# region Capture helpers
+
+<#
+.SYNOPSIS
+Start VLC for a single video file.
+.DESCRIPTION
+Launches vlc.exe with suitable flags for either GDI+ capture or snapshot mode.
+.PARAMETER VideoPath
+Full path to the video file.
+.PARAMETER UseVlcSnapshots
+Switch to enable VLC scene filter snapshots.
+.PARAMETER SaveFolder
+Folder where VLC should write snapshots when snapshot mode is enabled.
+.EXAMPLE
+$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -UseVlcSnapshots -SaveFolder 'C:\o'
+#>
+function Start-Vlc {
+    param(
+        [Parameter(Mandatory)][string]$VideoPath,
+        [Parameter(Mandatory)][string]$SaveFolder,
+        [switch]$UseVlcSnapshots
+    )
+
+    $commonArgs = @(
+        '--intf', 'dummy',
+        '--no-qt-privacy-ask',
+        '--no-video-title-show',
+        '--rate', '1',
+        '--play-and-exit'
+    )
+
+    $snapshotArgs = @()
+    if ($UseVlcSnapshots) {
+        # Note: scene-ratio uses frame ratio, not seconds. We set ratio=1 (max frequency)
+        # and rely on VLC to throttle; this may produce many frames on high-fps sources.
+        $snapshotArgs = @(
+            '--video-filter=scene',
+            "--scene-path=""$SaveFolder""",
+            '--scene-prefix=shot_',
+            '--scene-format=png',
+            '--scene-ratio=1'
+        )
+    }
+
+    $vlcArgs = @()
+    $vlcArgs += "`"$VideoPath`""
+    $vlcArgs += $commonArgs
+    $vlcArgs += $snapshotArgs
+    Write-Debug ("VLC args: " + ($vlcArgs -join ' '))
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName  = 'vlc'
+    $psi.Arguments = ($vlcArgs -join ' ')
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardError = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.CreateNoWindow = $true
+
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    $null = $p.Start()
+
+    # Wait for non-exited state as a minimal startup confirmation
+    $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if ($p.HasExited) { break }
+        Start-Sleep -Milliseconds 200
+        # On Windows, window creation is not guaranteed with dummy intf; rely on not-exited
+        # Add more checks here if using a GUI interface.
+    }
+
+    if ($p.HasExited) {
+        $stderr = $p.StandardError.ReadToEnd()
+        Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderr"
+        return $null
+    }
+
+    Write-Debug "VLC started (PID $($p.Id))"
+    return $p
 }
 
-if (-not (Test-Path -Path $pythonScriptPath)) {
-    Write-Message "Error: Python cropping script not found at $pythonScriptPath"
-    exit
+<#
+.SYNOPSIS
+Stops VLC process gracefully, with force-kill fallback.
+.DESCRIPTION
+Attempts CloseMainWindow, waits briefly, then Stop-Process -Force if still running.
+.PARAMETER Process
+The VLC process object.
+.EXAMPLE
+Stop-Vlc -Process $proc
+#>
+function Stop-Vlc {
+    param(
+        [Parameter(Mandatory)][System.Diagnostics.Process]$Process
+    )
+    try   { $null = $Process.CloseMainWindow() } catch {}
+    try   { $Process.WaitForExit(5000) } catch {}
+    if (-not $Process.HasExited) {
+        Write-Debug "VLC still running; force killing PID $($Process.Id)"
+        try { Stop-Process -Id $Process.Id -Force } catch {}
+    }
 }
 
-# Conditional checks based on CropOnly mode
-if ($CropOnly) {
-    Write-Output "CropOnly mode enabled. Proceeding with cropping tasks..."
-} else {
-    Write-Output "Standard mode enabled. Processing videos from the source folder..."
-}
-
-# Determine if this is a fresh start
-$freshStart = -not (Test-Path -Path $logFilePath)
-
-# Ensure the log file exists or create an empty one
-if ($freshStart) {
-    New-Item -Path $logFilePath -ItemType File | Out-Null
-    Write-Message "Log file created at $logFilePath"
-}
-
-# Load processed video paths from the log file
-$processedVideos = @()
-if ((Get-Content -Path $logFilePath | Measure-Object).Count -gt 0) {
-    $processedVideos = Get-Content -Path $logFilePath
-    Write-Message "Loaded $(($processedVideos).Count) processed video(s) from log."
-}
-
-# Clear existing screenshots only for fresh starts
-if ($freshStart -and -not $CropOnly) {
-    Get-ChildItem -Path $SaveFolder -Recurse -File | Remove-Item -Force
-    Write-Message "Cleared existing screenshots from $SaveFolder"
-}
-
-# Load required .NET assemblies for GDI+
-Add-Type -AssemblyName System.Drawing
-Add-Type -AssemblyName System.Windows.Forms
-
-# Function to capture the screen using GDI+
+<#
+.SYNOPSIS
+Captures the entire primary screen to a PNG file.
+.DESCRIPTION
+Uses System.Drawing to copy from the primary screen and saves to disk.
+.PARAMETER TargetPath
+Full path of the PNG file to write.
+.EXAMPLE
+Get-ScreenWithGDIPlus -TargetPath 'C:\shots\frame_0001.png'
+#>
 function Get-ScreenWithGDIPlus {
-    param ([string]$filePath)
-
-    # Screen resolution is hardcoded
-    $screenWidth = 1920
-    $screenHeight = 1080
-
-    # Create a bitmap with the current screen resolution
-    $bitmap = New-Object System.Drawing.Bitmap $screenWidth, $screenHeight
-    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-
-    # Capture the screen
-    $graphics.CopyFromScreen(0, 0, 0, 0, [System.Drawing.Size]::new($screenWidth, $screenHeight))
-    $bitmap.Save($filePath, [System.Drawing.Imaging.ImageFormat]::Png)
-
-    # Clean up resources
-    $graphics.Dispose()
-    $bitmap.Dispose()
+    param(
+        [Parameter(Mandatory)][string]$TargetPath
+    )
+    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+    $bmp.Save($TargetPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    $g.Dispose()
+    $bmp.Dispose()
 }
 
-$currentRunCount = 0
-$startTime = Get-Date # Record the start time
+<#
+.SYNOPSIS
+Runs the external Python cropper script.
+.DESCRIPTION
+Invokes Python with the given cropper path, passing SaveFolder and optional resume file.
+.PARAMETER PythonScriptPath
+Path to the Python script.
+.PARAMETER SaveFolder
+Folder containing images to be processed.
+.PARAMETER ResumeFile
+Optional resume file path or name (if relative, resolved under SaveFolder).
+.EXAMPLE
+Invoke-Cropper -PythonScriptPath .\crop_colours.py -SaveFolder .\Screenshots
+#>
+function Invoke-Cropper {
+    param(
+        [Parameter(Mandatory)][string]$PythonScriptPath,
+        [Parameter(Mandatory)][string]$SaveFolder,
+        [string]$ResumeFile
+    )
 
-if (-not $CropOnly) {
-    # Get all video files in the source folder
-    $allVideoFiles = Get-ChildItem -Path $SourceFolder -Recurse -Include *.mp4, *.avi, *.mkv
-
-    # Filter out videos that are already processed
-    # Normalize paths for comparison
-    $normalizedProcessedVideos = $processedVideos | ForEach-Object { $_.Trim().ToLower() }
-    $videoFiles = $allVideoFiles | Where-Object { ($_.FullName.Trim().ToLower()) -notin $normalizedProcessedVideos }
-    Write-Debug "Total videos: $($videoFiles.Count)"
-    Write-Debug "Processing first $maxVideosToProcess videos."
-
-    if ($videoFiles.Count -eq 0) {
-        Write-Message "No unprocessed videos found. Exiting."
-        exit
+    if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
+        throw "PythonScriptPath not found: $PythonScriptPath"
     }
 
-    # Limit the number of videos to process if VideoLimit is not 0
-    if ($maxVideosToProcess -gt 0) {
-        $videoFiles = $videoFiles[0..([Math]::Min($maxVideosToProcess, $videoFiles.Count) - 1)]
+    $resumeArg = @()
+    if ($ResumeFile) {
+        $resumePath = if ([System.IO.Path]::IsPathRooted($ResumeFile)) {
+            $ResumeFile
+        } else {
+            Join-Path $SaveFolder $ResumeFile
+        }
+        if (-not (Test-Path -LiteralPath $resumePath)) {
+            throw "Resume file not found: $resumePath"
+        }
+        $resumeArg = @('--resume_file', "`"$resumePath`"")
     }
+
+    $pyArgs = @("`"$PythonScriptPath`"", '--input', "`"$SaveFolder`"") + $resumeArg
+    Write-Debug ("Python args: " + ($pyArgs -join ' '))
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = 'python'
+    $psi.Arguments = ($pyArgs -join ' ')
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+    $psi.CreateNoWindow = $true
+
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    $null = $p.Start()
+    $stdout = $p.StandardOutput.ReadToEnd()
+    $stderr = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+
+    if ($p.ExitCode -ne 0) {
+        Write-Message -Level Error -Message "Cropper failed (ExitCode=$($p.ExitCode)). $stderr"
+        throw "Cropper failed."
+    } else {
+        Write-Debug "Cropper output: $stdout"
+        Write-Message -Level Info -Message "Cropper finished successfully."
+    }
+}
+
+# endregion Capture helpers
+
+# region Main flow
+
+if ($CropOnly) {
+    Write-Message -Level Info -Message "Crop-only mode."
+    try {
+        Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile
+    } catch {
+        Write-Message -Level Error -Message $_.Exception.Message
+        exit 1
+    }
+    exit 0
+}
+
+if (-not (Test-Path -LiteralPath $SourceFolder)) {
+    Write-Message -Level Error -Message "SourceFolder not found: $SourceFolder"
+    exit 1
+}
+
+$videoExt = @('*.mp4','*.mkv','*.avi','*.mov','*.m4v','*.wmv')
+$videos = Get-ChildItem -LiteralPath $SourceFolder -Recurse -File -Include $videoExt | Sort-Object FullName
+
+if ($VideoLimit -gt 0) {
+    $videos = $videos | Select-Object -First $VideoLimit
+}
+
+$processed = @()
+if (Test-Path -LiteralPath $ProcessedLogPath) {
+    $processed = Get-Content -LiteralPath $ProcessedLogPath -ErrorAction SilentlyContinue
+}
+
+$intervalMs = [int](1000 / [Math]::Max(1, $FramesPerSecond))
+
+foreach ($video in $videos) {
+    $already = $processed -contains $video.FullName
+    if ($already) {
+        Write-Message -Level Info -Message "Skipping (already processed): $($video.FullName)"
+        continue
+    }
+
+    Write-Message -Level Info -Message "Processing: $($video.FullName)"
+    $vlc = $null
+    $partial = $false
+    $errorDuringCapture = $false
+    $started = Get-Date
 
     try {
-        foreach ($video in $videoFiles) {
-            Write-Message "Processing video: $($video.Name)"
-            Write-Message "Processing video $($currentRunCount + 1) of $($videoFiles.Count)"
+        $vlc = Start-Vlc -VideoPath $video.FullName -SaveFolder $SaveFolder -UseVlcSnapshots:$UseVlcSnapshots
+        if (-not $vlc) {
+            throw "Failed to start VLC for: $($video.FullName)"
+        }
 
-            # Start VLC for the current video
-            $vlcProcess = Start-Process -FilePath "vlc.exe" -ArgumentList "`"$($video.FullName)`"", "--fullscreen", "--no-video-title-show", "--qt-minimal-view", "--no-qt-privacy-ask", "--video-on-top", "--play-and-exit" -PassThru
-
-            if (-not $vlcProcess) {
-                Write-Message "Error: VLC process could not be started for video $($video.Name)."
-                continue
-            }
-
-            Start-Sleep -Milliseconds $initialDelay  # Allow VLC to start
-
-            # Capture screenshots until VLC exits
-            while ($vlcProcess.HasExited -eq $false) {
-                $file = "$SaveFolder\Screenshot_$((Get-Date).ToString('yyyyMMddHHmmssfff')).png"
-                Get-ScreenWithGDIPlus -filePath $file
-                Write-Message "Screenshot saved: $file"
-                Start-Sleep -Milliseconds $screenshotInterval
-
-                # Check if the time limit has been reached if TimeLimit is not 0
-                if ($timeLimitInMinutes -gt 0) {
-                    $elapsedTime = (Get-Date) - $startTime
-                    if ($elapsedTime.TotalMinutes -ge $timeLimitInMinutes) {
-                        Write-Message "Time limit of $timeLimitInMinutes minutes reached. Proceeding to cropping step."
-                        break
-                    }
-                }
-            }
-
-            # Log the processed video
-            Add-Content -Path $logFilePath -Value $video.FullName
-
-            $currentRunCount++
-            Write-Message "Finished processing video: $($video.Name)"
-            Write-Message "Completed video $currentRunCount/$($videoFiles.Count)"
-
-            # Stop if video limit is reached
-            if ($maxVideosToProcess -gt 0 -and $currentRunCount -eq $maxVideosToProcess) {
-                Write-Message "Video limit of $maxVideosToProcess reached. Proceeding to cropping step."
-                break
-            }
-
-            # Check if the time limit has been reached if TimeLimit is not 0
-            if ($timeLimitInMinutes -gt 0) {
-                $elapsedTime = (Get-Date) - $startTime
-                if ($elapsedTime.TotalMinutes -ge $timeLimitInMinutes) {
-                    Write-Message "Time limit of $timeLimitInMinutes minutes reached. Proceeding to cropping step."
+        if ($UseVlcSnapshots) {
+            # In snapshot mode we just wait for VLC to finish or time out
+            while (-not $vlc.HasExited) {
+                if ($TimeLimitSeconds -gt 0 -and ((New-TimeSpan -Start $started -End (Get-Date)).TotalSeconds -ge $TimeLimitSeconds)) {
+                    Write-Message -Level Warn -Message "Time limit reached; stopping VLC."
+                    $partial = $true
                     break
                 }
+                Start-Sleep -Milliseconds 200
+            }
+        } else {
+            # GDI+ desktop capture loop
+            $frameIndex = 0
+            while (-not $vlc.HasExited) {
+                if ($TimeLimitSeconds -gt 0 -and ((New-TimeSpan -Start $started -End (Get-Date)).TotalSeconds -ge $TimeLimitSeconds)) {
+                    Write-Message -Level Warn -Message "Time limit reached; stopping capture."
+                    $partial = $true
+                    break
+                }
+
+                $filename = ('frame_{0:D6}.png' -f $frameIndex)
+                $target   = Join-Path $SaveFolder $filename
+
+                try {
+                    Get-ScreenWithGDIPlus -TargetPath $target
+                    if ($frameIndex -eq 0) { Write-Debug "First frame saved: $target" }
+                    $frameIndex++
+                } catch {
+                    $errorDuringCapture = $true
+                    Write-Message -Level Error -Message "Failed to save frame: $($_.Exception.Message)"
+                }
+
+                Start-Sleep -Milliseconds $intervalMs
             }
         }
-    } catch {
-        Write-Message "An error occurred during processing: $($_.Exception.Message)"
-
-        # Cleanup VLC process if running
-        if ($vlcProcess -and -not $vlcProcess.HasExited) {
-            $vlcProcess.Kill()
-            Write-Message "VLC process terminated."
-        }
+    }
+    catch {
+        $errorDuringCapture = $true
+        Write-Message -Level Error -Message $_.Exception.Message
+    }
+    finally {
+        if ($vlc) { Stop-Vlc -Process $vlc }
     }
 
-    # Check if all videos are processed and delete log file if true
-    if (($allVideoFiles | Measure-Object).Count -eq $processedVideos.Count + $currentRunCount) {
-        Remove-Item -Path $logFilePath -Force
-        Write-Message "All videos processed. Deleted log file."
+    # Evaluate outcome
+    $vlcExit = if ($vlc) { $vlc.ExitCode } else { -1 }
+    Write-Debug "VLC exit code: $vlcExit; partial=$partial; hadErrors=$errorDuringCapture"
+
+    $ok = (-not $partial) -and (-not $errorDuringCapture) -and ($vlcExit -eq 0)
+    if ($ok) {
+        Add-Content -LiteralPath $ProcessedLogPath -Value $video.FullName
+        Write-Message -Level Info -Message "Marked processed: $($video.FullName)"
+    } else {
+        Write-Message -Level Warn -Message "NOT marked processed (partial or error): $($video.FullName)"
     }
 }
 
-# Call the Python script to crop images
-try {
-    Write-Message "Calling Python cropping script: $pythonScriptPath"
-    if ($ResumeFile) {
-        $pythonOutput = python $pythonScriptPath --folder_path "$SaveFolder" --resume_file "$ResumeFile" 2>&1
-    } else {
-        $pythonOutput = python $pythonScriptPath --folder_path "$SaveFolder" 2>&1
-    }
-    Write-Message "Python script output: $pythonOutput"
-
-    if ($LastExitCode -ne 0) {
-        Write-Message "Error: Python script execution failed with exit code $LastExitCode."
-    } else {
-        Write-Message "Python script executed successfully."
-    }
-} catch {
-    Write-Message "Error during Python script execution: $($_.Exception.Message)"
-}
-
-Write-Message "Processing completed."
+Write-Message -Level Info -Message "All done."
+# endregion Main flow
