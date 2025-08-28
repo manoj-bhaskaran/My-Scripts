@@ -10,28 +10,31 @@
       - Copy a large set of files into per-extension subfolders for easier
         browsing, backup, or transfer.
       - Get reliable progress, input validation, and a final summary with totals,
-        per-extension counts, directory breakdown, and elapsed time.
+        per-extension counts, skip counts, directory breakdown, and elapsed time.
 
     What it does (high-level flow):
       1) Validates input and ensures destination exists.
       2) Renames .jpeg → .jpg (case-insensitive).
          - Skips if the target .jpg already exists.
          - Robust try/catch and error tracking.
-         - Optional progress via Write-Progress.
+         - Optional progress via Write-Progress (distinct progress ID).
          - Note: The .jpeg → .jpg renaming phase always evaluates .jpeg files
            regardless of -IncludeExtensions (the extension filter applies only
            to the copy phase).
       3) Copies all files (post-rename) into per-extension subfolders under DestDir:
            <BatchPrefix>_<RunStamp>_<ext>\ <ext>_0000, <ext>_0001, ...
-         - **Rule:** Skip ALL .png files.
-         - **Rule:** Copy .jpg only if filename starts with 'img' (case-sensitive).
+         - **Rule:** Skip ALL .png files (counts reported in summary).
+         - **Rule:** Copy .jpg only if filename starts with 'img' (case-sensitive)
+           (non-matching .jpg are counted as skipped in summary).
          - Respects FilesPerFolderLimit (per subfolder); rolls to the next counter.
          - **Deletes the source file after a successful copy** (move semantics).
-         - Robust try/catch and error tracking; optional progress; verbose logging.
+         - Robust try/catch and error tracking; optional progress (distinct ID);
+           verbose logging.
       4) Prints a comprehensive summary:
          - Total files processed
          - Renamed count (.jpeg → .jpg)
          - Copied count
+         - **Skipped counts**: .png, .jpg not starting with 'img'
          - Per-extension copied counts
          - Directories created (with breakdown: batch vs root/log)
          - Error count (and writes a detailed error log if any)
@@ -56,7 +59,8 @@
 
 .PARAMETER ShowProgress
     If set, displays Write-Progress for the renaming and copying phases.
-    The progress bars are explicitly completed at the end of each phase.
+    The progress bars use distinct IDs (1=rename, 2=copy) and are explicitly
+    completed at the end of each phase.
 
 .PARAMETER IncludeExtensions
     Optional list of file extensions to include for the **copy phase**
@@ -76,6 +80,10 @@
       'picconvert_errors_yyyyMMdd_HHmmss.log'
     is created under DestDir.
 
+.PARAMETER LogWarnSizeMB
+    Warn if the log file size (when using -LogFilePath) is at or above this many MB
+    before appending a new run. Default: 10 (MB). Set higher to reduce warnings.
+
 .INPUTS
     None. You cannot pipe input to this script.
 
@@ -92,29 +100,28 @@
 
 .NOTES
     VERSION
-      1.1.3
+      1.1.4
 
     CHANGELOG
+      1.1.4
+        - Summary now reports skipped counts:
+            • Skipped (.png), and Skipped (.jpg !^img)
+        - Log size management: warn if -LogFilePath file ≥ LogWarnSizeMB (default 10MB)
+          before appending new run output.
+        - Progress bars: assigned distinct IDs (1=rename, 2=copy) for clearer display.
+        - All prior 1.1.3 features retained (append-only logs, phase timings, etc).
+
       1.1.3
-        - Log safety: when -LogFilePath is supplied, append error output with a run header
-          instead of overwriting; still create timestamped file when -LogFilePath is omitted.
-        - Performance metrics breakdown: separate timings for Rename and Copy phases
-          added to the summary (alongside total time).
-        - Docs: clarified log append behavior under -LogFilePath in PARAMETERS and TROUBLESHOOTING.
+        - Append logs when -LogFilePath is supplied; phase timings in summary.
 
       1.1.2
-        - Per-extension copied counts in summary.
-        - Split directory counters: batch vs root/log; summary shows both and total.
-        - Added -BatchPrefix (default 'picconvert') for folder naming.
-        - Validated -IncludeExtensions entries; restored Source/Dest defaults.
-        - Kept: .png skip; .jpg '^img' rule; delete-after-copy; progress completion; elapsed time.
+        - Per-extension counts; split directory counters; -BatchPrefix; IncludeExtensions validation.
 
       1.1.1
-        - Enforced .png skip and .jpg '^img' rule; extension-based foldering with counters.
-        - Delete-after-copy; progress completion; LogFilePath validation; elapsed time; verbose.
+        - .png skip; .jpg '^img' rule; extension-based foldering; delete-after-copy; elapsed time.
 
       1.1.0
-        - Param block, input validation, modular functions, progress, structured summary.
+        - Param block, validation, modular functions, progress, structured summary.
 
       1.0.0
         - Initial version (assumed baseline).
@@ -131,6 +138,8 @@
       - **Logs with -LogFilePath:** This script APPENDS to the file with a run header
         per execution. To keep separate files, provide a unique path per run or omit
         -LogFilePath to use the auto-timestamped file under DestDir.
+      - **Log size warnings:** Use -LogWarnSizeMB to adjust or silence warnings
+        about large append-only log files.
 #>
 
 [CmdletBinding(SupportsShouldProcess=$true)]
@@ -159,7 +168,11 @@ param(
     [string[]]$IncludeExtensions,
 
     [Parameter(Mandatory=$false)]
-    [string]$LogFilePath
+    [string]$LogFilePath,
+
+    [Parameter(Mandatory=$false)]
+    [ValidateRange(1, 1048576)]
+    [int]$LogWarnSizeMB = 10
 )
 
 # region: Globals / State -------------------------------------------------------------------------
@@ -167,13 +180,15 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # Counters and tracking
-$script:ErrList          = New-Object System.Collections.Generic.List[string]
-$script:ErrCount         = 0
-$script:RenamedCount     = 0
-$script:CopiedCount      = 0
-$script:BatchDirsCreated = 0
-$script:RootDirsCreated  = 0
-$script:CopiedByExt      = @{}   # e.g., @{ "jpg" = 123; "heic" = 45 }
+$script:ErrList                  = New-Object System.Collections.Generic.List[string]
+$script:ErrCount                 = 0
+$script:RenamedCount             = 0
+$script:CopiedCount              = 0
+$script:BatchDirsCreated         = 0
+$script:RootDirsCreated          = 0
+$script:CopiedByExt              = @{}   # e.g., @{ "jpg" = 123; "heic" = 45 }
+$script:SkippedPngCount          = 0
+$script:SkippedJpgNotImgCount    = 0
 
 # Timestamp for naming
 $script:RunStamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
@@ -278,7 +293,7 @@ function Rename-JpegFiles {
     .PARAMETER Files
         Files to evaluate for renaming (typically only .jpeg).
     .PARAMETER ShowProgress
-        If set, shows Write-Progress and completes it at the end.
+        If set, shows Write-Progress and completes it at the end (Progress ID 1).
     .OUTPUTS
         [int] Renamed count
     #>
@@ -289,7 +304,7 @@ function Rename-JpegFiles {
     )
 
     if (-not $Files -or $Files.Count -eq 0) {
-        if ($ShowProgress) { Write-Progress -Activity "Renaming .jpeg → .jpg" -Completed }
+        if ($ShowProgress) { Write-Progress -Id 1 -Activity "Renaming .jpeg → .jpg" -Completed }
         return 0
     }
 
@@ -303,7 +318,7 @@ function Rename-JpegFiles {
 
         if ($ShowProgress) {
             $pct = [int]([math]::Floor(100 * $i / $total))
-            Write-Progress -Activity "Renaming .jpeg → .jpg" -Status "[$i/$total] $($f.Name)" -PercentComplete $pct
+            Write-Progress -Id 1 -Activity "Renaming .jpeg → .jpg" -Status "[$i/$total] $($f.Name)" -PercentComplete $pct
         }
 
         try {
@@ -326,11 +341,11 @@ function Rename-JpegFiles {
     }
 
     if ($ShowProgress) {
-        Write-Progress -Activity "Renaming .jpeg → .jpg" -Completed
+        Write-Progress -Id 1 -Activity "Renaming .jpeg → .jpg" -Completed
     }
 
     $sw.Stop()
-    return $script:RenamedCount, $sw.Elapsed  # caller will use only count and stopwatch externally
+    return $script:RenamedCount, $sw.Elapsed
 }
 
 function Copy-FilesToBatches {
@@ -345,7 +360,7 @@ function Copy-FilesToBatches {
     .PARAMETER FilesPerFolderLimit
         Max files per extension subfolder (0 or less = unlimited).
     .PARAMETER ShowProgress
-        If set, shows Write-Progress and completes it at the end.
+        If set, shows Write-Progress and completes it at the end (Progress ID 2).
     .OUTPUTS
         [int] Copied count
     #>
@@ -358,7 +373,7 @@ function Copy-FilesToBatches {
     )
 
     if (-not $Files -or $Files.Count -eq 0) {
-        if ($ShowProgress) { Write-Progress -Activity "Copying to batches" -Completed }
+        if ($ShowProgress) { Write-Progress -Id 2 -Activity "Copying to extension batches" -Completed }
         return 0
     }
 
@@ -373,19 +388,24 @@ function Copy-FilesToBatches {
 
         if ($ShowProgress) {
             $pct = [int]([math]::Floor(100 * $i / $total))
-            Write-Progress -Activity "Copying to batches" -Status "[$i/$total] $($f.Name)" -PercentComplete $pct
+            Write-Progress -Id 2 -Activity "Copying to extension batches" -Status "[$i/$total] $($f.Name)" -PercentComplete $pct
         }
 
         try {
             $ext = $f.Extension.ToLowerInvariant()
 
-            # RULE 1: Skip all .png files
-            if ($ext -eq '.png') { Write-Verbose "Skip PNG: $($f.FullName)"; continue }
+            # RULE 1: Skip all .png files (count it)
+            if ($ext -eq '.png') {
+                $script:SkippedPngCount++
+                Write-Verbose "Skip PNG: $($f.FullName)"
+                continue
+            }
 
             # RULE 2: For .jpg, only allow names starting with 'img' (case-sensitive)
             if ($ext -eq '.jpg') {
                 $nameOnly = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
                 if ($nameOnly -cnotmatch '^img') {
+                    $script:SkippedJpgNotImgCount++
                     Write-Verbose "Skip JPG not starting with 'img': $($f.Name)"
                     continue
                 }
@@ -447,11 +467,11 @@ function Copy-FilesToBatches {
     }
 
     if ($ShowProgress) {
-        Write-Progress -Activity "Copying to batches" -Completed
+        Write-Progress -Id 2 -Activity "Copying to extension batches" -Completed
     }
 
     $sw.Stop()
-    return $script:CopiedCount, $sw.Elapsed  # caller will use only count and stopwatch externally
+    return $script:CopiedCount, $sw.Elapsed
 }
 
 function Write-RunSummary {
@@ -505,6 +525,8 @@ function Write-RunSummary {
 Total files processed : $TotalFiles
 Renamed (.jpeg→.jpg)  : $Renamed
 Copied (then deleted) : $Copied
+Skipped (.png)        : $script:SkippedPngCount
+Skipped (.jpg !^img)  : $script:SkippedJpgNotImgCount
 Directories created   : $totalDirs (batch=$BatchDirsCreated, root/log=$RootDirsCreated)
 Errors                : $ErrCount
 Elapsed (rename)      : {0:c}
@@ -538,6 +560,14 @@ Elapsed (total)       : {2:c}
                 }
             }
 
+            # Warn if existing log is large before appending
+            if (Test-Path -LiteralPath $resolvedLogPath) {
+                $sizeMB = ([IO.FileInfo]$resolvedLogPath).Length / 1MB
+                if ($sizeMB -ge $LogWarnSizeMB) {
+                    Write-Warn ("Log file is {0:N1} MB (>= {1} MB). Consider rotating or changing -LogFilePath." -f $sizeMB, $LogWarnSizeMB)
+                }
+            }
+
             # Writability probe
             $probe = Join-Path $logDir ("._probe_{0}.tmp" -f [Guid]::NewGuid())
             "probe" | Out-File -FilePath $probe -Encoding UTF8
@@ -563,7 +593,7 @@ Elapsed (total)       : {2:c}
 # region: Main ------------------------------------------------------------------------------------
 
 try {
-    Write-Info "Starting picconvert 1.1.3"
+    Write-Info "Starting picconvert 1.1.4"
     Initialize-Directories -SourceDir $SourceDir -DestDir $DestDir
 
     # Phase 1: Gather all source files (for rename); always include .jpeg in consideration
