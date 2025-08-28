@@ -42,7 +42,7 @@ DEPENDENCIES
 
 USAGE
     # Safe default (non-destructive): Cropped/ + suffix
-    python cropper.py --input /path/to/images [--output /path/to/out]
+    python crop_colours.py --input /path/to/images [--output /path/to/out]
                       [--suffix _cropped] [--no-suffix]
                       [--max-workers N] [--retry-writes 3]
                       [--progress-interval 100]
@@ -53,7 +53,7 @@ USAGE
                       [--debug]
 
     # Overwrite originals (opt-in)
-    python cropper.py --input /path/to/images --in-place
+    python crop_colours.py --input /path/to/images --in-place
 
 TROUBLESHOOTING
     - "No valid images found":
@@ -132,7 +132,7 @@ try:
     # Optional third-party logger (if available)
     import python_logging_framework as plog  # type: ignore
 
-    logger = plog.get_logger("cropper")  # pragma: no cover
+    logger = plog.get_logger("crop_colours")  # pragma: no cover
     _using_plog = True
 except Exception:
     # Fallback to stdlib logging
