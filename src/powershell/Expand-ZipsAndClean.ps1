@@ -75,8 +75,8 @@
     .\Expand-ZipsAndClean.ps1 -DeleteSource -CleanNonZips
 
 .EXAMPLE
-    # Limit generated subfolder names to 200 characters (defensive)
-    .\Expand-ZipsAndClean.ps1 -MaxSafeNameLength 200
+    # Limit generated subfolder names to 200 characters (defensive) and show truncation via -Verbose
+    .\Expand-ZipsAndClean.ps1 -MaxSafeNameLength 200 -Verbose
 
 .EXAMPLE
     # Dry run (no changes), show what would happen
@@ -90,7 +90,7 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 1.1.1
+    Version  : 1.1.2
     Author   : Manoj Bhaskaran
     Requires : PowerShell 5.1 or 7+, Microsoft.PowerShell.Archive (Expand-Archive)
 
@@ -102,10 +102,13 @@
            for password-protected zips, unique subfolder naming if exists, parent
            writability check, optional -CleanNonZips, consistent summary printing,
            table summary, ms in duration, and expanded docs/FAQ.
-    1.1.1  Safety/UX updates: guard against same/overlapping source/destination,
-           optional MaxSafeNameLength, per-file move progress, compression ratio,
-           minor refactor to de-duplicate suffix logic, directory-based write probe,
-           docs for novices (optional features can be ignored), PS 5.1 note.
+    1.1.1  Safety/UX: guard against same/overlapping source/destination, optional
+           MaxSafeNameLength, per-file move progress, compression ratio, de-duped
+           suffix logic, directory write probe, docs for novices, PS 5.1 note.
+    1.1.2  Quick wins: path separator normalization for comparisons, verbose notice
+           on truncation, bytes shown in move progress, compression ratio rounded
+           to 1 decimal, `.EXAMPLE` for MaxSafeNameLength + -Verbose, notes on
+           typical MaxSafeNameLength values, FAQ includes 7-Zip example.
 
     ── Setup / Module check ─────────────────────────────────────────────────────
     Expand-Archive is provided by Microsoft.PowerShell.Archive.
@@ -127,12 +130,17 @@
     Optional features like ExtractMode and CollisionPolicy are advanced/optional.
     For a simple run, you can just execute the script with no parameters.
 
+    ── Tips for MaxSafeNameLength ───────────────────────────────────────────────
+    Typical values: 200 for defensive truncation; 100 for stricter limits. Leave as 0 to disable truncation.
+
 TROUBLESHOOTING & FAQ
     Q: Script seems to hang on large zips.
        A: Use -Verbose to monitor progress; consider running in PowerShell 7+ for better performance.
 
     Q: Can I process password-protected zips?
-       A: Not supported by Expand-Archive. Use an external tool like 7-Zip for those archives.
+       A: Not supported by Expand-Archive. Use an external tool like 7-Zip, e.g.:
+          7z x archive.zip -pYOURPASSWORD
+       ⚠ Password on the command line may appear in process listings/history; prefer interactive prompts.
 
     Q: I get errors mentioning long paths or path too long.
        A: Enable Long Path Support as noted above. Prefer PowerShell 7+. Keep destination close to drive root.
@@ -173,7 +181,7 @@ param(
     [switch]$CleanNonZips,
 
     [Parameter()]
-    [ValidateRange(0, 32767)]
+    [ValidateRange(0, 255)]
     [int]$MaxSafeNameLength = 0,
 
     [Parameter()]
@@ -190,9 +198,11 @@ function Write-Info {
 function Get-FullPath {
     param([Parameter(Mandatory)][string]$Path)
     try {
-        return ([System.IO.Path]::GetFullPath($Path))
+        # Normalize to Windows-style backslashes for consistent comparisons
+        $normalized = $Path -replace '/', '\'
+        return [System.IO.Path]::GetFullPath($normalized)
     } catch {
-        return $Path
+        return ($Path -replace '/', '\')
     }
 }
 
@@ -209,7 +219,7 @@ function Resolve-UniquePathCore {
     $stamp  = (Get-Date -Format 'yyyyMMddHHmmss')
     $i = 0
     do {
-        $suffix   = if ($i -eq 0) { "_$stamp" } else { "_$stamp`_$i" }
+        $suffix    = if ($i -eq 0) { "_$stamp" } else { "_$stamp`_$i" }
         $candidate = Join-Path $parent ($base + $suffix + $ext)
         $i++
     } while (Test-Path -LiteralPath $candidate)
@@ -241,6 +251,7 @@ function Get-SafeName {
     $san = $sb.ToString().TrimEnd('.', ' ')
     if ([string]::IsNullOrWhiteSpace($san)) { $san = 'archive' }
     if ($MaxLength -gt 0 -and $san.Length -gt $MaxLength) {
+        Write-Verbose "Truncated name '$san' to $MaxLength chars"
         $san = $san.Substring(0, $MaxLength)
     }
     return $san
@@ -326,6 +337,7 @@ function Expand-ZipSmart {
             return $movedCount
         } else {
             # For Skip/Rename, extract to a temp staging folder, then move files individually
+            # This duplicates some I/O but keeps logic simple and correct across PS 5.1/7.
             $temp = Join-Path $DestinationRoot (".extract_tmp_{0}" -f ([guid]::NewGuid().ToString('N')))
             New-Item -ItemType Directory -Path $temp -Force | Out-Null
             try {
@@ -392,7 +404,7 @@ function Move-Zips-ToParent {
         $idx++
         if (-not $Quiet) {
             $pct = [int](($idx) / [math]::Max(1,$total) * 100)
-            Write-Progress -Activity "Moving zip files to parent" -Status "$idx / $total : $($zf.Name)" -PercentComplete $pct
+            Write-Progress -Activity "Moving zip files to parent" -Status "$idx / $total : $($zf.Name) ($(Format-Bytes $zf.Length))" -PercentComplete $pct
         }
 
         $target = Join-Path $parent $zf.Name
@@ -433,7 +445,7 @@ try {
         throw "Source and destination cannot be the same: $srcFull"
     }
 
-    # Add trailing backslash for containment tests
+    # Add trailing backslash for containment tests (use normalized paths)
     $srcWithSep = if ($srcFull.EndsWith('\')) { $srcFull } else { $srcFull + '\' }
     $dstWithSep = if ($dstFull.EndsWith('\')) { $dstFull } else { $dstFull + '\' }
 
@@ -511,6 +523,7 @@ try {
     if ($DeleteSource) {
         try {
             # If not cleaning non-zips, warn and list if anything other than zip remains
+            # (We include containers in "non-zips" to catch leftover directories.)
             $remaining = Get-ChildItem -LiteralPath $SourceDirectory -Recurse -Force -ErrorAction SilentlyContinue
             $nonZips = @($remaining | Where-Object { -not $_.PSIsContainer -and $_.Extension -ne '.zip' -or $_.PSIsContainer })
             if ($nonZips.Count -gt 0 -and -not $CleanNonZips) {
@@ -555,8 +568,8 @@ function Format-Bytes {
 
 # Always print a summary (even if no zips)
 $compressionRatio = if ($totalCompressedZipBytes -gt 0) {
-    # Show as multiplier, e.g., 3.27x uncompressed vs compressed
-    "{0:N2}x" -f ($totalUncompressedBytes / [double]$totalCompressedZipBytes)
+    # Show as multiplier, one decimal (e.g., 3.3x)
+    "{0:N1}x" -f ($totalUncompressedBytes / [double]$totalCompressedZipBytes)
 } else { "n/a" }
 
 $summary = [pscustomobject]@{
