@@ -3,7 +3,7 @@
 """
 Frame cropper for image folders.
 
-Version: 2.0.0
+Version: 2.1.0
 Author: Manoj Bhaskaran
 
 DESCRIPTION
@@ -16,6 +16,8 @@ DESCRIPTION
       - Strict validation & clear exit codes
       - Resume-from-image support (--resume-file)
       - Save retries for transient I/O issues (--retry-writes)
+      - Optional recursion into subfolders (--recurse). When --output is set,
+        the original directory structure under --input is preserved.
       - Optionally skip corrupt images instead of failing the run (--skip-bad-images)
 
 EXIT CODES
@@ -25,8 +27,9 @@ EXIT CODES
 
 DEPENDENCIES
     - OpenCV:      pip install opencv-python
+    - NumPy:       pip install numpy
     - (Optional) python-logging-framework (plog): pip install python-logging-framework
-      If unavailable, the script falls back to Python's stdlib logging.
+      If not installed, the script automatically falls back to Python’s built-in logging.
 
 USAGE
     python cropper.py --input /path/to/images [--output /path/to/out]
@@ -34,12 +37,13 @@ USAGE
                       [--resume-file img_000123.png]
                       [--skip-bad-images]
                       [--allow-empty]
+                      [--recurse]
                       [--debug]
 
 TROUBLESHOOTING
     - "No valid images found":
         Ensure the --input path points to a folder with .png/.jpg/.jpeg files.
-        Use --allow-empty if you intentionally want to treat empty input as success.
+        Use --recurse to include subfolders. Use --allow-empty to treat empty input as success.
     - "Failed to load image":
         The file may be corrupt/unsupported. Use --skip-bad-images to continue.
     - "Saves failing on network drive":
@@ -49,7 +53,8 @@ TROUBLESHOOTING
 
 FAQS
     Q: Where are outputs written?
-       A: By default, images are overwritten in-place. Use --output to write to another folder.
+       A: By default, images are overwritten in-place. Use --output to write to another folder;
+          the original subfolder structure under --input is preserved when --recurse is used.
 
     Q: What if the crop finds nothing to trim?
        A: The original image is written as-is (no-op crop).
@@ -58,6 +63,15 @@ FAQS
        A: Yes. Pass --resume-file <an existing image filename>. Processing starts after that file.
 
 CHANGELOG
+    2.1.0
+      Add:
+        - --recurse for recursive image discovery (os.walk)
+        - When --output is used, preserve relative subfolder structure from --input
+      Docs:
+        - Clarify python-logging-framework is optional with stdlib fallback
+        - Minor comment clean-up (avoid redundancy with docstrings)
+      (Non-breaking minor release)
+
     2.0.0
       Breaking:
         - Empty folder now exits 2 unless --allow-empty is provided.
@@ -79,7 +93,8 @@ import concurrent.futures as fut
 import os
 import sys
 import time
-from typing import Iterable, List, Optional, Sequence, Tuple
+from pathlib import Path
+from typing import Optional, Sequence, Tuple, List
 
 # --- Logging setup -----------------------------------------------------------
 
@@ -139,6 +154,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                    help="Skip corrupt/unsupported images instead of failing the run.")
     p.add_argument("--allow-empty", action="store_true",
                    help="Treat empty input folder as success (exit 0).")
+    p.add_argument("--recurse", action="store_true",
+                   help="Search subfolders recursively for images.")
     p.add_argument("--debug", action="store_true", help="Enable debug logging.")
 
     # Crop tuning (optional, sensible defaults)
@@ -165,16 +182,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 VALID_EXTS = {".png", ".jpg", ".jpeg"}
 
 
-def list_images(folder: str) -> List[str]:
-    """Return sorted image paths with valid extensions."""
-    files = []
-    for name in os.listdir(folder):
-        ext = os.path.splitext(name)[1].lower()
-        if ext in VALID_EXTS:
-            files.append(os.path.join(folder, name))
-    files.sort()
-    return files
-
+def list_images(folder: str, recurse: bool = False) -> List[str]:
+    """Return sorted absolute image paths with valid extensions. Optionally recurse."""
+    root = Path(folder)
+    it = root.rglob("*") if recurse else root.iterdir()
+    return sorted(
+        str(p.resolve())
+        for p in it
+        if p.is_file() and p.suffix.lower() in VALID_EXTS
+    )
 
 def validate_resume_file(folder: str, resume: str) -> str:
     """
@@ -191,7 +207,7 @@ def validate_resume_file(folder: str, resume: str) -> str:
     return os.path.abspath(path)
 
 
-def load_image(path: str) -> np.ndarray:
+def load_image(path: str) -> "np.ndarray":
     """Load an image (BGR). Raises ValueError if corrupt/unsupported."""
     img = cv2.imread(path, cv2.IMREAD_COLOR)
     if img is None:
@@ -200,7 +216,7 @@ def load_image(path: str) -> np.ndarray:
 
 
 def detect_content_bbox(
-    img: np.ndarray,
+    img: "np.ndarray",
     low_threshold: int = 5,
     high_threshold: int = 250,
     min_area: int = 256,
@@ -223,7 +239,7 @@ def detect_content_bbox(
     if not np.any(content_mask):
         return None
 
-    ys, xs = np.nonzero(content_mask)
+    ys, xs = np.nonzero(content_mask)  # clearer than np.where(condition)
     y0, y1 = int(ys.min()), int(ys.max())
     x0, x1 = int(xs.min()), int(xs.max())
     if (y1 - y0 + 1) * (x1 - x0 + 1) < int(min_area):
@@ -238,37 +254,42 @@ def detect_content_bbox(
     return (y0, y1, x0, x1)
 
 
-def imwrite_retry(path: str, img: np.ndarray, attempts: int = 3) -> bool:
+def imwrite_retry(path: str, img: "np.ndarray", attempts: int = 3) -> bool:
     """
-    Write image with limited retries to absorb transient I/O errors.
+    Write image with limited retries (linear backoff) to absorb transient I/O errors.
     Returns True on success, False after exhausting attempts.
     """
     for i in range(1, max(1, attempts) + 1):
         if cv2.imwrite(path, img):
             return True
         if i < attempts:
-            time.sleep(0.2 * i)  # simple linear backoff
+            time.sleep(0.2 * i)
     return False
 
 
-def ensure_output_path(input_path: str, output_dir: Optional[str]) -> str:
+def ensure_output_path(input_path: str, output_dir: Optional[str], root: Optional[str]) -> str:
     """
     Map an input image path to its output path.
     If output_dir is None, overwrite in-place (same path).
+    If output_dir is given, preserve relative subfolder structure from root.
     """
     if not output_dir:
         return input_path
-    os.makedirs(output_dir, exist_ok=True)
-    return os.path.join(output_dir, os.path.basename(input_path))
+    if not root:
+        raise ValueError("ensure_output_path requires 'root' when output_dir is provided.")
+    rel_dir = os.path.relpath(os.path.dirname(input_path), root)
+    out_dir = os.path.join(output_dir, rel_dir) if rel_dir != os.curdir else output_dir
+    os.makedirs(out_dir, exist_ok=True)
+    return os.path.join(out_dir, os.path.basename(input_path))
 
 
 def crop_image(
-    img: np.ndarray,
+    img: "np.ndarray",
     low_threshold: int,
     high_threshold: int,
     min_area: int,
     padding: int,
-) -> np.ndarray:
+) -> "np.ndarray":
     """Return cropped image if a bbox is found; otherwise return original."""
     bbox = detect_content_bbox(img, low_threshold, high_threshold, min_area, padding)
     if bbox is None:
@@ -287,6 +308,7 @@ def process_one(
     high_threshold: int,
     min_area: int,
     padding: int,
+    root: Optional[str],
 ) -> Tuple[str, bool, Optional[str]]:
     """
     Process a single image: load, crop, save (with retries).
@@ -295,9 +317,9 @@ def process_one(
     try:
         img = load_image(in_path)
         cropped = crop_image(img, low_threshold, high_threshold, min_area, padding)
-        out_path = ensure_output_path(in_path, out_dir)
+        out_path = ensure_output_path(in_path, out_dir, root)
 
-        # Write via temp-and-rename when overwriting in-place to reduce partial writes risk
+        # Write via temp-and-rename when overwriting in-place to reduce partial write risk
         if out_dir is None:
             tmp = in_path + ".tmp_write"
             if not imwrite_retry(tmp, cropped, attempts=retry_writes):
@@ -319,6 +341,8 @@ def process_one(
         return (in_path, False, str(e))
 
 
+# --- Low-complexity helpers for main() --------------------------------------
+
 def _validate_paths(args) -> tuple[Optional[str], Optional[int]]:
     """
     Validate and normalize input/output paths.
@@ -339,17 +363,17 @@ def _validate_paths(args) -> tuple[Optional[str], Optional[int]]:
     return folder, None
 
 
-def _collect_images_or_exit(folder: str, allow_empty: bool) -> tuple[Optional[list[str]], Optional[int]]:
+def _collect_images_or_exit(folder: str, allow_empty: bool, recurse: bool) -> tuple[Optional[list[str]], Optional[int]]:
     """
     List images. On empty input:
       - return ([], 0) if allow_empty
       - return (None, 2) otherwise
     """
-    images = list_images(folder)
+    images = list_images(folder, recurse=recurse)
     if images:
         return images, None
 
-    logger.error("No valid images found in %s", folder)
+    logger.error("No valid images found in %s (recurse=%s)", folder, recurse)
     if allow_empty:
         logger.info("--allow-empty set; exiting 0")
         return [], 0
@@ -365,19 +389,18 @@ def _resolve_resume_index(folder: str, images: list[str], resume_file: Optional[
     if not resume_file:
         return 0, None
 
+    # Let SystemExit from validation bubble up naturally
     resume_abs = validate_resume_file(folder, resume_file)
 
     try:
         return images.index(resume_abs) + 1, None  # start AFTER this file
     except ValueError:
         logger.error("--resume-file not found in input set: %s", resume_abs)
-        # Mirror validation semantics: treat as usage error and exit 2.
         raise SystemExit(2)
 
+
 def _classify_result(ok: bool, err: Optional[str], skip_bad_images: bool) -> str:
-    """
-    Return 'ok', 'skip', or 'fail' based on worker outcome and flags.
-    """
+    """Return 'ok', 'skip', or 'fail' based on worker outcome and flags."""
     if ok:
         return "ok"
     if "Failed to load image" in (err or "") and skip_bad_images:
@@ -385,14 +408,14 @@ def _classify_result(ok: bool, err: Optional[str], skip_bad_images: bool) -> str
     return "fail"
 
 
-def _process_batch(to_process: list[str], args) -> tuple[int, int, int]:
+def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, int]:
     """
     Run the parallel crop/save over the list, returning (processed, skipped, failures).
     """
     total = len(to_process)
     logger.info(
-        "Starting crop: %d images (workers=%d, out=%s)",
-        total, args.max_workers, args.output or "in-place"
+        "Starting crop: %d images (workers=%d, out=%s, recurse=%s)",
+        total, args.max_workers, args.output or "in-place", args.recurse
     )
 
     processed = skipped = failures = 0
@@ -409,6 +432,7 @@ def _process_batch(to_process: list[str], args) -> tuple[int, int, int]:
                 args.high_threshold,
                 args.min_area,
                 args.padding,
+                root,
             ): path
             for path in to_process
         }
@@ -446,7 +470,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return code
 
     # 2) Collect images (early-exit if empty and allowed)
-    images, code = _collect_images_or_exit(folder, args.allow_empty)
+    images, code = _collect_images_or_exit(folder, args.allow_empty, args.recurse)
     if code is not None:
         return code  # 0 or 2
     assert images is not None  # for type checkers
@@ -464,11 +488,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
 
     # 5) Parallel processing
-    processed, skipped, failures = _process_batch(to_process, args)
+    processed, skipped, failures = _process_batch(to_process, args, root=folder)
 
     # 6) Summary & exit code
     logger.info("Done. processed=%d, skipped=%d, failed=%d", processed, skipped, failures)
     return 1 if failures > 0 else 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
