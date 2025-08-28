@@ -77,9 +77,16 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.3
+  1.1.4
 
 CHANGELOG
+    1.1.4
+  - Docs: add full comment-based help to Stop-Vlc and Get-ScreenWithGDIPlus
+    (.DESCRIPTION, .PARAMETER, .EXAMPLE) for Get-Help consistency
+  - Inline comments: clarify main-loop validation logic (pre/post snapshot counts,
+    GDI+ savedThisRun, and final $ok conditions)
+  - Behavior: no functional changes; readability and maintainability only
+
   1.1.3
   - Docs: expand Start-Vlc and Invoke-Cropper help (.DESCRIPTION, .RETURNS, .EXAMPLE)
     and add inline comments for VLC restart strategy and log-creation guard
@@ -404,12 +411,23 @@ function Start-Vlc {
 <#
 .SYNOPSIS
 Stops VLC process gracefully, with force-kill fallback.
+
 .DESCRIPTION
-Attempts CloseMainWindow, waits briefly, then Stop-Process -Force if still running.
+Attempts to close VLC via CloseMainWindow (no-op under --intf dummy),
+waits briefly for exit, and then force-kills the process if still running.
+Safe to call in finally blocks to ensure cleanup on all paths.
+
 .PARAMETER Process
-The VLC process object.
+The VLC process object to stop.
+
 .EXAMPLE
-Stop-Vlc -Process $proc
+# Ensure VLC is cleaned up even on error paths
+try {
+  $vlc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots'
+  # ... do work ...
+} finally {
+  if ($vlc) { Stop-Vlc -Process $vlc }
+}
 #>
 function Stop-Vlc {
     param(
@@ -426,12 +444,18 @@ function Stop-Vlc {
 <#
 .SYNOPSIS
 Captures the entire primary screen to a PNG file.
+
 .DESCRIPTION
-Uses System.Drawing to copy from the primary screen and saves to disk.
+Uses System.Drawing to copy pixels from the primary display and writes a PNG.
+Designed for Windows PowerShell/PowerShell 7 on Windows; multi-monitor setups
+capture only the primary screen. Use VLC snapshot mode for window-only frames.
+
 .PARAMETER TargetPath
-Full path of the PNG file to write.
+Full path of the PNG file to write. The parent folder must exist.
+
 .EXAMPLE
-Get-ScreenWithGDIPlus -TargetPath 'C:\shots\frame_0001.png'
+# Save a single desktop frame
+Get-ScreenWithGDIPlus -TargetPath (Join-Path $SaveFolder 'MyVideo_000001.png')
 #>
 function Get-ScreenWithGDIPlus {
     param(
@@ -673,12 +697,19 @@ foreach ($video in $videos) {
 
     # Post-run validation: ensure frames actually exist
     if ($UseVlcSnapshots) {
+        # Compare pre/post counts for this video's prefix
         $postCount = (Get-ChildItem -LiteralPath $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -ErrorAction SilentlyContinue | Measure-Object).Count
         $hadFrames = ($postCount -gt $preCount)
     } else {
+        # GDI+: require at least one frame saved during this run
         $hadFrames = ($savedThisRun -gt 0)
     }
 
+    # Final outcome: only mark processed when ALL conditions are true:
+    # - not partial (no time-limit break)
+    # - no capture errors
+    # - VLC exited cleanly (ExitCode 0)
+    # - evidence of frames saved (hadFrames)
     $ok = (-not $partial) -and (-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames
 
     if ($ok) {
