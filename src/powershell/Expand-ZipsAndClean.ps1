@@ -93,7 +93,7 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 1.2.1
+    Version  : 1.2.2
     Author   : Manoj Bhaskaran
     Requires : PowerShell 5.1 or 7+, Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
@@ -121,6 +121,8 @@
            reiterate 255-char rationale; verbose truncation message retained (with
            original length); clarify ExtractToFile overwrite flag comment; progress shows
            total bytes target; FAQ explains CompressionRatio; minor comments on caching.
+    1.2.2  Fixes & UX: Move Format-Bytes to Helpers (scope); adaptive summary layout
+           (table for wide consoles, list for narrow) to prevent header wrapping.
 
     ── Setup / Module check ─────────────────────────────────────────────────────
     Expand-Archive is provided by Microsoft.PowerShell.Archive.
@@ -238,12 +240,18 @@ function Get-FullPath {
 
 <#
 .SYNOPSIS
-    Core routine to resolve a unique file/dir path by suffixing a timestamp.
-.PARAMETER Path
-    The target path (file or directory).
-.PARAMETER IsDirectory
-    True if resolving for a directory; affects extension handling.
+    Formats a byte count into a human-readable string.
 #>
+function Format-Bytes {
+    param([Parameter(Mandatory)][int64]$Bytes)
+    if ($Bytes -lt 1KB) { return "$Bytes B" }
+    if ($Bytes -lt 1MB) { return "{0:N2} KB" -f ($Bytes / 1KB) }
+    if ($Bytes -lt 1GB) { return "{0:N2} MB" -f ($Bytes / 1MB) }
+    if ($Bytes -lt 1TB) { return "{0:N2} GB" -f ($Bytes / 1GB) }
+    return "{0:N2} TB" -f ($Bytes / 1TB)
+}
+
+# Shared unique-suffix helper (works for files or directories)
 function Resolve-UniquePathCore {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -263,20 +271,12 @@ function Resolve-UniquePathCore {
     return $candidate
 }
 
-<#
-.SYNOPSIS
-    Ensures a unique file path (adds timestamp suffix if needed).
-#>
 function Resolve-UniquePath {
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return $Path }
     return (Resolve-UniquePathCore -Path $Path -IsDirectory:$false)
 }
 
-<#
-.SYNOPSIS
-    Ensures a unique directory path (adds timestamp suffix if needed).
-#>
 function Resolve-UniqueDirectoryPath {
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return $Path }
@@ -677,55 +677,43 @@ try {
 
 #------------------------------ Summary -----------------------------#
 
-<#
-.SYNOPSIS
-    Formats a byte count into a human-readable string.
-#>
-function Format-Bytes {
-    param([Parameter(Mandatory)][int64]$Bytes)
-    if ($Bytes -lt 1KB) { return "$Bytes B" }
-    if ($Bytes -lt 1MB) { return "{0:N2} KB" -f ($Bytes / 1KB) }
-    if ($Bytes -lt 1GB) { return "{0:N2} MB" -f ($Bytes / 1MB) }
-    if ($Bytes -lt 1TB) { return "{0:N2} GB" -f ($Bytes / 1GB) }
-    return "{0:N2} TB" -f ($Bytes / 1TB)
-}
-
 # Always print a summary (even if no zips)
 $compressionRatio = if ($totalCompressedZipBytes -gt 0) {
     # Show as multiplier, one decimal (e.g., 3.3x). >1 means compression saved space.
     "{0:N1}x" -f ($totalUncompressedBytes / [double]$totalCompressedZipBytes)
 } else { "n/a" }
 
-$summary = [pscustomobject]@{
-    SourceDirectory          = $SourceDirectory
-    DestinationDirectory     = $DestinationDirectory
-    ExtractMode              = $ExtractMode
-    CollisionPolicy          = $CollisionPolicy
-    ZipsFound                = $zipCount
-    ZipsProcessed            = $processedZips
-    FilesExtracted           = $totalFilesExtracted
-    TotalUncompressedBytes   = $totalUncompressedBytes
-    TotalCompressedZipBytes  = $totalCompressedZipBytes
-    CompressionRatio         = $compressionRatio
-    ZipsMoved                = ($moveSummary.Count)
-    ZipsMovedBytes           = ($moveSummary.Bytes)
-    ZipsMovedTo              = ($moveSummary.Destination)
-    Errors                   = ($errors.Count)
-    Duration                 = ("{0:hh\:mm\:ss\.fff}" -f $stopwatch.Elapsed)
+# Build a view with shorter column names to avoid wrapping on narrow consoles
+$summaryView = [pscustomobject]@{
+    SrcDir       = $SourceDirectory
+    DestDir      = $DestinationDirectory
+    Mode         = $ExtractMode
+    Policy       = $CollisionPolicy
+    ZipsFound    = $zipCount
+    ZipsDone     = $processedZips
+    Files        = $totalFilesExtracted
+    Uncompressed = (Format-Bytes $totalUncompressedBytes)
+    Compressed   = (Format-Bytes $totalCompressedZipBytes)
+    Ratio        = $compressionRatio
+    ZipsMoved    = ($moveSummary.Count)
+    MovedBytes   = (Format-Bytes $moveSummary.Bytes)
+    MovedTo      = ($moveSummary.Destination)
+    Errors       = ($errors.Count)
+    Duration     = ("{0:hh\:mm\:ss\.fff}" -f $stopwatch.Elapsed)
 }
 
 Write-Host ""
 Write-Host "==== Expand-ZipsAndClean Summary ===="
-$summary |
-    Select-Object `
-        SourceDirectory, DestinationDirectory, ExtractMode, CollisionPolicy,
-        ZipsFound, ZipsProcessed, FilesExtracted,
-        @{n='TotalUncompressed'; e={ Format-Bytes $_.TotalUncompressedBytes }},
-        @{n='TotalCompressedZips'; e={ Format-Bytes $_.TotalCompressedZipBytes }},
-        CompressionRatio,
-        ZipsMoved, @{n='ZipsMovedBytes'; e={ Format-Bytes $_.ZipsMovedBytes }},
-        ZipsMovedTo, Errors, Duration |
-    Format-Table -AutoSize
+
+# Detect console width; for narrow consoles, use a clean list view
+$consoleWidth = 120
+try { $consoleWidth = $Host.UI.RawUI.WindowSize.Width } catch {}
+
+if ($consoleWidth -lt 120) {
+    $summaryView | Format-List
+} else {
+    $summaryView | Format-Table -AutoSize
+}
 
 if ($errors.Count -gt 0) {
     Write-Host "`nNotes / Errors:"
