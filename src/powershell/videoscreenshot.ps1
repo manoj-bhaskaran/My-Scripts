@@ -16,6 +16,7 @@ Major behaviours and safeguards:
   - Paths: Python cropper script path is parameterised; defaults relative to this script.
   - Resume file validation: in -CropOnly mode, the resume file must exist or the script errors.
   - Startup monitoring: waits up to VlcStartupTimeoutSeconds for VLC to initialise.
+  - Debug logging: enable with the common -Debug switch (Write-Debug traces).
 
 .PARAMETER SourceFolder
 Folder containing input videos. Recurses by default.
@@ -31,9 +32,6 @@ Maximum capture time per video. 0 = unlimited. Default: 0.
 
 .PARAMETER VideoLimit
 Maximum number of videos to process this run. 0 = unlimited. Default: 0.
-
-.PARAMETER Debug
-Enables verbose debug tracing via Write-Debug.
 
 .PARAMETER CropOnly
 Skips video playback and runs the Python cropper only.
@@ -77,9 +75,15 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.7
+  1.1.8
 
 CHANGELOG
+  1.1.8
+  - Fix: removed custom -Debug switch to avoid name collision with PowerShell’s common -Debug.
+    Behavior unchanged for callers: use the common -Debug to enable Write-Debug output.
+    Internally, the script now checks $PSBoundParameters.ContainsKey('Debug').
+  - Docs: updated notes/examples to mention the common -Debug parameter.
+
   1.1.7
   - Post-capture: also run crop_colours.py against $SaveFolder when not -CropOnly.
   - (Args: --input <SaveFolder> --skip-bad-images --allow-empty --recurse [+ --resume-file if set])
@@ -143,6 +147,7 @@ TROUBLESHOOTING
   - Blank images: ensure VLC can decode the file; try -UseVlcSnapshots.
   - VLC not starting: increase -VlcStartupTimeoutSeconds; verify codecs.
   - Crop-only errors: check -ResumeFile path; ensure Python & script path are correct.
+  - To see detailed diagnostic output, run with -Debug to enable Write-Debug traces.
 
 FAQS
   Q: No frames were captured—what should I check?
@@ -174,9 +179,6 @@ param(
 
     [Parameter(Mandatory = $false)]
     [int]$VideoLimit = 0,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$Debug,
 
     [Parameter(Mandatory = $false)]
     [switch]$CropOnly,
@@ -262,8 +264,8 @@ if (-not (Test-Path -LiteralPath $ProcessedLogPath)) {
     New-Item -ItemType File -Path $ProcessedLogPath -Force | Out-Null
 }
 
-# Expand debug preference if requested
-if ($Debug) { $DebugPreference = 'Continue' }
+# Honor the common -Debug parameter from CmdletBinding
+if ($PSBoundParameters.ContainsKey('Debug')) { $DebugPreference = 'Continue' }
 
 # Load assemblies needed for GDI+ capture (PS7 on Windows supports System.Drawing)
 Add-Type -AssemblyName System.Drawing | Out-Null
@@ -345,6 +347,8 @@ $proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots' -UseVlcSnaps
 With `--intf dummy` no GUI window is created; liveness is determined by the
 process not exiting. Consider -TimeLimitSeconds and adequate free disk space
 when using `--scene-ratio=1`.
+Uses PowerShell’s common -Debug parameter; no custom Debug switch is defined.
+
 #>
 function Start-Vlc {
     param(
