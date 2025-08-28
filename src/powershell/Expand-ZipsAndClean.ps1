@@ -22,7 +22,7 @@
           per CollisionPolicy before writing each file (Skip/Overwrite/Rename).
     - CollisionPolicy (for overlapping paths and/or Flat mode):
         * Skip | Overwrite | Rename (default: Rename)
-    - Progress bars for long runs (suppressed by -Quiet). Move progress shows cumulative bytes moved.
+    - Progress bars for long runs (suppressed by -Quiet). Move progress shows cumulative AND total bytes.
     - End-of-run summary includes uncompressed bytes, total compressed zip bytes, and compression ratio.
       (CompressionRatio > 1.0 means the original content is larger than the archives; compression saved space.)
     - Robust error handling and diagnostics (WhatIf/Confirm; -Verbose); clearer message if an
@@ -93,7 +93,7 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 1.2.0
+    Version  : 1.2.1
     Author   : Manoj Bhaskaran
     Requires : PowerShell 5.1 or 7+, Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
@@ -117,6 +117,10 @@
            function-level help & more inline comments; cache minor lookups;
            progress shows cumulative bytes moved; docs extend security caveats and
            rationale for 255-char limit; notes clarify ratio meaning.
+    1.2.1  Docs/UX polish: .NOTES calls out Zip Slip protection; parameter doc & NOTES
+           reiterate 255-char rationale; verbose truncation message retained (with
+           original length); clarify ExtractToFile overwrite flag comment; progress shows
+           total bytes target; FAQ explains CompressionRatio; minor comments on caching.
 
     ── Setup / Module check ─────────────────────────────────────────────────────
     Expand-Archive is provided by Microsoft.PowerShell.Archive.
@@ -125,6 +129,11 @@
     • PowerShell 7+: If missing, install from PSGallery:
         Install-Module -Name Microsoft.PowerShell.Archive -Scope CurrentUser -Force
       (You may need: Set-PSRepository PSGallery -InstallationPolicy Trusted)
+
+    ── Security (Flat mode / Zip Slip protection) ───────────────────────────────
+    Flat mode validates each entry’s resolved full path stays within the destination root
+    before writing, preventing path traversal (“Zip Slip”). Suspicious entries are skipped
+    and logged at -Verbose level.
 
     ── Long Path Support (Windows) ──────────────────────────────────────────────
     If you expect paths > 260 chars, enable LongPathsEnabled:
@@ -140,6 +149,7 @@
 
     ── Tips for MaxSafeNameLength ───────────────────────────────────────────────
     Typical values: 200 for defensive truncation; 100 for stricter limits. Leave as 0 to disable truncation.
+    The 255-character cap aligns with common NTFS filename component limits.
 
 TROUBLESHOOTING & FAQ
     Q: Script seems to hang on large zips.
@@ -150,6 +160,10 @@ TROUBLESHOOTING & FAQ
           7z x archive.zip -p"$env:ZIP_PASSWORD"
        ⚠ Avoid embedding passwords in scripts or plain command lines. Prefer interactive prompts,
          environment variables, or secret variables in CI systems.
+
+    Q: What does CompressionRatio mean?
+       A: Values > 1.0 indicate compression saved space (the total uncompressed content is larger
+          than the combined archive sizes).
 
     Q: I get errors mentioning long paths or path too long.
        A: Enable Long Path Support as noted above. Prefer PowerShell 7+. Keep destination close to drive root.
@@ -290,6 +304,7 @@ function Get-SafeName {
     $san = $sb.ToString().TrimEnd('.', ' ')
     if ([string]::IsNullOrWhiteSpace($san)) { $san = 'archive' }
     if ($MaxLength -gt 0 -and $san.Length -gt $MaxLength) {
+        # Include original name length for debugging
         Write-Verbose ("Truncating name from {0} to {1} chars: '{2}'" -f $san.Length, $MaxLength, $san)
         $san = $san.Substring(0, $MaxLength)
     }
@@ -310,6 +325,8 @@ function Test-LongPathsEnabled {
 <#
 .SYNOPSIS
     Returns quick stats for a zip (file count, uncompressed total, compressed bytes).
+.DESCRIPTION
+    Caches the FileInfo once to avoid redundant Get-Item/Length calls in loops.
 .PARAMETER ZipPath
     Full path to the .zip file.
 #>
@@ -319,7 +336,7 @@ function Get-ZipFileStats {
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
-    # Precompute to avoid repeated Get-Item lookups
+    # Precompute to avoid repeated Get-Item lookups (minor optimisation)
     $zipItem = Get-Item -LiteralPath $ZipPath
     $compressedLen = [int64]$zipItem.Length
 
@@ -414,7 +431,7 @@ function Expand-ZipSmart {
                 $dest = Join-Path $DestinationRoot $rel
                 $destFull = [System.IO.Path]::GetFullPath($dest)
                 if (-not $destFull.StartsWith($destRootFullWithSep, [System.StringComparison]::OrdinalIgnoreCase)) {
-                    Write-Verbose "Skipping suspicious entry outside root: $($entry.FullName)"
+                    Write-Verbose "Skipped path traversal: $($entry.FullName)"
                     continue
                 }
 
@@ -426,14 +443,14 @@ function Expand-ZipSmart {
                 $targetPath = $destFull
                 if (Test-Path -LiteralPath $targetPath) {
                     switch ($CollisionPolicy) {
-                        'Skip'     { continue }
-                        'Rename'   { $targetPath = Resolve-UniquePath -Path $targetPath }
-                        'Overwrite' { } # fall through; will overwrite
+                        'Skip'      { continue }
+                        'Rename'    { $targetPath = Resolve-UniquePath -Path $targetPath }
+                        'Overwrite' { } # NOTE: overwrite flag below is only enabled when policy is Overwrite
                     }
                 }
 
-                # Extract entry to file with overwrite flag per policy
                 try {
+                    # Overwrite is true only if policy == Overwrite; otherwise false (Skip handled above; Rename changed path)
                     [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, ($CollisionPolicy -eq 'Overwrite'))
                     $written++
                 } catch {
@@ -485,7 +502,9 @@ function Move-Zips-ToParent {
     }
 
     $zipsToMove = @(Get-ChildItem -LiteralPath $SourceDir -Filter *.zip -File)
-    $total = $zipsToMove.Count
+    $total      = $zipsToMove.Count
+    $totalBytes = [int64](($zipsToMove | Measure-Object Length -Sum).Sum)
+
     $idx = 0
     $moved = 0
     $bytes = [int64]0
@@ -496,7 +515,7 @@ function Move-Zips-ToParent {
             $pct = [int](($idx) / [math]::Max(1,$total) * 100)
             Write-Progress -Activity "Moving zip files to parent" `
                            -Status "$idx / $total : $($zf.Name) ($(Format-Bytes $zf.Length))" `
-                           -CurrentOperation ("Moved {0}" -f (Format-Bytes $bytes)) `
+                           -CurrentOperation ("Moved {0} of {1}" -f (Format-Bytes $bytes), (Format-Bytes $totalBytes)) `
                            -PercentComplete $pct
         }
 
