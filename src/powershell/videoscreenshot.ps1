@@ -77,17 +77,24 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.2
+  1.1.3
 
 CHANGELOG
+  1.1.3
+  - Docs: expand Start-Vlc and Invoke-Cropper help (.DESCRIPTION, .RETURNS, .EXAMPLE)
+    and add inline comments for VLC restart strategy and log-creation guard
+  - Fix: avoid scoped-variable parse issue by delimiting ${Path} in error message
+    inside Add-ContentWithRetry
+  - Diagnostics: log first-attempt cropper stderr in Debug on non-zero exit
+
   1.1.2
   - Robustness: retry appends to processed log (file lock tolerant) and guard
     against truncation by creating the log only if missing
   - GDI+ filenames: prefix saved frames with <VideoBaseName>_ to avoid cross-video
     collisions in shared SaveFolder (parity with VLC snapshot prefix)
   - VLC startup: single restart attempt if VLC exits during the startup window
-  - Docs: add comment-based help for Save-FrameWithRetry and clarify inline
-    comments (dummy interface, scene-ratio=1, validation gating)
+  - Docs: add comment-based help for Save-FrameWithRetry and Add-ContentWithRetry
+    and clarify inline comments (dummy interface, scene-ratio=1, validation gating)
 
   1.1.1
   - Snapshot mode: per-video --scene-prefix (<VideoBaseName>_) to avoid collisions
@@ -278,21 +285,44 @@ function Save-FrameWithRetry {
 
 <#
 .SYNOPSIS
-Start VLC for a single video file.
+Start VLC for a single video file (headless or snapshot mode).
+
 .DESCRIPTION
-Launches vlc.exe with suitable flags for either GDI+ capture or snapshot mode.
-.NOTES
-Uses `--intf dummy` (no GUI) for low overhead. In snapshot mode, `--scene-ratio=1`
-requests a snapshot for every rendered frame; this can produce many files. Use
--TimeLimitSeconds and sufficient free space.
+Launches `vlc.exe` with a headless `--intf dummy` interface for low overhead.
+When -UseVlcSnapshots is set, enables the `scene` video filter to write frames
+directly to disk:
+  • `--scene-path` is set to $SaveFolder
+  • `--scene-prefix` uses the video base name to avoid cross-video collisions
+  • `--scene-ratio=1` requests every rendered frame (may be many files)
+
+Startup is confirmed by observing the process remains alive within a short
+timeout. If VLC exits early during this window, the function performs one
+additional start attempt (best-effort resilience).
+
+.RETURNS
+[System.Diagnostics.Process] for the running VLC instance, or $null on failure.
+
 .PARAMETER VideoPath
-Full path to the video file.
-.PARAMETER UseVlcSnapshots
-Switch to enable VLC scene filter snapshots.
+Full path to the video file to play.
+
 .PARAMETER SaveFolder
-Folder where VLC should write snapshots when snapshot mode is enabled.
+Folder where VLC writes snapshots (snapshot mode) or where we save GDI+ frames.
+
+.PARAMETER UseVlcSnapshots
+Enable VLC `scene` snapshots instead of desktop GDI+ capture.
+
 .EXAMPLE
-$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -UseVlcSnapshots -SaveFolder 'C:\o'
+# Headless playback for GDI+ capture loop elsewhere
+$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots'
+
+.EXAMPLE
+# Snapshot mode: VLC writes frames directly as PNGs
+$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots' -UseVlcSnapshots
+
+.NOTES
+With `--intf dummy` no GUI window is created; liveness is determined by the
+process not exiting. Consider -TimeLimitSeconds and adequate free disk space
+when using `--scene-ratio=1`.
 #>
 function Start-Vlc {
     param(
@@ -315,11 +345,11 @@ function Start-Vlc {
         # Use a per-video prefix to avoid collisions across videos/runs.
         $snapshotArgs = @(
             '--video-filter=scene',
-            "--scene-path=`"$SaveFolder`"",
-            "--scene-prefix=`"$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_`"",
+            "--scene-path=""$SaveFolder""",
+            "--scene-prefix=""$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_""",
             '--scene-format=png',
             '--scene-ratio=1'
-            )
+        )
     }
 
     $vlcArgs = @()
@@ -348,7 +378,7 @@ function Start-Vlc {
         # With --intf dummy, no window is created; we rely on the process not exiting.
     }
 
-    # If VLC exited during startup, try a single restart to handle sporadic start failures
+    # If VLC exited during startup, try a single restart to handle sporadic launch failures
     if ($p.HasExited) {
         Write-Debug "VLC exited during startup; retrying once…"
         $p = New-Object System.Diagnostics.Process
@@ -418,17 +448,37 @@ function Get-ScreenWithGDIPlus {
 
 <#
 .SYNOPSIS
-Runs the external Python cropper script.
+Run the external Python cropper over saved frames.
+
 .DESCRIPTION
-Invokes Python with the given cropper path, passing SaveFolder and optional resume file.
+Invokes `python` with the cropper script, passing:
+  • `--input` = $SaveFolder
+  • optional `--resume_file` if -ResumeFile is provided (relative paths are
+    resolved under $SaveFolder)
+
+Behavior:
+  • Reads stdout fully (logged only when Debug is enabled)
+  • Reads stderr and, on non-zero exit, performs one lightweight retry (500 ms)
+  • Throws on repeated failure; caller handles the exception
+
+.RETURNS
+None. Throws on failure.
+
 .PARAMETER PythonScriptPath
-Path to the Python script.
+Path to the cropper Python script. Must exist.
+
 .PARAMETER SaveFolder
-Folder containing images to be processed.
+Folder containing images to process.
+
 .PARAMETER ResumeFile
-Optional resume file path or name (if relative, resolved under SaveFolder).
+Optional path or filename for cropper resume. Relative paths are resolved
+under $SaveFolder.
+
 .EXAMPLE
-Invoke-Cropper -PythonScriptPath .\crop_colours.py -SaveFolder .\Screenshots
+Invoke-Cropper -PythonScriptPath .\src\python\crop_colours.py -SaveFolder .\Screenshots
+
+.EXAMPLE
+Invoke-Cropper -PythonScriptPath .\crop.py -SaveFolder .\Shots -ResumeFile resume.json
 #>
 function Invoke-Cropper {
     param(
@@ -478,8 +528,7 @@ function Invoke-Cropper {
     $p.WaitForExit()
 
     if ($p.ExitCode -ne 0) {
-        $stderr = $p.StandardError.ReadToEnd()
-        if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "Cropper stderr (first attempt):`n$stderr" }
+         if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "Cropper stderr (first attempt):`n$stderr" }
          # One lightweight retry to handle transient issues (e.g., file locks)
          Start-Sleep -Milliseconds 500
          $p2 = New-Object System.Diagnostics.Process
@@ -498,7 +547,6 @@ function Invoke-Cropper {
          } else {
              if ($DebugPreference -eq 'Continue') { Write-Debug "Cropper (retry) output:`n$cropperStdout2" }
              Write-Message -Level Info -Message "Cropper finished successfully (after retry)."
-             $null = $p.StandardError.ReadToEnd()
          }
     } else {
         if ($DebugPreference -eq 'Continue') { Write-Debug "Cropper output:`n$cropperStdout" }
