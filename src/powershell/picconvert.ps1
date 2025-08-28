@@ -35,7 +35,7 @@
          - Per-extension copied counts
          - Directories created (with breakdown: batch vs root/log)
          - Error count (and writes a detailed error log if any)
-         - Elapsed execution time
+         - Elapsed execution time (Total, Rename phase, Copy phase)
 
 .PARAMETER SourceDir
     Source directory to scan (recursively). Default:
@@ -70,10 +70,11 @@
       • Validation: only alphanumeric extensions are accepted (e.g., .jpg, .heic).
 
 .PARAMETER LogFilePath
-    Optional path to a log file. If provided, detailed errors are appended here.
-    If omitted and errors occur, a file named 'picconvert_errors_yyyyMMdd_HHmmss.log'
-    will be created under DestDir. The path is validated and the directory is created
-    if missing.
+    Optional path to a log file. If provided, **this script appends** each run’s
+    errors with a run header; the directory is created if missing.
+    If omitted and errors occur, a timestamped file
+      'picconvert_errors_yyyyMMdd_HHmmss.log'
+    is created under DestDir.
 
 .INPUTS
     None. You cannot pipe input to this script.
@@ -91,22 +92,22 @@
 
 .NOTES
     VERSION
-      1.1.2
+      1.1.3
 
     CHANGELOG
+      1.1.3
+        - Log safety: when -LogFilePath is supplied, append error output with a run header
+          instead of overwriting; still create timestamped file when -LogFilePath is omitted.
+        - Performance metrics breakdown: separate timings for Rename and Copy phases
+          added to the summary (alongside total time).
+        - Docs: clarified log append behavior under -LogFilePath in PARAMETERS and TROUBLESHOOTING.
+
       1.1.2
-        - Added per-extension copied counts to the summary.
-        - Split directory counters:
-            • BatchDirsCreated (per-extension folders)
-            • RootDirsCreated (DestDir, log dir)
-          Summary shows both and total.
-        - Introduced -BatchPrefix (default 'picconvert') to customise folder prefix.
-        - Validated IncludeExtensions entries (alphanumeric-only extensions).
-        - Restored defaults for SourceDir and DestDir to original paths.
-        - Retained:
-            • .png always skipped; .jpg copied only when name starts with 'img' (case-sensitive)
-            • Delete source file after successful copy (move semantics)
-            • Progress bars completed; elapsed time in summary; robust logging & error handling
+        - Per-extension copied counts in summary.
+        - Split directory counters: batch vs root/log; summary shows both and total.
+        - Added -BatchPrefix (default 'picconvert') for folder naming.
+        - Validated -IncludeExtensions entries; restored Source/Dest defaults.
+        - Kept: .png skip; .jpg '^img' rule; delete-after-copy; progress completion; elapsed time.
 
       1.1.1
         - Enforced .png skip and .jpg '^img' rule; extension-based foldering with counters.
@@ -127,6 +128,9 @@
       - If copies fail due to access being denied, verify read/write permissions.
       - If existing .jpg prevents rename of .jpeg, the script logs and skips safely.
       - For performance, avoid real-time AV scanning on DestDir during heavy copies.
+      - **Logs with -LogFilePath:** This script APPENDS to the file with a run header
+        per execution. To keep separate files, provide a unique path per run or omit
+        -LogFilePath to use the auto-timestamped file under DestDir.
 #>
 
 [CmdletBinding(SupportsShouldProcess=$true)]
@@ -174,8 +178,10 @@ $script:CopiedByExt      = @{}   # e.g., @{ "jpg" = 123; "heic" = 45 }
 # Timestamp for naming
 $script:RunStamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
 
-# Stopwatch for elapsed time
-$sw = [System.Diagnostics.Stopwatch]::StartNew()
+# Stopwatches for elapsed time
+$swTotal  = [System.Diagnostics.Stopwatch]::StartNew()
+$elapsedRename = [TimeSpan]::Zero
+$elapsedCopy   = [TimeSpan]::Zero
 
 # Normalise/validate IncludeExtensions early (copy phase only)
 if ($IncludeExtensions) {
@@ -287,6 +293,8 @@ function Rename-JpegFiles {
         return 0
     }
 
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+
     $total = $Files.Count
     $i = 0
 
@@ -321,7 +329,8 @@ function Rename-JpegFiles {
         Write-Progress -Activity "Renaming .jpeg → .jpg" -Completed
     }
 
-    return $script:RenamedCount
+    $sw.Stop()
+    return $script:RenamedCount, $sw.Elapsed  # caller will use only count and stopwatch externally
 }
 
 function Copy-FilesToBatches {
@@ -352,6 +361,8 @@ function Copy-FilesToBatches {
         if ($ShowProgress) { Write-Progress -Activity "Copying to batches" -Completed }
         return 0
     }
+
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
     $total = $Files.Count
     $i = 0
@@ -426,7 +437,6 @@ function Copy-FilesToBatches {
                 Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop
                 $script:CopiedCount++
                 $state.Count++
-                # Per-extension count
                 if (-not $script:CopiedByExt.ContainsKey($extStem)) { $script:CopiedByExt[$extStem] = 0 }
                 $script:CopiedByExt[$extStem]++
                 Write-Verbose "Copied+Deleted: $($f.FullName) -> $targetPath"
@@ -440,7 +450,8 @@ function Copy-FilesToBatches {
         Write-Progress -Activity "Copying to batches" -Completed
     }
 
-    return $script:CopiedCount
+    $sw.Stop()
+    return $script:CopiedCount, $sw.Elapsed  # caller will use only count and stopwatch externally
 }
 
 function Write-RunSummary {
@@ -463,8 +474,12 @@ function Write-RunSummary {
         Destination directory (used for default log creation).
     .PARAMETER LogFilePath
         Optional explicit log file path (validated/created if needed).
-    .PARAMETER Elapsed
-        [TimeSpan] The total execution time to display.
+    .PARAMETER ElapsedRename
+        [TimeSpan] Rename phase duration.
+    .PARAMETER ElapsedCopy
+        [TimeSpan] Copy phase duration.
+    .PARAMETER ElapsedTotal
+        [TimeSpan] Total script duration.
     .OUTPUTS
         None
     #>
@@ -478,7 +493,9 @@ function Write-RunSummary {
         [int]$ErrCount,
         [string]$DestDir,
         [string]$LogFilePath,
-        [TimeSpan]$Elapsed
+        [TimeSpan]$ElapsedRename,
+        [TimeSpan]$ElapsedCopy,
+        [TimeSpan]$ElapsedTotal
     )
 
     $totalDirs = $BatchDirsCreated + $RootDirsCreated
@@ -490,8 +507,10 @@ Renamed (.jpeg→.jpg)  : $Renamed
 Copied (then deleted) : $Copied
 Directories created   : $totalDirs (batch=$BatchDirsCreated, root/log=$RootDirsCreated)
 Errors                : $ErrCount
-Elapsed time          : {0:c}
-"@ -f $Elapsed | Write-Host
+Elapsed (rename)      : {0:c}
+Elapsed (copy)        : {1:c}
+Elapsed (total)       : {2:c}
+"@ -f $ElapsedRename, $ElapsedCopy, $ElapsedTotal | Write-Host
 
     if ($script:CopiedByExt.Count -gt 0) {
         Write-Host "Per-extension copied counts:"
@@ -524,9 +543,14 @@ Elapsed time          : {0:c}
             "probe" | Out-File -FilePath $probe -Encoding UTF8
             Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
 
-            # Write the actual log
-            "[{0}] Error details (count={1})" -f (Get-Date), $ErrCount | Out-File -FilePath $resolvedLogPath -Encoding UTF8
-            $script:ErrList | Out-File -FilePath $resolvedLogPath -Append -Encoding UTF8
+            # APPEND-BY-DEFAULT for user-specified path; create file if missing
+            if (-not (Test-Path -LiteralPath $resolvedLogPath)) {
+                New-Item -ItemType File -Path $resolvedLogPath -Force | Out-Null
+            }
+            Add-Content -Path $resolvedLogPath -Value ("`n==== {0} ====" -f $script:RunStamp)
+            Add-Content -Path $resolvedLogPath -Value ("[{0}] Error details (count={1})" -f (Get-Date), $ErrCount)
+            $script:ErrList | Add-Content -Path $resolvedLogPath
+
             Write-Warn "Errors were logged to: $resolvedLogPath"
         } catch {
             Write-Warn "Failed to write error log to '$resolvedLogPath': $($_.Exception.Message)"
@@ -539,7 +563,7 @@ Elapsed time          : {0:c}
 # region: Main ------------------------------------------------------------------------------------
 
 try {
-    Write-Info "Starting picconvert 1.1.2"
+    Write-Info "Starting picconvert 1.1.3"
     Initialize-Directories -SourceDir $SourceDir -DestDir $DestDir
 
     # Phase 1: Gather all source files (for rename); always include .jpeg in consideration
@@ -549,9 +573,10 @@ try {
     $jpegFiles = $allFiles | Where-Object { $_.Extension -ieq '.jpeg' }
     if ($jpegFiles.Count -gt 0) {
         Write-Info "Renaming .jpeg files to .jpg (count: $($jpegFiles.Count)) ..."
-        [void](Rename-JpegFiles -Files $jpegFiles -ShowProgress:$ShowProgress)
+        $null, $elapsedRename = Rename-JpegFiles -Files $jpegFiles -ShowProgress:$ShowProgress
     } else {
         Write-Info "No .jpeg files found to rename."
+        $elapsedRename = [TimeSpan]::Zero
     }
 
     # Phase 2: Refresh file list post-rename for the copy phase (respect -IncludeExtensions here)
@@ -562,13 +587,14 @@ try {
     # Phase 3: Copy into per-extension subfolders (with rules and deletion)
     if ($totalAfter -gt 0) {
         Write-Info "Copying files into extension-based subfolders under: $DestDir (Limit: $FilesPerFolderLimit)"
-        [void](Copy-FilesToBatches -Files $postRenameFiles -DestDir $DestDir -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress)
+        $null, $elapsedCopy = Copy-FilesToBatches -Files $postRenameFiles -DestDir $DestDir -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress
     } else {
         Write-Info "No files found to copy."
+        $elapsedCopy = [TimeSpan]::Zero
     }
 
     # Stop timer and summarize
-    $sw.Stop()
+    $swTotal.Stop()
     Write-RunSummary -TotalFiles $totalAfter `
                      -Renamed $script:RenamedCount `
                      -Copied $script:CopiedCount `
@@ -577,10 +603,12 @@ try {
                      -ErrCount $script:ErrCount `
                      -DestDir $DestDir `
                      -LogFilePath $LogFilePath `
-                     -Elapsed $sw.Elapsed
+                     -ElapsedRename $elapsedRename `
+                     -ElapsedCopy $elapsedCopy `
+                     -ElapsedTotal $swTotal.Elapsed
 
 } catch {
-    $sw.Stop()
+    $swTotal.Stop()
     Write-ErrTrack "Fatal: $($_.Exception.Message)"
     Write-RunSummary -TotalFiles 0 `
                      -Renamed $script:RenamedCount `
@@ -590,7 +618,9 @@ try {
                      -ErrCount $script:ErrCount `
                      -DestDir $DestDir `
                      -LogFilePath $LogFilePath `
-                     -Elapsed $sw.Elapsed
+                     -ElapsedRename $elapsedRename `
+                     -ElapsedCopy $elapsedCopy `
+                     -ElapsedTotal $swTotal.Elapsed
     exit 1
 }
 
