@@ -3,7 +3,7 @@
 """
 Frame cropper for image folders.
 
-Version: 3.0.0
+Version: 3.1.0
 Author: Manoj Bhaskaran
 
 DESCRIPTION
@@ -22,6 +22,7 @@ DESCRIPTION
 
     Features:
       - Parallel processing via ThreadPoolExecutor (configurable --max-workers)
+      - Periodic progress logs (--progress-interval, default 100 images)
       - Strict validation & clear exit codes
       - Resume-from-image support (--resume-file)
       - Save retries for transient I/O issues (--retry-writes)
@@ -44,6 +45,7 @@ USAGE
     python cropper.py --input /path/to/images [--output /path/to/out]
                       [--suffix _cropped] [--no-suffix]
                       [--max-workers N] [--retry-writes 3]
+                      [--progress-interval 100]
                       [--resume-file img_000123.png]
                       [--skip-bad-images]
                       [--allow-empty]
@@ -76,6 +78,12 @@ FAQS
        A: Yes. Pass --resume-file <an existing image filename>. Processing starts after that file.
 
 CHANGELOG
+    3.1.0
+      Add:
+        - --progress-interval (default 100 images) to log periodic batch progress
+      Keep:
+        - Safe-by-default outputs and all 3.0.0 features
+
     3.0.0
       Breaking (default behavior changed from 2.x):
         - Default no longer overwrites inputs. Outputs go to <input>/Cropped with suffix "_cropped".
@@ -186,6 +194,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                    help="Treat empty input folder as success (exit 0).")
     p.add_argument("--recurse", action="store_true",
                    help="Search subfolders recursively for images.")
+    p.add_argument("--progress-interval", type=int, default=100,
+                   help="Log progress every N completed images (default: 100).")
     p.add_argument("--debug", action="store_true", help="Enable debug logging.")
 
     # Crop tuning (optional, sensible defaults)
@@ -529,6 +539,11 @@ def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, in
             else:
                 failures += 1
                 logger.error("[%d/%d] FAIL: %s — %s", i, total, name, err)
+
+            # Periodic progress logging (every N completed images)
+            if args.progress_interval and args.progress_interval > 0 and (i % args.progress_interval == 0):
+                logger.info("[%d/%d] Progress: processed=%d, skipped=%d, failed=%d",
+                            i, total, processed, skipped, failures)
 
     return processed, skipped, failures
 
