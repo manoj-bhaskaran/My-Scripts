@@ -77,9 +77,16 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.0
+  1.1.1
 
 CHANGELOG
+  1.1.1
+  - Snapshot mode: per-video --scene-prefix (<VideoBaseName>_) to avoid collisions
+  - Post-run validation: ensure frames were actually saved (snapshot pre/post counts; GDI+ counter)
+  - Resilience: retry GDI+ frame saves (3 attempts); single retry for Python cropper
+  - Preflight: in Crop-only mode, verify Python is in PATH and log version
+  - Hygiene: avoid assigning to automatic $args (use $vlcArgs/$pyArgs)
+
   1.1.0
   - Fix: Time-limit now terminates VLC and prevents false “processed” logging.
   - Fix: VLC is closed/killed on all exit paths via a central finally cleanup.
@@ -98,6 +105,18 @@ TROUBLESHOOTING
   - Blank images: ensure VLC can decode the file; try -UseVlcSnapshots.
   - VLC not starting: increase -VlcStartupTimeoutSeconds; verify codecs.
   - Crop-only errors: check -ResumeFile path; ensure Python & script path are correct.
+
+FAQS
+  Q: No frames were captured—what should I check?
+     A: Confirm VLC can play the file (codecs), ensure write permission to SaveFolder,
+        and verify free disk space. In snapshot mode, confirm scene prefix uniqueness.
+  Q: How do I reduce the number of saved frames?
+     A: Lower -FramesPerSecond (GDI+ mode) or use -TimeLimitSeconds to bound duration.
+  Q: VLC is installed but not detected.
+     A: Run `vlc --version` from the same PowerShell session; add VLC to PATH if needed.
+  Q: Python cropper fails to start.
+     A: Run `python --version`; ensure Python is on PATH and version is compatible.
+
 #>
 
 [CmdletBinding()]
@@ -179,6 +198,26 @@ if ($Debug) { $DebugPreference = 'Continue' }
 Add-Type -AssemblyName System.Drawing | Out-Null
 Add-Type -AssemblyName System.Windows.Forms | Out-Null
 
+# Retry helper for GDI+ saves (transient I/O hiccups)
+function Save-FrameWithRetry {
+    param(
+        [Parameter(Mandatory)][string]$TargetPath,
+        [int]$MaxAttempts = 3
+    )
+    for ($i = 1; $i -le $MaxAttempts; $i++) {
+        try {
+            Get-ScreenWithGDIPlus -TargetPath $TargetPath
+            return $true
+        } catch {
+            if ($i -eq $MaxAttempts) {
+                Write-Message -Level Error -Message "Failed to save frame after $MaxAttempts attempts: $($_.Exception.Message)"
+                return $false
+            }
+            Start-Sleep -Milliseconds (200 * $i)  # simple backoff
+        }
+    }
+}
+
 # endregion Utilities
 
 # region Capture helpers
@@ -219,7 +258,8 @@ function Start-Vlc {
         $snapshotArgs = @(
             '--video-filter=scene',
             "--scene-path=""$SaveFolder""",
-            '--scene-prefix=shot_',
+            # Use a per-video prefix to avoid collisions across videos/runs.
+            "--scene-prefix=""$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_""",
             '--scene-format=png',
             '--scene-ratio=1'
         )
@@ -359,15 +399,37 @@ function Invoke-Cropper {
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
     $null = $p.Start()
-    $stdout = $p.StandardOutput.ReadToEnd()
+    # Read stdout only when Debug is active; otherwise discard to avoid "unused variable" warnings
+    if ($DebugPreference -eq 'Continue') {
+        $cropperStdout = $p.StandardOutput.ReadToEnd()
+    } else {
+        $null = $p.StandardOutput.ReadToEnd()
+    }
     $stderr = $p.StandardError.ReadToEnd()
     $p.WaitForExit()
 
     if ($p.ExitCode -ne 0) {
-        Write-Message -Level Error -Message "Cropper failed (ExitCode=$($p.ExitCode)). $stderr"
-        throw "Cropper failed."
+         # One lightweight retry to handle transient issues (e.g., file locks)
+         Start-Sleep -Milliseconds 500
+         $p2 = New-Object System.Diagnostics.Process
+         $p2.StartInfo = $psi
+         $null = $p2.Start()
+         if ($DebugPreference -eq 'Continue') {
+             $cropperStdout2 = $p2.StandardOutput.ReadToEnd()
+         } else {
+             $null = $p2.StandardOutput.ReadToEnd()
+         }
+         $stderr2 = $p2.StandardError.ReadToEnd()
+         $p2.WaitForExit()
+         if ($p2.ExitCode -ne 0) {
+             Write-Message -Level Error -Message "Cropper failed (ExitCode=$($p2.ExitCode)). $stderr2"
+             throw "Cropper failed."
+         } else {
+             if ($DebugPreference -eq 'Continue') { Write-Debug "Cropper (retry) output:`n$cropperStdout2" }
+             Write-Message -Level Info -Message "Cropper finished successfully (after retry)."
+         }
     } else {
-        Write-Debug "Cropper output: $stdout"
+        if ($DebugPreference -eq 'Continue') { Write-Debug "Cropper output:`n$cropperStdout" }
         Write-Message -Level Info -Message "Cropper finished successfully."
     }
 }
@@ -378,6 +440,14 @@ function Invoke-Cropper {
 
 if ($CropOnly) {
     Write-Message -Level Info -Message "Crop-only mode."
+    # Preflight: ensure Python is present and log version for diagnostics
+    try {
+        $pv = (& python --version) 2>&1
+        Write-Debug "Python version: $pv"
+    } catch {
+        Write-Message -Level Error -Message "Python not found in PATH. Install Python 3.9+ or update PATH."
+        exit 1
+    }
     try {
         Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile
     } catch {
@@ -419,6 +489,15 @@ foreach ($video in $videos) {
     $errorDuringCapture = $false
     $started = Get-Date
 
+    $savedThisRun = 0
+    $hadFrames = $false
+    $preCount = 0
+    $scenePrefixForThisVideo = ([IO.Path]::GetFileNameWithoutExtension($video.FullName)) + '_'
+    if ($UseVlcSnapshots) {
+        # Count existing snapshots for this video's prefix before starting
+        $preCount = (Get-ChildItem -LiteralPath $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -ErrorAction SilentlyContinue | Measure-Object).Count
+    }
+
     try {
         $vlc = Start-Vlc -VideoPath $video.FullName -SaveFolder $SaveFolder -UseVlcSnapshots:$UseVlcSnapshots
         if (-not $vlc) {
@@ -448,15 +527,13 @@ foreach ($video in $videos) {
                 $filename = ('frame_{0:D6}.png' -f $frameIndex)
                 $target   = Join-Path $SaveFolder $filename
 
-                try {
-                    Get-ScreenWithGDIPlus -TargetPath $target
+                if (Save-FrameWithRetry -TargetPath $target) {
                     if ($frameIndex -eq 0) { Write-Debug "First frame saved: $target" }
                     $frameIndex++
-                } catch {
+                    $savedThisRun++
+                } else {
                     $errorDuringCapture = $true
-                    Write-Message -Level Error -Message "Failed to save frame: $($_.Exception.Message)"
                 }
-
                 Start-Sleep -Milliseconds $intervalMs
             }
         }
@@ -473,12 +550,22 @@ foreach ($video in $videos) {
     $vlcExit = if ($vlc) { $vlc.ExitCode } else { -1 }
     Write-Debug "VLC exit code: $vlcExit; partial=$partial; hadErrors=$errorDuringCapture"
 
-    $ok = (-not $partial) -and (-not $errorDuringCapture) -and ($vlcExit -eq 0)
+    # Post-run validation: ensure frames actually exist
+    if ($UseVlcSnapshots) {
+        $postCount = (Get-ChildItem -LiteralPath $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -ErrorAction SilentlyContinue | Measure-Object).Count
+        $hadFrames = ($postCount -gt $preCount)
+    } else {
+        $hadFrames = ($savedThisRun -gt 0)
+    }
+
+    $ok = (-not $partial) -and (-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames
+
     if ($ok) {
         Add-Content -LiteralPath $ProcessedLogPath -Value $video.FullName
         Write-Message -Level Info -Message "Marked processed: $($video.FullName)"
     } else {
-        Write-Message -Level Warn -Message "NOT marked processed (partial or error): $($video.FullName)"
+        $reason = if (-not $hadFrames) { 'no frames saved' } elseif ($partial) { 'time limit hit' } elseif ($errorDuringCapture) { 'capture errors' } elseif ($vlcExit -ne 0) { "VLC exit $vlcExit" } else { 'unknown' }
+        Write-Message -Level Warn -Message "NOT marked processed ($reason): $($video.FullName)"
     }
 }
 
