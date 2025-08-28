@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-    Renames *.jpeg to *.jpg and copies files from a source tree into
+    Renames *.jpeg and *.jpg_large to *.jpg and copies files from a source tree into
     extension-based, size-limited subfolders at the destination, with
     progress, robust error handling, deletion-after-copy, and a clear summary.
 
 .DESCRIPTION
     Typical use-cases:
-      - Normalise image extensions (.jpeg → .jpg) across a large photo library.
+      - Normalise image extensions (.jpeg/.jpg_large → .jpg) across a large photo library.
       - Copy a large set of files into per-extension subfolders for easier
         browsing, backup, or transfer.
       - Get reliable progress, input validation, and a final summary with totals,
@@ -14,11 +14,11 @@
 
     What it does (high-level flow):
       1) Validates input and ensures destination exists.
-      2) Renames .jpeg → .jpg (case-insensitive).
+      2) Renames .jpeg and .jpg_large → .jpg (case-insensitive on the extensions).
          - Skips if the target .jpg already exists.
          - Robust try/catch and error tracking.
          - Optional progress via Write-Progress (distinct progress ID).
-         - Note: The .jpeg → .jpg renaming phase always evaluates .jpeg files
+         - Note: The renaming phase ALWAYS evaluates .jpeg and .jpg_large files
            regardless of -IncludeExtensions (the extension filter applies only
            to the copy phase).
       3) Copies all files (post-rename) into per-extension subfolders under DestDir:
@@ -32,7 +32,7 @@
            verbose logging.
       4) Prints a comprehensive summary:
          - Total files processed
-         - Renamed count (.jpeg → .jpg)
+         - Renamed count (.jpeg/.jpg_large → .jpg)
          - Copied count
          - **Skipped counts**: .png, .jpg not starting with 'img'
          - Per-extension copied counts
@@ -65,7 +65,7 @@
 .PARAMETER IncludeExtensions
     Optional list of file extensions to include for the **copy phase**
     (e.g., '.jpg','.jpeg','.heic'). Case-insensitive.
-      • **.jpeg files are ALWAYS considered for the rename phase**, regardless of
+      • **.jpeg and .jpg_large are ALWAYS considered for the rename phase**, regardless of
         this filter.
       • Copy phase still enforces the rules:
           - Skip all .png
@@ -100,16 +100,16 @@
 
 .NOTES
     VERSION
-      1.1.4
+      1.1.5
 
     CHANGELOG
+      1.1.5
+        - Rename phase now also converts *.jpg_large → *.jpg (in addition to *.jpeg → *.jpg).
+        - Updated documentation, progress text, and summary label accordingly.
+
       1.1.4
-        - Summary now reports skipped counts:
-            • Skipped (.png), and Skipped (.jpg !^img)
-        - Log size management: warn if -LogFilePath file ≥ LogWarnSizeMB (default 10MB)
-          before appending new run output.
-        - Progress bars: assigned distinct IDs (1=rename, 2=copy) for clearer display.
-        - All prior 1.1.3 features retained (append-only logs, phase timings, etc).
+        - Summary: added skipped counts (.png, .jpg !^img); log size warning (default 10MB);
+          distinct progress IDs.
 
       1.1.3
         - Append logs when -LogFilePath is supplied; phase timings in summary.
@@ -133,7 +133,7 @@
     TROUBLESHOOTING
       - If "SourceDir not found", check the path and permissions.
       - If copies fail due to access being denied, verify read/write permissions.
-      - If existing .jpg prevents rename of .jpeg, the script logs and skips safely.
+      - If existing .jpg prevents rename of .jpeg/.jpg_large, the script logs and skips safely.
       - For performance, avoid real-time AV scanning on DestDir during heavy copies.
       - **Logs with -LogFilePath:** This script APPENDS to the file with a run header
         per execution. To keep separate files, provide a unique path per run or omit
@@ -266,7 +266,8 @@ function Get-SourceFiles {
         Root directory to enumerate.
     .PARAMETER IncludeExtensions
         Optional list of extensions (e.g., '.jpg','.heic'). Case-insensitive.
-        Note: The .jpeg → .jpg rename phase always considers .jpeg, regardless of this filter.
+        Note: The .jpeg/.jpg_large → .jpg rename phase always considers those inputs,
+              regardless of this filter.
     .OUTPUTS
         [System.IO.FileInfo[]]
     #>
@@ -289,9 +290,9 @@ function Get-SourceFiles {
 function Rename-JpegFiles {
     <#
     .SYNOPSIS
-        Renames .jpeg files to .jpg with robust error handling and optional progress.
+        Renames .jpeg and .jpg_large files to .jpg with robust error handling and optional progress.
     .PARAMETER Files
-        Files to evaluate for renaming (typically only .jpeg).
+        Files to evaluate for renaming (typically .jpeg and .jpg_large).
     .PARAMETER ShowProgress
         If set, shows Write-Progress and completes it at the end (Progress ID 1).
     .OUTPUTS
@@ -304,7 +305,7 @@ function Rename-JpegFiles {
     )
 
     if (-not $Files -or $Files.Count -eq 0) {
-        if ($ShowProgress) { Write-Progress -Id 1 -Activity "Renaming .jpeg → .jpg" -Completed }
+        if ($ShowProgress) { Write-Progress -Id 1 -Activity "Renaming (.jpeg/.jpg_large → .jpg)" -Completed }
         return 0
     }
 
@@ -318,11 +319,11 @@ function Rename-JpegFiles {
 
         if ($ShowProgress) {
             $pct = [int]([math]::Floor(100 * $i / $total))
-            Write-Progress -Id 1 -Activity "Renaming .jpeg → .jpg" -Status "[$i/$total] $($f.Name)" -PercentComplete $pct
+            Write-Progress -Id 1 -Activity "Renaming (.jpeg/.jpg_large → .jpg)" -Status "[$i/$total] $($f.Name)" -PercentComplete $pct
         }
 
         try {
-            if ($f.Extension -ieq '.jpeg') {
+            if ($f.Extension -ieq '.jpeg' -or $f.Extension -ieq '.jpg_large') {
                 $target = Join-Path -Path $f.DirectoryName -ChildPath ($f.BaseName + '.jpg')
                 if (Test-Path -LiteralPath $target) {
                     Write-Verbose "Skip rename; target exists: $target"
@@ -341,7 +342,7 @@ function Rename-JpegFiles {
     }
 
     if ($ShowProgress) {
-        Write-Progress -Id 1 -Activity "Renaming .jpeg → .jpg" -Completed
+        Write-Progress -Id 1 -Activity "Renaming (.jpeg/.jpg_large → .jpg)" -Completed
     }
 
     $sw.Stop()
@@ -481,7 +482,7 @@ function Write-RunSummary {
     .PARAMETER TotalFiles
         Total number of files processed post-rename.
     .PARAMETER Renamed
-        How many .jpeg → .jpg renames occurred.
+        How many .jpeg/.jpg_large → .jpg renames occurred.
     .PARAMETER Copied
         How many files were copied (and deleted from source).
     .PARAMETER BatchDirsCreated
@@ -523,7 +524,7 @@ function Write-RunSummary {
 @"
 ==================== SUMMARY ====================
 Total files processed : $TotalFiles
-Renamed (.jpeg→.jpg)  : $Renamed
+Renamed (.jpeg/.jpg_large → .jpg) : $Renamed
 Copied (then deleted) : $Copied
 Skipped (.png)        : $script:SkippedPngCount
 Skipped (.jpg !^img)  : $script:SkippedJpgNotImgCount
@@ -593,19 +594,19 @@ Elapsed (total)       : {2:c}
 # region: Main ------------------------------------------------------------------------------------
 
 try {
-    Write-Info "Starting picconvert 1.1.4"
+    Write-Info "Starting picconvert 1.1.5"
     Initialize-Directories -SourceDir $SourceDir -DestDir $DestDir
 
-    # Phase 1: Gather all source files (for rename); always include .jpeg in consideration
+    # Phase 1: Gather all source files (for rename); ALWAYS include .jpeg and .jpg_large
     $allFiles = Get-ChildItem -LiteralPath $SourceDir -File -Recurse
+    $renameCandidates = $allFiles | Where-Object { $_.Extension -in @('.jpeg', '.jpg_large') }
 
-    # Rename pass focuses only on .jpeg files (case-insensitive)
-    $jpegFiles = $allFiles | Where-Object { $_.Extension -ieq '.jpeg' }
-    if ($jpegFiles.Count -gt 0) {
-        Write-Info "Renaming .jpeg files to .jpg (count: $($jpegFiles.Count)) ..."
-        $null, $elapsedRename = Rename-JpegFiles -Files $jpegFiles -ShowProgress:$ShowProgress
+    # Rename pass focuses on .jpeg and .jpg_large (case-insensitive)
+    if ($renameCandidates.Count -gt 0) {
+        Write-Info "Renaming .jpeg/.jpg_large files to .jpg (count: $($renameCandidates.Count)) ..."
+        $null, $elapsedRename = Rename-JpegFiles -Files $renameCandidates -ShowProgress:$ShowProgress
     } else {
-        Write-Info "No .jpeg files found to rename."
+        Write-Info "No .jpeg or .jpg_large files found to rename."
         $elapsedRename = [TimeSpan]::Zero
     }
 
