@@ -77,9 +77,13 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.6
+  1.1.7
 
 CHANGELOG
+  1.1.7
+  - Post-capture: also run crop_colours.py against $SaveFolder when not -CropOnly.
+  - (Args: --input <SaveFolder> --skip-bad-images --allow-empty --recurse [+ --resume-file if set])
+
   1.1.6
   - Invoke-Cropper: call crop_colours.py v3.1.0 with:
       --input <SaveFolder> --skip-bad-images --allow-empty --recurse
@@ -740,6 +744,20 @@ foreach ($video in $videos) {
         $reason = if (-not $hadFrames) { 'no frames saved' } elseif ($partial) { 'time limit hit' } elseif ($errorDuringCapture) { 'capture errors' } elseif ($vlcExit -ne 0) { "VLC exit $vlcExit" } else { 'unknown' }
         Write-Message -Level Warn -Message "NOT marked processed ($reason): $($video.FullName)"
     }
+}
+
+# Post-capture: run cropper over SaveFolder if not in CropOnly mode
+# (mirrors original 1.0 behavior; uses v3.1.0 flags)
+try {
+    if (Get-ChildItem -LiteralPath $SaveFolder -Recurse -File -Include *.png, *.jpg, *.jpeg -ErrorAction SilentlyContinue | Select-Object -First 1) {
+        Write-Message -Level Info -Message "Invoking crop_colours.py on $SaveFolder (post-capture)."
+        Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile
+    } else {
+        Write-Message -Level Info -Message "No images found in $SaveFolder for cropping; skipping."
+    }
+} catch {
+    # Match original spirit: log failure without terminating the entire run
+    Write-Message -Level Error -Message "Post-capture cropper failed: $($_.Exception.Message)"
 }
 
 Write-Message -Level Info -Message "All done."
