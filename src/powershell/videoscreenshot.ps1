@@ -77,9 +77,18 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.1
+  1.1.2
 
 CHANGELOG
+  1.1.2
+  - Robustness: retry appends to processed log (file lock tolerant) and guard
+    against truncation by creating the log only if missing
+  - GDI+ filenames: prefix saved frames with <VideoBaseName>_ to avoid cross-video
+    collisions in shared SaveFolder (parity with VLC snapshot prefix)
+  - VLC startup: single restart attempt if VLC exits during the startup window
+  - Docs: add comment-based help for Save-FrameWithRetry and clarify inline
+    comments (dummy interface, scene-ratio=1, validation gating)
+
   1.1.1
   - Snapshot mode: per-video --scene-prefix (<VideoBaseName>_) to avoid collisions
   - Post-run validation: ensure frames were actually saved (snapshot pre/post counts; GDI+ counter)
@@ -163,6 +172,36 @@ param(
 
 <#
 .SYNOPSIS
+Append to a file with limited retries to absorb transient locks.
+.DESCRIPTION
+Attempts Add-Content up to MaxAttempts with a simple linear backoff. Returns
+$true on success, $false if all attempts fail.
+.PARAMETER Path
+Target file path (LiteralPath).
+.PARAMETER Value
+Text to append.
+.PARAMETER MaxAttempts
+Maximum attempts (default 3).
+.EXAMPLE
+Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName
+#>
+function Add-ContentWithRetry {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Value,
+        [int]$MaxAttempts = 3
+    )
+    for ($i=1; $i -le $MaxAttempts; $i++) {
+        try { Add-Content -LiteralPath $Path -Value $Value; return $true }
+        catch {
+            if ($i -eq $MaxAttempts) { Write-Message -Level Error -Message "Failed to append to ${Path}: $($_.Exception.Message)"; return $false }
+            Start-Sleep -Milliseconds (200 * $i) # linear backoff
+        }
+    }
+}
+
+<#
+.SYNOPSIS
 Simple structured console logging.
 .DESCRIPTION
 Writes coloured, prefixed messages for Info/Warn/Error with optional timestamps.
@@ -189,7 +228,10 @@ function Write-Message {
 
 # Ensure destination directories exist
 New-Item -ItemType Directory -Path $SaveFolder -Force | Out-Null
-New-Item -ItemType File -Path $ProcessedLogPath -Force | Out-Null
+# Create processed log only if missing to avoid truncation
+if (-not (Test-Path -LiteralPath $ProcessedLogPath)) {
+    New-Item -ItemType File -Path $ProcessedLogPath -Force | Out-Null
+}
 
 # Expand debug preference if requested
 if ($Debug) { $DebugPreference = 'Continue' }
@@ -198,7 +240,19 @@ if ($Debug) { $DebugPreference = 'Continue' }
 Add-Type -AssemblyName System.Drawing | Out-Null
 Add-Type -AssemblyName System.Windows.Forms | Out-Null
 
-# Retry helper for GDI+ saves (transient I/O hiccups)
+<#
+.SYNOPSIS
+Retries saving a frame to disk to absorb transient I/O errors.
+.DESCRIPTION
+Calls Get-ScreenWithGDIPlus up to MaxAttempts, backing off between tries.
+Returns $true on success, $false after exhausting retries.
+.PARAMETER TargetPath
+Full path of the PNG to write.
+.PARAMETER MaxAttempts
+Maximum attempts (default 3).
+.EXAMPLE
+Save-FrameWithRetry -TargetPath (Join-Path $SaveFolder 'frame_000001.png') -MaxAttempts 3
+#>
 function Save-FrameWithRetry {
     param(
         [Parameter(Mandatory)][string]$TargetPath,
@@ -213,7 +267,7 @@ function Save-FrameWithRetry {
                 Write-Message -Level Error -Message "Failed to save frame after $MaxAttempts attempts: $($_.Exception.Message)"
                 return $false
             }
-            Start-Sleep -Milliseconds (200 * $i)  # simple backoff
+            Start-Sleep -Milliseconds (200 * $i)  # simple linear backoff
         }
     }
 }
@@ -227,6 +281,10 @@ function Save-FrameWithRetry {
 Start VLC for a single video file.
 .DESCRIPTION
 Launches vlc.exe with suitable flags for either GDI+ capture or snapshot mode.
+.NOTES
+Uses `--intf dummy` (no GUI) for low overhead. In snapshot mode, `--scene-ratio=1`
+requests a snapshot for every rendered frame; this can produce many files. Use
+-TimeLimitSeconds and sufficient free space.
 .PARAMETER VideoPath
 Full path to the video file.
 .PARAMETER UseVlcSnapshots
@@ -244,7 +302,7 @@ function Start-Vlc {
     )
 
     $commonArgs = @(
-        '--intf', 'dummy',
+        '--intf', 'dummy',           # headless interface (no GUI window)
         '--no-qt-privacy-ask',
         '--no-video-title-show',
         '--rate', '1',
@@ -253,16 +311,15 @@ function Start-Vlc {
 
     $snapshotArgs = @()
     if ($UseVlcSnapshots) {
-        # Note: scene-ratio uses frame ratio, not seconds. We set ratio=1 (max frequency)
-        # and rely on VLC to throttle; this may produce many frames on high-fps sources.
+        # scene-ratio uses frame ratio, not seconds. ratio=1 requests every frame.
+        # Use a per-video prefix to avoid collisions across videos/runs.
         $snapshotArgs = @(
             '--video-filter=scene',
-            "--scene-path=""$SaveFolder""",
-            # Use a per-video prefix to avoid collisions across videos/runs.
-            "--scene-prefix=""$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_""",
+            "--scene-path=`"$SaveFolder`"",
+            "--scene-prefix=`"$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_`"",
             '--scene-format=png',
             '--scene-ratio=1'
-        )
+            )
     }
 
     $vlcArgs = @()
@@ -288,8 +345,20 @@ function Start-Vlc {
     while ((Get-Date) -lt $deadline) {
         if ($p.HasExited) { break }
         Start-Sleep -Milliseconds 200
-        # On Windows, window creation is not guaranteed with dummy intf; rely on not-exited
-        # Add more checks here if using a GUI interface.
+        # With --intf dummy, no window is created; we rely on the process not exiting.
+    }
+
+    # If VLC exited during startup, try a single restart to handle sporadic start failures
+    if ($p.HasExited) {
+        Write-Debug "VLC exited during startup; retrying once…"
+        $p = New-Object System.Diagnostics.Process
+        $p.StartInfo = $psi
+        try { $null = $p.Start() } catch {}
+        $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
+        while ((Get-Date) -lt $deadline) {
+            if ($p.HasExited) { break }
+            Start-Sleep -Milliseconds 200
+        }
     }
 
     if ($p.HasExited) {
@@ -399,7 +468,7 @@ function Invoke-Cropper {
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
     $null = $p.Start()
-    # Read stdout only when Debug is active; otherwise discard to avoid "unused variable" warnings
+    # Read stdout only when Debug is active; otherwise discard to avoid unused-variable warnings
     if ($DebugPreference -eq 'Continue') {
         $cropperStdout = $p.StandardOutput.ReadToEnd()
     } else {
@@ -409,6 +478,8 @@ function Invoke-Cropper {
     $p.WaitForExit()
 
     if ($p.ExitCode -ne 0) {
+        $stderr = $p.StandardError.ReadToEnd()
+        if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "Cropper stderr (first attempt):`n$stderr" }
          # One lightweight retry to handle transient issues (e.g., file locks)
          Start-Sleep -Milliseconds 500
          $p2 = New-Object System.Diagnostics.Process
@@ -427,6 +498,7 @@ function Invoke-Cropper {
          } else {
              if ($DebugPreference -eq 'Continue') { Write-Debug "Cropper (retry) output:`n$cropperStdout2" }
              Write-Message -Level Info -Message "Cropper finished successfully (after retry)."
+             $null = $p.StandardError.ReadToEnd()
          }
     } else {
         if ($DebugPreference -eq 'Continue') { Write-Debug "Cropper output:`n$cropperStdout" }
@@ -517,6 +589,7 @@ foreach ($video in $videos) {
         } else {
             # GDI+ desktop capture loop
             $frameIndex = 0
+            $videoBase  = [IO.Path]::GetFileNameWithoutExtension($video.Name)
             while (-not $vlc.HasExited) {
                 if ($TimeLimitSeconds -gt 0 -and ((New-TimeSpan -Start $started -End (Get-Date)).TotalSeconds -ge $TimeLimitSeconds)) {
                     Write-Message -Level Warn -Message "Time limit reached; stopping capture."
@@ -524,7 +597,7 @@ foreach ($video in $videos) {
                     break
                 }
 
-                $filename = ('frame_{0:D6}.png' -f $frameIndex)
+                $filename = ('{0}_{1:D6}.png' -f $videoBase, $frameIndex) # avoid cross-video collisions
                 $target   = Join-Path $SaveFolder $filename
 
                 if (Save-FrameWithRetry -TargetPath $target) {
@@ -561,7 +634,9 @@ foreach ($video in $videos) {
     $ok = (-not $partial) -and (-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames
 
     if ($ok) {
-        Add-Content -LiteralPath $ProcessedLogPath -Value $video.FullName
+        if (-not (Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName)) {
+            Write-Message -Level Warn -Message "Could not update processed log; leaving video unmarked."
+        }
         Write-Message -Level Info -Message "Marked processed: $($video.FullName)"
     } else {
         $reason = if (-not $hadFrames) { 'no frames saved' } elseif ($partial) { 'time limit hit' } elseif ($errorDuringCapture) { 'capture errors' } elseif ($vlcExit -ne 0) { "VLC exit $vlcExit" } else { 'unknown' }
