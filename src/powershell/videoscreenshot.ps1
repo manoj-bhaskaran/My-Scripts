@@ -115,9 +115,12 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.10
+  1.1.11
 
 CHANGELOG
+  1.1.11
+  - Start-Vlc: correct argument logging (was incorrectly logging $args instead of $vlcArgs).
+  
   1.1.10
   - Invoke-Cropper: enforce Python 3.9+ (throws with clear message if lower).
   - New -ClearSnapshotsBeforeRun: when in snapshot mode, delete existing
@@ -467,7 +470,7 @@ function Start-Vlc {
     }
 
     $vlcargs += $common
-    Write-Debug ("VLC args: " + ($args -join ' '))
+    Write-Debug ("VLC args: " + ($vlcargs -join ' '))
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName  = 'vlc'
