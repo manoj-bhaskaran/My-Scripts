@@ -127,9 +127,23 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.0
+  1.2.1
 
 CHANGELOG
+  1.2.1
+  - Auto-stop playback at detected video duration (+ grace) to prevent long
+    runs producing blank screens when VLC doesn’t exit cleanly.
+    • Enabled by default when -TimeLimitSeconds is 0.
+    • Disable with -DisableAutoStop.
+    • Grace seconds controlled by -AutoStopGraceSeconds (default: 2).
+  - Start-Vlc now passes --stop-time <seconds> when duration is known, and
+    also adds --no-loop and --no-repeat for safety.
+  - New parameters:
+    • -AutoStopGraceSeconds <int>   # extra seconds beyond detected duration
+    • -DisableAutoStop              # opt out of duration-based stop
+  - Docs: added .PARAMETER entries for the two new flags and a
+    TROUBLESHOOTING note about “screenshots continue after short clips”.
+
   1.2.0
   - Default processed log now resolves under <SaveFolder> as processed_videos.log when -ProcessedLogPath
     is omitted. Bare filenames/relative paths resolve under <SaveFolder>.
@@ -209,6 +223,7 @@ TROUBLESHOOTING
     If creation or append fails (permissions/locks), the run terminates (exit 1).
   - Stale .vlc_pids.txt: If a previous run crashed, you may see this file in <SaveFolder>.
     It is safe to delete; it will be recreated on the next run.
+  - Screenshots continue long after short clips: ensure auto-stop is enabled (default) or set -TimeLimitSeconds.
 
 FAQS
   Q: No frames were captured—what should I check?
@@ -289,7 +304,13 @@ param(
     [switch]$Legacy1080p,
 
     [Parameter(Mandatory = $false)]
-    [switch]$ClearSnapshotsBeforeRun
+    [switch]$ClearSnapshotsBeforeRun,
+
+    [Parameter(Mandatory = $false)]
+    [int]$AutoStopGraceSeconds = 2,   # extra seconds added to detected duration
+
+    [Parameter(Mandatory = $false)]
+    [switch]$DisableAutoStop          # if set, skip duration-based auto-stop
 
 )
 
@@ -441,6 +462,12 @@ Optional width to pass to Get-ScreenWithGDIPlus.
 .PARAMETER Height
 Optional height to pass to Get-ScreenWithGDIPlus.
 
+.PARAMETER AutoStopGraceSeconds
+Extra seconds added to detected video duration when auto-stopping VLC. Default 2.
+
+.PARAMETER DisableAutoStop
+Disable duration-based auto-stop; rely on VLC exit or -TimeLimitSeconds.
+
 .EXAMPLE
 Save-FrameWithRetry -TargetPath 'C:\shots\frame.png'
 .EXAMPLE
@@ -469,6 +496,24 @@ function Save-FrameWithRetry {
             Start-Sleep -Milliseconds (200 * $i)
         }
     }
+}
+
+<#
+.SYNOPSIS
+Return video duration in seconds using Windows property (if available).
+#>
+function Get-VideoDurationSeconds {
+    param([Parameter(Mandatory)][string]$Path)
+    try {
+        $shell  = New-Object -ComObject Shell.Application
+        $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
+        $item   = $folder.ParseName((Split-Path -Leaf -LiteralPath $Path))
+        $v = $item.ExtendedProperty('System.Media.Duration')  # 100-ns units or "hh:mm:ss"
+        if ($null -eq $v) { return $null }
+        if ($v -is [string] -and $v.Trim()) { return [TimeSpan]::Parse($v).TotalSeconds }
+        # 100-ns units
+        return [double]$v / 10000000.0
+    } catch { return $null }
 }
 
 # endregion Utilities
@@ -507,18 +552,25 @@ function Start-Vlc {
     param(
         [Parameter(Mandatory)][string]$VideoPath,
         [Parameter(Mandatory)][string]$SaveFolder,
-        [switch]$UseVlcSnapshots
+        [switch]$UseVlcSnapshots,
+        [double]$StopAtSeconds = 0
     )
 
     # Args that are safe for both modes
     $common = @(
-        '--no-qt-privacy-ask',
-        '--no-video-title-show',
-        '--rate', '1',
-        '--play-and-exit'
-    )
+            '--no-qt-privacy-ask',
+            '--no-video-title-show',
+            '--no-loop',
+            '--no-repeat',
+            '--rate', '1',
+            '--play-and-exit'
+        )
 
     $vlcargs = @("`"$VideoPath`"")
+
+    if ($StopAtSeconds -gt 0) {
+      $vlcargs += @('--stop-time', [string]([int][Math]::Round($StopAtSeconds)))
+    }
 
     if ($UseVlcSnapshots) {
         # Headless snapshots: no window needed
@@ -858,7 +910,15 @@ foreach ($video in $videos) {
     }
 
     try {
-        $vlc = Start-Vlc -VideoPath $video.FullName -SaveFolder $SaveFolder -UseVlcSnapshots:$UseVlcSnapshots
+        $stopAt = 0
+        if (-not $DisableAutoStop -and $TimeLimitSeconds -le 0) {
+            $dur = Get-VideoDurationSeconds -Path $video.FullName
+            if ($dur -and $dur -gt 0) { $stopAt = [double]$dur + [double]$AutoStopGraceSeconds }
+        }
+        
+        $vlc = Start-Vlc -VideoPath $video.FullName -SaveFolder $SaveFolder `
+                    -UseVlcSnapshots:$UseVlcSnapshots -StopAtSeconds:$stopAt
+
         if (-not $vlc) {
             throw "Failed to start VLC for: $($video.FullName)"
         }
