@@ -127,9 +127,15 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.1
+  1.2.2
 
 CHANGELOG
+  1.2.2
+  - Fix: treat clean early VLC exit during the startup wait as normal (short clips),
+    preventing false "failed to start" and avoiding erroneous errorDuringCapture.
+  - Hardening: add --no-loop and --no-repeat to VLC args to neutralize user loop/repeat prefs.
+  - Docs: clarify Start-Vlc behavior for short clips and note loop flags; add troubleshooting note.
+
   1.2.1
   - Auto-stop playback at detected video duration (+ grace) to prevent long
     runs producing blank screens when VLC doesn’t exit cleanly.
@@ -224,6 +230,9 @@ TROUBLESHOOTING
   - Stale .vlc_pids.txt: If a previous run crashed, you may see this file in <SaveFolder>.
     It is safe to delete; it will be recreated on the next run.
   - Screenshots continue long after short clips: ensure auto-stop is enabled (default) or set -TimeLimitSeconds.
+  - Very short clips exit during startup:
+      • This is normal. From v1.2.2, a clean early exit (ExitCode=0) during the startup wait is
+        treated as successful playback completion, not a start failure.
 
 FAQS
   Q: No frames were captured—what should I check?
@@ -530,6 +539,9 @@ Launches vlc.exe configured for the selected capture mode:
     full-screen, on-top, with minimal UI to reduce chrome in screenshots.
   - Snapshot mode (-UseVlcSnapshots): starts headless (--intf dummy) and writes
     frames directly to disk (no desktop/UI captured).
+  - Disables VLC loop/repeat via --no-loop and --no-repeat to avoid unintended replay due to user prefs.
+  - A clean VLC exit (ExitCode=0) during the startup wait window is treated as a valid early completion
+  (e.g., very short clips) and not a start failure.
 
 This function also records the launched VLC PID so that the script can terminate
 it on Ctrl+C (Console.CancelKeyPress) and on PowerShell session exit.
@@ -560,7 +572,7 @@ function Start-Vlc {
     $common = @(
             '--no-qt-privacy-ask',
             '--no-video-title-show',
-            '--no-loop',
+            '--no-loop',    # added in 1.2.2
             '--no-repeat',
             '--rate', '1',
             '--play-and-exit'
@@ -609,20 +621,27 @@ function Start-Vlc {
 
     # Basic startup wait (window may be GUI or dummy)
     $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
-    while ((Get-Date) -lt $deadline) {
-        if ($p.HasExited) { break }
-        Start-Sleep -Milliseconds 200
+    while (-not $p.HasExited -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 150
     }
 
     if ($p.HasExited) {
         $stderr = $p.StandardError.ReadToEnd()
         if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "VLC stderr: $stderr" }
-        Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderr"
+
+        if ($p.ExitCode -eq 0) {
+            # Clean exit during startup window => likely a very short clip or instant completion.
+            Write-Debug "VLC exited cleanly during startup window (ExitCode=0). Proceeding."
+            return $p   # caller will see HasExited=$true and hadFrames=false -> not marked processed
+        }
+
+        Write-Message -Level Error -Message "VLC failed to start (ExitCode=$($p.ExitCode)). $stderr"
         return $null
     }
 
     Write-Debug "VLC started (PID $($p.Id))"
     return $p
+
 }
 
 <#
