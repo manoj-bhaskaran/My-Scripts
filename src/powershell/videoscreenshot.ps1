@@ -136,9 +136,15 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.8
+  1.2.9
 
 CHANGELOG
+  1.2.9
+  - Fix: Corrected FAQ documentation that incorrectly stated both capture modes use time-based cadence
+    (VLC snapshot mode uses frame-ratio approximation due to VLC 3.x limitations)
+  - Fix: Changed video file enumeration from -LiteralPath to -Path with wildcard to ensure -Include 
+    filter works reliably across PowerShell versions
+
   1.2.8
   - Fix: VLC 3.0.21 compatibility - replaced unsupported --scene-fps with --scene-ratio calculation
     based on detected video frame rate for snapshot mode
@@ -324,8 +330,9 @@ FAQS
      to avoid cluttering the script directory. Use -SaveFolder to specify a different location.
 
   Q: Does FramesPerSecond work the same way in both capture modes?
-  A: Yes, from v1.2.4 both GDI+ and VLC snapshot modes use time-based capture (N shots per second)
-     rather than frame-count based capture, ensuring consistent behavior.
+  A: No. GDI+ mode uses exact time-based capture; VLC snapshot mode uses frame-ratio 
+     approximation based on detected video FPS due to VLC 3.x limitations. Both maintain 
+     native playback speed, but only GDI+ provides precise timing.
 
   Q: Why don't I get exactly N screenshots per second in snapshot mode?
   A: VLC 3.x uses frame-count ratios (save 1 out of every N frames) rather than time-based capture.
@@ -950,7 +957,7 @@ if (-not (Test-Path -LiteralPath $SourceFolder)) {
 }
 
 $videoExt = @('*.mp4','*.mkv','*.avi','*.mov','*.m4v','*.wmv')
-$videos = Get-ChildItem -LiteralPath $SourceFolder -Recurse -File -Include $videoExt | Sort-Object FullName
+$videos = Get-ChildItem -Path (Join-Path $SourceFolder '*') -Recurse -File -Include $videoExt | Sort-Object FullName
 
 if ($VideoLimit -gt 0) {
     $videos = $videos | Select-Object -First $VideoLimit
