@@ -136,9 +136,15 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.9
+  1.2.10
 
 CHANGELOG
+  1.2.10
+  - Fix: Corrected Get-ChildItem calls using -LiteralPath with filters to use -Path instead,
+    ensuring -Filter and -Include work reliably across PowerShell versions
+  - Fix: Updated snapshot file cleanup, pre/post-count validation, and post-capture image 
+    detection to use proper filter syntax for consistent operation
+
   1.2.9
   - Fix: Corrected FAQ documentation that incorrectly stated both capture modes use time-based cadence
     (VLC snapshot mode uses frame-ratio approximation due to VLC 3.x limitations)
@@ -996,12 +1002,12 @@ foreach ($video in $videos) {
     if ($UseVlcSnapshots) {
         if ($ClearSnapshotsBeforeRun) {
             # Remove old snapshots for this video’s prefix to start clean
-            Get-ChildItem -LiteralPath $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue |
+            Get-ChildItem -Path $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue |
                 Remove-Item -Force -ErrorAction SilentlyContinue
             $preCount = 0
         } else {
             # Keep existing files; measure preCount so post-run validation still works
-            $preCount = (Get-ChildItem -LiteralPath $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+            $preCount = (Get-ChildItem -Path $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
         }
     }
 
@@ -1080,7 +1086,7 @@ foreach ($video in $videos) {
     # Post-run validation: ensure frames actually exist
     if ($UseVlcSnapshots) {
         # Compare pre/post counts for this video's prefix
-        $postCount = (Get-ChildItem -LiteralPath $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+        $postCount = (Get-ChildItem -Path $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
         $hadFrames = ($postCount -gt $preCount)
     } else {
         # GDI+: require at least one frame saved during this run
@@ -1106,7 +1112,7 @@ foreach ($video in $videos) {
 # Post-capture: run cropper over SaveFolder if not in CropOnly mode
 # (mirrors original 1.0 behavior; uses v3.1.0 flags)
 try {
-    if (Get-ChildItem -LiteralPath $SaveFolder -Recurse -File -Include *.png, *.jpg, *.jpeg -ErrorAction SilentlyContinue | Select-Object -First 1) {
+    if (Get-ChildItem -Path (Join-Path $SaveFolder '*') -Recurse -File -Include *.png,*.jpg,*.jpeg -ErrorAction SilentlyContinue | Select-Object -First 1) {
         Write-Message -Level Info -Message "Invoking crop_colours.py on $SaveFolder (post-capture)."
         Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile
     } else {
