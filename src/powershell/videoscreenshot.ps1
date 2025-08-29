@@ -39,8 +39,8 @@ This folder is created if missing and also hosts the default processed log
 (ProcessedLogPath) and the temporary PID registry (.vlc_pids.txt).
 
 .PARAMETER FramesPerSecond
-Approx. capture rate for screenshots per second (applies to both GDI+ and VLC snapshot modes).
-In snapshot mode, it's approximate based on an assumed 30 FPS video.
+Time-based capture rate for screenshots per second (applies to both GDI+ and VLC snapshot modes).
+Specifies how many screenshots are captured per second while VLC plays at native speed.
 
 .PARAMETER TimeLimitSeconds
 Maximum global time for video processing and capture in seconds. Once reached, no new videos are started, but the current video finishes. 0 = unlimited. Default: 0.
@@ -88,6 +88,7 @@ VLC. Useful to avoid mixing frames across runs. Disabled by default.
 
 .PARAMETER AutoStopGraceSeconds
 Extra seconds added to detected video duration when auto-stopping VLC. Default 2.
+This per-video upper bound is enforced regardless of whether a global limit is set.
 
 .PARAMETER DisableAutoStop
 Disable duration-based auto-stop; rely on VLC exit or -TimeLimitSeconds.
@@ -134,9 +135,17 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.3
+  1.2.4
 
 CHANGELOG
+  1.2.4
+  - Fix: FramesPerSecond now properly implemented for VLC snapshot mode using --scene-fps instead of --scene-ratio=1
+    This ensures time-based capture cadence (N screenshots per second) rather than frame-count based capture
+  - Fix: SaveFolder default changed from script-relative path to Desktop\Screenshots for better user experience
+  - Fix: Per-video auto-stop grace period now always enforced regardless of global TimeLimitSeconds setting
+  - Fix: GDI+ capture mode now respects per-video time limits with proper deadline checking
+  - Improvement: Better separation of concerns between global time limits and per-video duration controls
+  
   1.2.3
   - FramesPerSecond now applies to VLC snapshot mode using --scene-ratio based on assumed 30 FPS video.
   - TimeLimitSeconds is now a global limit: stops starting new videos once reached, but allows current video to finish.
@@ -281,7 +290,15 @@ FAQS
 
   Q: Why did the script abort with a log write error?
   A: Creating or appending the processed log is mandatory. Fix folder permissions,
-   d  isk space, or pick a different SaveFolder/ProcessedLogPath.
+   disk space, or pick a different SaveFolder/ProcessedLogPath.
+
+  Q: Why does the script save to Desktop\Screenshots by default instead of the script folder?
+  A: From v1.2.4, the default location is Desktop\Screenshots for better discoverability and 
+     to avoid cluttering the script directory. Use -SaveFolder to specify a different location.
+
+  Q: Does FramesPerSecond work the same way in both capture modes?
+  A: Yes, from v1.2.4 both GDI+ and VLC snapshot modes use time-based capture (N shots per second)
+     rather than frame-count based capture, ensuring consistent behavior.
 #>
 
 [CmdletBinding()]
@@ -290,7 +307,7 @@ param(
     [string]$SourceFolder = (Join-Path $PSScriptRoot 'videos'),
 
     [Parameter(Mandatory = $false)]
-    [string]$SaveFolder = (Join-Path $PSScriptRoot 'Screenshots'),
+    [string]$SaveFolder = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Screenshots'),
 
     [Parameter(Mandatory = $false)]
     [ValidateRange(1, 60)]
@@ -595,7 +612,7 @@ function Start-Vlc {
             "--scene-path=""$SaveFolder""",
             "--scene-prefix=""$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_""",
             '--scene-format=png',
-            '--scene-ratio=1'
+            '--scene-fps=$FramesPerSecond'
         )
     } else {
         # GDI+ desktop capture requires a visible window
@@ -929,7 +946,7 @@ foreach ($video in $videos) {
 
     try {
         $stopAt = 0
-        if (-not $DisableAutoStop -and $TimeLimitSeconds -le 0) {
+        if (-not $DisableAutoStop) {
             $dur = Get-VideoDurationSeconds -Path $video.FullName
             if ($dur -and $dur -gt 0) { $stopAt = [double]$dur + [double]$AutoStopGraceSeconds }
         }
@@ -950,7 +967,17 @@ foreach ($video in $videos) {
             # GDI+ desktop capture loop
             $frameIndex = 0
             $videoBase  = [IO.Path]::GetFileNameWithoutExtension($video.Name)
+
+            # Add per-video deadline for GDI+ capture
+            $perVideoDeadline = if ($stopAt -gt 0) { (Get-Date).AddSeconds($stopAt) } else { $null }
+
             while (-not $vlc.HasExited) {
+
+                # Check per-video deadline in GDI+ capture loop
+                if ($perVideoDeadline -and (Get-Date) -ge $perVideoDeadline) {
+                    Write-Debug -Level Info -Message "Per-video time limit reached for: $($video.FullName)"
+                    break
+                }
                 $filename = ('{0}_{1:D6}.png' -f $videoBase, $frameIndex) # avoid cross-video collisions
                 $target   = Join-Path $SaveFolder $filename
 
