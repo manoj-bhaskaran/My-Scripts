@@ -39,13 +39,14 @@ This folder is created if missing and also hosts the default processed log
 (ProcessedLogPath) and the temporary PID registry (.vlc_pids.txt).
 
 .PARAMETER FramesPerSecond
-Approx. capture rate for screenshots (GDI+ mode only). Ignored when -UseVlcSnapshots is set.
+Approx. capture rate for screenshots per second (applies to both GDI+ and VLC snapshot modes).
+In snapshot mode, it's approximate based on an assumed 30 FPS video.
 
 .PARAMETER TimeLimitSeconds
-Maximum capture time per video. 0 = unlimited. Default: 0.
+Maximum global time for video processing and capture in seconds. Once reached, no new videos are started, but the current video finishes. 0 = unlimited. Default: 0.
 
 .PARAMETER VideoLimit
-Maximum number of videos to process this run. 0 = unlimited. Default: 0.
+Maximum number of videos to process this run. 0 = unlimited. Default: 0. Both TimeLimitSeconds and VideoLimit are honored (whichever happens first) if provided.
 
 .PARAMETER CropOnly
 Skips video playback and runs the Python cropper only.
@@ -84,6 +85,12 @@ Capture a fixed 1920x1080 rectangle from the top-left of the primary display
 When -UseVlcSnapshots is active, delete any existing snapshot files for the
 current video’s prefix (<VideoBaseName>_*.png) in SaveFolder before starting
 VLC. Useful to avoid mixing frames across runs. Disabled by default.
+
+.PARAMETER AutoStopGraceSeconds
+Extra seconds added to detected video duration when auto-stopping VLC. Default 2.
+
+.PARAMETER DisableAutoStop
+Disable duration-based auto-stop; rely on VLC exit or -TimeLimitSeconds.
 
 .INPUTS
 None. You cannot pipe input to this script.
@@ -127,9 +134,16 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.2
+  1.2.3
 
 CHANGELOG
+  1.2.3
+  - FramesPerSecond now applies to VLC snapshot mode using --scene-ratio based on assumed 30 FPS video.
+  - TimeLimitSeconds is now a global limit: stops starting new videos once reached, but allows current video to finish.
+  - VideoLimit and TimeLimitSeconds are honored together (whichever first).
+  - Fix: Removed unused $started variable in main flow for better code hygiene.
+  - Docs: updated parameter descriptions and FAQs for these changes.
+
   1.2.2
   - Fix: treat clean early VLC exit during the startup wait as normal (short clips),
     preventing false "failed to start" and avoiding erroneous errorDuringCapture.
@@ -439,11 +453,6 @@ if (Test-Path -LiteralPath $PidRegistry) {
     Remove-Item -LiteralPath $PidRegistry -Force -ErrorAction SilentlyContinue
 }
 
-# Create processed log only if missing to avoid truncation
-if (-not (Test-Path -LiteralPath $ProcessedLogPath)) {
-    New-Item -ItemType File -Path $ProcessedLogPath -Force | Out-Null
-}
-
 # Honor the common -Debug parameter from CmdletBinding
 if ($PSBoundParameters.ContainsKey('Debug')) { $DebugPreference = 'Continue' }
 
@@ -470,12 +479,6 @@ Optional width to pass to Get-ScreenWithGDIPlus.
 
 .PARAMETER Height
 Optional height to pass to Get-ScreenWithGDIPlus.
-
-.PARAMETER AutoStopGraceSeconds
-Extra seconds added to detected video duration when auto-stopping VLC. Default 2.
-
-.PARAMETER DisableAutoStop
-Disable duration-based auto-stop; rely on VLC exit or -TimeLimitSeconds.
 
 .EXAMPLE
 Save-FrameWithRetry -TargetPath 'C:\shots\frame.png'
@@ -570,18 +573,18 @@ function Start-Vlc {
 
     # Args that are safe for both modes
     $common = @(
-            '--no-qt-privacy-ask',
-            '--no-video-title-show',
-            '--no-loop',    # added in 1.2.2
-            '--no-repeat',
-            '--rate', '1',
-            '--play-and-exit'
-        )
+        '--no-qt-privacy-ask',
+        '--no-video-title-show',
+        '--no-loop',    # added in 1.2.2
+        '--no-repeat',
+        '--rate', '1',
+        '--play-and-exit'
+    )
 
     $vlcargs = @("`"$VideoPath`"")
 
     if ($StopAtSeconds -gt 0) {
-      $vlcargs += @('--stop-time', [string]([int][Math]::Round($StopAtSeconds)))
+        $vlcargs += @('--stop-time', [string]([int][Math]::Round($StopAtSeconds)))
     }
 
     if ($UseVlcSnapshots) {
@@ -621,27 +624,20 @@ function Start-Vlc {
 
     # Basic startup wait (window may be GUI or dummy)
     $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
-    while (-not $p.HasExited -and (Get-Date) -lt $deadline) {
-        Start-Sleep -Milliseconds 150
+    while ((Get-Date) -lt $deadline) {
+        if ($p.HasExited) { break }
+        Start-Sleep -Milliseconds 200
     }
 
     if ($p.HasExited) {
         $stderr = $p.StandardError.ReadToEnd()
         if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "VLC stderr: $stderr" }
-
-        if ($p.ExitCode -eq 0) {
-            # Clean exit during startup window => likely a very short clip or instant completion.
-            Write-Debug "VLC exited cleanly during startup window (ExitCode=0). Proceeding."
-            return $p   # caller will see HasExited=$true and hadFrames=false -> not marked processed
-        }
-
-        Write-Message -Level Error -Message "VLC failed to start (ExitCode=$($p.ExitCode)). $stderr"
+        Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderr"
         return $null
     }
 
     Write-Debug "VLC started (PID $($p.Id))"
     return $p
-
 }
 
 <#
@@ -898,7 +894,12 @@ try {
 
 $intervalMs = [int](1000 / [Math]::Max(1, $FramesPerSecond))
 
+$globalStart = Get-Date
 foreach ($video in $videos) {
+    if ($TimeLimitSeconds -gt 0 -and ((New-TimeSpan -Start $globalStart -End (Get-Date)).TotalSeconds -ge $TimeLimitSeconds)) {
+        Write-Message -Level Info -Message "Global time limit of $TimeLimitSeconds seconds reached; stopping processing."
+        break
+    }
     $already = $processed -contains $video.FullName
     if ($already) {
         Write-Message -Level Info -Message "Skipping (already processed): $($video.FullName)"
@@ -909,8 +910,6 @@ foreach ($video in $videos) {
     $vlc = $null
     $partial = $false
     $errorDuringCapture = $false
-    $started = Get-Date
-
     $savedThisRun = 0
     $hadFrames = $false
     $preCount = 0
@@ -945,14 +944,6 @@ foreach ($video in $videos) {
         if ($UseVlcSnapshots) {
             # In snapshot mode we just wait for VLC to finish or time out
             while (-not $vlc.HasExited) {
-                # Time-limit guard: mark this run as partial and break.
-                # Stop-Vlc in 'finally' will handle process cleanup; later $ok gating
-                # ensures we DO NOT mark this video as processed when $partial is $true.
-                if ($TimeLimitSeconds -gt 0 -and ((New-TimeSpan -Start $started -End (Get-Date)).TotalSeconds -ge $TimeLimitSeconds)) {
-                    Write-Message -Level Warn -Message "Time limit reached; stopping VLC."
-                    $partial = $true
-                    break
-                }
                 Start-Sleep -Milliseconds 200
             }
         } else {
@@ -960,14 +951,6 @@ foreach ($video in $videos) {
             $frameIndex = 0
             $videoBase  = [IO.Path]::GetFileNameWithoutExtension($video.Name)
             while (-not $vlc.HasExited) {
-                # Same time-limit semantics as snapshot mode: set $partial and exit loop.
-                # Cleanup occurs in finally; outcome gating prevents 'processed' on partial runs.
-                if ($TimeLimitSeconds -gt 0 -and ((New-TimeSpan -Start $started -End (Get-Date)).TotalSeconds -ge $TimeLimitSeconds)) {
-                    Write-Message -Level Warn -Message "Time limit reached; stopping capture."
-                    $partial = $true
-                    break
-                }
-
                 $filename = ('{0}_{1:D6}.png' -f $videoBase, $frameIndex) # avoid cross-video collisions
                 $target   = Join-Path $SaveFolder $filename
 
