@@ -21,6 +21,7 @@ Major behaviours and safeguards:
     • GDI+ (desktop) — simple screen grabs; add -GdiFullscreen to force VLC full-screen;
     add -Legacy1080p to capture a fixed 1920×1080 region (legacy behavior).
     • VLC snapshots — headless, video-frame-only capture (no desktop/UI chrome).
+  - Snapshot hygiene: opt-in -ClearSnapshotsBeforeRun deletes old <Video>_*.png before each run.
 
 .PARAMETER SourceFolder
 Folder containing input videos. Recurses by default.
@@ -67,6 +68,11 @@ Capture a fixed 1920x1080 rectangle from the top-left of the primary display
 (legacy behavior from v1.0). Combine with -GdiFullscreen to reproduce the old
 “full-screen 1080p desktop grab” method. Ignored in VLC snapshot mode.
 
+.PARAMETER ClearSnapshotsBeforeRun
+When -UseVlcSnapshots is active, delete any existing snapshot files for the
+current video’s prefix (<VideoBaseName>_*.png) in SaveFolder before starting
+VLC. Useful to avoid mixing frames across runs. Disabled by default.
+
 .INPUTS
 None. You cannot pipe input to this script.
 
@@ -99,14 +105,25 @@ None. Writes status/progress to the console and log files.
 .\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
   -UseVlcSnapshots
 
+.EXAMPLE
+# Snapshot mode with clean slate per video
+.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
+  -UseVlcSnapshots -ClearSnapshotsBeforeRun
+
 .NOTES
 AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.9
+  1.1.10
 
 CHANGELOG
+  1.1.10
+  - Invoke-Cropper: enforce Python 3.9+ (throws with clear message if lower).
+  - New -ClearSnapshotsBeforeRun: when in snapshot mode, delete existing
+    <VideoBaseName>_*.png in $SaveFolder before starting each video; sets
+    preCount=0 to ensure correct post-run validation.
+
   1.1.9
   - Add -GdiFullscreen to force legacy full-screen VLC window during GDI+ capture
   - Add -Legacy1080p to capture fixed 1920x1080 region (old method)
@@ -256,7 +273,10 @@ param(
     [switch]$GdiFullscreen,
 
     [Parameter(Mandatory = $false)]
-    [switch]$Legacy1080p
+    [switch]$Legacy1080p,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$ClearSnapshotsBeforeRun
 
 )
 
@@ -591,6 +611,12 @@ function Invoke-Cropper {
         [string]$ResumeFile
     )
 
+    # Require Python 3.9+ (handles both 'Python 3.x.y' and possible py launchers)
+    $pv = (& python --version) 2>&1
+    if ($pv -notmatch '^Python 3\.(9|[1-9][0-9])\.') {
+        throw "Python 3.9+ required (found: $pv)"
+    }
+
     if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
         throw "PythonScriptPath not found: $PythonScriptPath"
     }
@@ -711,9 +737,17 @@ foreach ($video in $videos) {
     $hadFrames = $false
     $preCount = 0
     $scenePrefixForThisVideo = ([IO.Path]::GetFileNameWithoutExtension($video.FullName)) + '_'
+
     if ($UseVlcSnapshots) {
-        # Count existing snapshots for this video's prefix before starting
-        $preCount = (Get-ChildItem -LiteralPath $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -ErrorAction SilentlyContinue | Measure-Object).Count
+        if ($ClearSnapshotsBeforeRun) {
+            # Remove old snapshots for this video’s prefix to start clean
+            Get-ChildItem -LiteralPath $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue |
+                Remove-Item -Force -ErrorAction SilentlyContinue
+            $preCount = 0
+        } else {
+            # Keep existing files; measure preCount so post-run validation still works
+            $preCount = (Get-ChildItem -LiteralPath $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+        }
     }
 
     try {
