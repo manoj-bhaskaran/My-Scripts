@@ -135,9 +135,15 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.4
+  1.2.5
 
 CHANGELOG
+  1.2.5
+  - Fix: Short video clips that complete during VLC startup window (ExitCode=0) are now correctly 
+    treated as successful completion rather than startup failures
+  - Fix: Corrected string quoting for --scene-fps parameter to ensure proper variable expansion 
+    in VLC snapshot mode arguments
+    
   1.2.4
   - Fix: FramesPerSecond now properly implemented for VLC snapshot mode using --scene-fps instead of --scene-ratio=1
     This ensures time-based capture cadence (N screenshots per second) rather than frame-count based capture
@@ -612,7 +618,7 @@ function Start-Vlc {
             "--scene-path=""$SaveFolder""",
             "--scene-prefix=""$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_""",
             '--scene-format=png',
-            '--scene-fps=$FramesPerSecond'
+            "--scene-fps=$FramesPerSecond"
         )
     } else {
         # GDI+ desktop capture requires a visible window
@@ -648,6 +654,10 @@ function Start-Vlc {
 
     if ($p.HasExited) {
         $stderr = $p.StandardError.ReadToEnd()
+        if ($p.ExitCode -eq 0) {
+            Write-Debug "VLC exited cleanly during startup window (short clip)."
+            return $p  # treat as success; downstream checks verify frames
+        }
         if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "VLC stderr: $stderr" }
         Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderr"
         return $null
