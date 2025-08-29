@@ -39,8 +39,9 @@ This folder is created if missing and also hosts the default processed log
 (ProcessedLogPath) and the temporary PID registry (.vlc_pids.txt).
 
 .PARAMETER FramesPerSecond
-Time-based capture rate for screenshots per second (applies to both GDI+ and VLC snapshot modes).
-Specifies how many screenshots are captured per second while VLC plays at native speed.
+Capture rate for screenshots per second. GDI+ mode uses exact time-based capture. 
+VLC snapshot mode uses frame-count approximation based on detected video FPS 
+(falls back to 30fps assumption if undetectable). Both modes maintain native playback speed.
 
 .PARAMETER TimeLimitSeconds
 Maximum global time for video processing and capture in seconds. Once reached, no new videos are started, but the current video finishes. 0 = unlimited. Default: 0.
@@ -135,9 +136,16 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.7
+  1.2.8
 
 CHANGELOG
+  1.2.8
+  - Fix: VLC 3.0.21 compatibility - replaced unsupported --scene-fps with --scene-ratio calculation
+    based on detected video frame rate for snapshot mode
+  - Add: Get-VideoFps function to read video frame rate from file metadata for snapshot cadence calculation
+  - Improvement: Snapshot mode now uses mathematical approximation (1 out of N frames) rather than
+    time-based capture, with 30fps fallback for files without detectable frame rate
+
   1.2.7
   - Fix: Updated Major behaviours documentation to correctly describe global time limit behavior 
     (prevents starting new videos rather than terminating current video mid-capture)
@@ -272,6 +280,9 @@ TROUBLESHOOTING
   - Very short clips exit during startup:
       • This is normal. From v1.2.2, a clean early exit (ExitCode=0) during the startup wait is
         treated as successful playback completion, not a start failure.
+  - VLC snapshot cadence not exact: VLC 3.x only supports frame-count ratios, not time-based FPS.
+    The script calculates the closest ratio based on detected video frame rate. For exact 
+    time-based capture, use GDI+ mode instead of -UseVlcSnapshots.
 
 FAQS
   Q: No frames were captured—what should I check?
@@ -315,6 +326,10 @@ FAQS
   Q: Does FramesPerSecond work the same way in both capture modes?
   A: Yes, from v1.2.4 both GDI+ and VLC snapshot modes use time-based capture (N shots per second)
      rather than frame-count based capture, ensuring consistent behavior.
+
+  Q: Why don't I get exactly N screenshots per second in snapshot mode?
+  A: VLC 3.x uses frame-count ratios (save 1 out of every N frames) rather than time-based capture.
+     The script calculates the best approximation based on video FPS. GDI+ mode provides exact timing.
 #>
 
 [CmdletBinding()]
@@ -561,6 +576,19 @@ function Get-VideoDurationSeconds {
     } catch { return $null }
 }
 
+function Get-VideoFps {
+    param([Parameter(Mandatory)][string]$Path)
+    try {
+        $shell  = New-Object -ComObject Shell.Application
+        $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
+        $item   = $folder.ParseName((Split-Path -Leaf -LiteralPath $Path))
+        $v = $item.ExtendedProperty('System.Video.FrameRate')  # 1000 * fps
+        if ($null -eq $v) { return $null }
+        $fps = [double]$v / 1000.0
+        if ($fps -gt 0) { return $fps } else { return $null }
+    } catch { return $null }
+}
+
 # endregion Utilities
 
 # region Capture helpers
@@ -629,9 +657,14 @@ function Start-Vlc {
             '--video-filter=scene',
             "--scene-path=""$SaveFolder""",
             "--scene-prefix=""$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_""",
-            '--scene-format=png',
-            "--scene-fps=$FramesPerSecond"
+            '--scene-format=png'
         )
+        # NEW: derive scene-ratio for VLC 3.x
+        $vfps  = Get-VideoFps -Path $VideoPath
+        $base  = if ($vfps -and $vfps -gt 0) { [double]$vfps } else { 30.0 }   # sensible fallback
+        $ratio = [int][Math]::Max(1, [Math]::Round($base / [double]$FramesPerSecond))
+        $vlcargs += @("--scene-ratio=$ratio")
+        Write-Debug "Snapshots (VLC 3.x): video_fps=$base; requested=$FramesPerSecond; using --scene-ratio=$ratio"
     } else {
         # GDI+ desktop capture requires a visible window
         if ($GdiFullscreen) {
