@@ -17,6 +17,10 @@ Major behaviours and safeguards:
   - Resume file validation: in -CropOnly mode, the resume file must exist or the script errors.
   - Startup monitoring: waits up to VlcStartupTimeoutSeconds for VLC to initialise.
   - Debug logging: enable with the common -Debug switch (Write-Debug traces).
+  - Capture modes:
+    • GDI+ (desktop) — simple screen grabs; add -GdiFullscreen to force VLC full-screen;
+    add -Legacy1080p to capture a fixed 1920×1080 region (legacy behavior).
+    • VLC snapshots — headless, video-frame-only capture (no desktop/UI chrome).
 
 .PARAMETER SourceFolder
 Folder containing input videos. Recurses by default.
@@ -53,6 +57,16 @@ Use VLC scene filter for frame capture instead of desktop GDI+ capture.
 .PARAMETER VlcStartupTimeoutSeconds
 Seconds to wait for VLC to start before considering it failed. Default: 10.
 
+.PARAMETER GdiFullscreen
+For GDI+ capture: launch VLC in full-screen, on-top, and minimal UI
+(--fullscreen --video-on-top --qt-minimal-view). Use this to avoid small window
+captures and to minimize chrome (menus/toolbars) in screenshots.
+
+.PARAMETER Legacy1080p
+Capture a fixed 1920x1080 rectangle from the top-left of the primary display
+(legacy behavior from v1.0). Combine with -GdiFullscreen to reproduce the old
+“full-screen 1080p desktop grab” method. Ignored in VLC snapshot mode.
+
 .INPUTS
 None. You cannot pipe input to this script.
 
@@ -70,14 +84,34 @@ None. Writes status/progress to the console and log files.
 .EXAMPLE
 .\videoscreenshot.ps1 -CropOnly -ResumeFile "resume_list.txt"
 
+.EXAMPLE
+# Legacy full-screen desktop capture (matches v1.0 behavior)
+.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
+  -FramesPerSecond 2 -GdiFullscreen -Legacy1080p
+
+.EXAMPLE
+# GDI+ capture at current screen size, but ensure VLC is full-screen/on-top
+.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
+  -FramesPerSecond 2 -GdiFullscreen
+
+.EXAMPLE
+# VLC snapshot mode (video-frame-only; no desktop chrome)
+.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
+  -UseVlcSnapshots
+
 .NOTES
 AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.8
+  1.1.9
 
 CHANGELOG
+  1.1.9
+  - Add -GdiFullscreen to force legacy full-screen VLC window during GDI+ capture
+  - Add -Legacy1080p to capture fixed 1920x1080 region (old method)
+  - GDI+ launch now uses GUI interface (no --intf dummy); snapshots still use --intf dummy
+
   1.1.8
   - Fix: removed custom -Debug switch to avoid name collision with PowerShell’s common -Debug.
     Behavior unchanged for callers: use the common -Debug to enable Write-Debug output.
@@ -148,6 +182,18 @@ TROUBLESHOOTING
   - VLC not starting: increase -VlcStartupTimeoutSeconds; verify codecs.
   - Crop-only errors: check -ResumeFile path; ensure Python & script path are correct.
   - To see detailed diagnostic output, run with -Debug to enable Write-Debug traces.
+  - Screenshots are tiny or include menus:
+      • Use -GdiFullscreen for GDI+ capture to force VLC full-screen/on-top.
+      • For exact video frames without desktop/UI, use -UseVlcSnapshots.
+      • To replicate v1.0 behavior exactly, combine -GdiFullscreen with -Legacy1080p.
+
+  - Wrong resolution:
+      • GDI+ (default) uses your current primary screen size; use -Legacy1080p for fixed 1920×1080,
+        or switch to snapshot mode to avoid desktop resolution altogether.
+
+  - Multi-monitor/DPI issues:
+      • Ensure VLC is displayed on the primary monitor or move it there; GDI+ grabs the primary screen by default.
+      • Disable Windows scaling on VLC if coordinates appear offset.
 
 FAQS
   Q: No frames were captured—what should I check?
@@ -159,6 +205,14 @@ FAQS
      A: Run `vlc --version` from the same PowerShell session; add VLC to PATH if needed.
   Q: Python cropper fails to start.
      A: Run `python --version`; ensure Python is on PATH and version is compatible.
+  Q: Why do I see the VLC title/menu bar in screenshots?
+  A: For GDI+ capture, add -GdiFullscreen, or switch to -UseVlcSnapshots which captures only the video frame.
+
+  Q: How do I get the exact legacy screenshots I used before?
+  A: Run with -GdiFullscreen -Legacy1080p (full-screen VLC + fixed 1920×1080 desktop grabs).
+
+  Q: What’s the difference between GDI+ and snapshot mode?
+  A: GDI+ captures the desktop (quick to set up; may include UI). Snapshot mode uses VLC’s scene filter to save only the video content (no UI), typically cleaner for analysis.
 
 #>
 
@@ -196,7 +250,14 @@ param(
     [switch]$UseVlcSnapshots,
 
     [Parameter(Mandatory = $false)]
-    [int]$VlcStartupTimeoutSeconds = 10
+    [int]$VlcStartupTimeoutSeconds = 10,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$GdiFullscreen,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Legacy1080p
+
 )
 
 # region Utilities
@@ -273,32 +334,50 @@ Add-Type -AssemblyName System.Windows.Forms | Out-Null
 
 <#
 .SYNOPSIS
-Retries saving a frame to disk to absorb transient I/O errors.
+Save a desktop frame with simple retries.
+
 .DESCRIPTION
-Calls Get-ScreenWithGDIPlus up to MaxAttempts, backing off between tries.
-Returns $true on success, $false after exhausting retries.
+Calls Get-ScreenWithGDIPlus and retries on transient I/O errors with linear backoff.
+If Width/Height are passed through, captures a fixed-size rectangle (e.g., legacy 1080p).
+
 .PARAMETER TargetPath
-Full path of the PNG to write.
+Output PNG path.
+
 .PARAMETER MaxAttempts
 Maximum attempts (default 3).
+
+.PARAMETER Width
+Optional width to pass to Get-ScreenWithGDIPlus.
+
+.PARAMETER Height
+Optional height to pass to Get-ScreenWithGDIPlus.
+
 .EXAMPLE
-Save-FrameWithRetry -TargetPath (Join-Path $SaveFolder 'frame_000001.png') -MaxAttempts 3
+Save-FrameWithRetry -TargetPath 'C:\shots\frame.png'
+.EXAMPLE
+Save-FrameWithRetry -TargetPath 'C:\shots\frame.png' -Width 1920 -Height 1080
 #>
 function Save-FrameWithRetry {
     param(
         [Parameter(Mandatory)][string]$TargetPath,
-        [int]$MaxAttempts = 3
+        [int]$MaxAttempts = 3,
+        [int]$Width,
+        [int]$Height
     )
     for ($i = 1; $i -le $MaxAttempts; $i++) {
         try {
-            Get-ScreenWithGDIPlus -TargetPath $TargetPath
+            if ($PSBoundParameters.ContainsKey('Width') -and $PSBoundParameters.ContainsKey('Height')) {
+                Get-ScreenWithGDIPlus -TargetPath $TargetPath -Width $Width -Height $Height
+            } else {
+                Get-ScreenWithGDIPlus -TargetPath $TargetPath
+            }
             return $true
         } catch {
             if ($i -eq $MaxAttempts) {
                 Write-Message -Level Error -Message "Failed to save frame after $MaxAttempts attempts: $($_.Exception.Message)"
                 return $false
             }
-            Start-Sleep -Milliseconds (200 * $i)  # simple linear backoff
+            Start-Sleep -Milliseconds (200 * $i)
         }
     }
 }
@@ -309,46 +388,28 @@ function Save-FrameWithRetry {
 
 <#
 .SYNOPSIS
-Start VLC for a single video file (headless or snapshot mode).
+Start VLC for a single video file.
 
 .DESCRIPTION
-Launches `vlc.exe` with a headless `--intf dummy` interface for low overhead.
-When -UseVlcSnapshots is set, enables the `scene` video filter to write frames
-directly to disk:
-  • `--scene-path` is set to $SaveFolder
-  • `--scene-prefix` uses the video base name to avoid cross-video collisions
-  • `--scene-ratio=1` requests every rendered frame (may be many files)
-
-Startup is confirmed by observing the process remains alive within a short
-timeout. If VLC exits early during this window, the function performs one
-additional start attempt (best-effort resilience).
-
-.RETURNS
-[System.Diagnostics.Process] for the running VLC instance, or $null on failure.
+Launches vlc.exe configured for the selected capture mode:
+  - GDI+ desktop capture: starts a GUI window. If -GdiFullscreen is set, VLC runs
+    full-screen, on-top, with minimal UI to reduce chrome in screenshots.
+  - Snapshot mode (-UseVlcSnapshots): starts headless (--intf dummy) and writes
+    frames directly to disk (no desktop/UI captured).
 
 .PARAMETER VideoPath
-Full path to the video file to play.
+Full path to the video file.
 
 .PARAMETER SaveFolder
-Folder where VLC writes snapshots (snapshot mode) or where we save GDI+ frames.
+Destination for snapshot files when -UseVlcSnapshots is enabled.
 
 .PARAMETER UseVlcSnapshots
-Enable VLC `scene` snapshots instead of desktop GDI+ capture.
+Enable VLC scene filter snapshots (headless capture, video-frame only).
 
 .EXAMPLE
-# Headless playback for GDI+ capture loop elsewhere
-$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots'
-
+$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\o'
 .EXAMPLE
-# Snapshot mode: VLC writes frames directly as PNGs
-$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots' -UseVlcSnapshots
-
-.NOTES
-With `--intf dummy` no GUI window is created; liveness is determined by the
-process not exiting. Consider -TimeLimitSeconds and adequate free disk space
-when using `--scene-ratio=1`.
-Uses PowerShell’s common -Debug parameter; no custom Debug switch is defined.
-
+$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\o' -UseVlcSnapshots
 #>
 function Start-Vlc {
     param(
@@ -357,36 +418,40 @@ function Start-Vlc {
         [switch]$UseVlcSnapshots
     )
 
-    $commonArgs = @(
-        '--intf', 'dummy',           # headless interface (no GUI window)
+    # Args that are safe for both modes
+    $common = @(
         '--no-qt-privacy-ask',
         '--no-video-title-show',
         '--rate', '1',
         '--play-and-exit'
     )
 
-    $snapshotArgs = @()
+    $vlcargs = @("`"$VideoPath`"")
+
     if ($UseVlcSnapshots) {
-        # scene-ratio uses frame ratio, not seconds. ratio=1 requests every frame.
-        # Use a per-video prefix to avoid collisions across videos/runs.
-        $snapshotArgs = @(
+        # Headless snapshots: no window needed
+        $vlcargs += @(
+            '--intf', 'dummy',
             '--video-filter=scene',
             "--scene-path=""$SaveFolder""",
             "--scene-prefix=""$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_""",
             '--scene-format=png',
             '--scene-ratio=1'
         )
+    } else {
+        # GDI+ desktop capture requires a visible window
+        if ($GdiFullscreen) {
+            $vlcargs += @('--fullscreen', '--video-on-top', '--qt-minimal-view')
+        }
+        # (no --intf dummy here; we want a GUI window)
     }
 
-    $vlcArgs = @()
-    $vlcArgs += "`"$VideoPath`""
-    $vlcArgs += $commonArgs
-    $vlcArgs += $snapshotArgs
-    Write-Debug ("VLC args: " + ($vlcArgs -join ' '))
+    $vlcargs += $common
+    Write-Debug ("VLC args: " + ($args -join ' '))
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName  = 'vlc'
-    $psi.Arguments = ($vlcArgs -join ' ')
+    $psi.Arguments = ($args -join ' ')
     $psi.UseShellExecute = $false
     $psi.RedirectStandardError = $true
     $psi.RedirectStandardOutput = $true
@@ -396,25 +461,11 @@ function Start-Vlc {
     $p.StartInfo = $psi
     $null = $p.Start()
 
-    # Wait for non-exited state as a minimal startup confirmation
+    # Basic startup wait (window may be GUI or dummy)
     $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         if ($p.HasExited) { break }
         Start-Sleep -Milliseconds 200
-        # With --intf dummy, no window is created; we rely on the process not exiting.
-    }
-
-    # If VLC exited during startup, try a single restart to handle sporadic launch failures
-    if ($p.HasExited) {
-        Write-Debug "VLC exited during startup; retrying once…"
-        $p = New-Object System.Diagnostics.Process
-        $p.StartInfo = $psi
-        try { $null = $p.Start() } catch {}
-        $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
-        while ((Get-Date) -lt $deadline) {
-            if ($p.HasExited) { break }
-            Start-Sleep -Milliseconds 200
-        }
     }
 
     if ($p.HasExited) {
@@ -462,28 +513,42 @@ function Stop-Vlc {
 
 <#
 .SYNOPSIS
-Captures the entire primary screen to a PNG file.
+Capture the primary screen to a PNG file.
 
 .DESCRIPTION
-Uses System.Drawing to copy pixels from the primary display and writes a PNG.
-Designed for Windows PowerShell/PowerShell 7 on Windows; multi-monitor setups
-capture only the primary screen. Use VLC snapshot mode for window-only frames.
+Uses System.Drawing to copy a region of the primary screen and save it to disk.
+If Width/Height are provided, captures a fixed-size rectangle from (0,0).
+Otherwise, captures the full primary screen (current resolution).
 
 .PARAMETER TargetPath
-Full path of the PNG file to write. The parent folder must exist.
+Output PNG path.
+
+.PARAMETER Width
+Optional explicit width in pixels (e.g., 1920 for legacy).
+
+.PARAMETER Height
+Optional explicit height in pixels (e.g., 1080 for legacy).
 
 .EXAMPLE
-# Save a single desktop frame
-Get-ScreenWithGDIPlus -TargetPath (Join-Path $SaveFolder 'MyVideo_000001.png')
+Get-ScreenWithGDIPlus -TargetPath 'C:\shots\frame.png'
+.EXAMPLE
+Get-ScreenWithGDIPlus -TargetPath 'C:\shots\frame.png' -Width 1920 -Height 1080
 #>
 function Get-ScreenWithGDIPlus {
     param(
-        [Parameter(Mandatory)][string]$TargetPath
+        [Parameter(Mandatory)][string]$TargetPath,
+        [int]$Width,
+        [int]$Height
     )
-    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    $bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+    if ($Width -and $Height) {
+        $w = $Width; $h = $Height
+    } else {
+        $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+        $w = $bounds.Width; $h = $bounds.Height
+    }
+    $bmp = New-Object System.Drawing.Bitmap($w, $h)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+    $g.CopyFromScreen(0, 0, 0, 0, [System.Drawing.Size]::new($w, $h))
     $bmp.Save($TargetPath, [System.Drawing.Imaging.ImageFormat]::Png)
     $g.Dispose()
     $bmp.Dispose()
@@ -491,37 +556,24 @@ function Get-ScreenWithGDIPlus {
 
 <#
 .SYNOPSIS
-Run the external Python cropper over saved frames.
+Run the external Python cropper.
 
 .DESCRIPTION
-Invokes `python` with the cropper script, passing:
-  • `--input` = $SaveFolder
-  • optional `--resume_file` if -ResumeFile is provided (relative paths are
-    resolved under $SaveFolder)
-
-Behavior:
-  • Reads stdout fully (logged only when Debug is enabled)
-  • Reads stderr and, on non-zero exit, performs one lightweight retry (500 ms)
-  • Throws on repeated failure; caller handles the exception
-
-.RETURNS
-None. Throws on failure.
+Invokes crop_colours.py (v3.1.0) with:
+  --input <SaveFolder> --skip-bad-images --allow-empty --recurse
+and, when provided, --resume-file <ResumeFile> (relative paths resolved under SaveFolder).
 
 .PARAMETER PythonScriptPath
-Path to the cropper Python script. Must exist.
+Path to crop_colours.py.
 
 .PARAMETER SaveFolder
-Folder containing images to process.
+Folder passed to --input.
 
 .PARAMETER ResumeFile
-Optional path or filename for cropper resume. Relative paths are resolved
-under $SaveFolder.
+Optional resume file; if relative, resolved under SaveFolder.
 
 .EXAMPLE
 Invoke-Cropper -PythonScriptPath .\src\python\crop_colours.py -SaveFolder .\Screenshots
-
-.EXAMPLE
-Invoke-Cropper -PythonScriptPath .\crop.py -SaveFolder .\Shots -ResumeFile resume.json
 #>
 function Invoke-Cropper {
     <#
