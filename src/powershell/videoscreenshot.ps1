@@ -34,7 +34,7 @@ Major behaviours and safeguards:
 Folder containing input videos. Recurses by default.
 
 .PARAMETER SaveFolder
-Destination folder for screenshots. Default: <script>\Screenshots
+Destination folder for screenshots. Default: Desktop\Screenshots
 This folder is created if missing and also hosts the default processed log
 (ProcessedLogPath) and the temporary PID registry (.vlc_pids.txt).
 
@@ -135,15 +135,19 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.5
+  1.2.6
 
 CHANGELOG
+  1.2.6
+  - Fix: Corrected invalid Write-Debug call that incorrectly used -Level parameter
+  - Fix: Updated SaveFolder parameter documentation to reflect correct default location (Desktop\Screenshots)
+  
   1.2.5
   - Fix: Short video clips that complete during VLC startup window (ExitCode=0) are now correctly 
     treated as successful completion rather than startup failures
   - Fix: Corrected string quoting for --scene-fps parameter to ensure proper variable expansion 
     in VLC snapshot mode arguments
-    
+
   1.2.4
   - Fix: FramesPerSecond now properly implemented for VLC snapshot mode using --scene-fps instead of --scene-ratio=1
     This ensures time-based capture cadence (N screenshots per second) rather than frame-count based capture
@@ -576,7 +580,9 @@ it on Ctrl+C (Console.CancelKeyPress) and on PowerShell session exit.
 Full path to the video file.
 
 .PARAMETER SaveFolder
-Destination for snapshot files when -UseVlcSnapshots is enabled.
+Destination folder for screenshots. Default: Desktop\Screenshots  
+This folder is created if missing and also hosts the default processed log
+(ProcessedLogPath) and the temporary PID registry (.vlc_pids.txt).
 
 .PARAMETER UseVlcSnapshots
 Enable VLC scene filter snapshots (headless capture, video-frame only).
@@ -985,7 +991,7 @@ foreach ($video in $videos) {
 
                 # Check per-video deadline in GDI+ capture loop
                 if ($perVideoDeadline -and (Get-Date) -ge $perVideoDeadline) {
-                    Write-Debug -Level Info -Message "Per-video time limit reached for: $($video.FullName)"
+                    Write-Debug "Per-video time limit reached for: $($video.FullName)"
                     break
                 }
                 $filename = ('{0}_{1:D6}.png' -f $videoBase, $frameIndex) # avoid cross-video collisions
