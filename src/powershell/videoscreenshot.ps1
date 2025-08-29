@@ -22,6 +22,9 @@ Major behaviours and safeguards:
     add -Legacy1080p to capture a fixed 1920×1080 region (legacy behavior).
     • VLC snapshots — headless, video-frame-only capture (no desktop/UI chrome).
   - Snapshot hygiene: opt-in -ClearSnapshotsBeforeRun deletes old <Video>_*.png before each run.
+  - Interrupt-safe cleanup: pressing Ctrl+C triggers a graceful shutdown path that
+    terminates any VLC processes launched by this script and then exits cleanly.
+
 
 .PARAMETER SourceFolder
 Folder containing input videos. Recurses by default.
@@ -115,12 +118,17 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.11
+  1.1.12
 
 CHANGELOG
+  1.1.12
+  - Robust interrupt cleanup: track launched VLC PIDs and terminate them on Ctrl+C
+    (Console.CancelKeyPress) and on PowerShell session exit (PowerShell.Exiting).
+  - Docs: updated .DESCRIPTION, TROUBLESHOOTING, FAQ; Start-Vlc help mentions PID tracking.
+
   1.1.11
   - Start-Vlc: correct argument logging (was incorrectly logging $args instead of $vlcArgs).
-  
+
   1.1.10
   - Invoke-Cropper: enforce Python 3.9+ (throws with clear message if lower).
   - New -ClearSnapshotsBeforeRun: when in snapshot mode, delete existing
@@ -206,14 +214,17 @@ TROUBLESHOOTING
       • Use -GdiFullscreen for GDI+ capture to force VLC full-screen/on-top.
       • For exact video frames without desktop/UI, use -UseVlcSnapshots.
       • To replicate v1.0 behavior exactly, combine -GdiFullscreen with -Legacy1080p.
-
   - Wrong resolution:
       • GDI+ (default) uses your current primary screen size; use -Legacy1080p for fixed 1920×1080,
         or switch to snapshot mode to avoid desktop resolution altogether.
-
   - Multi-monitor/DPI issues:
       • Ensure VLC is displayed on the primary monitor or move it there; GDI+ grabs the primary screen by default.
       • Disable Windows scaling on VLC if coordinates appear offset.
+  - Ctrl+C leaves VLC open:
+      • From v1.1.12, the script tracks VLC PIDs it launched and terminates them
+        on Ctrl+C (Console.CancelKeyPress) and on shell exit (PowerShell.Exiting).
+      • If VLC still remains, check for other VLC instances started outside the script.
+        Only PIDs launched by this script are terminated.
 
 FAQS
   Q: No frames were captured—what should I check?
@@ -234,6 +245,13 @@ FAQS
   Q: What’s the difference between GDI+ and snapshot mode?
   A: GDI+ captures the desktop (quick to set up; may include UI). Snapshot mode uses VLC’s scene filter to save only the video content (no UI), typically cleaner for analysis.
 
+  Q: I stopped the script with Ctrl+C but VLC stayed open—why?
+  A: Prior to v1.1.12, Ctrl+C could abort before the normal cleanup ran. From v1.1.12,
+   the script registers handlers that terminate VLC PIDs launched by this run.
+   Note: VLC started outside the script is not touched.
+
+  Q: Will this kill other VLC windows I opened manually?
+  A: No. Only VLC processes started by this script (tracked PIDs) are terminated.
 #>
 
 [CmdletBinding()]
@@ -343,6 +361,13 @@ function Write-Message {
 
 # Ensure destination directories exist
 New-Item -ItemType Directory -Path $SaveFolder -Force | Out-Null
+
+# PID registry used by event handlers (shared across runspaces)
+$PidRegistry = Join-Path $SaveFolder '.vlc_pids.txt'
+if (Test-Path -LiteralPath $PidRegistry) {
+    Remove-Item -LiteralPath $PidRegistry -Force -ErrorAction SilentlyContinue
+}
+
 # Create processed log only if missing to avoid truncation
 if (-not (Test-Path -LiteralPath $ProcessedLogPath)) {
     New-Item -ItemType File -Path $ProcessedLogPath -Force | Out-Null
@@ -420,6 +445,9 @@ Launches vlc.exe configured for the selected capture mode:
   - Snapshot mode (-UseVlcSnapshots): starts headless (--intf dummy) and writes
     frames directly to disk (no desktop/UI captured).
 
+This function also records the launched VLC PID so that the script can terminate
+it on Ctrl+C (Console.CancelKeyPress) and on PowerShell session exit.
+
 .PARAMETER VideoPath
 Full path to the video file.
 
@@ -430,9 +458,9 @@ Destination for snapshot files when -UseVlcSnapshots is enabled.
 Enable VLC scene filter snapshots (headless capture, video-frame only).
 
 .EXAMPLE
-$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\o'
+$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots'
 .EXAMPLE
-$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\o' -UseVlcSnapshots
+$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots' -UseVlcSnapshots
 #>
 function Start-Vlc {
     param(
@@ -474,7 +502,7 @@ function Start-Vlc {
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName  = 'vlc'
-    $psi.Arguments = ($args -join ' ')
+    $psi.Arguments = ($vlcargs -join ' ')
     $psi.UseShellExecute = $false
     $psi.RedirectStandardError = $true
     $psi.RedirectStandardOutput = $true
@@ -483,6 +511,8 @@ function Start-Vlc {
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
     $null = $p.Start()
+    $global:vlcPids += $p.Id
+    Add-Content -LiteralPath $PidRegistry -Value $p.Id
 
     # Basic startup wait (window may be GUI or dummy)
     $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
@@ -493,6 +523,7 @@ function Start-Vlc {
 
     if ($p.HasExited) {
         $stderr = $p.StandardError.ReadToEnd()
+        if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "VLC stderr: $stderr" }
         Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderr"
         return $null
     }
@@ -685,16 +716,44 @@ function Invoke-Cropper {
 
 # region Main flow
 
+# Track VLC PIDs we start so we can clean them up on Ctrl+C or shell exit
+$global:vlcPids = @()
+
+# Clean up on Ctrl+C (Console.CancelKeyPress) and on session exit
+$ctrlCHandler = Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress -SourceIdentifier CtrlCHandler -Action {
+    try {
+        $EventArgs.Cancel = $true
+        Write-Host "[CTRL+C] Cleaning up VLC..." -ForegroundColor Yellow
+        if (Test-Path -LiteralPath $using:PidRegistry) {
+            Get-Content -LiteralPath $using:PidRegistry |
+                ForEach-Object {
+                    $id = $_.ToString().Trim()
+                    if ($id -match '^\d+$') {
+                        Stop-Process -Id [int]$id -Force -ErrorAction SilentlyContinue
+                    }
+                }
+        }
+    } catch {}
+    [Environment]::Exit(1)
+}
+
+$exitHandler  = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
+    try {
+        if (Test-Path -LiteralPath $using:PidRegistry) {
+            Get-Content -LiteralPath $using:PidRegistry |
+                ForEach-Object {
+                    $id = $_.ToString().Trim()
+                    if ($id -match '^\d+$') {
+                        Stop-Process -Id [int]$id -Force -ErrorAction SilentlyContinue
+                    }
+                }
+        }
+    } catch {}
+}
+
 if ($CropOnly) {
     Write-Message -Level Info -Message "Crop-only mode."
-    # Preflight: ensure Python is present and log version for diagnostics
-    try {
-        $pv = (& python --version) 2>&1
-        Write-Debug "Python version: $pv"
-    } catch {
-        Write-Message -Level Error -Message "Python not found in PATH. Install Python 3.9+ or update PATH."
-        exit 1
-    }
+
     try {
         Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile
     } catch {
@@ -788,7 +847,13 @@ foreach ($video in $videos) {
                 $filename = ('{0}_{1:D6}.png' -f $videoBase, $frameIndex) # avoid cross-video collisions
                 $target   = Join-Path $SaveFolder $filename
 
-                if (Save-FrameWithRetry -TargetPath $target) {
+                $okSave = if ($Legacy1080p) {
+                    Save-FrameWithRetry -TargetPath $target -Width 1920 -Height 1080
+                } else {
+                    Save-FrameWithRetry -TargetPath $target
+                }
+
+                if ($okSave) {
                     if ($frameIndex -eq 0) { Write-Debug "First frame saved: $target" }
                     $frameIndex++
                     $savedThisRun++
@@ -804,7 +869,13 @@ foreach ($video in $videos) {
         Write-Message -Level Error -Message $_.Exception.Message
     }
     finally {
-        if ($vlc) { Stop-Vlc -Process $vlc }
+        if ($vlc) {
+            Stop-Vlc -Process $vlc
+            if (Test-Path -LiteralPath $PidRegistry) {
+                (Get-Content -LiteralPath $PidRegistry | Where-Object { $_ -ne "$($vlc.Id)" }) |
+                    Set-Content -LiteralPath $PidRegistry
+            }
+        }
     }
 
     # Evaluate outcome
@@ -829,10 +900,11 @@ foreach ($video in $videos) {
     $ok = (-not $partial) -and (-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames
 
     if ($ok) {
-        if (-not (Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName)) {
-            Write-Message -Level Warn -Message "Could not update processed log; leaving video unmarked."
+        if (Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName) {
+            Write-Message -Level Info -Message "Marked processed: $($video.FullName)"
+        } else {
+            Write-Message -Level Warn -Message "Processed OK, but failed to update processed log."
         }
-        Write-Message -Level Info -Message "Marked processed: $($video.FullName)"
     } else {
         $reason = if (-not $hadFrames) { 'no frames saved' } elseif ($partial) { 'time limit hit' } elseif ($errorDuringCapture) { 'capture errors' } elseif ($vlcExit -ne 0) { "VLC exit $vlcExit" } else { 'unknown' }
         Write-Message -Level Warn -Message "NOT marked processed ($reason): $($video.FullName)"
@@ -852,6 +924,22 @@ try {
     # Match original spirit: log failure without terminating the entire run
     Write-Message -Level Error -Message "Post-capture cropper failed: $($_.Exception.Message)"
 }
+
+if ($ctrlCHandler) {
+    Unregister-Event -SourceIdentifier CtrlCHandler
+    Remove-Job $ctrlCHandler -Force -ErrorAction SilentlyContinue
+}
+if ($exitHandler) {
+    Unregister-Event -SourceIdentifier PowerShell.Exiting
+    Remove-Job $exitHandler -Force -ErrorAction SilentlyContinue
+}
+
+# Final cleanup: remove the PID registry file
+try {
+    if (Test-Path -LiteralPath $PidRegistry) {
+        Remove-Item -LiteralPath $PidRegistry -Force -ErrorAction SilentlyContinue
+    }
+} catch {}
 
 Write-Message -Level Info -Message "All done."
 # endregion Main flow
