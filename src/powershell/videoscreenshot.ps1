@@ -13,8 +13,8 @@ Major behaviours and safeguards:
     If the log cannot be created or written to, the script terminates with an error.
   - Cleanup registry: a temporary PID registry file (.vlc_pids.txt) is written in
     <SaveFolder> to ensure VLC is terminated on Ctrl+C and shell exit.
-  - Time limit: if reached, capture stops, VLC is terminated cleanly, and the video is
-    NOT logged as processed (prevents false “processed” state).
+  - Time limit: if reached, no new videos are started, but the current video finishes.
+    Videos that complete successfully are logged as processed.
   - Process cleanup: VLC is closed or killed on all exit paths (normal, time/video limit, error).
   - Exit codes: non-zero VLC exit codes are treated as failures and not logged as processed.
   - Paths: Python cropper script path is parameterised; defaults relative to this script.
@@ -135,9 +135,15 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.6
+  1.2.7
 
 CHANGELOG
+  1.2.7
+  - Fix: Updated Major behaviours documentation to correctly describe global time limit behavior 
+    (prevents starting new videos rather than terminating current video mid-capture)
+  - Fix: Added missing -File parameter to postCount query for consistency with preCount query
+  - Cleanup: Removed unused $partial variable that was no longer needed after global time limit logic changes
+
   1.2.6
   - Fix: Corrected invalid Write-Debug call that incorrectly used -Level parameter
   - Fix: Updated SaveFolder parameter documentation to reflect correct default location (Desktop\Screenshots)
@@ -941,7 +947,6 @@ foreach ($video in $videos) {
 
     Write-Message -Level Info -Message "Processing: $($video.FullName)"
     $vlc = $null
-    $partial = $false
     $errorDuringCapture = $false
     $savedThisRun = 0
     $hadFrames = $false
@@ -1030,12 +1035,12 @@ foreach ($video in $videos) {
 
     # Evaluate outcome
     $vlcExit = if ($vlc) { $vlc.ExitCode } else { -1 }
-    Write-Debug "VLC exit code: $vlcExit; partial=$partial; hadErrors=$errorDuringCapture"
+    Write-Debug "VLC exit code: $vlcExit; hadErrors=$errorDuringCapture"
 
     # Post-run validation: ensure frames actually exist
     if ($UseVlcSnapshots) {
         # Compare pre/post counts for this video's prefix
-        $postCount = (Get-ChildItem -LiteralPath $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -ErrorAction SilentlyContinue | Measure-Object).Count
+        $postCount = (Get-ChildItem -LiteralPath $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
         $hadFrames = ($postCount -gt $preCount)
     } else {
         # GDI+: require at least one frame saved during this run
@@ -1043,11 +1048,10 @@ foreach ($video in $videos) {
     }
 
     # Final outcome: only mark processed when ALL conditions are true:
-    # - not partial (no time-limit break)
     # - no capture errors
     # - VLC exited cleanly (ExitCode 0)
     # - evidence of frames saved (hadFrames)
-    $ok = (-not $partial) -and (-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames
+    $ok = (-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames
 
     if ($ok) {
         if (Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName) {
