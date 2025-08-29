@@ -9,6 +9,10 @@ Two capture approaches are supported:
   2) VLC scene snapshots (opt-in via -UseVlcSnapshots) – captures only the video frame.
 
 Major behaviours and safeguards:
+  - Processed log: defaults to <SaveFolder>\processed_videos.log.
+    If the log cannot be created or written to, the script terminates with an error.
+  - Cleanup registry: a temporary PID registry file (.vlc_pids.txt) is written in
+    <SaveFolder> to ensure VLC is terminated on Ctrl+C and shell exit.
   - Time limit: if reached, capture stops, VLC is terminated cleanly, and the video is
     NOT logged as processed (prevents false “processed” state).
   - Process cleanup: VLC is closed or killed on all exit paths (normal, time/video limit, error).
@@ -31,9 +35,11 @@ Folder containing input videos. Recurses by default.
 
 .PARAMETER SaveFolder
 Destination folder for screenshots. Default: <script>\Screenshots
+This folder is created if missing and also hosts the default processed log
+(ProcessedLogPath) and the temporary PID registry (.vlc_pids.txt).
 
 .PARAMETER FramesPerSecond
-Approx. capture rate for screenshots (GDI+ mode). Default: 1.
+Approx. capture rate for screenshots (GDI+ mode only). Ignored when -UseVlcSnapshots is set.
 
 .PARAMETER TimeLimitSeconds
 Maximum capture time per video. 0 = unlimited. Default: 0.
@@ -53,7 +59,10 @@ Path to the Python cropper script. Defaults to src\python\crop_colours.py
 under the current script folder.
 
 .PARAMETER ProcessedLogPath
-Path to the text file tracking processed videos. Default: <script>\processed_videos.log
+Path to the file tracking processed videos.
+If omitted, defaults to <SaveFolder>\processed_videos.log.
+If a bare filename or relative path is provided, it is resolved under <SaveFolder>.
+Creation/write failures are terminating errors.
 
 .PARAMETER UseVlcSnapshots
 Use VLC scene filter for frame capture instead of desktop GDI+ capture.
@@ -118,90 +127,61 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.1.12
+  1.2.0
 
 CHANGELOG
+  1.2.0
+  - Default processed log now resolves under <SaveFolder> as processed_videos.log when -ProcessedLogPath
+    is omitted. Bare filenames/relative paths resolve under <SaveFolder>.
+  - Log create/append failures are terminating errors (exit 1).
+  - PID-registry: write <SaveFolder>\.vlc_pids.txt; Ctrl+C and PowerShell.Exiting handlers terminate
+    only PIDs launched by this run; entries are removed after Stop-Vlc.
+  - Start-Vlc: write PID to registry; surface VLC stderr on failed start (shown with -Debug).
+
   1.1.12
-  - Robust interrupt cleanup: track launched VLC PIDs and terminate them on Ctrl+C
-    (Console.CancelKeyPress) and on PowerShell session exit (PowerShell.Exiting).
-  - Docs: updated .DESCRIPTION, TROUBLESHOOTING, FAQ; Start-Vlc help mentions PID tracking.
+  - Robust interrupt cleanup: track launched VLC PIDs and terminate them on Ctrl+C (Console.CancelKeyPress)
+    and on PowerShell session exit (PowerShell.Exiting).
 
   1.1.11
-  - Start-Vlc: correct argument logging (was incorrectly logging $args instead of $vlcArgs).
+  - Start-Vlc: correct argument logging (was logging $args instead of $vlcArgs).
 
   1.1.10
-  - Invoke-Cropper: enforce Python 3.9+ (throws with clear message if lower).
-  - New -ClearSnapshotsBeforeRun: when in snapshot mode, delete existing
-    <VideoBaseName>_*.png in $SaveFolder before starting each video; sets
-    preCount=0 to ensure correct post-run validation.
+  - Invoke-Cropper: enforce Python 3.9+.
+  - New -ClearSnapshotsBeforeRun (snapshot mode): delete existing <VideoBaseName>_*.png before start.
 
   1.1.9
-  - Add -GdiFullscreen to force legacy full-screen VLC window during GDI+ capture
-  - Add -Legacy1080p to capture fixed 1920x1080 region (old method)
-  - GDI+ launch now uses GUI interface (no --intf dummy); snapshots still use --intf dummy
-
-  1.1.8
-  - Fix: removed custom -Debug switch to avoid name collision with PowerShell’s common -Debug.
-    Behavior unchanged for callers: use the common -Debug to enable Write-Debug output.
-    Internally, the script now checks $PSBoundParameters.ContainsKey('Debug').
-  - Docs: updated notes/examples to mention the common -Debug parameter.
+  - Add -GdiFullscreen to force legacy full-screen VLC window in GDI+ capture.
+  - Add -Legacy1080p to capture fixed 1920×1080 region (legacy method).
+  - GDI+ launch uses GUI interface; snapshots still use --intf dummy.
 
   1.1.7
-  - Post-capture: also run crop_colours.py against $SaveFolder when not -CropOnly.
-  - (Args: --input <SaveFolder> --skip-bad-images --allow-empty --recurse [+ --resume-file if set])
-
-  1.1.6
-  - Invoke-Cropper: call crop_colours.py v3.1.0 with:
-      --input <SaveFolder> --skip-bad-images --allow-empty --recurse
-    and forward --resume-file when provided.
-  - No other changes.
-
-  1.1.5
-  - Docs: inline comments clarifying time-limit/loop termination and final $ok conditions.
-  - Invoke-Cropper: (previous behavior; superseded by 1.1.6)
-  - Minor: keep stdout only in -Debug to avoid “assigned but not used” warnings.
-
-  1.1.4
-  - Docs: add full comment-based help to Stop-Vlc and Get-ScreenWithGDIPlus
-    (.DESCRIPTION, .PARAMETER, .EXAMPLE) for Get-Help consistency
-  - Inline comments: clarify main-loop validation logic (pre/post snapshot counts,
-    GDI+ savedThisRun, and final $ok conditions)
-  - Behavior: no functional changes; readability and maintainability only
+  - Post-capture: run crop_colours.py against SaveFolder when not -CropOnly
+    ( --input <SaveFolder> --skip-bad-images --allow-empty --recurse [+ --resume-file] ).
 
   1.1.3
-  - Docs: expand Start-Vlc and Invoke-Cropper help (.DESCRIPTION, .RETURNS, .EXAMPLE)
-    and add inline comments for VLC restart strategy and log-creation guard
-  - Fix: avoid scoped-variable parse issue by delimiting ${Path} in error message
-    inside Add-ContentWithRetry
-  - Diagnostics: log first-attempt cropper stderr in Debug on non-zero exit
+  - Fix: avoid scoped-variable parse issue by delimiting ${Path} in Add-ContentWithRetry.
 
   1.1.2
-  - Robustness: retry appends to processed log (file lock tolerant) and guard
-    against truncation by creating the log only if missing
-  - GDI+ filenames: prefix saved frames with <VideoBaseName>_ to avoid cross-video
-    collisions in shared SaveFolder (parity with VLC snapshot prefix)
-  - VLC startup: single restart attempt if VLC exits during the startup window
-  - Docs: add comment-based help for Save-FrameWithRetry and Add-ContentWithRetry
-    and clarify inline comments (dummy interface, scene-ratio=1, validation gating)
+  - Retry appends to processed log; guard against truncation by creating the log only if missing.
+  - GDI+ filenames: prefix with <VideoBaseName>_ to avoid cross-video collisions.
+  - VLC startup: single restart attempt if VLC exits during startup.
 
   1.1.1
-  - Snapshot mode: per-video --scene-prefix (<VideoBaseName>_) to avoid collisions
-  - Post-run validation: ensure frames were actually saved (snapshot pre/post counts; GDI+ counter)
-  - Resilience: retry GDI+ frame saves (3 attempts); single retry for Python cropper
-  - Preflight: in Crop-only mode, verify Python is in PATH and log version
-  - Hygiene: avoid assigning to automatic $args (use $vlcArgs/$pyArgs)
+  - Snapshot mode: per-video --scene-prefix (<VideoBaseName>_) to avoid collisions.
+  - Post-run validation: ensure frames were actually saved (snapshot pre/post counts; GDI+ counter).
+  - Robustness: retry GDI+ frame saves; single retry for Python cropper.
 
   1.1.0
-  - Fix: Time-limit now terminates VLC and prevents false “processed” logging.
-  - Fix: VLC is closed/killed on all exit paths via a central finally cleanup.
-  - Fix: Non-zero VLC exit codes mark the video as failed (not processed).
-  - Add: Parameterised PythonScriptPath; defaults relative to the script root.
-  - Add: Validate -ResumeFile in -CropOnly mode.
-  - Add: Startup timeout for VLC; improved debug tracing.
-  - Add: Optional -UseVlcSnapshots mode (VLC scene filter) to avoid full-screen capture.
-  - Doc: Converted to strict comment-based help for Get-Help compatibility.
+  - Time-limit terminates VLC and prevents false “processed” logging.
+  - Centralized cleanup: VLC closed/killed on all exit paths; non-zero VLC exit codes mark failure.
+  - Add -PythonScriptPath; validate -ResumeFile in -CropOnly; startup timeout for VLC; optional snapshot mode.
 
-PREREQUISITES
+  EXIT CODES
+    0  Success
+    1  Runtime error (processing/cropper failure, or log create/write failure)
+    2  Usage/validation error (invalid paths, resume file not found, etc.)
+
+  PREREQUISITES
   - VLC installed and in PATH (vlc.exe).
   - Python available if running the cropper; cropper script present.
 
@@ -225,6 +205,10 @@ TROUBLESHOOTING
         on Ctrl+C (Console.CancelKeyPress) and on shell exit (PowerShell.Exiting).
       • If VLC still remains, check for other VLC instances started outside the script.
         Only PIDs launched by this script are terminated.
+  - Log file errors: The processed log defaults to <SaveFolder>\processed_videos.log.
+    If creation or append fails (permissions/locks), the run terminates (exit 1).
+  - Stale .vlc_pids.txt: If a previous run crashed, you may see this file in <SaveFolder>.
+    It is safe to delete; it will be recreated on the next run.
 
 FAQS
   Q: No frames were captured—what should I check?
@@ -252,6 +236,14 @@ FAQS
 
   Q: Will this kill other VLC windows I opened manually?
   A: No. Only VLC processes started by this script (tracked PIDs) are terminated.
+
+  Q: Where is the processed log stored by default?
+  A: In <SaveFolder>\processed_videos.log. A bare filename for -ProcessedLogPath is
+     also created under <SaveFolder>.
+
+  Q: Why did the script abort with a log write error?
+  A: Creating or appending the processed log is mandatory. Fix folder permissions,
+   d  isk space, or pick a different SaveFolder/ProcessedLogPath.
 #>
 
 [CmdletBinding()]
@@ -282,7 +274,7 @@ param(
     [string]$PythonScriptPath = (Join-Path $PSScriptRoot 'src\python\crop_colours.py'),
 
     [Parameter(Mandatory = $false)]
-    [string]$ProcessedLogPath = (Join-Path $PSScriptRoot 'processed_videos.log'),
+    [string]$ProcessedLogPath,
 
     [Parameter(Mandatory = $false)]
     [switch]$UseVlcSnapshots,
@@ -317,6 +309,24 @@ Text to append.
 Maximum attempts (default 3).
 .EXAMPLE
 Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName
+.EXAMPLE
+# Use default log in <SaveFolder>\processed_videos.log
+.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots"
+
+.EXAMPLE
+# Provide a bare filename; it is resolved under <SaveFolder>
+.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
+  -ProcessedLogPath "new_processed_videos.log"
+
+.EXAMPLE
+# Provide a relative subpath; it is resolved under <SaveFolder>
+.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
+  -ProcessedLogPath "logs\processed.log"
+
+.EXAMPLE
+# Provide an absolute path; used as-is
+.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
+  -ProcessedLogPath "C:\logs\processed.log"
 #>
 function Add-ContentWithRetry {
     param(
@@ -361,6 +371,37 @@ function Write-Message {
 
 # Ensure destination directories exist
 New-Item -ItemType Directory -Path $SaveFolder -Force | Out-Null
+
+# Resolve default log path to <SaveFolder>\processed_videos.log when not provided
+if ([string]::IsNullOrWhiteSpace($ProcessedLogPath)) {
+    # No value provided -> default in SaveFolder
+    $ProcessedLogPath = Join-Path $SaveFolder 'processed_videos.log'
+} elseif (-not [System.IO.Path]::IsPathRooted($ProcessedLogPath)) {
+    # Bare filename or relative path -> resolve under SaveFolder
+    $ProcessedLogPath = Join-Path $SaveFolder $ProcessedLogPath
+}
+
+# Ensure the log directory exists, create the file if missing, and verify writability.
+try {
+    $logDir = Split-Path -Parent $ProcessedLogPath
+    if ($logDir -and -not (Test-Path -LiteralPath $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force -ErrorAction Stop | Out-Null
+    }
+    if (-not (Test-Path -LiteralPath $ProcessedLogPath)) {
+        New-Item -ItemType File -Path $ProcessedLogPath -Force -ErrorAction Stop | Out-Null
+    }
+    # Writability test without modifying contents
+    $fs = [System.IO.File]::Open(
+        $ProcessedLogPath,
+        [System.IO.FileMode]::Append,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::Read
+    )
+    $fs.Close()
+} catch {
+    Write-Message -Level Error -Message "Processed log must be creatable and writable: $ProcessedLogPath — $($_.Exception.Message)"
+    exit 1
+}
 
 # PID registry used by event handlers (shared across runspaces)
 $PidRegistry = Join-Path $SaveFolder '.vlc_pids.txt'
@@ -613,9 +654,10 @@ function Get-ScreenWithGDIPlus {
 Run the external Python cropper.
 
 .DESCRIPTION
-Invokes crop_colours.py (v3.1.0) with:
+Invokes crop_colours.py v3.1.0 with:
   --input <SaveFolder> --skip-bad-images --allow-empty --recurse
-and, when provided, --resume-file <ResumeFile> (relative paths resolved under SaveFolder).
+If provided, --resume-file is validated; a relative path is resolved under <SaveFolder>.
+Requires Python 3.9+; throws if lower.
 
 .PARAMETER PythonScriptPath
 Path to crop_colours.py.
@@ -776,8 +818,11 @@ if ($VideoLimit -gt 0) {
 }
 
 $processed = @()
-if (Test-Path -LiteralPath $ProcessedLogPath) {
-    $processed = Get-Content -LiteralPath $ProcessedLogPath -ErrorAction SilentlyContinue
+try {
+    $processed = Get-Content -LiteralPath $ProcessedLogPath -ErrorAction Stop
+} catch {
+    Write-Message -Level Error -Message "Failed to read processed log: $ProcessedLogPath — $($_.Exception.Message)"
+    exit 1
 }
 
 $intervalMs = [int](1000 / [Math]::Max(1, $FramesPerSecond))
@@ -903,11 +948,9 @@ foreach ($video in $videos) {
         if (Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName) {
             Write-Message -Level Info -Message "Marked processed: $($video.FullName)"
         } else {
-            Write-Message -Level Warn -Message "Processed OK, but failed to update processed log."
+            Write-Message -Level Error -Message "Processed OK, but failed to update processed log: $ProcessedLogPath"
+            exit 1
         }
-    } else {
-        $reason = if (-not $hadFrames) { 'no frames saved' } elseif ($partial) { 'time limit hit' } elseif ($errorDuringCapture) { 'capture errors' } elseif ($vlcExit -ne 0) { "VLC exit $vlcExit" } else { 'unknown' }
-        Write-Message -Level Warn -Message "NOT marked processed ($reason): $($video.FullName)"
     }
 }
 
