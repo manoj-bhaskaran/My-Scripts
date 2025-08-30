@@ -11,7 +11,7 @@ Two capture approaches are supported:
 Major behaviours and safeguards:
   - Processed log: defaults to <SaveFolder>\processed_videos.log.
     If the log cannot be created or written to, the script terminates with an error.
-  - Cleanup registry: a temporary PID registry file (.vlc_pids.txt) is written in
+  - Cleanup registry: a temporary PID registry file (.vlc_pids_<guid>.txt) is written in
     <SaveFolder> to ensure VLC is terminated on Ctrl+C and shell exit.
   - Time limit: if reached, no new videos are started, but the current video finishes.
     Videos that complete successfully are logged as processed.
@@ -29,14 +29,13 @@ Major behaviours and safeguards:
   - Interrupt-safe cleanup: pressing Ctrl+C triggers a graceful shutdown path that
     terminates any VLC processes launched by this script and then exits cleanly.
 
-
 .PARAMETER SourceFolder
 Folder containing input videos. Recurses by default.
 
 .PARAMETER SaveFolder
 Destination folder for screenshots. Default: Desktop\Screenshots
 This folder is created if missing and also hosts the default processed log
-(ProcessedLogPath) and the temporary PID registry (.vlc_pids.txt).
+(ProcessedLogPath) and the temporary PID registry (.vlc_pids_<guid>.txt).
 
 .PARAMETER FramesPerSecond
 Capture rate for screenshots per second. GDI+ mode uses exact time-based capture. 
@@ -80,11 +79,11 @@ captures and to minimize chrome (menus/toolbars) in screenshots.
 .PARAMETER Legacy1080p
 Capture a fixed 1920x1080 rectangle from the top-left of the primary display
 (legacy behavior from v1.0). Combine with -GdiFullscreen to reproduce the old
-“full-screen 1080p desktop grab” method. Ignored in VLC snapshot mode.
+"full-screen 1080p desktop grab" method. Ignored in VLC snapshot mode.
 
 .PARAMETER ClearSnapshotsBeforeRun
 When -UseVlcSnapshots is active, delete any existing snapshot files for the
-current video’s prefix (<VideoBaseName>_*.png) in SaveFolder before starting
+current video's prefix (<VideoBaseName>_*.png) in SaveFolder before starting
 VLC. Useful to avoid mixing frames across runs. Disabled by default.
 
 .PARAMETER AutoStopGraceSeconds
@@ -93,12 +92,6 @@ This per-video upper bound is enforced regardless of whether a global limit is s
 
 .PARAMETER DisableAutoStop
 Disable duration-based auto-stop; rely on VLC exit or -TimeLimitSeconds.
-
-.INPUTS
-None. You cannot pipe input to this script.
-
-.OUTPUTS
-None. Writes status/progress to the console and log files.
 
 .EXAMPLE
 .\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
@@ -131,14 +124,27 @@ None. Writes status/progress to the console and log files.
 .\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
   -UseVlcSnapshots -ClearSnapshotsBeforeRun
 
+.INPUTS
+None. You cannot pipe input to this script.
+
+.OUTPUTS
+None. Writes status/progress to the console and log files.
+
 .NOTES
 AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.17
+  1.2.18
 
 CHANGELOG
+  1.2.18
+  - Fix: Removed duplicate $vlcExit assignment to prevent logic drift and confusion
+  - Fix: Unified frame count calculation in debug output to prevent uninitialized variable references in GDI+ mode
+  - Fix: Added Wait-Process to Stop-Vlc function for consistent deterministic process termination across all code paths
+  - Fix: Updated troubleshooting documentation to reflect actual GUID-based PID registry filenames (.vlc_pids_*.txt)
+  - Fix: Corrected indentation inconsistencies in main capture try/catch/finally block
+
   1.2.17
   - Fix: Critical bug where GDI+ capture mode exit codes were uninitialized during outcome evaluation,
     causing successful captures to be incorrectly marked as failures
@@ -252,7 +258,7 @@ CHANGELOG
 
   1.2.1
   - Auto-stop playback at detected video duration (+ grace) to prevent long
-    runs producing blank screens when VLC doesn’t exit cleanly.
+    runs producing blank screens when VLC doesn't exit cleanly.
     • Enabled by default when -TimeLimitSeconds is 0.
     • Disable with -DisableAutoStop.
     • Grace seconds controlled by -AutoStopGraceSeconds (default: 2).
@@ -262,7 +268,7 @@ CHANGELOG
     • -AutoStopGraceSeconds <int>   # extra seconds beyond detected duration
     • -DisableAutoStop              # opt out of duration-based stop
   - Docs: added .PARAMETER entries for the two new flags and a
-    TROUBLESHOOTING note about “screenshots continue after short clips”.
+    TROUBLESHOOTING note about "screenshots continue after short clips".
 
   1.2.0
   - Default processed log now resolves under <SaveFolder> as processed_videos.log when -ProcessedLogPath
@@ -306,7 +312,7 @@ CHANGELOG
   - Robustness: retry GDI+ frame saves; single retry for Python cropper.
 
   1.1.0
-  - Time-limit terminates VLC and prevents false “processed” logging.
+  - Time-limit terminates VLC and prevents false "processed" logging.
   - Centralized cleanup: VLC closed/killed on all exit paths; non-zero VLC exit codes mark failure.
   - Add -PythonScriptPath; validate -ResumeFile in -CropOnly; startup timeout for VLC; optional snapshot mode.
 
@@ -342,18 +348,19 @@ TROUBLESHOOTING
         Only PIDs launched by this script are terminated.
   - Log file errors: The processed log defaults to <SaveFolder>\processed_videos.log.
     If creation or append fails (permissions/locks), the run terminates (exit 1).
-  - Stale .vlc_pids.txt: If a previous run crashed, you may see this file in <SaveFolder>.
-    It is safe to delete; it will be recreated on the next run.
+  - Stale .vlc_pids_*.txt files: If previous runs crashed, you may see PID registry files 
+    in <SaveFolder>. These are safe to delete; each run creates a unique registry file.
   - Screenshots continue long after short clips: The script now enforces per-video timeouts in
     both capture modes. GDI+ mode uses deadline checking, snapshot mode uses process monitoring.
   - Very short clips exit during startup:
       • This is normal. From v1.2.2, a clean early exit (ExitCode=0) during the startup wait is
-        treated as successful playback completion, not a start failure.
+        treated as successful playbook completion, not a start failure.
   - VLC snapshot cadence not exact: VLC 3.x only supports frame-count ratios, not time-based FPS.
     The script calculates the closest ratio based on detected video frame rate. For exact 
     time-based capture, use GDI+ mode instead of -UseVlcSnapshots.
   - Duration detection fails: Install FFmpeg (includes FFprobe) for enhanced metadata reading.
     The script tries Windows Shell properties first, then falls back to FFprobe if available.
+  - VLC hangs in snapshot mode: VLC's --stop-time parameter can be unreliable in headless mode.
     The script now monitors VLC processes and terminates them after video duration + 5 seconds
     (or 5 minutes maximum if duration unknown). Check debug output for timeout events.
   - International/locale issues: The script now supports international number formats (comma decimal separators)
@@ -362,10 +369,10 @@ TROUBLESHOOTING
   - Performance with large video collections: Processed video tracking now uses HashSet for O(1) lookups
     instead of O(n) array searches, significantly improving performance with hundreds/thousands of videos.
   - Concurrent script runs: Multiple script instances can now safely share the same SaveFolder. 
-    Each run uses a unique PID registry file to avoid VLC process conflicts.
+    Each run uses a unique PID registry file (.vlc_pids_<guid>.txt) to avoid VLC process conflicts.
   - Memory usage with many videos: COM object cleanup is now properly implemented to prevent 
     memory accumulation during large batch processing operations.
-    
+
 FAQS
   Q: No frames were captured—what should I check?
      A: Confirm VLC can play the file (codecs), ensure write permission to SaveFolder,
@@ -382,8 +389,8 @@ FAQS
   Q: How do I get the exact legacy screenshots I used before?
   A: Run with -GdiFullscreen -Legacy1080p (full-screen VLC + fixed 1920×1080 desktop grabs).
 
-  Q: What’s the difference between GDI+ and snapshot mode?
-  A: GDI+ captures the desktop (quick to set up; may include UI). Snapshot mode uses VLC’s scene filter to save only the video content (no UI), typically cleaner for analysis.
+  Q: What's the difference between GDI+ and snapshot mode?
+  A: GDI+ captures the desktop (quick to set up; may include UI). Snapshot mode uses VLC's scene filter to save only the video content (no UI), typically cleaner for analysis.
 
   Q: I stopped the script with Ctrl+C but VLC stayed open—why?
   A: Prior to v1.1.12, Ctrl+C could abort before the normal cleanup ran. From v1.1.12,
@@ -408,7 +415,7 @@ FAQS
   Q: Does FramesPerSecond work the same way in both capture modes?
   A: No. GDI+ mode uses exact time-based capture; VLC snapshot mode uses frame-ratio 
      approximation based on detected video FPS due to VLC 3.x limitations. Both maintain 
-     native playback speed, but only GDI+ provides precise timing.
+     native playbook speed, but only GDI+ provides precise timing.
 
   Q: Why don't I get exactly N screenshots per second in snapshot mode?
   A: VLC 3.x uses frame-count ratios (save 1 out of every N frames) rather than time-based capture.
@@ -466,11 +473,10 @@ param(
     [switch]$ClearSnapshotsBeforeRun,
 
     [Parameter(Mandatory = $false)]
-    [int]$AutoStopGraceSeconds = 2,   # extra seconds added to detected duration
+    [int]$AutoStopGraceSeconds = 2,
 
     [Parameter(Mandatory = $false)]
-    [switch]$DisableAutoStop          # if set, skip duration-based auto-stop
-
+    [switch]$DisableAutoStop
 )
 
 # region Utilities
@@ -489,24 +495,6 @@ Text to append.
 Maximum attempts (default 3).
 .EXAMPLE
 Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName
-.EXAMPLE
-# Use default log in <SaveFolder>\processed_videos.log
-.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots"
-
-.EXAMPLE
-# Provide a bare filename; it is resolved under <SaveFolder>
-.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
-  -ProcessedLogPath "new_processed_videos.log"
-
-.EXAMPLE
-# Provide a relative subpath; it is resolved under <SaveFolder>
-.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
-  -ProcessedLogPath "logs\processed.log"
-
-.EXAMPLE
-# Provide an absolute path; used as-is
-.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
-  -ProcessedLogPath "C:\logs\processed.log"
 #>
 function Add-ContentWithRetry {
     param(
@@ -518,7 +506,7 @@ function Add-ContentWithRetry {
         try { Add-Content -LiteralPath $Path -Value $Value; return $true }
         catch {
             if ($i -eq $MaxAttempts) { Write-Message -Level Error -Message "Failed to append to ${Path}: $($_.Exception.Message)"; return $false }
-            Start-Sleep -Milliseconds (200 * $i) # linear backoff
+            Start-Sleep -Milliseconds (200 * $i)
         }
     }
 }
@@ -554,14 +542,12 @@ New-Item -ItemType Directory -Path $SaveFolder -Force | Out-Null
 
 # Resolve default log path to <SaveFolder>\processed_videos.log when not provided
 if ([string]::IsNullOrWhiteSpace($ProcessedLogPath)) {
-    # No value provided -> default in SaveFolder
     $ProcessedLogPath = Join-Path $SaveFolder 'processed_videos.log'
 } elseif (-not [System.IO.Path]::IsPathRooted($ProcessedLogPath)) {
-    # Bare filename or relative path -> resolve under SaveFolder
     $ProcessedLogPath = Join-Path $SaveFolder $ProcessedLogPath
 }
 
-# Ensure the log directory exists, create the file if missing, and verify writability.
+# Ensure the log directory exists, create the file if missing, and verify writability
 try {
     $logDir = Split-Path -Parent $ProcessedLogPath
     if ($logDir -and -not (Test-Path -LiteralPath $logDir)) {
@@ -570,7 +556,6 @@ try {
     if (-not (Test-Path -LiteralPath $ProcessedLogPath)) {
         New-Item -ItemType File -Path $ProcessedLogPath -Force -ErrorAction Stop | Out-Null
     }
-    # Writability test without modifying contents
     $fs = [System.IO.File]::Open(
         $ProcessedLogPath,
         [System.IO.FileMode]::Append,
@@ -579,11 +564,11 @@ try {
     )
     $fs.Close()
 } catch {
-    Write-Message -Level Error -Message "Processed log must be creatable and writable: $ProcessedLogPath — $($_.Exception.Message)"
+    Write-Message -Level Error -Message "Processed log must be creatable and writable: $ProcessedLogPath – $($_.Exception.Message)"
     exit 1
 }
 
-# PID registry used by event handlers (shared across runspaces)
+# PID registry used by event handlers - unique per run to avoid concurrent conflicts
 $RunGuid = [System.Guid]::NewGuid().ToString("N").Substring(0, 8)
 $PidRegistry = Join-Path $SaveFolder ".vlc_pids_$RunGuid.txt"
 Write-Debug "Using PID registry: $PidRegistry"
@@ -591,10 +576,8 @@ if (Test-Path -LiteralPath $PidRegistry) {
     Remove-Item -LiteralPath $PidRegistry -Force -ErrorAction SilentlyContinue
 }
 
-# Honor the common -Debug parameter from CmdletBinding
 if ($PSBoundParameters.ContainsKey('Debug')) { $DebugPreference = 'Continue' }
 
-# Load assemblies needed for GDI+ capture (PS7 on Windows supports System.Drawing)
 Add-Type -AssemblyName System.Drawing | Out-Null
 Add-Type -AssemblyName System.Windows.Forms | Out-Null
 
@@ -662,11 +645,9 @@ Full path to the video file.
 #>
 function Get-VideoDurationViaShell {
     param([Parameter(Mandatory)][string]$Path)
-
     $shell = $null
     $folder = $null
     $item = $null
-
     try {
         $shell  = New-Object -ComObject Shell.Application
         $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
@@ -818,11 +799,9 @@ Falls back to 30 FPS assumption if detection fails.
 #>
 function Get-VideoFps {
     param([Parameter(Mandatory)][string]$Path)
-
     $shell = $null
     $folder = $null
     $item = $null
-
     try {
         $shell  = New-Object -ComObject Shell.Application
         $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
@@ -910,9 +889,7 @@ it on Ctrl+C (Console.CancelKeyPress) and on PowerShell session exit.
 Full path to the video file.
 
 .PARAMETER SaveFolder
-Destination folder for screenshots. Default: Desktop\Screenshots  
-This folder is created if missing and also hosts the default processed log
-(ProcessedLogPath) and the temporary PID registry (.vlc_pids.txt).
+Destination for snapshot files when -UseVlcSnapshots is enabled.
 
 .PARAMETER UseVlcSnapshots
 Enable VLC scene filter snapshots (headless capture, video-frame only).
@@ -930,11 +907,10 @@ function Start-Vlc {
         [double]$StopAtSeconds = 0
     )
 
-    # Args that are safe for both modes
     $common = @(
         '--no-qt-privacy-ask',
         '--no-video-title-show',
-        '--no-loop',    # added in 1.2.2
+        '--no-loop',
         '--no-repeat',
         '--rate', '1',
         '--play-and-exit'
@@ -951,7 +927,6 @@ function Start-Vlc {
     }
 
     if ($UseVlcSnapshots) {
-        # Headless snapshots: no window needed
         $vlcargs += @(
             '--intf', 'dummy',
             '--video-filter=scene',
@@ -959,18 +934,15 @@ function Start-Vlc {
             "--scene-prefix=""$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_""",
             '--scene-format=png'
         )
-        # NEW: derive scene-ratio for VLC 3.x
         $vfps  = Get-VideoFps -Path $VideoPath
-        $base  = if ($vfps -and $vfps -gt 0) { [double]$vfps } else { 30.0 }   # sensible fallback
+        $base  = if ($vfps -and $vfps -gt 0) { [double]$vfps } else { 30.0 }
         $ratio = [int][Math]::Max(1, [Math]::Round($base / [double]$FramesPerSecond))
         $vlcargs += @("--scene-ratio=$ratio")
         Write-Debug "Snapshots (VLC 3.x): video_fps=$base; requested=$FramesPerSecond; using --scene-ratio=$ratio"
     } else {
-        # GDI+ desktop capture requires a visible window
         if ($GdiFullscreen) {
             $vlcargs += @('--fullscreen', '--video-on-top', '--qt-minimal-view')
         }
-        # (no --intf dummy here; we want a GUI window)
     }
 
     $vlcargs += $common
@@ -990,7 +962,6 @@ function Start-Vlc {
     $null = $p.Start()
     Add-Content -LiteralPath $PidRegistry -Value $p.Id
 
-    # Basic startup wait (window may be GUI or dummy)
     $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         if ($p.HasExited) { break }
@@ -999,7 +970,7 @@ function Start-Vlc {
 
     if ($p.HasExited) {
         $stderr = $p.StandardError.ReadToEnd()
-        $exitTime = (Get-Date) - $startTime  # Add $startTime = Get-Date before the startup loop
+        $exitTime = (Get-Date) - $startTime
         if ($p.ExitCode -eq 0) {
             Write-Debug "VLC exited cleanly during startup window (short clip). ExitCode=0, elapsed=$($exitTime.TotalSeconds) sec"
             return $p
@@ -1036,14 +1007,19 @@ try {
 }
 #>
 function Stop-Vlc {
-    param(
-        [Parameter(Mandatory)][System.Diagnostics.Process]$Process
-    )
+    param([Parameter(Mandatory)][System.Diagnostics.Process]$Process)
     try   { $null = $Process.CloseMainWindow() } catch {}
     try   { $Process.WaitForExit(5000) } catch {}
     if (-not $Process.HasExited) {
         Write-Debug "VLC still running; force killing PID $($Process.Id)"
-        try { Stop-Process -Id $Process.Id -Force } catch {}
+        try { 
+            Stop-Process -Id $Process.Id -Force 
+            # Wait for process to actually terminate for consistent behavior
+            Wait-Process -Id $Process.Id -Timeout 3000 -ErrorAction SilentlyContinue
+            $Process.Refresh()
+        } catch {
+            Write-Debug "Error during VLC termination: $($_.Exception.Message)"
+        }
     }
 }
 
@@ -1113,22 +1089,12 @@ Optional resume file; if relative, resolved under SaveFolder.
 Invoke-Cropper -PythonScriptPath .\src\python\crop_colours.py -SaveFolder .\Screenshots
 #>
 function Invoke-Cropper {
-    <#
-    .SYNOPSIS
-    Runs the external Python cropper script.
-
-    .DESCRIPTION
-    Invokes crop_colours.py v3.1.0 with:
-      --input <SaveFolder> --skip-bad-images --allow-empty --recurse
-    and, if provided, --resume-file <ResumeFile> (relative paths resolved under SaveFolder).
-    #>
     param(
         [Parameter(Mandatory)][string]$PythonScriptPath,
         [Parameter(Mandatory)][string]$SaveFolder,
         [string]$ResumeFile
     )
 
-    # Require Python 3.9+ (handles both 'Python 3.x.y' and possible py launchers)
     $pv = (& python --version) 2>&1
     if ($pv -notmatch '^Python 3\.(9|[1-9][0-9])\.') {
         throw "Python 3.9+ required (found: $pv)"
@@ -1138,7 +1104,6 @@ function Invoke-Cropper {
         throw "PythonScriptPath not found: $PythonScriptPath"
     }
 
-    # Build optional --resume-file (resolve relative path under SaveFolder)
     $resumeArg = @()
     if ($ResumeFile) {
         $resumePath = if ([System.IO.Path]::IsPathRooted($ResumeFile)) {
@@ -1149,12 +1114,9 @@ function Invoke-Cropper {
         if (-not (Test-Path -LiteralPath $resumePath)) {
             throw "Resume file not found: $resumePath"
         }
-        # cropper v3.1.0 uses kebab-case --resume-file
         $resumeArg = @('--resume-file', "`"$resumePath`"")
     }
 
-    # Required flags:
-    #   --input <SaveFolder> --skip-bad-images --allow-empty --recurse
     $pyArgs = @(
         "`"$PythonScriptPath`"",
         '--input', "`"$SaveFolder`"",
@@ -1177,7 +1139,6 @@ function Invoke-Cropper {
     $p.StartInfo = $psi
     $null = $p.Start()
 
-    # Only keep stdout when debugging; otherwise discard to avoid “assigned but unused”
     if ($DebugPreference -eq 'Continue') {
         $cropperStdout = $p.StandardOutput.ReadToEnd()
     } else {
@@ -1199,7 +1160,6 @@ function Invoke-Cropper {
 
 # region Main flow
 
-# Clean up on Ctrl+C (Console.CancelKeyPress) and on session exit
 $ctrlCHandler = Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress -SourceIdentifier CtrlCHandler -Action {
     try {
         $EventArgs.Cancel = $true
@@ -1233,7 +1193,6 @@ $exitHandler  = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Actio
 
 if ($CropOnly) {
     Write-Message -Level Info -Message "Crop-only mode."
-
     try {
         Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile
     } catch {
@@ -1255,10 +1214,10 @@ if ($VideoLimit -gt 0) {
     $videos = $videos | Select-Object -First $VideoLimit
 }
 
-$processed = @()
+# Use HashSet for O(1) processed video lookups
+$processed = New-Object System.Collections.Generic.HashSet[string]
 try {
     $processedArray = Get-Content -LiteralPath $ProcessedLogPath -ErrorAction Stop
-    $processed = New-Object System.Collections.Generic.HashSet[string]
     foreach ($item in $processedArray) {
         [void]$processed.Add($item)
     }
@@ -1293,12 +1252,10 @@ foreach ($video in $videos) {
 
     if ($UseVlcSnapshots) {
         if ($ClearSnapshotsBeforeRun) {
-            # Remove old snapshots for this video’s prefix to start clean
             Get-ChildItem -Path $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue |
                 Remove-Item -Force -ErrorAction SilentlyContinue
             $preCount = 0
         } else {
-            # Keep existing files; measure preCount so post-run validation still works
             $preCount = (Get-ChildItem -Path $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
         }
     }
@@ -1325,9 +1282,8 @@ foreach ($video in $videos) {
         }
 
         if ($UseVlcSnapshots) {
-            # In snapshot mode we wait for VLC to finish or enforce our own timeout
             $processStart = Get-Date
-            $maxWait = if ($stopAt -gt 0) { $stopAt + 5 } else { 300 }  # stopAt + buffer, or 5min default
+            $maxWait = if ($stopAt -gt 0) { $stopAt + 5 } else { 300 }
             Write-Debug "Snapshot mode: monitoring VLC process (max wait: $maxWait sec)"
             
             while (-not $vlc.HasExited) {
@@ -1352,11 +1308,9 @@ foreach ($video in $videos) {
             $finalElapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
             Write-Debug "VLC process completed after $finalElapsed seconds"
         } else {
-            # GDI+ desktop capture loop
             $frameIndex = 0
             $videoBase  = [IO.Path]::GetFileNameWithoutExtension($video.Name)
-
-            # Add per-video deadline for GDI+ capture
+            
             $perVideoDeadline = if ($stopAt -gt 0) { (Get-Date).AddSeconds($stopAt) } else { $null }
             if ($perVideoDeadline) {
                 Write-Debug "GDI+ capture: per-video deadline set to $($perVideoDeadline.ToString('HH:mm:ss'))"
@@ -1365,15 +1319,14 @@ foreach ($video in $videos) {
             }
 
             while (-not $vlc.HasExited) {
-
-                # Check per-video deadline in GDI+ capture loop
                 if ($perVideoDeadline -and (Get-Date) -ge $perVideoDeadline) {
-                    $elapsed = (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds  # Add $videoStartTime = Get-Date at video start
+                    $elapsed = (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds
                     Write-Debug "Per-video deadline reached after $elapsed seconds of capture"
                     Write-Message -Level Info -Message "Per-video time limit reached for: $($video.FullName)"
                     break
                 }
-                $filename = ('{0}_{1:D6}.png' -f $videoBase, $frameIndex) # avoid cross-video collisions
+                
+                $filename = ('{0}_{1:D6}.png' -f $videoBase, $frameIndex)
                 $target   = Join-Path $SaveFolder $filename
 
                 $okSave = if ($Legacy1080p) {
@@ -1394,44 +1347,20 @@ foreach ($video in $videos) {
         }
     }
     catch {
-            $errorDuringCapture = $true
-            Write-Message -Level Error -Message $_.Exception.Message
-        }
-        finally {
-            if ($vlc) {
-                Stop-Vlc -Process $vlc
-                if (Test-Path -LiteralPath $PidRegistry) {
-                    (Get-Content -LiteralPath $PidRegistry | Where-Object { $_ -ne "$($vlc.Id)" }) |
-                        Set-Content -LiteralPath $PidRegistry
-                }
+        $errorDuringCapture = $true
+        Write-Message -Level Error -Message $_.Exception.Message
+    }
+    finally {
+        if ($vlc) {
+            Stop-Vlc -Process $vlc
+            if (Test-Path -LiteralPath $PidRegistry) {
+                (Get-Content -LiteralPath $PidRegistry | Where-Object { $_ -ne "$($vlc.Id)" }) |
+                    Set-Content -LiteralPath $PidRegistry
             }
         }
-
-        # Evaluate VLC exit code consistently for both capture modes
-        $vlcExit = if ($vlc -and -not $vlc.HasExited) { 
-            -1  # Still running 
-        } elseif ($vlc -and $null -ne $vlc.ExitCode) { 
-            $vlc.ExitCode 
-        } else { 
-            -1  # ExitCode not available
-        }
-
-    # Post-run validation: ensure frames actually exist
-    if ($UseVlcSnapshots) {
-        # Compare pre/post counts for this video's prefix
-        $postCount = (Get-ChildItem -Path $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
-        $hadFrames = ($postCount -gt $preCount)
-    } else {
-        # GDI+: require at least one frame saved during this run
-        $hadFrames = ($savedThisRun -gt 0)
     }
 
-    # Final outcome: only mark processed when ALL conditions are true:
-    # - no capture errors
-    # - VLC exited cleanly (ExitCode 0)
-    # - evidence of frames saved (hadFrames)
-    $ok = (-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames
-
+    # Evaluate VLC exit code consistently for both capture modes
     $vlcExit = if ($vlc -and -not $vlc.HasExited) { 
         -1  # Still running 
     } elseif ($vlc -and $null -ne $vlc.ExitCode) { 
@@ -1440,8 +1369,23 @@ foreach ($video in $videos) {
         -1  # ExitCode not available
     }
 
+    # Post-run validation: ensure frames actually exist
+    if ($UseVlcSnapshots) {
+        $postCount = (Get-ChildItem -Path $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+        $hadFrames = ($postCount -gt $preCount)
+        $framesDelta = $postCount - $preCount
+    } else {
+        $hadFrames = ($savedThisRun -gt 0)
+        $framesDelta = $savedThisRun
+    }
+
+    # Unified debug output that works for both modes
     $processingTime = if ($videoStartTime) { (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds } else { 0 }
-    Write-Debug "Video processing complete: ExitCode=$vlcExit, processingTime=$processingTime sec, frames=$savedThisRun (GDI+) or $($postCount-$preCount) (snapshots), hadErrors=$errorDuringCapture"
+    Write-Debug "Video processing complete: ExitCode=$vlcExit, processingTime=$processingTime sec, frames=$framesDelta, hadErrors=$errorDuringCapture"
+
+    # Final outcome evaluation
+    $ok = (-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames
+
     if ($ok) {
         if (Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName) {
             Write-Message -Level Info -Message "Marked processed: $($video.FullName)"
@@ -1461,8 +1405,7 @@ foreach ($video in $videos) {
     }
 }
 
-# Post-capture: run cropper over SaveFolder if not in CropOnly mode
-# (mirrors original 1.0 behavior; uses v3.1.0 flags)
+# Post-capture cropper
 try {
     if (Get-ChildItem -Path (Join-Path $SaveFolder '*') -Recurse -File -Include *.png,*.jpg,*.jpeg -ErrorAction SilentlyContinue | Select-Object -First 1) {
         Write-Message -Level Info -Message "Invoking crop_colours.py on $SaveFolder (post-capture)."
@@ -1471,7 +1414,6 @@ try {
         Write-Message -Level Info -Message "No images found in $SaveFolder for cropping; skipping."
     }
 } catch {
-    # Match original spirit: log failure without terminating the entire run
     Write-Message -Level Error -Message "Post-capture cropper failed: $($_.Exception.Message)"
 }
 
