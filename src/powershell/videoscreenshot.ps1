@@ -1380,7 +1380,7 @@ foreach ($video in $videos) {
                 $sleep = [int]($next - $sw.ElapsedMilliseconds)
                 if ($sleep -gt 0) { Start-Sleep -Milliseconds $sleep }
             }
-            sw.Stop()
+            $sw.Stop()
         }
     }
     catch {
