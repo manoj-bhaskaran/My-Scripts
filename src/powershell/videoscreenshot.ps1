@@ -136,9 +136,16 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.13
+  1.2.14
 
 CHANGELOG
+  1.2.14
+  - Fix: Added process monitoring timeout for VLC snapshot mode to prevent indefinite hanging
+  - Fix: VLC --stop-time parameter unreliable in snapshot mode, now using process termination fallback
+  - Add: Configurable timeout based on detected video duration plus buffer (5 seconds) or 5-minute default
+  - Add: Enhanced debug logging for VLC process monitoring and termination events
+  - Improvement: More reliable snapshot mode operation that won't hang on problematic video files
+
   1.2.13
   - Fix: Corrected FFprobe command line argument handling (removed double-quoting issue)
   - Fix: Replaced Windows Shell COM ExtendedProperty method with GetDetailsOf method for better compatibility
@@ -148,7 +155,7 @@ CHANGELOG
   - Add: Debug logging for both duration and frame rate detection processes
   - Improvement: More robust duration detection and VLC snapshot cadence calculation across different 
     Windows versions and file formats
-    
+
   1.2.12
   - Fix: Enhanced duration detection with multiple fallback methods for improved file compatibility
   - Add: FFprobe fallback for duration detection when Windows Shell COM properties unavailable  
@@ -312,7 +319,8 @@ TROUBLESHOOTING
     If creation or append fails (permissions/locks), the run terminates (exit 1).
   - Stale .vlc_pids.txt: If a previous run crashed, you may see this file in <SaveFolder>.
     It is safe to delete; it will be recreated on the next run.
-  - Screenshots continue long after short clips: ensure auto-stop is enabled (default) or set -TimeLimitSeconds.
+  - Screenshots continue long after short clips: The script now enforces per-video timeouts in
+    both capture modes. GDI+ mode uses deadline checking, snapshot mode uses process monitoring.
   - Very short clips exit during startup:
       • This is normal. From v1.2.2, a clean early exit (ExitCode=0) during the startup wait is
         treated as successful playback completion, not a start failure.
@@ -321,6 +329,9 @@ TROUBLESHOOTING
     time-based capture, use GDI+ mode instead of -UseVlcSnapshots.
   - Duration detection fails: Install FFmpeg (includes FFprobe) for enhanced metadata reading.
     The script tries Windows Shell properties first, then falls back to FFprobe if available.
+  - VLC hangs in snapshot mode: VLC's --stop-time parameter can be unreliable in headless mode.
+    The script now monitors VLC processes and terminates them after video duration + 5 seconds
+    (or 5 minutes maximum if duration unknown). Check debug output for timeout events.
 
 FAQS
   Q: No frames were captured—what should I check?
@@ -369,6 +380,11 @@ FAQS
   Q: Why don't I get exactly N screenshots per second in snapshot mode?
   A: VLC 3.x uses frame-count ratios (save 1 out of every N frames) rather than time-based capture.
      The script calculates the best approximation based on video FPS. GDI+ mode provides exact timing.
+
+  Q: Why does VLC get forcibly terminated in snapshot mode?
+  A: VLC's --stop-time parameter doesn't work reliably in headless snapshot mode. The script
+      monitors the process and terminates it after the expected duration plus a 5-second buffer
+      to prevent indefinite hanging while ensuring complete frame capture.
 #>
 
 [CmdletBinding()]
@@ -1211,10 +1227,28 @@ foreach ($video in $videos) {
         }
 
         if ($UseVlcSnapshots) {
-            # In snapshot mode we just wait for VLC to finish or time out
+            # In snapshot mode we wait for VLC to finish or enforce our own timeout
+            $processStart = Get-Date
+            $maxWait = if ($stopAt -gt 0) { $stopAt + 5 } else { 300 }  # stopAt + buffer, or 5min default
+            Write-Debug "Snapshot mode: monitoring VLC process (max wait: $maxWait sec)"
+            
             while (-not $vlc.HasExited) {
                 Start-Sleep -Milliseconds 200
+                $elapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
+                if ($elapsed -ge $maxWait) {
+                    Write-Debug "VLC process timeout reached ($elapsed sec), force terminating"
+                    Write-Message -Level Info -Message "VLC timeout reached, terminating process for: $($video.FullName)"
+                    try {
+                        Stop-Process -Id $vlc.Id -Force -ErrorAction SilentlyContinue
+                    } catch {
+                        Write-Debug "Error terminating VLC process: $($_.Exception.Message)"
+                    }
+                    break
+                }
             }
+            
+            $finalElapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
+            Write-Debug "VLC process completed after $finalElapsed seconds"
         } else {
             # GDI+ desktop capture loop
             $frameIndex = 0
