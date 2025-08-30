@@ -145,9 +145,13 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.24
+   1.2.25
 
 CHANGELOG
+   1.2.25
+   - Import UX: Enriched import-failure warning to include “same folder as this script” guidance and Unblock-File / execution policy tips. Kept “module not found” as Debug-only, but clarified the Debug message to explain how to enable the optional module.
+   - Docs: TROUBLESHOOTING now includes a hint for when the optional module isn’t found (how to place/unblock it). No functional changes.
+
    1.2.24
    - Import UX: Optional util module import now warns on failure with guidance to check path/permissions/execution policy, and mirrors detail to the Debug stream.
    - Docs: Clarified the optional nature and placement of videoscreenshot.util.psm1 (same folder as the script) in PREREQUISITES/TROUBLESHOOTING.
@@ -388,20 +392,20 @@ TROUBLESHOOTING
   - Crop-only errors: check -ResumeFile path; ensure Python & script path are correct.
   - To see detailed diagnostic output, run with -Debug to enable Write-Debug traces.
   - Screenshots are tiny or include menus:
-      • Use -GdiFullscreen for GDI+ capture to force VLC full-screen/on-top.
-      • For exact video frames without desktop/UI, use -UseVlcSnapshots.
-      • To replicate v1.0 behavior exactly, combine -GdiFullscreen with -Legacy1080p.
+    • Use -GdiFullscreen for GDI+ capture to force VLC full-screen/on-top.
+    • For exact video frames without desktop/UI, use -UseVlcSnapshots.
+    • To replicate v1.0 behavior exactly, combine -GdiFullscreen with -Legacy1080p.
   - Wrong resolution:
-      • GDI+ (default) uses your current primary screen size; use -Legacy1080p for fixed 1920×1080,
-        or switch to snapshot mode to avoid desktop resolution altogether.
+    • GDI+ (default) uses your current primary screen size; use -Legacy1080p for fixed 1920×1080,
+      or switch to snapshot mode to avoid desktop resolution altogether.
   - Multi-monitor/DPI issues:
-      • Ensure VLC is displayed on the primary monitor or move it there; GDI+ grabs the primary screen by default.
-      • Disable Windows scaling on VLC if coordinates appear offset.
+    • Ensure VLC is displayed on the primary monitor or move it there; GDI+ grabs the primary screen by default.
+    • Disable Windows scaling on VLC if coordinates appear offset.
   - Ctrl+C leaves VLC open:
-      • From v1.1.12, the script tracks VLC PIDs it launched and terminates them
-        on Ctrl+C (Console.CancelKeyPress) and on shell exit (PowerShell.Exiting).
-      • If VLC still remains, check for other VLC instances started outside the script.
-        Only PIDs launched by this script are terminated.
+    • From v1.1.12, the script tracks VLC PIDs it launched and terminates them
+      on Ctrl+C (Console.CancelKeyPress) and on shell exit (PowerShell.Exiting).
+    • If VLC still remains, check for other VLC instances started outside the script.
+      Only PIDs launched by this script are terminated.
   - Log file errors: The processed log defaults to <SaveFolder>\processed_videos.log.
     If creation or append fails (permissions/locks), the run terminates (exit 1).
   - Stale .vlc_pids_*.txt files: If previous runs crashed, you may see PID registry files 
@@ -409,18 +413,23 @@ TROUBLESHOOTING
   - Screenshots continue long after short clips: The script now enforces per-video timeouts in
     both capture modes. GDI+ mode uses deadline checking, snapshot mode uses process monitoring.
   - Very short clips exit during startup:
-      • This is normal. From v1.2.2, a clean early exit (ExitCode=0) during the startup wait is
-        treated as successful playback completion, not a start failure.
+    • This is normal. From v1.2.2, a clean early exit (ExitCode=0) during the startup wait is
+      treated as successful playback completion, not a start failure.
   - VLC snapshot cadence not exact: VLC 3.x only supports frame-count ratios, not time-based FPS.
     The script calculates the closest ratio based on detected video frame rate. For exact 
     time-based capture, use GDI+ mode instead of -UseVlcSnapshots.
   - Runtime warnings:
-      • When -UseVlcSnapshots is active, a one-time warning explains frame-ratio cadence and
-        recommends GDI+ for precise timing.
-      • When FFprobe is not found in PATH, a one-time warning explains that duration detection
-        falls back to Windows file metadata and auto-stop may be less reliable.
-      • When the optional helper module (videoscreenshot.util.psm1) is present but fails to import,
-        a warning is printed and the script uses built-in fallbacks for logging and safe file appends.
+    • When -UseVlcSnapshots is active, a one-time warning explains frame-ratio cadence and
+      recommends GDI+ for precise timing.
+    • When FFprobe is not found in PATH, a one-time warning explains that duration detection
+      falls back to Windows file metadata and auto-stop may be less reliable.
+    • When the optional helper module (videoscreenshot.util.psm1) is present but fails to import,
+      a warning is printed and the script uses built-in fallbacks for logging and safe file appends.
+  - Optional helper module not found:
+    • The script will use built-in helpers (this is normal if you didn’t add the module).
+    • To enable the module, place 'videoscreenshot.util.psm1' in the same folder as this script ($PSScriptRoot).
+    • If downloaded from the internet, run: Unblock-File -Path .\videoscreenshot.util.psm1
+    • Ensure execution policy allows module import (e.g., RemoteSigned). Details are emitted to the Debug stream.
   - Duration detection fails: Install FFmpeg (includes FFprobe) for enhanced metadata reading.
     The script tries Windows Shell properties first, then falls back to FFprobe if available.
   - VLC hangs in snapshot mode: VLC's --stop-time parameter can be unreliable in headless mode.
@@ -559,11 +568,15 @@ if (Test-Path -LiteralPath $utilModulePath) {
         Import-Module -Name $utilModulePath -Force -ErrorAction Stop | Out-Null
     } catch {
         # User-visible guidance + mirrored debug for diagnostics
-        Write-Warning -Message "Optional utilities module failed to load: $utilModulePath. Check file path, permissions, or execution policy."
-        Write-Debug "Util module import failed: $($_.Exception.Message)"
+        Write-Warning -Message ("Optional utilities module failed to load: {0}. " +
+                                "Ensure 'videoscreenshot.util.psm1' is in the same folder as this script ({1}), " +
+                                "check permissions/execution policy (try Unblock-File on the module and/or Set-ExecutionPolicy RemoteSigned), " +
+                                "then retry. Falling back to built-in helpers.") -f $utilModulePath, $PSScriptRoot
+        Write-Debug ("Util module import failed: {0}" -f $_.Exception.Message)
     }
 } else {
-    Write-Debug "Optional utilities module not found at $utilModulePath"
+    Write-Debug ("Optional utilities module not found at {0}. Using built-in helpers. " +
+                 "To enable it, place 'videoscreenshot.util.psm1' next to this script ({1}) and ensure it can be imported.") -f $utilModulePath, $PSScriptRoot
 }
 
 <#
