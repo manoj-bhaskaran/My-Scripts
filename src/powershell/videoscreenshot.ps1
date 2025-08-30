@@ -145,9 +145,13 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.32
+   1.2.33
 
 CHANGELOG
+  1.2.33
+  - Fix: Shell COM frame rate detection no longer hits a Split-Path parameter-set conflict. Replaced Split-Path with .NET path helpers; added null checks and defensive COM cleanup, with clearer debug traces.
+  - UX: Print a one-time startup banner that includes the script version (e.g., “videoscreenshot.ps1 v1.2.33 starting…”).
+
     1.2.32
   - Fix: Shell COM duration detection no longer trips a Split-Path parameter-set conflict. Replaced Split-Path usage with .NET path helpers (GetFullPath / GetDirectoryName / GetFileName).
   - Hardening: Added early null/invalid-path checks and graceful $null returns when the folder or item cannot be resolved.
@@ -431,6 +435,9 @@ param(
     [switch]$DisableAutoStop
 )
 
+# Script version constant for banner/logging
+$script:VideoScreenshotVersion = '1.2.33'
+
 # region Utilities
 
 # Try optional helper module; define fallbacks if missing so the script stays self-contained
@@ -523,6 +530,12 @@ if (-not (Get-Command Write-Message -ErrorAction SilentlyContinue)) {
         }
     }
 }
+
+# --- Startup banner (after Write-Message exists) ---
+try {
+    $mode = if ($UseVlcSnapshots) { 'VLC snapshots' } else { 'GDI+ desktop' }
+    Write-Message -Level Info -Message ("videoscreenshot.ps1 v{0} starting (Mode={1}, FPS={2}, SaveFolder=""{3}"")" -f $script:VideoScreenshotVersion, $mode, $FramesPerSecond, $SaveFolder)
+} catch { }
 
 # Generic: assert a folder is writable (moved to util module; keep fallback here)
 if (-not (Get-Command Assert-FolderWritable -ErrorAction SilentlyContinue)) {
@@ -864,32 +877,59 @@ appropriate --scene-ratio parameter for time-based frame capture approximation.
 Falls back to 30 FPS assumption if detection fails.
 #>
 function Get-VideoFps {
-    param([Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path)
+    param([Parameter(Mandatory)][string]$Path)
+
     $shell = $null
     $folder = $null
     $item = $null
     try {
+        # Normalize path via .NET helpers to avoid Split-Path parameter-set conflicts
+        try {
+            $full  = [System.IO.Path]::GetFullPath($Path)
+        } catch {
+            Write-Debug "Get-VideoFps: invalid path '$Path' – $($_.Exception.Message)"
+            return $null
+        }
+        $dir   = [System.IO.Path]::GetDirectoryName($full)
+        $leaf  = [System.IO.Path]::GetFileName($full)
+        if (-not $dir -or -not $leaf) {
+            Write-Debug "Get-VideoFps: could not resolve directory/file from '$full'"
+            return $null
+        }
+
         $shell  = New-Object -ComObject Shell.Application
-        $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
-        $item   = $folder.ParseName((Split-Path -Leaf -LiteralPath $Path))
-        
-        # Method 1: GetDetailsOf scan (works with localized headers)
+        $folder = $shell.NameSpace($dir)
+        if (-not $folder) { Write-Debug "Get-VideoFps: Shell.NameSpace failed for '$dir'"; return $null }
+
+        $item   = $folder.ParseName($leaf)
+        if (-not $item)   { Write-Debug "Get-VideoFps: folder.ParseName failed for '$leaf'"; return $null }
+
+        # Method 1: GetDetailsOf scan (works across locales)
         for ($i = 0; $i -lt 300; $i++) {
             $header = $folder.GetDetailsOf($null, $i)
             if ($header -match "Frame rate|FPS|Video frame rate|Fréquence d'images|Bildrate") {
                 $v = $folder.GetDetailsOf($item, $i)
                 if ($v -and $v.Trim()) {
                     Write-Debug "Frame rate from Shell COM column $i ($header): $v"
-                    
-                    if ($v -match "(\d+\.?\d*)\s*fps") {
-                        $fps = [double]::Parse($matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
-                        if ($fps -gt 0) { return $fps }
+
+                    # Accept "29.97 fps" / "29,97 fps"
+                    if ($v -match "(\d+[\.,]?\d*)\s*fps") {
+                        $num = $matches[1].Replace(',', '.')
+                        if ([double]::TryParse($num, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]([double]$null))) {
+                            $fps = [double]::Parse($num, [System.Globalization.CultureInfo]::InvariantCulture)
+                            if ($fps -gt 0) { return $fps }
+                        }
                     }
-                    if ($v -match "^(\d+\.?\d*)$") {
-                        $fps = [double]::Parse($matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
-                        if ($fps -gt 0) { return $fps }
+                    # Accept plain decimal "29.97" or "29,97"
+                    if ($v -match "^(\d+[\.,]?\d*)$") {
+                        $num = $matches[1].Replace(',', '.')
+                        if ([double]::TryParse($num, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]([double]$null))) {
+                            $fps = [double]::Parse($num, [System.Globalization.CultureInfo]::InvariantCulture)
+                            if ($fps -gt 0) { return $fps }
+                        }
                     }
-                    if ($v -match "(\d+)/(\d+)") {
+                    # Accept fractional notation "30000/1001"
+                    if ($v -match "^\s*(\d+)\s*/\s*(\d+)\s*$") {
                         $numerator = [double]$matches[1]
                         $denominator = [double]$matches[2]
                         if ($denominator -gt 0) {
@@ -900,24 +940,21 @@ function Get-VideoFps {
                 }
             }
         }
-        
-        # Method 2: ExtendedProperty fallback with canonical names
-        $canonicalProps = @('System.Video.FrameRate')
-        foreach ($prop in $canonicalProps) {
-            try {
-                $v = $item.ExtendedProperty($prop)
-                if ($v) {
-                    Write-Debug "Frame rate from ExtendedProperty $prop`: $v"
-                    if ($v -is [long] -or $v -is [int]) { 
-                        $fps = [double]$v / 1000.0
-                        if ($fps -gt 0) { return $fps }
-                    }
+
+        # Method 2: ExtendedProperty fallback (milliframes per second)
+        try {
+            $v = $item.ExtendedProperty('System.Video.FrameRate')
+            if ($null -ne $v) {
+                Write-Debug "Frame rate from ExtendedProperty System.Video.FrameRate: $v"
+                if ($v -is [long] -or $v -is [int]) {
+                    $fps = [double]$v / 1000.0
+                    if ($fps -gt 0) { return $fps }
                 }
-            } catch {
-                Write-Debug "ExtendedProperty $prop failed: $($_.Exception.Message)"
             }
+        } catch {
+            Write-Debug "ExtendedProperty System.Video.FrameRate failed: $($_.Exception.Message)"
         }
-        
+
         Write-Debug "No frame rate properties found via Shell COM"
         return $null
     } catch {
