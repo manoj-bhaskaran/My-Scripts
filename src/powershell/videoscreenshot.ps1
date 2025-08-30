@@ -136,9 +136,19 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.12
+  1.2.13
 
 CHANGELOG
+  1.2.13
+  - Fix: Corrected FFprobe command line argument handling (removed double-quoting issue)
+  - Fix: Replaced Windows Shell COM ExtendedProperty method with GetDetailsOf method for better compatibility
+    in both Get-VideoDurationSeconds and Get-VideoFps functions
+  - Fix: Enhanced Shell COM duration parsing to handle time format strings (HH:MM:SS)
+  - Fix: Enhanced frame rate parsing to handle multiple formats (decimal, "X fps", fractional notation)
+  - Add: Debug logging for both duration and frame rate detection processes
+  - Improvement: More robust duration detection and VLC snapshot cadence calculation across different 
+    Windows versions and file formats
+    
   1.2.12
   - Fix: Enhanced duration detection with multiple fallback methods for improved file compatibility
   - Add: FFprobe fallback for duration detection when Windows Shell COM properties unavailable  
@@ -587,6 +597,18 @@ function Save-FrameWithRetry {
     }
 }
 
+<#
+.SYNOPSIS
+Get video duration using Windows Shell COM GetDetailsOf method.
+
+.DESCRIPTION
+Searches through Windows Shell property columns to find duration information.
+Parses various time formats including HH:MM:SS strings. This method works
+better than ExtendedProperty on some Windows versions and file types.
+
+.PARAMETER Path
+Full path to the video file.
+#>
 function Get-VideoDurationViaShell {
     param([Parameter(Mandatory)][string]$Path)
     try {
@@ -594,14 +616,22 @@ function Get-VideoDurationViaShell {
         $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
         $item   = $folder.ParseName((Split-Path -Leaf -LiteralPath $Path))
         
-        # Try multiple duration properties
-        $properties = @('System.Media.Duration', 'Duration', 'System.Video.Duration')
-        foreach ($prop in $properties) {
-            $v = $item.ExtendedProperty($prop)
-            if ($v) {
-                Write-Debug "Duration from $prop`: $v"
-                if ($v -is [string] -and $v.Trim()) { return [TimeSpan]::Parse($v).TotalSeconds }
-                if ($v -is [long] -or $v -is [int]) { return [double]$v / 10000000.0 }
+        # Fix: Use GetDetailsOf method instead of ExtendedProperty
+        # First, find the duration column index
+        for ($i = 0; $i -lt 500; $i++) {
+            $header = $folder.GetDetailsOf($null, $i)
+            if ($header -match "Length|Duration") {
+                $v = $folder.GetDetailsOf($item, $i)
+                if ($v -and $v.Trim()) {
+                    Write-Debug "Duration from Shell COM column $i ($header): $v"
+                    # Try parsing as time format (e.g., "00:00:17")
+                    if ($v -match "(\d{1,2}):(\d{2}):(\d{2})") {
+                        $hours = [int]$matches[1]
+                        $minutes = [int]$matches[2] 
+                        $seconds = [int]$matches[3]
+                        return ($hours * 3600) + ($minutes * 60) + $seconds
+                    }
+                }
             }
         }
         
@@ -613,6 +643,18 @@ function Get-VideoDurationViaShell {
     }
 }
 
+<#
+.SYNOPSIS
+Get video duration using FFprobe command line tool.
+
+.DESCRIPTION
+Uses FFprobe (part of FFmpeg) to extract duration metadata directly from
+the video file. Requires FFprobe to be installed and available in PATH.
+Provides reliable duration detection for files with non-standard metadata.
+
+.PARAMETER Path
+Full path to the video file.
+#>
 function Get-VideoDurationViaFFprobe {
     param([Parameter(Mandatory)][string]$Path)
     try {
@@ -623,9 +665,10 @@ function Get-VideoDurationViaFFprobe {
         }
         
         Write-Debug "Trying FFprobe for duration detection"
-        $result = & ffprobe -v quiet -show_entries format=duration -of csv=p=0 "`"$Path`"" 2>$null
-        if ($result -and $result.Trim()) {
-            $duration = [double]::Parse($result.Trim())
+        # Fix: Remove extra quotes - PowerShell handles the path quoting
+        $result = & ffprobe -v quiet -show_entries format=duration -of csv=p=0 $Path 2>$null
+        if ($result -and $result.ToString().Trim()) {
+            $duration = [double]::Parse($result.ToString().Trim())
             Write-Debug "Duration from FFprobe: $duration sec"
             return $duration
         }
@@ -640,7 +683,18 @@ function Get-VideoDurationViaFFprobe {
 
 <#
 .SYNOPSIS
-Return video duration in seconds using Windows property (if available).
+Return video duration in seconds using multiple detection methods.
+
+.DESCRIPTION
+Attempts to detect video duration using Windows Shell COM properties first,
+then falls back to FFprobe if available. Supports various metadata formats
+and time string parsing for maximum file compatibility.
+
+.PARAMETER Path
+Full path to the video file.
+
+.EXAMPLE
+$duration = Get-VideoDurationSeconds -Path 'C:\video.mp4'
 #>
 function Get-VideoDurationSeconds {
     param([Parameter(Mandatory)][string]$Path)
@@ -657,17 +711,67 @@ function Get-VideoDurationSeconds {
     return $null
 }
 
+<#
+.SYNOPSIS
+Get video frame rate using Windows Shell COM GetDetailsOf method.
+
+.DESCRIPTION
+Searches through Windows Shell property columns to find frame rate information.
+Handles various frame rate formats including decimal values and fractions.
+Uses the same GetDetailsOf approach as duration detection for better compatibility.
+
+.PARAMETER Path
+Full path to the video file.
+
+.EXAMPLE
+$fps = Get-VideoFps -Path 'C:\video.mp4'
+if ($fps) { Write-Host "Video runs at $fps FPS" }
+#>
 function Get-VideoFps {
     param([Parameter(Mandatory)][string]$Path)
     try {
         $shell  = New-Object -ComObject Shell.Application
         $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
         $item   = $folder.ParseName((Split-Path -Leaf -LiteralPath $Path))
-        $v = $item.ExtendedProperty('System.Video.FrameRate')  # 1000 * fps
-        if ($null -eq $v) { return $null }
-        $fps = [double]$v / 1000.0
-        if ($fps -gt 0) { return $fps } else { return $null }
-    } catch { return $null }
+        
+        # Search through Shell property columns for frame rate information
+        for ($i = 0; $i -lt 500; $i++) {
+            $header = $folder.GetDetailsOf($null, $i)
+            if ($header -match "Frame rate|FPS|Video frame rate") {
+                $v = $folder.GetDetailsOf($item, $i)
+                if ($v -and $v.Trim()) {
+                    Write-Debug "Frame rate from Shell COM column $i ($header): $v"
+                    
+                    # Handle various formats
+                    # Format: "29.97 fps" or "30 fps"
+                    if ($v -match "(\d+\.?\d*)\s*fps") {
+                        $fps = [double]$matches[1]
+                        if ($fps -gt 0) { return $fps }
+                    }
+                    # Format: "29.97" or "30"
+                    if ($v -match "^(\d+\.?\d*)$") {
+                        $fps = [double]$matches[1]
+                        if ($fps -gt 0) { return $fps }
+                    }
+                    # Format: "30000/1001" (fractional)
+                    if ($v -match "(\d+)/(\d+)") {
+                        $numerator = [double]$matches[1]
+                        $denominator = [double]$matches[2]
+                        if ($denominator -gt 0) {
+                            $fps = $numerator / $denominator
+                            if ($fps -gt 0) { return $fps }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Write-Debug "No frame rate properties found via Shell COM"
+        return $null
+    } catch {
+        Write-Debug "Shell COM frame rate detection failed: $($_.Exception.Message)"
+        return $null
+    }
 }
 
 # endregion Utilities
