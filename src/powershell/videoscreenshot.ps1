@@ -136,9 +136,16 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.10
+  1.2.11
 
 CHANGELOG
+  1.2.11
+  - Add: Comprehensive debug logging for duration detection, grace period calculation, and auto-stop logic
+  - Add: Debug messages for VLC startup timing, early exit detection, and stop-time parameter configuration  
+  - Add: Debug output for per-video deadline enforcement in GDI+ capture mode
+  - Add: Video processing summary debug information showing exit codes, timing, and frame counts
+  - Improvement: Enhanced diagnostic visibility for testing and troubleshooting auto-stop functionality
+
   1.2.10
   - Fix: Corrected Get-ChildItem calls using -LiteralPath with filters to use -Path instead,
     ensuring -Filter and -Include work reliably across PowerShell versions
@@ -660,7 +667,11 @@ function Start-Vlc {
     $vlcargs = @("`"$VideoPath`"")
 
     if ($StopAtSeconds -gt 0) {
-        $vlcargs += @('--stop-time', [string]([int][Math]::Round($StopAtSeconds)))
+        $roundedStop = [int][Math]::Round($StopAtSeconds)
+        $vlcargs += @('--stop-time', [string]$roundedStop)
+        Write-Debug "VLC will be configured with --stop-time=$roundedStop (from stopAt=$StopAtSeconds)"
+    } else {
+        Write-Debug "No --stop-time parameter (stopAt=$StopAtSeconds)"
     }
 
     if ($UseVlcSnapshots) {
@@ -712,10 +723,12 @@ function Start-Vlc {
 
     if ($p.HasExited) {
         $stderr = $p.StandardError.ReadToEnd()
+        $exitTime = (Get-Date) - $startTime  # Add $startTime = Get-Date before the startup loop
         if ($p.ExitCode -eq 0) {
-            Write-Debug "VLC exited cleanly during startup window (short clip)."
-            return $p  # treat as success; downstream checks verify frames
+            Write-Debug "VLC exited cleanly during startup window (short clip). ExitCode=0, elapsed=$($exitTime.TotalSeconds) sec"
+            return $p
         }
+        Write-Debug "VLC failed during startup. ExitCode=$($p.ExitCode), elapsed=$($exitTime.TotalSeconds) sec"
         if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "VLC stderr: $stderr" }
         Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderr"
         return $null
@@ -1015,7 +1028,14 @@ foreach ($video in $videos) {
         $stopAt = 0
         if (-not $DisableAutoStop) {
             $dur = Get-VideoDurationSeconds -Path $video.FullName
-            if ($dur -and $dur -gt 0) { $stopAt = [double]$dur + [double]$AutoStopGraceSeconds }
+            if ($dur -and $dur -gt 0) { 
+                $stopAt = [double]$dur + [double]$AutoStopGraceSeconds 
+                Write-Debug "Duration detection: raw=$dur sec, grace=$AutoStopGraceSeconds sec, stopAt=$stopAt sec"
+            } else {
+                Write-Debug "Duration detection: unable to detect duration, no auto-stop will be applied"
+            }
+        } else {
+            Write-Debug "Auto-stop disabled via -DisableAutoStop parameter"
         }
         
         $vlc = Start-Vlc -VideoPath $video.FullName -SaveFolder $SaveFolder `
@@ -1037,12 +1057,19 @@ foreach ($video in $videos) {
 
             # Add per-video deadline for GDI+ capture
             $perVideoDeadline = if ($stopAt -gt 0) { (Get-Date).AddSeconds($stopAt) } else { $null }
+            if ($perVideoDeadline) {
+                Write-Debug "GDI+ capture: per-video deadline set to $($perVideoDeadline.ToString('HH:mm:ss'))"
+            } else {
+                Write-Debug "GDI+ capture: no per-video deadline (unlimited capture)"
+            }
 
             while (-not $vlc.HasExited) {
 
                 # Check per-video deadline in GDI+ capture loop
                 if ($perVideoDeadline -and (Get-Date) -ge $perVideoDeadline) {
-                    Write-Debug "Per-video time limit reached for: $($video.FullName)"
+                    $elapsed = (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds  # Add $videoStartTime = Get-Date at video start
+                    Write-Debug "Per-video deadline reached after $elapsed seconds of capture"
+                    Write-Message -Level Info -Message "Per-video time limit reached for: $($video.FullName)"
                     break
                 }
                 $filename = ('{0}_{1:D6}.png' -f $videoBase, $frameIndex) # avoid cross-video collisions
@@ -1099,6 +1126,10 @@ foreach ($video in $videos) {
     # - evidence of frames saved (hadFrames)
     $ok = (-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames
 
+    # At the end of video processing, before the $ok evaluation:
+    $vlcExit = if ($vlc) { $vlc.ExitCode } else { -1 }
+    $processingTime = if ($videoStartTime) { (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds } else { 0 }
+    Write-Debug "Video processing complete: ExitCode=$vlcExit, processingTime=$processingTime sec, frames=$savedThisRun (GDI+) or $($postCount-$preCount) (snapshots), hadErrors=$errorDuringCapture"
     if ($ok) {
         if (Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName) {
             Write-Message -Level Info -Message "Marked processed: $($video.FullName)"
