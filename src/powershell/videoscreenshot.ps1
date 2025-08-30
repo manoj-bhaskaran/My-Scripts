@@ -145,9 +145,15 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.21
+   1.2.22
 
 CHANGELOG
+   1.2.22
+   - Refactor: Extracted mode-specific capture into Invoke-GdiCapture and Invoke-SnapshotCapture to simplify the main loop.
+   - Modularization: Added optional videoscreenshot.util.psm1 providing Write-Message and Add-ContentWithRetry; script auto-imports it if present and falls back to inline helpers.
+   - Observability: Snapshot mode now emits a user-visible warning when achieved FPS deviates ≥20% from requested; precise achieved FPS still logged in debug.
+   - Docs: .TROUBLESHOOTING expanded with runtime warning explanations and a concrete frame-ratio example (expected vs. actual frames).
+ 
   1.2.21
   - Refactor: Start-Vlc now orchestrates helper functions and delegates process launch to Invoke-VlcProcess.
     Introduced Register-RunPid/Unregister-RunPid to centralize PID registry updates.
@@ -411,6 +417,14 @@ TROUBLESHOOTING
     Each run uses a unique PID registry file (.vlc_pids_<guid>.txt) to avoid VLC process conflicts.
   - Memory usage with many videos: COM object cleanup is now properly implemented to prevent 
     memory accumulation during large batch processing operations.
+  - Users may see the following runtime warnings/messages during execution:
+      • "Snapshot mode uses frame-count ratio..." when -UseVlcSnapshots is set (reminder that cadence is ratio-based).
+      • "FFprobe not found in PATH..." when ffprobe is missing (duration detection fallback; auto-stop may be less reliable).
+      • "Snapshot cadence deviates by NN%..." if achieved FPS differs ≥20% from requested (helps non-debug users spot inaccuracies).
+  - Example (frame-ratio impact):
+      • Requested 5 FPS on a 24 FPS source → best 1/N ratio ≈ 1/5 → ~4.8 FPS.
+      • 50-second clip → expected frames at 5 FPS = 250; actual ≈ 240. This is normal for snapshot mode.
+      • For exact time-based cadence, use GDI+ instead of -UseVlcSnapshots.
 
 FAQS
   Q: No frames were captured—what should I check?
@@ -520,9 +534,15 @@ param(
 
 # region Utilities
 
-<#
-.SYNOPSIS
-Append to a file with limited retries to absorb transient locks.
+ # Try optional helper module; define fallbacks if missing so the script stays self-contained
+ $utilModulePath = Join-Path $PSScriptRoot 'videoscreenshot.util.psm1'
+ if (Test-Path -LiteralPath $utilModulePath) {
+     try { Import-Module -LiteralPath $utilModulePath -Force -ErrorAction Stop | Out-Null } catch { Write-Debug "Util module import failed: $($_.Exception.Message)" }
+ }
+ 
+ <#
+ .SYNOPSIS
+ Append to a file with limited retries to absorb transient locks.
 .DESCRIPTION
 Attempts Add-Content up to MaxAttempts with a simple linear backoff. Returns
 $true on success, $false if all attempts fail.
@@ -535,29 +555,31 @@ Maximum attempts (default 3).
 .EXAMPLE
 Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName
 #>
-function Add-ContentWithRetry {
-    param(
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$Value,
-        [int]$MaxAttempts = 3
-    )
-    for ($i=1; $i -le $MaxAttempts; $i++) {
-        try {
-            $newline = [Environment]::NewLine
-            $bytes   = [System.Text.Encoding]::UTF8.GetBytes($Value + $newline)
-            $fs = [System.IO.File]::Open($Path,
-                [System.IO.FileMode]::Append,
-                [System.IO.FileAccess]::Write,
-                [System.IO.FileShare]::None) # exclusive append to avoid interleaving
-            $fs.Write($bytes, 0, $bytes.Length)
-            $fs.Close()
-            return $true
-        } catch {
-            if ($i -eq $MaxAttempts) {
-                Write-Message -Level Error -Message "Failed to append to ${Path}: $($_.Exception.Message)"
-                return $false
+if (-not (Get-Command Add-ContentWithRetry -ErrorAction SilentlyContinue)) {
+    function Add-ContentWithRetry {
+        param(
+            [Parameter(Mandatory)][string]$Path,
+            [Parameter(Mandatory)][string]$Value,
+            [int]$MaxAttempts = 3
+        )
+        for ($i=1; $i -le $MaxAttempts; $i++) {
+            try {
+                $newline = [Environment]::NewLine
+                $bytes   = [System.Text.Encoding]::UTF8.GetBytes($Value + $newline)
+                $fs = [System.IO.File]::Open($Path,
+                    [System.IO.FileMode]::Append,
+                    [System.IO.FileAccess]::Write,
+                    [System.IO.FileShare]::None) # exclusive append to avoid interleaving
+                $fs.Write($bytes, 0, $bytes.Length)
+                $fs.Close()
+                return $true
+            } catch {
+                if ($i -eq $MaxAttempts) {
+                    Write-Message -Level Error -Message "Failed to append to ${Path}: $($_.Exception.Message)"
+                    return $false
+                }
+                Start-Sleep -Milliseconds (200 * $i) # linear backoff
             }
-            Start-Sleep -Milliseconds (200 * $i) # linear backoff
         }
     }
 }
@@ -574,17 +596,19 @@ Message text.
 .EXAMPLE
 Write-Message -Level Info -Message "Starting capture..."
 #>
-function Write-Message {
-    param(
-        [ValidateSet('Info','Warn','Error')]
-        [string]$Level = 'Info',
-        [Parameter(Mandatory)][string]$Message
-    )
-    $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-    switch ($Level) {
-        'Info'  { Write-Host "[$ts] [INFO ] $Message" -ForegroundColor Cyan }
-        'Warn'  { Write-Host "[$ts] [WARN ] $Message" -ForegroundColor Yellow }
-        'Error' { Write-Host "[$ts] [ERROR] $Message" -ForegroundColor Red }
+if (-not (Get-Command Write-Message -ErrorAction SilentlyContinue)) {
+    function Write-Message {
+        param(
+            [ValidateSet('Info','Warn','Error')]
+            [string]$Level = 'Info',
+            [Parameter(Mandatory)][string]$Message
+        )
+        $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        switch ($Level) {
+            'Info'  { Write-Host "[$ts] [INFO ] $Message" -ForegroundColor Cyan }
+            'Warn'  { Write-Host "[$ts] [WARN ] $Message" -ForegroundColor Yellow }
+            'Error' { Write-Host "[$ts] [ERROR] $Message" -ForegroundColor Red }
+        }
     }
 }
 
@@ -631,12 +655,12 @@ if ($PSBoundParameters.ContainsKey('Debug')) { $DebugPreference = 'Continue' }
 
 # One-time visibility note for snapshot cadence approximation
 if ($UseVlcSnapshots) {
-    Write-Warning -Message "Snapshot mode uses frame-count ratio approximation (1/N frames) derived from video FPS; exact N FPS is not guaranteed. For precise time-based cadence, use GDI+ mode."
+    Write-Message -Level Warn -Message "Snapshot mode uses frame-count ratio approximation (1/N frames) derived from video FPS; exact N FPS is not guaranteed. For precise time-based cadence, use GDI+ mode."
 }
 
 # FFprobe presence note (duration fallback clarity)
 if (-not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
-    Write-Warning -Message "FFprobe not found in PATH. Duration detection will rely on Windows file metadata; auto-stop may be less reliable for some formats. Install FFmpeg (ffprobe) and ensure it’s on PATH for best results."
+    Write-Message -Level Warn -Message "FFprobe not found in PATH. Duration detection will rely on Windows file metadata; auto-stop may be less reliable for some formats. Install FFmpeg (ffprobe) and ensure it’s on PATH for best results."
 }
 
 Add-Type -AssemblyName System.Drawing | Out-Null
@@ -929,6 +953,136 @@ function Get-VideoFps {
 # endregion Utilities
 
 # region Capture helpers
+
+<#
+.SYNOPSIS
+Perform GDI+ (desktop) capture until VLC exits or a per-video deadline is reached.
+.DESCRIPTION
+Uses a monotonic stopwatch scheduler to reduce drift from PNG saves. Returns frame
+count, elapsed seconds, error state, and achieved FPS (logged in debug).
+.PARAMETER Process
+The VLC process to monitor.
+.PARAMETER SaveFolder
+Where PNGs are written.
+.PARAMETER VideoBaseName
+Prefix for frame filenames (<VideoBaseName>_######.png).
+.PARAMETER IntervalMs
+Desired interval between frames in milliseconds.
+.PARAMETER Legacy1080p
+If set, captures a fixed 1920x1080 region (legacy behavior).
+.PARAMETER PerVideoDeadline
+Optional deadline time; capture stops when reached.
+.OUTPUTS
+PSCustomObject with FramesSaved, ElapsedSeconds, HadError, AchievedFps.
+#>
+function Invoke-GdiCapture {
+    param(
+        [Parameter(Mandatory)][System.Diagnostics.Process]$Process,
+        [Parameter(Mandatory)][string]$SaveFolder,
+        [Parameter(Mandatory)][string]$VideoBaseName,
+        [Parameter(Mandatory)][int]$IntervalMs,
+        [switch]$Legacy1080p,
+        [datetime]$PerVideoDeadline
+    )
+    $frameIndex = 0
+    $savedThisRun = 0
+    $hadError = $false
+
+    $fpsSw = [System.Diagnostics.Stopwatch]::StartNew()
+    $sw    = [System.Diagnostics.Stopwatch]::StartNew()
+    $next  = $sw.ElapsedMilliseconds  # capture first frame immediately
+
+    while (-not $Process.HasExited) {
+        if ($PerVideoDeadline -and (Get-Date) -ge $PerVideoDeadline) {
+            $elapsed = $fpsSw.Elapsed.TotalSeconds
+            Write-Debug "Per-video deadline reached after $elapsed seconds of capture"
+            break
+        }
+
+        $filename = ('{0}_{1:D6}.png' -f $VideoBaseName, $frameIndex)
+        $target   = Join-Path $SaveFolder $filename
+
+        $okSave = if ($Legacy1080p) {
+            Save-FrameWithRetry -TargetPath $target -Width 1920 -Height 1080
+        } else {
+            Save-FrameWithRetry -TargetPath $target
+        }
+
+        if ($okSave) {
+            if ($frameIndex -eq 0) { Write-Debug "First frame saved: $target" }
+            $frameIndex++
+            $savedThisRun++
+        } else {
+            $hadError = $true
+        }
+        $next += $IntervalMs
+        $sleep = [int]($next - $sw.ElapsedMilliseconds)
+        if ($sleep -gt 0) { Start-Sleep -Milliseconds $sleep }
+    }
+
+    $fpsSw.Stop()
+    $sw.Stop()
+    $elapsedSec  = [Math]::Max(0.001, $fpsSw.Elapsed.TotalSeconds)
+    $achievedFps = [Math]::Round($savedThisRun / $elapsedSec, 3)
+    Write-Debug "GDI+ achieved FPS: $achievedFps (frames=$savedThisRun, elapsed=${elapsedSec}s)"
+
+    [pscustomobject]@{
+        FramesSaved    = $savedThisRun
+        ElapsedSeconds = $elapsedSec
+        HadError       = $hadError
+        AchievedFps    = $achievedFps
+    }
+}
+
+<#
+.SYNOPSIS
+Perform snapshot-mode (VLC scene filter) monitoring until exit or timeout.
+.DESCRIPTION
+Waits for the VLC process to finish, enforcing a max wait derived from StopAtSeconds
+(+5s) or 300s fallback. Returns elapsed seconds and whether a timeout occurred.
+.PARAMETER Process
+The VLC process to monitor.
+.PARAMETER StopAtSeconds
+Optional content duration + grace; when set, max wait = StopAtSeconds + 5s.
+.OUTPUTS
+PSCustomObject with ElapsedSeconds and TimedOut.
+#>
+function Invoke-SnapshotCapture {
+    param(
+        [Parameter(Mandatory)][System.Diagnostics.Process]$Process,
+        [double]$StopAtSeconds = 0
+    )
+    $processStart = Get-Date
+    $maxWait = if ($StopAtSeconds -gt 0) { $StopAtSeconds + 5 } else { 300 }
+    Write-Debug "Snapshot mode: monitoring VLC process (max wait: $maxWait sec)"
+
+    $timedOut = $false
+    while (-not $Process.HasExited) {
+        Start-Sleep -Milliseconds 200
+        $elapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
+        if ($elapsed -ge $maxWait) {
+            Write-Debug "VLC process timeout reached ($elapsed sec), force terminating"
+            Write-Message -Level Warn -Message "VLC timeout reached after $([int]$elapsed)s; terminating process."
+            try {
+                Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+                Wait-Process -Id $Process.Id -Timeout 3000 -ErrorAction SilentlyContinue
+                $Process.Refresh()
+                Write-Debug "Process termination completed"
+            } catch {
+                Write-Debug "Error during process termination: $($_.Exception.Message)"
+            }
+            $timedOut = $true
+            break
+        }
+    }
+
+    $finalElapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
+    Write-Debug "VLC process completed after $finalElapsed seconds"
+    [pscustomobject]@{
+        ElapsedSeconds = [Math]::Max(0.001, $finalElapsed)
+        TimedOut       = $timedOut
+    }
+}
 <#
 .SYNOPSIS
 Builds VLC command-line switches common to all modes.
@@ -1483,7 +1637,6 @@ foreach ($video in $videos) {
     $videoStartTime = Get-Date
     $vlc = $null
     $errorDuringCapture = $false
-    $savedThisRun = 0
     $hadFrames = $false
     $preCount = 0
     $scenePrefixForThisVideo = ([IO.Path]::GetFileNameWithoutExtension($video.FullName)) + '_'
@@ -1520,79 +1673,18 @@ foreach ($video in $videos) {
         }
 
         if ($UseVlcSnapshots) {
-            $processStart = Get-Date
-            $maxWait = if ($stopAt -gt 0) { $stopAt + 5 } else { 300 }
-            Write-Debug "Snapshot mode: monitoring VLC process (max wait: $maxWait sec)"
-            
-            while (-not $vlc.HasExited) {
-                Start-Sleep -Milliseconds 200
-                $elapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
-                if ($elapsed -ge $maxWait) {
-                    Write-Debug "VLC process timeout reached ($elapsed sec), force terminating"
-                    Write-Message -Level Warn -Message "VLC timeout reached after $([int]$elapsed)s, terminating process for: $($video.FullName)"
-                    try {
-                        Stop-Process -Id $vlc.Id -Force -ErrorAction SilentlyContinue
-                        # Wait for process to actually terminate
-                        Wait-Process -Id $vlc.Id -Timeout 3000 -ErrorAction SilentlyContinue
-                        $vlc.Refresh()
-                        Write-Debug "Process termination completed"
-                    } catch {
-                        Write-Debug "Error during process termination: $($_.Exception.Message)"
-                    }
-                    break
-                }
-            }
-            
-            $finalElapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
-            Write-Debug "VLC process completed after $finalElapsed seconds"
+            $snapResult = Invoke-SnapshotCapture -Process $vlc -StopAtSeconds $stopAt
         } else {
-            $frameIndex = 0
-            $fpsSw = [System.Diagnostics.Stopwatch]::StartNew()
-            $videoBase  = [IO.Path]::GetFileNameWithoutExtension($video.Name)
-            
+            $videoBase = [IO.Path]::GetFileNameWithoutExtension($video.Name)
             $perVideoDeadline = if ($stopAt -gt 0) { (Get-Date).AddSeconds($stopAt) } else { $null }
             if ($perVideoDeadline) {
                 Write-Debug "GDI+ capture: per-video deadline set to $($perVideoDeadline.ToString('HH:mm:ss'))"
             } else {
                 Write-Debug "GDI+ capture: no per-video deadline (unlimited capture)"
             }
-
-            # Monotonic cadence to reduce timing drift from PNG writes
-            $sw   = [System.Diagnostics.Stopwatch]::StartNew()
-            $next = $sw.ElapsedMilliseconds  # capture first frame immediately
-            while (-not $vlc.HasExited) {
-                if ($perVideoDeadline -and (Get-Date) -ge $perVideoDeadline) {
-                    $elapsed = (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds
-                    Write-Debug "Per-video deadline reached after $elapsed seconds of capture"
-                    Write-Message -Level Info -Message "Per-video time limit reached for: $($video.FullName)"
-                    break
-                }
-                
-                $filename = ('{0}_{1:D6}.png' -f $videoBase, $frameIndex)
-                $target   = Join-Path $SaveFolder $filename
-
-                $okSave = if ($Legacy1080p) {
-                    Save-FrameWithRetry -TargetPath $target -Width 1920 -Height 1080
-                } else {
-                    Save-FrameWithRetry -TargetPath $target
-                }
-
-                if ($okSave) {
-                    if ($frameIndex -eq 0) { Write-Debug "First frame saved: $target" }
-                    $frameIndex++
-                    $savedThisRun++
-                } else {
-                    $errorDuringCapture = $true
-                }
-                $next += $intervalMs
-                $sleep = [int]($next - $sw.ElapsedMilliseconds)
-                if ($sleep -gt 0) { Start-Sleep -Milliseconds $sleep }
-            }
-            $fpsSw.Stop()
-            $elapsedSec = [Math]::Max(0.001, $fpsSw.Elapsed.TotalSeconds)
-            $achievedFps = [Math]::Round($savedThisRun / $elapsedSec, 3)
-            Write-Debug "GDI+ achieved FPS: $achievedFps (requested=$FramesPerSecond, frames=$savedThisRun, elapsed=${elapsedSec}s)"
-            $sw.Stop()
+            $gdiResult = Invoke-GdiCapture -Process $vlc -SaveFolder $SaveFolder -VideoBaseName $videoBase `
+                                          -IntervalMs $intervalMs -Legacy1080p:$Legacy1080p -PerVideoDeadline $perVideoDeadline
+            $errorDuringCapture = $gdiResult.HadError
         }
     }
     catch {
@@ -1622,14 +1714,22 @@ foreach ($video in $videos) {
         $hadFrames = ($postCount -gt $preCount)
         $framesDelta = $postCount - $preCount
     } else {
-        $hadFrames = ($savedThisRun -gt 0)
-        $framesDelta = $savedThisRun
+        $framesSaved = if ($null -ne $gdiResult) { [int]$gdiResult.FramesSaved } else { 0 }
+        $hadFrames   = ($framesSaved -gt 0)
+        $framesDelta = $framesSaved
     }
 
-    # Snapshot achieved FPS (diagnostic)
-    if ($UseVlcSnapshots -and $finalElapsed -and $finalElapsed -gt 0) {
-        $snapFps = [Math]::Round([double]$framesDelta / [double]$finalElapsed, 3)
-        Write-Debug "Snapshot achieved FPS: $snapFps (requested=$FramesPerSecond, frames=$framesDelta, elapsed=$([Math]::Round($finalElapsed,3))s)"
+    # Snapshot achieved FPS: always compute; warn non-debug users if deviation >= 20%
+    if ($UseVlcSnapshots -and $hadFrames -and $snapResult) {
+        $snapElapsed = $snapResult.ElapsedSeconds
+        $achieved = if ($snapElapsed -gt 0) { [Math]::Round($framesDelta / $snapElapsed, 3) } else { 0 }
+        Write-Debug "Snapshot achieved FPS: $achieved (requested=$FramesPerSecond, frames=$framesDelta, elapsed=${snapElapsed}s)"
+        if ($FramesPerSecond -gt 0) {
+            $dev = [Math]::Abs($achieved - $FramesPerSecond) / [double]$FramesPerSecond
+            if ($dev -ge 0.20) {
+                Write-Message -Level Warn -Message ("Snapshot cadence deviates by {0:P0} from requested FPS (requested={1}, achieved={2}) for: {3}" -f $dev, $FramesPerSecond, $achieved, $video.FullName)
+            }
+        }
     }
 
     # Unified debug output that works for both modes
@@ -1649,7 +1749,8 @@ foreach ($video in $videos) {
     } else {
         # Provide specific feedback for timeout cases
         if ($UseVlcSnapshots -and $vlcExit -ne 0 -and -not $hadFrames) {
-            Write-Message -Level Warn -Message "Video timed out after $([int]$finalElapsed)s; not marking as processed: $($video.FullName)"
+            $elapsedForMsg = if ($snapResult) { [int]$snapResult.ElapsedSeconds } else { 0 }
+            Write-Message -Level Warn -Message "Video timed out after ${elapsedForMsg}s; not marking as processed: $($video.FullName)"
         } elseif (-not $hadFrames) {
             Write-Message -Level Warn -Message "No frames captured; not marking as processed: $($video.FullName)"
         } else {
