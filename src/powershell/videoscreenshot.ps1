@@ -145,9 +145,14 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.28
+   1.2.29
 
 CHANGELOG
+  1.2.29
+  - Robustness: Improved Python version detection to handle non-English locales by parsing
+    version components systematically instead of using locale-dependent regex patterns.
+  - Security: Replaced string-based argument concatenation with array-based arguments in 
+    Invoke-Python and Invoke-Cropper to prevent potential argument injection.
   1.2.28
   - Logging: Removed duplicate INFO messages. Write-Message (Info) now routes to a single native
     stream: Write-Information when available, with a Host fallback only if Information isn’t supported.
@@ -1517,10 +1522,10 @@ function Confirm-PythonModules {
     param()
     # Helper to run a python command and capture output
     function Invoke-Python {
-        param([Parameter(Mandatory)][string]$Arguments)
+        param([Parameter(Mandatory)][string[]]$Arguments)
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = 'python'
-        $psi.Arguments = $Arguments
+        foreach ($arg in $Arguments) { $psi.ArgumentList.Add($arg) }
         $psi.UseShellExecute = $false
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError  = $true
@@ -1535,7 +1540,7 @@ function Confirm-PythonModules {
     }
 
     $checkCode = 'import importlib,sys;mods=["numpy","cv2"];missing=[m for m in mods if importlib.util.find_spec(m) is None];print(",".join(missing))'
-    $check = Invoke-Python -Arguments ("-c ""$checkCode""")
+    $check = Invoke-Python -Arguments @('-c', $checkCode)
     if ($check.Code -ne 0) {
         Write-Debug "Module check failed: $($check.Err)"
         # If python itself can't run the check, bail early.
@@ -1553,10 +1558,10 @@ function Confirm-PythonModules {
     Write-Message -Level Info -Message ("Missing Python modules: {0}. Attempting auto-install..." -f ($missing -join ', '))
 
     # Ensure pip exists
-    $pipCheck = Invoke-Python -Arguments "-m pip --version"
+    $pipCheck = Invoke-Python -Arguments @('-m', 'pip', '--version')
     if ($pipCheck.Code -ne 0) {
         Write-Debug "pip not available; attempting ensurepip. stderr: $($pipCheck.Err)"
-        $ensure = Invoke-Python -Arguments "-m ensurepip --default-pip"
+        $ensure = Invoke-Python -Arguments @('-m', 'ensurepip', '--default-pip')
         if ($ensure.Code -ne 0) {
             Write-Message -Level Error -Message ("Unable to bootstrap pip (ensurepip failed). stderr: {0}" -f $ensure.Err)
             return $false
@@ -1574,8 +1579,7 @@ function Confirm-PythonModules {
         return $false
     }
 
-    $installArgs = "-m pip install --disable-pip-version-check " + ($packages -join ' ')
-    Write-Debug "Installing Python packages: $installArgs"
+    $installArgs = @('-m', 'pip', 'install', '--disable-pip-version-check') + $packages
     $install = Invoke-Python -Arguments $installArgs
     if ($install.Code -ne 0) {
         Write-Message -Level Error -Message ("pip install failed. stderr: {0}" -f $install.Err)
@@ -1583,7 +1587,7 @@ function Confirm-PythonModules {
     }
 
     # Recheck
-    $recheck = Invoke-Python -Arguments ("-c ""$checkCode""")
+    $recheck = Invoke-Python -Arguments @('-c', $checkCode)
     if ($recheck.Code -ne 0) {
         Write-Message -Level Error -Message ("Module re-check failed after install. stderr: {0}" -f $recheck.Err)
         return $false
@@ -1630,8 +1634,16 @@ function Invoke-Cropper {
         [string]$ResumeFile
     )
 
-    $pv = (& python --version) 2>&1
-    if ($pv -notmatch '^Python 3\.(9|[1-9][0-9])\.') {
+    try {
+        $versionResult = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>$null
+        $versionParts = $versionResult.ToString().Trim() -split '\.'
+        $major = [int]$versionParts[0]
+        $minor = [int]$versionParts[1]
+        if ($major -ne 3 -or $minor -lt 9) {
+            throw "Insufficient version: Python $major.$minor detected"
+        }
+    } catch {
+        $pv = (& python --version) 2>&1
         throw "Python 3.9+ required (found: $pv). Install Python ≥3.9 and ensure 'python' is on PATH."
     }
 
@@ -1662,8 +1674,8 @@ function Invoke-Cropper {
     }
 
     $pyArgs = @(
-        "`"$PythonScriptPath`"",
-        '--input', "`"$SaveFolder`"",
+        $PythonScriptPath,
+        '--input', $SaveFolder,
         '--skip-bad-images',
         '--allow-empty',
         '--recurse'
@@ -1673,7 +1685,7 @@ function Invoke-Cropper {
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = 'python'
-    $psi.Arguments = ($pyArgs -join ' ')
+    foreach ($arg in $pyArgs) { $psi.ArgumentList.Add($arg) }
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
