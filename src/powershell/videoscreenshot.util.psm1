@@ -8,8 +8,11 @@ Versioning and changelog are tracked by the main script/release tags.
 
 .NOTES
 Author: Manoj Bhaskaran
-Streams: Warn/Error go to native streams (Write-Warning / Write-Error).
-Info is sent to Information stream (when enabled) and to host for visibility.
+Streams & compatibility:
+- Info → Information stream (when enabled). A try/catch wraps Write-Information for
+  older hosts; we also echo to the host for visibility.
+- Warn/Error → native streams (Write-Warning / Write-Error) and mirrored to the Debug
+  stream to aid troubleshooting when -Debug is enabled.
 #>
 
 function Write-Message {
@@ -29,8 +32,8 @@ function Write-Message {
     $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     $prefixed = "[$ts] [$($Level.ToUpper().PadRight(5))] $Message"
     switch ($Level) {
-        'Warn'  { Write-Warning $prefixed }
-        'Error' { Write-Error   $prefixed }
+        'Warn'  { Write-Warning $prefixed; Write-Debug $prefixed }
+        'Error' { Write-Error   $prefixed; Write-Debug $prefixed }
         Default {
             try { Write-Information $prefixed } catch {}
             Write-Host $prefixed -ForegroundColor Cyan

@@ -145,9 +145,16 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.23
+   1.2.24
 
 CHANGELOG
+   1.2.24
+   - Import UX: Optional util module import now warns on failure with guidance to check path/permissions/execution policy, and mirrors detail to the Debug stream.
+   - Docs: Clarified the optional nature and placement of videoscreenshot.util.psm1 (same folder as the script) in PREREQUISITES/TROUBLESHOOTING.
+   - Refactor: Extracted Initialize-VideoContext (snapshot prefix prep, optional cleanup, SaveFolder writability preflight, and duration→stop-time derivation).
+   - Refactor: Extracted Measure-PostCapture (post-capture frame detection + snapshot FPS deviation check and warning).
+   - Logging: Write-Message now routes to native PowerShell streams (Information/Warning/Error) and mirrors Warn/Error to Debug for easier diagnosis.
+ 
    1.2.23
    - Import handling: If videoscreenshot.util.psm1 exists but fails to load, emit a user-visible warning and fall back to built-ins.
    - Docs: Document the optional helper module in PREREQUISITES and TROUBLESHOOTING.
@@ -551,9 +558,12 @@ if (Test-Path -LiteralPath $utilModulePath) {
     try {
         Import-Module -Name $utilModulePath -Force -ErrorAction Stop | Out-Null
     } catch {
-        # user-visible warning when the helper exists but fails to load
-        Write-Warning ("Optional helper module failed to load; using built-in fallbacks. Error: {0}" -f $_.Exception.Message)
+        # User-visible guidance + mirrored debug for diagnostics
+        Write-Warning -Message "Optional utilities module failed to load: $utilModulePath. Check file path, permissions, or execution policy."
+        Write-Debug "Util module import failed: $($_.Exception.Message)"
     }
+} else {
+    Write-Debug "Optional utilities module not found at $utilModulePath"
 }
 
 <#
@@ -620,15 +630,11 @@ if (-not (Get-Command Write-Message -ErrorAction SilentlyContinue)) {
             [Parameter(Mandatory)][string]$Message
         )
         $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-        $prefixed = "[$ts] [$($Level.ToUpper().PadRight(5))] $Message"
+        $formatted = "[$ts] [$($Level.ToUpper().PadRight(5))] $Message"
         switch ($Level) {
-            'Warn'  { Write-Warning $prefixed }
-            'Error' { Write-Error   $prefixed }
-            Default {
-                # Prefer Information stream for scriptability; also show in host for visibility
-                try { Write-Information $prefixed } catch {}
-                Write-Host $prefixed -ForegroundColor Cyan
-            }
+            'Info'  { try { Write-Information -MessageData $formatted -InformationAction Continue } catch { Write-Host $formatted } }
+            'Warn'  { Write-Warning -Message $formatted; Write-Debug $formatted }
+            'Error' { Write-Error   -Message $formatted; Write-Debug $formatted }
         }
     }
 }
@@ -1005,6 +1011,18 @@ function Initialize-VideoContext {
         [switch]$DisableAutoStop,
         [int]$AutoStopGraceSeconds = 2
     )
+    # One-time SaveFolder writability preflight so failures surface early & clearly
+    if (-not $script:__SaveFolderWriteChecked) {
+        try {
+            $tmp = Join-Path $SaveFolder (".writetest_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
+            [IO.File]::WriteAllText($tmp, 'ok')
+            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+            $script:__SaveFolderWriteChecked = $true
+        } catch {
+            Write-Message -Level Error -Message "SaveFolder is not writable: $SaveFolder – $($_.Exception.Message)"
+            throw
+        }
+    }
     $scenePrefix = ([IO.Path]::GetFileNameWithoutExtension($VideoPath)) + '_'
     $preCount = 0
     if ($UseVlcSnapshots) {
@@ -1036,6 +1054,58 @@ function Initialize-VideoContext {
         PreCount         = $preCount
         StopAtSeconds    = $stopAt
         PerVideoDeadline = $deadline
+    }
+}
+
+<#
+.SYNOPSIS
+Post-capture measurement/validation and (snapshot) FPS deviation handling.
+.DESCRIPTION
+Determines whether frames were produced and computes frames delta. In snapshot mode,
+also computes achieved FPS and warns if it deviates ≥20% from the requested value.
+.OUTPUTS
+PSCustomObject with HadFrames, FramesDelta, AchievedFps.
+#>
+function Measure-PostCapture {
+    param(
+        [switch]$UseVlcSnapshots,
+        [Parameter(Mandatory)][string]$SaveFolder,
+        [Parameter(Mandatory)][string]$ScenePrefix,
+        [int]$PreCount = 0,
+        $GdiResult,
+        $SnapResult,
+        [Parameter(Mandatory)][int]$RequestedFps,
+        [Parameter(Mandatory)][string]$VideoPath
+    )
+    $hadFrames = $false
+    $framesDelta = 0
+    $achieved = $null
+
+    if ($UseVlcSnapshots) {
+        $postCount = (Get-ChildItem -Path $SaveFolder -Filter "$ScenePrefix*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+        $framesDelta = $postCount - $PreCount
+        $hadFrames   = ($framesDelta -gt 0)
+        if ($SnapResult -and $SnapResult.ElapsedSeconds -gt 0) {
+            $achieved = [Math]::Round($framesDelta / $SnapResult.ElapsedSeconds, 3)
+            Write-Debug "Snapshot achieved FPS: $achieved (requested=$RequestedFps, frames=$framesDelta, elapsed=$($SnapResult.ElapsedSeconds)s)"
+            if ($RequestedFps -gt 0) {
+                $dev = [Math]::Abs($achieved - $RequestedFps) / [double]$RequestedFps
+                if ($dev -ge 0.20) {
+                    Write-Message -Level Warn -Message ("Snapshot cadence deviates by {0:P0} from requested FPS (requested={1}, achieved={2}) for: {3}" -f $dev, $RequestedFps, $achieved, $VideoPath)
+                }
+            }
+        }
+    } else {
+        $framesSaved = if ($null -ne $GdiResult) { [int]$GdiResult.FramesSaved } else { 0 }
+        $hadFrames   = ($framesSaved -gt 0)
+        $framesDelta = $framesSaved
+        $achieved    = ($GdiResult?.AchievedFps)
+    }
+
+    [pscustomobject]@{
+        HadFrames   = [bool]$hadFrames
+        FramesDelta = [int]$framesDelta
+        AchievedFps = $achieved
     }
 }
 
@@ -1775,29 +1845,13 @@ foreach ($video in $videos) {
         -1  # ExitCode not available
     }
 
-    # Post-run validation: ensure frames actually exist
-    if ($UseVlcSnapshots) {
-        $postCount = (Get-ChildItem -Path $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
-        $hadFrames = ($postCount -gt $preCount)
-        $framesDelta = $postCount - $preCount
-    } else {
-        $framesSaved = if ($null -ne $gdiResult) { [int]$gdiResult.FramesSaved } else { 0 }
-        $hadFrames   = ($framesSaved -gt 0)
-        $framesDelta = $framesSaved
-    }
-
-    # Snapshot achieved FPS: always compute; warn non-debug users if deviation >= 20%
-    if ($UseVlcSnapshots -and $hadFrames -and $snapResult) {
-        $snapElapsed = $snapResult.ElapsedSeconds
-        $achieved = if ($snapElapsed -gt 0) { [Math]::Round($framesDelta / $snapElapsed, 3) } else { 0 }
-        Write-Debug "Snapshot achieved FPS: $achieved (requested=$FramesPerSecond, frames=$framesDelta, elapsed=${snapElapsed}s)"
-        if ($FramesPerSecond -gt 0) {
-            $dev = [Math]::Abs($achieved - $FramesPerSecond) / [double]$FramesPerSecond
-            if ($dev -ge 0.20) {
-                Write-Message -Level Warn -Message ("Snapshot cadence deviates by {0:P0} from requested FPS (requested={1}, achieved={2}) for: {3}" -f $dev, $FramesPerSecond, $achieved, $video.FullName)
-            }
-        }
-    }
+    # Post-run validation + (snapshot) FPS deviation handling
+    $post = Measure-PostCapture -UseVlcSnapshots:$UseVlcSnapshots -SaveFolder $SaveFolder `
+                                 -ScenePrefix $scenePrefixForThisVideo -PreCount $preCount `
+                                 -GdiResult $gdiResult -SnapResult $snapResult `
+                                 -RequestedFps $FramesPerSecond -VideoPath $video.FullName
+    $hadFrames   = $post.HadFrames
+    $framesDelta = $post.FramesDelta
 
     # Unified debug output that works for both modes
     $processingTime = if ($videoStartTime) { (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds } else { 0 }
