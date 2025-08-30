@@ -145,9 +145,11 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.30
+   1.2.31
 
 CHANGELOG
+  1.2.31
+   - Bug fix: Clean up event handlers and jobs on script start
   1.2.30
   - Bug fix: Fixed Python module detection by explicitly importing importlib.util submodule.
     The previous code imported importlib but tried to access importlib.util without explicitly
@@ -1712,6 +1714,18 @@ function Invoke-Cropper {
 # endregion Capture helpers
 
 # region Main flow
+
+# Clean up any existing handlers from previous runs
+try {
+    Get-EventSubscriber -SourceIdentifier CtrlCHandler -ErrorAction Stop | Unregister-Event
+} catch { }
+
+try {
+    Get-EventSubscriber -SourceIdentifier PowerShell.Exiting -ErrorAction Stop | Unregister-Event  
+} catch { }
+
+# Remove any leftover jobs
+Get-Job | Where-Object Name -In @('CtrlCHandler', 'PowerShell.Exiting') | Remove-Job -Force -ErrorAction SilentlyContinue
 
 $ctrlCHandler = Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress -SourceIdentifier CtrlCHandler -Action {
     try {
