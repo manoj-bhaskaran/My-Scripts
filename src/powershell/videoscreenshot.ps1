@@ -145,9 +145,17 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.31
+   1.2.32
 
 CHANGELOG
+    1.2.32
+  - Fix: Shell COM duration detection no longer trips a Split-Path parameter-set conflict. Replaced Split-Path usage with .NET path helpers (GetFullPath / GetDirectoryName / GetFileName).
+  - Hardening: Added early null/invalid-path checks and graceful $null returns when the folder or item cannot be resolved.
+  - Parsing: Expanded support for duration formats (HH:MM:SS(.ms), MM:SS(.ms), HH:MM:SS;ff) and kept canonical ExtendedProperty fallbacks (System.Media.Duration / Duration).
+  - Reliability: Defensive COM cleanup (ReleaseComObject) for item/folder/shell to reduce resource leaks.
+  - Observability: Richer Write-Debug traces for each detection path and failure reason.
+  - No public parameter changes; behavior is identical on success—only improved robustness on edge cases.
+
   1.2.31
    - Bug fix: Clean up event handlers and jobs on script start
   1.2.30
@@ -642,66 +650,112 @@ function Save-FrameWithRetry {
     }
 }
 
-<#
-.SYNOPSIS
-Get video duration using Windows Shell COM GetDetailsOf method.
-
-.DESCRIPTION
-Searches through Windows Shell property columns to find duration information.
-Parses various time formats including HH:MM:SS strings. This method works
-better than ExtendedProperty on some Windows versions and file types.
-
-.PARAMETER Path
-Full path to the video file.
-#>
 function Get-VideoDurationViaShell {
-    param([Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path)
-    $shell = $null
+    <#
+    .SYNOPSIS
+    Get video duration using Windows Shell COM GetDetailsOf method.
+
+    .DESCRIPTION
+    Uses Shell.Application to read localized Details columns and parse duration.
+    Falls back to canonical ExtendedProperty values when available. Avoids
+    Split-Path parameter-set conflicts by using .NET path helpers.
+
+    .PARAMETER Path
+    Full path to the video file.
+
+    .OUTPUTS
+    [double] seconds, or $null if not available.
+    #>
+    param([Parameter(Mandatory)][string]$Path)
+
+    $shell  = $null
     $folder = $null
-    $item = $null
+    $item   = $null
     try {
+        if ([string]::IsNullOrWhiteSpace($Path)) {
+            Write-Debug "Shell COM duration: input path is null/empty"
+            return $null
+        }
+
+        # Normalize components without Split-Path (avoid parameter-set conflicts)
+        try { $full = [System.IO.Path]::GetFullPath($Path) } catch { $full = $Path }
+        $dir  = [System.IO.Path]::GetDirectoryName($full)
+        $leaf = [System.IO.Path]::GetFileName($full)
+
+        if (-not $dir -or -not (Test-Path -LiteralPath $dir)) {
+            Write-Debug "Shell COM duration: invalid or missing directory for '$Path' (dir='$dir')"
+            return $null
+        }
+
         $shell  = New-Object -ComObject Shell.Application
-        $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
-        $item   = $folder.ParseName((Split-Path -Leaf -LiteralPath $Path))
-        
-        # Method 1: GetDetailsOf scan (works with localized headers)
+        $folder = $shell.NameSpace($dir)
+        if (-not $folder) {
+            Write-Debug "Shell COM duration: NameSpace returned null for '$dir'"
+            return $null
+        }
+
+        $item = $folder.ParseName($leaf)
+        if (-not $item) {
+            Write-Debug "Shell COM duration: ParseName failed for '$leaf' in '$dir'"
+            return $null
+        }
+
+        # Method 1: scan localized Details columns
         for ($i = 0; $i -lt 300; $i++) {
             $header = $folder.GetDetailsOf($null, $i)
-            if ($header -match "Length|Duration|Durée|Dauer|Duración") {
+            if ($header -match '^(?:Length|Duration|Durée|Dauer|Duración)\b') {
                 $v = $folder.GetDetailsOf($item, $i)
                 if ($v -and $v.Trim()) {
                     Write-Debug "Duration from Shell COM column $i ($header): $v"
-                    if ($v -match "(\d{1,2}):(\d{2}):(\d{2})") {
-                        $hours = [int]$matches[1]
-                        $minutes = [int]$matches[2] 
+                    $t = $v.Trim()
+
+                    # HH:MM:SS(.ms)
+                    if ($t -match '^\s*(\d{1,2}):(\d{2}):(\d{2})(?:[.,](\d{1,3}))?\s*$') {
+                        $hours   = [int]$matches[1]
+                        $minutes = [int]$matches[2]
                         $seconds = [int]$matches[3]
-                        return ($hours * 3600) + ($minutes * 60) + $seconds
+                        $ms      = if ($matches[4]) { [int]$matches[4] } else { 0 }
+                        return ($hours * 3600 + $minutes * 60 + $seconds) + ($ms / 1000.0)
                     }
-                    if ($v -match "(\d{1,2}):(\d{2})") {
+
+                    # MM:SS(.ms)
+                    if ($t -match '^\s*(\d{1,2}):(\d{2})(?:[.,](\d{1,3}))?\s*$') {
                         $minutes = [int]$matches[1]
                         $seconds = [int]$matches[2]
-                        return ($minutes * 60) + $seconds
+                        $ms      = if ($matches[4]) { [int]$matches[4] } else { 0 }
+                        return ($minutes * 60 + $seconds) + ($ms / 1000.0)
+                    }
+
+                    # HH:MM:SS;ff (drop frame count)
+                    if ($t -match '^\s*(\d{1,2}):(\d{2}):(\d{2});\d+\s*$') {
+                        $hours   = [int]$matches[1]
+                        $minutes = [int]$matches[2]
+                        $seconds = [int]$matches[3]
+                        return ($hours * 3600 + $minutes * 60 + $seconds)
                     }
                 }
             }
         }
-        
-        # Method 2: ExtendedProperty fallback with canonical names
-        $canonicalProps = @('System.Media.Duration', 'Duration')
-        foreach ($prop in $canonicalProps) {
+
+        # Method 2: canonical ExtendedProperty fallbacks
+        foreach ($prop in @('System.Media.Duration', 'Duration')) {
             try {
                 $v = $item.ExtendedProperty($prop)
                 if ($v) {
                     Write-Debug "Duration from ExtendedProperty $prop`: $v"
-                    if ($v -is [string] -and $v.Trim()) { return [TimeSpan]::Parse($v).TotalSeconds }
-                    if ($v -is [long] -or $v -is [int]) { return [double]$v / 10000000.0 }
+                    if ($v -is [string] -and $v.Trim()) {
+                        try { return [TimeSpan]::Parse($v).TotalSeconds } catch {}
+                    }
+                    if ($v -is [long] -or $v -is [int]) {
+                        return [double]$v / 10000000.0  # ticks (100ns) -> seconds
+                    }
                 }
             } catch {
                 Write-Debug "ExtendedProperty $prop failed: $($_.Exception.Message)"
             }
         }
-        
-        Write-Debug "No duration properties found via Shell COM"
+
+        Write-Debug "No duration properties found via Shell COM for '$Path'"
         return $null
     } catch {
         Write-Debug "Shell COM duration detection failed: $($_.Exception.Message)"
