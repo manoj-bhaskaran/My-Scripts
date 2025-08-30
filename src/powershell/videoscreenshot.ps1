@@ -145,9 +145,16 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.20
+  1.2.21
 
 CHANGELOG
+  1.2.21
+  - Refactor: Start-Vlc now orchestrates helper functions and delegates process launch to Invoke-VlcProcess.
+    Introduced Register-RunPid/Unregister-RunPid to centralize PID registry updates.
+  - Fix: Get-VlcArgsCommon returned an undefined variable; now returns the composed args correctly.
+  - Observability: Added snapshot-mode achieved FPS debug log using post-capture frame counts and elapsed time.
+  - Docs: TROUBLESHOOTING now notes the one-time runtime warnings (snapshot cadence & FFprobe absence).
+
   1.2.20
   - Refactor: Split Start-Vlc into helper functions (Get-VlcArgsCommon / Get-VlcArgsSnapshot / Get-VlcArgsGdi) to reduce complexity and improve maintainability.
   - UX: Added a one-time user-visible warning when -UseVlcSnapshots is enabled explaining frame-ratio cadence approximation and pointing to GDI+ for exact timing.
@@ -384,6 +391,12 @@ TROUBLESHOOTING
   - VLC snapshot cadence not exact: VLC 3.x only supports frame-count ratios, not time-based FPS.
     The script calculates the closest ratio based on detected video frame rate. For exact 
     time-based capture, use GDI+ mode instead of -UseVlcSnapshots.
+  - Runtime warnings:
+      • When -UseVlcSnapshots is active, a one-time warning explains frame-ratio cadence and
+        recommends GDI+ for precise timing.
+      • When FFprobe is not found in PATH, a one-time warning explains that duration detection
+        falls back to Windows file metadata and auto-stop may be less reliable.
+
   - Duration detection fails: Install FFmpeg (includes FFprobe) for enhanced metadata reading.
     The script tries Windows Shell properties first, then falls back to FFprobe if available.
   - VLC hangs in snapshot mode: VLC's --stop-time parameter can be unreliable in headless mode.
@@ -958,7 +971,7 @@ function Get-VlcArgsCommon {
     } else {
         Write-Debug "No --stop-time parameter (stopAt=$StopAtSeconds)"
     }
-    return ,$args
+    return ,$vlcArgs
 }
 
 <#
@@ -1046,6 +1059,86 @@ function Get-VlcArgsGdi {
 
 <#
 .SYNOPSIS
+Register a launched VLC PID in the per-run registry.
+.DESCRIPTION
+Appends the PID to $PidRegistry so engine-exit/Ctrl+C handlers can clean it up.
+.PARAMETER ProcessId
+Process ID to add to the registry.
+#>
+function Register-RunPid {
+    param([Parameter(Mandatory)][int]$ProcessId)
+    Add-Content -LiteralPath $PidRegistry -Value $ProcessId
+}
+
+<#
+.SYNOPSIS
+Remove a PID from the per-run registry.
+.DESCRIPTION
+Edits $PidRegistry to drop the specified PID after the process has been stopped.
+.PARAMETER ProcessId
+Process ID to remove from the registry.
+#>
+function Unregister-RunPid {
+    param([Parameter(Mandatory)][int]$ProcessId)
+    if (Test-Path -LiteralPath $PidRegistry) {
+        (Get-Content -LiteralPath $PidRegistry | Where-Object { $_ -ne "$ProcessId" }) |
+            Set-Content -LiteralPath $PidRegistry
+    }
+}
+
+<#
+.SYNOPSIS
+Launch vlc.exe with given arguments and perform startup monitoring.
+.DESCRIPTION
+Starts VLC, records its PID, and waits up to VlcStartupTimeoutSeconds to confirm
+it's running. A clean ExitCode=0 during this window is treated as a valid early
+completion (short clips). Returns the Process object or $null on failure.
+.PARAMETER Arguments
+Array of VLC CLI arguments to pass, already composed.
+.OUTPUTS
+System.Diagnostics.Process
+#>
+function Invoke-VlcProcess {
+    param([Parameter(Mandatory)][string[]]$Arguments)
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName  = 'vlc'
+    $psi.Arguments = ($Arguments -join ' ')
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardError = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.CreateNoWindow = $true
+
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    $startTime = Get-Date
+    $null = $p.Start()
+    Register-RunPid -ProcessId $p.Id
+
+    $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if ($p.HasExited) { break }
+        Start-Sleep -Milliseconds 200
+    }
+
+    if ($p.HasExited) {
+        $stderr = $p.StandardError.ReadToEnd()
+        $exitTime = (Get-Date) - $startTime
+        if ($p.ExitCode -eq 0) {
+            Write-Debug "VLC exited cleanly during startup window (short clip). ExitCode=0, elapsed=$($exitTime.TotalSeconds) sec"
+            return $p
+        }
+        Write-Debug "VLC failed during startup. ExitCode=$($p.ExitCode), elapsed=$($exitTime.TotalSeconds) sec"
+        if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "VLC stderr: $stderr" }
+        Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderr"
+        return $null
+    }
+    Write-Debug "VLC started (PID $($p.Id))"
+    return $p
+}
+
+<#
+.SYNOPSIS
 Starts VLC for a single video with arguments composed per capture mode.
 
 .DESCRIPTION
@@ -1103,85 +1196,17 @@ function Start-Vlc {
         [double]$StopAtSeconds = 0
     )
 
-    $common = @(
-        '--no-qt-privacy-ask',
-        '--no-video-title-show',
-        '--no-loop',
-        '--no-repeat',
-        '--rate', '1',
-        '--play-and-exit'
-    )
-
+    # Assemble arguments: file path, then mode-specific args, then common args
     $vlcargs = @("`"$VideoPath`"")
-
-    if ($StopAtSeconds -gt 0) {
-        $roundedStop = [int][Math]::Round($StopAtSeconds)
-        $vlcargs += @('--stop-time', [string]$roundedStop)
-        Write-Debug "VLC will be configured with --stop-time=$roundedStop (from stopAt=$StopAtSeconds)"
-    } else {
-        Write-Debug "No --stop-time parameter (stopAt=$StopAtSeconds)"
-    }
-
     if ($UseVlcSnapshots) {
-        $vlcargs += @(
-            '--intf', 'dummy',
-            '--video-filter=scene',
-            "--scene-path=""$SaveFolder""",
-            "--scene-prefix=""$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_""",
-            '--scene-format=png'
-        )
-        $vfps  = Get-VideoFps -Path $VideoPath
-        $base  = if ($vfps -and $vfps -gt 0) { [double]$vfps } else { 30.0 }
-        $ratio = [int][Math]::Max(1, [Math]::Round($base / [double]$FramesPerSecond))
-        $vlcargs += @("--scene-ratio=$ratio")
-        Write-Debug "Snapshots (VLC 3.x): video_fps=$base; requested=$FramesPerSecond; using --scene-ratio=$ratio"
-        if ($FramesPerSecond -gt [int][Math]::Round($base)) {
-            Write-Debug "Requested FPS ($FramesPerSecond) exceeds detected video FPS ($base); snapshot cadence is capped by source FPS."
-        }    
+        $vlcargs += Get-VlcArgsSnapshot -VideoPath $VideoPath -SaveFolder $SaveFolder -RequestedFps $FramesPerSecond
     } else {
-        if ($GdiFullscreen) {
-            $vlcargs += @('--fullscreen', '--video-on-top', '--qt-minimal-view')
-        }
+        $vlcargs += Get-VlcArgsGdi -GdiFullscreen:$GdiFullscreen
     }
+    $vlcargs += Get-VlcArgsCommon -StopAtSeconds $StopAtSeconds
 
-    $vlcargs += $common
     Write-Debug ("VLC args: " + ($vlcargs -join ' '))
-
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName  = 'vlc'
-    $psi.Arguments = ($vlcargs -join ' ')
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardError = $true
-    $psi.RedirectStandardOutput = $true
-    $psi.CreateNoWindow = $true
-
-    $p = New-Object System.Diagnostics.Process
-    $p.StartInfo = $psi
-    $startTime = Get-Date
-    $null = $p.Start()
-    Add-Content -LiteralPath $PidRegistry -Value $p.Id
-
-    $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
-    while ((Get-Date) -lt $deadline) {
-        if ($p.HasExited) { break }
-        Start-Sleep -Milliseconds 200
-    }
-
-    if ($p.HasExited) {
-        $stderr = $p.StandardError.ReadToEnd()
-        $exitTime = (Get-Date) - $startTime
-        if ($p.ExitCode -eq 0) {
-            Write-Debug "VLC exited cleanly during startup window (short clip). ExitCode=0, elapsed=$($exitTime.TotalSeconds) sec"
-            return $p
-        }
-        Write-Debug "VLC failed during startup. ExitCode=$($p.ExitCode), elapsed=$($exitTime.TotalSeconds) sec"
-        if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "VLC stderr: $stderr" }
-        Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderr"
-        return $null
-    }
-
-    Write-Debug "VLC started (PID $($p.Id))"
-    return $p
+    return (Invoke-VlcProcess -Arguments $vlcargs)
 }
 
 <#
@@ -1577,10 +1602,8 @@ foreach ($video in $videos) {
     finally {
         if ($vlc) {
             Stop-Vlc -Process $vlc
-            if (Test-Path -LiteralPath $PidRegistry) {
-                (Get-Content -LiteralPath $PidRegistry | Where-Object { $_ -ne "$($vlc.Id)" }) |
-                    Set-Content -LiteralPath $PidRegistry
-            }
+            # remove from PID registry after termination
+            Unregister-RunPid -ProcessId $vlc.Id
         }
     }
 
@@ -1601,6 +1624,12 @@ foreach ($video in $videos) {
     } else {
         $hadFrames = ($savedThisRun -gt 0)
         $framesDelta = $savedThisRun
+    }
+
+    # Snapshot achieved FPS (diagnostic)
+    if ($UseVlcSnapshots -and $finalElapsed -and $finalElapsed -gt 0) {
+        $snapFps = [Math]::Round([double]$framesDelta / [double]$finalElapsed, 3)
+        Write-Debug "Snapshot achieved FPS: $snapFps (requested=$FramesPerSecond, frames=$framesDelta, elapsed=$([Math]::Round($finalElapsed,3))s)"
     }
 
     # Unified debug output that works for both modes
