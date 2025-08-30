@@ -136,9 +136,19 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.14
+  1.2.15
 
 CHANGELOG
+  1.2.15
+  - Fix: Initialize timer variables ($startTime, $videoStartTime) used in debug logging to prevent runtime errors
+  - Fix: Handle ExitCode unavailability after forced VLC process termination with proper wait and null checks  
+  - Fix: Use invariant culture for number parsing to support international locales with comma decimal separators
+  - Fix: Add ExtendedProperty fallback for Shell COM duration/FPS detection when localized headers fail
+  - Fix: Support MM:SS duration format in addition to existing HH:MM:SS parsing
+  - Fix: Convert processed video log from O(n) array lookup to O(1) HashSet for better performance with large collections
+  - Cleanup: Remove unused $global:vlcPids variable and references
+  - Improvement: Enhanced international compatibility and performance for large video sets
+
   1.2.14
   - Fix: Added process monitoring timeout for VLC snapshot mode to prevent indefinite hanging
   - Fix: VLC --stop-time parameter unreliable in snapshot mode, now using process termination fallback
@@ -332,6 +342,11 @@ TROUBLESHOOTING
   - VLC hangs in snapshot mode: VLC's --stop-time parameter can be unreliable in headless mode.
     The script now monitors VLC processes and terminates them after video duration + 5 seconds
     (or 5 minutes maximum if duration unknown). Check debug output for timeout events.
+  - International/locale issues: The script now supports international number formats (comma decimal separators)
+    and attempts to detect localized property names. If duration/FPS detection still fails, ensure Windows
+    file properties are populated correctly.
+  - Performance with large video collections: Processed video tracking now uses HashSet for O(1) lookups
+    instead of O(n) array searches, significantly improving performance with hundreds/thousands of videos.
 
 FAQS
   Q: No frames were captured—what should I check?
@@ -632,22 +647,41 @@ function Get-VideoDurationViaShell {
         $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
         $item   = $folder.ParseName((Split-Path -Leaf -LiteralPath $Path))
         
-        # Fix: Use GetDetailsOf method instead of ExtendedProperty
-        # First, find the duration column index
-        for ($i = 0; $i -lt 500; $i++) {
+        # Method 1: GetDetailsOf scan (works with localized headers)
+        for ($i = 0; $i -lt 300; $i++) {  # Reduced from 500 for performance
             $header = $folder.GetDetailsOf($null, $i)
-            if ($header -match "Length|Duration") {
+            if ($header -match "Length|Duration|Durée|Dauer|Duración") {  # Multi-language
                 $v = $folder.GetDetailsOf($item, $i)
                 if ($v -and $v.Trim()) {
                     Write-Debug "Duration from Shell COM column $i ($header): $v"
-                    # Try parsing as time format (e.g., "00:00:17")
-                    if ($v -match "(\d{1,2}):(\d{2}):(\d{2})") {
+                    # Parse time formats
+                    if ($v -match "(\d{1,2}):(\d{2}):(\d{2})") {  # HH:MM:SS
                         $hours = [int]$matches[1]
                         $minutes = [int]$matches[2] 
                         $seconds = [int]$matches[3]
                         return ($hours * 3600) + ($minutes * 60) + $seconds
                     }
+                    if ($v -match "(\d{1,2}):(\d{2})") {  # MM:SS format
+                        $minutes = [int]$matches[1]
+                        $seconds = [int]$matches[2]
+                        return ($minutes * 60) + $seconds
+                    }
                 }
+            }
+        }
+        
+        # Method 2: ExtendedProperty fallback with canonical names
+        $canonicalProps = @('System.Media.Duration', 'Duration')
+        foreach ($prop in $canonicalProps) {
+            try {
+                $v = $item.ExtendedProperty($prop)
+                if ($v) {
+                    Write-Debug "Duration from ExtendedProperty $prop`: $v"
+                    if ($v -is [string] -and $v.Trim()) { return [TimeSpan]::Parse($v).TotalSeconds }
+                    if ($v -is [long] -or $v -is [int]) { return [double]$v / 10000000.0 }
+                }
+            } catch {
+                Write-Debug "ExtendedProperty $prop failed: $($_.Exception.Message)"
             }
         }
         
@@ -684,7 +718,7 @@ function Get-VideoDurationViaFFprobe {
         # Fix: Remove extra quotes - PowerShell handles the path quoting
         $result = & ffprobe -v quiet -show_entries format=duration -of csv=p=0 $Path 2>$null
         if ($result -and $result.ToString().Trim()) {
-            $duration = [double]::Parse($result.ToString().Trim())
+            $duration = [double]::Parse($result.ToString().Trim(), [System.Globalization.CultureInfo]::InvariantCulture)
             Write-Debug "Duration from FFprobe: $duration sec"
             return $duration
         }
@@ -733,8 +767,9 @@ Get video frame rate using Windows Shell COM GetDetailsOf method.
 
 .DESCRIPTION
 Searches through Windows Shell property columns to find frame rate information.
-Handles various frame rate formats including decimal values and fractions.
-Uses the same GetDetailsOf approach as duration detection for better compatibility.
+Handles various frame rate formats including decimal values, "X fps" strings,
+and fractional notation (e.g., "30000/1001"). Uses the same GetDetailsOf 
+approach as duration detection for better Windows version compatibility.
 
 .PARAMETER Path
 Full path to the video file.
@@ -742,6 +777,11 @@ Full path to the video file.
 .EXAMPLE
 $fps = Get-VideoFps -Path 'C:\video.mp4'
 if ($fps) { Write-Host "Video runs at $fps FPS" }
+
+.NOTES
+This function is used internally by VLC snapshot mode to calculate the 
+appropriate --scene-ratio parameter for time-based frame capture approximation.
+Falls back to 30 FPS assumption if detection fails.
 #>
 function Get-VideoFps {
     param([Parameter(Mandatory)][string]$Path)
@@ -750,10 +790,10 @@ function Get-VideoFps {
         $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
         $item   = $folder.ParseName((Split-Path -Leaf -LiteralPath $Path))
         
-        # Search through Shell property columns for frame rate information
-        for ($i = 0; $i -lt 500; $i++) {
+        # Method 1: GetDetailsOf scan (works with localized headers)
+        for ($i = 0; $i -lt 300; $i++) {  # Reduced from 500 for performance
             $header = $folder.GetDetailsOf($null, $i)
-            if ($header -match "Frame rate|FPS|Video frame rate") {
+            if ($header -match "Frame rate|FPS|Video frame rate|Fréquence d'images|Bildrate") {  # Multi-language
                 $v = $folder.GetDetailsOf($item, $i)
                 if ($v -and $v.Trim()) {
                     Write-Debug "Frame rate from Shell COM column $i ($header): $v"
@@ -761,12 +801,12 @@ function Get-VideoFps {
                     # Handle various formats
                     # Format: "29.97 fps" or "30 fps"
                     if ($v -match "(\d+\.?\d*)\s*fps") {
-                        $fps = [double]$matches[1]
+                        $fps = [double]::Parse($matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
                         if ($fps -gt 0) { return $fps }
                     }
                     # Format: "29.97" or "30"
                     if ($v -match "^(\d+\.?\d*)$") {
-                        $fps = [double]$matches[1]
+                        $fps = [double]::Parse($matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
                         if ($fps -gt 0) { return $fps }
                     }
                     # Format: "30000/1001" (fractional)
@@ -779,6 +819,23 @@ function Get-VideoFps {
                         }
                     }
                 }
+            }
+        }
+        
+        # Method 2: ExtendedProperty fallback with canonical names
+        $canonicalProps = @('System.Video.FrameRate')
+        foreach ($prop in $canonicalProps) {
+            try {
+                $v = $item.ExtendedProperty($prop)
+                if ($v) {
+                    Write-Debug "Frame rate from ExtendedProperty $prop`: $v"
+                    if ($v -is [long] -or $v -is [int]) { 
+                        $fps = [double]$v / 1000.0  # System.Video.FrameRate is in 1000*fps
+                        if ($fps -gt 0) { return $fps }
+                    }
+                }
+            } catch {
+                Write-Debug "ExtendedProperty $prop failed: $($_.Exception.Message)"
             }
         }
         
@@ -891,8 +948,8 @@ function Start-Vlc {
 
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
+    $startTime = Get-Date
     $null = $p.Start()
-    $global:vlcPids += $p.Id
     Add-Content -LiteralPath $PidRegistry -Value $p.Id
 
     # Basic startup wait (window may be GUI or dummy)
@@ -1104,9 +1161,6 @@ function Invoke-Cropper {
 
 # region Main flow
 
-# Track VLC PIDs we start so we can clean them up on Ctrl+C or shell exit
-$global:vlcPids = @()
-
 # Clean up on Ctrl+C (Console.CancelKeyPress) and on session exit
 $ctrlCHandler = Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress -SourceIdentifier CtrlCHandler -Action {
     try {
@@ -1165,9 +1219,14 @@ if ($VideoLimit -gt 0) {
 
 $processed = @()
 try {
-    $processed = Get-Content -LiteralPath $ProcessedLogPath -ErrorAction Stop
+    $processedArray = Get-Content -LiteralPath $ProcessedLogPath -ErrorAction Stop
+    $processed = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($item in $processedArray) {
+        [void]$processed.Add($item)
+    }
+    Write-Debug "Loaded $($processed.Count) processed videos into HashSet"
 } catch {
-    Write-Message -Level Error -Message "Failed to read processed log: $ProcessedLogPath — $($_.Exception.Message)"
+    Write-Message -Level Error -Message "Failed to read processed log: $ProcessedLogPath – $($_.Exception.Message)"
     exit 1
 }
 
@@ -1179,13 +1238,14 @@ foreach ($video in $videos) {
         Write-Message -Level Info -Message "Global time limit of $TimeLimitSeconds seconds reached; stopping processing."
         break
     }
-    $already = $processed -contains $video.FullName
+    $already = $processed.Contains($video.FullName)
     if ($already) {
         Write-Message -Level Info -Message "Skipping (already processed): $($video.FullName)"
         continue
     }
 
     Write-Message -Level Info -Message "Processing: $($video.FullName)"
+    $videoStartTime = Get-Date
     $vlc = $null
     $errorDuringCapture = $false
     $savedThisRun = 0
@@ -1240,11 +1300,20 @@ foreach ($video in $videos) {
                     Write-Message -Level Info -Message "VLC timeout reached, terminating process for: $($video.FullName)"
                     try {
                         Stop-Process -Id $vlc.Id -Force -ErrorAction SilentlyContinue
+                        Start-Sleep -Milliseconds 500
                     } catch {
                         Write-Debug "Error terminating VLC process: $($_.Exception.Message)"
                     }
                     break
                 }
+            }
+
+            $vlcExit = if ($vlc -and -not $vlc.HasExited) { 
+                -1  # Still running 
+            } elseif ($vlc -and $null -ne $vlc.ExitCode) { 
+                $vlc.ExitCode 
+            } else { 
+                -1  # ExitCode not available
             }
             
             $finalElapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
@@ -1306,7 +1375,13 @@ foreach ($video in $videos) {
     }
 
     # Evaluate outcome
-    $vlcExit = if ($vlc) { $vlc.ExitCode } else { -1 }
+    $vlcExit = if ($vlc -and -not $vlc.HasExited) { 
+        -1  # Still running 
+    } elseif ($vlc -and $null -ne $vlc.ExitCode) { 
+        $vlc.ExitCode 
+    } else { 
+        -1  # ExitCode not available
+    }
     Write-Debug "VLC exit code: $vlcExit; hadErrors=$errorDuringCapture"
 
     # Post-run validation: ensure frames actually exist
