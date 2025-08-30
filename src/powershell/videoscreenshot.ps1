@@ -135,9 +135,17 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.18
+  1.2.19
 
 CHANGELOG
+  1.2.19
+  - Improvement: GDI+ capture uses a monotonic scheduler (Stopwatch) to minimize FPS drift from PNG save time
+  - Fix: FFprobe invocation now passes the video path after `--` to prevent arg parsing issues on odd paths
+  - Add: Preflight check for VLC in PATH (except when -CropOnly) with clear validation error (exit 2)
+  - Improvement: Snapshot mode logs a helpful debug note when requested FPS exceeds detected video FPS
+  - Improvement: Processed log appends use an exclusive file lock for better concurrency behavior
+  - Docs: Fix typos (“playbook” → “playback”) and tighten SaveFolder note in Start-Vlc docs
+
   1.2.18
   - Fix: Removed duplicate $vlcExit assignment to prevent logic drift and confusion
   - Fix: Unified frame count calculation in debug output to prevent uninitialized variable references in GDI+ mode
@@ -354,7 +362,7 @@ TROUBLESHOOTING
     both capture modes. GDI+ mode uses deadline checking, snapshot mode uses process monitoring.
   - Very short clips exit during startup:
       • This is normal. From v1.2.2, a clean early exit (ExitCode=0) during the startup wait is
-        treated as successful playbook completion, not a start failure.
+        treated as successful playback completion, not a start failure.
   - VLC snapshot cadence not exact: VLC 3.x only supports frame-count ratios, not time-based FPS.
     The script calculates the closest ratio based on detected video frame rate. For exact 
     time-based capture, use GDI+ mode instead of -UseVlcSnapshots.
@@ -415,7 +423,7 @@ FAQS
   Q: Does FramesPerSecond work the same way in both capture modes?
   A: No. GDI+ mode uses exact time-based capture; VLC snapshot mode uses frame-ratio 
      approximation based on detected video FPS due to VLC 3.x limitations. Both maintain 
-     native playbook speed, but only GDI+ provides precise timing.
+     native playback speed, but only GDI+ provides precise timing.
 
   Q: Why don't I get exactly N screenshots per second in snapshot mode?
   A: VLC 3.x uses frame-count ratios (save 1 out of every N frames) rather than time-based capture.
@@ -503,10 +511,22 @@ function Add-ContentWithRetry {
         [int]$MaxAttempts = 3
     )
     for ($i=1; $i -le $MaxAttempts; $i++) {
-        try { Add-Content -LiteralPath $Path -Value $Value; return $true }
-        catch {
-            if ($i -eq $MaxAttempts) { Write-Message -Level Error -Message "Failed to append to ${Path}: $($_.Exception.Message)"; return $false }
-            Start-Sleep -Milliseconds (200 * $i)
+        try {
+            $newline = [Environment]::NewLine
+            $bytes   = [System.Text.Encoding]::UTF8.GetBytes($Value + $newline)
+            $fs = [System.IO.File]::Open($Path,
+                [System.IO.FileMode]::Append,
+                [System.IO.FileAccess]::Write,
+                [System.IO.FileShare]::None) # exclusive append to avoid interleaving
+            $fs.Write($bytes, 0, $bytes.Length)
+            $fs.Close()
+            return $true
+        } catch {
+            if ($i -eq $MaxAttempts) {
+                Write-Message -Level Error -Message "Failed to append to ${Path}: $($_.Exception.Message)"
+                return $false
+            }
+            Start-Sleep -Milliseconds (200 * $i) # linear backoff
         }
     }
 }
@@ -724,7 +744,8 @@ function Get-VideoDurationViaFFprobe {
         }
         
         Write-Debug "Trying FFprobe for duration detection"
-        $result = & ffprobe -v quiet -show_entries format=duration -of csv=p=0 $Path 2>$null
+        # Pass path after `--` to prevent ffprobe parsing it as an option and ensure odd paths are safe
+        $result = & ffprobe -v quiet -show_entries format=duration -of csv=p=0 -- "$Path" 2>$null
         if ($result -and $result.ToString().Trim()) {
             $resultStr = $result.ToString().Trim()
             # Validate before parsing to avoid exceptions on "N/A" or error strings
@@ -889,7 +910,7 @@ it on Ctrl+C (Console.CancelKeyPress) and on PowerShell session exit.
 Full path to the video file.
 
 .PARAMETER SaveFolder
-Destination for snapshot files when -UseVlcSnapshots is enabled.
+Destination folder for screenshots when snapshot mode is enabled..
 
 .PARAMETER UseVlcSnapshots
 Enable VLC scene filter snapshots (headless capture, video-frame only).
@@ -939,6 +960,9 @@ function Start-Vlc {
         $ratio = [int][Math]::Max(1, [Math]::Round($base / [double]$FramesPerSecond))
         $vlcargs += @("--scene-ratio=$ratio")
         Write-Debug "Snapshots (VLC 3.x): video_fps=$base; requested=$FramesPerSecond; using --scene-ratio=$ratio"
+        if ($FramesPerSecond -gt [int][Math]::Round($base)) {
+            Write-Debug "Requested FPS ($FramesPerSecond) exceeds detected video FPS ($base); snapshot cadence is capped by source FPS."
+        }    
     } else {
         if ($GdiFullscreen) {
             $vlcargs += @('--fullscreen', '--video-on-top', '--qt-minimal-view')
@@ -1207,6 +1231,13 @@ if (-not (Test-Path -LiteralPath $SourceFolder)) {
     exit 1
 }
 
+# Preflight: require VLC when capturing (not needed for -CropOnly which returns above)
+$vlcCmd = Get-Command vlc -ErrorAction SilentlyContinue
+if (-not $vlcCmd) {
+    Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH. Please install VLC or add it to PATH."
+    exit 2
+}
+
 $videoExt = @('*.mp4','*.mkv','*.avi','*.mov','*.m4v','*.wmv')
 $videos = Get-ChildItem -Path (Join-Path $SourceFolder '*') -Recurse -File -Include $videoExt | Sort-Object FullName
 
@@ -1318,6 +1349,9 @@ foreach ($video in $videos) {
                 Write-Debug "GDI+ capture: no per-video deadline (unlimited capture)"
             }
 
+            # Monotonic cadence to reduce timing drift from PNG writes
+            $sw   = [System.Diagnostics.Stopwatch]::StartNew()
+            $next = $sw.ElapsedMilliseconds  # capture first frame immediately
             while (-not $vlc.HasExited) {
                 if ($perVideoDeadline -and (Get-Date) -ge $perVideoDeadline) {
                     $elapsed = (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds
@@ -1342,8 +1376,11 @@ foreach ($video in $videos) {
                 } else {
                     $errorDuringCapture = $true
                 }
-                Start-Sleep -Milliseconds $intervalMs
+                $next += $intervalMs
+                $sleep = [int]($next - $sw.ElapsedMilliseconds)
+                if ($sleep -gt 0) { Start-Sleep -Milliseconds $sleep }
             }
+            sw.Stop()
         }
     }
     catch {
