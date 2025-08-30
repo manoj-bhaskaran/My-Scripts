@@ -136,9 +136,15 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.11
+  1.2.12
 
 CHANGELOG
+  1.2.12
+  - Fix: Enhanced duration detection with multiple fallback methods for improved file compatibility
+  - Add: FFprobe fallback for duration detection when Windows Shell COM properties unavailable  
+  - Add: Multiple Windows metadata property attempts (System.Media.Duration, Duration, System.Video.Duration)
+  - Improvement: More robust auto-stop functionality with better file format support
+
   1.2.11
   - Add: Comprehensive debug logging for duration detection, grace period calculation, and auto-stop logic
   - Add: Debug messages for VLC startup timing, early exit detection, and stop-time parameter configuration  
@@ -270,6 +276,7 @@ CHANGELOG
   PREREQUISITES
   - VLC installed and in PATH (vlc.exe).
   - Python available if running the cropper; cropper script present.
+  - FFprobe (optional) for enhanced duration detection on files with missing Windows metadata.
 
 TROUBLESHOOTING
   - Blank images: ensure VLC can decode the file; try -UseVlcSnapshots.
@@ -302,6 +309,8 @@ TROUBLESHOOTING
   - VLC snapshot cadence not exact: VLC 3.x only supports frame-count ratios, not time-based FPS.
     The script calculates the closest ratio based on detected video frame rate. For exact 
     time-based capture, use GDI+ mode instead of -UseVlcSnapshots.
+  - Duration detection fails: Install FFmpeg (includes FFprobe) for enhanced metadata reading.
+    The script tries Windows Shell properties first, then falls back to FFprobe if available.
 
 FAQS
   Q: No frames were captured—what should I check?
@@ -578,22 +587,74 @@ function Save-FrameWithRetry {
     }
 }
 
+function Get-VideoDurationViaShell {
+    param([Parameter(Mandatory)][string]$Path)
+    try {
+        $shell  = New-Object -ComObject Shell.Application
+        $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
+        $item   = $folder.ParseName((Split-Path -Leaf -LiteralPath $Path))
+        
+        # Try multiple duration properties
+        $properties = @('System.Media.Duration', 'Duration', 'System.Video.Duration')
+        foreach ($prop in $properties) {
+            $v = $item.ExtendedProperty($prop)
+            if ($v) {
+                Write-Debug "Duration from $prop`: $v"
+                if ($v -is [string] -and $v.Trim()) { return [TimeSpan]::Parse($v).TotalSeconds }
+                if ($v -is [long] -or $v -is [int]) { return [double]$v / 10000000.0 }
+            }
+        }
+        
+        Write-Debug "No duration properties found via Shell COM"
+        return $null
+    } catch {
+        Write-Debug "Shell COM duration detection failed: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Get-VideoDurationViaFFprobe {
+    param([Parameter(Mandatory)][string]$Path)
+    try {
+        $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
+        if (-not $ffprobe) {
+            Write-Debug "FFprobe not found in PATH"
+            return $null
+        }
+        
+        Write-Debug "Trying FFprobe for duration detection"
+        $result = & ffprobe -v quiet -show_entries format=duration -of csv=p=0 "`"$Path`"" 2>$null
+        if ($result -and $result.Trim()) {
+            $duration = [double]::Parse($result.Trim())
+            Write-Debug "Duration from FFprobe: $duration sec"
+            return $duration
+        }
+        
+        Write-Debug "FFprobe returned no duration data"
+        return $null
+    } catch {
+        Write-Debug "FFprobe duration detection failed: $($_.Exception.Message)"
+        return $null
+    }
+}
+
 <#
 .SYNOPSIS
 Return video duration in seconds using Windows property (if available).
 #>
 function Get-VideoDurationSeconds {
     param([Parameter(Mandatory)][string]$Path)
-    try {
-        $shell  = New-Object -ComObject Shell.Application
-        $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
-        $item   = $folder.ParseName((Split-Path -Leaf -LiteralPath $Path))
-        $v = $item.ExtendedProperty('System.Media.Duration')  # 100-ns units or "hh:mm:ss"
-        if ($null -eq $v) { return $null }
-        if ($v -is [string] -and $v.Trim()) { return [TimeSpan]::Parse($v).TotalSeconds }
-        # 100-ns units
-        return [double]$v / 10000000.0
-    } catch { return $null }
+    
+    # Method 1: Enhanced Shell COM with multiple properties
+    $duration = Get-VideoDurationViaShell -Path $Path
+    if ($duration) { return $duration }
+    
+    # Method 2: FFprobe fallback
+    $duration = Get-VideoDurationViaFFprobe -Path $Path  
+    if ($duration) { return $duration }
+    
+    Write-Debug "All duration detection methods failed for: $Path"
+    return $null
 }
 
 function Get-VideoFps {
