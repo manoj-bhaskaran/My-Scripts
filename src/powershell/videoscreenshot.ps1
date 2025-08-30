@@ -139,6 +139,15 @@ VERSION
   1.2.15
 
 CHANGELOG
+  1.2.16
+  - Fix: Removed duplicated exit code evaluation logic and consolidated into consistent approach across all capture modes
+  - Fix: Added validation to FFprobe parsing to prevent exceptions on non-numeric results like "N/A"
+  - Fix: Implemented proper COM object cleanup (Marshal.ReleaseComObject) in duration/FPS detection functions for better memory management
+  - Fix: Use unique GUID-based PID registry filenames to prevent conflicts between concurrent script runs sharing SaveFolder
+  - Fix: Added deterministic process termination with Wait-Process after Stop-Process -Force for reliable exit code reading
+  - Improvement: Enhanced user feedback with specific timeout messages when videos aren't marked as processed
+  - Improvement: Better resource management for long-running operations and concurrent usage scenarios
+
   1.2.15
   - Fix: Initialize timer variables ($startTime, $videoStartTime) used in debug logging to prevent runtime errors
   - Fix: Handle ExitCode unavailability after forced VLC process termination with proper wait and null checks  
@@ -340,6 +349,9 @@ TROUBLESHOOTING
   - Duration detection fails: Install FFmpeg (includes FFprobe) for enhanced metadata reading.
     The script tries Windows Shell properties first, then falls back to FFprobe if available.
   - VLC hangs in snapshot mode: VLC's --stop-time parameter can be unreliable in headless mode.
+    The script monitors VLC processes and terminates them after video duration + 5 seconds
+    (or 5 minutes maximum if duration unknown). Timeout events now provide specific user feedback
+    about why videos weren't marked as processed.
     The script now monitors VLC processes and terminates them after video duration + 5 seconds
     (or 5 minutes maximum if duration unknown). Check debug output for timeout events.
   - International/locale issues: The script now supports international number formats (comma decimal separators)
@@ -347,6 +359,10 @@ TROUBLESHOOTING
     file properties are populated correctly.
   - Performance with large video collections: Processed video tracking now uses HashSet for O(1) lookups
     instead of O(n) array searches, significantly improving performance with hundreds/thousands of videos.
+  - Concurrent script runs: Multiple script instances can now safely share the same SaveFolder. 
+    Each run uses a unique PID registry file to avoid VLC process conflicts.
+  - Memory usage with many videos: COM object cleanup is now properly implemented to prevent 
+    memory accumulation during large batch processing operations.
 
 FAQS
   Q: No frames were captured—what should I check?
@@ -566,7 +582,9 @@ try {
 }
 
 # PID registry used by event handlers (shared across runspaces)
-$PidRegistry = Join-Path $SaveFolder '.vlc_pids.txt'
+$RunGuid = [System.Guid]::NewGuid().ToString("N").Substring(0, 8)
+$PidRegistry = Join-Path $SaveFolder ".vlc_pids_$RunGuid.txt"
+Write-Debug "Using PID registry: $PidRegistry"
 if (Test-Path -LiteralPath $PidRegistry) {
     Remove-Item -LiteralPath $PidRegistry -Force -ErrorAction SilentlyContinue
 }
@@ -642,26 +660,30 @@ Full path to the video file.
 #>
 function Get-VideoDurationViaShell {
     param([Parameter(Mandatory)][string]$Path)
+
+    $shell = $null
+    $folder = $null
+    $item = $null
+
     try {
         $shell  = New-Object -ComObject Shell.Application
         $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
         $item   = $folder.ParseName((Split-Path -Leaf -LiteralPath $Path))
         
         # Method 1: GetDetailsOf scan (works with localized headers)
-        for ($i = 0; $i -lt 300; $i++) {  # Reduced from 500 for performance
+        for ($i = 0; $i -lt 300; $i++) {
             $header = $folder.GetDetailsOf($null, $i)
-            if ($header -match "Length|Duration|Durée|Dauer|Duración") {  # Multi-language
+            if ($header -match "Length|Duration|Durée|Dauer|Duración") {
                 $v = $folder.GetDetailsOf($item, $i)
                 if ($v -and $v.Trim()) {
                     Write-Debug "Duration from Shell COM column $i ($header): $v"
-                    # Parse time formats
-                    if ($v -match "(\d{1,2}):(\d{2}):(\d{2})") {  # HH:MM:SS
+                    if ($v -match "(\d{1,2}):(\d{2}):(\d{2})") {
                         $hours = [int]$matches[1]
                         $minutes = [int]$matches[2] 
                         $seconds = [int]$matches[3]
                         return ($hours * 3600) + ($minutes * 60) + $seconds
                     }
-                    if ($v -match "(\d{1,2}):(\d{2})") {  # MM:SS format
+                    if ($v -match "(\d{1,2}):(\d{2})") {
                         $minutes = [int]$matches[1]
                         $seconds = [int]$matches[2]
                         return ($minutes * 60) + $seconds
@@ -690,6 +712,10 @@ function Get-VideoDurationViaShell {
     } catch {
         Write-Debug "Shell COM duration detection failed: $($_.Exception.Message)"
         return $null
+    } finally {
+        if ($item)   { try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($item) } catch {} }
+        if ($folder) { try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($folder) } catch {} }
+        if ($shell)  { try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell) } catch {} }
     }
 }
 
@@ -715,12 +741,17 @@ function Get-VideoDurationViaFFprobe {
         }
         
         Write-Debug "Trying FFprobe for duration detection"
-        # Fix: Remove extra quotes - PowerShell handles the path quoting
         $result = & ffprobe -v quiet -show_entries format=duration -of csv=p=0 $Path 2>$null
         if ($result -and $result.ToString().Trim()) {
-            $duration = [double]::Parse($result.ToString().Trim(), [System.Globalization.CultureInfo]::InvariantCulture)
-            Write-Debug "Duration from FFprobe: $duration sec"
-            return $duration
+            $resultStr = $result.ToString().Trim()
+            # Validate before parsing to avoid exceptions on "N/A" or error strings
+            if ($resultStr -match '^\d+\.?\d*$') {
+                $duration = [double]::Parse($resultStr, [System.Globalization.CultureInfo]::InvariantCulture)
+                Write-Debug "Duration from FFprobe: $duration sec"
+                return $duration
+            } else {
+                Write-Debug "FFprobe returned non-numeric result: $resultStr"
+            }
         }
         
         Write-Debug "FFprobe returned no duration data"
@@ -785,31 +816,32 @@ Falls back to 30 FPS assumption if detection fails.
 #>
 function Get-VideoFps {
     param([Parameter(Mandatory)][string]$Path)
+
+    $shell = $null
+    $folder = $null
+    $item = $null
+
     try {
         $shell  = New-Object -ComObject Shell.Application
         $folder = $shell.NameSpace((Split-Path -LiteralPath $Path))
         $item   = $folder.ParseName((Split-Path -Leaf -LiteralPath $Path))
         
         # Method 1: GetDetailsOf scan (works with localized headers)
-        for ($i = 0; $i -lt 300; $i++) {  # Reduced from 500 for performance
+        for ($i = 0; $i -lt 300; $i++) {
             $header = $folder.GetDetailsOf($null, $i)
-            if ($header -match "Frame rate|FPS|Video frame rate|Fréquence d'images|Bildrate") {  # Multi-language
+            if ($header -match "Frame rate|FPS|Video frame rate|Fréquence d'images|Bildrate") {
                 $v = $folder.GetDetailsOf($item, $i)
                 if ($v -and $v.Trim()) {
                     Write-Debug "Frame rate from Shell COM column $i ($header): $v"
                     
-                    # Handle various formats
-                    # Format: "29.97 fps" or "30 fps"
                     if ($v -match "(\d+\.?\d*)\s*fps") {
                         $fps = [double]::Parse($matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
                         if ($fps -gt 0) { return $fps }
                     }
-                    # Format: "29.97" or "30"
                     if ($v -match "^(\d+\.?\d*)$") {
                         $fps = [double]::Parse($matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
                         if ($fps -gt 0) { return $fps }
                     }
-                    # Format: "30000/1001" (fractional)
                     if ($v -match "(\d+)/(\d+)") {
                         $numerator = [double]$matches[1]
                         $denominator = [double]$matches[2]
@@ -830,7 +862,7 @@ function Get-VideoFps {
                 if ($v) {
                     Write-Debug "Frame rate from ExtendedProperty $prop`: $v"
                     if ($v -is [long] -or $v -is [int]) { 
-                        $fps = [double]$v / 1000.0  # System.Video.FrameRate is in 1000*fps
+                        $fps = [double]$v / 1000.0
                         if ($fps -gt 0) { return $fps }
                     }
                 }
@@ -844,6 +876,10 @@ function Get-VideoFps {
     } catch {
         Write-Debug "Shell COM frame rate detection failed: $($_.Exception.Message)"
         return $null
+    } finally {
+        if ($item)   { try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($item) } catch {} }
+        if ($folder) { try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($folder) } catch {} }
+        if ($shell)  { try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell) } catch {} }
     }
 }
 
@@ -1297,12 +1333,15 @@ foreach ($video in $videos) {
                 $elapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
                 if ($elapsed -ge $maxWait) {
                     Write-Debug "VLC process timeout reached ($elapsed sec), force terminating"
-                    Write-Message -Level Info -Message "VLC timeout reached, terminating process for: $($video.FullName)"
+                    Write-Message -Level Warn -Message "VLC timeout reached after $([int]$elapsed)s, terminating process for: $($video.FullName)"
                     try {
                         Stop-Process -Id $vlc.Id -Force -ErrorAction SilentlyContinue
-                        Start-Sleep -Milliseconds 500
+                        # Wait for process to actually terminate
+                        Wait-Process -Id $vlc.Id -Timeout 3000 -ErrorAction SilentlyContinue
+                        $vlc.Refresh()
+                        Write-Debug "Process termination completed"
                     } catch {
-                        Write-Debug "Error terminating VLC process: $($_.Exception.Message)"
+                        Write-Debug "Error during process termination: $($_.Exception.Message)"
                     }
                     break
                 }
@@ -1374,16 +1413,6 @@ foreach ($video in $videos) {
         }
     }
 
-    # Evaluate outcome
-    $vlcExit = if ($vlc -and -not $vlc.HasExited) { 
-        -1  # Still running 
-    } elseif ($vlc -and $null -ne $vlc.ExitCode) { 
-        $vlc.ExitCode 
-    } else { 
-        -1  # ExitCode not available
-    }
-    Write-Debug "VLC exit code: $vlcExit; hadErrors=$errorDuringCapture"
-
     # Post-run validation: ensure frames actually exist
     if ($UseVlcSnapshots) {
         # Compare pre/post counts for this video's prefix
@@ -1400,8 +1429,14 @@ foreach ($video in $videos) {
     # - evidence of frames saved (hadFrames)
     $ok = (-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames
 
-    # At the end of video processing, before the $ok evaluation:
-    $vlcExit = if ($vlc) { $vlc.ExitCode } else { -1 }
+    $vlcExit = if ($vlc -and -not $vlc.HasExited) { 
+        -1  # Still running 
+    } elseif ($vlc -and $null -ne $vlc.ExitCode) { 
+        $vlc.ExitCode 
+    } else { 
+        -1  # ExitCode not available
+    }
+
     $processingTime = if ($videoStartTime) { (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds } else { 0 }
     Write-Debug "Video processing complete: ExitCode=$vlcExit, processingTime=$processingTime sec, frames=$savedThisRun (GDI+) or $($postCount-$preCount) (snapshots), hadErrors=$errorDuringCapture"
     if ($ok) {
@@ -1410,6 +1445,15 @@ foreach ($video in $videos) {
         } else {
             Write-Message -Level Error -Message "Processed OK, but failed to update processed log: $ProcessedLogPath"
             exit 1
+        }
+    } else {
+        # Provide specific feedback for timeout cases
+        if ($UseVlcSnapshots -and $vlcExit -ne 0 -and -not $hadFrames) {
+            Write-Message -Level Warn -Message "Video timed out after $([int]$finalElapsed)s; not marking as processed: $($video.FullName)"
+        } elseif (-not $hadFrames) {
+            Write-Message -Level Warn -Message "No frames captured; not marking as processed: $($video.FullName)"
+        } else {
+            Write-Debug "Video not marked processed - VlcExit: $vlcExit, HadFrames: $hadFrames, Errors: $errorDuringCapture"
         }
     }
 }
