@@ -67,7 +67,7 @@ Validated when -CropOnly is used.
 
 .PARAMETER PythonScriptPath
 Path to the Python cropper script. Defaults to src\python\crop_colours.py
-under the current script folder.
+one level above this script folder (..\python\crop_colours.py), i.e., a sibling to the 'powershell' folder.
 
 .PARAMETER ProcessedLogPath
 Path to the file tracking processed videos.
@@ -145,9 +145,14 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.25
+   1.2.26
 
 CHANGELOG
+   1.2.26
+   - Behavior: In snapshot mode, if VLC is terminated by the per-video timeout derived from detected duration + grace (i.e., StopAtSeconds path), the video is now marked as processed to avoid repeated reprocessing loops—even if no frames were detected and VLC was force-terminated.
+   - Fix: Default PythonScriptPath now points to a sibling 'python\\crop_colours.py' next to the PowerShell folder (…\\src\\python\\crop_colours.py), instead of incorrectly nesting under the PowerShell folder.
+   - Docs: Updated .PARAMETER PythonScriptPath description, TROUBLESHOOTING, and Major behaviours to reflect the new timeout handling semantics and default cropper path.
+
    1.2.25
    - Import UX: Enriched import-failure warning to include “same folder as this script” guidance and Unblock-File / execution policy tips. Kept “module not found” as Debug-only, but clarified the Debug message to explain how to enable the optional module.
    - Docs: TROUBLESHOOTING now includes a hint for when the optional module isn’t found (how to place/unblock it). No functional changes.
@@ -435,6 +440,12 @@ TROUBLESHOOTING
   - VLC hangs in snapshot mode: VLC's --stop-time parameter can be unreliable in headless mode.
     The script now monitors VLC processes and terminates them after video duration + 5 seconds
     (or 5 minutes maximum if duration unknown). Check debug output for timeout events.
+  - Per-video timeout semantics (snapshot mode):
+    • If the snapshot watchdog reaches the per-video limit derived from detected duration + AutoStopGraceSeconds,
+      the video is treated as processed even if VLC had to be force-terminated and zero frames were saved.
+      This prevents the same clip from being retried indefinitely.
+    • If duration is unknown (300s fallback timeout), the video is NOT marked processed.
+    • Tune AutoStopGraceSeconds if you find legitimate videos being cut a bit early.
   - International/locale issues: The script now supports international number formats (comma decimal separators)
     and attempts to detect localized property names. If duration/FPS detection still fails, ensure Windows
     file properties are populated correctly.
@@ -505,6 +516,11 @@ FAQS
   A: VLC's --stop-time parameter doesn't work reliably in headless snapshot mode. The script
       monitors the process and terminates it after the expected duration plus a 5-second buffer
       to prevent indefinite hanging while ensuring complete frame capture.
+
+  Q: Why was a timed-out video marked as processed?
+  A: In snapshot mode, when the watchdog hits the expected per-video bound (detected duration + grace),
+     the script intentionally marks the video as processed to avoid repeated loops on uncooperative files.
+
 #>
 
 [CmdletBinding()]
@@ -532,7 +548,7 @@ param(
     [string]$ResumeFile,
 
     [Parameter(Mandatory = $false)]
-    [string]$PythonScriptPath = (Join-Path $PSScriptRoot 'src\python\crop_colours.py'),
+    [string]$PythonScriptPath = (Join-Path (Split-Path $PSScriptRoot -Parent) 'python\crop_colours.py'),
 
     [Parameter(Mandatory = $false)]
     [string]$ProcessedLogPath,
@@ -1866,14 +1882,22 @@ foreach ($video in $videos) {
     $hadFrames   = $post.HadFrames
     $framesDelta = $post.FramesDelta
 
+    # Recognize per-video timeout (duration + grace) in snapshot mode as a successful completion
+    # This is distinct from the 300s fallback timeout (unknown duration).
+    $timedOutPerVideo = ($UseVlcSnapshots -and $snapResult -and $snapResult.TimedOut -and ($stopAt -gt 0))
+
     # Unified debug output that works for both modes
     $processingTime = if ($videoStartTime) { (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds } else { 0 }
     Write-Debug "Video processing complete: ExitCode=$vlcExit, processingTime=$processingTime sec, frames=$framesDelta, hadErrors=$errorDuringCapture"
 
     # Final outcome evaluation
-    $ok = (-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames
+    # Consider per-video timeout (duration + grace reached) as processed even if VLC was force-terminated and no frames were produced.
+    $ok = $timedOutPerVideo -or ((-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames)
 
     if ($ok) {
+        if ($timedOutPerVideo) {
+            Write-Message -Level Info -Message "Timed out at per-video limit (duration + grace); marking processed: $($video.FullName)"
+        }
         if (Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName) {
             Write-Message -Level Info -Message "Marked processed: $($video.FullName)"
         } else {
@@ -1884,7 +1908,12 @@ foreach ($video in $videos) {
         # Provide specific feedback for timeout cases
         if ($UseVlcSnapshots -and $vlcExit -ne 0 -and -not $hadFrames) {
             $elapsedForMsg = if ($snapResult) { [int]$snapResult.ElapsedSeconds } else { 0 }
-            Write-Message -Level Warn -Message "Video timed out after ${elapsedForMsg}s; not marking as processed: $($video.FullName)"
+            if ($stopAt -gt 0 -and $snapResult -and $snapResult.TimedOut) {
+                # This branch should be rare now because $timedOutPerVideo already set $ok=true.
+                Write-Message -Level Info -Message "Timed out at per-video limit after ${elapsedForMsg}s; treating as processed: $($video.FullName)"
+            } else {
+                Write-Message -Level Warn -Message "Video timed out after ${elapsedForMsg}s; not marking as processed: $($video.FullName)"
+            }
         } elseif (-not $hadFrames) {
             Write-Message -Level Warn -Message "No frames captured; not marking as processed: $($video.FullName)"
         } else {
