@@ -145,9 +145,15 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.22
+   1.2.23
 
 CHANGELOG
+   1.2.23
+   - Import handling: If videoscreenshot.util.psm1 exists but fails to load, emit a user-visible warning and fall back to built-ins.
+   - Docs: Document the optional helper module in PREREQUISITES and TROUBLESHOOTING.
+   - Refactor: Extracted per-video validation into Initialize-VideoContext (duration/stopAt, snapshot prefix/precount, per-video deadline).
+   - Logging: Write-Message now routes Warn/Error to native streams (Write-Warning / Write-Error) while preserving consistent formatting.
+   
    1.2.22
    - Refactor: Extracted mode-specific capture into Invoke-GdiCapture and Invoke-SnapshotCapture to simplify the main loop.
    - Modularization: Added optional videoscreenshot.util.psm1 providing Write-Message and Add-ContentWithRetry; script auto-imports it if present and falls back to inline helpers.
@@ -364,6 +370,10 @@ CHANGELOG
   - Python available if running the cropper; cropper script present.
   - FFprobe (optional but recommended) in PATH for robust duration detection.
     Download via FFmpeg and ensure `ffprobe` is available in your shell.
+  - Optional module: videoscreenshot.util.psm1 (same folder as this script).
+    Provides Write-Message and Add-ContentWithRetry. If present, the script imports it.
+    If missing or it fails to load, the script falls back to built-in helpers and
+    prints a warning for visibility.
 
 TROUBLESHOOTING
   - Blank images: ensure VLC can decode the file; try -UseVlcSnapshots.
@@ -402,7 +412,8 @@ TROUBLESHOOTING
         recommends GDI+ for precise timing.
       • When FFprobe is not found in PATH, a one-time warning explains that duration detection
         falls back to Windows file metadata and auto-stop may be less reliable.
-
+      • When the optional helper module (videoscreenshot.util.psm1) is present but fails to import,
+        a warning is printed and the script uses built-in fallbacks for logging and safe file appends.
   - Duration detection fails: Install FFmpeg (includes FFprobe) for enhanced metadata reading.
     The script tries Windows Shell properties first, then falls back to FFprobe if available.
   - VLC hangs in snapshot mode: VLC's --stop-time parameter can be unreliable in headless mode.
@@ -534,15 +545,20 @@ param(
 
 # region Utilities
 
- # Try optional helper module; define fallbacks if missing so the script stays self-contained
- $utilModulePath = Join-Path $PSScriptRoot 'videoscreenshot.util.psm1'
- if (Test-Path -LiteralPath $utilModulePath) {
-     try { Import-Module -LiteralPath $utilModulePath -Force -ErrorAction Stop | Out-Null } catch { Write-Debug "Util module import failed: $($_.Exception.Message)" }
- }
- 
- <#
- .SYNOPSIS
- Append to a file with limited retries to absorb transient locks.
+# Try optional helper module; define fallbacks if missing so the script stays self-contained
+$utilModulePath = Join-Path $PSScriptRoot 'videoscreenshot.util.psm1'
+if (Test-Path -LiteralPath $utilModulePath) {
+    try {
+        Import-Module -Name $utilModulePath -Force -ErrorAction Stop | Out-Null
+    } catch {
+        # user-visible warning when the helper exists but fails to load
+        Write-Warning ("Optional helper module failed to load; using built-in fallbacks. Error: {0}" -f $_.Exception.Message)
+    }
+}
+
+<#
+.SYNOPSIS
+Append to a file with limited retries to absorb transient locks.
 .DESCRIPTION
 Attempts Add-Content up to MaxAttempts with a simple linear backoff. Returns
 $true on success, $false if all attempts fail.
@@ -604,10 +620,15 @@ if (-not (Get-Command Write-Message -ErrorAction SilentlyContinue)) {
             [Parameter(Mandatory)][string]$Message
         )
         $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        $prefixed = "[$ts] [$($Level.ToUpper().PadRight(5))] $Message"
         switch ($Level) {
-            'Info'  { Write-Host "[$ts] [INFO ] $Message" -ForegroundColor Cyan }
-            'Warn'  { Write-Host "[$ts] [WARN ] $Message" -ForegroundColor Yellow }
-            'Error' { Write-Host "[$ts] [ERROR] $Message" -ForegroundColor Red }
+            'Warn'  { Write-Warning $prefixed }
+            'Error' { Write-Error   $prefixed }
+            Default {
+                # Prefer Information stream for scriptability; also show in host for visibility
+                try { Write-Information $prefixed } catch {}
+                Write-Host $prefixed -ForegroundColor Cyan
+            }
         }
     }
 }
@@ -953,6 +974,70 @@ function Get-VideoFps {
 # endregion Utilities
 
 # region Capture helpers
+
+<#
+.SYNOPSIS
+Compute per-video context shared by both capture modes.
+.DESCRIPTION
+Resolves snapshot prefix & pre-run counts, duration/stopAt, and a per-video deadline.
+Returns an object with ScenePrefix, PreCount, StopAtSeconds, PerVideoDeadline.
+.PARAMETER VideoPath
+Full path to the video.
+.PARAMETER SaveFolder
+Destination folder for frames.
+.PARAMETER UseVlcSnapshots
+If set, handles snapshot hygiene (ClearSnapshotsBeforeRun) and pre/post counting.
+.PARAMETER ClearSnapshotsBeforeRun
+Deletes existing <prefix>*.png before run when in snapshot mode.
+.PARAMETER DisableAutoStop
+Skips duration-based stopAt calculation when set.
+.PARAMETER AutoStopGraceSeconds
+Seconds added beyond detected duration (if any).
+.OUTPUTS
+PSCustomObject
+#>
+function Initialize-VideoContext {
+    param(
+        [Parameter(Mandatory)][string]$VideoPath,
+        [Parameter(Mandatory)][string]$SaveFolder,
+        [switch]$UseVlcSnapshots,
+        [switch]$ClearSnapshotsBeforeRun,
+        [switch]$DisableAutoStop,
+        [int]$AutoStopGraceSeconds = 2
+    )
+    $scenePrefix = ([IO.Path]::GetFileNameWithoutExtension($VideoPath)) + '_'
+    $preCount = 0
+    if ($UseVlcSnapshots) {
+        if ($ClearSnapshotsBeforeRun) {
+            Get-ChildItem -Path $SaveFolder -Filter "$scenePrefix*.png" -File -ErrorAction SilentlyContinue |
+                Remove-Item -Force -ErrorAction SilentlyContinue
+            $preCount = 0
+        } else {
+            $preCount = (Get-ChildItem -Path $SaveFolder -Filter "$scenePrefix*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+        }
+    }
+
+    $stopAt = 0.0
+    if (-not $DisableAutoStop) {
+        $dur = Get-VideoDurationSeconds -Path $VideoPath
+        if ($dur -and $dur -gt 0) {
+            $stopAt = [double]$dur + [double]$AutoStopGraceSeconds
+            Write-Debug "Duration detection: raw=$dur sec, grace=$AutoStopGraceSeconds sec, stopAt=$stopAt sec"
+        } else {
+            Write-Debug "Duration detection: unable to detect duration, no auto-stop will be applied"
+        }
+    } else {
+        Write-Debug "Auto-stop disabled via -DisableAutoStop parameter"
+    }
+
+    $deadline = if ($stopAt -gt 0) { (Get-Date).AddSeconds($stopAt) } else { $null }
+    [pscustomobject]@{
+        ScenePrefix      = $scenePrefix
+        PreCount         = $preCount
+        StopAtSeconds    = $stopAt
+        PerVideoDeadline = $deadline
+    }
+}
 
 <#
 .SYNOPSIS
@@ -1638,32 +1723,14 @@ foreach ($video in $videos) {
     $vlc = $null
     $errorDuringCapture = $false
     $hadFrames = $false
-    $preCount = 0
-    $scenePrefixForThisVideo = ([IO.Path]::GetFileNameWithoutExtension($video.FullName)) + '_'
-
-    if ($UseVlcSnapshots) {
-        if ($ClearSnapshotsBeforeRun) {
-            Get-ChildItem -Path $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue |
-                Remove-Item -Force -ErrorAction SilentlyContinue
-            $preCount = 0
-        } else {
-            $preCount = (Get-ChildItem -Path $SaveFolder -Filter "$scenePrefixForThisVideo*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
-        }
-    }
-
+    $savedThisRun = 0
+    $ctx = Initialize-VideoContext -VideoPath $video.FullName -SaveFolder $SaveFolder `
+        -UseVlcSnapshots:$UseVlcSnapshots -ClearSnapshotsBeforeRun:$ClearSnapshotsBeforeRun `
+        -DisableAutoStop:$DisableAutoStop -AutoStopGraceSeconds $AutoStopGraceSeconds
+    $scenePrefixForThisVideo = $ctx.ScenePrefix
+    $preCount = $ctx.PreCount
     try {
-        $stopAt = 0
-        if (-not $DisableAutoStop) {
-            $dur = Get-VideoDurationSeconds -Path $video.FullName
-            if ($dur -and $dur -gt 0) { 
-                $stopAt = [double]$dur + [double]$AutoStopGraceSeconds 
-                Write-Debug "Duration detection: raw=$dur sec, grace=$AutoStopGraceSeconds sec, stopAt=$stopAt sec"
-            } else {
-                Write-Debug "Duration detection: unable to detect duration, no auto-stop will be applied"
-            }
-        } else {
-            Write-Debug "Auto-stop disabled via -DisableAutoStop parameter"
-        }
+        $stopAt = $ctx.StopAtSeconds
         
         $vlc = Start-Vlc -VideoPath $video.FullName -SaveFolder $SaveFolder `
                     -UseVlcSnapshots:$UseVlcSnapshots -StopAtSeconds:$stopAt
@@ -1676,7 +1743,7 @@ foreach ($video in $videos) {
             $snapResult = Invoke-SnapshotCapture -Process $vlc -StopAtSeconds $stopAt
         } else {
             $videoBase = [IO.Path]::GetFileNameWithoutExtension($video.Name)
-            $perVideoDeadline = if ($stopAt -gt 0) { (Get-Date).AddSeconds($stopAt) } else { $null }
+            $perVideoDeadline = $ctx.PerVideoDeadline
             if ($perVideoDeadline) {
                 Write-Debug "GDI+ capture: per-video deadline set to $($perVideoDeadline.ToString('HH:mm:ss'))"
             } else {
