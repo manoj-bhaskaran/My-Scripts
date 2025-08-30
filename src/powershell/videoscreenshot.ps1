@@ -136,9 +136,15 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.15
+  1.2.17
 
 CHANGELOG
+  1.2.17
+  - Fix: Critical bug where GDI+ capture mode exit codes were uninitialized during outcome evaluation,
+    causing successful captures to be incorrectly marked as failures
+  - Fix: Moved VLC exit code evaluation to occur before outcome assessment for both capture modes
+  - Fix: Removed duplicate troubleshooting documentation entry
+
   1.2.16
   - Fix: Removed duplicated exit code evaluation logic and consolidated into consistent approach across all capture modes
   - Fix: Added validation to FFprobe parsing to prevent exceptions on non-numeric results like "N/A"
@@ -348,10 +354,6 @@ TROUBLESHOOTING
     time-based capture, use GDI+ mode instead of -UseVlcSnapshots.
   - Duration detection fails: Install FFmpeg (includes FFprobe) for enhanced metadata reading.
     The script tries Windows Shell properties first, then falls back to FFprobe if available.
-  - VLC hangs in snapshot mode: VLC's --stop-time parameter can be unreliable in headless mode.
-    The script monitors VLC processes and terminates them after video duration + 5 seconds
-    (or 5 minutes maximum if duration unknown). Timeout events now provide specific user feedback
-    about why videos weren't marked as processed.
     The script now monitors VLC processes and terminates them after video duration + 5 seconds
     (or 5 minutes maximum if duration unknown). Check debug output for timeout events.
   - International/locale issues: The script now supports international number formats (comma decimal separators)
@@ -363,7 +365,7 @@ TROUBLESHOOTING
     Each run uses a unique PID registry file to avoid VLC process conflicts.
   - Memory usage with many videos: COM object cleanup is now properly implemented to prevent 
     memory accumulation during large batch processing operations.
-
+    
 FAQS
   Q: No frames were captured—what should I check?
      A: Confirm VLC can play the file (codecs), ensure write permission to SaveFolder,
@@ -1346,14 +1348,6 @@ foreach ($video in $videos) {
                     break
                 }
             }
-
-            $vlcExit = if ($vlc -and -not $vlc.HasExited) { 
-                -1  # Still running 
-            } elseif ($vlc -and $null -ne $vlc.ExitCode) { 
-                $vlc.ExitCode 
-            } else { 
-                -1  # ExitCode not available
-            }
             
             $finalElapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
             Write-Debug "VLC process completed after $finalElapsed seconds"
@@ -1400,18 +1394,27 @@ foreach ($video in $videos) {
         }
     }
     catch {
-        $errorDuringCapture = $true
-        Write-Message -Level Error -Message $_.Exception.Message
-    }
-    finally {
-        if ($vlc) {
-            Stop-Vlc -Process $vlc
-            if (Test-Path -LiteralPath $PidRegistry) {
-                (Get-Content -LiteralPath $PidRegistry | Where-Object { $_ -ne "$($vlc.Id)" }) |
-                    Set-Content -LiteralPath $PidRegistry
+            $errorDuringCapture = $true
+            Write-Message -Level Error -Message $_.Exception.Message
+        }
+        finally {
+            if ($vlc) {
+                Stop-Vlc -Process $vlc
+                if (Test-Path -LiteralPath $PidRegistry) {
+                    (Get-Content -LiteralPath $PidRegistry | Where-Object { $_ -ne "$($vlc.Id)" }) |
+                        Set-Content -LiteralPath $PidRegistry
+                }
             }
         }
-    }
+
+        # Evaluate VLC exit code consistently for both capture modes
+        $vlcExit = if ($vlc -and -not $vlc.HasExited) { 
+            -1  # Still running 
+        } elseif ($vlc -and $null -ne $vlc.ExitCode) { 
+            $vlc.ExitCode 
+        } else { 
+            -1  # ExitCode not available
+        }
 
     # Post-run validation: ensure frames actually exist
     if ($UseVlcSnapshots) {
