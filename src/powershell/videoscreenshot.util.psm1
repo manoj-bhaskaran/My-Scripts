@@ -8,11 +8,9 @@ Versioning and changelog are tracked by the main script/release tags.
 
 .NOTES
 Author: Manoj Bhaskaran
-Streams & compatibility:
-- Info → Information stream (when enabled). A try/catch wraps Write-Information for
-  older hosts; we also echo to the host for visibility.
-- Warn/Error → native streams (Write-Warning / Write-Error) and mirrored to the Debug
-  stream to aid troubleshooting when -Debug is enabled.
+Streams:
+  - Warn/Error: native streams (Write-Warning / Write-Error) and mirrored to Debug for diagnosis.
+  - Info: primary to Information stream (with -InformationAction Continue); fallback is Write-Output (pipeline-friendly).
 #>
 
 function Write-Message {
@@ -35,8 +33,9 @@ function Write-Message {
         'Warn'  { Write-Warning $prefixed; Write-Debug $prefixed }
         'Error' { Write-Error   $prefixed; Write-Debug $prefixed }
         Default {
-            try { Write-Information $prefixed } catch {}
-            Write-Host $prefixed -ForegroundColor Cyan
+            try { Write-Information -MessageData $prefixed -InformationAction Continue } catch {}
+            # Prefer pipeline over host for non-interactive callers
+            Write-Output $prefixed
         }
     }
 }
@@ -80,4 +79,75 @@ function Add-ContentWithRetry {
     }
 }
 
-Export-ModuleMember -Function Write-Message,Add-ContentWithRetry
+function Assert-FolderWritable {
+    <#
+    .SYNOPSIS
+    Ensures a folder exists and is writable (throws if not).
+    .PARAMETER Folder
+    Target directory path; created if missing.
+    #>
+    param([Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Folder)
+    try {
+        if (-not (Test-Path -LiteralPath $Folder)) {
+            New-Item -ItemType Directory -Path $Folder -Force | Out-Null
+        }
+        $tmp = Join-Path $Folder (".writetest_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
+        [IO.File]::WriteAllText($tmp, 'ok')
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        return $true
+    } catch {
+        throw "Folder is not writable: $Folder – $($_.Exception.Message)"
+    }
+}
+
+function Measure-PostCapture {
+    <#
+    .SYNOPSIS
+    Post-capture measurement/validation and (snapshot) FPS deviation handling.
+    .DESCRIPTION
+    Determines whether frames were produced and computes frames delta. In snapshot mode,
+    also computes achieved FPS and warns if it deviates ≥20% from the requested value.
+    #>
+    param(
+        [switch]$UseVlcSnapshots,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$SaveFolder,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$ScenePrefix,
+        [int]$PreCount = 0,
+        $GdiResult,
+        $SnapResult,
+        [Parameter(Mandatory)][ValidateRange(1,1000)][int]$RequestedFps,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$VideoPath
+    )
+    $hadFrames = $false
+    $framesDelta = 0
+    $achieved = $null
+
+    if ($UseVlcSnapshots) {
+        $postCount = (Get-ChildItem -Path $SaveFolder -Filter "$ScenePrefix*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+        $framesDelta = $postCount - $PreCount
+        $hadFrames   = ($framesDelta -gt 0)
+        if ($SnapResult -and $SnapResult.ElapsedSeconds -gt 0) {
+            $achieved = [Math]::Round($framesDelta / $SnapResult.ElapsedSeconds, 3)
+            Write-Debug "Snapshot achieved FPS: $achieved (requested=$RequestedFps, frames=$framesDelta, elapsed=$($SnapResult.ElapsedSeconds)s)"
+            if ($RequestedFps -gt 0) {
+                $dev = [Math]::Abs($achieved - $RequestedFps) / [double]$RequestedFps
+                if ($dev -ge 0.20) {
+                    Write-Message -Level Warn -Message ("Snapshot cadence deviates by {0:P0} from requested FPS (requested={1}, achieved={2}) for: {3}" -f $dev, $RequestedFps, $achieved, $VideoPath)
+                }
+            }
+        }
+    } else {
+        $framesSaved = if ($null -ne $GdiResult) { [int]$GdiResult.FramesSaved } else { 0 }
+        $hadFrames   = ($framesSaved -gt 0)
+        $framesDelta = $framesSaved
+        $achieved    = ($GdiResult?.AchievedFps)
+    }
+
+    [pscustomobject]@{
+        HadFrames   = [bool]$hadFrames
+        FramesDelta = [int]$framesDelta
+        AchievedFps = $achieved
+    }
+}
+
+Export-ModuleMember -Function Write-Message,Add-ContentWithRetry,Assert-FolderWritable,Measure-PostCapture

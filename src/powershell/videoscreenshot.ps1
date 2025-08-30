@@ -145,190 +145,39 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.26
+   1.2.27
 
 CHANGELOG
+   1.2.27
+   - Snapshot mode UX: add a pre-run warning when -FramesPerSecond exceeds detected video FPS; cadence will be limited to 1:1 (frame-per-frame).
+   - Validation: add stricter parameter validation to several helpers (paths non-empty; positive ranges; width/height pairing).
+   - Errors: make key errors more actionable (suggest next steps for SourceFolder/VLC missing; “no frames” guidance).
+   - Complexity: moved common helpers (Measure-PostCapture, Assert-FolderWritable) into the optional util module; script keeps fallbacks when module is absent.
+   - Docs: trimmed historical patch-level CHANGELOG noise; most recent five patch versions remain detailed, older entries are condensed.
+
    1.2.26
-   - Behavior: In snapshot mode, if VLC is terminated by the per-video timeout derived from detected duration + grace (i.e., StopAtSeconds path), the video is now marked as processed to avoid repeated reprocessing loops—even if no frames were detected and VLC was force-terminated.
-   - Fix: Default PythonScriptPath now points to a sibling 'python\\crop_colours.py' next to the PowerShell folder (…\\src\\python\\crop_colours.py), instead of incorrectly nesting under the PowerShell folder.
-   - Docs: Updated .PARAMETER PythonScriptPath description, TROUBLESHOOTING, and Major behaviours to reflect the new timeout handling semantics and default cropper path.
+   - Import UX: Debug-only note when optional module is not found; richer warning when present but fails to import.
+   - Docs: TROUBLESHOOTING notes for optional module placement/unblock/execution policy.
 
    1.2.25
-   - Import UX: Enriched import-failure warning to include “same folder as this script” guidance and Unblock-File / execution policy tips. Kept “module not found” as Debug-only, but clarified the Debug message to explain how to enable the optional module.
-   - Docs: TROUBLESHOOTING now includes a hint for when the optional module isn’t found (how to place/unblock it). No functional changes.
+   - Import UX: Enriched import-failure guidance; clarified Debug message when module not found.
+   - Docs: TROUBLESHOOTING hint for placing/unblocking optional module.
 
    1.2.24
-   - Import UX: Optional util module import now warns on failure with guidance to check path/permissions/execution policy, and mirrors detail to the Debug stream.
-   - Docs: Clarified the optional nature and placement of videoscreenshot.util.psm1 (same folder as the script) in PREREQUISITES/TROUBLESHOOTING.
-   - Refactor: Extracted Initialize-VideoContext (snapshot prefix prep, optional cleanup, SaveFolder writability preflight, and duration→stop-time derivation).
-   - Refactor: Extracted Measure-PostCapture (post-capture frame detection + snapshot FPS deviation check and warning).
-   - Logging: Write-Message now routes to native PowerShell streams (Information/Warning/Error) and mirrors Warn/Error to Debug for easier diagnosis.
- 
+   - Optional util import warns on failure; refactors for Initialize-VideoContext; Write-Message routes to native streams.
+
    1.2.23
-   - Import handling: If videoscreenshot.util.psm1 exists but fails to load, emit a user-visible warning and fall back to built-ins.
-   - Docs: Document the optional helper module in PREREQUISITES and TROUBLESHOOTING.
-   - Refactor: Extracted per-video validation into Initialize-VideoContext (duration/stopAt, snapshot prefix/precount, per-video deadline).
-   - Logging: Write-Message now routes Warn/Error to native streams (Write-Warning / Write-Error) while preserving consistent formatting.
-   
+   - Import handling; docs for optional module; per-video context refactor; stream routing improvements.
+
    1.2.22
-   - Refactor: Extracted mode-specific capture into Invoke-GdiCapture and Invoke-SnapshotCapture to simplify the main loop.
-   - Modularization: Added optional videoscreenshot.util.psm1 providing Write-Message and Add-ContentWithRetry; script auto-imports it if present and falls back to inline helpers.
-   - Observability: Snapshot mode now emits a user-visible warning when achieved FPS deviates ≥20% from requested; precise achieved FPS still logged in debug.
-   - Docs: .TROUBLESHOOTING expanded with runtime warning explanations and a concrete frame-ratio example (expected vs. actual frames).
- 
-  1.2.21
-  - Refactor: Start-Vlc now orchestrates helper functions and delegates process launch to Invoke-VlcProcess.
-    Introduced Register-RunPid/Unregister-RunPid to centralize PID registry updates.
-  - Fix: Get-VlcArgsCommon returned an undefined variable; now returns the composed args correctly.
-  - Observability: Added snapshot-mode achieved FPS debug log using post-capture frame counts and elapsed time.
-  - Docs: TROUBLESHOOTING now notes the one-time runtime warnings (snapshot cadence & FFprobe absence).
+   - Split capture helpers; optional util module; snapshot-mode FPS deviation warning; doc expansions.
 
-  1.2.20
-  - Refactor: Split Start-Vlc into helper functions (Get-VlcArgsCommon / Get-VlcArgsSnapshot / Get-VlcArgsGdi) to reduce complexity and improve maintainability.
-  - UX: Added a one-time user-visible warning when -UseVlcSnapshots is enabled explaining frame-ratio cadence approximation and pointing to GDI+ for exact timing.
-  - UX: Added a one-time user-visible warning when FFprobe is missing, clarifying that duration detection will fall back to Windows metadata and auto-stop may be less reliable.
-  - Debug: GDI+ mode now logs achieved FPS at end of capture to help verify timing accuracy (Write-Debug).
-  - Docs: Clarified GDI+ vs snapshot trade-offs prominently in .DESCRIPTION with concise bullets.
-
-  1.2.19
-  - Improvement: GDI+ capture uses a monotonic scheduler (Stopwatch) to minimize FPS drift from PNG save time
-  - Fix: FFprobe invocation now passes the video path after `--` to prevent arg parsing issues on odd paths
-  - Add: Preflight check for VLC in PATH (except when -CropOnly) with clear validation error (exit 2)
-  - Improvement: Snapshot mode logs a helpful debug note when requested FPS exceeds detected video FPS
-  - Improvement: Processed log appends use an exclusive file lock for better concurrency behavior
-  - Docs: Fix typos (“playbook” → “playback”) and tighten SaveFolder note in Start-Vlc docs
-
-  1.2.18
-  - Fix: Removed duplicate $vlcExit assignment to prevent logic drift and confusion
-  - Fix: Unified frame count calculation in debug output to prevent uninitialized variable references in GDI+ mode
-  - Fix: Added Wait-Process to Stop-Vlc function for consistent deterministic process termination across all code paths
-  - Fix: Updated troubleshooting documentation to reflect actual GUID-based PID registry filenames (.vlc_pids_*.txt)
-  - Fix: Corrected indentation inconsistencies in main capture try/catch/finally block
-
-  1.2.17
-  - Fix: Critical bug where GDI+ capture mode exit codes were uninitialized during outcome evaluation,
-    causing successful captures to be incorrectly marked as failures
-  - Fix: Moved VLC exit code evaluation to occur before outcome assessment for both capture modes
-  - Fix: Removed duplicate troubleshooting documentation entry
-
-  1.2.16
-  - Fix: Removed duplicated exit code evaluation logic and consolidated into consistent approach across all capture modes
-  - Fix: Added validation to FFprobe parsing to prevent exceptions on non-numeric results like "N/A"
-  - Fix: Implemented proper COM object cleanup (Marshal.ReleaseComObject) in duration/FPS detection functions for better memory management
-  - Fix: Use unique GUID-based PID registry filenames to prevent conflicts between concurrent script runs sharing SaveFolder
-  - Fix: Added deterministic process termination with Wait-Process after Stop-Process -Force for reliable exit code reading
-  - Improvement: Enhanced user feedback with specific timeout messages when videos aren't marked as processed
-  - Improvement: Better resource management for long-running operations and concurrent usage scenarios
-
-  1.2.15
-  - Fix: Initialize timer variables ($startTime, $videoStartTime) used in debug logging to prevent runtime errors
-  - Fix: Handle ExitCode unavailability after forced VLC process termination with proper wait and null checks  
-  - Fix: Use invariant culture for number parsing to support international locales with comma decimal separators
-  - Fix: Add ExtendedProperty fallback for Shell COM duration/FPS detection when localized headers fail
-  - Fix: Support MM:SS duration format in addition to existing HH:MM:SS parsing
-  - Fix: Convert processed video log from O(n) array lookup to O(1) HashSet for better performance with large collections
-  - Cleanup: Remove unused $global:vlcPids variable and references
-  - Improvement: Enhanced international compatibility and performance for large video sets
-
-  1.2.14
-  - Fix: Added process monitoring timeout for VLC snapshot mode to prevent indefinite hanging
-  - Fix: VLC --stop-time parameter unreliable in snapshot mode, now using process termination fallback
-  - Add: Configurable timeout based on detected video duration plus buffer (5 seconds) or 5-minute default
-  - Add: Enhanced debug logging for VLC process monitoring and termination events
-  - Improvement: More reliable snapshot mode operation that won't hang on problematic video files
-
-  1.2.13
-  - Fix: Corrected FFprobe command line argument handling (removed double-quoting issue)
-  - Fix: Replaced Windows Shell COM ExtendedProperty method with GetDetailsOf method for better compatibility
-    in both Get-VideoDurationSeconds and Get-VideoFps functions
-  - Fix: Enhanced Shell COM duration parsing to handle time format strings (HH:MM:SS)
-  - Fix: Enhanced frame rate parsing to handle multiple formats (decimal, "X fps", fractional notation)
-  - Add: Debug logging for both duration and frame rate detection processes
-  - Improvement: More robust duration detection and VLC snapshot cadence calculation across different 
-    Windows versions and file formats
-
-  1.2.12
-  - Fix: Enhanced duration detection with multiple fallback methods for improved file compatibility
-  - Add: FFprobe fallback for duration detection when Windows Shell COM properties unavailable  
-  - Add: Multiple Windows metadata property attempts (System.Media.Duration, Duration, System.Video.Duration)
-  - Improvement: More robust auto-stop functionality with better file format support
-
-  1.2.11
-  - Add: Comprehensive debug logging for duration detection, grace period calculation, and auto-stop logic
-  - Add: Debug messages for VLC startup timing, early exit detection, and stop-time parameter configuration  
-  - Add: Debug output for per-video deadline enforcement in GDI+ capture mode
-  - Add: Video processing summary debug information showing exit codes, timing, and frame counts
-  - Improvement: Enhanced diagnostic visibility for testing and troubleshooting auto-stop functionality
-
-  1.2.10
-  - Fix: Corrected Get-ChildItem calls using -LiteralPath with filters to use -Path instead,
-    ensuring -Filter and -Include work reliably across PowerShell versions
-  - Fix: Updated snapshot file cleanup, pre/post-count validation, and post-capture image 
-    detection to use proper filter syntax for consistent operation
-
-  1.2.9
-  - Fix: Corrected FAQ documentation that incorrectly stated both capture modes use time-based cadence
-    (VLC snapshot mode uses frame-ratio approximation due to VLC 3.x limitations)
-  - Fix: Changed video file enumeration from -LiteralPath to -Path with wildcard to ensure -Include 
-    filter works reliably across PowerShell versions
-
-  1.2.8
-  - Fix: VLC 3.0.21 compatibility - replaced unsupported --scene-fps with --scene-ratio calculation
-    based on detected video frame rate for snapshot mode
-  - Add: Get-VideoFps function to read video frame rate from file metadata for snapshot cadence calculation
-  - Improvement: Snapshot mode now uses mathematical approximation (1 out of N frames) rather than
-    time-based capture, with 30fps fallback for files without detectable frame rate
-
-  1.2.7
-  - Fix: Updated Major behaviours documentation to correctly describe global time limit behavior 
-    (prevents starting new videos rather than terminating current video mid-capture)
-  - Fix: Added missing -File parameter to postCount query for consistency with preCount query
-  - Cleanup: Removed unused $partial variable that was no longer needed after global time limit logic changes
-
-  1.2.6
-  - Fix: Corrected invalid Write-Debug call that incorrectly used -Level parameter
-  - Fix: Updated SaveFolder parameter documentation to reflect correct default location (Desktop\Screenshots)
-  
-  1.2.5
-  - Fix: Short video clips that complete during VLC startup window (ExitCode=0) are now correctly 
-    treated as successful completion rather than startup failures
-  - Fix: Corrected string quoting for --scene-fps parameter to ensure proper variable expansion 
-    in VLC snapshot mode arguments
-
-  1.2.4
-  - Fix: FramesPerSecond now properly implemented for VLC snapshot mode using --scene-fps instead of --scene-ratio=1
-    This ensures time-based capture cadence (N screenshots per second) rather than frame-count based capture
-  - Fix: SaveFolder default changed from script-relative path to Desktop\Screenshots for better user experience
-  - Fix: Per-video auto-stop grace period now always enforced regardless of global TimeLimitSeconds setting
-  - Fix: GDI+ capture mode now respects per-video time limits with proper deadline checking
-  - Improvement: Better separation of concerns between global time limits and per-video duration controls
-  
-  1.2.3
-  - FramesPerSecond now applies to VLC snapshot mode using --scene-ratio based on assumed 30 FPS video.
-  - TimeLimitSeconds is now a global limit: stops starting new videos once reached, but allows current video to finish.
-  - VideoLimit and TimeLimitSeconds are honored together (whichever first).
-  - Fix: Removed unused $started variable in main flow for better code hygiene.
-  - Docs: updated parameter descriptions and FAQs for these changes.
-
-  1.2.2
-  - Fix: treat clean early VLC exit during the startup wait as normal (short clips),
-    preventing false "failed to start" and avoiding erroneous errorDuringCapture.
-  - Hardening: add --no-loop and --no-repeat to VLC args to neutralize user loop/repeat prefs.
-  - Docs: clarify Start-Vlc behavior for short clips and note loop flags; add troubleshooting note.
-
-  1.2.1
-  - Auto-stop playback at detected video duration (+ grace) to prevent long
-    runs producing blank screens when VLC doesn't exit cleanly.
-    • Enabled by default when -TimeLimitSeconds is 0.
-    • Disable with -DisableAutoStop.
-    • Grace seconds controlled by -AutoStopGraceSeconds (default: 2).
-  - Start-Vlc now passes --stop-time <seconds> when duration is known, and
-    also adds --no-loop and --no-repeat for safety.
-  - New parameters:
-    • -AutoStopGraceSeconds <int>   # extra seconds beyond detected duration
-    • -DisableAutoStop              # opt out of duration-based stop
-  - Docs: added .PARAMETER entries for the two new flags and a
-    TROUBLESHOOTING note about "screenshots continue after short clips".
+   Earlier 1.2.x (≤1.2.21) — condensed:
+   - Robustness: safer process termination, improved metadata detection (Shell/FFprobe), cross-locale parsing, O(1) processed lookups.
+   - UX/Observability: clearer warnings for snapshot cadence/FFprobe absence, detailed Debug traces for timings and FPS.
+   - Behavior: reliable per-video/global timeouts; GDI monotonic scheduling; snapshot process monitoring.
+   - Fixes: argument quoting, filter usage, exit-code handling, PID registry naming, duplicate logic removal, and other quality-of-life fixes.
+     See commits between 1.2.1 and 1.2.21 for full details.
 
   1.2.0
   - Default processed log now resolves under <SaveFolder> as processed_videos.log when -ProcessedLogPath
@@ -338,38 +187,13 @@ CHANGELOG
     only PIDs launched by this run; entries are removed after Stop-Vlc.
   - Start-Vlc: write PID to registry; surface VLC stderr on failed start (shown with -Debug).
 
-  1.1.12
-  - Robust interrupt cleanup: track launched VLC PIDs and terminate them on Ctrl+C (Console.CancelKeyPress)
-    and on PowerShell session exit (PowerShell.Exiting).
-
-  1.1.11
-  - Start-Vlc: correct argument logging (was logging $args instead of $vlcArgs).
-
-  1.1.10
-  - Invoke-Cropper: enforce Python 3.9+.
-  - New -ClearSnapshotsBeforeRun (snapshot mode): delete existing <VideoBaseName>_*.png before start.
-
-  1.1.9
-  - Add -GdiFullscreen to force legacy full-screen VLC window in GDI+ capture.
-  - Add -Legacy1080p to capture fixed 1920×1080 region (legacy method).
-  - GDI+ launch uses GUI interface; snapshots still use --intf dummy.
-
-  1.1.7
-  - Post-capture: run crop_colours.py against SaveFolder when not -CropOnly
-    ( --input <SaveFolder> --skip-bad-images --allow-empty --recurse [+ --resume-file] ).
-
-  1.1.3
-  - Fix: avoid scoped-variable parse issue by delimiting ${Path} in Add-ContentWithRetry.
-
-  1.1.2
-  - Retry appends to processed log; guard against truncation by creating the log only if missing.
-  - GDI+ filenames: prefix with <VideoBaseName>_ to avoid cross-video collisions.
-  - VLC startup: single restart attempt if VLC exits during startup.
-
-  1.1.1
-  - Snapshot mode: per-video --scene-prefix (<VideoBaseName>_) to avoid collisions.
-  - Post-run validation: ensure frames were actually saved (snapshot pre/post counts; GDI+ counter).
-  - Robustness: retry GDI+ frame saves; single retry for Python cropper.
+  1.1.x (1.1.1–1.1.12)
+  - Summary: Quality-of-life fixes and robustness for the 1.1 line, including:
+    • Per-video scene prefix and post-run validation; retries for GDI+ saves and cropper.
+    • Process/PID tracking with reliable cleanup on Ctrl+C and session exit.
+    • GDI+ quality switches (-GdiFullscreen, -Legacy1080p) and snapshot housekeeping.
+    • Cropper integration, Python 3.9+ enforcement, safer logging/argument fixes.
+    See commits between 1.1.0..1.2.0 for full details.
 
   1.1.0
   - Time-limit terminates VLC and prevents false "processed" logging.
@@ -548,6 +372,7 @@ param(
     [string]$ResumeFile,
 
     [Parameter(Mandatory = $false)]
+    [ValidateNotNullOrEmpty()]
     [string]$PythonScriptPath = (Join-Path (Split-Path $PSScriptRoot -Parent) 'python\crop_colours.py'),
 
     [Parameter(Mandatory = $false)]
@@ -613,9 +438,9 @@ Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName
 if (-not (Get-Command Add-ContentWithRetry -ErrorAction SilentlyContinue)) {
     function Add-ContentWithRetry {
         param(
-            [Parameter(Mandatory)][string]$Path,
-            [Parameter(Mandatory)][string]$Value,
-            [int]$MaxAttempts = 3
+            [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path,
+            [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Value,
+            [ValidateRange(1,10)][int]$MaxAttempts = 3
         )
         for ($i=1; $i -le $MaxAttempts; $i++) {
             try {
@@ -656,7 +481,7 @@ if (-not (Get-Command Write-Message -ErrorAction SilentlyContinue)) {
         param(
             [ValidateSet('Info','Warn','Error')]
             [string]$Level = 'Info',
-            [Parameter(Mandatory)][string]$Message
+            [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Message
         )
         $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
         $formatted = "[$ts] [$($Level.ToUpper().PadRight(5))] $Message"
@@ -664,6 +489,24 @@ if (-not (Get-Command Write-Message -ErrorAction SilentlyContinue)) {
             'Info'  { try { Write-Information -MessageData $formatted -InformationAction Continue } catch { Write-Host $formatted } }
             'Warn'  { Write-Warning -Message $formatted; Write-Debug $formatted }
             'Error' { Write-Error   -Message $formatted; Write-Debug $formatted }
+        }
+    }
+}
+
+# Generic: assert a folder is writable (moved to util module; keep fallback here)
+if (-not (Get-Command Assert-FolderWritable -ErrorAction SilentlyContinue)) {
+    function Assert-FolderWritable {
+        param([Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Folder)
+        try {
+            if (-not (Test-Path -LiteralPath $Folder)) {
+                New-Item -ItemType Directory -Path $Folder -Force | Out-Null
+            }
+            $tmp = Join-Path $Folder (".writetest_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
+            [IO.File]::WriteAllText($tmp, 'ok')
+            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+            return $true
+        } catch {
+            throw "Folder is not writable: $Folder – $($_.Exception.Message)"
         }
     }
 }
@@ -749,11 +592,15 @@ Save-FrameWithRetry -TargetPath 'C:\shots\frame.png' -Width 1920 -Height 1080
 #>
 function Save-FrameWithRetry {
     param(
-        [Parameter(Mandatory)][string]$TargetPath,
-        [int]$MaxAttempts = 3,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$TargetPath,
+        [ValidateRange(1,10)][int]$MaxAttempts = 3,
         [int]$Width,
         [int]$Height
     )
+    if (($PSBoundParameters.ContainsKey('Width') -xor $PSBoundParameters.ContainsKey('Height')) -or
+        (($PSBoundParameters.ContainsKey('Width') -and $Width -le 0) -or ($PSBoundParameters.ContainsKey('Height') -and $Height -le 0))) {
+        throw "Width/Height must be provided together and be positive integers."
+    }
     for ($i = 1; $i -le $MaxAttempts; $i++) {
         try {
             if ($PSBoundParameters.ContainsKey('Width') -and $PSBoundParameters.ContainsKey('Height')) {
@@ -785,7 +632,7 @@ better than ExtendedProperty on some Windows versions and file types.
 Full path to the video file.
 #>
 function Get-VideoDurationViaShell {
-    param([Parameter(Mandatory)][string]$Path)
+    param([Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path)
     $shell = $null
     $folder = $null
     $item = $null
@@ -856,7 +703,7 @@ Provides reliable duration detection for files with non-standard metadata.
 Full path to the video file.
 #>
 function Get-VideoDurationViaFFprobe {
-    param([Parameter(Mandatory)][string]$Path)
+    param([Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path)
     try {
         $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
         if (-not $ffprobe) {
@@ -903,7 +750,7 @@ Full path to the video file.
 $duration = Get-VideoDurationSeconds -Path 'C:\video.mp4'
 #>
 function Get-VideoDurationSeconds {
-    param([Parameter(Mandatory)][string]$Path)
+    param([Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path)
     
     # Method 1: Enhanced Shell COM with multiple properties
     $duration = Get-VideoDurationViaShell -Path $Path
@@ -940,7 +787,7 @@ appropriate --scene-ratio parameter for time-based frame capture approximation.
 Falls back to 30 FPS assumption if detection fails.
 #>
 function Get-VideoFps {
-    param([Parameter(Mandatory)][string]$Path)
+    param([Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path)
     $shell = $null
     $folder = $null
     $item = $null
@@ -1040,17 +887,10 @@ function Initialize-VideoContext {
         [switch]$DisableAutoStop,
         [int]$AutoStopGraceSeconds = 2
     )
-    # One-time SaveFolder writability preflight so failures surface early & clearly
+    # One-time SaveFolder writability preflight via helper (module or fallback)
     if (-not $script:__SaveFolderWriteChecked) {
-        try {
-            $tmp = Join-Path $SaveFolder (".writetest_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
-            [IO.File]::WriteAllText($tmp, 'ok')
-            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
-            $script:__SaveFolderWriteChecked = $true
-        } catch {
-            Write-Message -Level Error -Message "SaveFolder is not writable: $SaveFolder – $($_.Exception.Message)"
-            throw
-        }
+        Assert-FolderWritable -Folder $SaveFolder | Out-Null
+        $script:__SaveFolderWriteChecked = $true
     }
     $scenePrefix = ([IO.Path]::GetFileNameWithoutExtension($VideoPath)) + '_'
     $preCount = 0
@@ -1095,6 +935,7 @@ also computes achieved FPS and warns if it deviates ≥20% from the requested va
 .OUTPUTS
 PSCustomObject with HadFrames, FramesDelta, AchievedFps.
 #>
+if (-not (Get-Command Measure-PostCapture -ErrorAction SilentlyContinue)) {
 function Measure-PostCapture {
     param(
         [switch]$UseVlcSnapshots,
@@ -1136,6 +977,7 @@ function Measure-PostCapture {
         FramesDelta = [int]$framesDelta
         AchievedFps = $achieved
     }
+}
 }
 
 <#
@@ -1345,15 +1187,22 @@ Internal helper used by Start-Vlc for -UseVlcSnapshots.
 #>
 function Get-VlcArgsSnapshot {
     param(
-        [Parameter(Mandatory)][string]$VideoPath,
-        [Parameter(Mandatory)][string]$SaveFolder,
-        [Parameter(Mandatory)][int]$RequestedFps
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$VideoPath,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$SaveFolder,
+        [Parameter(Mandatory)][ValidateRange(1,1000)][int]$RequestedFps
     )
     $vfps  = Get-VideoFps -Path $VideoPath
     $base  = if ($vfps -and $vfps -gt 0) { [double]$vfps } else { 30.0 }
     $ratio = [int][Math]::Max(1, [Math]::Round($base / [double]$RequestedFps))
 
     Write-Debug "Snapshots (VLC 3.x): video_fps=$base; requested=$RequestedFps; using --scene-ratio=$ratio"
+    if ($RequestedFps -gt [int][Math]::Ceiling($base)) {
+        Write-Message -Level Warn -Message (
+            "Requested -FramesPerSecond ({0}) exceeds detected video FPS ({1:0.###}). " +
+            "Snapshot cadence will be limited to at most the source FPS (1:1 frames). " +
+            "To avoid this downgrade, lower -FramesPerSecond or use GDI+ for exact timing."
+        ) -f $RequestedFps, $base
+    }
 
     return ,@(
         '--intf', 'dummy',
@@ -1617,7 +1466,7 @@ Get-ScreenWithGDIPlus -TargetPath 'C:\shots\frame.png' -Width 1920 -Height 1080
 #>
 function Get-ScreenWithGDIPlus {
     param(
-        [Parameter(Mandatory)][string]$TargetPath,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$TargetPath,
         [int]$Width,
         [int]$Height
     )
@@ -1659,18 +1508,21 @@ Invoke-Cropper -PythonScriptPath .\src\python\crop_colours.py -SaveFolder .\Scre
 #>
 function Invoke-Cropper {
     param(
-        [Parameter(Mandatory)][string]$PythonScriptPath,
-        [Parameter(Mandatory)][string]$SaveFolder,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$PythonScriptPath,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$SaveFolder,
         [string]$ResumeFile
     )
 
     $pv = (& python --version) 2>&1
     if ($pv -notmatch '^Python 3\.(9|[1-9][0-9])\.') {
-        throw "Python 3.9+ required (found: $pv)"
+        throw "Python 3.9+ required (found: $pv). Install Python ≥3.9 and ensure 'python' is on PATH."
     }
 
     if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
-        throw "PythonScriptPath not found: $PythonScriptPath"
+        throw "PythonScriptPath not found: $PythonScriptPath. Override with -PythonScriptPath (default assumes ..\python\crop_colours.py)."
+    }
+    if (-not (Test-Path -LiteralPath $SaveFolder)) {
+        throw "SaveFolder not found: $SaveFolder. Create it or pass -SaveFolder."
     }
 
     $resumeArg = @()
@@ -1772,7 +1624,7 @@ if ($CropOnly) {
 }
 
 if (-not (Test-Path -LiteralPath $SourceFolder)) {
-    Write-Message -Level Error -Message "SourceFolder not found: $SourceFolder"
+    Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH. Install VLC or add it to PATH, then re-run."
     exit 1
 }
 
@@ -1910,12 +1762,12 @@ foreach ($video in $videos) {
             $elapsedForMsg = if ($snapResult) { [int]$snapResult.ElapsedSeconds } else { 0 }
             if ($stopAt -gt 0 -and $snapResult -and $snapResult.TimedOut) {
                 # This branch should be rare now because $timedOutPerVideo already set $ok=true.
-                Write-Message -Level Info -Message "Timed out at per-video limit after ${elapsedForMsg}s; treating as processed: $($video.FullName)"
+                Write-Message -Level Warn -Message "Video timed out after ${elapsedForMsg}s; not marking as processed: $($video.FullName). Consider increasing -AutoStopGraceSeconds or verifying the media decodes correctly."
             } else {
                 Write-Message -Level Warn -Message "Video timed out after ${elapsedForMsg}s; not marking as processed: $($video.FullName)"
             }
         } elseif (-not $hadFrames) {
-            Write-Message -Level Warn -Message "No frames captured; not marking as processed: $($video.FullName)"
+            Write-Message -Level Warn -Message "No frames captured; not marking as processed: $($video.FullName). Try -GdiFullscreen (GDI+) or -UseVlcSnapshots, and check SaveFolder write permissions."
         } else {
             Write-Debug "Video not marked processed - VlcExit: $vlcExit, HadFrames: $hadFrames, Errors: $errorDuringCapture"
         }
