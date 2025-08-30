@@ -30,12 +30,16 @@ function Write-Message {
     $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     $prefixed = "[$ts] [$($Level.ToUpper().PadRight(5))] $Message"
     switch ($Level) {
-        'Warn'  { Write-Warning $prefixed; Write-Debug $prefixed }
-        'Error' { Write-Error   $prefixed; Write-Debug $prefixed }
+        'Warn'  { Write-Warning $prefixed }
+        'Error' { Write-Error   $prefixed }
         Default {
-            try { Write-Information -MessageData $prefixed -InformationAction Continue } catch {}
-            # Prefer pipeline over host for non-interactive callers
-            Write-Output $prefixed
+            try {
+                # Route Info to the Information stream; let the host decide how to render it
+                Write-Information -MessageData $prefixed -InformationAction Continue
+            } catch {
+                # Legacy/locked-down shells: fall back to Host only if Information fails
+                Write-Host $prefixed -ForegroundColor Cyan
+            }
         }
     }
 }

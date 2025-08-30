@@ -145,9 +145,21 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.27
+   1.2.28
 
 CHANGELOG
+  1.2.28
+  - Logging: Removed duplicate INFO messages. Write-Message (Info) now routes to a single native
+    stream: Write-Information when available, with a Host fallback only if Information isn’t supported.
+    This prevents “double print” scenarios while preserving structured logging behavior controlled by
+    $InformationPreference / -InformationAction.
+  - Cropper preflight: Verify required Python modules (numpy, cv2) in the active interpreter before
+    running the cropper. If missing, the script bootstraps pip via `python -m ensurepip` (when needed)
+    and attempts `python -m pip install numpy opencv-python`. If installation still fails (offline /
+    restricted env), the run terminates with an actionable error (exit 1).
+  - Docs: PREREQUISITES/TROUBLESHOOTING updated to document the auto-install behavior, how to preinstall
+    manually, and common failure modes (no network, blocked index, policy restrictions)
+
    1.2.27
    - Snapshot mode UX: add a pre-run warning when -FramesPerSecond exceeds detected video FPS; cadence will be limited to 1:1 (frame-per-frame).
    - Validation: add stricter parameter validation to several helpers (paths non-empty; positive ranges; width/height pairing).
@@ -261,6 +273,13 @@ TROUBLESHOOTING
     • Ensure execution policy allows module import (e.g., RemoteSigned). Details are emitted to the Debug stream.
   - Duration detection fails: Install FFmpeg (includes FFprobe) for enhanced metadata reading.
     The script tries Windows Shell properties first, then falls back to FFprobe if available.
+  - Cropper prerequisites (numpy / OpenCV):
+      • The script verifies `numpy` and `cv2` before running the cropper and will attempt to install them
+        into the active Python interpreter (`python -m pip install numpy opencv-python`).
+      • If `pip` is missing, the script tries `python -m ensurepip` first.
+      • If installation fails (offline network, blocked index, or restricted env), the run terminates with a clear error.
+        You can preinstall manually in the same interpreter with:
+          python -m pip install numpy opencv-python
   - VLC hangs in snapshot mode: VLC's --stop-time parameter can be unreliable in headless mode.
     The script now monitors VLC processes and terminates them after video duration + 5 seconds
     (or 5 minutes maximum if duration unknown). Check debug output for timeout events.
@@ -1486,6 +1505,104 @@ function Get-ScreenWithGDIPlus {
 
 <#
 .SYNOPSIS
+Ensure required Python modules exist; install them if missing.
+.DESCRIPTION
+Checks for importability of 'numpy' and 'cv2' in the current 'python' interpreter.
+If missing, bootstraps pip (ensurepip) if needed and attempts install via pip.
+Returns $true when modules are importable after the process; $false otherwise.
+.OUTPUTS
+Boolean
+#>
+function Confirm-PythonModules {
+    param()
+    # Helper to run a python command and capture output
+    function Invoke-Python {
+        param([Parameter(Mandatory)][string]$Arguments)
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = 'python'
+        $psi.Arguments = $Arguments
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError  = $true
+        $psi.CreateNoWindow = $true
+        $p = [System.Diagnostics.Process]::new()
+        $p.StartInfo = $psi
+        $null = $p.Start()
+        $stdout = $p.StandardOutput.ReadToEnd()
+        $stderr = $p.StandardError.ReadToEnd()
+        $p.WaitForExit()
+        [pscustomobject]@{ Code=$p.ExitCode; Out=$stdout; Err=$stderr }
+    }
+
+    $checkCode = 'import importlib,sys;mods=["numpy","cv2"];missing=[m for m in mods if importlib.util.find_spec(m) is None];print(",".join(missing))'
+    $check = Invoke-Python -Arguments ("-c ""$checkCode""")
+    if ($check.Code -ne 0) {
+        Write-Debug "Module check failed: $($check.Err)"
+        # If python itself can't run the check, bail early.
+        return $false
+    }
+    $missing = @()
+    if ($check.Out) {
+        $missing = ($check.Out.Trim() -split ',') | Where-Object { $_ -and $_.Trim() }
+    }
+    if (-not $missing -or $missing.Count -eq 0) {
+        Write-Debug "All required Python modules present."
+        return $true
+    }
+
+    Write-Message -Level Info -Message ("Missing Python modules: {0}. Attempting auto-install..." -f ($missing -join ', '))
+
+    # Ensure pip exists
+    $pipCheck = Invoke-Python -Arguments "-m pip --version"
+    if ($pipCheck.Code -ne 0) {
+        Write-Debug "pip not available; attempting ensurepip. stderr: $($pipCheck.Err)"
+        $ensure = Invoke-Python -Arguments "-m ensurepip --default-pip"
+        if ($ensure.Code -ne 0) {
+            Write-Message -Level Error -Message ("Unable to bootstrap pip (ensurepip failed). stderr: {0}" -f $ensure.Err)
+            return $false
+        }
+    }
+
+    # Map import names to packages
+    $pkgMap = @{
+        'numpy' = 'numpy'
+        'cv2'   = 'opencv-python'
+    }
+    $packages = $missing | ForEach-Object { $pkgMap[$_] } | Where-Object { $_ }
+    if (-not $packages -or $packages.Count -eq 0) {
+        Write-Message -Level Error -Message "Cannot resolve package names for required modules: $($missing -join ', ')"
+        return $false
+    }
+
+    $installArgs = "-m pip install --disable-pip-version-check " + ($packages -join ' ')
+    Write-Debug "Installing Python packages: $installArgs"
+    $install = Invoke-Python -Arguments $installArgs
+    if ($install.Code -ne 0) {
+        Write-Message -Level Error -Message ("pip install failed. stderr: {0}" -f $install.Err)
+        return $false
+    }
+
+    # Recheck
+    $recheck = Invoke-Python -Arguments ("-c ""$checkCode""")
+    if ($recheck.Code -ne 0) {
+        Write-Message -Level Error -Message ("Module re-check failed after install. stderr: {0}" -f $recheck.Err)
+        return $false
+    }
+    $missing2 = @()
+    if ($recheck.Out) {
+        $missing2 = ($recheck.Out.Trim() -split ',') | Where-Object { $_ -and $_.Trim() }
+    }
+    if ($missing2 -and $missing2.Count -gt 0) {
+        Write-Message -Level Error -Message ("Required modules still missing after install: {0}" -f ($missing2 -join ', '))
+        return $false
+    }
+
+    Write-Message -Level Info -Message "Python module auto-install completed."
+    return $true
+}
+
+<#
+.SYNOPSIS
 Run the external Python cropper.
 
 .DESCRIPTION
@@ -1521,6 +1638,12 @@ function Invoke-Cropper {
     if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
         throw "PythonScriptPath not found: $PythonScriptPath. Override with -PythonScriptPath (default assumes ..\python\crop_colours.py)."
     }
+
+    # Ensure required Python modules exist (or install them)
+    if (-not (Confirm-PythonModules)) {
+        throw "Required Python modules (numpy/cv2) are missing and automatic installation failed. [MODULE_INSTALL_FAILED]"
+    }
+
     if (-not (Test-Path -LiteralPath $SaveFolder)) {
         throw "SaveFolder not found: $SaveFolder. Create it or pass -SaveFolder."
     }
@@ -1784,6 +1907,10 @@ try {
     }
 } catch {
     Write-Message -Level Error -Message "Post-capture cropper failed: $($_.Exception.Message)"
+    # Only hard-fail the run when module auto-installation was the reason
+    if ($_.Exception.Message -like '*[MODULE_INSTALL_FAILED]*') {
+        exit 1
+    }
 }
 
 if ($ctrlCHandler) {
