@@ -145,9 +145,14 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.33
+   1.2.34
 
 CHANGELOG
+  1.2.34
+  - Fix: Eliminated stray “True” prints by suppressing incidental output from helper/monitoring calls (e.g., Stop-Process, Wait-Process, Set-Content/Add-Content).
+  - Debug: Show cropper stdout only when present; also surface non-empty stderr in Debug on success. Avoids a blank “Cropper output:” line.
+  - UX: Added end-of-run summary (files, processed, skipped, failures, frames, elapsed, and timed-out-but-processed count) and a closing banner. Summary prints on normal and abnormal exits.
+
   1.2.33
   - Fix: Shell COM frame rate detection no longer hits a Split-Path parameter-set conflict. Replaced Split-Path with .NET path helpers; added null checks and defensive COM cleanup, with clearer debug traces.
   - UX: Print a one-time startup banner that includes the script version (e.g., “videoscreenshot.ps1 v1.2.33 starting…”).
@@ -436,7 +441,20 @@ param(
 )
 
 # Script version constant for banner/logging
-$script:VideoScreenshotVersion = '1.2.33'
+$script:VideoScreenshotVersion = '1.2.34'
+# Track run stats for end-of-run summary
+$script:RunStats = [pscustomobject]@{
+  StartTime           = (Get-Date)
+  TotalFiles          = 0
+  Attempted           = 0
+  Processed           = 0
+  TimedOutProcessed   = 0
+  SkippedAlready      = 0
+  Failures            = 0
+  FramesSaved         = 0
+}
+# Script-wide exit code so we can summarize before exiting
+$script:ExitCode = 0
 
 # region Utilities
 
@@ -524,8 +542,8 @@ if (-not (Get-Command Write-Message -ErrorAction SilentlyContinue)) {
         $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
         $formatted = "[$ts] [$($Level.ToUpper().PadRight(5))] $Message"
         switch ($Level) {
-            'Info'  { try { Write-Information -MessageData $formatted -InformationAction Continue } catch { Write-Host $formatted } }
-            'Warn'  { Write-Warning -Message $formatted; Write-Debug $formatted }
+                'Info'  { try { Write-Information -MessageData $formatted -InformationAction Continue } catch { Write-Host $formatted } }
+                'Warn'  { Write-Warning -Message $formatted; Write-Debug $formatted }
             'Error' { Write-Error   -Message $formatted; Write-Debug $formatted }
         }
     }
@@ -1070,6 +1088,8 @@ function Measure-PostCapture {
         $framesDelta = $postCount - $PreCount
         $hadFrames   = ($framesDelta -gt 0)
         if ($SnapResult -and $SnapResult.ElapsedSeconds -gt 0) {
+            # Guard against extremely small elapsed times that can create absurd FPS values
+            if ($SnapResult.ElapsedSeconds -lt 1) { Write-Debug "Elapsed < 1s; skipping achieved-FPS calc to avoid noise"; $achieved = $null }
             $achieved = [Math]::Round($framesDelta / $SnapResult.ElapsedSeconds, 3)
             Write-Debug "Snapshot achieved FPS: $achieved (requested=$RequestedFps, frames=$framesDelta, elapsed=$($SnapResult.ElapsedSeconds)s)"
             if ($RequestedFps -gt 0) {
@@ -1198,15 +1218,15 @@ function Invoke-SnapshotCapture {
 
     $timedOut = $false
     while (-not $Process.HasExited) {
-        Start-Sleep -Milliseconds 200
+        $null = Start-Sleep -Milliseconds 200
         $elapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
         if ($elapsed -ge $maxWait) {
             Write-Debug "VLC process timeout reached ($elapsed sec), force terminating"
             Write-Message -Level Warn -Message "VLC timeout reached after $([int]$elapsed)s; terminating process."
             try {
-                Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
-                Wait-Process -Id $Process.Id -Timeout 3000 -ErrorAction SilentlyContinue
-                $Process.Refresh()
+                $null = Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+                $null = Wait-Process -Id $Process.Id -Timeout 3000 -ErrorAction SilentlyContinue
+                $null = $Process.Refresh()
                 Write-Debug "Process termination completed"
             } catch {
                 Write-Debug "Error during process termination: $($_.Exception.Message)"
@@ -1218,7 +1238,7 @@ function Invoke-SnapshotCapture {
 
     $finalElapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
     Write-Debug "VLC process completed after $finalElapsed seconds"
-    [pscustomobject]@{
+    return [pscustomobject]@{
         ElapsedSeconds = [Math]::Max(0.001, $finalElapsed)
         TimedOut       = $timedOut
     }
@@ -1357,7 +1377,19 @@ function Get-VlcArgsGdi {
     }
     return @()
 }
-
+# Helper to write run summary & closing banner
+function Write-RunSummary {
+    try {
+        $elapsed = (New-TimeSpan -Start $script:RunStats.StartTime -End (Get-Date)).TotalSeconds
+        Write-Message -Level Info -Message ("Summary: files={0}, attempted={1}, processed={2} (timed-out+processed={3}), skipped={4}, failures={5}, frames={6}, elapsed={7:N2}s" -f `
+            $script:RunStats.TotalFiles, $script:RunStats.Attempted, $script:RunStats.Processed, $script:RunStats.TimedOutProcessed, `
+            $script:RunStats.SkippedAlready, $script:RunStats.Failures, $script:RunStats.FramesSaved, $elapsed)
+    } catch { }
+    try {
+        $status = if ($script:ExitCode -eq 0) { 'OK' } else { "ERROR ($script:ExitCode)" }
+        Write-Message -Level Info -Message ("videoscreenshot.ps1 v{0} finished — {1}" -f $script:VideoScreenshotVersion, $status)
+    } catch { }
+}
 <#
 .SYNOPSIS
 Register a launched VLC PID in the per-run registry.
@@ -1368,7 +1400,7 @@ Process ID to add to the registry.
 #>
 function Register-RunPid {
     param([Parameter(Mandatory)][int]$ProcessId)
-    Add-Content -LiteralPath $PidRegistry -Value $ProcessId
+    $null = Add-Content -LiteralPath $PidRegistry -Value $ProcessId
 }
 
 <#
@@ -1383,7 +1415,7 @@ function Unregister-RunPid {
     param([Parameter(Mandatory)][int]$ProcessId)
     if (Test-Path -LiteralPath $PidRegistry) {
         (Get-Content -LiteralPath $PidRegistry | Where-Object { $_ -ne "$ProcessId" }) |
-            Set-Content -LiteralPath $PidRegistry
+            Set-Content -LiteralPath $PidRegistry | Out-Null
     }
 }
 
@@ -1414,7 +1446,7 @@ function Invoke-VlcProcess {
     $p.StartInfo = $psi
     $startTime = Get-Date
     $null = $p.Start()
-    Register-RunPid -ProcessId $p.Id
+    $null = Register-RunPid -ProcessId $p.Id
 
     $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
@@ -1541,14 +1573,14 @@ original error path.
 function Stop-Vlc {
     param([Parameter(Mandatory)][System.Diagnostics.Process]$Process)
     try   { $null = $Process.CloseMainWindow() } catch {}
-    try   { $Process.WaitForExit(5000) } catch {}
+    try   { $null = $Process.WaitForExit(5000) } catch {}
     if (-not $Process.HasExited) {
         Write-Debug "VLC still running; force killing PID $($Process.Id)"
         try { 
-            Stop-Process -Id $Process.Id -Force 
+            $null = Stop-Process -Id $Process.Id -Force 
             # Wait for process to actually terminate for consistent behavior
-            Wait-Process -Id $Process.Id -Timeout 3000 -ErrorAction SilentlyContinue
-            $Process.Refresh()
+            $null = Wait-Process -Id $Process.Id -Timeout 3000 -ErrorAction SilentlyContinue
+            $null = $Process.Refresh()
         } catch {
             Write-Debug "Error during VLC termination: $($_.Exception.Message)"
         }
@@ -1791,13 +1823,16 @@ function Invoke-Cropper {
         $null = $p.StandardOutput.ReadToEnd()
     }
     $cropperStderr = $p.StandardError.ReadToEnd()
-    $p.WaitForExit()
+    $null = $p.WaitForExit()
 
     if ($p.ExitCode -ne 0) {
         Write-Message -Level Error -Message "Cropper failed (ExitCode=$($p.ExitCode)). $cropperStderr"
         throw "Cropper failed."
     } else {
-        if ($DebugPreference -eq 'Continue') { Write-Debug "Cropper output:`n$cropperStdout" }
+        if ($DebugPreference -eq 'Continue') {
+            if ($cropperStdout) { Write-Debug "Cropper stdout:`n$cropperStdout" }
+            if ($cropperStderr) { Write-Debug "Cropper stderr (non-fatal):`n$cropperStderr" }
+        }
         Write-Message -Level Info -Message "Cropper finished successfully."
     }
 }
@@ -1855,21 +1890,27 @@ if ($CropOnly) {
         Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile
     } catch {
         Write-Message -Level Error -Message $_.Exception.Message
-        exit 1
+        $script:ExitCode = 1
+        Write-RunSummary
+        exit $script:ExitCode
     }
     exit 0
 }
 
 if (-not (Test-Path -LiteralPath $SourceFolder)) {
     Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH. Install VLC or add it to PATH, then re-run."
-    exit 1
+    $script:ExitCode = 1
+    Write-RunSummary
+    exit $script:ExitCode
 }
 
 # Preflight: require VLC when capturing (not needed for -CropOnly which returns above)
 $vlcCmd = Get-Command vlc -ErrorAction SilentlyContinue
 if (-not $vlcCmd) {
     Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH. Please install VLC or add it to PATH."
-    exit 2
+    $script:ExitCode = 2
+    Write-RunSummary
+    exit $script:ExitCode
 }
 
 $videoExt = @('*.mp4','*.mkv','*.avi','*.mov','*.m4v','*.wmv')
@@ -1889,12 +1930,15 @@ try {
     Write-Debug "Loaded $($processed.Count) processed videos into HashSet"
 } catch {
     Write-Message -Level Error -Message "Failed to read processed log: $ProcessedLogPath – $($_.Exception.Message)"
-    exit 1
+    $script:ExitCode = 1
+    Write-RunSummary
+    exit $script:ExitCode
 }
 
 $intervalMs = [int](1000 / [Math]::Max(1, $FramesPerSecond))
 
 $globalStart = Get-Date
+$script:RunStats.TotalFiles = ($videos | Measure-Object).Count
 foreach ($video in $videos) {
     if ($TimeLimitSeconds -gt 0 -and ((New-TimeSpan -Start $globalStart -End (Get-Date)).TotalSeconds -ge $TimeLimitSeconds)) {
         Write-Message -Level Info -Message "Global time limit of $TimeLimitSeconds seconds reached; stopping processing."
@@ -1903,10 +1947,12 @@ foreach ($video in $videos) {
     $already = $processed.Contains($video.FullName)
     if ($already) {
         Write-Message -Level Info -Message "Skipping (already processed): $($video.FullName)"
+        $script:RunStats.SkippedAlready++
         continue
     }
 
     Write-Message -Level Info -Message "Processing: $($video.FullName)"
+    $script:RunStats.Attempted++
     $videoStartTime = Get-Date
     $vlc = $null
     $errorDuringCapture = $false
@@ -1970,6 +2016,7 @@ foreach ($video in $videos) {
                                  -RequestedFps $FramesPerSecond -VideoPath $video.FullName
     $hadFrames   = $post.HadFrames
     $framesDelta = $post.FramesDelta
+    $script:RunStats.FramesSaved += [int]$framesDelta
 
     # Recognize per-video timeout (duration + grace) in snapshot mode as a successful completion
     # This is distinct from the 300s fallback timeout (unknown duration).
@@ -1984,14 +2031,22 @@ foreach ($video in $videos) {
     $ok = $timedOutPerVideo -or ((-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames)
 
     if ($ok) {
+        $timedOutAndProcessed = ($UseVlcSnapshots -and $snapResult -and $snapResult.TimedOut -and $ctx.StopAtSeconds -gt 0)
+        if ($timedOutAndProcessed) {
+            Write-Message -Level Info -Message "Timed out at per-video limit (duration + grace); marking processed: $($video.FullName)"
+            $script:RunStats.TimedOutProcessed++
+        }
         if ($timedOutPerVideo) {
             Write-Message -Level Info -Message "Timed out at per-video limit (duration + grace); marking processed: $($video.FullName)"
         }
         if (Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName) {
             Write-Message -Level Info -Message "Marked processed: $($video.FullName)"
+            $script:RunStats.Processed++
         } else {
             Write-Message -Level Error -Message "Processed OK, but failed to update processed log: $ProcessedLogPath"
-            exit 1
+            $script:ExitCode = 1
+            Write-RunSummary
+            exit $script:ExitCode
         }
     } else {
         # Provide specific feedback for timeout cases
@@ -2002,11 +2057,14 @@ foreach ($video in $videos) {
                 Write-Message -Level Warn -Message "Video timed out after ${elapsedForMsg}s; not marking as processed: $($video.FullName). Consider increasing -AutoStopGraceSeconds or verifying the media decodes correctly."
             } else {
                 Write-Message -Level Warn -Message "Video timed out after ${elapsedForMsg}s; not marking as processed: $($video.FullName)"
+                $script:RunStats.Failures++
             }
         } elseif (-not $hadFrames) {
             Write-Message -Level Warn -Message "No frames captured; not marking as processed: $($video.FullName). Try -GdiFullscreen (GDI+) or -UseVlcSnapshots, and check SaveFolder write permissions."
+            $script:RunStats.Failures++
         } else {
             Write-Debug "Video not marked processed - VlcExit: $vlcExit, HadFrames: $hadFrames, Errors: $errorDuringCapture"
+            $script:RunStats.Failures++
         }
     }
 }
@@ -2021,6 +2079,7 @@ try {
     }
 } catch {
     Write-Message -Level Error -Message "Post-capture cropper failed: $($_.Exception.Message)"
+    $script:ExitCode = 1
     # Only hard-fail the run when module auto-installation was the reason
     if ($_.Exception.Message -like '*[MODULE_INSTALL_FAILED]*') {
         exit 1
@@ -2039,9 +2098,9 @@ if ($exitHandler) {
 # Final cleanup: remove the PID registry file
 try {
     if (Test-Path -LiteralPath $PidRegistry) {
-        Remove-Item -LiteralPath $PidRegistry -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $PidRegistry -Force -ErrorAction SilentlyContinue | Out-Null
     }
 } catch {}
 
-Write-Message -Level Info -Message "All done."
+Write-RunSummary
 # endregion Main flow
