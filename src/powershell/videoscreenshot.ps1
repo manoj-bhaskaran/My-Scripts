@@ -4,9 +4,19 @@ Captures video frames from VLC or the desktop and (optionally) runs a Python cro
 
 .DESCRIPTION
 Plays each video file via VLC and saves periodic screenshots to a target folder.
-Two capture approaches are supported:
-  1) Desktop capture via GDI+ (default) – generic, no VLC filters required.
-  2) VLC scene snapshots (opt-in via -UseVlcSnapshots) – captures only the video frame.
+Two capture approaches are supported (choose based on your goal):
+
+  1) Desktop capture via GDI+ (default)
+     • Captures the primary screen at native resolution and timing (exact time-based cadence).
+     • Easiest to set up; no VLC filters required.
+     • May include UI “chrome” (menus/title bars). Use -GdiFullscreen to minimize this.
+     • Image size matches your desktop; can be very large on high-DPI/4K displays.
+
+  2) VLC scene snapshots (opt-in via -UseVlcSnapshots)
+     • Headless video-frame-only capture (no desktop/UI).
+     • Cadence is frame-ratio based (VLC 3.x limitation): saves 1 out of N frames derived from video FPS.
+       Exact N FPS is not guaranteed; for precise timing use GDI+.
+     • Falls back to 30 FPS when video FPS is undetectable (documented limitation).
 
 Major behaviours and safeguards:
   - Processed log: defaults to <SaveFolder>\processed_videos.log.
@@ -135,9 +145,16 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-  1.2.19
+  1.2.20
 
 CHANGELOG
+  1.2.20
+  - Refactor: Split Start-Vlc into helper functions (Get-VlcArgsCommon / Get-VlcArgsSnapshot / Get-VlcArgsGdi) to reduce complexity and improve maintainability.
+  - UX: Added a one-time user-visible warning when -UseVlcSnapshots is enabled explaining frame-ratio cadence approximation and pointing to GDI+ for exact timing.
+  - UX: Added a one-time user-visible warning when FFprobe is missing, clarifying that duration detection will fall back to Windows metadata and auto-stop may be less reliable.
+  - Debug: GDI+ mode now logs achieved FPS at end of capture to help verify timing accuracy (Write-Debug).
+  - Docs: Clarified GDI+ vs snapshot trade-offs prominently in .DESCRIPTION with concise bullets.
+
   1.2.19
   - Improvement: GDI+ capture uses a monotonic scheduler (Stopwatch) to minimize FPS drift from PNG save time
   - Fix: FFprobe invocation now passes the video path after `--` to prevent arg parsing issues on odd paths
@@ -332,7 +349,8 @@ CHANGELOG
   PREREQUISITES
   - VLC installed and in PATH (vlc.exe).
   - Python available if running the cropper; cropper script present.
-  - FFprobe (optional) for enhanced duration detection on files with missing Windows metadata.
+  - FFprobe (optional but recommended) in PATH for robust duration detection.
+    Download via FFmpeg and ensure `ffprobe` is available in your shell.
 
 TROUBLESHOOTING
   - Blank images: ensure VLC can decode the file; try -UseVlcSnapshots.
@@ -597,6 +615,16 @@ if (Test-Path -LiteralPath $PidRegistry) {
 }
 
 if ($PSBoundParameters.ContainsKey('Debug')) { $DebugPreference = 'Continue' }
+
+# One-time visibility note for snapshot cadence approximation
+if ($UseVlcSnapshots) {
+    Write-Warning -Message "Snapshot mode uses frame-count ratio approximation (1/N frames) derived from video FPS; exact N FPS is not guaranteed. For precise time-based cadence, use GDI+ mode."
+}
+
+# FFprobe presence note (duration fallback clarity)
+if (-not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+    Write-Warning -Message "FFprobe not found in PATH. Duration detection will rely on Windows file metadata; auto-stop may be less reliable for some formats. Install FFmpeg (ffprobe) and ensure it’s on PATH for best results."
+}
 
 Add-Type -AssemblyName System.Drawing | Out-Null
 Add-Type -AssemblyName System.Windows.Forms | Out-Null
@@ -888,37 +916,184 @@ function Get-VideoFps {
 # endregion Utilities
 
 # region Capture helpers
+<#
+.SYNOPSIS
+Builds VLC command-line switches common to all modes.
+
+.DESCRIPTION
+Returns an array of VLC arguments that are safe for both GDI+ (GUI) and snapshot
+(headless) modes. If StopAtSeconds > 0, appends --stop-time with the rounded
+second value. Emits Write-Debug messages describing the applied stop-time.
+
+.PARAMETER StopAtSeconds
+Optional upper bound (seconds) for playback. When > 0, a rounded value is
+passed to VLC via --stop-time. When 0, no stop-time is applied.
+
+.OUTPUTS
+string[]  # Array of individual argument tokens.
+
+.EXAMPLE
+# Compose a common arg set with a 125s stop time
+$common = Get-VlcArgsCommon -StopAtSeconds 125
+
+.NOTES
+Internal helper used by Start-Vlc.
+#>
+function Get-VlcArgsCommon {
+    param([double]$StopAtSeconds = 0)
+
+    $vlcArgs = @(
+        '--no-qt-privacy-ask',
+        '--no-video-title-show',
+        '--no-loop',
+        '--no-repeat',
+        '--rate', '1',
+        '--play-and-exit'
+    )
+
+    if ($StopAtSeconds -gt 0) {
+        $roundedStop = [int][Math]::Round($StopAtSeconds)
+        $vlcArgs += @('--stop-time', [string]$roundedStop)
+        Write-Debug "VLC will be configured with --stop-time=$roundedStop (from stopAt=$StopAtSeconds)"
+    } else {
+        Write-Debug "No --stop-time parameter (stopAt=$StopAtSeconds)"
+    }
+    return ,$args
+}
 
 <#
 .SYNOPSIS
-Start VLC for a single video file.
+Builds VLC scene-filter arguments for snapshot mode (headless).
 
 .DESCRIPTION
-Launches vlc.exe configured for the selected capture mode:
-  - GDI+ desktop capture: starts a GUI window. If -GdiFullscreen is set, VLC runs
-    full-screen, on-top, with minimal UI to reduce chrome in screenshots.
-  - Snapshot mode (-UseVlcSnapshots): starts headless (--intf dummy) and writes
-    frames directly to disk (no desktop/UI captured).
-  - Disables VLC loop/repeat via --no-loop and --no-repeat to avoid unintended replay due to user prefs.
-  - A clean VLC exit (ExitCode=0) during the startup wait window is treated as a valid early completion
-  (e.g., very short clips) and not a start failure.
+Returns an array of VLC arguments that enable the 'scene' video filter and write
+PNG snapshots to the specified SaveFolder using a <VideoBase>_ prefix. The
+cadence uses VLC 3.x's frame-ratio approximation (1/N frames). N is derived from
+the detected video FPS (via Get-VideoFps) and the requested FramesPerSecond,
+falling back to 30 FPS if the file's FPS cannot be detected. Writes helpful
+Write-Debug traces showing detected FPS, requested FPS, and the chosen ratio.
 
-This function also records the launched VLC PID so that the script can terminate
-it on Ctrl+C (Console.CancelKeyPress) and on PowerShell session exit.
+.PARAMETER VideoPath
+Full path to the input video. Used for the scene prefix.
+
+.PARAMETER SaveFolder
+Destination folder for scene snapshots.
+
+.PARAMETER RequestedFps
+Desired capture cadence (used to derive the 1/N frame ratio).
+
+.OUTPUTS
+string[]  # Array of individual argument tokens.
+
+.EXAMPLE
+# Build snapshot args for a 2 FPS target cadence
+$snap = Get-VlcArgsSnapshot -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots' -RequestedFps 2
+
+.NOTES
+Internal helper used by Start-Vlc for -UseVlcSnapshots.
+#>
+function Get-VlcArgsSnapshot {
+    param(
+        [Parameter(Mandatory)][string]$VideoPath,
+        [Parameter(Mandatory)][string]$SaveFolder,
+        [Parameter(Mandatory)][int]$RequestedFps
+    )
+    $vfps  = Get-VideoFps -Path $VideoPath
+    $base  = if ($vfps -and $vfps -gt 0) { [double]$vfps } else { 30.0 }
+    $ratio = [int][Math]::Max(1, [Math]::Round($base / [double]$RequestedFps))
+
+    Write-Debug "Snapshots (VLC 3.x): video_fps=$base; requested=$RequestedFps; using --scene-ratio=$ratio"
+
+    return ,@(
+        '--intf', 'dummy',
+        '--video-filter=scene',
+        "--scene-path=""$SaveFolder""",
+        "--scene-prefix=""$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_""",
+        '--scene-format=png',
+        "--scene-ratio=$ratio"
+    )
+}
+
+<#
+.SYNOPSIS
+Builds VLC UI arguments for GDI+ (desktop) capture.
+
+.DESCRIPTION
+Returns UI-related VLC arguments when -GdiFullscreen is requested
+(--fullscreen --video-on-top --qt-minimal-view) to reduce UI chrome in
+desktop screenshots. Returns an empty array when not requested.
+
+.PARAMETER GdiFullscreen
+When set, returns the full-screen/on-top/minimal-UI switches.
+
+.OUTPUTS
+string[]  # Array of individual argument tokens.
+
+.EXAMPLE
+# Full-screen VLC window for desktop capture
+$gdi = Get-VlcArgsGdi -GdiFullscreen
+
+.NOTES
+Internal helper used by Start-Vlc for GDI+ mode.
+#>
+function Get-VlcArgsGdi {
+    param([switch]$GdiFullscreen)
+    if ($GdiFullscreen) {
+        return ,@('--fullscreen', '--video-on-top', '--qt-minimal-view')
+    }
+    return @()
+}
+
+<#
+.SYNOPSIS
+Starts VLC for a single video with arguments composed per capture mode.
+
+.DESCRIPTION
+Launches vlc.exe configured for:
+  • GDI+ desktop capture (GUI window). If -GdiFullscreen is set, VLC runs
+    full-screen, on-top, with minimal UI to reduce chrome in screenshots.
+  • Snapshot mode (-UseVlcSnapshots) using the 'scene' filter (headless).
+    Cadence is frame-ratio based (1/N frames) derived from detected video FPS.
+
+Common flags disable title overlays and user loop/repeat preferences. If a
+clean ExitCode=0 occurs during the startup wait window, it is treated as a
+successful early completion (very short clips). The function records the VLC
+PID in a per-run registry file so Ctrl+C/engine-exit handlers can terminate only
+processes launched by this script.
+
+This function delegates argument construction to:
+  - Get-VlcArgsCommon     (shared flags, optional --stop-time)
+  - Get-VlcArgsSnapshot   (scene filter + 1/N frame ratio)
+  - Get-VlcArgsGdi        (optional full-screen UI switches)
 
 .PARAMETER VideoPath
 Full path to the video file.
 
 .PARAMETER SaveFolder
-Destination folder for screenshots when snapshot mode is enabled..
+Destination for snapshot files when -UseVlcSnapshots is enabled.
+(Not used by GDI+ capture itself, but required by the signature.)
 
 .PARAMETER UseVlcSnapshots
-Enable VLC scene filter snapshots (headless capture, video-frame only).
+When set, enables headless snapshot capture (video-frame only).
+
+.PARAMETER StopAtSeconds
+Optional stop time (seconds). When > 0, Start-Vlc passes --stop-time.
+
+.OUTPUTS
+System.Diagnostics.Process  # Process object for the running VLC instance (may have exited).
 
 .EXAMPLE
-$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots'
+# GDI+ capture (desktop), with full-screen VLC window
+$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots' -StopAtSeconds 65
+
 .EXAMPLE
-$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots' -UseVlcSnapshots
+# Snapshot mode (headless; no desktop UI in images)
+$proc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots' -UseVlcSnapshots -StopAtSeconds 65
+
+.NOTES
+- Writes the launched PID to the per-run registry (.vlc_pids_<guid>.txt) so
+  event handlers can clean up reliably.
+- Emits Write-Debug traces for args and startup behavior.
 #>
 function Start-Vlc {
     param(
@@ -1011,24 +1186,31 @@ function Start-Vlc {
 
 <#
 .SYNOPSIS
-Stops VLC process gracefully, with force-kill fallback.
+Stops VLC gracefully, with force-kill and deterministic exit.
 
 .DESCRIPTION
-Attempts to close VLC via CloseMainWindow (no-op under --intf dummy),
-waits briefly for exit, and then force-kills the process if still running.
-Safe to call in finally blocks to ensure cleanup on all paths.
+Attempts CloseMainWindow (no-op in --intf dummy), then waits briefly for exit.
+If still running, uses Stop-Process -Force and then Wait-Process to ensure the
+process actually terminates. This deterministic termination helps make ExitCode
+readable and consistent on all code paths.
 
 .PARAMETER Process
 The VLC process object to stop.
 
+.OUTPUTS
+None.
+
 .EXAMPLE
-# Ensure VLC is cleaned up even on error paths
 try {
   $vlc = Start-Vlc -VideoPath 'C:\v\clip.mp4' -SaveFolder 'C:\shots'
-  # ... do work ...
+  # ... work ...
 } finally {
   if ($vlc) { Stop-Vlc -Process $vlc }
 }
+
+.NOTES
+Safe for use in finally blocks; exceptions are swallowed to avoid masking the
+original error path.
 #>
 function Stop-Vlc {
     param([Parameter(Mandatory)][System.Diagnostics.Process]$Process)
@@ -1340,6 +1522,7 @@ foreach ($video in $videos) {
             Write-Debug "VLC process completed after $finalElapsed seconds"
         } else {
             $frameIndex = 0
+            $fpsSw = [System.Diagnostics.Stopwatch]::StartNew()
             $videoBase  = [IO.Path]::GetFileNameWithoutExtension($video.Name)
             
             $perVideoDeadline = if ($stopAt -gt 0) { (Get-Date).AddSeconds($stopAt) } else { $null }
@@ -1380,6 +1563,10 @@ foreach ($video in $videos) {
                 $sleep = [int]($next - $sw.ElapsedMilliseconds)
                 if ($sleep -gt 0) { Start-Sleep -Milliseconds $sleep }
             }
+            $fpsSw.Stop()
+            $elapsedSec = [Math]::Max(0.001, $fpsSw.Elapsed.TotalSeconds)
+            $achievedFps = [Math]::Round($savedThisRun / $elapsedSec, 3)
+            Write-Debug "GDI+ achieved FPS: $achievedFps (requested=$FramesPerSecond, frames=$savedThisRun, elapsed=${elapsedSec}s)"
             $sw.Stop()
         }
     }
