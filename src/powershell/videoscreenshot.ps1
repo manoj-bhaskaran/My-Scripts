@@ -145,9 +145,13 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.29
+   1.2.30
 
 CHANGELOG
+  1.2.30
+  - Bug fix: Fixed Python module detection by explicitly importing importlib.util submodule.
+    The previous code imported importlib but tried to access importlib.util without explicitly
+    importing the submodule, causing AttributeError on module detection checks.
   1.2.29
   - Robustness: Improved Python version detection to handle non-English locales by parsing
     version components systematically instead of using locale-dependent regex patterns.
@@ -176,25 +180,18 @@ CHANGELOG
    - Import UX: Debug-only note when optional module is not found; richer warning when present but fails to import.
    - Docs: TROUBLESHOOTING notes for optional module placement/unblock/execution policy.
 
-   1.2.25
-   - Import UX: Enriched import-failure guidance; clarified Debug message when module not found.
-   - Docs: TROUBLESHOOTING hint for placing/unblocking optional module.
-
-   1.2.24
-   - Optional util import warns on failure; refactors for Initialize-VideoContext; Write-Message routes to native streams.
-
-   1.2.23
-   - Import handling; docs for optional module; per-video context refactor; stream routing improvements.
-
-   1.2.22
-   - Split capture helpers; optional util module; snapshot-mode FPS deviation warning; doc expansions.
-
-   Earlier 1.2.x (≤1.2.21) — condensed:
-   - Robustness: safer process termination, improved metadata detection (Shell/FFprobe), cross-locale parsing, O(1) processed lookups.
-   - UX/Observability: clearer warnings for snapshot cadence/FFprobe absence, detailed Debug traces for timings and FPS.
-   - Behavior: reliable per-video/global timeouts; GDI monotonic scheduling; snapshot process monitoring.
-   - Fixes: argument quoting, filter usage, exit-code handling, PID registry naming, duplicate logic removal, and other quality-of-life fixes.
-     See commits between 1.2.1 and 1.2.21 for full details.
+   1.2.1-1.2.25 (condensed):
+  - Robustness: Safer process termination, improved metadata detection (Shell/FFprobe), cross-locale 
+    parsing, O(1) processed lookups, enhanced import handling with graceful fallback for optional modules.
+  - UX/Observability: Clearer warnings for snapshot cadence/FFprobe absence, detailed Debug traces 
+    for timings and FPS, snapshot-mode FPS deviation warnings, enriched import failure guidance.
+  - Architecture: Split capture helpers into focused functions, introduced Initialize-VideoContext 
+    for per-video state management, optional util module pattern with better troubleshooting docs.
+  - Behavior: Reliable per-video/global timeouts, GDI monotonic scheduling, snapshot process monitoring,
+    improved Write-Message stream routing to native PowerShell streams.
+  - Fixes: Argument quoting, filter usage, exit-code handling, PID registry naming, duplicate logic 
+    removal, and other quality-of-life improvements across 25 patch releases.
+  - Refer to commit history for full details.
 
   1.2.0
   - Default processed log now resolves under <SaveFolder> as processed_videos.log when -ProcessedLogPath
@@ -1539,7 +1536,7 @@ function Confirm-PythonModules {
         [pscustomobject]@{ Code=$p.ExitCode; Out=$stdout; Err=$stderr }
     }
 
-    $checkCode = 'import importlib,sys;mods=["numpy","cv2"];missing=[m for m in mods if importlib.util.find_spec(m) is None];print(",".join(missing))'
+    $checkCode = 'import importlib.util,sys;mods=["numpy","cv2"];missing=[m for m in mods if importlib.util.find_spec(m) is None];print(",".join(missing))'
     $check = Invoke-Python -Arguments @('-c', $checkCode)
     if ($check.Code -ne 0) {
         Write-Debug "Module check failed: $($check.Err)"
