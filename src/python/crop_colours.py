@@ -37,7 +37,7 @@ DESCRIPTION
 
 EXIT CODES
     0  Success
-    1  1  Runtime error (some or all images failed to process after starting work)
+    1  Runtime error (some or all images failed to process after starting work)
     2  Usage/validation error (empty input without --allow-empty, invalid resume file, etc.)
 
     Exit code policy: Partial success (some images processed, some failed) returns 1 to alert automation.
@@ -78,7 +78,7 @@ TROUBLESHOOTING
         The file may be corrupt/unsupported. Use --skip-bad-images to continue.
     - "Transparent images not cropping properly":
         Use --preserve-alpha to detect transparent borders instead of treating
-        them as solid colors. Requires images with alpha channels
+        them as solid colors. Requires images with alpha channels.
         For images with anti-aliased transparent edges, also tune --alpha-threshold
         to ignore semi-transparent pixels (e.g. --alpha-threshold 10 to ignore
         alpha values <= 10).
