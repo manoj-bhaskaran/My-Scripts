@@ -1,7 +1,7 @@
 """
 Frame cropper for image folders.
 
-Version: 3.3.0
+Version: 3.3.1
 Author: Manoj Bhaskaran
 
 DESCRIPTION
@@ -99,6 +99,13 @@ FAQS
        A: Yes. Pass --resume-file <an existing image filename>. Processing starts after that file.
 
 CHANGELOG
+    3.3.1
+      Fix:
+        - Windows compatibility: Made fcntl import conditional to prevent ImportError crashes
+          on Windows systems. Script now properly falls back to Windows-only file locking.
+        - Spurious error logging: Removed unconditional error message that appeared even
+          on successful runs when images were found and processed correctly.
+
     3.3.0
       Fix:
         - Thread safety: Added file locking to prevent corruption of .processed_images tracking
@@ -159,7 +166,6 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures as fut
-import fcntl  # Unix file locking
 import os
 import sys
 import threading
@@ -186,6 +192,13 @@ except Exception:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     _using_plog = False
+
+# Platform-specific file locking imports
+try:
+    import fcntl
+    _has_unix_locking = True
+except ImportError:
+    _has_unix_locking = False
 
 # Windows file locking fallback
 try:
@@ -333,7 +346,7 @@ def mark_processed(folder: str, path: str) -> None:
         try:
             with open(processed_file, 'a', encoding='utf-8') as f:
                 # Platform-specific file locking for additional safety
-                if hasattr(fcntl, 'LOCK_EX'):
+                if _has_unix_locking:
                     try:
                         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                     except (OSError, AttributeError):
@@ -666,8 +679,6 @@ def _collect_and_filter_images(
             return [], 0
         logger.error("No unprocessed images remaining (all previously completed)")
         return None, 2
-
-    logger.error("No valid images found in %s (recurse=%s)", folder, recurse)
 
     return filtered_images, None
 
