@@ -1,7 +1,7 @@
 """
 Frame cropper for image folders.
 
-Version: 3.4.3
+Version: 3.4.4
 Author: Manoj Bhaskaran
 
 DESCRIPTION
