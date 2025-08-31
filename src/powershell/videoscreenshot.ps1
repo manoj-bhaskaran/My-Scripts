@@ -103,6 +103,10 @@ This per-video upper bound is enforced regardless of whether a global limit is s
 .PARAMETER DisableAutoStop
 Disable duration-based auto-stop; rely on VLC exit or -TimeLimitSeconds.
 
+.PARAMETER PreserveAlpha
+Enable alpha channel-based border detection in the Python cropper. When set, passes --preserve-alpha
+to crop_colours.py for proper handling of PNG images with transparent backgrounds.
+
 .EXAMPLE
 .\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
   -FramesPerSecond 2 -TimeLimitSeconds 600 -Debug
@@ -134,6 +138,10 @@ Disable duration-based auto-stop; rely on VLC exit or -TimeLimitSeconds.
 .\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
   -UseVlcSnapshots -ClearSnapshotsBeforeRun
 
+.EXAMPLE
+# Enable alpha channel detection for transparent PNG borders
+.\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" -PreserveAlpha
+
 .INPUTS
 None. You cannot pipe input to this script.
 
@@ -145,9 +153,14 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.34
+   1.2.35
 
 CHANGELOG
+  1.2.35
+  - Feature: Added -PreserveAlpha parameter to enable transparent border detection in the Python cropper.
+    When set, passes --preserve-alpha to crop_colours.py for proper handling of PNG images with 
+    transparent backgrounds. Useful for UI screenshots, logos, and graphics with alpha channels.
+
   1.2.34
   - Fix: Eliminated stray “True” prints by suppressing incidental output from helper/monitoring calls (e.g., Stop-Process, Wait-Process, Set-Content/Add-Content).
   - Debug: Show cropper stdout only when present; also surface non-empty stderr in Debug on success. Avoids a blank “Cropper output:” line.
@@ -301,6 +314,10 @@ TROUBLESHOOTING
       • If installation fails (offline network, blocked index, or restricted env), the run terminates with a clear error.
         You can preinstall manually in the same interpreter with:
           python -m pip install numpy opencv-python
+  - Transparent borders not detected in PNG images:
+      • Use -PreserveAlpha to enable alpha channel-based border detection in the cropper.
+      • This is useful for UI screenshots, logos, and other graphics with transparent backgrounds
+        where traditional grayscale thresholding may not detect borders correctly.
   - VLC hangs in snapshot mode: VLC's --stop-time parameter can be unreliable in headless mode.
     The script now monitors VLC processes and terminates them after video duration + 5 seconds
     (or 5 minutes maximum if duration unknown). Check debug output for timeout events.
@@ -385,6 +402,11 @@ FAQS
   A: In snapshot mode, when the watchdog hits the expected per-video bound (detected duration + grace),
      the script intentionally marks the video as processed to avoid repeated loops on uncooperative files.
 
+  Q: How do I handle screenshots with transparent backgrounds?
+  A: Use -PreserveAlpha to enable alpha channel-based border detection. This works with PNG images
+     that have transparency and is particularly useful for UI screenshots, logos, and graphics
+     where the "border" is transparent rather than a solid color.
+
 #>
 
 [CmdletBinding()]
@@ -441,7 +463,7 @@ param(
 )
 
 # Script version constant for banner/logging
-$script:VideoScreenshotVersion = '1.2.34'
+$script:VideoScreenshotVersion = '1.2.35'
 # Track run stats for end-of-run summary
 $script:RunStats = [pscustomobject]@{
   StartTime           = (Get-Date)
@@ -1732,7 +1754,7 @@ function Confirm-PythonModules {
 Run the external Python cropper.
 
 .DESCRIPTION
-Invokes crop_colours.py v3.1.0 with:
+Invokes crop_colours.py with:
   --input <SaveFolder> --skip-bad-images --allow-empty --recurse
 If provided, --resume-file is validated; a relative path is resolved under <SaveFolder>.
 Requires Python 3.9+; throws if lower.
@@ -1746,6 +1768,9 @@ Folder passed to --input.
 .PARAMETER ResumeFile
 Optional resume file; if relative, resolved under SaveFolder.
 
+.PARAMETER PreserveAlpha
+When set, passes --preserve-alpha to the Python cropper for alpha channel border detection.
+
 .EXAMPLE
 Invoke-Cropper -PythonScriptPath .\src\python\crop_colours.py -SaveFolder .\Screenshots
 #>
@@ -1753,7 +1778,8 @@ function Invoke-Cropper {
     param(
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$PythonScriptPath,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$SaveFolder,
-        [string]$ResumeFile
+        [string]$ResumeFile,
+        [switch]$PreserveAlpha
     )
 
     try {
@@ -1801,7 +1827,13 @@ function Invoke-Cropper {
         '--skip-bad-images',
         '--allow-empty',
         '--recurse'
-    ) + $resumeArg
+    )
+    
+    if ($PreserveAlpha) {
+        $pyArgs += @('--preserve-alpha')
+    }
+    
+    $pyArgs += $resumeArg
 
     Write-Debug ("Python args: " + ($pyArgs -join ' '))
 
@@ -1887,7 +1919,7 @@ $exitHandler  = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Actio
 if ($CropOnly) {
     Write-Message -Level Info -Message "Crop-only mode."
     try {
-        Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile
+        Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile -PreserveAlpha:$PreserveAlpha
     } catch {
         Write-Message -Level Error -Message $_.Exception.Message
         $script:ExitCode = 1
