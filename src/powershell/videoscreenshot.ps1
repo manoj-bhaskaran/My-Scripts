@@ -104,8 +104,9 @@ This per-video upper bound is enforced regardless of whether a global limit is s
 Disable duration-based auto-stop; rely on VLC exit or -TimeLimitSeconds.
 
 .PARAMETER PreserveAlpha
-Enable alpha channel-based border detection in the Python cropper. When set, passes --preserve-alpha
-to crop_colours.py for proper handling of PNG images with transparent backgrounds.
+Enable alpha channel-based border detection in the Python cropper. When set, passes
+--preserve-alpha and --alpha-threshold 5 to crop_colours.py for proper handling of
+PNGs with transparent backgrounds (fully/mostly transparent edges).
 
 .EXAMPLE
 .\videoscreenshot.ps1 -SourceFolder "D:\clips" -SaveFolder "D:\shots" `
@@ -153,9 +154,14 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.35
+   1.2.36
 
 CHANGELOG
+  1.2.36
+  - Feature: When -PreserveAlpha is set, the cropper is invoked with both
+    --preserve-alpha and --alpha-threshold 5 to improve trimming of transparent
+    borders in PNGs. Also fixed post-capture call to respect -PreserveAlpha.
+
   1.2.35
   - Feature: Added -PreserveAlpha parameter to enable transparent border detection in the Python cropper.
     When set, passes --preserve-alpha to crop_colours.py for proper handling of PNG images with 
@@ -316,8 +322,9 @@ TROUBLESHOOTING
           python -m pip install numpy opencv-python
   - Transparent borders not detected in PNG images:
       • Use -PreserveAlpha to enable alpha channel-based border detection in the cropper.
-      • This is useful for UI screenshots, logos, and other graphics with transparent backgrounds
-        where traditional grayscale thresholding may not detect borders correctly.
+      • With -PreserveAlpha, the script invokes the cropper with --preserve-alpha and
+        --alpha-threshold 5 by default. For a different sensitivity, run the cropper
+        directly and tune --alpha-threshold.
   - VLC hangs in snapshot mode: VLC's --stop-time parameter can be unreliable in headless mode.
     The script now monitors VLC processes and terminates them after video duration + 5 seconds
     (or 5 minutes maximum if duration unknown). Check debug output for timeout events.
@@ -463,7 +470,7 @@ param(
 )
 
 # Script version constant for banner/logging
-$script:VideoScreenshotVersion = '1.2.35'
+$script:VideoScreenshotVersion = '1.2.36'
 # Track run stats for end-of-run summary
 $script:RunStats = [pscustomobject]@{
   StartTime           = (Get-Date)
@@ -1830,7 +1837,7 @@ function Invoke-Cropper {
     )
     
     if ($PreserveAlpha) {
-        $pyArgs += @('--preserve-alpha')
+        $pyArgs += @('--preserve-alpha', '--alpha-threshold', '5')
     }
     
     $pyArgs += $resumeArg
@@ -2105,7 +2112,7 @@ foreach ($video in $videos) {
 try {
     if (Get-ChildItem -Path (Join-Path $SaveFolder '*') -Recurse -File -Include *.png,*.jpg,*.jpeg -ErrorAction SilentlyContinue | Select-Object -First 1) {
         Write-Message -Level Info -Message "Invoking crop_colours.py on $SaveFolder (post-capture)."
-        Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile
+        Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile -PreserveAlpha:$PreserveAlpha
     } else {
         Write-Message -Level Info -Message "No images found in $SaveFolder for cropping; skipping."
     }
