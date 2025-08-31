@@ -1,7 +1,7 @@
 """
 Frame cropper for image folders.
 
-Version: 3.3.1
+Version: 3.4.0
 Author: Manoj Bhaskaran
 
 DESCRIPTION
@@ -57,6 +57,7 @@ USAGE
                       [--ignore-processed]
                       [--recurse]
                       [--preserve-alpha]
+                      [--alpha-threshold N]
                       [--debug]
 
     # Overwrite originals (opt-in)
@@ -75,6 +76,9 @@ TROUBLESHOOTING
     - "Transparent images not cropping properly":
         Use --preserve-alpha to detect transparent borders instead of treating
         them as solid colors. Requires images with alpha channels
+        For images with anti-aliased transparent edges, also tune --alpha-threshold
+        to ignore semi-transparent pixels (e.g. --alpha-threshold 10 to ignore
+        alpha values <= 10).
     - "Saves failing on network drive":
         Increase --retry-writes, reduce --max-workers, and check disk permissions/space.
     - "Too slow or too CPU-heavy":
@@ -99,6 +103,20 @@ FAQS
        A: Yes. Pass --resume-file <an existing image filename>. Processing starts after that file.
 
 CHANGELOG
+    3.4.0
+      Fix:
+        - Resume file matching: Use case-insensitive path comparison on Windows to handle
+          mixed case and path separator differences in --resume-file arguments
+        - Exit semantics: Return success (0) instead of error (2) when all images are
+          already processed, improving automation workflow compatibility
+        - Error diagnostics: Include target output path in save failure messages for better debugging
+        - Parameter validation: Add bounds checking for thresholds, padding, and min-area values
+      Add:
+        - --alpha-threshold parameter for fine-tuning transparent border detection sensitivity,
+          useful for handling anti-aliased edges and semi-transparent content
+      Improve:
+        - Type annotations: Modernize to use built-in types (tuple, list) instead of typing module
+
     3.3.1
       Fix:
         - Windows compatibility: Made fcntl import conditional to prevent ImportError crashes
@@ -171,7 +189,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Optional, Sequence, Tuple, List
+from typing import Optional, Sequence, Tuple
 
 # --- Logging setup -----------------------------------------------------------
 
@@ -225,6 +243,34 @@ def default_workers() -> int:
     except Exception:
         return 8
 
+def _validate_parameters(args) -> None:
+    """
+    Validate command-line parameters with meaningful error messages.
+    Extracted to reduce cognitive complexity of parse_args.
+    """
+    import argparse
+    
+    # Create a dummy parser for error reporting
+    p = argparse.ArgumentParser()
+    
+    if args.low_threshold < 0 or args.low_threshold > 255:
+        p.error("--low-threshold must be between 0-255")
+    if args.high_threshold < 0 or args.high_threshold > 255:
+        p.error("--high-threshold must be between 0-255")
+    if args.low_threshold >= args.high_threshold:
+        p.error("--low-threshold must be less than --high-threshold")
+    if args.min_area <= 0:
+        p.error("--min-area must be positive")
+    if args.padding < 0:
+        p.error("--padding cannot be negative")
+    if args.alpha_threshold < 0 or args.alpha_threshold > 255:
+        p.error("--alpha-threshold must be between 0-255")
+    if args.max_workers <= 0:
+        p.error("--max-workers must be positive")
+    if args.retry_writes <= 0:
+        p.error("--retry-writes must be positive")
+    if args.progress_interval < 0:
+        p.error("--progress-interval cannot be negative")
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Crop uniform borders from images in a folder.")
@@ -245,6 +291,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                    help="Do not append a suffix in non in-place mode (still non-clobbering).")
     p.add_argument("--preserve-alpha", action="store_true",
                    help="Detect transparent borders using alpha channel (for PNG with transparency).")
+    p.add_argument("--alpha-threshold", type=int, default=0,
+                   help="Minimum alpha value to treat as content (default: 0). Increase to ignore semi-transparent edges.")
     p.add_argument("--max-workers", type=int, default=default_workers(),
                    help="Thread pool size (I/O-bound default: 2×CPU, capped 64).")
     p.add_argument("--retry-writes", type=int, default=3,
@@ -273,7 +321,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     args = p.parse_args(argv)
 
-    # Configure logging level for both backends
+    _validate_parameters(args)
+     # Configure logging level for both backends
     if _using_plog:
         if args.debug:
             try:
@@ -291,7 +340,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 VALID_EXTS = {".png", ".jpg", ".jpeg"}
 
 
-def list_images(folder: str, recurse: bool = False) -> List[str]:
+def list_images(folder: str, recurse: bool = False) -> list[str]:
     """Return sorted absolute image paths with valid extensions. Optionally recurse."""
     root = Path(folder)
     it = root.rglob("*") if recurse else root.iterdir()
@@ -315,8 +364,8 @@ def get_processed_set(folder: str) -> set[str]:
         if not os.path.exists(processed_file):
             # Create empty tracking file
             try:
-                with open(processed_file, 'w', encoding='utf-8') as f:
-                    pass
+                with open(processed_file, 'w', encoding='utf-8'):
+                    pass  # Create empty file for tracking processed images
             except Exception as e:
                 logger.debug("Could not create processed tracking file: %s", e)
                 return processed
@@ -416,6 +465,7 @@ def detect_content_bbox(
     min_area: int = 256,
     padding: int = 2,
     preserve_alpha: bool = False,
+    alpha_threshold: int = 0,
 ) -> Optional[Tuple[int, int, int, int]]:
     """
     Compute a bounding box around non-border content.
@@ -426,14 +476,18 @@ def detect_content_bbox(
       - Mark as 'content' pixels based on the selected detection method
       - If any content exists and area >= min_area, return bbox with optional padding.
       - Otherwise, return None (no crop).
+      
+    Args:
+        alpha_threshold: Minimum alpha value to treat as content (0-255). Higher values ignore semi-transparent edges.
+ 
 
     Returns bbox as (y0, y1, x0, x1) in image coordinates, or None.
     """
     if preserve_alpha and img.shape[2] == 4:  # Has alpha channel
         # Use alpha channel for transparency detection
         alpha = img[:, :, 3]
-        # Content is where alpha > 0 (not fully transparent)
-        content_mask = alpha > 0
+        # Content is where alpha > threshold (configurable transparency cutoff)
+        content_mask = alpha > alpha_threshold
     else:
         # Traditional grayscale threshold detection
         if img.shape[2] == 4:
@@ -531,50 +585,64 @@ def crop_image(
     min_area: int,
     padding: int,
     preserve_alpha: bool = False,
+    alpha_threshold: int = 0,
 ) -> "np.ndarray":
     """Return cropped image if a bbox is found; otherwise return original."""
-    bbox = detect_content_bbox(img, low_threshold, high_threshold, min_area, padding, preserve_alpha)
+    bbox = detect_content_bbox(img, low_threshold, high_threshold, min_area, padding, preserve_alpha, alpha_threshold)
     if bbox is None:
         return img
     y0, y1, x0, x1 = bbox
     return img[y0:y1 + 1, x0:x1 + 1]
 
+class ProcessingConfig:
+    """Configuration object to reduce parameter count in process_one function."""
+    def __init__(self, args, root: str, folder: str):
+        self.retry_writes = args.retry_writes
+        self.low_threshold = args.low_threshold
+        self.high_threshold = args.high_threshold
+        self.min_area = args.min_area
+        self.padding = args.padding
+        self.preserve_alpha = args.preserve_alpha
+        self.alpha_threshold = args.alpha_threshold
+        self.suffix = args.suffix
+        self.no_suffix = args.no_suffix
+        self.in_place = args.in_place
+        self.root = root
+        self.folder = folder
 
 # --- Worker & orchestration --------------------------------------------------
 
 def process_one(
     in_path: str,
     out_dir: Optional[str],
-    retry_writes: int,
-    low_threshold: int,
-    high_threshold: int,
-    min_area: int,
-    padding: int,
-    root: Optional[str],
-    *,
-    folder: str,
-    preserve_alpha: bool = False,
-    suffix: str,
-    no_suffix: bool,
-    in_place: bool,
-) -> Tuple[str, bool, Optional[str]]:
+    config: ProcessingConfig,
+) -> tuple[str, bool, Optional[str]]:
     """
     Process a single image: load, crop, save (with retries).
+    Uses ProcessingConfig to reduce parameter count.
     Returns (path, success, error_message_or_None).
     """
     try:
-        img = load_image(in_path, preserve_alpha)
-        cropped = crop_image(img, low_threshold, high_threshold, min_area, padding, preserve_alpha)
+        img = load_image(in_path, config.preserve_alpha)
+        cropped = crop_image(
+            img, 
+            config.low_threshold, 
+            config.high_threshold, 
+            config.min_area, 
+            config.padding, 
+            config.preserve_alpha, 
+            config.alpha_threshold
+        )
         out_path = ensure_output_path(
-            in_path, out_dir, root,
-            suffix=suffix, no_suffix=no_suffix, in_place=in_place
+            in_path, out_dir, config.root,
+            suffix=config.suffix, no_suffix=config.no_suffix, in_place=config.in_place
         )
 
-        if in_place:
+        if config.in_place:
             # Atomic replace via temp file to reduce partial write risk
             tmp = in_path + ".tmp_write"
-            if not imwrite_retry(tmp, cropped, attempts=retry_writes):
-                return (in_path, False, "Failed to save image after retries (tmp).")
+            if not imwrite_retry(tmp, cropped, attempts=config.retry_writes):
+                return (in_path, False, f"Failed to save image to '{tmp}' after {config.retry_writes} attempts.")
             try:
                 os.replace(tmp, in_path)
             except Exception as e:
@@ -584,11 +652,11 @@ def process_one(
                     pass
                 return (in_path, False, f"Atomic replace failed: {e}")
         else:
-            if not imwrite_retry(out_path, cropped, attempts=retry_writes):
-                return (in_path, False, "Failed to save image after retries.")
+            if not imwrite_retry(out_path, cropped, attempts=config.retry_writes):
+                return (in_path, False, f"Failed to save image to '{out_path}' after {config.retry_writes} attempts.")
 
         # Mark as successfully processed for future run tracking
-        mark_processed(folder, in_path)
+        mark_processed(config.folder, in_path)
      
         return (in_path, True, None)
 
@@ -597,7 +665,7 @@ def process_one(
 
 
 # --- Low-complexity helpers for main() --------------------------------------
-def _filter_processed_images(images: List[str], folder: str, ignore_processed: bool) -> List[str]:
+def _filter_processed_images(images: list[str], folder: str, ignore_processed: bool) -> list[str]:
     """
     Filter out already-processed images unless ignore_processed=True.
     
@@ -651,7 +719,7 @@ def _collect_and_filter_images(
     allow_empty: bool, 
     recurse: bool, 
     ignore_processed: bool
-) -> tuple[Optional[list[str]], Optional[int]]:    
+) -> tuple[Optional[list[str]], Optional[int]]:   
     """
     Collect images and filter out already-processed ones (unless ignore_processed=True).
     
@@ -677,8 +745,8 @@ def _collect_and_filter_images(
         if allow_empty:
             logger.info("No unprocessed images remaining; --allow-empty set; exiting 0")
             return [], 0
-        logger.error("No unprocessed images remaining (all previously completed)")
-        return None, 2
+        logger.info("No unprocessed images remaining (all previously completed); treating as success")
+        return [], 0
 
     return filtered_images, None
 
@@ -692,9 +760,23 @@ def _resolve_resume_index(folder: str, images: list[str], resume_file: Optional[
         return 0, None
 
     resume_abs = validate_resume_file(folder, resume_file)  # may SystemExit(2)
-    try:
-        return images.index(resume_abs) + 1, None  # start AFTER this file
-    except ValueError:
+    
+    # Case-insensitive path comparison for Windows compatibility
+    import platform
+    is_case_insensitive = platform.system().lower() == 'windows'
+    
+    if is_case_insensitive:
+        resume_normalized = os.path.normcase(os.path.normpath(resume_abs))
+        for i, img_path in enumerate(images):
+            if os.path.normcase(os.path.normpath(img_path)) == resume_normalized:
+                return i + 1, None  # start AFTER this file
+    else:
+        # Unix: exact path matching
+        try:
+            return images.index(resume_abs) + 1, None
+        except ValueError:
+            pass
+   
         logger.error("--resume-file not found in input set: %s", resume_abs)
         raise SystemExit(2)
 
@@ -752,6 +834,8 @@ def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, in
     last_progress_time = start_time
     processed = skipped = failures = 0
 
+    config = ProcessingConfig(args, root, args.input)
+  
     with fut.ThreadPoolExecutor(max_workers=args.max_workers) as ex:
         # Submit all tasks
         future_map = {
@@ -759,17 +843,7 @@ def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, in
                 process_one,
                 path,
                 args.output,
-                args.retry_writes,
-                args.low_threshold,
-                args.high_threshold,
-                args.min_area,
-                args.padding,
-                root,
-                folder=args.input,
-                preserve_alpha=args.preserve_alpha,
-                suffix=args.suffix,
-                no_suffix=args.no_suffix,
-                in_place=args.in_place,
+                config,
             ): path
             for path in to_process
         }
