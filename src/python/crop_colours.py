@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Frame cropper for image folders.
 
-Version: 3.1.0
+Version: 3.2.0
 Author: Manoj Bhaskaran
 
 DESCRIPTION
@@ -16,6 +14,7 @@ DESCRIPTION
       - Appends a filename suffix (default: "_cropped")
       - Preserves subfolder structure with --recurse
       - Never overwrites outputs (auto de-duplicates if needed)
+      - Tracks processed files to avoid reprocessing (via .processed_images) 
 
     Opt-in overwrite:
       - Use --in-place to overwrite originals in-place (atomic temp->replace)
@@ -23,11 +22,14 @@ DESCRIPTION
     Features:
       - Parallel processing via ThreadPoolExecutor (configurable --max-workers)
       - Periodic progress logs (--progress-interval, default 100 images)
+      - Real-time progress with ETA estimates and processing rate
       - Strict validation & clear exit codes
       - Resume-from-image support (--resume-file)
       - Save retries for transient I/O issues (--retry-writes)
       - Optionally skip corrupt images instead of failing the run (--skip-bad-images)
       - Optional recursion into subfolders (--recurse)
+      - Automatic reprocessing protection via .processed_images tracking
+      - Comprehensive summary statistics with timing and success rates
 
 EXIT CODES
     0  Success
@@ -49,6 +51,7 @@ USAGE
                       [--resume-file img_000123.png]
                       [--skip-bad-images]
                       [--allow-empty]
+                      [--ignore-processed]
                       [--recurse]
                       [--debug]
 
@@ -59,6 +62,10 @@ TROUBLESHOOTING
     - "No valid images found":
         Ensure --input has .png/.jpg/.jpeg files. Use --recurse to include subfolders.
         Use --allow-empty to treat empty input as success.
+    - "Already processed X images":
+        The script tracks completed files in .processed_images to avoid reprocessing.
+        Use --ignore-processed to reprocess all files, or delete .processed_images
+        from the input folder to reset tracking.
     - "Failed to load image":
         The file may be corrupt/unsupported. Use --skip-bad-images to continue.
     - "Saves failing on network drive":
@@ -74,10 +81,21 @@ FAQS
     Q: What if the crop finds nothing to trim?
        A: The original image is written as-is (no-op crop).
 
+    Q: How does reprocessing protection work?
+       A: Successfully processed files are recorded in <input>/.processed_images.
+          Delete this file or use --ignore-processed to reprocess everything.
+
     Q: Can I resume after a partial run?
        A: Yes. Pass --resume-file <an existing image filename>. Processing starts after that file.
 
 CHANGELOG
+    3.2.0
+      Add:
+        - Reprocessing protection: .processed_images tracking prevents redundant work
+        - Enhanced progress reporting with ETA estimates and processing rates  
+        - Comprehensive summary statistics with timing and success rate analysis
+        - --ignore-processed flag to override reprocessing protection when needed
+
     3.1.0
       Add:
         - --progress-interval (default 100 images) to log periodic batch progress
@@ -172,18 +190,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                    help="Output folder (default: <input>/Cropped). Ignored with --in-place.")
     p.add_argument("--in-place", action="store_true",
                    help="Overwrite originals in-place (atomic replace).")
-
     # Accept both kebab and underscore to match callers
     p.add_argument("--resume-file", dest="resume_file", default=None,
                    help="Resume after this image (filename or absolute path).")
     p.add_argument("--resume_file", dest="resume_file", default=None,
                    help=argparse.SUPPRESS)
-
     p.add_argument("--suffix", default="_cropped",
                    help="Filename suffix in non in-place mode (default: _cropped).")
     p.add_argument("--no-suffix", action="store_true",
                    help="Do not append a suffix in non in-place mode (still non-clobbering).")
-
     p.add_argument("--max-workers", type=int, default=default_workers(),
                    help="Thread pool size (I/O-bound default: 2×CPU, capped 64).")
     p.add_argument("--retry-writes", type=int, default=3,
@@ -194,6 +209,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                    help="Treat empty input folder as success (exit 0).")
     p.add_argument("--recurse", action="store_true",
                    help="Search subfolders recursively for images.")
+    p.add_argument("--ignore-processed", action="store_true", 
+                   help="Ignore .processed_images tracking and reprocess all files.")
     p.add_argument("--progress-interval", type=int, default=100,
                    help="Log progress every N completed images (default: 100).")
     p.add_argument("--debug", action="store_true", help="Enable debug logging.")
@@ -231,6 +248,41 @@ def list_images(folder: str, recurse: bool = False) -> List[str]:
         for p in it
         if p.is_file() and p.suffix.lower() in VALID_EXTS
     )
+
+def get_processed_set(folder: str) -> set[str]:
+    """
+    Load set of already-processed files from .processed_images tracking file.
+    
+    Returns absolute paths of files that were successfully processed in previous runs.
+    Creates the tracking file if it doesn't exist. Handles read errors gracefully.
+    """
+    processed_file = os.path.join(folder, ".processed_images")
+    processed = set()
+    if os.path.exists(processed_file):
+        try:
+            with open(processed_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    path = line.strip()
+                    if path and os.path.exists(path):
+                        processed.add(path)
+            logger.debug("Loaded %d previously processed images from %s", len(processed), processed_file)
+        except Exception as e:
+            logger.warning("Could not read processed tracking file %s: %s", processed_file, e)
+    return processed
+
+def mark_processed(folder: str, path: str) -> None:
+    """
+    Append a successfully processed file path to .processed_images tracking file.
+    
+    Used to prevent reprocessing the same files in subsequent runs. Handles
+    write errors gracefully with debug logging.
+    """
+    processed_file = os.path.join(folder, ".processed_images")
+    try:
+        with open(processed_file, 'a', encoding='utf-8') as f:
+            f.write(f"{path}\n")
+    except Exception as e:
+        logger.debug("Could not update processed tracking file: %s", e)
 
 def validate_resume_file(folder: str, resume: str) -> str:
     """
@@ -381,6 +433,7 @@ def process_one(
     padding: int,
     root: Optional[str],
     *,
+    folder: str,
     suffix: str,
     no_suffix: bool,
     in_place: bool,
@@ -414,6 +467,9 @@ def process_one(
             if not imwrite_retry(out_path, cropped, attempts=retry_writes):
                 return (in_path, False, "Failed to save image after retries.")
 
+        # Mark as successfully processed for future run tracking
+        mark_processed(folder, in_path)
+     
         return (in_path, True, None)
 
     except Exception as e:
@@ -447,15 +503,32 @@ def _validate_paths(args) -> tuple[Optional[str], Optional[int]]:
     return folder, None
 
 
-def _collect_images_or_exit(folder: str, allow_empty: bool, recurse: bool) -> tuple[Optional[list[str]], Optional[int]]:
+def _collect_and_filter_images(
+    folder: str, 
+    allow_empty: bool, 
+    recurse: bool, 
+    ignore_processed: bool
+) -> tuple[Optional[list[str]], Optional[int]]:    
     """
-    List images. On empty input:
+    List images and filter out already-processed ones (unless ignore_processed=True).
+    On empty input after filtering:
       - return ([], 0) if allow_empty
       - return (None, 2) otherwise
     """
     images = list_images(folder, recurse=recurse)
     if images:
-        return images, None
+        # Filter out already processed images unless explicitly ignored
+        if not ignore_processed:
+            processed_set = get_processed_set(folder)
+            if processed_set:
+                original_count = len(images)
+                images = [img for img in images if img not in processed_set]
+                filtered_count = original_count - len(images)
+                if filtered_count > 0:
+                    logger.info("Filtered out %d already-processed images (%d remaining)", 
+                                filtered_count, len(images))
+        
+        return images, None if images else ([], 0 if allow_empty else 2)
 
     logger.error("No valid images found in %s (recurse=%s)", folder, recurse)
     if allow_empty:
@@ -490,14 +563,24 @@ def _classify_result(ok: bool, err: Optional[str], skip_bad_images: bool) -> str
     return "fail"
 
 
-def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, int]:
-    """Run the parallel crop/save over the list, returning (processed, skipped, failures)."""
+def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, int, float]:
+    """
+    Run the parallel crop/save over the list with enhanced progress reporting.
+    
+    Returns (processed, skipped, failures, elapsed_seconds) for summary statistics.
+    Provides real-time progress updates with ETA estimates and processing rates.
+    """
     total = len(to_process)
+    start_time = time.time()
+    last_progress_time = start_time
+ 
     logger.info(
         "Starting crop: %d images (workers=%d, out=%s, recurse=%s, in_place=%s)",
         total, args.max_workers, (args.output or "in-place"), args.recurse, args.in_place
     )
 
+    start_time = time.time()
+    last_progress_time = start_time
     processed = skipped = failures = 0
 
     with fut.ThreadPoolExecutor(max_workers=args.max_workers) as ex:
@@ -512,6 +595,7 @@ def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, in
                 args.min_area,
                 args.padding,
                 root,
+                folder=args.input,
                 suffix=args.suffix,
                 no_suffix=args.no_suffix,
                 in_place=args.in_place,
@@ -519,6 +603,7 @@ def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, in
             for path in to_process
         }
 
+        # Process completed futures with enhanced progress reporting
         for i, f in enumerate(fut.as_completed(future_map), 1):
             path = future_map[f]
             name = os.path.basename(path)
@@ -539,13 +624,25 @@ def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, in
             else:
                 failures += 1
                 logger.error("[%d/%d] FAIL: %s — %s", i, total, name, err)
+            # Enhanced progress reporting with timing and ETA
+            current_time = time.time()
+            should_log = (
+                args.debug or
+                (args.progress_interval and args.progress_interval > 0 and i % args.progress_interval == 0) or
+                (i % max(1, total // 20) == 0) or  # Every 5% for large batches
+                (current_time - last_progress_time >= 5.0)  # Every 5 seconds minimum
+            )
+            
+            if should_log:
+                elapsed = current_time - start_time
+                rate = i / elapsed if elapsed > 0 else 0
+                eta = (total - i) / rate if rate > 0 else 0
+                logger.info("[%d/%d] Progress: processed=%d, skipped=%d, failed=%d (%.1f img/sec, ETA: %.0fs)",
+                            i, total, processed, skipped, failures, rate, eta)
+                last_progress_time = current_time
 
-            # Periodic progress logging (every N completed images)
-            if args.progress_interval and args.progress_interval > 0 and (i % args.progress_interval == 0):
-                logger.info("[%d/%d] Progress: processed=%d, skipped=%d, failed=%d",
-                            i, total, processed, skipped, failures)
-
-    return processed, skipped, failures
+    elapsed_total = time.time() - start_time
+    return processed, skipped, failures, elapsed_total
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -556,8 +653,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if code is not None:
         return code
 
-    # 2) Collect images (early-exit if empty and allowed)
-    images, code = _collect_images_or_exit(folder, args.allow_empty, args.recurse)
+    # 2) Collect and filter images (early-exit if empty and allowed)
+    images, code = _collect_and_filter_images(folder, args.allow_empty, args.recurse, args.ignore_processed)
     if code is not None:
         return code  # 0 or 2
     assert images is not None  # for type checkers
@@ -575,11 +672,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
 
     # 5) Parallel processing
-    processed, skipped, failures = _process_batch(to_process, args, root=folder)
+    processed, skipped, failures, elapsed_total = _process_batch(to_process, args, root=folder)
 
-    # 6) Summary & exit code
-    logger.info("Done. processed=%d, skipped=%d, failed=%d", processed, skipped, failures)
-    return 1 if failures > 0 else 0
+    # 6) Comprehensive summary statistics
+    rate_overall = len(to_process) / elapsed_total if elapsed_total > 0 else 0
+    success_rate = (processed / len(to_process)) * 100 if to_process else 0
+    
+    logger.info("=== CROP SUMMARY ===")
+    logger.info("Total images processed: %d", len(to_process))
+    logger.info("Successful crops: %d", processed)
+    logger.info("Skipped (bad images): %d", skipped) 
+    logger.info("Failed: %d", failures)
+    logger.info("Success rate: %.1f%%", success_rate)
+    logger.info("Total time: %.1f seconds", elapsed_total)
+    logger.info("Processing rate: %.1f images/second", rate_overall)
+    if args.output and not args.in_place:
+        logger.info("Output folder: %s", args.output)
+  
 
 
 if __name__ == "__main__":
