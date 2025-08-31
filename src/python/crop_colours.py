@@ -1,7 +1,7 @@
 """
 Frame cropper for image folders.
 
-Version: 3.4.1
+Version: 3.4.2
 Author: Manoj Bhaskaran
 
 DESCRIPTION
@@ -103,6 +103,11 @@ FAQS
        A: Yes. Pass --resume-file <an existing image filename>. Processing starts after that file.
 
 CHANGELOG
+    3.4.2
+      Fix:
+        - Code cleanup: Remove duplicate start_time assignment in _process_batch that was
+          causing redundant time initialization and potential timing confusion
+
     3.4.1
       Fix:
         - Alpha channel crash: Add proper dimension checking to prevent IndexError when
@@ -851,8 +856,6 @@ def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, in
     Complexity reduced by extracting progress logging and statistics helpers.
     """
     total = len(to_process)
-    start_time = time.time()
-    last_progress_time = start_time
  
     logger.info(
         "Starting crop: %d images (workers=%d, out=%s, recurse=%s, in_place=%s)",
