@@ -1,7 +1,7 @@
 """
 Frame cropper for image folders.
 
-Version: 3.4.0
+Version: 3.4.1
 Author: Manoj Bhaskaran
 
 DESCRIPTION
@@ -103,6 +103,14 @@ FAQS
        A: Yes. Pass --resume-file <an existing image filename>. Processing starts after that file.
 
 CHANGELOG
+    3.4.1
+      Fix:
+        - Alpha channel crash: Add proper dimension checking to prevent IndexError when
+          processing grayscale images with --preserve-alpha flag
+        - Resume lookup logic: Improve control flow clarity in Windows case-insensitive matching
+        - Error messages: Add more actionable guidance for resume file and save failures
+        - Type consistency: Use built-in tuple type instead of typing.Tuple for Python 3.9+ style
+
     3.4.0
       Fix:
         - Resume file matching: Use case-insensitive path comparison on Windows to handle
@@ -189,7 +197,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Sequence
 
 # --- Logging setup -----------------------------------------------------------
 
@@ -271,6 +279,8 @@ def _validate_parameters(args) -> None:
         p.error("--retry-writes must be positive")
     if args.progress_interval < 0:
         p.error("--progress-interval cannot be negative")
+# Global flag to track if we've shown save failure guidance this run
+_save_failure_guidance_shown = False
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Crop uniform borders from images in a folder.")
@@ -423,7 +433,8 @@ def validate_resume_file(folder: str, resume: str) -> str:
         path = Path(folder) / resume
     # Check existence and extension first
     if not path.exists() or path.suffix.lower() not in VALID_EXTS:
-        logger.error("Invalid --resume-file: %s (must exist and have .png/.jpg/.jpeg extension)", str(path))
+        logger.error("Invalid --resume-file: %s (must exist and have .png/.jpg/.jpeg extension). "
+                    "Check path/extension or pass a file under --input; try --recurse if it's in a subfolder.", str(path))
         raise SystemExit(2)
     
     # Verify the file is actually a readable image
@@ -466,7 +477,7 @@ def detect_content_bbox(
     padding: int = 2,
     preserve_alpha: bool = False,
     alpha_threshold: int = 0,
-) -> Optional[Tuple[int, int, int, int]]:
+) -> Optional[tuple[int, int, int, int]]:
     """
     Compute a bounding box around non-border content.
 
@@ -483,19 +494,28 @@ def detect_content_bbox(
 
     Returns bbox as (y0, y1, x0, x1) in image coordinates, or None.
     """
-    if preserve_alpha and img.shape[2] == 4:  # Has alpha channel
+    # Check for alpha channel support: need 3+ dimensions and 4 channels
+    if preserve_alpha and img.ndim >= 3 and img.shape[2] == 4:
         # Use alpha channel for transparency detection
         alpha = img[:, :, 3]
         # Content is where alpha > threshold (configurable transparency cutoff)
         content_mask = alpha > alpha_threshold
     else:
         # Traditional grayscale threshold detection
-        if img.shape[2] == 4:
+        if img.ndim == 2:
+            # Already grayscale
+            gray = img
+        elif img.ndim >= 3 and img.shape[2] == 4:
             # Convert BGRA to BGR for grayscale conversion
             img_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
             gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-        else:
+        elif img.ndim >= 3:
+            # Standard BGR to grayscale
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        else:
+            # Fallback for unexpected image formats
+            gray = img.astype(np.uint8) if img.dtype != np.uint8 else img
+  
         content_mask = (gray > low_threshold) & (gray < high_threshold)
  
     if not np.any(content_mask):
@@ -653,7 +673,13 @@ def process_one(
                 return (in_path, False, f"Atomic replace failed: {e}")
         else:
             if not imwrite_retry(out_path, cropped, attempts=config.retry_writes):
-                return (in_path, False, f"Failed to save image to '{out_path}' after {config.retry_writes} attempts.")
+                # Add actionable guidance for save failures (once per run)
+                global _save_failure_guidance_shown
+                guidance = ""
+                if not _save_failure_guidance_shown:
+                    guidance = " Check write permissions and free disk space."
+                    _save_failure_guidance_shown = True
+                return (in_path, False, f"Failed to save image to '{out_path}' after {config.retry_writes} attempts.{guidance}")
 
         # Mark as successfully processed for future run tracking
         mark_processed(config.folder, in_path)
@@ -766,19 +792,22 @@ def _resolve_resume_index(folder: str, images: list[str], resume_file: Optional[
     is_case_insensitive = platform.system().lower() == 'windows'
     
     if is_case_insensitive:
+        # Windows: case-insensitive path matching
         resume_normalized = os.path.normcase(os.path.normpath(resume_abs))
         for i, img_path in enumerate(images):
             if os.path.normcase(os.path.normpath(img_path)) == resume_normalized:
                 return i + 1, None  # start AFTER this file
     else:
-        # Unix: exact path matching
+        # Unix: case-sensitive exact path matching
         try:
             return images.index(resume_abs) + 1, None
         except ValueError:
+            # Fall through to common error handling
             pass
-   
-        logger.error("--resume-file not found in input set: %s", resume_abs)
-        raise SystemExit(2)
+    
+    # Common error handling for both platforms when file not found
+    logger.error("--resume-file not found in input set: %s. Check path/extension or pass a file under --input; try --recurse if it's in a subfolder.", resume_abs)
+    raise SystemExit(2)
 
 def _should_log_progress(i: int, total: int, args, current_time: float, last_progress_time: float) -> bool:
     """
