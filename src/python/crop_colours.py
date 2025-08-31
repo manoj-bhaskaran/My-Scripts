@@ -1,7 +1,7 @@
 """
 Frame cropper for image folders.
 
-Version: 3.4.2
+Version: 3.4.3
 Author: Manoj Bhaskaran
 
 DESCRIPTION
@@ -14,7 +14,8 @@ DESCRIPTION
       - Appends a filename suffix (default: "_cropped")
       - Preserves subfolder structure with --recurse
       - Never overwrites outputs (auto de-duplicates if needed)
-      - Tracks processed files to avoid reprocessing (via .processed_images) 
+      - Tracks processed files to avoid reprocessing (via .processed_images using absolute paths)
+        Note: Moving input directories invalidates tracking; use --ignore-processed after relocating
 
     Opt-in overwrite:
       - Use --in-place to overwrite originals in-place (atomic temp->replace)
@@ -30,15 +31,17 @@ DESCRIPTION
       - Optional recursion into subfolders (--recurse)
       - Automatic reprocessing protection via .processed_images tracking
       - Comprehensive summary statistics with timing and success rates
-      - Thread-safe processed file tracking with proper file locking
+      - Thread-safe processed file tracking with cross-process coordination
       - Alpha channel support for transparent border detection
       - Strict resume file validation with image readability checks
 
 EXIT CODES
     0  Success
-    1  Runtime error (processing failed after starting work)
+    1  1  Runtime error (some or all images failed to process after starting work)
     2  Usage/validation error (empty input without --allow-empty, invalid resume file, etc.)
 
+    Exit code policy: Partial success (some images processed, some failed) returns 1 to alert automation.
+     
 DEPENDENCIES
     - OpenCV:      pip install opencv-python
     - NumPy:       pip install numpy
@@ -95,6 +98,8 @@ FAQS
     Q: How does reprocessing protection work?
        A: Successfully processed files are recorded in <input>/.processed_images.
           Delete this file or use --ignore-processed to reprocess everything.
+          Note: Tracking uses absolute paths, so moving the input directory to a different
+          location will bypass reprocessing protection until tracking is rebuilt.
           
     Q: How do I handle images with transparent backgrounds?
        A: Use --preserve-alpha to detect borders based on alpha transparency.
@@ -103,6 +108,14 @@ FAQS
        A: Yes. Pass --resume-file <an existing image filename>. Processing starts after that file.
 
 CHANGELOG
+    3.4.3
+      Fix:
+        - Exit codes: Ensure exit code 1 is properly returned when any image processing
+          failures occur, aligning implementation with documented behavior for automation
+      Improve:
+        - Documentation: Clarify file locking as "cross-process coordination" rather than
+          "proper locking", and document absolute path behavior in reprocessing protection
+
     3.4.2
       Fix:
         - Code cleanup: Remove duplicate start_time assignment in _process_batch that was
@@ -956,8 +969,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     logger.info("Processing rate: %.1f images/second", rate_overall)
     if args.output and not args.in_place:
         logger.info("Output folder: %s", args.output)
-  
 
+    # Return appropriate exit code based on processing results
+    return 1 if failures > 0 else 0
 
 if __name__ == "__main__":
     sys.exit(main())
