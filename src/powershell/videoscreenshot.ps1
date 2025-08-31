@@ -69,6 +69,14 @@ Validated when -CropOnly is used.
 Path to the Python cropper script. Defaults to src\python\crop_colours.py
 one level above this script folder (..\python\crop_colours.py), i.e., a sibling to the 'powershell' folder.
 
+.PARAMETER PythonExe
+Full path (or command name) of the Python interpreter to use for dependency checks and
+running the cropper. If not provided, the script resolves an interpreter in this order:
+  1) Active virtual environment (if $env:VIRTUAL_ENV is set): $VIRTUAL_ENV\Scripts\python.exe
+  2) `python` found on PATH (via Get-Command)
+  3) Python launcher: `py -3` → resolved to its sys.executable
+Use this to avoid installing modules into the wrong interpreter when multiple Pythons exist.
+
 .PARAMETER ProcessedLogPath
 Path to the file tracking processed videos.
 If omitted, defaults to <SaveFolder>\processed_videos.log.
@@ -154,9 +162,17 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.36
+   1.2.37
 
 CHANGELOG
+  1.2.37
+  - Robustness: Resolve and use a single Python interpreter consistently for both module checks/installs and cropper execution.
+    Resolution order: (1) active virtual environment ($env:VIRTUAL_ENV\Scripts\python.exe), (2) `python` on PATH,
+    (3) `py -3` resolved to its underlying sys.executable. Logs chosen interpreter in Info.
+  - Feature: New -PythonExe parameter to explicitly point at an interpreter (e.g., C:\venv\Scripts\python.exe).
+    Prevents “installed into A, ran with B” issues when multiple Pythons are present.
+  - Docs: Updated PARAMETER section, TROUBLESHOOTING notes for multi-Python/venv setups.
+
   1.2.36
   - Feature: When -PreserveAlpha is set, the cropper is invoked with both
     --preserve-alpha and --alpha-threshold 5 to improve trimming of transparent
@@ -311,6 +327,12 @@ TROUBLESHOOTING
     • To enable the module, place 'videoscreenshot.util.psm1' in the same folder as this script ($PSScriptRoot).
     • If downloaded from the internet, run: Unblock-File -Path .\videoscreenshot.util.psm1
     • Ensure execution policy allows module import (e.g., RemoteSigned). Details are emitted to the Debug stream.
+  - Multiple Python installs / virtual environments:
+    • You can pass -PythonExe to point at an exact interpreter (e.g., C:\venv\Scripts\python.exe).
+    • If -PythonExe is not provided, the script prefers an active virtual environment, otherwise `python` on PATH,
+      and finally the Python launcher (`py -3`) which is resolved to its underlying interpreter path.
+    • The chosen interpreter is used consistently for both module installation and running the cropper to
+      prevent “installed into A, ran with B” issues.
   - Duration detection fails: Install FFmpeg (includes FFprobe) for enhanced metadata reading.
     The script tries Windows Shell properties first, then falls back to FFprobe if available.
   - Cropper prerequisites (numpy / OpenCV):
@@ -445,6 +467,9 @@ param(
     [string]$PythonScriptPath = (Join-Path (Split-Path $PSScriptRoot -Parent) 'python\crop_colours.py'),
 
     [Parameter(Mandatory = $false)]
+    [string]$PythonExe,
+
+    [Parameter(Mandatory = $false)]
     [string]$ProcessedLogPath,
 
     [Parameter(Mandatory = $false)]
@@ -470,7 +495,7 @@ param(
 )
 
 # Script version constant for banner/logging
-$script:VideoScreenshotVersion = '1.2.36'
+$script:VideoScreenshotVersion = '1.2.37'
 # Track run stats for end-of-run summary
 $script:RunStats = [pscustomobject]@{
   StartTime           = (Get-Date)
@@ -576,6 +601,70 @@ if (-not (Get-Command Write-Message -ErrorAction SilentlyContinue)) {
             'Error' { Write-Error   -Message $formatted; Write-Debug $formatted }
         }
     }
+}
+
+# Resolve a Python interpreter once per invocation site (crop-only / post-capture).
+# Preference: active venv → `python` on PATH → `py -3` resolved to sys.executable.
+function Resolve-PythonInterpreter {
+    param([string]$PythonExe)
+    # Helper to run a short Python snippet and capture stdout; returns '' on failure
+    function __TryPy([string]$exe, [string[]]$pyargs) {
+        try {
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = $exe
+            foreach ($a in $args) { $psi.ArgumentList.Add($a) }
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError  = $true
+            $psi.CreateNoWindow = $true
+            $p = [System.Diagnostics.Process]::new()
+            $p.StartInfo = $psi
+            $null = $p.Start()
+            $out = $p.StandardOutput.ReadToEnd()
+            $err = $p.StandardError.ReadToEnd()
+            $p.WaitForExit()
+            if ($p.ExitCode -eq 0) { return $out.Trim() } else { return '' }
+        } catch { return '' }
+    }
+
+    # 1) If an explicit interpreter was provided, prefer it.
+    if ($PythonExe) {
+        try {
+            # Resolve command names to full paths when possible
+            $cmd = Get-Command -Name $PythonExe -ErrorAction Stop
+            $candidate = if ($cmd.Source) { $cmd.Source } else { $PythonExe }
+        } catch {
+            $candidate = $PythonExe
+        }
+        if (-not (Test-Path -LiteralPath $candidate) -and -not (Get-Command $candidate -ErrorAction SilentlyContinue)) {
+            throw "Specified -PythonExe not found or not executable: $PythonExe"
+        }
+        $sys = __TryPy $candidate @('-c','import sys;print(sys.executable)')
+        if (-not $sys) { throw "Cannot execute Python at: $candidate" }
+        return [pscustomobject]@{ Path = $candidate; SysExecutable = $sys }
+    }
+
+    # 2) Active venv
+    if ($env:VIRTUAL_ENV) {
+        $venvPy = Join-Path $env:VIRTUAL_ENV 'Scripts\python.exe'
+        if (Test-Path -LiteralPath $venvPy) {
+            $sys = __TryPy $venvPy @('-c','import sys;print(sys.executable)')
+            if ($sys) { return [pscustomobject]@{ Path = $venvPy; SysExecutable = $sys } }
+        }
+    }
+    # 3) python on PATH
+    $cmdPython = Get-Command python -ErrorAction SilentlyContinue
+    if ($cmdPython) {
+        $sys = __TryPy $cmdPython.Source @('-c','import sys;print(sys.executable)')
+        if ($sys) { return [pscustomobject]@{ Path = $cmdPython.Source; SysExecutable = $sys } }
+    }
+    # 4) py -3 → resolve to real interpreter
+    $cmdPy = Get-Command py -ErrorAction SilentlyContinue
+    if ($cmdPy) {
+        $sys = __TryPy $cmdPy.Source @('-3','-c','import sys;print(sys.executable)')
+        if ($sys -and (Test-Path -LiteralPath $sys)) { return [pscustomobject]@{ Path = $sys; SysExecutable = $sys } }
+    }
+    throw "No suitable Python interpreter found. Install Python ≥3.9 or pass -PythonExe."
 }
 
 # --- Startup banner (after Write-Message exists) ---
@@ -1670,12 +1759,12 @@ Returns $true when modules are importable after the process; $false otherwise.
 Boolean
 #>
 function Confirm-PythonModules {
-    param()
+    param([Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$PythonExe)
     # Helper to run a python command and capture output
     function Invoke-Python {
         param([Parameter(Mandatory)][string[]]$Arguments)
         $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = 'python'
+        $psi.FileName = $PythonExe
         foreach ($arg in $Arguments) { $psi.ArgumentList.Add($arg) }
         $psi.UseShellExecute = $false
         $psi.RedirectStandardOutput = $true
@@ -1769,6 +1858,9 @@ Requires Python 3.9+; throws if lower.
 .PARAMETER PythonScriptPath
 Path to crop_colours.py.
 
+.PARAMETER PythonExe
+Preferred Python interpreter (see Resolve-PythonInterpreter); if omitted, one is auto-resolved.
+
 .PARAMETER SaveFolder
 Folder passed to --input.
 
@@ -1784,13 +1876,18 @@ Invoke-Cropper -PythonScriptPath .\src\python\crop_colours.py -SaveFolder .\Scre
 function Invoke-Cropper {
     param(
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$PythonScriptPath,
+        [string]$PythonExe,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$SaveFolder,
         [string]$ResumeFile,
         [switch]$PreserveAlpha
     )
 
+    # Resolve interpreter (venv → python on PATH → py -3)
+    $py = Resolve-PythonInterpreter -PythonExe $PythonExe
+    Write-Message -Level Info -Message ("Using Python interpreter: {0} (sys.executable={1})" -f $py.Path, $py.SysExecutable)
+
     try {
-        $versionResult = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>$null
+        $versionResult = & $py.Path -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>$null
         $versionParts = $versionResult.ToString().Trim() -split '\.'
         $major = [int]$versionParts[0]
         $minor = [int]$versionParts[1]
@@ -1798,7 +1895,7 @@ function Invoke-Cropper {
             throw "Insufficient version: Python $major.$minor detected"
         }
     } catch {
-        $pv = (& python --version) 2>&1
+        $pv = (& $py.Path --version) 2>&1
         throw "Python 3.9+ required (found: $pv). Install Python ≥3.9 and ensure 'python' is on PATH."
     }
 
@@ -1807,7 +1904,7 @@ function Invoke-Cropper {
     }
 
     # Ensure required Python modules exist (or install them)
-    if (-not (Confirm-PythonModules)) {
+    if (-not (Confirm-PythonModules -PythonExe $py.Path)) {
         throw "Required Python modules (numpy/cv2) are missing and automatic installation failed. [MODULE_INSTALL_FAILED]"
     }
 
@@ -1845,7 +1942,7 @@ function Invoke-Cropper {
     Write-Debug ("Python args: " + ($pyArgs -join ' '))
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = 'python'
+    $psi.FileName = $py.Path
     foreach ($arg in $pyArgs) { $psi.ArgumentList.Add($arg) }
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
@@ -1926,7 +2023,7 @@ $exitHandler  = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Actio
 if ($CropOnly) {
     Write-Message -Level Info -Message "Crop-only mode."
     try {
-        Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile -PreserveAlpha:$PreserveAlpha
+        Invoke-Cropper -PythonScriptPath $PythonScriptPath -PythonExe $PythonExe -SaveFolder $SaveFolder -ResumeFile $ResumeFile -PreserveAlpha:$PreserveAlpha
     } catch {
         Write-Message -Level Error -Message $_.Exception.Message
         $script:ExitCode = 1
@@ -2112,7 +2209,7 @@ foreach ($video in $videos) {
 try {
     if (Get-ChildItem -Path (Join-Path $SaveFolder '*') -Recurse -File -Include *.png,*.jpg,*.jpeg -ErrorAction SilentlyContinue | Select-Object -First 1) {
         Write-Message -Level Info -Message "Invoking crop_colours.py on $SaveFolder (post-capture)."
-        Invoke-Cropper -PythonScriptPath $PythonScriptPath -SaveFolder $SaveFolder -ResumeFile $ResumeFile -PreserveAlpha:$PreserveAlpha
+        Invoke-Cropper -PythonScriptPath $PythonScriptPath -PythonExe $PythonExe -SaveFolder $SaveFolder -ResumeFile $ResumeFile -PreserveAlpha:$PreserveAlpha
     } else {
         Write-Message -Level Info -Message "No images found in $SaveFolder for cropping; skipping."
     }
