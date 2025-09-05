@@ -163,10 +163,15 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.38
+   1.2.39
 
 CHANGELOG
-  1.2.38
+  1.2.39
+  - Fix: Removed runspace exception in Invoke-VlcProcess by switching from evented output
+        (Begin*ReadLine) to synchronous stream reading, maintaining live console feedback.
+        Corrected misleading variable names (cropperStdout/cropperStderr) which actually
+        store VLC output.
+ 1.2.38
   - Fix/UX: Show Python cropper startup/progress logs live in the console during normal runs.
            Previously, stdout/stderr were redirected and consumed only after the process ended,
            and stdout was shown only in -Debug. This made crop_colours.py’s messages invisible.
@@ -1575,31 +1580,32 @@ function Invoke-VlcProcess {
     # Start process and forward output LIVE to the console while also capturing for diagnostics
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
-    $p.EnableRaisingEvents = $true
-
     # StringBuilders to retain copies for Debug/error paths
     $stdoutSb = New-Object System.Text.StringBuilder
     $stderrSb = New-Object System.Text.StringBuilder
 
-    # Forward each line as it arrives (crop_colours.py logs to stderr by default)
-    $p.add_OutputDataReceived({
-        param($s,$e)
-        if ($e.Data) {
-            [void]$stdoutSb.AppendLine($e.Data)
-            Write-Host $e.Data
-        }
-    })
-    $p.add_ErrorDataReceived({
-        param($s,$e)
-        if ($e.Data) {
-            [void]$stderrSb.AppendLine($e.Data)
-            Write-Host $e.Data
-        }
-    })
+    # Read output synchronously to avoid runspace issues
+    $stdoutReader = $p.StandardOutput
+    $stderrReader = $p.StandardError
 
     $null = $p.Start()
-    $p.BeginOutputReadLine()
-    $p.BeginErrorReadLine()
+
+    # Read and echo output lines as they arrive
+    while (-not $stdoutReader.EndOfStream) {
+        $line = $stdoutReader.ReadLine()
+        if ($line) {
+            [void]$stdoutSb.AppendLine($line)
+            Write-Host $line
+        }
+    }
+    while (-not $stderrReader.EndOfStream) {
+        $line = $stderrReader.ReadLine()
+        if ($line) {
+            [void]$stderrSb.AppendLine($line)
+            Write-Host $line
+        }
+    }
+
     $null = $p.WaitForExit()
 
     $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
