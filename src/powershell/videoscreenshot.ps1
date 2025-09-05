@@ -31,6 +31,7 @@ Major behaviours and safeguards:
   - Resume file validation: in -CropOnly mode, the resume file must exist or the script errors.
   - Startup monitoring: waits up to VlcStartupTimeoutSeconds for VLC to initialise.
   - Debug logging: enable with the common -Debug switch (Write-Debug traces).
+  - Python cropper logs: startup/progress from crop_colours.py are now forwarded live to the console.
   - Capture modes:
     • GDI+ (desktop) — simple screen grabs; add -GdiFullscreen to force VLC full-screen;
     add -Legacy1080p to capture a fixed 1920×1080 region (legacy behavior).
@@ -162,9 +163,19 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.37
+   1.2.38
 
 CHANGELOG
+  1.2.38
+  - Fix/UX: Show Python cropper startup/progress logs live in the console during normal runs.
+           Previously, stdout/stderr were redirected and consumed only after the process ended,
+           and stdout was shown only in -Debug. This made crop_colours.py’s messages invisible.
+  - Implementation: Switch Invoke-Cropper to evented stream forwarding (Begin*ReadLine) and
+                    echo each incoming line to the console while also capturing for diagnostics.
+  - Docs: Major behaviours list now calls out that cropper logs are forwarded live. Added a
+          TROUBLESHOOTING note about older versions hiding logs due to redirection.
+  - Backwards compatibility: No CLI or behavioural changes other than improved log visibility.
+
   1.2.37
   - Robustness: Resolve and use a single Python interpreter consistently for both module checks/installs and cropper execution.
     Resolution order: (1) active virtual environment ($env:VIRTUAL_ENV\Scripts\python.exe), (2) `python` on PATH,
@@ -1560,11 +1571,37 @@ function Invoke-VlcProcess {
     $psi.RedirectStandardOutput = $true
     $psi.CreateNoWindow = $true
 
+    # Start process and forward output LIVE to the console while also capturing for diagnostics
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
-    $startTime = Get-Date
+    $p.EnableRaisingEvents = $true
+
+    # StringBuilders to retain copies for Debug/error paths
+    $stdoutSb = New-Object System.Text.StringBuilder
+    $stderrSb = New-Object System.Text.StringBuilder
+
+    # Forward each line as it arrives (crop_colours.py logs to stderr by default)
+    $p.add_OutputDataReceived({
+        param($s,$e)
+        if ($e.Data) {
+            [void]$stdoutSb.AppendLine($e.Data)
+            Write-Host $e.Data
+        }
+    })
+    $p.add_ErrorDataReceived({
+        param($s,$e)
+        if ($e.Data) {
+            [void]$stderrSb.AppendLine($e.Data)
+            Write-Host $e.Data
+        }
+    })
+
     $null = $p.Start()
-    $null = Register-RunPid -ProcessId $p.Id
+    $p.BeginOutputReadLine()
+    $p.BeginErrorReadLine()
+    $null = $p.WaitForExit()
+    $cropperStdout = $stdoutSb.ToString()
+    $cropperStderr = $stderrSb.ToString()
 
     $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
