@@ -175,6 +175,7 @@ CHANGELOG
   - Docs: Major behaviours list now calls out that cropper logs are forwarded live. Added a
           TROUBLESHOOTING note about older versions hiding logs due to redirection.
   - Backwards compatibility: No CLI or behavioural changes other than improved log visibility.
+  - Fix: Removed unused assignments to cropperStdout and cropperStderr in Invoke-VlcProcess; discarded unused stderr in __TryPy.
 
   1.2.37
   - Robustness: Resolve and use a single Python interpreter consistently for both module checks/installs and cropper execution.
@@ -632,7 +633,7 @@ function Resolve-PythonInterpreter {
             $p.StartInfo = $psi
             $null = $p.Start()
             $out = $p.StandardOutput.ReadToEnd()
-            $err = $p.StandardError.ReadToEnd()
+            $null = $p.StandardError.ReadToEnd()
             $p.WaitForExit()
             if ($p.ExitCode -eq 0) { return $out.Trim() } else { return '' }
         } catch { return '' }
@@ -1600,8 +1601,6 @@ function Invoke-VlcProcess {
     $p.BeginOutputReadLine()
     $p.BeginErrorReadLine()
     $null = $p.WaitForExit()
-    $cropperStdout = $stdoutSb.ToString()
-    $cropperStderr = $stderrSb.ToString()
 
     $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
@@ -1611,7 +1610,7 @@ function Invoke-VlcProcess {
 
     if ($p.HasExited) {
         $stderr = $p.StandardError.ReadToEnd()
-        $exitTime = (Get-Date) - $startTime
+        $exitTime = (Get-Date) - $processStart
         if ($p.ExitCode -eq 0) {
             Write-Debug "VLC exited cleanly during startup window (short clip). ExitCode=0, elapsed=$($exitTime.TotalSeconds) sec"
             return $p
