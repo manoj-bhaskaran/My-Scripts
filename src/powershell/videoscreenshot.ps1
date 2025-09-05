@@ -506,7 +506,7 @@ param(
 )
 
 # Script version constant for banner/logging
-$script:VideoScreenshotVersion = '1.2.37'
+$script:VideoScreenshotVersion = '1.2.38'
 # Track run stats for end-of-run summary
 $script:RunStats = [pscustomobject]@{
   StartTime           = (Get-Date)
