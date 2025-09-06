@@ -25,7 +25,7 @@ function Add-ContentWithRetry {
       }
       Start-Sleep -Milliseconds (200 * $i)
     } finally {
-      if ($fs -ne $null) {
+      if ($null -ne $fs) {
         try { $fs.Dispose() } catch { }
       }
     }
