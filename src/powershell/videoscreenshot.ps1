@@ -34,33 +34,57 @@ if (-not (Test-Path -LiteralPath $modulePs1)) {
 }
 
 Import-Module $modulePs1 -Force -ErrorAction Stop
-Write-Warning "videoscreenshot.ps1 is now a thin wrapper. Prefer: Import-Module …\Videoscreenshot; Start-VideoBatch …"
+# Build wrapper → module parameter forwarding with parity checks
+$sbParams = (Get-Command Start-VideoBatch -ErrorAction Stop).Parameters.Keys
+$renameMap = @{
+  # legacy → module
+  'CropOnly' = 'RunCropper'
+}
 
-# Forward only parameters that Start-VideoBatch actually supports
-$cmd = Get-Command -Name Start-VideoBatch -ErrorAction Stop
-$supported = $cmd.Parameters.Keys
+$forward     = @{}
+$translated  = New-Object System.Collections.Generic.List[string]
+$ignored     = New-Object System.Collections.Generic.List[string]
 
-$forward = @{}
-foreach ($name in @('SourceFolder','SaveFolder','FramesPerSecond','TimeLimitSeconds','VideoLimit','VlcStartupTimeoutSeconds')) {
-  if ($supported -contains $name) {
-    $forward[$name] = Get-Variable -Name $name -ValueOnly
+# Include wrapper defaults for core params to keep parity with historical behavior
+$coreDefaults = @{
+  SourceFolder              = $SourceFolder
+  SaveFolder                = $SaveFolder
+  FramesPerSecond           = $FramesPerSecond
+  TimeLimitSeconds          = $TimeLimitSeconds
+  VideoLimit                = $VideoLimit
+  UseVlcSnapshots           = [bool]$UseVlcSnapshots
+  GdiFullscreen             = [bool]$GdiFullscreen
+  VlcStartupTimeoutSeconds  = $VlcStartupTimeoutSeconds
+  PythonScriptPath          = $PythonScriptPath
+  PythonExe                 = $PythonExe
+  ClearSnapshotsBeforeRun   = [bool]$ClearSnapshotsBeforeRun
+}
+foreach ($k in $coreDefaults.Keys) {
+  if ($sbParams -contains $k) { $forward[$k] = $coreDefaults[$k] }
+}
+
+# Apply user-specified parameters, handling renames and collecting unsupported
+foreach ($k in $PSBoundParameters.Keys) {
+  if ($renameMap.ContainsKey($k)) {
+    $new = $renameMap[$k]
+    if ($sbParams -contains $new) {
+      $forward[$new] = $PSBoundParameters[$k]
+      $null = $translated.Add("$k->$new")
+    } else {
+      $null = $ignored.Add($k)
+    }
+  } elseif ($sbParams -contains $k) {
+    $forward[$k] = $PSBoundParameters[$k]
+  } else {
+    $null = $ignored.Add($k)
   }
 }
-# Switch params: include only if the caller supplied them
-foreach ($sw in @('UseVlcSnapshots','GdiFullscreen')) {
-  if ($supported -contains $sw -and $PSBoundParameters.ContainsKey($sw)) {
-    $forward[$sw] = $true
-  }
-}
 
-# Warn about legacy/ignored params if the caller provided them
-$legacyOnly = @(
-  'CropOnly','ResumeFile','PythonScriptPath','PythonExe','ProcessedLogPath',
-  'Legacy1080p','ClearSnapshotsBeforeRun','AutoStopGraceSeconds','DisableAutoStop'
-)
-$ignored = $legacyOnly | Where-Object { $PSBoundParameters.ContainsKey($_) -and -not ($supported -contains $_) }
-if ($ignored) {
-  Write-Warning ("The following parameters are not used by the module's Start-VideoBatch in v1.3.0 and were ignored: {0}" -f ($ignored -join ', '))
-}
+# Emit a single, clear warning about deprecation + parameter handling
+$parts = @("videoscreenshot.ps1 is a thin wrapper; prefer: Import-Module …\Videoscreenshot; Start-VideoBatch …")
+if ($translated.Count -gt 0) { $parts += "Translated legacy parameter(s): $($translated -join ', ')" }
+if ($ignored.Count -gt 0)    { $parts += "Ignored unsupported parameter(s): $($ignored -join ', ')" }
+Write-Warning ($parts -join ' | ')
 
+# Invoke module entrypoint with curated parameter set
 Start-VideoBatch @forward

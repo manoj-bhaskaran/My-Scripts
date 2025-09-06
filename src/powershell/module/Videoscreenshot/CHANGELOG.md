@@ -6,6 +6,20 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [1.3.5] – 2025-09-07
+
+### PowerShell
+- **Videoscreenshot**
+  - Wrapper parameter parity: detect legacy/unsupported parameters passed to `videoscreenshot.ps1`, translate known legacy names (e.g., `-CropOnly` → `-RunCropper`), and emit a single consolidated deprecation/ignore warning. Improves clarity without breaking existing usage.
+  - No runtime behavior change to the module entrypoint; this is a UX/compat improvement only.
+- **Other scripts**
+  - No changes in this release.
+
+### Docs / CI
+- Updated changelogs for 1.3.5.
+
+---
+
 ## [1.3.4] – 2025-09-07
 
 ### PowerShell
