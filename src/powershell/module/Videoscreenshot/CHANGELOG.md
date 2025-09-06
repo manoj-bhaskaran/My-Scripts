@@ -6,6 +6,16 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [1.3.6] – 2025-09-07
+
+### Changed
+- Robust module loader: handle absent `Public/` or `Private/` directories gracefully and dot-source scripts in deterministic (sorted) order to avoid load-order flakiness.
+
+### Notes
+- Backwards compatible; no public API changes.
+
+---
+
 ## [1.3.5] – 2025-09-07
 
 ### PowerShell

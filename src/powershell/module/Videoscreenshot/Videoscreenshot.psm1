@@ -1,19 +1,24 @@
-# Dot-source private and public functions (robust to missing folders; also load flat layout)
-$here    = Split-Path -Parent $PSCommandPath
-$private = Join-Path $here 'Private'
-$public  = Join-Path $here 'Public'
+# Robust module loader: guard for missing dirs and deterministic load order
+$here = Split-Path -Parent $PSCommandPath
+$privateDir = Join-Path $here 'Private'
+$publicDir  = Join-Path $here 'Public'
 
-if (Test-Path -LiteralPath $private) {
-  Get-ChildItem -Path $private -Filter *.ps1 -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object { . $_.FullName }
+foreach ($dir in @($privateDir, $publicDir)) {
+    if (Test-Path -LiteralPath $dir) {
+        Get-ChildItem -LiteralPath $dir -Filter *.ps1 -File -ErrorAction SilentlyContinue |
+            Sort-Object -Property Name |
+            ForEach-Object {
+                try {
+                    . $_.FullName
+                } catch {
+                    throw "Failed to load $($_.FullName): $($_.Exception.Message)"
+                }
+            }
+    } else {
+        # Directory is optional at runtime (e.g., partial checkout or phased refactor)
+        Write-Debug "Module load: optional directory not found: $dir"
+    }
 }
-if (Test-Path -LiteralPath $public) {
-  Get-ChildItem -Path $public -Filter *.ps1 -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object { . $_.FullName }
-}
-# Also dot-source any top-level *.ps1 (for repos that keep a flat layout)
-Get-ChildItem -Path $here -Filter *.ps1 -ErrorAction SilentlyContinue |
-  Where-Object { $_.Name -notin @('Videoscreenshot.psm1','Videoscreenshot.psd1') } |
-  Sort-Object Name |
-  ForEach-Object { . $_.FullName }
 
-# Export public API
+# Export public API (explicit to avoid accidental exports)
 Export-ModuleMember -Function Start-VideoBatch
