@@ -6,6 +6,14 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [1.3.3] – 2025-09-07
+
+### PowerShell
+- **Videoscreenshot**
+  - Post-capture reporting: consume `snapStats`/`gdiStats` to compute frames delta and achieved FPS; fall back to disk counts if stats are unavailable.
+  - Cleanup: eliminate “assigned but never used” warnings by using stats objects in reporting.
+  - SemVer: patch bump (no breaking changes).
+
 ## [1.3.2] – 2025-09-07
 
 ### Fixed

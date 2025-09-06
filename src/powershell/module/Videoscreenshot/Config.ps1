@@ -1,5 +1,5 @@
-# Central config & version (semver patch for fixes in this PR)
-$script:VideoScreenshotVersion = '1.3.2'
+# Central config & version (semver)
+$script:VideoScreenshotVersion = '1.3.3'
 $script:Config = @{
   PollIntervalMs                    = 200
   SnapshotFallbackTimeoutSeconds    = 300
