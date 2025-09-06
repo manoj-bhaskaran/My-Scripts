@@ -17,7 +17,9 @@ function Start-VideoBatch {
     [int]$VlcStartupTimeoutSeconds = 10
   )
   # Policy: helpers throw; only this function emits user-facing messages.
-  $mode = ($UseVlcSnapshots ? 'VLC snapshots' : 'GDI+ desktop')
+  # PowerShell 5.1-compatible (avoid ternary operator)
+  $mode = 'GDI+ desktop'
+  if ($UseVlcSnapshots) { $mode = 'VLC snapshots' }
   Write-Message -Level Info -Message ("videoscreenshot module v{0} starting (Mode={1}, FPS={2}, SaveFolder=""{3}"")" -f $script:VideoScreenshotVersion, $mode, $FramesPerSecond, $SaveFolder)
 
   if (-not (Test-Path -LiteralPath $SourceFolder)) { Write-Message -Level Error -Message "SourceFolder not found: $SourceFolder"; throw "Invalid SourceFolder." }

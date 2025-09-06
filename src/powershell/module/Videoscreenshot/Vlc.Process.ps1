@@ -4,7 +4,7 @@ function Get-VlcArgsCommon { param([double]$StopAtSeconds = 0)
     $rounded = [int][Math]::Round($StopAtSeconds)
     $vlcargs += @('--stop-time',"$rounded"); Write-Debug "VLC --stop-time=$rounded"
   }
-  ,$vlcargs
+  return ,$vlcargs
 }
 function Get-VlcArgsGdi { param([switch]$GdiFullscreen) if ($GdiFullscreen) { ,@('--fullscreen','--video-on-top','--qt-minimal-view') } else { @() } }
 function Get-VlcArgsSnapshot {
@@ -24,26 +24,41 @@ function Get-VlcArgsSnapshot {
 function Start-VlcProcess {
   param([Parameter(Mandatory)][string[]]$Arguments,[Parameter(Mandatory)][int]$StartupTimeoutSeconds)
   $psi = [Diagnostics.ProcessStartInfo]::new()
-  $psi.FileName = 'vlc'
-  foreach($a in $Arguments){ $psi.ArgumentList.Add($a) }
-  $psi.UseShellExecute=$false; $psi.RedirectStandardOutput=$true; $psi.RedirectStandardError=$true; $psi.CreateNoWindow=$true
-  $p = [Diagnostics.Process]::new(); $p.StartInfo=$psi; $p.EnableRaisingEvents=$true
+  $psi.FileName = 'vlc.exe'   # more explicit on Windows; still resolves via PATH
+  # Prefer .Arguments string for WinPS 5.1 compatibility (ArgumentList may be unavailable)
+  $quotedArgs = $Arguments | ForEach-Object { '"{0}"' -f ($_.Replace('"','""')) }
+  $psi.Arguments = [string]::Join(' ', $quotedArgs)
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError  = $true
+  $psi.CreateNoWindow = $true
 
-  $stdoutSb = New-Object Text.StringBuilder; $stderrSb = New-Object Text.StringBuilder
-  $outLock = New-Object object; $errLock = New-Object object
-  $p.add_OutputDataReceived({ param($s,$e) if ($e.Data){ [Threading.Monitor]::Enter($outLock); try{[void]$stdoutSb.AppendLine($e.Data)}finally{[Threading.Monitor]::Exit($outLock)}; Write-Host $e.Data } })
-  $p.add_ErrorDataReceived( { param($s,$e) if ($e.Data){ [Threading.Monitor]::Enter($errLock); try{[void]$stderrSb.AppendLine($e.Data)} finally{[Threading.Monitor]::Exit($errLock)};  Write-Host $e.Data } })
+  $p = [Diagnostics.Process]::new()
+  $p.StartInfo = $psi
+  $p.EnableRaisingEvents = $true
+
+  $stdoutSb = New-Object Text.StringBuilder
+  $stderrSb = New-Object Text.StringBuilder
+  $outLock = New-Object object
+  $errLock = New-Object object
+  $p.add_OutputDataReceived({ param($s,$e) if ($e.Data){ [Threading.Monitor]::Enter($outLock); try{ [void]$stdoutSb.AppendLine($e.Data) } finally { [Threading.Monitor]::Exit($outLock) }; Write-Debug $e.Data } })
+  $p.add_ErrorDataReceived( { param($s,$e) if ($e.Data){ [Threading.Monitor]::Enter($errLock);  try{ [void]$stderrSb.AppendLine($e.Data) } finally { [Threading.Monitor]::Exit($errLock)  }; Write-Debug $e.Data } })
 
   $start = Get-Date
-  $null = $p.Start(); $p.BeginOutputReadLine(); $p.BeginErrorReadLine()
+  $null = $p.Start()
+  $p.BeginOutputReadLine()
+  $p.BeginErrorReadLine()
   $deadline = $start.AddSeconds([int]$StartupTimeoutSeconds)
-  while ((Get-Date) -lt $deadline) { if ($p.HasExited){ break }; Start-Sleep -Milliseconds $script:Config.PollIntervalMs }
+  while ((Get-Date) -lt $deadline) {
+    if ($p.HasExited) { break }
+    Start-Sleep -Milliseconds $script:Config.PollIntervalMs
+  }
   if ($p.HasExited -and $p.ExitCode -ne 0) {
     $stderrText = $stderrSb.ToString()
     Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderrText"
     throw "VLC startup failed (ExitCode=$($p.ExitCode))."
   }
-  $p
+  return $p
 }
 function Start-Vlc {
   param(
@@ -60,7 +75,7 @@ function Start-Vlc {
   $vlcargs += Get-VlcArgsCommon -StopAtSeconds $StopAtSeconds
   $p = Start-VlcProcess -Arguments $vlcargs -StartupTimeoutSeconds $StartupTimeoutSeconds
   Register-RunPid -ProcessId $p.Id
-  $p
+  return $p
 }
 function Stop-Vlc { param([Parameter(Mandatory)][Diagnostics.Process]$Process)
   try { $null = $Process.CloseMainWindow() } catch {}

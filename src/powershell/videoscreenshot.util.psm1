@@ -30,8 +30,8 @@ function Write-Message {
     $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     $prefixed = "[$ts] [$($Level.ToUpper().PadRight(5))] $Message"
     switch ($Level) {
-        'Warn'  { Write-Warning $prefixed }
-        'Error' { Write-Error   $prefixed }
+        'Warn'  { Write-Warning $prefixed; Write-Debug $prefixed }
+        'Error' { Write-Error   $prefixed; Write-Debug $prefixed }
         Default {
             try {
                 # Route Info to the Information stream; let the host decide how to render it
@@ -63,15 +63,17 @@ function Add-ContentWithRetry {
         [int]$MaxAttempts = 3
     )
     for ($i=1; $i -le $MaxAttempts; $i++) {
+        $fs = $null
         try {
             $newline = [Environment]::NewLine
             $bytes   = [System.Text.Encoding]::UTF8.GetBytes($Value + $newline)
-            $fs = [System.IO.File]::Open($Path,
+            $fs = [System.IO.File]::Open(
+                $Path,
                 [System.IO.FileMode]::Append,
                 [System.IO.FileAccess]::Write,
-                [System.IO.FileShare]::None) # exclusive append
+                [System.IO.FileShare]::None  # exclusive append
+            )
             $fs.Write($bytes, 0, $bytes.Length)
-            $fs.Close()
             return $true
         } catch {
             if ($i -eq $MaxAttempts) {
@@ -79,6 +81,10 @@ function Add-ContentWithRetry {
                 return $false
             }
             Start-Sleep -Milliseconds (200 * $i)
+        } finally {
+            if ($null -ne $fs) {
+                try { $fs.Dispose() } catch { }
+            }
         }
     }
 }
@@ -127,7 +133,7 @@ function Measure-PostCapture {
     $achieved = $null
 
     if ($UseVlcSnapshots) {
-        $postCount = (Get-ChildItem -Path $SaveFolder -Filter "$ScenePrefix*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+        $postCount = (Get-ChildItem -LiteralPath $SaveFolder -Filter "$ScenePrefix*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
         $framesDelta = $postCount - $PreCount
         $hadFrames   = ($framesDelta -gt 0)
         if ($SnapResult -and $SnapResult.ElapsedSeconds -gt 0) {
@@ -144,7 +150,16 @@ function Measure-PostCapture {
         $framesSaved = if ($null -ne $GdiResult) { [int]$GdiResult.FramesSaved } else { 0 }
         $hadFrames   = ($framesSaved -gt 0)
         $framesDelta = $framesSaved
-        $achieved    = ($GdiResult?.AchievedFps)
+        # PowerShell 5.1 compatibility: avoid null-conditional operator (?.)
+        if ($null -ne $GdiResult) {
+            # Be defensive in case the property isn't present
+            $prop = $GdiResult.PSObject.Properties['AchievedFps']
+            if ($null -ne $prop) {
+                $achieved = $prop.Value
+            } else {
+                $achieved = $null
+            }
+        }
     }
 
     [pscustomobject]@{

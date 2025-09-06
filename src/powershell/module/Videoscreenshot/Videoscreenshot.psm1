@@ -1,7 +1,19 @@
-# Dot-source private and public functions
-$here = Split-Path -Parent $PSCommandPath
-Get-ChildItem -Path (Join-Path $here 'Private') -Filter *.ps1 | ForEach-Object { . $_.FullName }
-Get-ChildItem -Path (Join-Path $here 'Public')  -Filter *.ps1 | ForEach-Object { . $_.FullName }
+# Dot-source private and public functions (deterministic order, resilient if a folder is absent)
+$here       = Split-Path -Parent $PSCommandPath
+$privateDir = Join-Path -Path $here -ChildPath 'Private'
+$publicDir  = Join-Path -Path $here -ChildPath 'Public'
+
+if (Test-Path -LiteralPath $privateDir) {
+    Get-ChildItem -LiteralPath $privateDir -Filter *.ps1 -File -ErrorAction Stop |
+        Sort-Object Name |
+        ForEach-Object { . $_.FullName }
+}
+
+if (Test-Path -LiteralPath $publicDir) {
+    Get-ChildItem -LiteralPath $publicDir -Filter *.ps1 -File -ErrorAction Stop |
+        Sort-Object Name |
+        ForEach-Object { . $_.FullName }
+}
 
 # Export public API
 Export-ModuleMember -Function Start-VideoBatch

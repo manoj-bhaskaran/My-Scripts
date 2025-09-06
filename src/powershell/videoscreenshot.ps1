@@ -1,4 +1,5 @@
 <# 
+  Requires: PowerShell 5.1+ (or PowerShell 7+)
   videoscreenshot.ps1 (shim)
   This thin wrapper preserves the existing CLI entrypoint while the implementation lives
   in the Videoscreenshot PowerShell module. For full functionality, import the module
@@ -32,16 +33,34 @@ if (-not (Test-Path -LiteralPath $modulePs1)) {
   exit 1
 }
 
-Import-Module $modulePs1 -Force
+Import-Module $modulePs1 -Force -ErrorAction Stop
 Write-Warning "videoscreenshot.ps1 is now a thin wrapper. Prefer: Import-Module …\Videoscreenshot; Start-VideoBatch …"
 
-# Pass only parameters supported by Start-VideoBatch (avoid splatting unknown keys)
-Start-VideoBatch `
-  -SourceFolder $SourceFolder `
-  -SaveFolder $SaveFolder `
-  -FramesPerSecond $FramesPerSecond `
-  -TimeLimitSeconds $TimeLimitSeconds `
-  -VideoLimit $VideoLimit `
-  -UseVlcSnapshots:$UseVlcSnapshots `
-  -GdiFullscreen:$GdiFullscreen `
-  -VlcStartupTimeoutSeconds $VlcStartupTimeoutSeconds
+# Forward only parameters that Start-VideoBatch actually supports
+$cmd = Get-Command -Name Start-VideoBatch -ErrorAction Stop
+$supported = $cmd.Parameters.Keys
+
+$forward = @{}
+foreach ($name in @('SourceFolder','SaveFolder','FramesPerSecond','TimeLimitSeconds','VideoLimit','VlcStartupTimeoutSeconds')) {
+  if ($supported -contains $name) {
+    $forward[$name] = Get-Variable -Name $name -ValueOnly
+  }
+}
+# Switch params: include only if the caller supplied them
+foreach ($sw in @('UseVlcSnapshots','GdiFullscreen')) {
+  if ($supported -contains $sw -and $PSBoundParameters.ContainsKey($sw)) {
+    $forward[$sw] = $true
+  }
+}
+
+# Warn about legacy/ignored params if the caller provided them
+$legacyOnly = @(
+  'CropOnly','ResumeFile','PythonScriptPath','PythonExe','ProcessedLogPath',
+  'Legacy1080p','ClearSnapshotsBeforeRun','AutoStopGraceSeconds','DisableAutoStop'
+)
+$ignored = $legacyOnly | Where-Object { $PSBoundParameters.ContainsKey($_) -and -not ($supported -contains $_) }
+if ($ignored) {
+  Write-Warning ("The following parameters are not used by the module's Start-VideoBatch in v1.3.0 and were ignored: {0}" -f ($ignored -join ', '))
+}
+
+Start-VideoBatch @forward

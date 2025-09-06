@@ -1,100 +1,75 @@
-# Changelog
+# Videoscreenshot Module – Changelog
 
-All notable changes to this repository are documented here.  
-This repo contains multiple tools and scripts; entries are grouped by **area**.
-
-The project follows [Semantic Versioning](https://semver.org) and the format is inspired by
+All notable changes to the **PowerShell Videoscreenshot module** are documented here.  
+The project follows [Semantic Versioning](https://semver.org) and the structure is inspired by
 [Keep a Changelog](https://keepachangelog.com).
 
-> For detailed, module-specific history, see the changelog in that component’s folder
-> (e.g., `src/powershell/module/Videoscreenshot/CHANGELOG.md`).
+> This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
 ## [Unreleased]
 
-### PowerShell
-- **Videoscreenshot (module)** — see module changelog for pending items.
-- **Other scripts** — (placeholder) Add notes here when changes land.
-
-### Python
+### Added
 - (placeholder)
 
-### Batch
+### Changed
 - (placeholder)
 
-### SQL
+### Fixed
 - (placeholder)
 
-### Docs / CI
-- (placeholder)
+---
+
+## [1.3.1] – 2025-09-06
+
+### Fixed
+- **I/O:** `Add-ContentWithRetry` now reliably disposes the file handle via `finally` and returns `$false`
+  on final failure instead of silently continuing. This prevents lingering locks and improves caller feedback.
+- **VLC args:** Removed stray leading comma in function returns and ensured argument arrays are returned
+  correctly from `Get-VlcArgs*` helpers; avoids “Missing expression after unary operator ','” and
+  quoting issues in snapshot paths.
+
+### Changed
+- **Manifest:** `ModuleVersion` bumped to **1.3.1** to capture the above fixes.
 
 ---
 
 ## [1.3.0] – 2025-09-06
 
-### PowerShell
-- **Videoscreenshot**
-  - **Modularization:** Extracted the monolithic `videoscreenshot.ps1` into a module at
-    `src/powershell/module/Videoscreenshot/` with `Start-VideoBatch` as the public entrypoint.
-  - The legacy `src/powershell/videoscreenshot.ps1` remains as a thin wrapper that forwards to the module
-    and prints a deprecation notice.
-  - **Details:** See `src/powershell/module/Videoscreenshot/CHANGELOG.md`.
-- **Other scripts**
-  - No notable changes in this release.
+### Added
+- **Modularization (PR-1):** Initial extraction of the monolithic script into a module located at
+  `src/powershell/module/Videoscreenshot/`.
+- Public entrypoint: `Start-VideoBatch` (thin orchestrator for now).
+- Legacy wrapper `src/powershell/videoscreenshot.ps1` retained for back-compat (emits deprecation notice).
 
-### Docs / CI
-- Added `src/powershell/README.md` for module usage and wrapper notes.
-- Introduced module-scoped `CHANGELOG.md`.
+### Notes
+- Several components (GDI capture, snapshot monitor, Python cropper integration, metadata helpers) remain
+  to be migrated in subsequent PRs.
 
 ---
 
-## [1.2.41] – 2025-09-06
+## [1.2.41] – 2025-09-06 (condensed)
 
-### PowerShell
-- **Videoscreenshot**
-  - Incremental refactors (“quick wins”): centralized configuration, clearer outcome handling, improved validation.
-  - Documentation updates in preparation for modularization.
-- **Other scripts**
-  - No changes recorded.
+### Changed
+- Centralized configuration, clearer outcome logic, incremental validation improvements.
 
 ---
 
-## [1.2.40] – 2025-09-06
+## [1.2.40] – 2025-09-06 (condensed)
 
-### PowerShell
-- **Videoscreenshot**
-  - Fixes around error handling consistency, parameter validation, and locale coverage for FPS detection.
-- **Other scripts**
-  - No changes recorded.
+### Fixed
+- Error-handling consistency, parameter validation, and locale coverage for FPS detection.
 
 ---
 
-## [1.2.0 – 1.2.39] – 2024–2025 (condensed highlights)
+## [1.2.1 – 1.2.39] – 2024–2025 (condensed highlights)
 
-### PowerShell
-- **Videoscreenshot**
-  - Python cropper integration with live log forwarding; interpreter resolution & module preflight.
-  - `-PreserveAlpha` support; safer processed-log I/O; duration/FPS detection via Shell/`ffprobe`.
-  - Snapshot mode guardrails; GDI+ capture improvements; PID registry + Ctrl+C/exit cleanup.
-  - Structured logging and end-of-run summaries.
-- **Other scripts**
-  - (No consolidated record for this period; future changes will be tracked here.)
-
-### Python / Batch / SQL
-- (No consolidated record for this period; future changes will be tracked here.)
-
----
-
-## Repository Areas
-
-- **PowerShell**
-  - `src/powershell/module/Videoscreenshot/` — Videoscreenshot module (see module changelog)
-  - `src/powershell/*.ps1` — other independent scripts
-- **Python** — `src/python/`
-- **Batch** — `src/batch/`
-- **SQL** — `src/sql/`
-- **Docs** — `docs/`, plus per-area READMEs
+- Python cropper integration with live log forwarding; interpreter resolution & preflight.
+- Safer processed-log I/O; duration/FPS detection via Shell/`ffprobe`.
+- Snapshot mode guardrails; GDI+ capture improvements; PID registry + Ctrl+C/exit cleanup.
+- Structured logging and end-of-run summaries.
 
 [Unreleased]: #
+[1.3.1]: #
 [1.3.0]: #
 [1.2.41]: #
 [1.2.40]: #

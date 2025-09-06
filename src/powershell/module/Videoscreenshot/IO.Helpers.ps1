@@ -10,10 +10,18 @@ function Add-ContentWithRetry {
       $nl = [Environment]::NewLine
       $bytes = [System.Text.Encoding]::UTF8.GetBytes($Value + $nl)
       $fs = [System.IO.File]::Open($Path,[IO.FileMode]::Append,[IO.FileAccess]::Write,[IO.FileShare]::None)
-      $fs.Write($bytes,0,$bytes.Length); $fs.Close()
+      try {
+        $fs.Write($bytes,0,$bytes.Length)
+      } finally {
+        # Ensure the handle is always released even if Write() throws.
+        if ($null -ne $fs) { $fs.Dispose() }
+      }
       return $true
     } catch {
-      if ($i -eq $MaxAttempts) { Write-Message -Level Error -Message ('Failed to append to {0}: {1}' -f $Path, $_.Exception.Message) }
+      if ($i -eq $MaxAttempts) {
+        Write-Message -Level Error -Message ('Failed to append to {0}: {1}' -f $Path, $_.Exception.Message)
+        return $false
+      }
       Start-Sleep -Milliseconds (200 * $i)
     }
   }
