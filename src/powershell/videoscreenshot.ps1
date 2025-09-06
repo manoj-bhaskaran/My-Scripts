@@ -163,9 +163,26 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.39
+   1.2.40
 
 CHANGELOG
+  1.2.40
+  - Critical fix: Reworked Invoke-VlcProcess to be non-blocking and deadlock-free. We now drain
+    stdout/stderr concurrently (evented readers) and return the running process immediately so
+    GDI+/snapshot capture can proceed. Also registers the VLC PID for Ctrl+C cleanup.
+  - Fix: Restored live, line-by-line forwarding of crop_colours.py output in Invoke-Cropper while
+    still capturing for -Debug diagnostics (aligns with docs from 1.2.38).
+  - Fix: Source folder validation message now correctly reports a missing -SourceFolder instead of
+    a misleading “VLC not found” error.
+  - Fix: Resolve-PythonInterpreter::__TryPy now uses its parameter ($pyargs) instead of $args.
+  - Fix: Replaced brittle string-joined VLC command line with ArgumentList tokens; also adjusted
+    Get-VlcArgsSnapshot/Start-Vlc so path/prefix arguments are passed unquoted as separate tokens.
+  - Fix: Replaced Wait-Process -Timeout 3000 (minutes) with -Timeout 3 (seconds) where used.
+  - Fix: Get-ScreenWithGDIPlus now disposes Graphics/Bitmap in a finally block (no resource leaks if Save fails).
+  - Fix: Measure-PostCapture no longer overwrites the “skip FPS” branch when elapsed < 1s.
+  - Hardening: Ctrl+C / engine-exit handlers now only terminate tracked PIDs that are VLC processes,
+    reducing the risk of killing recycled, unrelated PIDs.
+
   1.2.39
   - Fix: Removed runspace exception in Invoke-VlcProcess by switching from evented output
         (Begin*ReadLine) to synchronous stream reading, maintaining live console feedback.
@@ -180,7 +197,7 @@ CHANGELOG
            to suggest checking file playability or converting the file.
   - Fix: Enhanced debug logging in Invoke-SnapshotCapture and main loop for clearer failure
            diagnostics, including maxWait in timeout messages and safer processingTime calculation.
- 1.2.38
+  1.2.38
   - Fix/UX: Show Python cropper startup/progress logs live in the console during normal runs.
            Previously, stdout/stderr were redirected and consumed only after the process ended,
            and stdout was shown only in -Debug. This made crop_colours.py’s messages invisible.
@@ -218,7 +235,7 @@ CHANGELOG
   - Fix: Shell COM frame rate detection no longer hits a Split-Path parameter-set conflict. Replaced Split-Path with .NET path helpers; added null checks and defensive COM cleanup, with clearer debug traces.
   - UX: Print a one-time startup banner that includes the script version (e.g., “videoscreenshot.ps1 v1.2.33 starting…”).
 
-    1.2.32
+  1.2.32
   - Fix: Shell COM duration detection no longer trips a Split-Path parameter-set conflict. Replaced Split-Path usage with .NET path helpers (GetFullPath / GetDirectoryName / GetFileName).
   - Hardening: Added early null/invalid-path checks and graceful $null returns when the folder or item cannot be resolved.
   - Parsing: Expanded support for duration formats (HH:MM:SS(.ms), MM:SS(.ms), HH:MM:SS;ff) and kept canonical ExtendedProperty fallbacks (System.Media.Duration / Duration).
@@ -226,52 +243,20 @@ CHANGELOG
   - Observability: Richer Write-Debug traces for each detection path and failure reason.
   - No public parameter changes; behavior is identical on success—only improved robustness on edge cases.
 
-  1.2.31
-   - Bug fix: Clean up event handlers and jobs on script start
-  1.2.30
-  - Bug fix: Fixed Python module detection by explicitly importing importlib.util submodule.
-    The previous code imported importlib but tried to access importlib.util without explicitly
-    importing the submodule, causing AttributeError on module detection checks.
-  1.2.29
-  - Robustness: Improved Python version detection to handle non-English locales by parsing
-    version components systematically instead of using locale-dependent regex patterns.
-  - Security: Replaced string-based argument concatenation with array-based arguments in 
-    Invoke-Python and Invoke-Cropper to prevent potential argument injection.
-  1.2.28
-  - Logging: Removed duplicate INFO messages. Write-Message (Info) now routes to a single native
-    stream: Write-Information when available, with a Host fallback only if Information isn’t supported.
-    This prevents “double print” scenarios while preserving structured logging behavior controlled by
-    $InformationPreference / -InformationAction.
-  - Cropper preflight: Verify required Python modules (numpy, cv2) in the active interpreter before
-    running the cropper. If missing, the script bootstraps pip via `python -m ensurepip` (when needed)
-    and attempts `python -m pip install numpy opencv-python`. If installation still fails (offline /
-    restricted env), the run terminates with an actionable error (exit 1).
-  - Docs: PREREQUISITES/TROUBLESHOOTING updated to document the auto-install behavior, how to preinstall
-    manually, and common failure modes (no network, blocked index, policy restrictions)
+  1.2.31 
+  - Bug fix: Clean up event handlers and jobs on script start
 
-   1.2.27
-   - Snapshot mode UX: add a pre-run warning when -FramesPerSecond exceeds detected video FPS; cadence will be limited to 1:1 (frame-per-frame).
-   - Validation: add stricter parameter validation to several helpers (paths non-empty; positive ranges; width/height pairing).
-   - Errors: make key errors more actionable (suggest next steps for SourceFolder/VLC missing; “no frames” guidance).
-   - Complexity: moved common helpers (Measure-PostCapture, Assert-FolderWritable) into the optional util module; script keeps fallbacks when module is absent.
-   - Docs: trimmed historical patch-level CHANGELOG noise; most recent five patch versions remain detailed, older entries are condensed.
-
-   1.2.26
-   - Import UX: Debug-only note when optional module is not found; richer warning when present but fails to import.
-   - Docs: TROUBLESHOOTING notes for optional module placement/unblock/execution policy.
-
-   1.2.1-1.2.25 (condensed):
-  - Robustness: Safer process termination, improved metadata detection (Shell/FFprobe), cross-locale 
-    parsing, O(1) processed lookups, enhanced import handling with graceful fallback for optional modules.
-  - UX/Observability: Clearer warnings for snapshot cadence/FFprobe absence, detailed Debug traces 
-    for timings and FPS, snapshot-mode FPS deviation warnings, enriched import failure guidance.
-  - Architecture: Split capture helpers into focused functions, introduced Initialize-VideoContext 
-    for per-video state management, optional util module pattern with better troubleshooting docs.
-  - Behavior: Reliable per-video/global timeouts, GDI monotonic scheduling, snapshot process monitoring,
-    improved Write-Message stream routing to native PowerShell streams.
-  - Fixes: Argument quoting, filter usage, exit-code handling, PID registry naming, duplicate logic 
-    removal, and other quality-of-life improvements across 25 patch releases.
-  - Refer to commit history for full details.
+  1.2.1–1.2.30 (condensed)
+  - Robustness & platform: safer process termination; improved metadata detection (Shell/FFprobe);
+    cross-locale parsing; O(1) processed lookups; optional util module with graceful fallbacks.
+  - UX/Observability: clearer warnings for snapshot cadence/FFprobe absence; richer Debug traces
+    for timings/FPS; deviation warnings; startup banner; end-of-run summary.
+  - Python integration: consistent interpreter resolution; version detection improvements; module
+    preflight with auto-install (ensurepip + pip); explicit import fixes (importlib.util).
+  - Architecture/behavior: split capture helpers; Initialize-VideoContext; reliable per-video/global
+    timeouts; GDI monotonic scheduling; snapshot monitoring; improved logging stream routing.
+  - Security/quoting: array-based argument passing for Python invocations; argument injection mitigations.
+  - Documentation: prerequisites/troubleshooting expanded; historical patch notes condensed.
 
   1.2.0
   - Default processed log now resolves under <SaveFolder> as processed_videos.log when -ProcessedLogPath
@@ -521,7 +506,7 @@ param(
 )
 
 # Script version constant for banner/logging
-$script:VideoScreenshotVersion = '1.2.39'
+$script:VideoScreenshotVersion = '1.2.40'
 # Track run stats for end-of-run summary
 $script:RunStats = [pscustomobject]@{
   StartTime           = (Get-Date)
@@ -638,7 +623,7 @@ function Resolve-PythonInterpreter {
         try {
             $psi = [System.Diagnostics.ProcessStartInfo]::new()
             $psi.FileName = $exe
-            foreach ($a in $args) { $psi.ArgumentList.Add($a) }
+            foreach ($a in $pyargs) { $psi.ArgumentList.Add($a) }
             $psi.UseShellExecute = $false
             $psi.RedirectStandardOutput = $true
             $psi.RedirectStandardError  = $true
@@ -1233,8 +1218,12 @@ function Measure-PostCapture {
         $hadFrames   = ($framesDelta -gt 0)
         if ($SnapResult -and $SnapResult.ElapsedSeconds -gt 0) {
             # Guard against extremely small elapsed times that can create absurd FPS values
-            if ($SnapResult.ElapsedSeconds -lt 1) { Write-Debug "Elapsed < 1s; skipping achieved-FPS calc to avoid noise"; $achieved = $null }
-            $achieved = [Math]::Round($framesDelta / $SnapResult.ElapsedSeconds, 3)
+            if ($SnapResult.ElapsedSeconds -lt 1) {
+                Write-Debug "Elapsed < 1s; skipping achieved-FPS calc to avoid noise"
+                $achieved = $null
+            } else {
+                $achieved = [Math]::Round($framesDelta / $SnapResult.ElapsedSeconds, 3)
+            }
             Write-Debug "Snapshot achieved FPS: $achieved (requested=$RequestedFps, frames=$framesDelta, elapsed=$($SnapResult.ElapsedSeconds)s)"
             if ($RequestedFps -gt 0) {
                 $dev = [Math]::Abs($achieved - $RequestedFps) / [double]$RequestedFps
@@ -1369,7 +1358,7 @@ function Invoke-SnapshotCapture {
             Write-Message -Level Warn -Message "VLC timeout reached after $([int]$elapsed)s; terminating process."
             try {
                 $null = Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
-                $null = Wait-Process -Id $Process.Id -Timeout 3000 -ErrorAction SilentlyContinue
+                $null = Wait-Process -Id $Process.Id -Timeout 3 -ErrorAction SilentlyContinue
                 $null = $Process.Refresh()
                 Write-Debug "Process termination completed"
             } catch {
@@ -1483,12 +1472,12 @@ function Get-VlcArgsSnapshot {
     }
 
     return ,@(
-        '--intf', 'dummy',
+        '--intf','dummy',
         '--video-filter=scene',
-        "--scene-path=""$SaveFolder""",
-        "--scene-prefix=""$([IO.Path]::GetFileNameWithoutExtension($VideoPath))_""",
-        '--scene-format=png',
-        "--scene-ratio=$ratio"
+        '--scene-path', $SaveFolder,
+        '--scene-prefix', ("{0}_" -f [IO.Path]::GetFileNameWithoutExtension($VideoPath)),
+        '--scene-format','png',
+        '--scene-ratio', "$ratio"
     )
 }
 
@@ -1544,7 +1533,7 @@ Process ID to add to the registry.
 #>
 function Register-RunPid {
     param([Parameter(Mandatory)][int]$ProcessId)
-    $null = Add-Content -LiteralPath $PidRegistry -Value $ProcessId
+    $null = Add-ContentWithRetry -Path $PidRegistry -Value $ProcessId
 }
 
 <#
@@ -1559,7 +1548,7 @@ function Unregister-RunPid {
     param([Parameter(Mandatory)][int]$ProcessId)
     if (Test-Path -LiteralPath $PidRegistry) {
         (Get-Content -LiteralPath $PidRegistry | Where-Object { $_ -ne "$ProcessId" }) |
-            Set-Content -LiteralPath $PidRegistry | Out-Null
+            Set-Content -LiteralPath $PidRegistry -Encoding utf8 | Out-Null
     }
 }
 
@@ -1578,61 +1567,47 @@ System.Diagnostics.Process
 function Invoke-VlcProcess {
     param([Parameter(Mandatory)][string[]]$Arguments)
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName  = 'vlc'
-    $psi.Arguments = ($Arguments -join ' ')
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardError = $true
+    foreach ($a in $Arguments) { $psi.ArgumentList.Add($a) }
+    $psi.UseShellExecute    = $false
+    $psi.RedirectStandardError  = $true
     $psi.RedirectStandardOutput = $true
-    $psi.CreateNoWindow = $true
-    # Start process and forward output LIVE to the console while also capturing for diagnostics
-    $p = New-Object System.Diagnostics.Process
+    $psi.CreateNoWindow     = $true
+
+    $p = [System.Diagnostics.Process]::new()
     $p.StartInfo = $psi
-    # StringBuilders to retain copies for Debug/error paths
+    $p.EnableRaisingEvents = $true
+
+    # Capture + live-forward
     $stdoutSb = New-Object System.Text.StringBuilder
     $stderrSb = New-Object System.Text.StringBuilder
+    $p.add_OutputDataReceived({ param($s,$e) if ($e.Data) { [void]$stdoutSb.AppendLine($e.Data); Write-Host $e.Data } })
+    $p.add_ErrorDataReceived( { param($s,$e) if ($e.Data) { [void]$stderrSb.AppendLine($e.Data); Write-Host $e.Data } })
 
-    # Read output synchronously to avoid runspace issues
-    $stdoutReader = $p.StandardOutput
-    $stderrReader = $p.StandardError
-
+    $processStart = Get-Date
     $null = $p.Start()
+    Register-RunPid -ProcessId $p.Id
+    $p.BeginOutputReadLine()
+    $p.BeginErrorReadLine()
 
-    # Read and echo output lines as they arrive
-    while (-not $stdoutReader.EndOfStream) {
-        $line = $stdoutReader.ReadLine()
-        if ($line) {
-            [void]$stdoutSb.AppendLine($line)
-            Write-Host $line
-        }
-    }
-    while (-not $stderrReader.EndOfStream) {
-        $line = $stderrReader.ReadLine()
-        if ($line) {
-            [void]$stderrSb.AppendLine($line)
-            Write-Host $line
-        }
-    }
-
-    $null = $p.WaitForExit()
-
-    $deadline = (Get-Date).AddSeconds($VlcStartupTimeoutSeconds)
+    # Startup window to detect immediate failure/short clips
+    $deadline = $processStart.AddSeconds([int]$VlcStartupTimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         if ($p.HasExited) { break }
         Start-Sleep -Milliseconds 200
     }
-
     if ($p.HasExited) {
-        $stderr = $p.StandardError.ReadToEnd()
-        $exitTime = (Get-Date) - $processStart
+        $elapsed = ((Get-Date) - $processStart).TotalSeconds
         if ($p.ExitCode -eq 0) {
-            Write-Debug "VLC exited cleanly during startup window (short clip). ExitCode=0, elapsed=$($exitTime.TotalSeconds) sec"
+            Write-Debug "VLC exited cleanly during startup window (short clip). ExitCode=0, elapsed=$elapsed sec"
             return $p
         }
-        Write-Debug "VLC failed during startup. ExitCode=$($p.ExitCode), elapsed=$($exitTime.TotalSeconds) sec"
-        if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "VLC stderr: $stderr" }
-        Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderr"
-        throw [System.Exception]::new("VLC startup failed with ExitCode=$($p.ExitCode). stderr: $stderr")
+        $stderrText = $stderrSb.ToString()
+        Write-Debug "VLC failed during startup. ExitCode=$($p.ExitCode), elapsed=$elapsed sec"
+        if ($DebugPreference -eq 'Continue' -and $stderrText) { Write-Debug "VLC stderr: $stderrText" }
+        Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderrText"
+        throw [System.Exception]::new("VLC startup failed with ExitCode=$($p.ExitCode). stderr: $stderrText")
     }
     Write-Debug "VLC started (PID $($p.Id))"
     return $p
@@ -1698,7 +1673,7 @@ function Start-Vlc {
     )
 
     # Assemble arguments: file path, then mode-specific args, then common args
-    $vlcargs = @("`"$VideoPath`"")
+    $vlcargs = @($VideoPath)
     if ($UseVlcSnapshots) {
         $vlcargs += Get-VlcArgsSnapshot -VideoPath $VideoPath -SaveFolder $SaveFolder -RequestedFps $FramesPerSecond
     } else {
@@ -1747,7 +1722,7 @@ function Stop-Vlc {
         try { 
             $null = Stop-Process -Id $Process.Id -Force 
             # Wait for process to actually terminate for consistent behavior
-            $null = Wait-Process -Id $Process.Id -Timeout 3000 -ErrorAction SilentlyContinue
+            $null = Wait-Process -Id $Process.Id -Timeout 3 -ErrorAction SilentlyContinue
             $null = $Process.Refresh()
         } catch {
             Write-Debug "Error during VLC termination: $($_.Exception.Message)"
@@ -1792,10 +1767,13 @@ function Get-ScreenWithGDIPlus {
     }
     $bmp = New-Object System.Drawing.Bitmap($w, $h)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen(0, 0, 0, 0, [System.Drawing.Size]::new($w, $h))
-    $bmp.Save($TargetPath, [System.Drawing.Imaging.ImageFormat]::Png)
-    $g.Dispose()
-    $bmp.Dispose()
+    try {
+        $g.CopyFromScreen(0, 0, 0, 0, [System.Drawing.Size]::new($w, $h))
+        $bmp.Save($TargetPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally {
+        if ($g)   { $g.Dispose() }
+        if ($bmp) { $bmp.Dispose() }
+    }
 }
 
 <#
@@ -1991,33 +1969,38 @@ function Invoke-Cropper {
 
     Write-Debug ("Python args: " + ($pyArgs -join ' '))
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName = $py.Path
-    foreach ($arg in $pyArgs) { $psi.ArgumentList.Add($arg) }
+   foreach ($arg in $pyArgs) { $psi.ArgumentList.Add($arg) }
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
     $psi.CreateNoWindow = $true
 
-    $p = New-Object System.Diagnostics.Process
+    $p = [System.Diagnostics.Process]::new()
     $p.StartInfo = $psi
-    $null = $p.Start()
+    $p.EnableRaisingEvents = $true
 
-    if ($DebugPreference -eq 'Continue') {
-        $cropperStdout = $p.StandardOutput.ReadToEnd()
-    } else {
-        $null = $p.StandardOutput.ReadToEnd()
-    }
-    $cropperStderr = $p.StandardError.ReadToEnd()
+    $stdoutSb = New-Object System.Text.StringBuilder
+    $stderrSb = New-Object System.Text.StringBuilder
+    $p.add_OutputDataReceived({ param($s,$e) if ($e.Data) { [void]$stdoutSb.AppendLine($e.Data); Write-Host $e.Data } })
+    $p.add_ErrorDataReceived( { param($s,$e) if ($e.Data) { [void]$stderrSb.AppendLine($e.Data); Write-Host $e.Data } })
+
+    $null = $p.Start()
+    $p.BeginOutputReadLine()
+    $p.BeginErrorReadLine()
     $null = $p.WaitForExit()
 
     if ($p.ExitCode -ne 0) {
-        Write-Message -Level Error -Message "Cropper failed (ExitCode=$($p.ExitCode)). $cropperStderr"
+        $stderrText = $stderrSb.ToString()
+        Write-Message -Level Error -Message "Cropper failed (ExitCode=$($p.ExitCode)). $stderrText"
         throw "Cropper failed."
     } else {
         if ($DebugPreference -eq 'Continue') {
-            if ($cropperStdout) { Write-Debug "Cropper stdout:`n$cropperStdout" }
-            if ($cropperStderr) { Write-Debug "Cropper stderr (non-fatal):`n$cropperStderr" }
+            $stdoutText = $stdoutSb.ToString()
+            $stderrText = $stderrSb.ToString()
+            if ($stdoutText) { Write-Debug "Cropper stdout:`n$stdoutText" }
+            if ($stderrText) { Write-Debug "Cropper stderr (non-fatal):`n$stderrText" }
         }
         Write-Message -Level Info -Message "Cropper finished successfully."
     }
@@ -2048,7 +2031,10 @@ $ctrlCHandler = Register-ObjectEvent -InputObject ([Console]) -EventName CancelK
                 ForEach-Object {
                     $id = $_.ToString().Trim()
                     if ($id -match '^\d+$') {
-                        Stop-Process -Id [int]$id -Force -ErrorAction SilentlyContinue
+                        $p = Get-Process -Id ([int]$id) -ErrorAction SilentlyContinue
+                        if ($p -and $p.ProcessName -like 'vlc*') {
+                            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                        }
                     }
                 }
         }
@@ -2063,7 +2049,10 @@ $exitHandler  = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Actio
                 ForEach-Object {
                     $id = $_.ToString().Trim()
                     if ($id -match '^\d+$') {
-                        Stop-Process -Id [int]$id -Force -ErrorAction SilentlyContinue
+                        $p = Get-Process -Id ([int]$id) -ErrorAction SilentlyContinue
+                        if ($p -and $p.ProcessName -like 'vlc*') {
+                            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                        }
                     }
                 }
         }
@@ -2084,7 +2073,7 @@ if ($CropOnly) {
 }
 
 if (-not (Test-Path -LiteralPath $SourceFolder)) {
-    Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH. Install VLC or add it to PATH, then re-run."
+    Write-Message -Level Error -Message "SourceFolder not found: $SourceFolder. Provide a valid -SourceFolder path."
     $script:ExitCode = 1
     Write-RunSummary
     exit $script:ExitCode
