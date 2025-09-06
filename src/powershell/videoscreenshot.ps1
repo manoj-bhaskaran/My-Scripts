@@ -171,6 +171,15 @@ CHANGELOG
         (Begin*ReadLine) to synchronous stream reading, maintaining live console feedback.
         Corrected misleading variable names (cropperStdout/cropperStderr) which actually
         store VLC output.
+  - Fix: Resolved null-valued expression error in main loop catch block (line 2171) by checking
+           for null $_ or $_.Exception, providing a fallback error message for better diagnostics.
+  - Fix: Improved VLC startup failure handling in Invoke-VlcProcess by throwing detailed
+           exceptions with exit code and stderr instead of returning null, ensuring proper
+           exception propagation to the main loop.
+  - Fix: Corrected misleading timeout message in main loop for VLC startup failures; updated
+           to suggest checking file playability or converting the file.
+  - Fix: Enhanced debug logging in Invoke-SnapshotCapture and main loop for clearer failure
+           diagnostics, including maxWait in timeout messages and safer processingTime calculation.
  1.2.38
   - Fix/UX: Show Python cropper startup/progress logs live in the console during normal runs.
            Previously, stdout/stderr were redirected and consumed only after the process ended,
@@ -1356,7 +1365,7 @@ function Invoke-SnapshotCapture {
         $null = Start-Sleep -Milliseconds 200
         $elapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
         if ($elapsed -ge $maxWait) {
-            Write-Debug "VLC process timeout reached ($elapsed sec), force terminating"
+            Write-Debug "VLC process timeout reached ($elapsed sec; maxWait=$maxWait), force terminating"
             Write-Message -Level Warn -Message "VLC timeout reached after $([int]$elapsed)s; terminating process."
             try {
                 $null = Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
@@ -1576,7 +1585,6 @@ function Invoke-VlcProcess {
     $psi.RedirectStandardError = $true
     $psi.RedirectStandardOutput = $true
     $psi.CreateNoWindow = $true
-
     # Start process and forward output LIVE to the console while also capturing for diagnostics
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
@@ -1624,7 +1632,7 @@ function Invoke-VlcProcess {
         Write-Debug "VLC failed during startup. ExitCode=$($p.ExitCode), elapsed=$($exitTime.TotalSeconds) sec"
         if ($DebugPreference -eq 'Continue' -and $stderr) { Write-Debug "VLC stderr: $stderr" }
         Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderr"
-        return $null
+        throw [System.Exception]::new("VLC startup failed with ExitCode=$($p.ExitCode). stderr: $stderr")
     }
     Write-Debug "VLC started (PID $($p.Id))"
     return $p
@@ -2148,7 +2156,9 @@ foreach ($video in $videos) {
                     -UseVlcSnapshots:$UseVlcSnapshots -StopAtSeconds:$stopAt
 
         if (-not $vlc) {
-            throw "Failed to start VLC for: $($video.FullName)"
+            $errorDuringCapture = $true
+            Write-Message -Level Error -Message "Failed to start VLC for: $($video.FullName)"
+            continue
         }
 
         if ($UseVlcSnapshots) {
@@ -2168,7 +2178,12 @@ foreach ($video in $videos) {
     }
     catch {
         $errorDuringCapture = $true
-        Write-Message -Level Error -Message $_.Exception.Message
+        $errorMsg = if ($null -eq $_ -or $null -eq $_.Exception) {
+            "Unknown error occurred; no exception details available."
+        } else {
+            $_.Exception.Message
+        }
+        Write-Message -Level Error -Message "Error processing $($video.FullName): $errorMsg"
     }
     finally {
         if ($vlc) {
@@ -2201,7 +2216,7 @@ foreach ($video in $videos) {
     $timedOutPerVideo = ($UseVlcSnapshots -and $snapResult -and $snapResult.TimedOut -and ($stopAt -gt 0))
 
     # Unified debug output that works for both modes
-    $processingTime = if ($videoStartTime) { (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds } else { 0 }
+    $processingTime = if ($videoStartTime) { [math]::Max(0.001, (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds) } else { 0.001 }
     Write-Debug "Video processing complete: ExitCode=$vlcExit, processingTime=$processingTime sec, frames=$framesDelta, hadErrors=$errorDuringCapture"
 
     # Final outcome evaluation
@@ -2234,7 +2249,7 @@ foreach ($video in $videos) {
                 # This branch should be rare now because $timedOutPerVideo already set $ok=true.
                 Write-Message -Level Warn -Message "Video timed out after ${elapsedForMsg}s; not marking as processed: $($video.FullName). Consider increasing -AutoStopGraceSeconds or verifying the media decodes correctly."
             } else {
-                Write-Message -Level Warn -Message "Video timed out after ${elapsedForMsg}s; not marking as processed: $($video.FullName)"
+                Write-Message -Level Warn -Message "Video failed after ${elapsedForMsg}s; not marking as processed: $($video.FullName). Check if the file is playable in VLC or consider converting it."
                 $script:RunStats.Failures++
             }
         } elseif (-not $hadFrames) {
