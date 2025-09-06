@@ -6,16 +6,16 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
-## [Unreleased]
-
-### Added
-- (placeholder)
-
-### Changed
-- (placeholder)
+## [1.3.2] – 2025-09-07
 
 ### Fixed
-- (placeholder)
+- Enforce “helpers throw; orchestrator handles” policy across I/O and process helpers.
+- Replace mixed return conventions (bool/null) with clear success-or-throw behavior.
+- Ensure file handles are always disposed via try/finally in `Add-ContentWithRetry`.
+- When VLC fails to start, `Start-VlcProcess` now throws with stderr included for diagnosis.
+
+### Notes
+- Patch release: behavior is more robust and consistent without breaking the public API.
 
 ---
 

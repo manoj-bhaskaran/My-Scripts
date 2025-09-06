@@ -62,7 +62,8 @@ function Add-ContentWithRetry {
         [Parameter(Mandatory)][string]$Value,
         [int]$MaxAttempts = 3
     )
-    for ($i=1; $i -le $MaxAttempts; $i++) {
+    # Contract: succeed or throw; ensure handle disposal via finally.
+    for ($i = 1; $i -le $MaxAttempts; $i++) {
         $fs = $null
         try {
             $newline = [Environment]::NewLine
@@ -71,18 +72,17 @@ function Add-ContentWithRetry {
                 $Path,
                 [System.IO.FileMode]::Append,
                 [System.IO.FileAccess]::Write,
-                [System.IO.FileShare]::None  # exclusive append
-            )
+                [System.IO.FileShare]::None
+            ) # exclusive append
             $fs.Write($bytes, 0, $bytes.Length)
             return $true
         } catch {
-            if ($i -eq $MaxAttempts) {
-                Write-Message -Level Error -Message "Failed to append to ${Path}: $($_.Exception.Message)"
-                return $false
+            if ($i -ge $MaxAttempts) {
+                throw ("Failed to append to '{0}' after {1} attempts: {2}" -f $Path, $MaxAttempts, $_.Exception.Message)
             }
             Start-Sleep -Milliseconds (200 * $i)
         } finally {
-            if ($null -ne $fs) {
+            if ($fs -ne $null) {
                 try { $fs.Dispose() } catch { }
             }
         }
@@ -106,7 +106,7 @@ function Assert-FolderWritable {
         Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
         return $true
     } catch {
-        throw "Folder is not writable: $Folder – $($_.Exception.Message)"
+        throw ("Folder is not writable: {0} – {1}" -f $Folder, $_.Exception.Message)
     }
 }
 

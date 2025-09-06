@@ -5,24 +5,29 @@ function Add-ContentWithRetry {
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Value,
     [ValidateRange(1,10)][int]$MaxAttempts = 3
   )
-  for ($i=1; $i -le $MaxAttempts; $i++) {
+  # Contract: succeeds or throws. No partial returns.
+  for ($i = 1; $i -le $MaxAttempts; $i++) {
+    $fs = $null
     try {
-      $nl = [Environment]::NewLine
+      $nl    = [Environment]::NewLine
       $bytes = [System.Text.Encoding]::UTF8.GetBytes($Value + $nl)
-      $fs = [System.IO.File]::Open($Path,[IO.FileMode]::Append,[IO.FileAccess]::Write,[IO.FileShare]::None)
-      try {
-        $fs.Write($bytes,0,$bytes.Length)
-      } finally {
-        # Ensure the handle is always released even if Write() throws.
-        if ($null -ne $fs) { $fs.Dispose() }
-      }
+      $fs = [System.IO.File]::Open(
+        $Path,
+        [System.IO.FileMode]::Append,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None
+      )
+      $fs.Write($bytes, 0, $bytes.Length)
       return $true
     } catch {
-      if ($i -eq $MaxAttempts) {
-        Write-Message -Level Error -Message ('Failed to append to {0}: {1}' -f $Path, $_.Exception.Message)
-        return $false
+      if ($i -ge $MaxAttempts) {
+        throw ("Failed to append to '{0}' after {1} attempts: {2}" -f $Path, $MaxAttempts, $_.Exception.Message)
       }
       Start-Sleep -Milliseconds (200 * $i)
+    } finally {
+      if ($fs -ne $null) {
+        try { $fs.Dispose() } catch { }
+      }
     }
   }
 }

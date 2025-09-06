@@ -55,8 +55,7 @@ function Start-VlcProcess {
   }
   if ($p.HasExited -and $p.ExitCode -ne 0) {
     $stderrText = $stderrSb.ToString()
-    Write-Message -Level Error -Message "VLC failed to start. ExitCode=$($p.ExitCode). $stderrText"
-    throw "VLC startup failed (ExitCode=$($p.ExitCode))."
+    throw ("VLC startup failed (ExitCode={0}). stderr: {1}" -f $p.ExitCode, $stderrText)
   }
   return $p
 }
