@@ -163,9 +163,21 @@ AUTHOR
   Manoj Bhaskaran
 
 VERSION
-   1.2.40
+   1.2.41
 
 CHANGELOG
+  1.2.41
+  - Policy/Docs: Documented a simple error-handling policy: helpers throw on failure; only the
+    top-level flow emits user-facing messages. This improves predictability and testability.
+  - Quick win: Centralized “magic numbers” into a $script:Config block (poll intervals, snapshot
+    fallbacks/grace, wait timeouts). Call sites now reference these named constants.
+  - Quick win: Added Resolve-Outcome helper to decide success/failure in one place; the main loop
+    now consumes {Processed, Reason} for clearer logic and logging.
+  - Quick win: Reduced filesystem overhead by switching snapshot frame counts to streaming
+    enumeration (Directory.EnumerateFiles) instead of full Get-ChildItem scans.
+  - Quick win: Added tiny per-stream locks around StringBuilder appends in evented readers to
+    eliminate benign race complaints during concurrent output handling.
+
   1.2.40
   - Critical fix: Reworked Invoke-VlcProcess to be non-blocking and deadlock-free. We now drain
     stdout/stderr concurrently (evented readers) and return the running process immediately so
@@ -293,6 +305,15 @@ CHANGELOG
     Provides Write-Message and Add-ContentWithRetry. If present, the script imports it.
     If missing or it fails to load, the script falls back to built-in helpers and
     prints a warning for visibility.
+
+CONFIGURATION
+  - The following knobs can be tuned via $script:Config near the top of the script:
+      • PollIntervalMs (default 200)
+      • SnapshotFallbackTimeoutSeconds (default 300)
+      • SnapshotTerminationExtraSeconds (default 5)
+      • StopVlcWaitMs (default 5000)
+      • WaitProcessTimeoutSeconds (default 3)
+  - Change these values if your environment needs different watchdog/timeout behavior.
 
 TROUBLESHOOTING
   - Blank images: ensure VLC can decode the file; try -UseVlcSnapshots.
@@ -506,7 +527,7 @@ param(
 )
 
 # Script version constant for banner/logging
-$script:VideoScreenshotVersion = '1.2.40'
+$script:VideoScreenshotVersion = '1.2.41'
 # Track run stats for end-of-run summary
 $script:RunStats = [pscustomobject]@{
   StartTime           = (Get-Date)
@@ -521,6 +542,14 @@ $script:RunStats = [pscustomobject]@{
 # Script-wide exit code so we can summarize before exiting
 $script:ExitCode = 0
 
+# Centralized configuration (“magic numbers”)
+$script:Config = @{
+  PollIntervalMs                    = 200   # general short sleeps / poll cadence (ms)
+  SnapshotFallbackTimeoutSeconds    = 300   # watchdog timeout when duration is unknown (s)
+  SnapshotTerminationExtraSeconds   = 5     # extra beyond StopAtSeconds before force-kill (s)
+  StopVlcWaitMs                     = 5000  # graceful CloseMainWindow wait (ms)
+  WaitProcessTimeoutSeconds         = 3     # Wait-Process timeouts (s)
+}
 # region Utilities
 
 # Try optional helper module; define fallbacks if missing so the script stays self-contained
@@ -1161,7 +1190,9 @@ function Initialize-VideoContext {
                 Remove-Item -Force -ErrorAction SilentlyContinue
             $preCount = 0
         } else {
-            $preCount = (Get-ChildItem -Path $SaveFolder -Filter "$scenePrefix*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+            # Streaming enumeration for pre-count
+            $preCount = 0
+            foreach ($null in [System.IO.Directory]::EnumerateFiles($SaveFolder, "$scenePrefix*.png")) { $preCount++ }
         }
     }
 
@@ -1213,7 +1244,10 @@ function Measure-PostCapture {
     $achieved = $null
 
     if ($UseVlcSnapshots) {
-        $postCount = (Get-ChildItem -Path $SaveFolder -Filter "$ScenePrefix*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+        # Streaming enumeration to avoid loading large file lists into memory
+        $pattern = "$ScenePrefix*.png"
+        $postCount = 0
+        foreach ($null in [System.IO.Directory]::EnumerateFiles($SaveFolder, $pattern)) { $postCount++ }
         $framesDelta = $postCount - $PreCount
         $hadFrames   = ($framesDelta -gt 0)
         if ($SnapResult -and $SnapResult.ElapsedSeconds -gt 0) {
@@ -1346,19 +1380,23 @@ function Invoke-SnapshotCapture {
         [double]$StopAtSeconds = 0
     )
     $processStart = Get-Date
-    $maxWait = if ($StopAtSeconds -gt 0) { $StopAtSeconds + 5 } else { 300 }
+    $maxWait = if ($StopAtSeconds -gt 0) {
+        $StopAtSeconds + [double]$script:Config.SnapshotTerminationExtraSeconds
+    } else {
+        [double]$script:Config.SnapshotFallbackTimeoutSeconds
+    }
     Write-Debug "Snapshot mode: monitoring VLC process (max wait: $maxWait sec)"
 
     $timedOut = $false
     while (-not $Process.HasExited) {
-        $null = Start-Sleep -Milliseconds 200
+        $null = Start-Sleep -Milliseconds $script:Config.PollIntervalMs
         $elapsed = (New-TimeSpan -Start $processStart -End (Get-Date)).TotalSeconds
         if ($elapsed -ge $maxWait) {
             Write-Debug "VLC process timeout reached ($elapsed sec; maxWait=$maxWait), force terminating"
             Write-Message -Level Warn -Message "VLC timeout reached after $([int]$elapsed)s; terminating process."
             try {
                 $null = Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
-                $null = Wait-Process -Id $Process.Id -Timeout 3 -ErrorAction SilentlyContinue
+                $null = Wait-Process -Id $Process.Id -Timeout $script:Config.WaitProcessTimeoutSeconds -ErrorAction SilentlyContinue
                 $null = $Process.Refresh()
                 Write-Debug "Process termination completed"
             } catch {
@@ -1582,8 +1620,24 @@ function Invoke-VlcProcess {
     # Capture + live-forward
     $stdoutSb = New-Object System.Text.StringBuilder
     $stderrSb = New-Object System.Text.StringBuilder
-    $p.add_OutputDataReceived({ param($s,$e) if ($e.Data) { [void]$stdoutSb.AppendLine($e.Data); Write-Host $e.Data } })
-    $p.add_ErrorDataReceived( { param($s,$e) if ($e.Data) { [void]$stderrSb.AppendLine($e.Data); Write-Host $e.Data } })
+    $outLock  = New-Object object
+    $errLock  = New-Object object
+    $p.add_OutputDataReceived({
+        param($s,$e)
+        if ($e.Data) {
+            [System.Threading.Monitor]::Enter($outLock)
+            try { [void]$stdoutSb.AppendLine($e.Data) } finally { [System.Threading.Monitor]::Exit($outLock) }
+            Write-Host $e.Data
+        }
+    })
+    $p.add_ErrorDataReceived({
+        param($s,$e)
+        if ($e.Data) {
+            [System.Threading.Monitor]::Enter($errLock)
+            try { [void]$stderrSb.AppendLine($e.Data) } finally { [System.Threading.Monitor]::Exit($errLock) }
+            Write-Host $e.Data
+        }
+    })
 
     $processStart = Get-Date
     $null = $p.Start()
@@ -1595,7 +1649,7 @@ function Invoke-VlcProcess {
     $deadline = $processStart.AddSeconds([int]$VlcStartupTimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         if ($p.HasExited) { break }
-        Start-Sleep -Milliseconds 200
+        Start-Sleep -Milliseconds $script:Config.PollIntervalMs
     }
     if ($p.HasExited) {
         $elapsed = ((Get-Date) - $processStart).TotalSeconds
@@ -1716,13 +1770,13 @@ original error path.
 function Stop-Vlc {
     param([Parameter(Mandatory)][System.Diagnostics.Process]$Process)
     try   { $null = $Process.CloseMainWindow() } catch {}
-    try   { $null = $Process.WaitForExit(5000) } catch {}
+    try   { $null = $Process.WaitForExit($script:Config.StopVlcWaitMs) } catch {}
     if (-not $Process.HasExited) {
         Write-Debug "VLC still running; force killing PID $($Process.Id)"
         try { 
             $null = Stop-Process -Id $Process.Id -Force 
             # Wait for process to actually terminate for consistent behavior
-            $null = Wait-Process -Id $Process.Id -Timeout 3 -ErrorAction SilentlyContinue
+            $null = Wait-Process -Id $Process.Id -Timeout $script:Config.WaitProcessTimeoutSeconds -ErrorAction SilentlyContinue
             $null = $Process.Refresh()
         } catch {
             Write-Debug "Error during VLC termination: $($_.Exception.Message)"
@@ -1983,8 +2037,24 @@ function Invoke-Cropper {
 
     $stdoutSb = New-Object System.Text.StringBuilder
     $stderrSb = New-Object System.Text.StringBuilder
-    $p.add_OutputDataReceived({ param($s,$e) if ($e.Data) { [void]$stdoutSb.AppendLine($e.Data); Write-Host $e.Data } })
-    $p.add_ErrorDataReceived( { param($s,$e) if ($e.Data) { [void]$stderrSb.AppendLine($e.Data); Write-Host $e.Data } })
+    $outLock  = New-Object object
+    $errLock  = New-Object object
+    $p.add_OutputDataReceived({
+        param($s,$e)
+        if ($e.Data) {
+            [System.Threading.Monitor]::Enter($outLock)
+            try { [void]$stdoutSb.AppendLine($e.Data) } finally { [System.Threading.Monitor]::Exit($outLock) }
+            Write-Host $e.Data
+        }
+    })
+    $p.add_ErrorDataReceived({
+        param($s,$e)
+        if ($e.Data) {
+            [System.Threading.Monitor]::Enter($errLock)
+            try { [void]$stderrSb.AppendLine($e.Data) } finally { [System.Threading.Monitor]::Exit($errLock) }
+            Write-Host $e.Data
+        }
+    })
 
     $null = $p.Start()
     $p.BeginOutputReadLine()
@@ -2004,6 +2074,36 @@ function Invoke-Cropper {
         }
         Write-Message -Level Info -Message "Cropper finished successfully."
     }
+}
+
+<#
+.SYNOPSIS
+Decide whether a video run should be marked processed.
+.DESCRIPTION
+Evaluates capture results in one place to produce a consistent outcome.
+.OUTPUTS
+PSCustomObject with:
+  - Processed [bool]
+  - Reason    [string]  # Processed | TimedOutProcessed | NoFrames | VlcFailed | ErrorDuringCapture | UnknownFailure
+#>
+function Resolve-Outcome {
+    param(
+        [Parameter(Mandatory)][bool]$HadFrames,
+        [Parameter(Mandatory)][int]$ExitCode,
+        [Parameter(Mandatory)][bool]$TimedOutPerVideo,
+        [Parameter(Mandatory)][bool]$HadErrors
+    )
+    if ($TimedOutPerVideo) {
+        return [pscustomobject]@{ Processed = $true; Reason = 'TimedOutProcessed' }
+    }
+    if (-not $HadErrors -and $ExitCode -eq 0 -and $HadFrames) {
+        return [pscustomobject]@{ Processed = $true; Reason = 'Processed' }
+    }
+    $reason = if (-not $HadFrames) { 'NoFrames' }
+              elseif ($ExitCode -ne 0) { 'VlcFailed' }
+              elseif ($HadErrors) { 'ErrorDuringCapture' }
+              else { 'UnknownFailure' }
+    return [pscustomobject]@{ Processed = $false; Reason = $reason }
 }
 
 # endregion Capture helpers
@@ -2200,26 +2300,20 @@ foreach ($video in $videos) {
     $framesDelta = $post.FramesDelta
     $script:RunStats.FramesSaved += [int]$framesDelta
 
-    # Recognize per-video timeout (duration + grace) in snapshot mode as a successful completion
-    # This is distinct from the 300s fallback timeout (unknown duration).
+    # Recognize per-video timeout (duration + grace) in snapshot mode as a successful completion.
     $timedOutPerVideo = ($UseVlcSnapshots -and $snapResult -and $snapResult.TimedOut -and ($stopAt -gt 0))
 
-    # Unified debug output that works for both modes
+    # Unified debug summary
     $processingTime = if ($videoStartTime) { [math]::Max(0.001, (New-TimeSpan -Start $videoStartTime -End (Get-Date)).TotalSeconds) } else { 0.001 }
     Write-Debug "Video processing complete: ExitCode=$vlcExit, processingTime=$processingTime sec, frames=$framesDelta, hadErrors=$errorDuringCapture"
 
-    # Final outcome evaluation
-    # Consider per-video timeout (duration + grace reached) as processed even if VLC was force-terminated and no frames were produced.
-    $ok = $timedOutPerVideo -or ((-not $errorDuringCapture) -and ($vlcExit -eq 0) -and $hadFrames)
+    # Outcome evaluation (centralized)
+    $outcome = Resolve-Outcome -HadFrames:$hadFrames -ExitCode:$vlcExit -TimedOutPerVideo:$timedOutPerVideo -HadErrors:$errorDuringCapture
 
-    if ($ok) {
-        $timedOutAndProcessed = ($UseVlcSnapshots -and $snapResult -and $snapResult.TimedOut -and $ctx.StopAtSeconds -gt 0)
-        if ($timedOutAndProcessed) {
+    if ($outcome.Processed) {
+        if ($outcome.Reason -eq 'TimedOutProcessed') {
             Write-Message -Level Info -Message "Timed out at per-video limit (duration + grace); marking processed: $($video.FullName)"
             $script:RunStats.TimedOutProcessed++
-        }
-        if ($timedOutPerVideo) {
-            Write-Message -Level Info -Message "Timed out at per-video limit (duration + grace); marking processed: $($video.FullName)"
         }
         if (Add-ContentWithRetry -Path $ProcessedLogPath -Value $video.FullName) {
             Write-Message -Level Info -Message "Marked processed: $($video.FullName)"
@@ -2231,22 +2325,24 @@ foreach ($video in $videos) {
             exit $script:ExitCode
         }
     } else {
-        # Provide specific feedback for timeout cases
-        if ($UseVlcSnapshots -and $vlcExit -ne 0 -and -not $hadFrames) {
-            $elapsedForMsg = if ($snapResult) { [int]$snapResult.ElapsedSeconds } else { 0 }
-            if ($stopAt -gt 0 -and $snapResult -and $snapResult.TimedOut) {
-                # This branch should be rare now because $timedOutPerVideo already set $ok=true.
-                Write-Message -Level Warn -Message "Video timed out after ${elapsedForMsg}s; not marking as processed: $($video.FullName). Consider increasing -AutoStopGraceSeconds or verifying the media decodes correctly."
-            } else {
+        switch ($outcome.Reason) {
+            'VlcFailed' {
+                $elapsedForMsg = if ($snapResult) { [int]$snapResult.ElapsedSeconds } else { 0 }
                 Write-Message -Level Warn -Message "Video failed after ${elapsedForMsg}s; not marking as processed: $($video.FullName). Check if the file is playable in VLC or consider converting it."
                 $script:RunStats.Failures++
             }
-        } elseif (-not $hadFrames) {
-            Write-Message -Level Warn -Message "No frames captured; not marking as processed: $($video.FullName). Try -GdiFullscreen (GDI+) or -UseVlcSnapshots, and check SaveFolder write permissions."
-            $script:RunStats.Failures++
-        } else {
-            Write-Debug "Video not marked processed - VlcExit: $vlcExit, HadFrames: $hadFrames, Errors: $errorDuringCapture"
-            $script:RunStats.Failures++
+            'NoFrames' {
+                Write-Message -Level Warn -Message "No frames captured; not marking as processed: $($video.FullName). Try -GdiFullscreen (GDI+) or -UseVlcSnapshots, and check SaveFolder write permissions."
+                $script:RunStats.Failures++
+            }
+            'ErrorDuringCapture' {
+                Write-Message -Level Warn -Message "Capture errors occurred; not marking as processed: $($video.FullName). See previous messages for details."
+                $script:RunStats.Failures++
+            }
+            default {
+                Write-Debug "Video not marked processed - Outcome=$($outcome.Reason), VlcExit=$vlcExit, HadFrames=$hadFrames, Errors=$errorDuringCapture"
+                $script:RunStats.Failures++
+            }
         }
     }
 }
