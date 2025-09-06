@@ -1,28 +1,35 @@
-# Simple per-run PID file with safe writes
-$script:PidRegistryPath = $null
+# Simple per-run PID file with safe writes (state carried via $Context)
 function Initialize-PidRegistry {
+  [CmdletBinding()]
   param(
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$SaveFolder,
-    [string]$RunGuid
+    [Parameter(Mandatory)][psobject]$Context,
+    [Parameter(Mandatory)][string]$SaveFolder,
+    [Parameter(Mandatory)][string]$RunGuid
   )
-  $script:PidRegistryPath = Join-Path $SaveFolder ".vlc_pids_$RunGuid.txt"
-  if (Test-Path -LiteralPath $script:PidRegistryPath) {
-    Remove-Item -LiteralPath $script:PidRegistryPath -Force -ErrorAction SilentlyContinue
+  $path = Join-Path $SaveFolder ".vlc_pids_$RunGuid.txt"
+  if (Test-Path -LiteralPath $path) {
+    Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
   }
-  $script:PidRegistryPath
+  $Context.PidRegistryPath = $path
+  $path
 }
-
 function Register-RunPid {
-  param([Parameter(Mandatory)][int]$ProcessId)
-  if (-not $script:PidRegistryPath) { throw "PID registry not initialised. Call Initialize-PidRegistry first." }
-  $null = Add-ContentWithRetry -Path $script:PidRegistryPath -Value $ProcessId
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][psobject]$Context,
+    [Parameter(Mandatory)][int]$ProcessId
+  )
+  if (-not $Context.PidRegistryPath) { throw "PID registry not initialized." }
+  $null = Add-ContentWithRetry -Path $Context.PidRegistryPath -Value $ProcessId
 }
-
 function Unregister-RunPid {
-  param([Parameter(Mandatory)][int]$ProcessId)
-  if (-not $script:PidRegistryPath) { return }
-  if (Test-Path -LiteralPath $script:PidRegistryPath) {
-    (Get-Content -LiteralPath $script:PidRegistryPath | Where-Object { $_ -ne "$ProcessId" }) |
-      Set-Content -LiteralPath $script:PidRegistryPath -Encoding utf8 | Out-Null
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][psobject]$Context,
+    [Parameter(Mandatory)][int]$ProcessId
+  )
+  if ($Context.PidRegistryPath -and (Test-Path -LiteralPath $Context.PidRegistryPath)) {
+    (Get-Content -LiteralPath $Context.PidRegistryPath | Where-Object { $_ -ne "$ProcessId" }) |
+      Set-Content -LiteralPath $Context.PidRegistryPath -Encoding utf8 | Out-Null
   }
 }

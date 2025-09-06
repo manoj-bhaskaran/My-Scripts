@@ -6,6 +6,15 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [1.3.4] – 2025-09-07
+
+### PowerShell
+- **Videoscreenshot**
+  - State isolation: replaced module-scoped `$script:*` variables with a per-run **context object** `New-VideoRunContext`) that is passed through private functions.
+  - Updated private APIs: `Start-Vlc`, `Stop-Vlc`, `Start-VlcProcess`, and PID registry helpers now accept `-Context` and read settings from `Context.Config`.
+  - Config defaults are now exposed via `Get-DefaultConfig`; no mutable module-wide state remains.
+  - SemVer: patch bump (internal refactor; no public API changes).
+
 ## [1.3.3] – 2025-09-07
 
 ### PowerShell

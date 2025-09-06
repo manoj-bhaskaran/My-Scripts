@@ -22,7 +22,11 @@ function Get-VlcArgsSnapshot {
      '--scene-ratio',"$ratio")
 }
 function Start-VlcProcess {
-  param([Parameter(Mandatory)][string[]]$Arguments,[Parameter(Mandatory)][int]$StartupTimeoutSeconds)
+  param(
+    [Parameter(Mandatory)][psobject]$Context,
+    [Parameter(Mandatory)][string[]]$Arguments,
+    [Parameter(Mandatory)][int]$StartupTimeoutSeconds
+  )
   $psi = [Diagnostics.ProcessStartInfo]::new()
   $psi.FileName = 'vlc.exe'   # more explicit on Windows; still resolves via PATH
   # Prefer .Arguments string for WinPS 5.1 compatibility (ArgumentList may be unavailable)
@@ -51,7 +55,7 @@ function Start-VlcProcess {
   $deadline = $start.AddSeconds([int]$StartupTimeoutSeconds)
   while ((Get-Date) -lt $deadline) {
     if ($p.HasExited) { break }
-    Start-Sleep -Milliseconds $script:Config.PollIntervalMs
+    Start-Sleep -Milliseconds $Context.Config.PollIntervalMs
   }
   if ($p.HasExited -and $p.ExitCode -ne 0) {
     $stderrText = $stderrSb.ToString()
@@ -61,26 +65,32 @@ function Start-VlcProcess {
 }
 function Start-Vlc {
   param(
+    [Parameter(Mandatory)][psobject]$Context,
     [Parameter(Mandatory)][string]$VideoPath,
     [Parameter(Mandatory)][string]$SaveFolder,
     [switch]$UseVlcSnapshots,
+    [Parameter(Mandatory)][int]$RequestedFps,
     [double]$StopAtSeconds,
     [switch]$GdiFullscreen,
     [int]$StartupTimeoutSeconds = 10
   )
   $vlcargs = @($VideoPath)
-  if ($UseVlcSnapshots){ $vlcargs += Get-VlcArgsSnapshot -VideoPath $VideoPath -SaveFolder $SaveFolder -RequestedFps $script:RequestedFps }
+  if ($UseVlcSnapshots){ $vlcargs += Get-VlcArgsSnapshot -VideoPath $VideoPath -SaveFolder $SaveFolder -RequestedFps $RequestedFps }
   else { $vlcargs += Get-VlcArgsGdi -GdiFullscreen:$GdiFullscreen }
   $vlcargs += Get-VlcArgsCommon -StopAtSeconds $StopAtSeconds
-  $p = Start-VlcProcess -Arguments $vlcargs -StartupTimeoutSeconds $StartupTimeoutSeconds
-  Register-RunPid -ProcessId $p.Id
+  $p = Start-VlcProcess -Context $Context -Arguments $vlcargs -StartupTimeoutSeconds $StartupTimeoutSeconds
+  Register-RunPid -Context $Context -ProcessId $p.Id
   return $p
 }
-function Stop-Vlc { param([Parameter(Mandatory)][Diagnostics.Process]$Process)
+function Stop-Vlc {
+  param(
+    [Parameter(Mandatory)][psobject]$Context,
+    [Parameter(Mandatory)][Diagnostics.Process]$Process
+  )
   try { $null = $Process.CloseMainWindow() } catch {}
-  try { $null = $Process.WaitForExit($script:Config.StopVlcWaitMs) } catch {}
+  try { $null = $Process.WaitForExit($Context.Config.StopVlcWaitMs) } catch {}
   if (-not $Process.HasExited) {
     Write-Debug "VLC still running; forcing PID $($Process.Id)"
-    try { Stop-Process -Id $Process.Id -Force; $null = Wait-Process -Id $Process.Id -Timeout $script:Config.WaitProcessTimeoutSeconds -ErrorAction SilentlyContinue; $null = $Process.Refresh() } catch {}
+    try { Stop-Process -Id $Process.Id -Force; $null = Wait-Process -Id $Process.Id -Timeout $Context.Config.WaitProcessTimeoutSeconds -ErrorAction SilentlyContinue; $null = $Process.Refresh() } catch {}
   }
 }

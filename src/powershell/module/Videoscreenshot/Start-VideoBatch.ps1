@@ -23,8 +23,10 @@ function Start-VideoBatch {
   )
   # Policy: helpers throw; only this function emits user-facing messages.
   $mode = ($UseVlcSnapshots ? 'VLC snapshots' : 'GDI+ desktop')
-  Write-Message -Level Info -Message ("videoscreenshot module v{0} starting (Mode={1}, FPS={2}, SaveFolder=""{3}"")" -f $script:VideoScreenshotVersion, $mode, $FramesPerSecond, $SaveFolder) 
-
+  $runGuid = [Guid]::NewGuid().ToString('N').Substring(0,8)
+  $context = New-VideoRunContext -RequestedFps $FramesPerSecond -SaveFolder $SaveFolder -RunGuid $runGuid
+  Write-Message -Level Info -Message ("videoscreenshot module v{0} starting (Mode={1}, FPS={2}, SaveFolder=""{3}"")" -f $context.Version, $mode, $FramesPerSecond, $SaveFolder)
+ 
   if (-not (Test-Path -LiteralPath $SourceFolder)) { Write-Message -Level Error -Message "SourceFolder not found: $SourceFolder"; throw "Invalid SourceFolder." }
   if (-not (Get-Command vlc -ErrorAction SilentlyContinue)) { Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH."; throw "VLC missing." }
   Test-FolderWritable -Folder $SaveFolder | Out-Null
@@ -34,15 +36,13 @@ function Start-VideoBatch {
   }
 
   # Initialize PID registry for this run
-  $runGuid = [Guid]::NewGuid().ToString('N').Substring(0,8)
-  $pidFile = Initialize-PidRegistry -SaveFolder $SaveFolder -RunGuid $runGuid
+  $pidFile = Initialize-PidRegistry -Context $context -SaveFolder $SaveFolder -RunGuid $runGuid
   Write-Debug "PID registry: $pidFile"
 
   # Discover videos
   $videos = Get-ChildItem -Path (Join-Path $SourceFolder '*') -Recurse -File -Include *.mp4,*.mkv,*.avi,*.mov,*.m4v,*.wmv
   if (-not $videos) { Write-Message -Level Warn -Message "No videos found under $SourceFolder."; return }
 
-  $script:RequestedFps = $FramesPerSecond
   $processedCount = 0
 
   foreach ($video in $videos) {
@@ -63,14 +63,14 @@ function Start-VideoBatch {
     $stopAfter = if ($TimeLimitSeconds -gt 0) { [double]$TimeLimitSeconds } else { 0 }
 
     try {
-      $p = Start-Vlc -VideoPath $video.FullName -SaveFolder $SaveFolder -UseVlcSnapshots:$UseVlcSnapshots -StopAtSeconds $stopAfter -GdiFullscreen:$GdiFullscreen -StartupTimeoutSeconds $VlcStartupTimeoutSeconds
+      $p = Start-Vlc -Context $context -VideoPath $video.FullName -SaveFolder $SaveFolder -UseVlcSnapshots:$UseVlcSnapshots -RequestedFps $FramesPerSecond -StopAtSeconds $stopAfter -GdiFullscreen:$GdiFullscreen -StartupTimeoutSeconds $VlcStartupTimeoutSeconds
 
       if ($UseVlcSnapshots) {
-        $waitSeconds = if ($TimeLimitSeconds -gt 0) { [int]$TimeLimitSeconds } else { [int]$script:Config.SnapshotFallbackTimeoutSeconds }
+        $waitSeconds = if ($TimeLimitSeconds -gt 0) { [int]$TimeLimitSeconds } else { [int]$context.Config.SnapshotFallbackTimeoutSeconds }
         $snapStats = Wait-ForSnapshotFrames -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -MaxSeconds $waitSeconds
       }
       else {
-        $dur = if ($TimeLimitSeconds -gt 0) { [int]$TimeLimitSeconds } else { [int]$script:Config.GdiCaptureDefaultSeconds }
+        $dur = if ($TimeLimitSeconds -gt 0) { [int]$TimeLimitSeconds } else { [int]$context.Config.GdiCaptureDefaultSeconds }
         $gdiStats = Invoke-GdiCapture -DurationSeconds $dur -Fps $FramesPerSecond -SaveFolder $SaveFolder -ScenePrefix $scenePrefix
       }
     }
@@ -79,9 +79,7 @@ function Start-VideoBatch {
       throw
     }
     finally {
-      if ($p) {
-        try { Stop-Vlc -Process $p } finally { Unregister-RunPid -ProcessId $p.Id }
-      }
+      if ($p) { Stop-Vlc -Context $context -Process $p; Unregister-RunPid -Context $context -ProcessId $p.Id }
     }
 
     # Post-measure (use stats objects so they aren't unused)
@@ -126,5 +124,5 @@ function Start-VideoBatch {
     $processedCount++
   }
 
-  Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed {1} file(s)" -f $script:VideoScreenshotVersion, $processedCount)
+  Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed {1} file(s)" -f ($MyInvocation.MyCommand.Module.Version.ToString()), $processedCount)
  }
