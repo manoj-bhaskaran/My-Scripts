@@ -27,6 +27,27 @@ param(
   [switch]$DisableAutoStop
 )
 
+# Guard: require pwsh 7+
+try {
+    $ver = $PSVersionTable.PSVersion
+    $edition = $PSEdition
+} catch {
+    Write-Error "Unable to determine PowerShell host version."
+    exit 1
+}
+
+if ($null -eq $ver -or $ver.Major -lt 7 -or ($edition -ne 'Core')) {
+    $self = $MyInvocation.MyCommand.Path
+    $msg = @"
+PowerShell 7+ required. Detected: $ver ($edition).
+Install PowerShell 7+ and re-run this script using 'pwsh'.
+Example (Windows): winget install --id Microsoft.PowerShell -e
+Then run: pwsh -NoProfile -File `"$self`" ...
+"@
+    Write-Error $msg
+    exit 1
+}
+
 $modulePs1 = Join-Path $PSScriptRoot 'module\Videoscreenshot\Videoscreenshot.psd1'
 if (-not (Test-Path -LiteralPath $modulePs1)) {
   Write-Error "Videoscreenshot module not found at: $modulePs1"

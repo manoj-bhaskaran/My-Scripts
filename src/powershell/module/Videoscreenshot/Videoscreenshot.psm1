@@ -1,3 +1,6 @@
+#requires -PSEdition Core
+#requires -Version 7.0
+
 # Robust module loader: guard for missing dirs and deterministic load order
 $here = Split-Path -Parent $PSCommandPath
 $privateDir = Join-Path $here 'Private'

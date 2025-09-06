@@ -21,6 +21,9 @@ function Start-VideoBatch {
     [string]$PythonExe,
     [switch]$ClearSnapshotsBeforeRun
   )
+  # Enforce pwsh 7+ at runtime (friendly error if invoked directly)
+  Assert-Pwsh7OrThrow
+
   # Policy: helpers throw; only this function emits user-facing messages.
   $mode = ($UseVlcSnapshots ? 'VLC snapshots' : 'GDI+ desktop')
   $runGuid = [Guid]::NewGuid().ToString('N').Substring(0,8)

@@ -6,6 +6,23 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.0.0] – 2025-09-07
+
+### PowerShell
+- **Videoscreenshot**
+  - **Breaking:** Require PowerShell 7+ (pwsh). The module manifest and loader now target PSEdition Core only and version 7.0+. Import and runtime guards error out on older hosts with clear guidance.
+  - Wrapper `videoscreenshot.ps1` detects legacy Windows PowerShell (5.1/`Desktop`) and exits with instructions to run under `pwsh` and suggested install commands.
+- **Other scripts**
+  - No changes in this release.
+
+### Docs
+- Update `src/powershell/module/Videoscreenshot/README.md` to document the PowerShell 7+ requirement and migration notes.
+
+### Notes
+- Rationale: standardize on a modern runtime (pwsh) to simplify code paths and ensure consistent behavior across platforms.
+
+---
+
 ## [1.3.6] – 2025-09-07
 
 ### Changed

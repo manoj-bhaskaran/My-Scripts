@@ -57,9 +57,15 @@ src/
 - `-VlcStartupTimeoutSeconds` – timeout for VLC to initialize
 
 ## Requirements
+- PowerShell 7.0+ (PSEdition Core, a.k.a. pwsh) — Windows PowerShell 5.1 is not supported as of v2.0.0.
 - VLC (`vlc.exe`) on PATH
-- PowerShell 5.1+ (Windows) or PowerShell 7+ (Core)
 - Python only needed when running the cropper (moved in later PRs)
+### If you see a version error
+The script/module will refuse to run under Windows PowerShell (5.1/Desktop).
+Install PowerShell 7+ and re-run using pwsh.
+
+On Windows (examples):
+ +winget install --id Microsoft.PowerShell -e +
 
 ## Troubleshooting
 - “VLC not found”: ensure `vlc --version` runs in the same session.

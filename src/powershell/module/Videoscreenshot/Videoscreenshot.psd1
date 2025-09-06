@@ -1,12 +1,12 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '1.3.6'
+  ModuleVersion     = '2.0.0'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
-  CompatiblePSEditions = @('Desktop','Core')
+  CompatiblePSEditions = @('Core')
   Description       = 'Modularized video frame capture (VLC/GDI+) with Python cropper integration.'
-  PowerShellVersion = '5.1'
+  PowerShellVersion = '7.0'
   FunctionsToExport = @('Start-VideoBatch')
   AliasesToExport   = @()
   CmdletsToExport   = @()
