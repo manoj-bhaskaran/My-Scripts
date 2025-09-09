@@ -6,6 +6,10 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.2] – 2025-09-09
+### Fixed
+- Cropper timing now uses wall-clock measurement via `Stopwatch` instead of CPU time, improving accuracy for I/O-bound operations (image writes, process startup). This affects the `ElapsedSeconds` value returned by `Invoke-Cropper`.
+
 ## [2.1.1] – 2025-09-09
 
 ### PowerShell

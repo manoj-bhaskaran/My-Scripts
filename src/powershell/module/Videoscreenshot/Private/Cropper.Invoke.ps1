@@ -57,10 +57,12 @@ function Invoke-Cropper {
 
     $p = [System.Diagnostics.Process]::new()
     $p.StartInfo = $psi
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $null = $p.Start()
     $stdOut = $p.StandardOutput.ReadToEnd()
     $stdErr = $p.StandardError.ReadToEnd()
     $p.WaitForExit()
+    $sw.Stop()
 
     if ($p.ExitCode -ne 0) {
         $msg = "Cropper failed (exit $($p.ExitCode)). STDERR: $stdErr"
@@ -70,7 +72,8 @@ function Invoke-Cropper {
 
     [pscustomobject]@{
         ExitCode       = [int]$p.ExitCode
-        ElapsedSeconds = [double]($p.TotalProcessorTime.TotalSeconds) # approximate; script-reported timing is preferred if available
+        ElapsedSeconds = [math]::Round($sw.Elapsed.TotalSeconds, 3) # wall-clock time for accuracy on I/O-bound work
+        StdOut         = $stdOut
         StdOut         = $stdOut
         StdErr         = $stdErr
     }

@@ -151,3 +151,6 @@ On Windows (example):
 ---
 
 For module history, see this folder’s `CHANGELOG.md`. For repository-wide changes, see the root `CHANGELOG.md`.
+
+### Notes on timings
+Runtime measurements reported by the cropper use wall-clock time (not CPU time) to better reflect I/O-bound workloads.
