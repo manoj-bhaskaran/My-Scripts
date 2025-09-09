@@ -1,35 +1,77 @@
-# Python cropper integration (private helper)
-# Placeholder implementation to keep the pipeline coherent. When implemented,
-# this should invoke the Python cropper script and return a result object if needed.
 function Invoke-Cropper {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$PythonScriptPath,
-    [ValidateNotNullOrEmpty()][string]$PythonExe,
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$SaveFolder,
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$ScenePrefix
-  )
+    <#
+    .SYNOPSIS
+    Run the Python cropper script to trim borders by dominant color.
+    .DESCRIPTION
+    Invokes the provided Python script with folder/prefix arguments. Throws on non-zero exit.
+    Helpers follow the “throw on failure; no user-facing writes” policy.
+    .PARAMETER PythonScriptPath
+    Path to the cropper script (e.g., crop_colours.py).
+    .PARAMETER PythonExe
+    Optional Python executable to use. If not supplied, tries 'py' (Windows launcher) then 'python'.
+    .PARAMETER SaveFolder
+    Folder where frames were saved.
+    .PARAMETER ScenePrefix
+    Filename prefix used for frames (files like '<prefix>*.png' are targeted).
+    .OUTPUTS
+    [pscustomobject] with ExitCode and ElapsedSeconds
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$PythonScriptPath,
+        [Parameter()][string]$PythonExe,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$SaveFolder,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$ScenePrefix
+    )
 
-  # Example of a real implementation sketch (to be completed later):
-  # $exe = if ($PythonExe) { $PythonExe } else { 'python' }
-  # $psi = [Diagnostics.ProcessStartInfo]::new()
-  # $psi.FileName = $exe
-  # $psi.ArgumentList.Add($PythonScriptPath)
-  # $psi.ArgumentList.Add('--input')
-  # $psi.ArgumentList.Add($SaveFolder)
-  # $psi.ArgumentList.Add('--prefix')
-  # $psi.ArgumentList.Add($ScenePrefix)
-  # $psi.UseShellExecute = $false
-  # $psi.RedirectStandardOutput = $true
-  # $psi.RedirectStandardError  = $true
-  # $p = [Diagnostics.Process]::new()
-  # $p.StartInfo = $psi
-  # $null = $p.Start()
-  # $out = $p.StandardOutput.ReadToEnd()
-  # $err = $p.StandardError.ReadToEnd()
-  # $p.WaitForExit()
-  # if ($p.ExitCode -ne 0) { throw "Cropper failed (exit=$($p.ExitCode)): $err" }
-  # return [pscustomobject]@{ ExitCode = $p.ExitCode; Output = $out }
+    if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
+        throw "Cropper script not found: $PythonScriptPath"
+    }
+    if (-not (Test-Path -LiteralPath $SaveFolder)) {
+        throw "SaveFolder not found for cropper: $SaveFolder"
+    }
 
-  throw "Invoke-Cropper is not implemented yet. Provide a Python cropper or disable -RunCropper."
+    # Resolve python executable
+    $pythonCmd = $null
+    if ($PythonExe) {
+        $pythonCmd = $PythonExe
+    } else {
+        if (Get-Command -Name py -ErrorAction SilentlyContinue) { $pythonCmd = 'py' }
+        elseif (Get-Command -Name python -ErrorAction SilentlyContinue) { $pythonCmd = 'python' }
+        else { throw "Python not found. Provide -PythonExe or ensure 'py'/'python' is on PATH." }
+    }
+
+    # Common argument model: script --folder <SaveFolder> --prefix <ScenePrefix>
+    # (Keeps compatibility simple; adjust your cropper script accordingly.)
+    $pyArgs = @("$PythonScriptPath", '--folder', $SaveFolder, '--prefix', $ScenePrefix)
+
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $pythonCmd
+        foreach ($a in $pyArgs) {
+        $psi.ArgumentList.Add($a)
+    }
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+    $psi.CreateNoWindow = $true
+
+    $p = [System.Diagnostics.Process]::new()
+    $p.StartInfo = $psi
+    $null = $p.Start()
+    $stdOut = $p.StandardOutput.ReadToEnd()
+    $stdErr = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+
+    if ($p.ExitCode -ne 0) {
+        $msg = "Cropper failed (exit $($p.ExitCode)). STDERR: $stdErr"
+        if ($stdOut) { $msg += " | STDOUT: $stdOut" }
+        throw $msg
+    }
+
+    [pscustomobject]@{
+        ExitCode       = [int]$p.ExitCode
+        ElapsedSeconds = [double]($p.TotalProcessorTime.TotalSeconds) # approximate; script-reported timing is preferred if available
+        StdOut         = $stdOut
+        StdErr         = $stdErr
+    }
 }

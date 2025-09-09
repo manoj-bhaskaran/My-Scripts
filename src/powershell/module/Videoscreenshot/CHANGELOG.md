@@ -6,6 +6,17 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.1] – 2025-09-09
+
+### PowerShell
+- Videoscreenshot
+  - Implement Python cropper invocation (`Invoke-Cropper`) using `System.Diagnostics.Process` with `ArgumentList`, redirected stdout/stderr, and fail-fast errors.
+  - Python resolution order: custom `-PythonExe`, then `py` (Windows launcher), then `python`. Adds `-3` automatically when using `py`.
+  - Clearer failure messages when the cropper exits non-zero, including captured STDERR/STDOUT for easier diagnosis.
+
+### Docs
+- Videoscreenshot README: add “Cropper integration” usage and environment notes (Python resolution, working directory assumptions).
+
 ## [2.1.0] – 2025-09-07
 
 ### Added

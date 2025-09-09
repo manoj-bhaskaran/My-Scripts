@@ -9,6 +9,51 @@ This project captures frames from videos via VLC and (optionally) runs a Python 
 Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
 Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots
 ```
+### GDI capture mode (desktop capture)
+
+If you prefer GDI+ desktop capture instead of VLC’s snapshot filter, omit -UseVlcSnapshots:
+
+```powershell
+Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
+Start-VideoBatch `
+-SourceFolder .\videos `
+-SaveFolder .\shots `
+-FramesPerSecond 2 `
+-GdiFullscreen `
+-TimeLimitSeconds 5
+```
+
+Notes:
+- Leaving -TimeLimitSeconds 0 uses the module’s default GDI duration from config.
+- The run summary logs the number of frames saved and (when available) the achieved FPS.
+- -GdiFullscreen asks VLC to run fullscreen/top-most to reduce desktop interference during capture.
+
+### VLC snapshot mode (scene filter)
+
+Use VLC’s scene snapshot filter to write frames directly to disk:
+
+powershell +Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1 +Start-VideoBatch SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots 
+
+### Cropper integration
+
+To run the Python cropper after frame capture:
+
+```powershell
+Start-VideoBatch `
+  -SourceFolder .\videos `
+  -SaveFolder .\shots `
+  -FramesPerSecond 2 `
+  -UseVlcSnapshots `
+  -RunCropper `
+  -PythonScriptPath .\src\python\crop_colours.py
+# optionally pin the interpreter:
+#  -PythonExe "C:\Python312\python.exe"
+```
+
+Notes:
+- Python resolution order is: -PythonExe (if supplied), otherwise py (Windows launcher, invoked with -3), otherwise python.
+- The cropper receives absolute paths for --folder and --prefix. It should not rely on current working directory.
+- On failure, the module throws with the cropper’s STDERR (and STDOUT when present) to simplify debugging.
 
 **Legacy wrapper (still supported)**
 ```powershell
@@ -89,7 +134,8 @@ Start-VideoBatch `
 ## Requirements
 - PowerShell 7.0+ (PSEdition Core, a.k.a. pwsh) — Windows PowerShell 5.1 is not supported as of v2.0.0.
 - VLC (`vlc.exe`) on PATH
-- Python only needed when running the cropper (moved in later PRs)
+- Python only needed when running the cropper.
+- GDI capture currently targets Windows (uses GDI+/System.Drawing); VLC snapshot mode is cross-platform where VLC is available.
 ### If you see a version error
 The script/module will refuse to run under Windows PowerShell (5.1/Desktop).
 Install PowerShell 7+ and re-run using pwsh.
