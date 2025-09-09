@@ -19,7 +19,7 @@ function Get-ResumeIndex {
       if ([string]::IsNullOrWhiteSpace($_)) { return }
       $parts = $_ -split "`t", 4
       if ($parts.Length -eq 4) {
-        $null = $set.Add((Normalize-VideoPath -Path $parts[3]))
+        $null = $set.Add((Resolve-VideoPath -Path $parts[3]))
       }
     }
   } catch {
@@ -37,7 +37,7 @@ function Write-ProcessedLog {
     [string]$Reason = ''
   )
   $ts = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss.fffK')
-  $line = "{0}`t{1}`t{2}`t{3}" -f $ts, $Status, ($Reason ?? ''), (Normalize-VideoPath -Path $VideoPath)
+  $line = "{0}`t{1}`t{2}`t{3}" -f $ts, $Status, ($Reason ?? ''), (Resolve-VideoPath -Path $VideoPath)
   # Using-style write with retry (exclusive append)
   for ($i=1; $i -le 3; $i++) {
     try {

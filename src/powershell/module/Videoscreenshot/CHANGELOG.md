@@ -6,6 +6,18 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.4] – 2025-09-09
+### Fixed
+- Resume/processed logging now wired to the existing `Processed.Log.ps1` helpers:
+  `Get-ResumeIndex`, `Resolve-VideoPath`, and `Write-ProcessedLog`.
+- Removed stale references to non-existent helpers (`Get-ProcessedLogPath`,
+  `Read-ProcessedSet`) that blocked runs.
+
+### Docs
+- README updated to list `Processed.Log.ps1` in the module layout and to clarify
+  the default processed log path (`<SaveFolder>\.processed_videos.txt`) and resume behavior.
+
+---
 ## [2.1.3] – 2025-09-09
 ### Changed
 - Cropper is now invoked over the **SourceFolder** with flags:

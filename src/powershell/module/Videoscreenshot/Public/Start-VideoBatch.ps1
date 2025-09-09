@@ -40,10 +40,9 @@ function Start-VideoBatch {
   $runGuid = [Guid]::NewGuid().ToString('N').Substring(0,8)
   $context = New-VideoRunContext -RequestedFps $FramesPerSecond -SaveFolder $SaveFolder -RunGuid $runGuid
 
-  Write-Message -Level Info -Message (
-    "videoscreenshot module v{0} starting (Mode={1}, FPS={2}, SaveFolder=""{3}"")" -f
-    $context.Version, $mode, $FramesPerSecond, $SaveFolder
-  )
+  $mod = $MyInvocation.MyCommand.Module
+  $verString = if ($null -ne $mod) { $mod.Version.ToString() } else { 'dev' }
+  Write-Message -Level Info -Message ("videoscreenshot module v{0} starting (Mode={1}, FPS={2}, SaveFolder=""{3}"")" -f $verString, $mode, $FramesPerSecond, $SaveFolder)
 
   if (-not (Test-Path -LiteralPath $SourceFolder)) {
     Write-Message -Level Error -Message "SourceFolder not found: $SourceFolder"
@@ -55,9 +54,16 @@ function Start-VideoBatch {
   }
   Test-FolderWritable -Folder $SaveFolder | Out-Null
 
-  # Resolve processed log path and read processed/resume set
-  $processedLog = Get-ProcessedLogPath -SaveFolder $SaveFolder -Override $ProcessedLogPath
-  $processedSet = Read-ProcessedSet -Path $processedLog -ResumeFile $ResumeFile
+  # Resolve processed log path and read processed/resume set (P0)
+  $processedLog = if ([string]::IsNullOrWhiteSpace($ProcessedLogPath)) {
+    Join-Path $SaveFolder '.processed_videos.txt'
+  } else {
+    $ProcessedLogPath
+  }
+  $processedSet = Get-ResumeIndex -Path $processedLog
+  if (-not [string]::IsNullOrWhiteSpace($ResumeFile)) {
+    try { [void]$processedSet.Add((Resolve-VideoPath -Path $ResumeFile)) } catch {}
+  }
   if ($processedSet.Count -gt 0) {
     Write-Message -Level Info -Message (
       "Resume enabled: {0} item(s) will be skipped based on processed/resume lists." -f $processedSet.Count
@@ -174,7 +180,7 @@ function Start-VideoBatch {
       }
 
       # Append processed on success
-      Append-Processed -Path $processedLog -VideoPath $video.FullName
+      Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Processed'
       $processedCount++
     }
   }

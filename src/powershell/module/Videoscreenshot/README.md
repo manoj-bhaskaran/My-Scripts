@@ -139,6 +139,8 @@ On Windows (example):
 ## Troubleshooting
 - “VLC not found”: ensure `vlc --version` runs in the same session.
 - “Module not found”: verify the path to `Videoscreenshot.psd1` when importing the module manually.
+- “Resume/processed not working”: the module records lines to `<SaveFolder>\.processed_videos.txt`
+  via `Write-ProcessedLog`. `Start-VideoBatch` also honors `-ResumeFile` by skipping items up to that file
 
 ---
 

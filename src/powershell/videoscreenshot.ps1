@@ -65,8 +65,8 @@ $sbParams = (Get-Command Start-VideoBatch -ErrorAction Stop).Parameters.Keys
 $renameMap = @{
   # legacy → module
   'CropOnly'            = 'RunCropper'
-  # grace → delay (module parameter name)
-  'AutoStopGraceSeconds' = 'AutoStopDelaySeconds'
+  # legacy grace → current module param
+  'AutoStopGraceSeconds' = 'StartupGraceSeconds'
 }
 
 $forward     = @{}
