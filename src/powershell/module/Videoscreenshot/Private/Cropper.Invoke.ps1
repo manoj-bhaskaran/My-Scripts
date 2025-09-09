@@ -1,18 +1,17 @@
 function Invoke-Cropper {
     <#
     .SYNOPSIS
-    Run the Python cropper script to trim borders by dominant color.
+    Run the Python cropper (crop_colours.py) over an input folder.
     .DESCRIPTION
-    Invokes the provided Python script with folder/prefix arguments. Throws on non-zero exit.
-    Helpers follow the “throw on failure; no user-facing writes” policy.
+    Invokes the Python script as:
+      python crop_colours.py --input <folder> --skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha [--debug]
+    Throws on non-zero exit. No user-facing writes here (“helpers throw” policy).
     .PARAMETER PythonScriptPath
     Path to the cropper script (e.g., crop_colours.py).
     .PARAMETER PythonExe
     Optional Python executable to use. If not supplied, tries 'py' (Windows launcher) then 'python'.
-    .PARAMETER SaveFolder
-    Folder where frames were saved.
-    .PARAMETER ScenePrefix
-    Filename prefix used for frames (files like '<prefix>*.png' are targeted).
+    .PARAMETER InputFolder
+    Folder containing images to process (will recurse).
     .OUTPUTS
     [pscustomobject] with ExitCode and ElapsedSeconds
     #>
@@ -20,15 +19,14 @@ function Invoke-Cropper {
     param(
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$PythonScriptPath,
         [Parameter()][string]$PythonExe,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$SaveFolder,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$ScenePrefix
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$InputFolder
     )
 
     if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
         throw "Cropper script not found: $PythonScriptPath"
     }
-    if (-not (Test-Path -LiteralPath $SaveFolder)) {
-        throw "SaveFolder not found for cropper: $SaveFolder"
+    if (-not (Test-Path -LiteralPath $InputFolder)) {
+        throw "InputFolder not found for cropper: $InputFolder"
     }
 
     # Resolve python executable
@@ -41,13 +39,23 @@ function Invoke-Cropper {
         else { throw "Python not found. Provide -PythonExe or ensure 'py'/'python' is on PATH." }
     }
 
-    # Common argument model: script --folder <SaveFolder> --prefix <ScenePrefix>
-    # (Keeps compatibility simple; adjust your cropper script accordingly.)
-    $pyArgs = @("$PythonScriptPath", '--folder', $SaveFolder, '--prefix', $ScenePrefix)
+    # Required cropper arguments
+    $pyArgs = @(
+        "$PythonScriptPath",
+        '--input', $InputFolder,
+        '--skip-bad-images',
+        '--allow-empty',
+        '--ignore-processed',
+        '--recurse',
+        '--preserve-alpha'
+    )
+    # If caller used -Debug, propagate --debug to Python
+    $wantDebug = $PSBoundParameters.ContainsKey('Debug') -or ($DebugPreference -eq 'Continue')
+    if ($wantDebug) { $pyArgs += '--debug' }
 
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName = $pythonCmd
-        foreach ($a in $pyArgs) {
+    foreach ($a in $pyArgs) {
         $psi.ArgumentList.Add($a)
     }
     $psi.UseShellExecute = $false

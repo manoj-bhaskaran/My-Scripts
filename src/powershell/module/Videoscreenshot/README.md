@@ -35,19 +35,11 @@ Use VLC’s scene snapshot filter to write frames directly to disk:
 powershell +Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1 +Start-VideoBatch SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots 
 
 ### Cropper integration
-
-To run the Python cropper after frame capture:
-
-```powershell
-Start-VideoBatch `
-  -SourceFolder .\videos `
-  -SaveFolder .\shots `
-  -FramesPerSecond 2 `
-  -UseVlcSnapshots `
-  -RunCropper `
-  -PythonScriptPath .\src\python\crop_colours.py
-# optionally pin the interpreter:
-#  -PythonExe "C:\Python312\python.exe"
+- When `-RunCropper` is set, the module invokes the Python cropper as:
+  ```
+  python crop_colours.py --input <SourceFolder> --skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha
+  ```
+  If you call `Start-VideoBatch -Debug`, the module also adds `--debug` to the Python invocation.
 ```
 
 Notes:

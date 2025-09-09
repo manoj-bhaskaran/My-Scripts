@@ -6,6 +6,14 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.3] – 2025-09-09
+### Changed
+- Cropper is now invoked over the **SourceFolder** with flags:
+  `--skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha`.
+  If `Start-VideoBatch` is run with `-Debug`, `--debug` is propagated to the Python script.
+### Fixed
+- Avoid repeated per-video cropper runs; run once post-capture to reduce overhead.
+
 ## [2.1.2] – 2025-09-09
 ### Fixed
 - Cropper timing now uses wall-clock measurement via `Stopwatch` instead of CPU time, improving accuracy for I/O-bound operations (image writes, process startup). This affects the `ElapsedSeconds` value returned by `Invoke-Cropper`.
