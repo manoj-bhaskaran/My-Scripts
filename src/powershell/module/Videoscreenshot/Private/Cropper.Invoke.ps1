@@ -74,7 +74,6 @@ function Invoke-Cropper {
         ExitCode       = [int]$p.ExitCode
         ElapsedSeconds = [math]::Round($sw.Elapsed.TotalSeconds, 3) # wall-clock time for accuracy on I/O-bound work
         StdOut         = $stdOut
-        StdOut         = $stdOut
         StdErr         = $stdErr
     }
 }
