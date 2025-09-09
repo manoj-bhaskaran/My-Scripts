@@ -1,5 +1,5 @@
 <# 
-  Requires: PowerShell 5.1+ (or PowerShell 7+)
+  Requires: PowerShell 7+
   videoscreenshot.ps1 (shim)
   This thin wrapper preserves the existing CLI entrypoint while the implementation lives
   in the Videoscreenshot PowerShell module. For full functionality, import the module
@@ -14,17 +14,22 @@ param(
   [int]$TimeLimitSeconds = 0,
   [int]$VideoLimit = 0,
   [switch]$CropOnly,
+  # Resume & processed logging (P0)
   [string]$ResumeFile,
+  [string]$ProcessedLogPath,
   [string]$PythonScriptPath = (Join-Path (Split-Path $PSScriptRoot -Parent) 'python\crop_colours.py'),
   [string]$PythonExe,
-  [string]$ProcessedLogPath,
   [switch]$UseVlcSnapshots,
   [int]$VlcStartupTimeoutSeconds = 10,
   [switch]$GdiFullscreen,
   [switch]$Legacy1080p,
   [switch]$ClearSnapshotsBeforeRun,
   [int]$AutoStopGraceSeconds = 2,
-  [switch]$DisableAutoStop
+  [switch]$DisableAutoStop,
+  # New (parity) parameters forwarded to the module
+  [int]$MaxPerVideoSeconds = 0,
+  [int]$StartupGraceSeconds = 2,
+  [switch]$Force
 )
 
 # Guard: require pwsh 7+
@@ -59,7 +64,9 @@ Import-Module $modulePs1 -Force -ErrorAction Stop
 $sbParams = (Get-Command Start-VideoBatch -ErrorAction Stop).Parameters.Keys
 $renameMap = @{
   # legacy → module
-  'CropOnly' = 'RunCropper'
+  'CropOnly'            = 'RunCropper'
+  # grace → delay (module parameter name)
+  'AutoStopGraceSeconds' = 'AutoStopDelaySeconds'
 }
 
 $forward     = @{}
@@ -76,9 +83,14 @@ $coreDefaults = @{
   UseVlcSnapshots           = [bool]$UseVlcSnapshots
   GdiFullscreen             = [bool]$GdiFullscreen
   VlcStartupTimeoutSeconds  = $VlcStartupTimeoutSeconds
+  ResumeFile                = $ResumeFile
+  ProcessedLogPath          = $ProcessedLogPath
   PythonScriptPath          = $PythonScriptPath
   PythonExe                 = $PythonExe
-  ClearSnapshotsBeforeRun   = [bool]$ClearSnapshotsBeforeRun
+  # P0 advanced timing defaults should be forwarded even if user doesn't pass them,
+  # to keep behavior consistent with the legacy script.
+  MaxPerVideoSeconds        = $MaxPerVideoSeconds
+  StartupGraceSeconds       = $StartupGraceSeconds
 }
 foreach ($k in $coreDefaults.Keys) {
   if ($sbParams -contains $k) { $forward[$k] = $coreDefaults[$k] }

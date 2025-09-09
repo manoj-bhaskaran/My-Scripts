@@ -1,10 +1,11 @@
-function Get-VlcArgsCommon { param([double]$StopAtSeconds = 0)
+function Get-VlcArgsCommon {
+  param([double]$StopAtSeconds = 0)
   $vlcargs = @('--no-qt-privacy-ask','--no-video-title-show','--no-loop','--no-repeat','--rate','1','--play-and-exit')
   if ($StopAtSeconds -gt 0) {
     $rounded = [int][Math]::Round($StopAtSeconds)
     $vlcargs += @('--stop-time',"$rounded"); Write-Debug "VLC --stop-time=$rounded"
   }
-  return ,$vlcargs
+  ,$vlcargs
 }
 function Get-VlcArgsGdi { param([switch]$GdiFullscreen) if ($GdiFullscreen) { ,@('--fullscreen','--video-on-top','--qt-minimal-view') } else { @() } }
 function Get-VlcArgsSnapshot {

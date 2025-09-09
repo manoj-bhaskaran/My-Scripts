@@ -2,7 +2,7 @@
 .SYNOPSIS
 Entry point for batch processing (back-compat wrapper around the old script’s parameters).
 .DESCRIPTION
-Thin orchestrator for now; calls into private helpers. More logic will move here in follow-up PRs.
+Implements resume & processed logging (P0), advanced timing controls, and full pipeline wiring.
 #>
 function Start-VideoBatch {
   [CmdletBinding()]
@@ -12,6 +12,12 @@ function Start-VideoBatch {
     [ValidateRange(1,60)][int]$FramesPerSecond = 1,
     [int]$TimeLimitSeconds = 0,
     [int]$VideoLimit = 0,
+    # P0: resume & processed logging
+    [string]$ProcessedLogPath,
+    [string]$ResumeFile,
+    # P0: advanced timing controls
+    [ValidateRange(0,86400)][int]$MaxPerVideoSeconds = 0,
+    [ValidateRange(0,60)][int]$StartupGraceSeconds = 2,
     [switch]$UseVlcSnapshots,
     [switch]$GdiFullscreen,
     [int]$VlcStartupTimeoutSeconds = 10,
@@ -34,6 +40,13 @@ function Start-VideoBatch {
   if (-not (Get-Command vlc -ErrorAction SilentlyContinue)) { Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH."; throw "VLC missing." }
   Test-FolderWritable -Folder $SaveFolder | Out-Null
 
+  # Resolve processed log path and read processed/resume set (P0)
+  $processedLog = Get-ProcessedLogPath -SaveFolder $SaveFolder -Override $ProcessedLogPath
+  $processedSet = Read-ProcessedSet -Path $processedLog -ResumeFile $ResumeFile
+  if ($processedSet.Count -gt 0) {
+    Write-Message -Level Info -Message ("Resume enabled: {0} item(s) will be skipped based on processed/resume lists." -f $processedSet.Count)
+  }
+
   if ($RunCropper -and [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
     Write-Message -Level Warn -Message "RunCropper was specified but PythonScriptPath is empty. Cropper will be skipped."
   }
@@ -47,9 +60,18 @@ function Start-VideoBatch {
   if (-not $videos) { Write-Message -Level Warn -Message "No videos found under $SourceFolder."; return }
 
   $processedCount = 0
+  $attemptedCount = 0
 
   foreach ($video in $videos) {
-    if ($VideoLimit -gt 0 -and $processedCount -ge $VideoLimit) { break }
+    if ($VideoLimit -gt 0 -and $attemptedCount -ge $VideoLimit) { break }
+
+    # Skip if already processed/per resume list
+    $normPath = Resolve-VideoPath -Path $video.FullName
+    if ($processedSet.Contains($normPath)) {
+      Write-Debug "Skipping already processed: $normPath"
+      continue
+    }
+    $attemptedCount++
 
     $scenePrefix = ('{0}_' -f [IO.Path]::GetFileNameWithoutExtension($video.Name))
 
@@ -63,17 +85,22 @@ function Start-VideoBatch {
     $p = $null
     $snapStats = $null
     $gdiStats  = $null
-    $stopAfter = if ($TimeLimitSeconds -gt 0) { [double]$TimeLimitSeconds } else { 0 }
+    # Prefer MaxPerVideoSeconds (if provided) over TimeLimitSeconds
+    $capSeconds = if ($MaxPerVideoSeconds -gt 0) { [int]$MaxPerVideoSeconds }
+                  elseif ($TimeLimitSeconds -gt 0) { [int]$TimeLimitSeconds }
+                  else { 0 }
+    $stopAfter = [double]$capSeconds
 
     try {
       $p = Start-Vlc -Context $context -VideoPath $video.FullName -SaveFolder $SaveFolder -UseVlcSnapshots:$UseVlcSnapshots -RequestedFps $FramesPerSecond -StopAtSeconds $stopAfter -GdiFullscreen:$GdiFullscreen -StartupTimeoutSeconds $VlcStartupTimeoutSeconds
 
       if ($UseVlcSnapshots) {
-        $waitSeconds = if ($TimeLimitSeconds -gt 0) { [int]$TimeLimitSeconds } else { [int]$context.Config.SnapshotFallbackTimeoutSeconds }
+        $baseWait = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.SnapshotFallbackTimeoutSeconds }
+        $waitSeconds = [int]([Math]::Max(1, $baseWait + [int]$StartupGraceSeconds))
         $snapStats = Wait-ForSnapshotFrames -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -MaxSeconds $waitSeconds
       }
       else {
-        $dur = if ($TimeLimitSeconds -gt 0) { [int]$TimeLimitSeconds } else { [int]$context.Config.GdiCaptureDefaultSeconds }
+        $dur = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.GdiCaptureDefaultSeconds }
         $gdiStats = Invoke-GdiCapture -DurationSeconds $dur -Fps $FramesPerSecond -SaveFolder $SaveFolder -ScenePrefix $scenePrefix
       }
     }
@@ -122,9 +149,10 @@ function Start-VideoBatch {
           Write-Message -Level Warn -Message ("Cropper failed for {0}: {1}" -f $video.FullName, $_.Exception.Message)
         }
       }
+      # Append processed on success
+      Append-Processed -Path $processedLog -VideoPath $video.FullName
+      $processedCount++
     }
-
-    $processedCount++
   }
 
   Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed {1} file(s)" -f ($MyInvocation.MyCommand.Module.Version.ToString()), $processedCount)

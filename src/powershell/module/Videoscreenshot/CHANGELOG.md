@@ -6,6 +6,27 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.0] – 2025-09-07
+
+### Added
+- **Resume & processed logging:**
+  - `Read-ProcessedSet` (Private) to load processed entries and optional resume list.
+  - `Get-ProcessedLogPath` (Private) to resolve default/override log location.
+  - `Append-Processed` (Private) to record successful completions (atomic append).
+  - `Resolve-VideoPath` (Private) to normalize paths for stable comparisons.
+
+- **Advanced timing controls:**
+  - `Start-VideoBatch` accepts `-MaxPerVideoSeconds` and `-StartupGraceSeconds`.
+  - Effective limit is forwarded to VLC via `-StopAtSeconds`; snapshot waits include startup grace.
+
+### Changed
+- `Start-VideoBatch` now skips videos present in processed/resume sets, maintains attempted/processed counts, and emits concise run summaries.
+
+### Notes
+- No breaking changes; defaults match previous behavior when new parameters are omitted.
+
+**SemVer:** Minor.
+
 ## [2.0.0] – 2025-09-07
 
 ### PowerShell
