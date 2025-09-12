@@ -32,7 +32,10 @@ Notes:
 
 Use VLC’s scene snapshot filter to write frames directly to disk:
 
-powershell +Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1 +Start-VideoBatch SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots 
+```powershell
+Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
+Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots
+```
 
 ### Cropper integration
 - When `-RunCropper` is set, the module invokes the Python cropper as:
@@ -46,6 +49,28 @@ Notes:
 - Python resolution order is: -PythonExe (if supplied), otherwise py (Windows launcher, invoked with -3), otherwise python.
 - The cropper receives absolute paths for --folder and --prefix. It should not rely on current working directory.
 - On failure, the module throws with the cropper’s STDERR (and STDOUT when present) to simplify debugging.
+
+### Advanced usage
+
+#### Custom video extensions & preflight video verification
+```powershell
+Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
+  -Start-VideoBatch `
+  -SourceFolder .\videos `
+  -SaveFolder .\shots `
+  -FramesPerSecond 2 `
+  -UseVlcSnapshots `
+  -IncludeExtensions '.mp4','.mkv','.webm' `
+  -VerifyVideos
+```
+* -IncludeExtensions overrides the discovery set (defaults come from module config).
+* -VerifyVideos attempts a lightweight playability check if Test-VideoPlayable is available; otherwise it logs a warning and skips verification.
+
+#### What the cropper flags do
+* --preserve-alpha — consider transparency when trimming borders; useful for PNGs with transparent edges.
+* --ignore-processed — skip images listed in the run’s .processed_images tracking file.
+* --allow-empty — treat an empty input as success (exit code 0).
+See the Python script’s docstring for advanced options: src/python/crop_colours.py.
 
 **Legacy wrapper (still supported)**
 ```powershell
@@ -71,18 +96,18 @@ src/
         Public/
           Start-VideoBatch.ps1          (public entrypoint)
         Private/
-          Logging.ps1                   (Write-Message)
-          IO.Helpers.ps1                (file I/O helpers)
-          Config.ps1                    (Get-DefaultConfig; config defaults)
+          Logging.ps1                   (Write-Message; timestamped logging with stream selection)
+          IO.Helpers.ps1                (file I/O helpers; safe append with retry; folder writability)
+          Config.ps1                    (Get-DefaultConfig; central defaults incl. VideoExtensions, timings, Python pkgs)
           Env.Guards.ps1                (pwsh 7+ guard and env checks)
-          New-RunContext.ps1            (state isolation: build per-run context)
-          PidRegistry.ps1               (PID registry helpers)
+          New-RunContext.ps1            (per-run context: version, config, stats, run GUID)
+          PidRegistry.ps1               (PID registry helpers for child VLC processes)
           Vlc.Process.ps1               (VLC arg building + start/stop)
-          Snapshot.Monitor.ps1          (wait/measure scene snapshots)
-          Gdi.Capture.ps1               (desktop capture path)
-          Cropper.Invoke.ps1            (Python cropper integration)
-          Processed.Log.ps1             (processed/resume file support)
-          Core.Outcome.ps1              (outcome helpers)
+          Snapshot.Monitor.ps1          (wait for snapshot frames; measure throughput & elapsed)
+          Gdi.Capture.ps1               (desktop capture path; GDI+/System.Drawing on Windows)
+          Cropper.Invoke.ps1            (Python cropper integration with optional auto-install of deps)
+          Processed.Log.ps1             (processed/resume file support; TSV logging)
+          Core.Outcome.ps1              (exit-code mapping and run outcome helpers)
         CHANGELOG.md
         README.md
 ```
@@ -97,6 +122,10 @@ src/
 - -UseVlcSnapshots – enable VLC scene snapshot mode; otherwise GDI capture is used
 - -GdiFullscreen – when using GDI, request fullscreen/top-most playback
 - -VlcStartupTimeoutSeconds – timeout for VLC to initialize
+- -RunCropper – after capture, run the Python cropper over the output images
+- -PythonScriptPath – path to crop_colours.py when using -RunCropper
+- -PythonExe – optional Python interpreter to use (defaults to py launcher or python)
+- -NoAutoInstall – disable automatic installation of missing Python packages (see below)
 - -TimeLimitSeconds – per-video time cap for playback/capture (0 = no cap)
 - -VideoLimit – limit how many videos to process in this run (0 = all)
 - **Resume / processed logging (P0)**
@@ -125,9 +154,25 @@ Start-VideoBatch `
 ```
 ## Requirements
 - PowerShell 7.0+ (PSEdition Core, a.k.a. pwsh) — Windows PowerShell 5.1 is not supported as of v2.0.0.
-- VLC (`vlc.exe`) on PATH
-- Python only needed when running the cropper.
+- VLC 3.x+ on PATH (vlc.exe) — snapshot mode is cross-platform where VLC is available.
+- Python 3.8+ only needed when running the cropper.
+- GDI capture is Windows-only (uses GDI+/System.Drawing). Prefer VLC snapshot mode on non-Windows systems
+### Cropper dependencies & auto-install
+When -RunCropper is used, the module preflights Python and required packages for the default cropper:
+
+- Packages (configurable):
+  - opencv-python — image I/O/decoding/encoding and basic pixel ops used for border trimming
+  - numpy — efficient array operations supporting crop calculations
+- Source of truth: Get-DefaultConfig().Python.RequiredPackages
+
+If any package is missing, the module automatically installs them via python -m pip install by default.
+- To disable this behavior, pass -NoAutoInstall. Missing packages will then raise a clear error with a suggested pip command.
+
+> Tip: You can change the required package list by editing Config.ps1 (Python.RequiredPackages). This keeps the PowerShell code free of hard-coded package names.
+
+> Note: Stdout/stderr from the Python process are captured for diagnostics. For advanced control over cropping arguments, adjust the Python script directly (the default integration uses safe batch flags: `--skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha`).
 - GDI capture currently targets Windows (uses GDI+/System.Drawing); VLC snapshot mode is cross-platform where VLC is available.
+> See also the docstring in src/python/crop_colours.py for a full list of cropper flags, behaviors, and troubleshooting notes.
 ### If you see a version error
 The script/module will refuse to run under Windows PowerShell (5.1/Desktop).
 Install PowerShell 7+ and re-run using pwsh.
@@ -139,9 +184,19 @@ On Windows (example):
 ## Troubleshooting
 - “VLC not found”: ensure `vlc --version` runs in the same session.
 - “Module not found”: verify the path to `Videoscreenshot.psd1` when importing the module manually.
+- “Cropper failed due to missing packages”: by default, the module tries to install them. If you used -NoAutoInstall, install manually with python -m pip install <packages> or remove the switch.
 - “Resume/processed not working”: the module records lines to `<SaveFolder>\.processed_videos.txt`
   via `Write-ProcessedLog`. `Start-VideoBatch` also honors `-ResumeFile` by skipping items up to that file
 
+### GDI-specific tips
+- Ensure an interactive desktop session is active (RDP/minimized/locked screens can interfere).
+- Prefer the Primary display; multi-monitor/VM environments may vary in behavior.
+- If GDI capture is unreliable, try VLC snapshot mode (-UseVlcSnapshots) which is less dependent on desktop state.
+
+## Performance tips
+- For large image sets, tune the cropper’s --max-workers (I/O-bound workloads often benefit up to the number of cores; start modestly).
+- Place -SaveFolder on a fast local SSD to reduce write bottlenecks.
+- Use -VideoLimit for quick smoke tests before running the full batch.
 ---
 
 For module history, see this folder’s `CHANGELOG.md`. For repository-wide changes, see the root `CHANGELOG.md`.

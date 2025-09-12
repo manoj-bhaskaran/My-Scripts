@@ -6,6 +6,42 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.5] – 2025-09-12
+### Added
+- **New FPS detection helper**: `Get-VideoFps` (ffprobe → Windows Shell fallback) with robust parsing of fractions/decimals and warnings on fallback.
+- **Batch entrypoint options**: `Start-VideoBatch` now supports `-VerifyVideos` (playability probe when helper is present) and `-IncludeExtensions` (override discovery set).
+- **Logging options**: `Write-Message` gains `-Quiet` (suppress Info) and `-LogFile` (append to file).
+- **Folder writability**: `Test-FolderWritable -SkipCreate` to test permissions without creating the directory.
+- **Cropper preflight**: `Invoke-Cropper` auto-installs missing Python packages from `Config.Python.RequiredPackages` (disable with `-NoAutoInstall`).
+
+### Changed
+- **VLC orchestration (Private/Vlc.Process.ps1)**  
+  - `Start-Vlc` validates inputs (`VideoPath` is a file; `SaveFolder` is a directory) and assembles args in a documented order (media → mode → base → extras).  
+  - Config-aware defaults: precedence is built-in < `Context.Config.Vlc` (e.g., `BaseArgs`, `Scene.Format`) < explicit params.  
+  - `Get-VlcArgsSnapshot` enforces `-SceneFormat` via `ValidateSet('png','jpg','jpeg')` and logs computed `--scene-ratio`.
+  - `Start-VlcProcess` debugs fully quoted arguments and clarifies thread-safe buffering.
+- **GDI capture (Private/Gdi.Capture.ps1)**  
+  - Safer monitor selection (Primary → first screen; clear error if none) and save-retry with linear backoff. Richer inline comments.
+- **Video playability (Private/Video.Validate.ps1)**  
+  - On non-zero exit, capture and include `stderr` in debug output; comment documents the 1 s probe choice.
+- **Batch entrypoint (Public/Start-VideoBatch.ps1)**  
+  - Expanded comment-based help with examples and dependency notes.  
+  - Pre-validate cropper inputs; improved diagnostics (achieved FPS when available; post-capture fallbacks).  
+  - Clarified capture budget precedence: `MaxPerVideoSeconds` > `TimeLimitSeconds`.
+
+### Documentation
+- **README.md**  
+  - Advanced examples for `-IncludeExtensions`/`-VerifyVideos`.  
+  - Requirements clarified (VLC 3.x+, Python 3.8+; GDI is Windows-only).  
+  - Added cropper flag explanations (e.g., `--preserve-alpha`), directory roles, GDI troubleshooting, and performance guidance; cross-reference to `crop_colours.py` docstring.
+- **Private modules** now include comment-based help and inline comments where previously sparse (Logging, IO, PID registry, Config, Cropper, VLC/GDI/Validate helpers).
+
+### Internal / Maintainability
+- Deterministic module loader with improved error context; verify `Start-VideoBatch` before export.
+- `Config.ps1` documented per key; centralized `Python.RequiredPackages` (opencv-python, numpy).
+
+**Note:** These changes preserve backward compatibility while improving diagnostics, configurability, and first-run experience.
+
 ## [2.1.4] – 2025-09-09
 ### Fixed
 - Resume/processed logging now wired to the existing `Processed.Log.ps1` helpers:

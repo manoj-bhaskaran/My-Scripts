@@ -237,6 +237,13 @@ except Exception:
     logger.setLevel(logging.INFO)
     _using_plog = False
 
+# --- parse_args recursion guard ---------------------------------------------
+# Some tools or wrappers can accidentally re-enter parse_args (e.g., by calling
+# code paths that themselves parse CLI again). To avoid infinite recursion, we
+# keep a very small re-entrancy budget and abort with a clear message if exceeded.
+_PARSE_ARGS_DEPTH = 0
+_PARSE_ARGS_MAX_DEPTH = 1
+
 # Platform-specific file locking imports
 try:
     import fcntl
@@ -301,67 +308,96 @@ def _validate_parameters(args) -> None:
 _save_failure_guidance_shown = False
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Crop uniform borders from images in a folder.")
+    """
+    Parse command-line options for the cropper.
 
-    p.add_argument("--input", required=True, help="Input folder containing images.")
-    p.add_argument("--output", default=None,
-                   help="Output folder (default: <input>/Cropped). Ignored with --in-place.")
-    p.add_argument("--in-place", action="store_true",
-                   help="Overwrite originals in-place (atomic replace).")
-    # Accept both kebab and underscore to match callers
-    p.add_argument("--resume-file", dest="resume_file", default=None,
-                   help="Resume after this image (filename or absolute path).")
-    p.add_argument("--resume_file", dest="resume_file", default=None,
-                   help=argparse.SUPPRESS)
-    p.add_argument("--suffix", default="_cropped",
-                   help="Filename suffix in non in-place mode (default: _cropped).")
-    p.add_argument("--no-suffix", action="store_true",
-                   help="Do not append a suffix in non in-place mode (still non-clobbering).")
-    p.add_argument("--preserve-alpha", action="store_true",
-                   help="Detect transparent borders using alpha channel (for PNG with transparency).")
-    p.add_argument("--alpha-threshold", type=int, default=0,
-                   help="Minimum alpha value to treat as content (default: 0). Increase to ignore semi-transparent edges.")
-    p.add_argument("--max-workers", type=int, default=default_workers(),
-                   help="Thread pool size (I/O-bound default: 2×CPU, capped 64).")
-    p.add_argument("--retry-writes", type=int, default=3,
-                   help="Retries for image writes (cv2.imwrite).")
-    p.add_argument("--skip-bad-images", action="store_true",
-                   help="Skip corrupt/unsupported images instead of failing the run.")
-    p.add_argument("--allow-empty", action="store_true",
-                   help="Treat empty input folder as success (exit 0).")
-    p.add_argument("--recurse", action="store_true",
-                   help="Search subfolders recursively for images.")
-    p.add_argument("--ignore-processed", action="store_true", 
-                   help="Ignore .processed_images tracking and reprocess all files.")
-    p.add_argument("--progress-interval", type=int, default=100,
-                   help="Log progress every N completed images (default: 100).")
-    p.add_argument("--debug", action="store_true", help="Enable debug logging.")
+    Recursion/rewrapping guard:
+      This function defends against accidental recursion/re-entrancy by
+      aborting if called more than once concurrently or recursively.
+    """
+    # ---- recursion guard: break out of accidental re-entrancy --------------
+    global _PARSE_ARGS_DEPTH
+    if _PARSE_ARGS_DEPTH >= _PARSE_ARGS_MAX_DEPTH:
+        # Logger is already initialized above; emit a clear, actionable error.
+        logger.error("Recursive parse_args() invocation detected; aborting to prevent infinite recursion.")
+        raise SystemExit(2)
+    _PARSE_ARGS_DEPTH += 1
+    try:
+        p = argparse.ArgumentParser(description="Crop uniform borders from images in a folder.")
 
-    # Crop tuning (optional, sensible defaults)
-    p.add_argument("--low-threshold", type=int, default=5,
-                   help="Pixel values <= low-threshold treated as 'black' border.")
-    p.add_argument("--high-threshold", type=int, default=250,
-                   help="Pixel values >= high-threshold treated as 'white' border.")
-    p.add_argument("--min-area", type=int, default=256,
-                   help="Minimum content area (pixels) required to accept a crop bbox.")
-    p.add_argument("--padding", type=int, default=2,
-                   help="Extra pixels to include around detected content (clamped).")
+        p.add_argument("--input", required=True, help="Input folder containing images.")
+        p.add_argument("--output", default=None,
+                       help="Output folder (default: <input>/Cropped). Ignored with --in-place.")
+        p.add_argument("--in-place", action="store_true",
+                       help="Overwrite originals in-place (atomic replace).")
+        # Accept both kebab and underscore to match callers
+        p.add_argument("--resume-file", dest="resume_file", default=None,
+                       help="Resume after this image (filename or absolute path).")
+        p.add_argument("--resume_file", dest="resume_file", default=None,
+                       help=argparse.SUPPRESS)
+        p.add_argument("--suffix", default="_cropped",
+                       help="Filename suffix in non in-place mode (default: _cropped).")
+        p.add_argument("--no-suffix", action="store_true",
+                       help="Do not append a suffix in non in-place mode (still non-clobbering).")
+        p.add_argument("--preserve-alpha", action="store_true",
+                       help="Detect transparent borders using alpha channel (for PNG with transparency).")
+        p.add_argument("--alpha-threshold", type=int, default=0,
+                       help="Minimum alpha value to treat as content (default: 0). Increase to ignore semi-transparent edges.")
+        p.add_argument("--max-workers", type=int, default=default_workers(),
+                       help="Thread pool size (I/O-bound default: 2×CPU, capped 64).")
+        p.add_argument("--retry-writes", type=int, default=3,
+                       help="Retries for image writes (cv2.imwrite).")
+        p.add_argument("--skip-bad-images", action="store_true",
+                       help="Skip corrupt/unsupported images instead of failing the run.")
+        p.add_argument("--allow-empty", action="store_true",
+                       help="Treat empty input folder as success (exit 0).")
+        p.add_argument("--recurse", action="store_true",
+                       help="Search subfolders recursively for images.")
+        p.add_argument("--ignore-processed", action="store_true", 
+                       help="Ignore .processed_images tracking and reprocess all files.")
+        p.add_argument("--progress-interval", type=int, default=100,
+                       help="Log progress every N completed images (default: 100).")
+        p.add_argument("--debug", action="store_true", help="Enable debug logging.")
 
-    args = p.parse_args(argv)
+        # Crop tuning (optional, sensible defaults)
+        p.add_argument("--low-threshold", type=int, default=5,
+                       help="Pixel values <= low-threshold treated as 'black' border.")
+        p.add_argument("--high-threshold", type=int, default=250,
+                       help="Pixel values >= high-threshold treated as 'white' border.")
+        p.add_argument("--min-area", type=int, default=256,
+                       help="Minimum content area (pixels) required to accept a crop bbox.")
+        p.add_argument("--padding", type=int, default=2,
+                       help="Extra pixels to include around detected content (clamped).")
 
-    _validate_parameters(args)
-     # Configure logging level for both backends
-    if _using_plog:
-        if args.debug:
+        args = p.parse_args(argv)
+
+        # Validate parsed values and set logger level
+        _validate_parameters(args)
+        if _using_plog:
+            if args.debug:
+                try:
+                    logger.setLevel("DEBUG")  # plog string-based levels
+                except Exception:
+                    pass  # Ignore if plog doesn't support setLevel
+        else:
+            logger.setLevel(logging.DEBUG if args.debug else logging.INFO)
+
+        # Debug-mode environment/version diagnostics
+        # Helps confirm Python and library versions at runtime when investigating issues.
+        if getattr(args, "debug", False):
             try:
-                logger.setLevel("DEBUG")  # plog string-based levels
-            except Exception:
-                pass  # Ignore if plog doesn't support setLevel
-    else:
-        logger.setLevel(logging.DEBUG if args.debug else logging.INFO)
+                import platform
+                py_ver = platform.python_version()
+                cv2_ver = getattr(cv2, "__version__", "?")
+                np_ver  = getattr(np, "__version__", "?")
+                logger.debug("Runtime versions: Python=%s; OpenCV(cv2)=%s; NumPy=%s", py_ver, cv2_ver, np_ver)
+            except Exception as e:
+                logger.debug("Failed to emit runtime version info: %s", e)
 
-    return args
-
+        return args
+    finally:
+        # Always decrement the recursion counter to avoid false positives on next call.
+        _PARSE_ARGS_DEPTH = max(0, _PARSE_ARGS_DEPTH - 1)
 
 # --- Image & crop helpers ----------------------------------------------------
 

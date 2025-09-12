@@ -1,9 +1,49 @@
 <#
-.SYNOPSIS
-Entry point for batch processing (back-compat wrapper around the old script’s parameters).
-.DESCRIPTION
-Implements resume & processed logging, advanced timing controls, and full pipeline wiring.
-#>
++.SYNOPSIS
++Entry point for batch video frame capture and optional cropping.
++
++.DESCRIPTION
++Runs VLC-based snapshot capture (or GDI capture) over videos discovered under -SourceFolder,
++writes frames to -SaveFolder, optionally resumes using processed/resume lists, and can run
++the Python cropper over the produced frames. This is the primary public entrypoint; helpers
++throw on failure and this function owns user-facing messages.
++
++.PARAMETER SourceFolder
++Folder to search for input videos (recursive).
++.PARAMETER SaveFolder
++Destination for frame files.
++.PARAMETER FramesPerSecond
++Target FPS for capture (1–60).
++.PARAMETER TimeLimitSeconds
++Legacy per-video time budget (seconds). Prefer -MaxPerVideoSeconds.
++.PARAMETER VideoLimit
++Process at most this many videos (0 = no limit).
++.PARAMETER ProcessedLogPath
++TSV log used for resume/skip; auto-located in SaveFolder when not provided.
++.PARAMETER ResumeFile
++Optional file path/name to resume after.
++.PARAMETER MaxPerVideoSeconds
++Hard cap per video (seconds). Overrides TimeLimitSeconds when > 0.
++.PARAMETER StartupGraceSeconds
++Extra seconds added to snapshot wait to absorb VLC startup.
++.PARAMETER UseVlcSnapshots
++Use VLC scene snapshots; otherwise use GDI capture.
++.PARAMETER GdiFullscreen
++With GDI capture, request fullscreen/top-most playback.
++.PARAMETER VlcStartupTimeoutSeconds
++Timeout for VLC process to initialize.
++.PARAMETER RunCropper
++Run the Python cropper after capture completes.
++.PARAMETER PythonScriptPath
++Path to crop_colours.py (required when -RunCropper).
++.PARAMETER PythonExe
++Python interpreter to use (optional; falls back to py/python in helper).
++.PARAMETER ClearSnapshotsBeforeRun
++Delete existing frames with the scene prefix before each video.
++
++.EXAMPLE
++Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper -PythonScriptPath .\src\python\crop_colours.py
++#>
 function Start-VideoBatch {
   [CmdletBinding()]
   param(
@@ -24,11 +64,15 @@ function Start-VideoBatch {
     [switch]$UseVlcSnapshots,
     [switch]$GdiFullscreen,
     [int]$VlcStartupTimeoutSeconds = 10,
+    # Optional validation / discovery flexibility
+    [switch]$VerifyVideos,
+    [string[]]$IncludeExtensions,
 
     # Pipeline completion parameters
     [switch]$RunCropper,
     [string]$PythonScriptPath,
     [string]$PythonExe,
+    [switch]$NoAutoInstall,
     [switch]$ClearSnapshotsBeforeRun
   )
 
@@ -40,9 +84,26 @@ function Start-VideoBatch {
   $runGuid = [Guid]::NewGuid().ToString('N').Substring(0,8)
   $context = New-VideoRunContext -RequestedFps $FramesPerSecond -SaveFolder $SaveFolder -RunGuid $runGuid
 
-  $mod = $MyInvocation.MyCommand.Module
-  $verString = if ($null -ne $mod) { $mod.Version.ToString() } else { 'dev' }
-  Write-Message -Level Info -Message ("videoscreenshot module v{0} starting (Mode={1}, FPS={2}, SaveFolder=""{3}"")" -f $verString, $mode, $FramesPerSecond, $SaveFolder)
+  # Context contains Version, Config (defaults incl. VideoExtensions), RunGuid, SaveFolder, RequestedFps
+  Write-Message -Level Info -Message ("videoscreenshot module v{0} starting (Mode={1}, FPS={2}, SaveFolder=""{3}"")" -f ($context.Version -as [string]), $mode, $FramesPerSecond, $SaveFolder)
+
+  # Optional cropper pre-validation (fail fast with clear diagnostics)
+  if ($RunCropper) {
+    if ([string]::IsNullOrWhiteSpace($PythonScriptPath)) {
+      Write-Message -Level Warn -Message "RunCropper was specified but PythonScriptPath is empty. Cropper will be skipped."
+    } else {
+      if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
+        throw "PythonScriptPath not found: $PythonScriptPath"
+      }
+      if (-not [string]::IsNullOrWhiteSpace($PythonExe)) {
+        try {
+          $null = Get-Command -Name $PythonExe -ErrorAction Stop
+        } catch {
+          throw "Python executable not found or not on PATH: $PythonExe"
+        }
+      }
+    }
+  }
 
   if (-not (Test-Path -LiteralPath $SourceFolder)) {
     Write-Message -Level Error -Message "SourceFolder not found: $SourceFolder"
@@ -70,16 +131,29 @@ function Start-VideoBatch {
     )
   }
 
-  if ($RunCropper -and [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
-    Write-Message -Level Warn -Message "RunCropper was specified but PythonScriptPath is empty. Cropper will be skipped."
+  # If requested, verify videos only when a verifier is available
+  $canVerify = $false
+  if ($VerifyVideos) {
+    if (Get-Command -Name Test-VideoPlayable -ErrorAction SilentlyContinue) {
+      $canVerify = $true
+    } else {
+      Write-Message -Level Warn -Message "VerifyVideos requested but Test-VideoPlayable is not available; skipping verification."
+      $canVerify = $false
+    }
   }
 
   # Initialize PID registry for this run
   $pidFile = Initialize-PidRegistry -Context $context -SaveFolder $SaveFolder -RunGuid $runGuid
   Write-Debug "PID registry: $pidFile"
 
-  # Discover videos
-  $videos = Get-ChildItem -Path (Join-Path $SourceFolder '*') -Recurse -File -Include *.mp4,*.mkv,*.avi,*.mov,*.m4v,*.wmv
+  # Discover videos (configurable extension set via param or config)
+  $exts = if ($IncludeExtensions -and $IncludeExtensions.Count -gt 0) { $IncludeExtensions } else { $context.Config.VideoExtensions }
+  $patterns = $exts | ForEach-Object {
+    $e = $_.Trim()
+    if ($e -notmatch '^\.') { $e = '.' + $e }
+    '*{0}' -f $e
+  }
+  $videos = Get-ChildItem -Path (Join-Path $SourceFolder '*') -Recurse -File -Include $patterns
   if (-not $videos) {
     Write-Message -Level Warn -Message "No videos found under $SourceFolder."
     return
@@ -97,6 +171,23 @@ function Start-VideoBatch {
       Write-Debug "Skipping already processed: $normPath"
       continue
     }
+
+    # Optional: verify video playability before spending time on it
+    if ($canVerify) {
+      try {
+        if (-not (Test-VideoPlayable -Path $video.FullName)) {
+          Write-Message -Level Warn -Message ("Skipping not-playable video: {0}" -f $video.FullName)
+          if (Get-Command -Name Write-ProcessedLog -ErrorAction SilentlyContinue) {
+            Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Skipped' -Reason 'NotPlayable'
+          }
+          continue
+        }
+      } catch {
+        Write-Message -Level Warn -Message ("Video verification error for {0}: {1}" -f $video.FullName, $_.Exception.Message)
+        continue
+      }
+    }
+
     $attemptedCount++
 
     $scenePrefix = ('{0}_' -f [IO.Path]::GetFileNameWithoutExtension($video.Name))
@@ -113,7 +204,8 @@ function Start-VideoBatch {
     $snapStats = $null
     $gdiStats  = $null
 
-    # Prefer MaxPerVideoSeconds (if provided) over TimeLimitSeconds
+    # Compute the per-video cap:
+    # Prefer MaxPerVideoSeconds (explicit) over TimeLimitSeconds (legacy).
     $capSeconds = if ($MaxPerVideoSeconds -gt 0) { [int]$MaxPerVideoSeconds }
                   elseif ($TimeLimitSeconds -gt 0) { [int]$TimeLimitSeconds }
                   else { 0 }
@@ -130,11 +222,11 @@ function Start-VideoBatch {
                      -StartupTimeoutSeconds $VlcStartupTimeoutSeconds
 
       if ($UseVlcSnapshots) {
-        $baseWait   = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.SnapshotFallbackTimeoutSeconds }
+        $baseWait = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.SnapshotFallbackTimeoutSeconds }
         $waitSeconds = [int]([Math]::Max(1, $baseWait + [int]$StartupGraceSeconds))
         $snapStats  = Wait-ForSnapshotFrames -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -MaxSeconds $waitSeconds
       } else {
-        $dur      = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.GdiCaptureDefaultSeconds }
+        $dur = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.GdiCaptureDefaultSeconds }
         $gdiStats = Invoke-GdiCapture -DurationSeconds $dur -Fps $FramesPerSecond -SaveFolder $SaveFolder -ScenePrefix $scenePrefix
       }
     }
@@ -184,22 +276,17 @@ function Start-VideoBatch {
       $processedCount++
     }
   }
-
-  # After capture loop, optionally run the cropper once over the source folder
+  # After capture, optionally run the cropper once over the output images (SaveFolder)
   if ($RunCropper -and -not [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
     try {
-      $crop = Invoke-Cropper -PythonScriptPath $PythonScriptPath `
-                             -PythonExe $PythonExe `
-                             -InputFolder $SourceFolder `
-                             -Debug:($PSBoundParameters.ContainsKey('Debug'))
-      Write-Message -Level Info -Message ("Cropper finished OK (elapsed={0}s, exit={1})" -f $crop.ElapsedSeconds, $crop.ExitCode)
+      $isDebug = $PSBoundParameters.ContainsKey('Debug')
+      $crop = Invoke-Cropper -PythonScriptPath $PythonScriptPath -PythonExe $PythonExe -InputFolder $SaveFolder -NoAutoInstall:$NoAutoInstall -Debug:$isDebug
+      Write-Message -Level Info -Message ("Cropper finished OK (exit={0}). STDERR: {1}" -f $crop.ExitCode, ([string]::IsNullOrWhiteSpace($crop.StdErr) ? '<none>' : $crop.StdErr))
     } catch {
+      # Include as much context as we have
       Write-Message -Level Warn -Message ("Cropper failed: {0}" -f $_.Exception.Message)
     }
   }
 
-  Write-Message -Level Info -Message (
-    "videoscreenshot module v{0} finished — processed {1} file(s)" -f
-    ($MyInvocation.MyCommand.Module.Version.ToString()), $processedCount
-  )
+  Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed {1} file(s)" -f ($MyInvocation.MyCommand.Module.Version.ToString()), $processedCount)
 }

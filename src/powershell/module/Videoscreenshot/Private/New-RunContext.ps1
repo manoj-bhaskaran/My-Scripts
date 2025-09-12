@@ -1,3 +1,16 @@
+<#
+.SYNOPSIS
+Create a per-run context used across helpers instead of module-wide state.
+.DESCRIPTION
+Encapsulates version, configuration defaults, run identifiers, and caller preferences.
+.OUTPUTS
+PSCustomObject with:
+  - Version        : [string] module version
+  - Config         : [hashtable] defaults (e.g., PollIntervalMs, VideoExtensions, timeouts)
+  - RunGuid        : [string] short GUID for the current run
+  - SaveFolder     : [string] destination for output frames
+  - RequestedFps   : [int] nominal target FPS for capture
+#>
 function New-VideoRunContext {
   [CmdletBinding()]
   param(

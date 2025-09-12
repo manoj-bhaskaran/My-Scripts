@@ -1,9 +1,21 @@
-<# 
-  Requires: PowerShell 7+
-  videoscreenshot.ps1 (shim)
-  This thin wrapper preserves the existing CLI entrypoint while the implementation lives
-  in the Videoscreenshot PowerShell module. For full functionality, import the module
-  and call Start-VideoBatch directly.
+<#
+.SYNOPSIS
+Thin wrapper for capturing and (optionally) cropping video screenshots; forwards to the Videoscreenshot module.
+
+.DESCRIPTION
+Maintains legacy CLI compatibility for videoscreenshot.ps1. Imports the Videoscreenshot module and calls
+Start-VideoBatch with translated/forwarded parameters. Prefer using the module directly for new workflows.
+
+.EXAMPLE
+.\videoscreenshot.ps1 -SourceFolder "C:\Videos" -SaveFolder "C:\Screenshots" -FramesPerSecond 2 -UseVlcSnapshots
+
+.EXAMPLE
+# Legacy flag example (mapped to module): runs the cropper step via -RunCropper when using the module directly.
+.\videoscreenshot.ps1 -CropOnly -SourceFolder "C:\ScreenshotsFolder"
+
+.NOTES
+Requires PowerShell 7+ (PSEdition Core). For full details and advanced parameters:
+Get-Help Start-VideoBatch -Full
 #>
 
 [CmdletBinding()]
@@ -11,8 +23,8 @@ param(
   [string]$SourceFolder = (Join-Path $PSScriptRoot 'videos'),
   [string]$SaveFolder   = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Screenshots'),
   [ValidateRange(1,60)][int]$FramesPerSecond = 1,
-  [int]$TimeLimitSeconds = 0,
-  [int]$VideoLimit = 0,
+  [ValidateRange(0,[int]::MaxValue)][int]$TimeLimitSeconds = 0,
+  [ValidateRange(0,[int]::MaxValue)][int]$VideoLimit = 0,
   [switch]$CropOnly,
   # Resume & processed logging (P0)
   [string]$ResumeFile,
@@ -20,15 +32,15 @@ param(
   [string]$PythonScriptPath = (Join-Path (Split-Path $PSScriptRoot -Parent) 'python\crop_colours.py'),
   [string]$PythonExe,
   [switch]$UseVlcSnapshots,
-  [int]$VlcStartupTimeoutSeconds = 10,
+  [ValidateRange(1,300)][int]$VlcStartupTimeoutSeconds = 10,
   [switch]$GdiFullscreen,
   [switch]$Legacy1080p,
   [switch]$ClearSnapshotsBeforeRun,
-  [int]$AutoStopGraceSeconds = 2,
+  [ValidateRange(0,60)][int]$AutoStopGraceSeconds = 2,
   [switch]$DisableAutoStop,
   # New (parity) parameters forwarded to the module
-  [int]$MaxPerVideoSeconds = 0,
-  [int]$StartupGraceSeconds = 2,
+  [ValidateRange(0,86400)][int]$MaxPerVideoSeconds = 0,
+  [ValidateRange(0,60)][int]$StartupGraceSeconds = 2,
   [switch]$Force
 )
 
@@ -117,6 +129,9 @@ foreach ($k in $PSBoundParameters.Keys) {
 $parts = @("videoscreenshot.ps1 is a thin wrapper; prefer: Import-Module …\Videoscreenshot; Start-VideoBatch …")
 if ($translated.Count -gt 0) { $parts += "Translated legacy parameter(s): $($translated -join ', ')" }
 if ($ignored.Count -gt 0)    { $parts += "Ignored unsupported parameter(s): $($ignored -join ', ')" }
+if ($PSBoundParameters.ContainsKey('CropOnly')) {
+  $parts += "Hint: when calling the module directly, use -RunCropper with Start-VideoBatch"
+}
 Write-Warning ($parts -join ' | ')
 
 # Invoke module entrypoint with curated parameter set
