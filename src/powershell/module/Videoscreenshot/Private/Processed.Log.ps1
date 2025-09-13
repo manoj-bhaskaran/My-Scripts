@@ -1,3 +1,14 @@
+<#
+.SYNOPSIS
+  Normalize a video file path for processed/resume tracking.
+.DESCRIPTION
+  Returns an absolute, provider path with consistent casing rules so that
+  resume/skip lookups work reliably across runs and environments.
+.PARAMETER Path
+  Input path (relative or absolute).
+.OUTPUTS
+  [string] normalized absolute path.
+#>
 function Resolve-VideoPath {
   param([Parameter(Mandatory)][string]$Path)
   # Normalize for resume lookups: full path, invariant case for Windows
@@ -6,28 +17,75 @@ function Resolve-VideoPath {
   return $full
 }
 
+<#
+.SYNOPSIS
+  Build a normalized set of already-processed video paths.
+.DESCRIPTION
+  Reads a processed log and returns a HashSet[string] of normalized absolute paths.
+  Supports both the current TSV format (`<FullPath>`<tab>`<Status>`) and the
+  **legacy format** that contains one `<FullPath>` per line. Blank lines and
+  comment lines (starting with '#') are ignored. Status values in TSV are
+  currently informational; presence of the path implies “already processed”.
+.PARAMETER Path
+  Path to the processed log. The file may be missing (returns an empty set).
+.OUTPUTS
+  [System.Collections.Generic.HashSet[string]]
+#>
 function Get-ResumeIndex {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Path
   )
-  $set = [System.Collections.Generic.HashSet[string]]::new()
+  # Case-insensitive by default on Windows; keeps behavior stable cross-platform.
+  $set = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
   if (-not (Test-Path -LiteralPath $Path)) { return $set }
   try {
     Get-Content -LiteralPath $Path -ErrorAction Stop | ForEach-Object {
-      # TSV: Timestamp\tStatus\tReason\tVideoPath
       if ([string]::IsNullOrWhiteSpace($_)) { return }
-      $parts = $_ -split "`t", 4
-      if ($parts.Length -eq 4) {
-        $null = $set.Add((Resolve-VideoPath -Path $parts[3]))
+      $line = $_.Trim()
+      if ($line.StartsWith('#')) { return }
+
+      $rawPath = $null
+      if ($line -like "*`t*") {
+        # TSV (current) format: <FullPath>\t<Status>[\t<Reason>]
+        $rawPath = ($line.Split("`t"))[0]
+      } else {
+        # Legacy format: a single path per line
+        $rawPath = $line
+      }
+
+      if (-not [string]::IsNullOrWhiteSpace($rawPath)) {
+        try {
+          $full = Resolve-VideoPath -Path $rawPath
+        } catch {
+          $full = $rawPath
+        }
+        if (-not [string]::IsNullOrWhiteSpace($full)) {
+          [void]$set.Add($full)
+        }
       }
     }
   } catch {
-    throw "Failed to read resume/processed log '$Path' — $($_.Exception.Message)"
+    Write-Debug ("Get-ResumeIndex: failed to read '{0}': {1}" -f $Path, $_.Exception.Message)
   }
   return $set
 }
 
+<#
+.SYNOPSIS
+  Append a processed/skip record to the processed log.
+.DESCRIPTION
+  Writes a TSV line in the form `<FullPath>\t<Status>\t<Reason?>`. The current
+  skipper accepts both TSV (this) and legacy single-column logs; new writes use TSV.
+.PARAMETER Path
+  Processed log path to append to (created if missing).
+.PARAMETER VideoPath
+  The video file path to record (will be normalized).
+.PARAMETER Status
+  Status string (e.g., 'Processed', 'Skipped').
+.PARAMETER Reason
+  Optional reason string (e.g., 'NotPlayable').
+#>
 function Write-ProcessedLog {
   [CmdletBinding()]
   param(

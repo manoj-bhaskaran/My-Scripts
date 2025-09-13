@@ -43,10 +43,8 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
   python crop_colours.py --input <SourceFolder> --skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha
   ```
   If you call `Start-VideoBatch -Debug`, the module also adds `--debug` to the Python invocation.
-```
 
 Notes:
-- Python resolution order is: -PythonExe (if supplied), otherwise py (Windows launcher, invoked with -3), otherwise python.
 - The cropper receives absolute paths for --folder and --prefix. It should not rely on current working directory.
 - On failure, the module throws with the cropper’s STDERR (and STDOUT when present) to simplify debugging.
 
@@ -71,6 +69,34 @@ Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
 * --ignore-processed — skip images listed in the run’s .processed_images tracking file.
 * --allow-empty — treat an empty input as success (exit code 0).
 See the Python script’s docstring for advanced options: src/python/crop_colours.py.
+
+### Resume / processed logging
+
+The module tracks which videos have been handled so future runs can skip work.
+
+**Supported formats (both accepted):**
+
+* **TSV (current, default for new writes)**  
+  Each line is `<FullPath>\t<Status>[\t<Reason>]`:
+  ```
+  C:\path\to\video1.mp4\tProcessed
+  C:\path\to\video2.mp4\tSkipped\tnot playable
+  ```
+
+* **Legacy (single-column)**  
+  Each line is just the full path:
+  ```
+  C:\path\to\video1.mp4
+  C:\path\to\video2.mp4
+  ```
+
+**Location**
+- Default: `<SaveFolder>\.processed_videos.txt` (override with `-ProcessedLogPath`).
+
+**Behavior**
+- Entries are normalized to absolute provider paths at import time.
+- On Windows, matching is case-insensitive to minimize false mismatches.
+- Mixing TSV and legacy lines in the same file is supported; new writes use TSV.
 
 **Legacy wrapper (still supported)**
 ```powershell
@@ -182,14 +208,12 @@ On Windows (example):
 `+`powershell +winget install --id Microsoft.PowerShell -e +`
 
 ## Troubleshooting
-- “VLC not found”: ensure `vlc --version` runs in the same session.
-- “Module not found”: verify the path to `Videoscreenshot.psd1` when importing the module manually.
-- “Cropper failed due to missing packages”: by default, the module tries to install them. If you used -NoAutoInstall, install manually with python -m pip install <packages> or remove the switch.
-- “Resume/processed not working”: the module records lines to `<SaveFolder>\.processed_videos.txt`
-  via `Write-ProcessedLog`. `Start-VideoBatch` also honors `-ResumeFile` by skipping items up to that file
+- “Resume/processed not working”: the module reads `<SaveFolder>\.processed_videos.txt` and accepts **both**
+  TSV (`<FullPath>\t<Status>[\t<Reason>]`) **and** legacy single-column (`<FullPath>`) lines. Paths are
+  normalized to absolute; on Windows matching is case-insensitive. You can also point to an existing file
+  via `-ProcessedLogPath`. `Start-VideoBatch` honors `-ResumeFile` by skipping items up to that file.
 
 ### GDI-specific tips
-- Ensure an interactive desktop session is active (RDP/minimized/locked screens can interfere).
 - Prefer the Primary display; multi-monitor/VM environments may vary in behavior.
 - If GDI capture is unreliable, try VLC snapshot mode (-UseVlcSnapshots) which is less dependent on desktop state.
 

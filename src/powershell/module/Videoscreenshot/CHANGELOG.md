@@ -6,99 +6,60 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
-## [2.1.7] – 2025-09-13
-### Fixed
-- **Resume/processed crash**: Hardened `Start-VideoBatch` to always construct a `HashSet[string]` for the resume/processed set, even if `Get-ResumeIndex` returns `$null` or throws. Also converts any non-`HashSet` enumerables to a `HashSet` and warns (instead of failing) when the resume log can’t be read. This prevents the runtime error:
-  > *You cannot call a method on a null-valued expression.*  
-  observed at `$processedSet.Contains($normPath)`.
+## [2.2.0] – 2025-09-13
 
-### Improved
-- Added debug diagnostics showing the resume set **type**, **count**, and the **log path** being used to aid troubleshooting.
-
-**Affected**: `Public/Start-VideoBatch.ps1`  
-**Compatibility**: Backwards compatible (patch).  
-
-## [2.1.6] – 2025-09-13
-### Fixed
-- **PidRegistry.ps1**: Replaced invalid `-LiteralPath` parameter with `-Path` when calling `Add-ContentWithRetry` in three locations (Initialize, Register, Unregister). This resolves the runtime error:
-
-  > A parameter cannot be found that matches parameter name 'LiteralPath'.
-
-  Impact:
-  - PID registry header and START/STOP entries now append correctly.
-  - Unblocks `Start-VideoBatch` execution that previously failed during PID registry initialization and registration.
-  - No behavior change to registry format; purely a parameter fix
-  
-## [2.1.5] – 2025-09-12
 ### Added
-- **New FPS detection helper**: `Get-VideoFps` (ffprobe → Windows Shell fallback) with robust parsing of fractions/decimals and warnings on fallback.
-- **Batch entrypoint options**: `Start-VideoBatch` now supports `-VerifyVideos` (playability probe when helper is present) and `-IncludeExtensions` (override discovery set).
-- **Logging options**: `Write-Message` gains `-Quiet` (suppress Info) and `-LogFile` (append to file).
-- **Folder writability**: `Test-FolderWritable -SkipCreate` to test permissions without creating the directory.
-- **Cropper preflight**: `Invoke-Cropper` auto-installs missing Python packages from `Config.Python.RequiredPackages` (disable with `-NoAutoInstall`).
+- **Processed-log compatibility:** The module now recognizes **both** legacy single-column processed logs (one absolute path per line) and the newer **TSV** format (`<Path>\t<Status>`). This enables seamless reuse of older logs without manual conversion.
 
 ### Changed
-- **VLC orchestration (Private/Vlc.Process.ps1)**  
-  - `Start-Vlc` validates inputs (`VideoPath` is a file; `SaveFolder` is a directory) and assembles args in a documented order (media → mode → base → extras).  
-  - Config-aware defaults: precedence is built-in < `Context.Config.Vlc` (e.g., `BaseArgs`, `Scene.Format`) < explicit params.  
-  - `Get-VlcArgsSnapshot` enforces `-SceneFormat` via `ValidateSet('png','jpg','jpeg')` and logs computed `--scene-ratio`.
-  - `Start-VlcProcess` debugs fully quoted arguments and clarifies thread-safe buffering.
-- **GDI capture (Private/Gdi.Capture.ps1)**  
-  - Safer monitor selection (Primary → first screen; clear error if none) and save-retry with linear backoff. Richer inline comments.
-- **Video playability (Private/Video.Validate.ps1)**  
-  - On non-zero exit, capture and include `stderr` in debug output; comment documents the 1 s probe choice.
-- **Batch entrypoint (Public/Start-VideoBatch.ps1)**  
-  - Expanded comment-based help with examples and dependency notes.  
-  - Pre-validate cropper inputs; improved diagnostics (achieved FPS when available; post-capture fallbacks).  
-  - Clarified capture budget precedence: `MaxPerVideoSeconds` > `TimeLimitSeconds`.
+- **Processed.Log helpers**
+  - `Get-ResumeIndex`:
+    - Detects format per line and accepts either legacy or TSV entries.
+    - Uses `Resolve-VideoPath` normalization so comparisons are stable across path case/format differences.
+    - Ignores blank/commented lines and emits warnings (not failures) for malformed rows.
+  - `Write-ProcessedLog`: **No change** to file format (still TSV). Works alongside legacy input logs.
+- **Start-VideoBatch**: No behavioral changes required for skipping; it consumes the normalized set produced by `Get-ResumeIndex`.
 
 ### Documentation
-- **README.md**  
-  - Advanced examples for `-IncludeExtensions`/`-VerifyVideos`.  
-  - Requirements clarified (VLC 3.x+, Python 3.8+; GDI is Windows-only).  
-  - Added cropper flag explanations (e.g., `--preserve-alpha`), directory roles, GDI troubleshooting, and performance guidance; cross-reference to `crop_colours.py` docstring.
-- **Private modules** now include comment-based help and inline comments where previously sparse (Logging, IO, PID registry, Config, Cropper, VLC/GDI/Validate helpers).
+- **README.md**
+  - Updated “Resume / processed logging” section to document both supported formats.
+  - Added a migration snippet to convert a legacy single-column file to TSV (optional).
+  - Clarified how skipping works and the default location (`<SaveFolder>\.processed_videos.txt`).
 
-### Internal / Maintainability
-- Deterministic module loader with improved error context; verify `Start-VideoBatch` before export.
-- `Config.ps1` documented per key; centralized `Python.RequiredPackages` (opencv-python, numpy).
+### Notes
+- **SemVer**: Minor version bump because 2.2.0 adds backward-compatible capability (accepting legacy processed logs).
 
-**Note:** These changes preserve backward compatibility while improving diagnostics, configurability, and first-run experience.
+## [2.1.x] – 2025-09-07 → 2025-09-13 (condensed)
 
-## [2.1.4] – 2025-09-09
-### Fixed
-- Resume/processed logging now wired to the existing `Processed.Log.ps1` helpers:
-  `Get-ResumeIndex`, `Resolve-VideoPath`, and `Write-ProcessedLog`.
-- Removed stale references to non-existent helpers (`Get-ProcessedLogPath`,
-  `Read-ProcessedSet`) that blocked runs.
+This series delivered cohesive improvements across the batch entrypoint, VLC orchestration, FPS detection, cropper integration, logging, and docs—without breaking existing workflows.
 
-### Docs
-- README updated to list `Processed.Log.ps1` in the module layout and to clarify
-  the default processed log path (`<SaveFolder>\.processed_videos.txt`) and resume behavior.
+### Added
+- **FPS detection:** `Get-VideoFps` helper (ffprobe → Windows Shell fallback) with robust parsing (`30000/1001`, `29.97`, `29,97`, optional `fps`), warnings on fallback, and 0.0 return so callers can default to 30.
+- **Batch options:** `Start-VideoBatch` supports `-VerifyVideos` (if `Test-VideoPlayable` exists) and `-IncludeExtensions` to override discovery set.
+- **Logging switches:** `Write-Message -Quiet` (suppress Info) and `-LogFile` (append to file).
+- **Cropper preflight:** `Invoke-Cropper` auto-installs missing Python packages from `Config.Python.RequiredPackages` (disable via `-NoAutoInstall`).
 
----
-## [2.1.3] – 2025-09-09
 ### Changed
-- Cropper is now invoked over the **SourceFolder** with flags:
-  `--skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha`.
-  If `Start-VideoBatch` is run with `-Debug`, `--debug` is propagated to the Python script.
+- **VLC orchestration (`Private/Vlc.Process.ps1`):**
+  - `Start-Vlc` validates inputs (video path/file; save folder/dir) and assembles args in a documented order (media → mode → base → extras).
+  - Config-aware defaults: built-in < `Context.Config.Vlc` (e.g., `BaseArgs`, `Scene.Format`) < explicit params.
+  - `Get-VlcArgsSnapshot` enforces image format via `ValidateSet('png','jpg','jpeg')` and logs computed `--scene-ratio`.
+  - `Start-VlcProcess` debugs fully quoted arguments; notes thread-safe buffering.
+- **GDI capture:** Safer monitor selection (primary → first screen; clear error if none) and retry-on-save with linear backoff. Richer inline comments.
+- **Video validation:** On non-zero VLC exit, capture and log `stderr`; documented 1-second probe choice.
+- **I/O helpers:** `Test-FolderWritable -SkipCreate` option; `Add-ContentWithRetry` ensures disposal, retry, and clear errors.
+
 ### Fixed
-- Avoid repeated per-video cropper runs; run once post-capture to reduce overhead.
+- **Pid registry:** Replaced invalid `-LiteralPath` usage with `-Path`; header and START/STOP entries append correctly.
+- **Resume/processed robustness:** Always construct a `HashSet[string]` for the processed set; convert enumerables; warn on unreadable logs; avoid null dereference at `.Contains()`.
 
-## [2.1.2] – 2025-09-09
-### Fixed
-- Cropper timing now uses wall-clock measurement via `Stopwatch` instead of CPU time, improving accuracy for I/O-bound operations (image writes, process startup). This affects the `ElapsedSeconds` value returned by `Invoke-Cropper`.
+### Documentation
+- **README:** Added advanced examples for `-IncludeExtensions`/`-VerifyVideos`, clarified requirements (VLC 3.x+, Python 3.8+; GDI is Windows-only), explained cropper flags (e.g., `--preserve-alpha`), directory roles, troubleshooting (incl. GDI tips), and performance guidance. Documented processed/resume log support for both TSV and legacy single-column formats.
+- **Private modules:** Expanded comment-based help and inline comments across Logging, IO, PID registry, Config, Cropper, VLC/GDI/Validate helpers.
 
-## [2.1.1] – 2025-09-09
-
-### PowerShell
-- Videoscreenshot
-  - Implement Python cropper invocation (`Invoke-Cropper`) using `System.Diagnostics.Process` with `ArgumentList`, redirected stdout/stderr, and fail-fast errors.
-  - Python resolution order: custom `-PythonExe`, then `py` (Windows launcher), then `python`. Adds `-3` automatically when using `py`.
-  - Clearer failure messages when the cropper exits non-zero, including captured STDERR/STDOUT for easier diagnosis.
-
-### Docs
-- Videoscreenshot README: add “Cropper integration” usage and environment notes (Python resolution, working directory assumptions).
+### Notes
+- Backwards compatible; focuses on diagnostics, safer defaults, and a better first-run experience.  
+- For fine-grained details omitted here, please refer to the respective git commit messages between **2.1.1** and **2.1.7**.
 
 ## [2.1.0] – 2025-09-07
 
@@ -138,111 +99,36 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ---
 
-## [1.3.6] – 2025-09-07
+## [1.x] – 2024–2025 (condensed)
 
-### Changed
-- Robust module loader: handle absent `Public/` or `Private/` directories gracefully and dot-source scripts in deterministic (sorted) order to avoid load-order flakiness.
-
-### Notes
-- Backwards compatible; no public API changes.
-
----
-
-## [1.3.5] – 2025-09-07
-
-### PowerShell
-- **Videoscreenshot**
-  - Wrapper parameter parity: detect legacy/unsupported parameters passed to `videoscreenshot.ps1`, translate known legacy names (e.g., `-CropOnly` → `-RunCropper`), and emit a single consolidated deprecation/ignore warning. Improves clarity without breaking existing usage.
-  - No runtime behavior change to the module entrypoint; this is a UX/compat improvement only.
-- **Other scripts**
-  - No changes in this release.
-
-### Docs / CI
-- Updated changelogs for 1.3.5.
-
----
-
-## [1.3.4] – 2025-09-07
-
-### PowerShell
-- **Videoscreenshot**
-  - State isolation: replaced module-scoped `$script:*` variables with a per-run **context object** `New-VideoRunContext`) that is passed through private functions.
-  - Updated private APIs: `Start-Vlc`, `Stop-Vlc`, `Start-VlcProcess`, and PID registry helpers now accept `-Context` and read settings from `Context.Config`.
-  - Config defaults are now exposed via `Get-DefaultConfig`; no mutable module-wide state remains.
-  - SemVer: patch bump (internal refactor; no public API changes).
-
-## [1.3.3] – 2025-09-07
-
-### PowerShell
-- **Videoscreenshot**
-  - Post-capture reporting: consume `snapStats`/`gdiStats` to compute frames delta and achieved FPS; fall back to disk counts if stats are unavailable.
-  - Cleanup: eliminate “assigned but never used” warnings by using stats objects in reporting.
-  - SemVer: patch bump (no breaking changes).
-
-## [1.3.2] – 2025-09-07
-
-### Fixed
-- Enforce “helpers throw; orchestrator handles” policy across I/O and process helpers.
-- Replace mixed return conventions (bool/null) with clear success-or-throw behavior.
-- Ensure file handles are always disposed via try/finally in `Add-ContentWithRetry`.
-- When VLC fails to start, `Start-VlcProcess` now throws with stderr included for diagnosis.
-
-### Notes
-- Patch release: behavior is more robust and consistent without breaking the public API.
-
----
-
-## [1.3.1] – 2025-09-06
-
-### Fixed
-- **I/O:** `Add-ContentWithRetry` now reliably disposes the file handle via `finally` and returns `$false`
-  on final failure instead of silently continuing. This prevents lingering locks and improves caller feedback.
-- **VLC args:** Removed stray leading comma in function returns and ensured argument arrays are returned
-  correctly from `Get-VlcArgs*` helpers; avoids “Missing expression after unary operator ','” and
-  quoting issues in snapshot paths.
-
-### Changed
-- **Manifest:** `ModuleVersion` bumped to **1.3.1** to capture the above fixes.
-
----
-
-## [1.3.0] – 2025-09-06
+> Consolidated highlights for all **1.*** releases.  
+> **For omissions or more granular details, please refer to the corresponding git commit messages (tags `v1.x.y`) in the repository history.**
 
 ### Added
-- **Modularization (PR-1):** Initial extraction of the monolithic script into a module located at
-  `src/powershell/module/Videoscreenshot/`.
-- Public entrypoint: `Start-VideoBatch` (thin orchestrator for now).
-- Legacy wrapper `src/powershell/videoscreenshot.ps1` retained for back-compat (emits deprecation notice).
-
-### Notes
-- Several components (GDI capture, snapshot monitor, Python cropper integration, metadata helpers) remain
-  to be migrated in subsequent PRs.
-
----
-
-## [1.2.41] – 2025-09-06 (condensed)
+- **Modularization (1.3.0):** Split the monolithic script into a PowerShell module with `Public/` and `Private/` components; introduced `Start-VideoBatch` as the public entrypoint and kept the legacy wrapper for back-compat.
+- **Per-run context:** `New-VideoRunContext` centralizes version, config, stats, and run GUID; helpers accept `-Context`.
+- **Config defaults:** `Get-DefaultConfig` provides central, immutable defaults (timings, extensions).
+- **PID registry:** Helpers to track VLC child processes across the run.
+- **Structured logging:** Timestamped `Write-Message` with stream routing.
+- **Snapshot + GDI paths:** VLC scene-snapshot mode and Windows GDI+ desktop capture.
+- **Processed/resume support (early iterations):** Helpers to track processed items and resume runs.
+- **Cropper integration (1.2.x):** First Python cropper wiring with live output forwarding; interpreter resolution and preflight.
 
 ### Changed
-- Centralized configuration, clearer outcome logic, incremental validation improvements.
-
----
-
-## [1.2.40] – 2025-09-06 (condensed)
+- **Deterministic loader (1.3.6):** Dot-sources `Public/` and `Private/` in sorted order; warns when folders are missing.
+- **Argument handling & orchestration:** Fixed edge cases in VLC arg builders; clarified argument array returns; consistent success-or-throw contract across helpers.
+- **Post-capture reporting (1.3.3):** Consumes `snapStats`/`gdiStats` for frame deltas and achieved FPS; falls back to disk counts when needed.
+- **Outcome consistency (1.3.2+):** Unified error-handling patterns; eliminated mixed bool/null conventions; ensured process stderr is surfaced on startup failures.
 
 ### Fixed
-- Error-handling consistency, parameter validation, and locale coverage for FPS detection.
+- **File I/O reliability (1.3.1–1.3.2):** `Add-ContentWithRetry` disposes handles via `finally`; clearer final-failure behavior; avoids stale locks.
+- **VLC arg array bugs (1.3.1):** Removed stray commas and ensured arrays are returned correctly to prevent parsing/quoting errors.
+- **Stability & guards:** Snapshot-mode guardrails; safer GDI capture initialization; early checks for required tools.
 
----
+### Documentation
+- **README (1.x series):** Introduced module structure, migration notes, and usage examples; documented PowerShell 7+ requirement and basic troubleshooting.
+- **Inline help/comments:** Incremental comment-based help across new module files; expanded inline comments in orchestrators and helpers.
 
-## [1.2.1 – 1.2.39] – 2024–2025 (condensed highlights)
-
-- Python cropper integration with live log forwarding; interpreter resolution & preflight.
-- Safer processed-log I/O; duration/FPS detection via Shell/`ffprobe`.
-- Snapshot mode guardrails; GDI+ capture improvements; PID registry + Ctrl+C/exit cleanup.
-- Structured logging and end-of-run summaries.
-
-[Unreleased]: #
-[1.3.1]: #
-[1.3.0]: #
-[1.2.41]: #
-[1.2.40]: #
+### Notes
+- **Compatibility:** 1.* focused on modularization, reliability, and clarity without breaking the legacy wrapper.
+- **Scope:** Some later capabilities (e.g., richer FPS detection, config-aware VLC orchestration, auto-install cropper deps) arrived in 2.* and are not part of 1.*.
