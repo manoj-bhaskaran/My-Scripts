@@ -205,7 +205,7 @@ function Start-VlcProcess {
   # They execute on ThreadPool threads without a PowerShell runspace and will crash with:
   # "There is no Runspace available to run scripts in this thread."
   # We still redirect streams, but avoid async handlers; on startup failure we read stderr synchronously.
-  $p.EnableRaisingEvents = $true
+  $null = ($p.EnableRaisingEvents = $true)
 
   $start = Get-Date
   # Documentation: we quote/escape here to avoid argument splitting by the host shell.
@@ -306,7 +306,7 @@ function Start-Vlc {
   }
 
   $p = Start-VlcProcess -Context $Context -Arguments $vlcargs -StartupTimeoutSeconds $StartupTimeoutSeconds
-  $null = Register-RunPid -Context $Context -ProcessId $p.Id
+  Register-RunPid -Context $Context -ProcessId $p.Id *> $null
   return $p
 }
 <#

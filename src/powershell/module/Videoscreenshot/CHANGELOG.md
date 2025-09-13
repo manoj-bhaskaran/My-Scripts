@@ -6,6 +6,13 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.2.3] — 2025-09-13
+### Fixed
+- Silence stray console output ("True") during batch runs by redirecting **all** streams from `Register-RunPid` to `$null` inside `Start-Vlc`. This keeps logs clean without altering functionality.
+  - Replaced:
+    - `$null = Register-RunPid -Context $Context -ProcessId $p.Id`
+    + `Register-RunPid -Context $Context -ProcessId $p.Id *> $null`
+    
 ## [2.2.2] – 2025-09-13
 ### Fixed
 - **Stop-Vlc bind error**: `Start-Vlc` no longer leaks the boolean result of `Register-RunPid`, which previously caused `$p` to become `System.Object[]` and broke `Stop-Vlc -Process`. Only a single `Process` object is returned now.
