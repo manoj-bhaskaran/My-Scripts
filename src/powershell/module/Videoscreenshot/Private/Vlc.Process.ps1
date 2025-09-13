@@ -206,11 +206,15 @@ function Start-VlcProcess {
   # "There is no Runspace available to run scripts in this thread."
   # We still redirect streams, but avoid async handlers; on startup failure we read stderr synchronously.
   $null = ($p.EnableRaisingEvents = $true)
+  Write-Debug ("TRACE Start-VlcProcess: EnableRaisingEvents={0}" -f $p.EnableRaisingEvents
 
   $start = Get-Date
   # Documentation: we quote/escape here to avoid argument splitting by the host shell.
   Write-Debug ("Starting VLC with args: {0}" -f $psi.Arguments)
-  $null = $p.Start()
+  Write-Debug 'TRACE Start-VlcProcess: about to call p.Start()'
+  $startResult = $p.Start()
+  Write-Debug ("TRACE Start-VlcProcess: p.Start() returned: {0}" -f $startResult)
+  $null = $startResult
   $deadline = $start.AddSeconds([int]$StartupTimeoutSeconds)
   # Simplicity-over-complexity: polling watchdog keeps import-time logic straightforward.
   while ((Get-Date) -lt $deadline) {
@@ -306,7 +310,12 @@ function Start-Vlc {
   }
 
   $p = Start-VlcProcess -Context $Context -Arguments $vlcargs -StartupTimeoutSeconds $StartupTimeoutSeconds
-  Register-RunPid -Context $Context -ProcessId $p.Id
+  Write-Debug 'TRACE Start-Vlc: calling Register-RunPid'
+  $regResult = Register-RunPid -Context $Context -ProcessId $p.Id
+  $regType = if ($null -ne $regResult) { $regResult.GetType().FullName } else { '<null>' }
+  $regVal  = if ($null -ne $regResult) { $regResult } else { '<null>' }
+  Write-Debug ("TRACE Start-Vlc: Register-RunPid returned: type={0} value={1}" -f $regType, $regVal)
+  $null = $regResult
   return $p
 }
 <#

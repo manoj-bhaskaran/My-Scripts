@@ -6,6 +6,16 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.4.5] - 2025-09-13
+### Fixed
+- Added precise debug sentinels and output sinking to trace/suppress stray `True` emissions during VLC startup.
+  - `Start-VlcProcess`: log before/after `p.Start()`; sink the boolean return explicitly.
+  - `Start-Vlc`: log before/after `Register-RunPid`; capture/sink any return value.
+- Minor debug for `EnableRaisingEvents` state to aid correlation in logs.
+
+### Notes
+- Run with `-Debug` to see `TRACE` lines that pinpoint the exact source if `True` still appears.
+
 ## [2.2.4] - 2025-09-13
 
 ### Fixed
