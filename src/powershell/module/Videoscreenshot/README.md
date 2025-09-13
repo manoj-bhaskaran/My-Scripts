@@ -44,6 +44,15 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
   ```
   If you call `Start-VideoBatch -Debug`, the module also adds `--debug` to the Python invocation.
 
+#### Crop-only mode
+Run the cropper without taking screenshots:
+```powershell
+Start-VideoBatch -CropOnly -SaveFolder .\shots -PythonScriptPath .\src\python\crop_colours.py
+```
+Notes:
+- `-CropOnly` ignores capture-related parameters (e.g., `-UseVlcSnapshots`, `-TimeLimitSeconds`); a warning lists any that were supplied.
+- The cropper operates on images under `-SaveFolder`.
+
 Notes:
 - The cropper receives absolute paths for --folder and --prefix. It should not rely on current working directory.
 - On failure, the module throws with the cropper’s STDERR (and STDOUT when present) to simplify debugging.

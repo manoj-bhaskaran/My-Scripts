@@ -10,7 +10,7 @@ Start-VideoBatch with translated/forwarded parameters. Prefer using the module d
 .\videoscreenshot.ps1 -SourceFolder "C:\Videos" -SaveFolder "C:\Screenshots" -FramesPerSecond 2 -UseVlcSnapshots
 
 .EXAMPLE
-# Legacy flag example (mapped to module): runs the cropper step via -RunCropper when using the module directly.
+# Legacy flag example (now maps to module -CropOnly): runs only the cropper over images in the folder.
 .\videoscreenshot.ps1 -CropOnly -SourceFolder "C:\ScreenshotsFolder"
 
 .NOTES
@@ -75,8 +75,6 @@ Import-Module $modulePs1 -Force -ErrorAction Stop
 # Build wrapper → module parameter forwarding with parity checks
 $sbParams = (Get-Command Start-VideoBatch -ErrorAction Stop).Parameters.Keys
 $renameMap = @{
-  # legacy → module
-  'CropOnly'            = 'RunCropper'
   # legacy grace → current module param
   'AutoStopGraceSeconds' = 'StartupGraceSeconds'
 }
@@ -125,13 +123,20 @@ foreach ($k in $PSBoundParameters.Keys) {
   }
 }
 
+# Legacy compatibility: when -CropOnly is used and the user passed -SourceFolder as
+# the images directory (but not -SaveFolder), treat SourceFolder as SaveFolder.
+if ($PSBoundParameters.ContainsKey('CropOnly') -and
+    $PSBoundParameters.ContainsKey('SourceFolder') -and
+    -not $PSBoundParameters.ContainsKey('SaveFolder')) {
+  $forward['SaveFolder'] = $SourceFolder
+  # Optional trace note for the warning below
+  $null = $translated.Add('SourceFolder->SaveFolder (CropOnly)')
+}
 # Emit a single, clear warning about deprecation + parameter handling
 $parts = @("videoscreenshot.ps1 is a thin wrapper; prefer: Import-Module …\Videoscreenshot; Start-VideoBatch …")
 if ($translated.Count -gt 0) { $parts += "Translated legacy parameter(s): $($translated -join ', ')" }
 if ($ignored.Count -gt 0)    { $parts += "Ignored unsupported parameter(s): $($ignored -join ', ')" }
-if ($PSBoundParameters.ContainsKey('CropOnly')) {
-  $parts += "Hint: when calling the module directly, use -RunCropper with Start-VideoBatch"
-}
+if ($PSBoundParameters.ContainsKey('CropOnly')) { $parts += "Hint: module equivalent is -CropOnly (not -RunCropper)" }
 Write-Warning ($parts -join ' | ')
 
 # Invoke module entrypoint with curated parameter set

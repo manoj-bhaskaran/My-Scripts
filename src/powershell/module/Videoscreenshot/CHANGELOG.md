@@ -6,112 +6,49 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
-## [2.2.8] - 2025-09-13
-
-### Fixed
-- Eliminated stray `True` values leaking to the pipeline during batch runs by explicitly sinking return values from helper calls in **Start-VideoBatch**:
-  - `Write-ProcessedLog`, `Stop-Vlc`, `Unregister-RunPid`, and final `Write-Message` now assign outputs to `$null`.
-- Replaced unsafe null-propagation patterns in TRACE logs with explicit `$null` checks to avoid
-  `InvalidOperation: You cannot call a method on a null-valued expression`.
+## [2.3.0] - 2025-09-13
+### Added
+- `Start-VideoBatch`: new `-CropOnly` mode to run the Python cropper over `-SaveFolder` **without** performing any screenshot capture.
+- `Start-VideoBatch` warns and ignores capture-related parameters when `-CropOnly` is used.
+- README: documented crop-only usage.
 
 ### Changed
-- Added granular TRACE diagnostics around `Wait-ForSnapshotFrames`/`Invoke-GdiCapture` and lifecycle points
-  in **Start-VideoBatch** to pinpoint future emitters without affecting normal output.
-- Ensured the entrypoint returns no pipeline output under normal operation (use `-Debug` to view traces).
-
-### Notes
-- Patch release; no breaking changes to parameters or behavior.
-
-## [2.2.7] - 2025-09-13
-### Fixed
-- Suppressed stray `True` emission during batch runs by capturing and sinking `Unregister-RunPid` return value in `Start-VideoBatch`.
-- Ensured `Write-ProcessedLog` calls do not spill to the success stream.
-- Made `Start-VideoBatch` explicitly return no output to avoid last-expression leakage.
-
-### Diagnostics
-- Added TRACE debug line to log `Unregister-RunPid` return type/value for proof in troubleshooting.
-
-## [2.2.6] - 2025-09-13
-### Fixed
-- Added precise “leaving” TRACE sentinels before returns in `Start-VlcProcess` and `Start-Vlc` to bracket output and identify external emitters of stray `True`.
-- Continued to explicitly sink any incidental boolean outputs from internal calls.
-
-### Notes
-- If a bare `True` prints after `TRACE Start-Vlc: leaving; returning Process Id=...`, it’s originating in the caller (e.g., `Start-VideoBatch`), not `Vlc.Process`.
-
-## [2.2.5] - 2025-09-13
-### Fixed
-- Added precise debug sentinels and output sinking to trace/suppress stray `True` emissions during VLC startup.
-  - `Start-VlcProcess`: log before/after `p.Start()`; sink the boolean return explicitly.
-  - `Start-Vlc`: log before/after `Register-RunPid`; capture/sink any return value.
-- Minor debug for `EnableRaisingEvents` state to aid correlation in logs.
-
-### Notes
-- Run with `-Debug` to see `TRACE` lines that pinpoint the exact source if `True` still appears.
-
-## [2.2.4] - 2025-09-13
+- Legacy wrapper `videoscreenshot.ps1`: `-CropOnly` now maps to module `-CropOnly` (previously mapped to `-RunCropper`).
+- Wrapper compatibility: when `-CropOnly` is used and `-SaveFolder` is not provided, `-SourceFolder` is treated as the cropper input folder (mapped to `-SaveFolder`) to mirror legacy behavior.
 
 ### Fixed
-- Suppress stray `True` leaking to the pipeline during VLC startup by making `Register-RunPid` non-emitting and simplifying the call site in `Vlc.Process`. This keeps `Start-VideoBatch` output clean and avoids breaking callers that expect no pipeline output.
+- Avoid confusion in wrapper hint: points users to `-CropOnly` for module parity instead of `-RunCropper`.
 
-### Internal
-- `Register-RunPid` now appends auditable `START` entries via `Add-ContentWithRetry` and intentionally returns no output.
-
-## [2.2.3] — 2025-09-13
-### Fixed
-- Silence stray console output ("True") during batch runs by redirecting **all** streams from `Register-RunPid` to `$null` inside `Start-Vlc`. This keeps logs clean without altering functionality.
-  - Replaced:
-    - `$null = Register-RunPid -Context $Context -ProcessId $p.Id`
-    + `Register-RunPid -Context $Context -ProcessId $p.Id *> $null`
-    
-## [2.2.2] – 2025-09-13
-### Fixed
-- **Stop-Vlc bind error**: `Start-Vlc` no longer leaks the boolean result of `Register-RunPid`, which previously caused `$p` to become `System.Object[]` and broke `Stop-Vlc -Process`. Only a single `Process` object is returned now.
-- **Nested argument arrays**: Removed leading commas from `Get-VlcArgsCommon`, `Get-VlcArgsGdi`, and `Get-VlcArgsSnapshot` returns to avoid wrapping arrays as single elements.
-### Notes
-- No public API changes; pure bug fixes. If you need per-line VLC output mirroring, see 2.2.1 notes on runspace-safe debugging.
-**Affected**: `Private/Vlc.Process.ps1` (and optional defensive tweak in `Start-VideoBatch.ps1`).
-
-## [2.2.1] – 2025-09-13
-### Fixed
-- **Runspace crash during VLC startup**: Eliminated background event handlers that emitted PowerShell `Write-Debug` from non-default threads, which caused:
-  > *There is no Runspace available to run scripts in this thread...*
-  `Start-VlcProcess` now avoids `add_OutputDataReceived`/`add_ErrorDataReceived` and `Begin*ReadLine` calls. Startup still uses a polling watchdog; on non-zero early exit, captured `stderr` is surfaced in the thrown error.
-
-### Changed
-- **Debug output behavior**: `-Debug` no longer mirrors VLC’s per-line live output. Errors continue to include captured `stderr`; info/warn/error logs remain unchanged. Inline comments expanded around startup/stream handling.
-
-### Documentation
-- **README (Troubleshooting)**: Added note about the runspace crash, the fix, and the intentional change to `-Debug` behavior.
-
-**Affected**: `Private/Vlc.Process.ps1`, `README.md`  
-**SemVer**: Patch (2.2.1) – bug fix without public API changes.
-
-## [2.2.0] – 2025-09-13
+## [2.2.0–2.2.8] — 2025-09-13 (condensed roll-up)
 
 ### Added
-- **Processed-log compatibility:** The module now recognizes **both** legacy single-column processed logs (one absolute path per line) and the newer **TSV** format (`<Path>\t<Status>`). This enables seamless reuse of older logs without manual conversion.
+- **Processed-log compatibility (2.2.0):** The module now accepts both legacy single-column logs (one absolute path per line) and TSV (`<Path>\t<Status>`), enabling seamless reuse of older files.
+- **Robust resume index (2.2.0):** `Get-ResumeIndex` detects line format, normalizes paths via `Resolve-VideoPath`, ignores blanks/comments, and warns (doesn’t fail) on malformed rows.
+
+### Fixed
+- **Runspace crash on VLC startup (2.2.1+):** Removed background stdout/stderr event handlers in `Start-VlcProcess` to avoid “There is no Runspace available…”; replaced with a polling watchdog and synchronous `stderr` read on non-zero exit.
+- **Stray `True` in pipeline (2.2.2–2.2.8):** Systematically sunk/redirected success-stream returns in `Start-VideoBatch` and `Vlc.Process`. Captured and nulled outputs from `Write-ProcessedLog`, `Stop-Vlc`, `Unregister-RunPid`, and the final `Write-Message`. Initially redirected `Register-RunPid *> $null`; later refactored `Register-RunPid` to be non-emitting while still appending auditable START lines via `Add-ContentWithRetry`.
+- **Null-safe TRACE logs (2.2.7–2.2.8):** Replaced null-propagation with explicit `$null` checks to prevent `InvalidOperation` (“method on a null-valued expression”).
+- **Argument arrays (2.2.2):** Removed leading commas in `Get-VlcArgs*` returns to prevent nested arrays.
+- **Return shape (2.2.2):** Ensured `Start-Vlc` returns a single `[Diagnostics.Process]` object (no boolean concatenation that could break `Stop-Vlc -Process`).
 
 ### Changed
-- **Processed.Log helpers**
-  - `Get-ResumeIndex`:
-    - Detects format per line and accepts either legacy or TSV entries.
-    - Uses `Resolve-VideoPath` normalization so comparisons are stable across path case/format differences.
-    - Ignores blank/commented lines and emits warnings (not failures) for malformed rows.
-  - `Write-ProcessedLog`: **No change** to file format (still TSV). Works alongside legacy input logs.
-- **Start-VideoBatch**: No behavioral changes required for skipping; it consumes the normalized set produced by `Get-ResumeIndex`.
+- **Debug behavior (2.2.1+):** `-Debug` no longer mirrors VLC per-line live output; errors still surface captured `stderr`. Inline comments expanded around startup/stream handling.
+- **Entrypoint cleanliness (2.2.6–2.2.8):** Added/sustained TRACE sentinels and explicitly returned no pipeline output during normal runs.
+
+### Diagnostics
+- Precise TRACE around `p.Start()` and function exits in `Start-VlcProcess`/`Start-Vlc`.
+- Granular TRACE around `Wait-ForSnapshotFrames` / `Invoke-GdiCapture` and teardown (`Stop-Vlc`, `Unregister-RunPid`) to pinpoint any future emitters.
 
 ### Documentation
-- **README.md**
-  - Updated “Resume / processed logging” section to document both supported formats.
-  - Added a migration snippet to convert a legacy single-column file to TSV (optional).
-  - Clarified how skipping works and the default location (`<SaveFolder>\.processed_videos.txt`).
+- **README:** Documented both processed-log formats and how skipping works; added troubleshooting for the runspace crash and clarified the intentional `-Debug` change.
 
 ### Notes
-- **SemVer**: Minor version bump because 2.2.0 adds backward-compatible capability (accepting legacy processed logs).
+- **SemVer:** 2.2.0 is **Minor** (backward-compatible capability). 2.2.1–2.2.8 are **Patch** releases (bug fixes, diagnostics).  
+- **Affected:** `Private/Vlc.Process.ps1`, `Public/Start-VideoBatch.ps1`, processed-log helpers, `README.md`.  
+- No breaking parameter changes; defaults remain compatible with previous workflows.
 
-## [2.1.x] – 2025-09-07 → 2025-09-13 (condensed)
-
+## [2.1.0–2.1.x] — 2025-09-07 → 2025-09-13 (condensed)
 This series delivered cohesive improvements across the batch entrypoint, VLC orchestration, FPS detection, cropper integration, logging, and docs—without breaking existing workflows.
 
 ### Added
@@ -135,31 +72,12 @@ This series delivered cohesive improvements across the batch entrypoint, VLC orc
 - **Resume/processed robustness:** Always construct a `HashSet[string]` for the processed set; convert enumerables; warn on unreadable logs; avoid null dereference at `.Contains()`.
 
 ### Documentation
-- **README:** Added advanced examples for `-IncludeExtensions`/`-VerifyVideos`, clarified requirements (VLC 3.x+, Python 3.8+; GDI is Windows-only), explained cropper flags (e.g., `--preserve-alpha`), directory roles, troubleshooting (incl. GDI tips), and performance guidance. Documented processed/resume log support for both TSV and legacy single-column formats.
+- **README:** Added advanced examples for `-IncludeExtensions` / `-VerifyVideos`, clarified requirements (VLC 3.x+, Python 3.8+; GDI is Windows-only), explained cropper flags (e.g., `--preserve-alpha`), directory roles, troubleshooting (incl. GDI tips), and performance guidance. Documented processed/resume log support for both TSV and legacy single-column formats.
 - **Private modules:** Expanded comment-based help and inline comments across Logging, IO, PID registry, Config, Cropper, VLC/GDI/Validate helpers.
 
 ### Notes
-- Backwards compatible; focuses on diagnostics, safer defaults, and a better first-run experience.  
-- For fine-grained details omitted here, please refer to the respective git commit messages between **2.1.1** and **2.1.7**.
-
-## [2.1.0] – 2025-09-07
-
-### Added
-- **Resume & processed logging:**
-  - `Read-ProcessedSet` (Private) to load processed entries and optional resume list.
-  - `Get-ProcessedLogPath` (Private) to resolve default/override log location.
-  - `Append-Processed` (Private) to record successful completions (atomic append).
-  - `Resolve-VideoPath` (Private) to normalize paths for stable comparisons.
-
-- **Advanced timing controls:**
-  - `Start-VideoBatch` accepts `-MaxPerVideoSeconds` and `-StartupGraceSeconds`.
-  - Effective limit is forwarded to VLC via `-StopAtSeconds`; snapshot waits include startup grace.
-
-### Changed
-- `Start-VideoBatch` now skips videos present in processed/resume sets, maintains attempted/processed counts, and emits concise run summaries.
-
-### Notes
-- No breaking changes; defaults match previous behavior when new parameters are omitted.
+- Backwards compatible; focuses on diagnostics, safer defaults, and a better first-run experience.
+- For fine-grained details omitted here, see commit messages between **2.1.1** and **2.1.7**.
 
 **SemVer:** Minor.
 

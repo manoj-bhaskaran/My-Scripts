@@ -34,6 +34,8 @@ With GDI capture, request fullscreen/top-most playback.
 Timeout for VLC process to initialize.
 .PARAMETER RunCropper
 Run the Python cropper after capture completes.
+.PARAMETER CropOnly
+Run only the Python cropper over images in -SaveFolder and skip screenshot capture entirely.
 .PARAMETER PythonScriptPath
 Path to crop_colours.py (required when -RunCropper).
 .PARAMETER PythonExe
@@ -80,12 +82,53 @@ function Start-VideoBatch {
   Assert-Pwsh7OrThrow
 
   # Policy: helpers throw; only this function emits user-facing messages.
-  $mode    = ($UseVlcSnapshots ? 'VLC snapshots' : 'GDI+ desktop')
+  $mode    = ($CropOnly ? 'Crop-only' : ($UseVlcSnapshots ? 'VLC snapshots' : 'GDI+ desktop'))
   $runGuid = [Guid]::NewGuid().ToString('N').Substring(0,8)
   $context = New-VideoRunContext -RequestedFps $FramesPerSecond -SaveFolder $SaveFolder -RunGuid $runGuid
 
   # Context contains Version, Config (defaults incl. VideoExtensions), RunGuid, SaveFolder, RequestedFps
   Write-Message -Level Info -Message ("videoscreenshot module v{0} starting (Mode={1}, FPS={2}, SaveFolder=""{3}"")" -f ($context.Version -as [string]), $mode, $FramesPerSecond, $SaveFolder)
+
+  # --- Crop-only fast path ---------------------------------------------------
+  if ($CropOnly) {
+    # Warn about ignored capture-related parameters if supplied
+    $captureParams = @('UseVlcSnapshots','FramesPerSecond','TimeLimitSeconds','MaxPerVideoSeconds',
+                       'GdiFullscreen','VlcStartupTimeoutSeconds','VerifyVideos','IncludeExtensions',
+                       'ClearSnapshotsBeforeRun','VideoLimit','ResumeFile','ProcessedLogPath')
+    $ignored = @()
+    foreach ($n in $captureParams) {
+      if ($PSBoundParameters.ContainsKey($n)) { $ignored += $n }
+    }
+    if ($ignored.Count -gt 0) {
+      Write-Message -Level Warn -Message ("CropOnly: ignoring capture-related parameter(s): {0}" -f ($ignored -join ', '))
+    }
+
+    # Validate inputs for cropper
+    if ([string]::IsNullOrWhiteSpace($PythonScriptPath)) {
+      throw "CropOnly requires -PythonScriptPath pointing to crop_colours.py."
+    }
+    if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
+      throw "PythonScriptPath not found: $PythonScriptPath"
+    }
+    if (-not (Test-Path -LiteralPath $SaveFolder -PathType Container)) {
+      throw "SaveFolder not found (CropOnly expects images here): $SaveFolder"
+    }
+    # Ensure we can write logs if needed (non-fatal if read-only images)
+    Test-FolderWritable -Folder $SaveFolder | Out-Null
+
+    try {
+      $isDebug = $PSBoundParameters.ContainsKey('Debug')
+      $crop = Invoke-Cropper -PythonScriptPath $PythonScriptPath -PythonExe $PythonExe -InputFolder $SaveFolder -NoAutoInstall:$NoAutoInstall -Debug:$isDebug
+      Write-Message -Level Info -Message ("Cropper finished OK (exit={0}). STDERR: {1}" -f $crop.ExitCode, ([string]::IsNullOrWhiteSpace($crop.StdErr) ? '<none>' : $crop.StdErr))
+    } catch {
+      Write-Message -Level Warn -Message ("Cropper failed: {0}" -f $_.Exception.Message)
+      throw
+    }
+
+    $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — crop-only mode" -f ($MyInvocation.MyCommand.Module.Version.ToString()))
+    Write-Debug 'TRACE Start-VideoBatch: leaving (CropOnly)'
+    return
+  }
 
   # Optional cropper pre-validation (fail fast with clear diagnostics)
   if ($RunCropper) {
