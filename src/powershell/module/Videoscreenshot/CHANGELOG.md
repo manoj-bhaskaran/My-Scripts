@@ -6,6 +6,22 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.2.8] - 2025-09-13
+
+### Fixed
+- Eliminated stray `True` values leaking to the pipeline during batch runs by explicitly sinking return values from helper calls in **Start-VideoBatch**:
+  - `Write-ProcessedLog`, `Stop-Vlc`, `Unregister-RunPid`, and final `Write-Message` now assign outputs to `$null`.
+- Replaced unsafe null-propagation patterns in TRACE logs with explicit `$null` checks to avoid
+  `InvalidOperation: You cannot call a method on a null-valued expression`.
+
+### Changed
+- Added granular TRACE diagnostics around `Wait-ForSnapshotFrames`/`Invoke-GdiCapture` and lifecycle points
+  in **Start-VideoBatch** to pinpoint future emitters without affecting normal output.
+- Ensured the entrypoint returns no pipeline output under normal operation (use `-Debug` to view traces).
+
+### Notes
+- Patch release; no breaking changes to parameters or behavior.
+
 ## [2.2.7] - 2025-09-13
 ### Fixed
 - Suppressed stray `True` emission during batch runs by capturing and sinking `Unregister-RunPid` return value in `Start-VideoBatch`.

@@ -239,10 +239,18 @@ function Start-VideoBatch {
       if ($UseVlcSnapshots) {
         $baseWait = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.SnapshotFallbackTimeoutSeconds }
         $waitSeconds = [int]([Math]::Max(1, $baseWait + [int]$StartupGraceSeconds))
+        Write-Debug ("TRACE Start-VideoBatch: about to call Wait-ForSnapshotFrames (MaxSeconds={0}, Prefix={1})" -f $waitSeconds, $scenePrefix)
         $snapStats  = Wait-ForSnapshotFrames -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -MaxSeconds $waitSeconds
+        $snapType = if ($null -ne $snapStats) { $snapStats.GetType().FullName } else { '<null>' }
+        $snapStr  = if ($null -ne $snapStats) { $snapStats.ToString() } else { '<null>' }
+        Write-Debug ("TRACE Start-VideoBatch: Wait-ForSnapshotFrames returned type={0} tostring={1}" -f $snapType, $snapStr)
       } else {
         $dur = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.GdiCaptureDefaultSeconds }
+        Write-Debug ("TRACE Start-VideoBatch: about to call Invoke-GdiCapture (DurationSeconds={0}, FPS={1}, Prefix={2})" -f $dur, $FramesPerSecond, $scenePrefix)
         $gdiStats = Invoke-GdiCapture -DurationSeconds $dur -Fps $FramesPerSecond -SaveFolder $SaveFolder -ScenePrefix $scenePrefix
+        $gdiType = if ($null -ne $gdiStats) { $gdiStats.GetType().FullName } else { '<null>' }
+        $gdiStr  = if ($null -ne $gdiStats) { $gdiStats.ToString() } else { '<null>' }
+        Write-Debug ("TRACE Start-VideoBatch: Invoke-GdiCapture returned type={0} tostring={1}" -f $gdiType, $gdiStr)
       }
     }
     catch {
@@ -251,11 +259,15 @@ function Start-VideoBatch {
     }
     finally {
       if ($p) {
-        Stop-Vlc -Context $context -Process $p
-        # Capture & trace any output from Unregister-RunPid, then sink it.
+        $__stop = Stop-Vlc -Context $context -Process $p
+        $__stopType = if ($null -ne $__stop) { $__stop.GetType().FullName } else { '<null>' }
+        Write-Debug ("TRACE Start-VideoBatch: Stop-Vlc returned type={0}" -f $__stopType)
+        $null = $__stop
+
         $__unreg = Unregister-RunPid -Context $context -ProcessId $p.Id
-        Write-Debug ("TRACE Start-VideoBatch: Unregister-RunPid returned type={0} tostring={1}" `
-                     -f ($__unreg?.GetType().FullName ?? '<null>'), ($__unreg?.ToString() ?? '<null>'))
+        $__unregType = if ($null -ne $__unreg) { $__unreg.GetType().FullName } else { '<null>' }
+        $__unregStr  = if ($null -ne $__unreg) { $__unreg.ToString() } else { '<null>' }
+        Write-Debug ("TRACE Start-VideoBatch: Unregister-RunPid returned type={0} tostring={1}" -f $__unregType, $__unregStr)
         $null = $__unreg
       }
     }
