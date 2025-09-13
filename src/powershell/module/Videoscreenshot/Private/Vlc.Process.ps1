@@ -50,7 +50,7 @@ function Get-VlcArgsCommon {
     $rounded = [int][Math]::Round($StopAtSeconds)
     $vlcargs += @('--stop-time',"$rounded"); Write-Debug "VLC --stop-time=$rounded"
   }
-  ,$vlcargs
+  $vlcargs
 }
 <#
 .SYNOPSIS
@@ -75,7 +75,7 @@ function Get-VlcArgsGdi {
     $uiArgs += [string[]]$Context.Config.Vlc.Gdi.Args
   }
   if ($GdiArgs) { $uiArgs += $GdiArgs }
-  ,$uiArgs
+  $uiArgs
 }
 <#
 .SYNOPSIS
@@ -142,7 +142,7 @@ function Get-VlcArgsSnapshot {
              '--scene-format', $SceneFormat,
              '--scene-ratio',"$ratio")
   if ($SceneArgs) { $sceneArgsList += $SceneArgs }
-  ,$sceneArgsList
+  $sceneArgsList
 }
 
 <#
@@ -306,7 +306,7 @@ function Start-Vlc {
   }
 
   $p = Start-VlcProcess -Context $Context -Arguments $vlcargs -StartupTimeoutSeconds $StartupTimeoutSeconds
-  Register-RunPid -Context $Context -ProcessId $p.Id
+  $null = Register-RunPid -Context $Context -ProcessId $p.Id
   return $p
 }
 <#

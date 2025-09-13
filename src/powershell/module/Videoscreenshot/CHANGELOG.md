@@ -6,6 +6,14 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.2.2] – 2025-09-13
+### Fixed
+- **Stop-Vlc bind error**: `Start-Vlc` no longer leaks the boolean result of `Register-RunPid`, which previously caused `$p` to become `System.Object[]` and broke `Stop-Vlc -Process`. Only a single `Process` object is returned now.
+- **Nested argument arrays**: Removed leading commas from `Get-VlcArgsCommon`, `Get-VlcArgsGdi`, and `Get-VlcArgsSnapshot` returns to avoid wrapping arrays as single elements.
+### Notes
+- No public API changes; pure bug fixes. If you need per-line VLC output mirroring, see 2.2.1 notes on runspace-safe debugging.
+**Affected**: `Private/Vlc.Process.ps1` (and optional defensive tweak in `Start-VideoBatch.ps1`).
+
 ## [2.2.1] – 2025-09-13
 ### Fixed
 - **Runspace crash during VLC startup**: Eliminated background event handlers that emitted PowerShell `Write-Debug` from non-default threads, which caused:
