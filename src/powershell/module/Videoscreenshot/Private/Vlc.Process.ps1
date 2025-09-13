@@ -206,7 +206,7 @@ function Start-VlcProcess {
   # "There is no Runspace available to run scripts in this thread."
   # We still redirect streams, but avoid async handlers; on startup failure we read stderr synchronously.
   $null = ($p.EnableRaisingEvents = $true)
-  Write-Debug ("TRACE Start-VlcProcess: EnableRaisingEvents={0}" -f $p.EnableRaisingEvents
+  Write-Debug ("TRACE Start-VlcProcess: EnableRaisingEvents={0}" -f $p.EnableRaisingEvents)
 
   $start = Get-Date
   # Documentation: we quote/escape here to avoid argument splitting by the host shell.
