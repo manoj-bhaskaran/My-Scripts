@@ -208,10 +208,18 @@ On Windows (example):
 `+`powershell +winget install --id Microsoft.PowerShell -e +`
 
 ## Troubleshooting
+- “VLC not found”: ensure `vlc --version` runs in the same session.
+- “Module not found”: verify the path to `Videoscreenshot.psd1` when importing the module manually.
+- “Cropper failed due to missing packages”: by default, the module tries to install them. If you used -NoAutoInstall, install manually with python -m pip install <packages> or remove the switch.
 - “Resume/processed not working”: the module reads `<SaveFolder>\.processed_videos.txt` and accepts **both**
   TSV (`<FullPath>\t<Status>[\t<Reason>]`) **and** legacy single-column (`<FullPath>`) lines. Paths are
   normalized to absolute; on Windows matching is case-insensitive. You can also point to an existing file
   via `-ProcessedLogPath`. `Start-VideoBatch` honors `-ResumeFile` by skipping items up to that file.
+- **Crash: “There is no Runspace available to run scripts in this thread.”**  
+  This was caused by emitting PowerShell debug output from background stream handlers.  
+  Fixed in the next patch release; update to the latest version. As a temporary workaround,
+  run without `-Debug`. Note that, by design, VLC’s stdout/stderr are still captured for errors,
+  but per-line live output from VLC is no longer shown when `-Debug` is used.
 
 ### GDI-specific tips
 - Prefer the Primary display; multi-monitor/VM environments may vary in behavior.

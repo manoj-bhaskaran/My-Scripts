@@ -201,22 +201,16 @@ function Start-VlcProcess {
 
   $p = [Diagnostics.Process]::new()
   $p.StartInfo = $psi
+  # IMPORTANT (Robustness): Do not attach ScriptBlock event handlers for stdout/stderr.
+  # They execute on ThreadPool threads without a PowerShell runspace and will crash with:
+  # "There is no Runspace available to run scripts in this thread."
+  # We still redirect streams, but avoid async handlers; on startup failure we read stderr synchronously.
   $p.EnableRaisingEvents = $true
-
-  $stdoutSb = New-Object Text.StringBuilder
-  $stderrSb = New-Object Text.StringBuilder
-  $outLock = New-Object object
-  $errLock = New-Object object
-  # Maintainability: thread-safe buffering avoids interleaved lines in parallel runs.
-  $p.add_OutputDataReceived({ param($s,$e) if ($e.Data){ [Threading.Monitor]::Enter($outLock); try{ [void]$stdoutSb.AppendLine($e.Data) } finally { [Threading.Monitor]::Exit($outLock) }; Write-Debug $e.Data } })
-  $p.add_ErrorDataReceived( { param($s,$e) if ($e.Data){ [Threading.Monitor]::Enter($errLock);  try{ [void]$stderrSb.AppendLine($e.Data) } finally { [Threading.Monitor]::Exit($errLock)  }; Write-Debug $e.Data } })
 
   $start = Get-Date
   # Documentation: we quote/escape here to avoid argument splitting by the host shell.
   Write-Debug ("Starting VLC with args: {0}" -f $psi.Arguments)
   $null = $p.Start()
-  $p.BeginOutputReadLine()
-  $p.BeginErrorReadLine()
   $deadline = $start.AddSeconds([int]$StartupTimeoutSeconds)
   # Simplicity-over-complexity: polling watchdog keeps import-time logic straightforward.
   while ((Get-Date) -lt $deadline) {
@@ -224,8 +218,10 @@ function Start-VlcProcess {
     Start-Sleep -Milliseconds $Context.Config.PollIntervalMs
   }
   if ($p.HasExited -and $p.ExitCode -ne 0) {
-    $stderrText = $stderrSb.ToString()
-    throw ("VLC startup failed (ExitCode={0}). stderr: {1}" -f $p.ExitCode, $stderrText)
+    # Safe: streams are closed after process exit; read synchronously for diagnostics.
+    $stderrText = ''
+    try { $stderrText = $p.StandardError.ReadToEnd() } catch { }
+    throw ("VLC startup failed (ExitCode={0}). stderr: {1}" -f $p.ExitCode, ($stderrText ?? ''))
   }
   return $p
 }

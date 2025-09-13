@@ -6,6 +6,21 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.2.1] – 2025-09-13
+### Fixed
+- **Runspace crash during VLC startup**: Eliminated background event handlers that emitted PowerShell `Write-Debug` from non-default threads, which caused:
+  > *There is no Runspace available to run scripts in this thread...*
+  `Start-VlcProcess` now avoids `add_OutputDataReceived`/`add_ErrorDataReceived` and `Begin*ReadLine` calls. Startup still uses a polling watchdog; on non-zero early exit, captured `stderr` is surfaced in the thrown error.
+
+### Changed
+- **Debug output behavior**: `-Debug` no longer mirrors VLC’s per-line live output. Errors continue to include captured `stderr`; info/warn/error logs remain unchanged. Inline comments expanded around startup/stream handling.
+
+### Documentation
+- **README (Troubleshooting)**: Added note about the runspace crash, the fix, and the intentional change to `-Debug` behavior.
+
+**Affected**: `Private/Vlc.Process.ps1`, `README.md`  
+**SemVer**: Patch (2.2.1) – bug fix without public API changes.
+
 ## [2.2.0] – 2025-09-13
 
 ### Added
