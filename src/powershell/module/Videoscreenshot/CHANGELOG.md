@@ -6,6 +6,18 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.7] – 2025-09-13
+### Fixed
+- **Resume/processed crash**: Hardened `Start-VideoBatch` to always construct a `HashSet[string]` for the resume/processed set, even if `Get-ResumeIndex` returns `$null` or throws. Also converts any non-`HashSet` enumerables to a `HashSet` and warns (instead of failing) when the resume log can’t be read. This prevents the runtime error:
+  > *You cannot call a method on a null-valued expression.*  
+  observed at `$processedSet.Contains($normPath)`.
+
+### Improved
+- Added debug diagnostics showing the resume set **type**, **count**, and the **log path** being used to aid troubleshooting.
+
+**Affected**: `Public/Start-VideoBatch.ps1`  
+**Compatibility**: Backwards compatible (patch).  
+
 ## [2.1.6] – 2025-09-13
 ### Fixed
 - **PidRegistry.ps1**: Replaced invalid `-LiteralPath` parameter with `-Path` when calling `Add-ContentWithRetry` in three locations (Initialize, Register, Unregister). This resolves the runtime error:

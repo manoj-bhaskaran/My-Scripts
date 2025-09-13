@@ -121,14 +121,29 @@ function Start-VideoBatch {
   } else {
     $ProcessedLogPath
   }
-  $processedSet = Get-ResumeIndex -Path $processedLog
+  # Always produce a usable HashSet for O(1) membership checks; log diagnostics.
+  try {
+    $processedSet = Get-ResumeIndex -Path $processedLog
+  } catch {
+    Write-Message -Level Warn -Message ("Resume index read failed ('{0}'): {1}" -f $processedLog, $_.Exception.Message)
+    $processedSet = $null
+  }
+  if ($null -eq $processedSet) {
+    $processedSet = [System.Collections.Generic.HashSet[string]]::new()
+  }
+  if ($processedSet -isnot [System.Collections.Generic.HashSet[string]]) {
+    $tmpSet = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($v in @($processedSet)) {
+      if (-not [string]::IsNullOrWhiteSpace($v)) { $null = $tmpSet.Add($v) }
+    }
+    $processedSet = $tmpSet
+  }
   if (-not [string]::IsNullOrWhiteSpace($ResumeFile)) {
     try { [void]$processedSet.Add((Resolve-VideoPath -Path $ResumeFile)) } catch {}
   }
+  Write-Debug ("Resume/processed set: Type={0}; Count={1}; Log={2}" -f $processedSet.GetType().FullName, $processedSet.Count, $processedLog)
   if ($processedSet.Count -gt 0) {
-    Write-Message -Level Info -Message (
-      "Resume enabled: {0} item(s) will be skipped based on processed/resume lists." -f $processedSet.Count
-    )
+    Write-Message -Level Info -Message ("Resume enabled: {0} item(s) will be skipped based on processed/resume lists." -f $processedSet.Count)
   }
 
   # If requested, verify videos only when a verifier is available
