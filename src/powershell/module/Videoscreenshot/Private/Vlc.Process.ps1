@@ -227,6 +227,7 @@ function Start-VlcProcess {
     try { $stderrText = $p.StandardError.ReadToEnd() } catch { }
     throw ("VLC startup failed (ExitCode={0}). stderr: {1}" -f $p.ExitCode, ($stderrText ?? ''))
   }
+  Write-Debug ("TRACE Start-VlcProcess: leaving; returning Process Id={0}" -f $p.Id)
   return $p
 }
 <#
@@ -316,6 +317,7 @@ function Start-Vlc {
   $regVal  = if ($null -ne $regResult) { $regResult } else { '<null>' }
   Write-Debug ("TRACE Start-Vlc: Register-RunPid returned: type={0} value={1}" -f $regType, $regVal)
   $null = $regResult
+  Write-Debug ("TRACE Start-Vlc: leaving; returning Process Id={0}" -f $p.Id)
   return $p
 }
 <#

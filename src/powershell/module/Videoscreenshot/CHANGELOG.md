@@ -6,7 +6,15 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
-## [2.4.5] - 2025-09-13
+## [2.2.6] - 2025-09-13
+### Fixed
+- Added precise “leaving” TRACE sentinels before returns in `Start-VlcProcess` and `Start-Vlc` to bracket output and identify external emitters of stray `True`.
+- Continued to explicitly sink any incidental boolean outputs from internal calls.
+
+### Notes
+- If a bare `True` prints after `TRACE Start-Vlc: leaving; returning Process Id=...`, it’s originating in the caller (e.g., `Start-VideoBatch`), not `Vlc.Process`.
+
+## [2.2.5] - 2025-09-13
 ### Fixed
 - Added precise debug sentinels and output sinking to trace/suppress stray `True` emissions during VLC startup.
   - `Start-VlcProcess`: log before/after `p.Start()`; sink the boolean return explicitly.
