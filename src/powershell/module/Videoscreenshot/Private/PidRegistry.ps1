@@ -52,6 +52,7 @@ function Initialize-PidRegistry {
 }
 function Register-RunPid {
   [CmdletBinding()]
+  [OutputType([void])]
   param(
     [Parameter(Mandatory)][psobject]$Context,
     [Parameter(Mandatory)][int]$ProcessId
@@ -59,7 +60,8 @@ function Register-RunPid {
   if (-not $Context.PidRegistryPath) { throw "PID registry not initialized." }
   # Append an auditable START entry instead of mutating/removing prior lines.
   $line = ("{0}`tSTART`t{1}" -f (Get-Date -Format o), $ProcessId)
-  Add-ContentWithRetry -Path $Context.PidRegistryPath -Value $line
+  # Be intentionally silent on success; still throw on errors.
+  [void](Add-ContentWithRetry -Path $Context.PidRegistryPath -Value $line -ErrorAction Stop)
 }
 
 <#

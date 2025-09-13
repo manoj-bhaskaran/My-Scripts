@@ -6,6 +6,14 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.2.4] - 2025-09-13
+
+### Fixed
+- Suppress stray `True` leaking to the pipeline during VLC startup by making `Register-RunPid` non-emitting and simplifying the call site in `Vlc.Process`. This keeps `Start-VideoBatch` output clean and avoids breaking callers that expect no pipeline output.
+
+### Internal
+- `Register-RunPid` now appends auditable `START` entries via `Add-ContentWithRetry` and intentionally returns no output.
+
 ## [2.2.3] — 2025-09-13
 ### Fixed
 - Silence stray console output ("True") during batch runs by redirecting **all** streams from `Register-RunPid` to `$null` inside `Start-Vlc`. This keeps logs clean without altering functionality.

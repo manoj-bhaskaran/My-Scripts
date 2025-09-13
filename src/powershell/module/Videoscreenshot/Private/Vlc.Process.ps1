@@ -306,7 +306,7 @@ function Start-Vlc {
   }
 
   $p = Start-VlcProcess -Context $Context -Arguments $vlcargs -StartupTimeoutSeconds $StartupTimeoutSeconds
-  Register-RunPid -Context $Context -ProcessId $p.Id *> $null
+  Register-RunPid -Context $Context -ProcessId $p.Id
   return $p
 }
 <#
