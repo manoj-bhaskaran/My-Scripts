@@ -44,7 +44,7 @@ function Initialize-PidRegistry {
   }
   New-Item -ItemType File -Path $path -Force | Out-Null
   $header = "# videoscreenshot PID registry`n# RunGuid=$RunGuid`n# Created=$(Get-Date -Format o)`n"
-  Add-ContentWithRetry -LiteralPath $path -Value $header
+  Add-ContentWithRetry -Path $path -Value $header
 
   # Attach to the context so other helpers can append without recomputing the path.
   $Context.PidRegistryPath = $path
@@ -59,7 +59,7 @@ function Register-RunPid {
   if (-not $Context.PidRegistryPath) { throw "PID registry not initialized." }
   # Append an auditable START entry instead of mutating/removing prior lines.
   $line = ("{0}`tSTART`t{1}" -f (Get-Date -Format o), $ProcessId)
-  Add-ContentWithRetry -LiteralPath $Context.PidRegistryPath -Value $line
+  Add-ContentWithRetry -Path $Context.PidRegistryPath -Value $line
 }
 
 <#
@@ -83,5 +83,5 @@ function Unregister-RunPid {
   if (-not (Test-Path -LiteralPath $Context.PidRegistryPath)) { return }
   # Append a STOP entry; callers can correlate START/STOP pairs during diagnostics.
   $line = ("{0}`tSTOP`t{1}" -f (Get-Date -Format o), $ProcessId)
-  Add-ContentWithRetry -LiteralPath $Context.PidRegistryPath -Value $line
+  Add-ContentWithRetry -Path $Context.PidRegistryPath -Value $line
 }

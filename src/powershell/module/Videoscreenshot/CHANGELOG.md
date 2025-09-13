@@ -6,6 +6,17 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.6] – 2025-09-13
+### Fixed
+- **PidRegistry.ps1**: Replaced invalid `-LiteralPath` parameter with `-Path` when calling `Add-ContentWithRetry` in three locations (Initialize, Register, Unregister). This resolves the runtime error:
+
+  > A parameter cannot be found that matches parameter name 'LiteralPath'.
+
+  Impact:
+  - PID registry header and START/STOP entries now append correctly.
+  - Unblocks `Start-VideoBatch` execution that previously failed during PID registry initialization and registration.
+  - No behavior change to registry format; purely a parameter fix
+  
 ## [2.1.5] – 2025-09-12
 ### Added
 - **New FPS detection helper**: `Get-VideoFps` (ffprobe → Windows Shell fallback) with robust parsing of fractions/decimals and warnings on fallback.
