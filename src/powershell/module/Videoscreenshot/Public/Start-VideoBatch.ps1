@@ -1,49 +1,49 @@
 <#
-+.SYNOPSIS
-+Entry point for batch video frame capture and optional cropping.
-+
-+.DESCRIPTION
-+Runs VLC-based snapshot capture (or GDI capture) over videos discovered under -SourceFolder,
-+writes frames to -SaveFolder, optionally resumes using processed/resume lists, and can run
-+the Python cropper over the produced frames. This is the primary public entrypoint; helpers
-+throw on failure and this function owns user-facing messages.
-+
-+.PARAMETER SourceFolder
-+Folder to search for input videos (recursive).
-+.PARAMETER SaveFolder
-+Destination for frame files.
-+.PARAMETER FramesPerSecond
-+Target FPS for capture (1–60).
-+.PARAMETER TimeLimitSeconds
-+Legacy per-video time budget (seconds). Prefer -MaxPerVideoSeconds.
-+.PARAMETER VideoLimit
-+Process at most this many videos (0 = no limit).
-+.PARAMETER ProcessedLogPath
-+TSV log used for resume/skip; auto-located in SaveFolder when not provided.
-+.PARAMETER ResumeFile
-+Optional file path/name to resume after.
-+.PARAMETER MaxPerVideoSeconds
-+Hard cap per video (seconds). Overrides TimeLimitSeconds when > 0.
-+.PARAMETER StartupGraceSeconds
-+Extra seconds added to snapshot wait to absorb VLC startup.
-+.PARAMETER UseVlcSnapshots
-+Use VLC scene snapshots; otherwise use GDI capture.
-+.PARAMETER GdiFullscreen
-+With GDI capture, request fullscreen/top-most playback.
-+.PARAMETER VlcStartupTimeoutSeconds
-+Timeout for VLC process to initialize.
-+.PARAMETER RunCropper
-+Run the Python cropper after capture completes.
-+.PARAMETER PythonScriptPath
-+Path to crop_colours.py (required when -RunCropper).
-+.PARAMETER PythonExe
-+Python interpreter to use (optional; falls back to py/python in helper).
-+.PARAMETER ClearSnapshotsBeforeRun
-+Delete existing frames with the scene prefix before each video.
-+
-+.EXAMPLE
-+Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper -PythonScriptPath .\src\python\crop_colours.py
-+#>
+.SYNOPSIS
+Entry point for batch video frame capture and optional cropping.
+
+.DESCRIPTION
+Runs VLC-based snapshot capture (or GDI capture) over videos discovered under -SourceFolder,
+writes frames to -SaveFolder, optionally resumes using processed/resume lists, and can run
+the Python cropper over the produced frames. This is the primary public entrypoint; helpers
+throw on failure and this function owns user-facing messages.
+
+.PARAMETER SourceFolder
+Folder to search for input videos (recursive).
+.PARAMETER SaveFolder
+Destination for frame files.
+.PARAMETER FramesPerSecond
+Target FPS for capture (1–60).
+.PARAMETER TimeLimitSeconds
+Legacy per-video time budget (seconds). Prefer -MaxPerVideoSeconds.
+.PARAMETER VideoLimit
+Process at most this many videos (0 = no limit).
+.PARAMETER ProcessedLogPath
+TSV log used for resume/skip; auto-located in SaveFolder when not provided.
+.PARAMETER ResumeFile
+Optional file path/name to resume after.
+.PARAMETER MaxPerVideoSeconds
+Hard cap per video (seconds). Overrides TimeLimitSeconds when > 0.
+.PARAMETER StartupGraceSeconds
+Extra seconds added to snapshot wait to absorb VLC startup.
+.PARAMETER UseVlcSnapshots
+Use VLC scene snapshots; otherwise use GDI capture.
+.PARAMETER GdiFullscreen
+With GDI capture, request fullscreen/top-most playback.
+.PARAMETER VlcStartupTimeoutSeconds
+Timeout for VLC process to initialize.
+.PARAMETER RunCropper
+Run the Python cropper after capture completes.
+.PARAMETER PythonScriptPath
+Path to crop_colours.py (required when -RunCropper).
+.PARAMETER PythonExe
+Python interpreter to use (optional; falls back to py/python in helper).
+.PARAMETER ClearSnapshotsBeforeRun
+Delete existing frames with the scene prefix before each video.
+
+.EXAMPLE
+Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper -PythonScriptPath .\src\python\crop_colours.py
+#>
 function Start-VideoBatch {
   [CmdletBinding()]
   param(
@@ -193,7 +193,7 @@ function Start-VideoBatch {
         if (-not (Test-VideoPlayable -Path $video.FullName)) {
           Write-Message -Level Warn -Message ("Skipping not-playable video: {0}" -f $video.FullName)
           if (Get-Command -Name Write-ProcessedLog -ErrorAction SilentlyContinue) {
-            Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Skipped' -Reason 'NotPlayable'
+            $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Skipped' -Reason 'NotPlayable'
           }
           continue
         }
@@ -252,7 +252,11 @@ function Start-VideoBatch {
     finally {
       if ($p) {
         Stop-Vlc -Context $context -Process $p
-        Unregister-RunPid -Context $context -ProcessId $p.Id
+        # Capture & trace any output from Unregister-RunPid, then sink it.
+        $__unreg = Unregister-RunPid -Context $context -ProcessId $p.Id
+        Write-Debug ("TRACE Start-VideoBatch: Unregister-RunPid returned type={0} tostring={1}" `
+                     -f ($__unreg?.GetType().FullName ?? '<null>'), ($__unreg?.ToString() ?? '<null>'))
+        $null = $__unreg
       }
     }
 
@@ -287,7 +291,7 @@ function Start-VideoBatch {
       }
 
       # Append processed on success
-      Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Processed'
+      $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Processed'
       $processedCount++
     }
   }
@@ -303,5 +307,7 @@ function Start-VideoBatch {
     }
   }
 
-  Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed {1} file(s)" -f ($MyInvocation.MyCommand.Module.Version.ToString()), $processedCount)
+  $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed {1} file(s)" -f ($MyInvocation.MyCommand.Module.Version.ToString()), $processedCount)
+  Write-Debug 'TRACE Start-VideoBatch: leaving (no output intended)'
+  return
 }

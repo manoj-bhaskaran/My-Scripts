@@ -6,6 +6,15 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.2.7] - 2025-09-13
+### Fixed
+- Suppressed stray `True` emission during batch runs by capturing and sinking `Unregister-RunPid` return value in `Start-VideoBatch`.
+- Ensured `Write-ProcessedLog` calls do not spill to the success stream.
+- Made `Start-VideoBatch` explicitly return no output to avoid last-expression leakage.
+
+### Diagnostics
+- Added TRACE debug line to log `Unregister-RunPid` return type/value for proof in troubleshooting.
+
 ## [2.2.6] - 2025-09-13
 ### Fixed
 - Added precise “leaving” TRACE sentinels before returns in `Start-VlcProcess` and `Start-Vlc` to bracket output and identify external emitters of stray `True`.
