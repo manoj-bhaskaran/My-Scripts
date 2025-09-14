@@ -1,71 +1,104 @@
 <#
 .SYNOPSIS
-This PowerShell script generates a random file name, excluding characters that might cause issues. It accepts parameters for the minimum and maximum lengths of the file name.
+Generates a random file name using a conservative, Windows-safe allow-list.
+Accepts parameters for the minimum and maximum lengths of the file name.
 
 .DESCRIPTION
-The script generates a random file name by selecting random characters from a defined set, ensuring that problematic characters like \ / : * ? " < > | are excluded. The length of the generated name is random within the specified range provided by the parameters. If the first character is a problematic parenthesis, it is replaced with another random character from the filtered set.
+Builds a name from an allow-list that avoids Windows invalid filename characters
+(`< > : " / \ | ? *`) and shell-sensitive punctuation. The first character is
+restricted to alphanumerics; subsequent characters may include `_`, `-`, or `~`.
+Names are additionally validated to avoid Windows reserved device names
+(`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`, case-insensitive).
+Randomness uses `Get-Random` (not cryptographically secure).
 
 .PARAMETER MinimumLength
-Optional. Specifies the minimum length of the generated file name. Defaults to 4. Must be greater than 0.
+Optional. Maximum length of the generated file name. Defaults to 32.
+Must be between 1 and 255 and >= MinimumLength.
 
 .PARAMETER MaximumLength
 Optional. Specifies the maximum length of the generated file name. Defaults to 32. Must be greater than or equal to the MinimumLength.
 
-.EXAMPLES
-To generate a random file name with default length range:
-Get-RandomFileName
+.EXAMPLE
+Generate a random file name with default length range:
 
-To generate a random file name with a custom length range:
+.EXAMPLE
+Generate a random file name with a custom length range:
 Get-RandomFileName -MinimumLength 5 -MaximumLength 15
 
 .NOTES
 Script Workflow:
 1. **Parameter Validation**:
-   - Validates that `MinimumLength` is greater than 0.
-   - Validates that `MaximumLength` is greater than or equal to `MinimumLength`.
+   - Validates that `MinimumLength` and `MaximumLength` are within 1..255.
+   - Validates that `MaximumLength` is greater than or equal to `MinimumLength`
 
 2. **Character Set Definition**:
-   - Defines a set of characters to be used for generating the random file name, excluding problematic characters.
+   - Uses an allow-list:
+     - First character: `A–Z`, `a–z`, `0–9`
+     - Remaining characters: `A–Z`, `a–z`, `0–9`, `_`, `-`, `~`
 
 3. **Random Name Generation**:
    - Randomly selects the length of the file name within the specified range.
-   - Randomly generates the file name by selecting characters from the defined set.
+   - Generates the name from the allow-list and rejects Windows reserved names.
 
-4. **First Character Check**:
-   - Checks if the first character is a problematic parenthesis.
-   - If so, replaces it with another random character from the filtered set.
+4. **Reserved Name Check**:
+   - Regenerates if the random name matches a Windows reserved device name.
 
 Limitations:
-- The generated file name does not include some special characters that might be safe but are excluded for simplicity.
+- Randomness is suitable for uniqueness, not for cryptographic security.
+- The generator returns a base name only (no extension).
+
+.VERSION
+2.0.0
+
+CHANGELOG
+## 2.0.0 — 2025-09-14
+### Added
+- Validation to avoid Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1–9`, `LPT1–9`, case-insensitive).
+### Changed (breaking)
+- First character must be alphanumeric; removed previous special-case parenthesis handling.
+- Tightened allow-list to alphanumerics plus `_`, `-`, `~` (subsequent characters only).
+### Improved
+- Parameter validation using `[ValidateRange(1,255)]` on `MinimumLength` and `MaximumLength`, plus runtime check that `MaximumLength >= MinimumLength`.
+- Documentation updated (.EXAMPLE blocks, clarify non-crypto RNG, list allow-list and reserved name handling).
 #>
 
 # Function to generate a random file name
 function Get-RandomFileName {
+    [CmdletBinding()]
     param(
+        [ValidateRange(1,255)]
         [int]$MinimumLength = 4,
+        [ValidateRange(1,255)]
         [int]$MaximumLength = 32
     )
 
     # Validate parameters
-    if ($MinimumLength -le 0) {
-        throw "MinimumLength must be greater than 0."
-    }
     if ($MaximumLength -lt $MinimumLength) {
         throw "MaximumLength must be greater than or equal to MinimumLength."
     }
 
-    # Exclude problematic characters: \ / : * ? " < > | and others that might cause issues.
-    $chars = 'abcdefghijklmnopqrstuvwxyz0123456789~!@$()_-+=QWERTYUIOPASDFGHJKLZXCVBNM'
-    $namelen = Get-Random -Minimum $MinimumLength -Maximum ($MaximumLength + 1)
-    $randomName = -join ((0..($namelen-1)) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
+    # Allow-lists
+    $firstCharSet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    $restCharSet  = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-~'
 
-    if ($randomName[0] -eq '(' -or $randomName[0] -eq ')') {
-        # Filter out '(' from the available characters
-        $filteredChars = $chars -replace '[()]'
-        # Select a random character that is not '('
-        $newFirstChar = $filteredChars[(Get-Random -Maximum $filteredChars.Length)]
-        # Replace the first character with the new one
-        $randomName = $newFirstChar + $randomName.Substring(1)
-    }
+    # Windows reserved device names (base name only, case-insensitive)
+    $reservedRegex = '^(?i:(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]))$'
+
+    do {
+        $namelen = Get-Random -Minimum $MinimumLength -Maximum ($MaximumLength + 1)
+
+        # Always start with an alphanumeric
+        $sb = [System.Text.StringBuilder]::new()
+        $null = $sb.Append($firstCharSet[(Get-Random -Maximum $firstCharSet.Length)])
+
+        # Fill the remainder from the broader allow-list
+        for ($i = 1; $i -lt $namelen; $i++) {
+            $null = $sb.Append($restCharSet[(Get-Random -Maximum $restCharSet.Length)])
+        }
+
+        $randomName = $sb.ToString()
+        # Regenerate if the name is a reserved Windows device name
+    } while ($randomName -match $reservedRegex)
+
     return $randomName
 }
