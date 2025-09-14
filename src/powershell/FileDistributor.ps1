@@ -6,9 +6,9 @@ This PowerShell script copies files from a source folder to a target folder, dis
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 1.3.0
+ 1.4.0
  
- (Windows paths update: dynamic path resolution; randomname.ps1 search via parameter, script root, or PATH. See CHANGELOG.)
+ (Distribution update: random-balanced placement replaces round-robin. See CHANGELOG.)
 
 File name conflicts are resolved using a custom random name generator. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
 
@@ -121,6 +121,13 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
++## 1.4.0 — 2025-09-14
++### Changed
++- **Distribution is now random-balanced (best effort):** Replaced deterministic round-robin with per-file random target selection biased toward the least-filled subfolders, while respecting the per-folder limit. This better aligns with the “random basis” requirement and maintains evenness without new parameters.
++- Applies to both initial distribution and redistribution (function `DistributeFilesToSubfolders`).
++
++---
++
 ## 1.3.0 — 2025-09-14
 ### Added
 - Windows-only dynamic path resolution using the following order:
@@ -617,43 +624,89 @@ function DistributeFilesToSubfolders {
         [int]$TotalFiles             # Total number of files to process
     )
 
-    # Create an enumerator for subfolders to cycle through them
-    $subfolderQueue = $Subfolders.GetEnumerator()
-
-    foreach ($file in $Files) {
-        if (!$subfolderQueue.MoveNext()) {
-            $subfolderQueue.Reset()
-            $subfolderQueue.MoveNext() | Out-Null
+    # Normalize subfolder inputs to full path strings and seed counts for balance tracking
+    $subfolderPaths = @()
+    $folderCounts = @{}
+    foreach ($sf in $Subfolders) {
+        $sfPath = if ($sf -is [System.IO.FileSystemInfo]) { $sf.FullName } else { [string]$sf }
+        if (-not [string]::IsNullOrWhiteSpace($sfPath)) {
+            $subfolderPaths += $sfPath
+            try {
+                $folderCounts[$sfPath] = (Get-ChildItem -Path $sfPath -File | Measure-Object).Count
+            } catch {
+                $folderCounts[$sfPath] = 0
+                LogMessage -Message "Failed to count files in subfolder '$sfPath'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
+            }
         }
+    }
+    if ($subfolderPaths.Count -eq 0) {
+        LogMessage -Message "No subfolders provided to DistributeFilesToSubfolders. Aborting distribution for this batch." -IsError
+        return
+    }
 
-        $destinationFolder = $subfolderQueue.Current
-        # Always generate a randomized destination name (preserve extension),
-        # regardless of conflicts—this enforces "do not retain original names".
-        $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $file.Name
+    # Randomize processing order of files to reduce bias
+    $filesToProcess = $Files
+    try {
+        if ($Files.Count -gt 1) {
+            $filesToProcess = $Files | Get-Random -Count $Files.Count
+        }
+    } catch {
+        $filesToProcess = $Files
+        LogMessage -Message "Could not shuffle file list due to: $($_.Exception.Message). Proceeding without shuffle." -IsWarning
+    }
+
+    foreach ($file in $filesToProcess) {
+        # Resolve file path and name safely (supports FileInfo or string path)
+        $filePath = if ($file -is [System.IO.FileSystemInfo]) { $file.FullName } else { [string]$file }
+        $originalName = if ($file -is [System.IO.FileSystemInfo]) { $file.Name } else { [System.IO.Path]::GetFileName($filePath) }
+
+        # Build eligible target list (under limit), bias toward least-filled
+        $eligible = @()
+        foreach ($p in $subfolderPaths) {
+            if ($folderCounts[$p] -lt $Limit) { $eligible += $p }
+        }
+        if ($eligible.Count -eq 0) {
+            # Best-effort fallback if all at/over limit
+            $eligible = $subfolderPaths
+            LogMessage -Message "All subfolders appear at/over limit ($Limit). Selecting among all subfolders (best effort)." -IsWarning
+        }
+        $minCount = ($eligible | ForEach-Object { $folderCounts[$_] } | Measure-Object -Minimum).Minimum
+        $candidates = $eligible | Where-Object { $folderCounts[$_] -eq $minCount }
+        $destinationFolder = if ($candidates.Count -gt 1) { $candidates | Get-Random } else { $candidates[0] }
+
+        # Always generate a randomized destination name (preserve extension)
+        $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $originalName
+ 
         $destinationFile = Join-Path -Path $destinationFolder -ChildPath $newFileName
         
         # (Optional) Log the rename intent for traceability
-        LogMessage -Message "Assigning randomized destination name for '$file' -> '$destinationFile'."
+        LogMessage -Message "Assigning randomized destination name for '$filePath' -> '$destinationFile'."
 
         # Copy with retries and stop-on-error semantics
-        Copy-ItemWithRetry -Path $file -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount
+        Copy-ItemWithRetry -Path $filePath -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount
 
         # Verify the file was copied successfully
         if (Test-Path -Path $destinationFile) {
+            # Update in-memory count for balance tracking
+            if ($folderCounts.ContainsKey($destinationFolder)) {
+                $folderCounts[$destinationFolder]++
+            } else {
+                $folderCounts[$destinationFolder] = 1
+            }
             try {
                 # Handle file deletion based on DeleteMode
                 if ($DeleteMode -eq "RecycleBin") {
-                    Move-ToRecycleBin -FilePath $file
+                    Move-ToRecycleBin -FilePath $filePath
                     LogMessage -Message "Copied from $file to $destinationFile and moved original to Recycle Bin."
                 } elseif ($DeleteMode -eq "Immediate") {
-                    Remove-File -FilePath $file
+                    Remove-File -FilePath $filePath
                     LogMessage -Message "Copied from $file to $destinationFile and immediately deleted original."
                 } elseif ($DeleteMode -eq "EndOfScript") {
                     # Ensure FilesToDelete.Value is initialized as an array
                     if (-not $FilesToDelete.Value) {
                         $FilesToDelete.Value = @()
                     }
-                    $FilesToDelete.Value += $file  # Correctly update the ref variable
+                    $FilesToDelete.Value += $filePath  # Track by path for reliability
                     LogMessage -Message "Copied from $file to $destinationFile. Original pending deletion at end of script."
                 }
             } catch {
