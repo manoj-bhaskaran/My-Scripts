@@ -6,11 +6,11 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 2.0.0
+ 3.0.0
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
-File name conflicts are resolved using a custom random name generator. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
+File name conflicts are resolved using the **RandomName** module’s `Get-RandomFileName`. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
 
 - `RecycleBin`: Moves the files to the Recycle Bin.
 - `Immediate`: Deletes the files immediately after successful copying.
@@ -34,9 +34,6 @@ Resolution order (Windows): (1) user-provided, (2) script-root relative `.\logs\
 
 .PARAMETER Restart
 Optional. If specified, the script will restart from the last checkpoint, resuming its previous state.
-
-.PARAMETER RandomNameScriptPath
-Optional. Path to `randomname.ps1`. Resolution order: (1) user-provided path, (2) script root relative `.\randomname.ps1`, (3) any directory in `%PATH%`. The script errors out if not found.
 
 .PARAMETER MaxBackoff
 Optional. Maximum backoff (in seconds) used by the exponential retry helper when `-RetryCount` is non-zero. 
@@ -87,61 +84,89 @@ Optional. Specifies an age in days. All log entries older than the specified num
 .PARAMETER Help
 Optional. Displays the script's synopsis/help text and exits without performing any operations.
 
-.EXAMPLES
+.PARAMETER RandomNameModulePath
+Optional. Path to the **RandomName** module (either a `.psd1`/`.psm1` file or the module directory). Resolution order:
+1) `-RandomNameModulePath` (if provided),
+2) script-root `.\powershell\module\RandomName\RandomName.psd1` (or `.psm1`),
+3) `Import-Module RandomName` via `$env:PSModulePath`.
+The script errors out if the module cannot be located.
+
+.EXAMPLE
 Tune retries (unlimited attempts, capped backoff 5 minutes) while copying:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "D:\Target" -RetryDelay 5 -RetryCount 0 -MaxBackoff 300
 
+.EXAMPLE
 Use end-of-script deletion gated on no *errors* (warnings allowed), and resume safely:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "D:\Target" -DeleteMode EndOfScript -EndOfScriptDeletionCondition WarningsOnly
 # ...if interrupted, restart with:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "D:\Target" -Restart
 
+.EXAMPLE
 Write logs to a script-root relative file (auto-created), show progress every 250 files:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "D:\Target" -ShowProgress -UpdateFrequency 250 -LogFilePath ".\logs\FileDistributor-log.txt"
 
+.EXAMPLE
 Use Windows default locations for state/logs (no need to pass paths) and prune logs older than 14 days:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "D:\Target" -RemoveEntriesOlderThan 14
 
----
-
+.EXAMPLE
 To copy files from "C:\Source" to "C:\Target" with a default file limit:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
 
+.EXAMPLE
 To copy files with progress updates every 50 files:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -ShowProgress -UpdateFrequency 50
 
+.EXAMPLE
 To restart the script from the last checkpoint:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Restart
 
+.EXAMPLE
 To delete files immediately after copying:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -DeleteMode Immediate
 
+.EXAMPLE
 To delete files at the end of the script only if no warnings occur:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -DeleteMode EndOfScript -EndOfScriptDeletionCondition NoWarnings
 
+.EXAMPLE
 To enable verbose logging using PowerShell's built-in `-Verbose` switch:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -Verbose
 
+.EXAMPLE
 To invoke cleanup scripts for duplicates and empty folders:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -CleanupDuplicates -CleanupEmptyFolders
 
+.EXAMPLE
 To truncate the log file and start afresh:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateLog
 
+.EXAMPLE
 To truncate the log file if it exceeds 10 megabytes:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateIfLarger 10M
 
+.EXAMPLE
 To remove log entries before a specific timestamp:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -RemoveEntriesBefore "2023-01-01 00:00:00"
 
+.EXAMPLE
 To remove log entries older than 30 days:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -RemoveEntriesOlderThan 30
 
+.EXAMPLE
 To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
 CHANGELOG
+## 3.0.0 — 2025-09-14
+### Changed (⚠️ Breaking)
+- **Random name provider is now module-only:** the legacy `randomname.ps1` script is no longer supported.
+- Removed the `-RandomNameScriptPath` parameter.
+- The script now imports **RandomName** via: `-RandomNameModulePath` → script-root `powershell\module\RandomName\RandomName.psd1/.psm1` → `Import-Module RandomName` from `$env:PSModulePath`.
+### Added
+- `-RandomNameModulePath` parameter to explicitly point to the RandomName module.
+
 ## 2.0.0 — 2025-09-14
 ### Changed (⚠️ Breaking)
 - **Source enumeration is now recursive by default (and only behavior):** All files under `-SourceFolder` (including nested subdirectories) are processed. Previously only top-level files were handled.
@@ -211,9 +236,9 @@ Post-Processing:
 
 Prerequisites:
 - Ensure permissions for reading and writing in both source and target directories.
-- Random name generator resolution order (Windows): (1) `-RandomNameScriptPath` if provided, (2) script root `.\randomname.ps1`, (3) any directory listed in `%PATH%`. The script errors out if it cannot be located.
+- **RandomName module** must be available via `-RandomNameModulePath`, script-root `powershell\module\RandomName`, or in `$env:PSModulePath`.
 
- Limitations:
+Limitations:
  - The script processes files only (directories are ignored) and will recurse all nested folders under the specified source.
 #>
 
@@ -223,7 +248,7 @@ param(
     [int]$FilesPerFolderLimit = 20000,
     [string]$LogFilePath = $null,
     [string]$StateFilePath = $null,
-    [string]$RandomNameScriptPath = $null,
+    [string]$RandomNameModulePath = $null,
     [switch]$Restart,
     [switch]$ShowProgress = $false,
     [int]$MaxBackoff = 60, # Cap for exponential backoff used by retry helper
@@ -302,12 +327,12 @@ if ($Help) {
 
     Write-Host "`nNOTES" -ForegroundColor Yellow
     Write-Host "Ensure permissions for reading and writing in both source and target directories." -ForegroundColor White
-    Write-Host "Random name generator script ('randomname.ps1') resolution order:" -ForegroundColor White
-    Write-Host "  1) -RandomNameScriptPath (if provided)" -ForegroundColor DarkCyan
-    Write-Host "  2) Script root (same folder as this script)" -ForegroundColor DarkCyan
-    Write-Host "  3) Any directory listed in %PATH%" -ForegroundColor DarkCyan
-    Write-Host "The script errors out if 'randomname.ps1' cannot be located." -ForegroundColor White
-
+    Write-Host "Random name provider (module) resolution order:" -ForegroundColor White
+    Write-Host "  1) -RandomNameModulePath (.psd1/.psm1 or module folder)" -ForegroundColor DarkCyan
+    Write-Host "  2) Script-root 'powershell\\module\\RandomName\\RandomName.psd1' (or .psm1)" -ForegroundColor DarkCyan
+    Write-Host "  3) Import-Module RandomName (from PSModulePath)" -ForegroundColor DarkCyan
+    Write-Host "The script errors out if the RandomName module cannot be located." -ForegroundColor White
+ 
     exit
 }
 
@@ -546,39 +571,55 @@ $script:StateFilePath = Resolve-PathWithFallback -UserPath $StateFilePath `
 $LogFilePath   = $script:LogFilePath
 $StateFilePath = $script:StateFilePath
 
-# ===== Random name generator resolution (Windows, required) =====
-function Resolve-RandomNameScriptPath {
-    param([string]$UserProvided)
-    # 1) User-provided
-    if ($UserProvided -and (Test-Path -LiteralPath $UserProvided)) { return (Resolve-Path -LiteralPath $UserProvided).Path }
-    # 2) Script root relative
-    $scriptRel = Join-Path -Path $script:ScriptRoot -ChildPath 'randomname.ps1'
-    if (Test-Path -LiteralPath $scriptRel) { return (Resolve-Path -LiteralPath $scriptRel).Path }
-    # 3) PATH search
-    foreach ($p in ($env:PATH -split ';')) {
-        if ([string]::IsNullOrWhiteSpace($p)) { continue }
-        $candidate = Join-Path -Path $p -ChildPath 'randomname.ps1'
-        if (Test-Path -LiteralPath $candidate) { return (Resolve-Path -LiteralPath $candidate).Path }
-    }
-    return $null
-}
+# ===== Random name provider resolution (module-only) =====
+function Import-RandomNameProvider {
+    param(
+        [string]$ModulePath
+    )
 
-function Initialize-RandomNameGenerator {
-    param([string]$UserProvided)
-    $resolved = Resolve-RandomNameScriptPath -UserProvided $UserProvided
-    if (-not $resolved) {
-        LogMessage -Message "Unable to locate 'randomname.ps1'. Checked: -RandomNameScriptPath, script root, PATH." -IsError
-        throw "Random name generator script not found."
+    # Already available?
+    if (Get-Command -Name Get-RandomFileName -ErrorAction SilentlyContinue) {
+        LogMessage -Message "RandomName provider already available (Get-RandomFileName found)."
+        return
     }
-    try {
-        . $resolved
-        if (-not (Get-Command -Name Get-RandomFileName -ErrorAction SilentlyContinue)) {
-            throw "randomname.ps1 did not define Get-RandomFileName."
+
+    # 1) Explicit module path (psd1/psm1 or module directory)
+    if ($ModulePath) {
+        try {
+            $resolved = Resolve-Path -LiteralPath $ModulePath -ErrorAction Stop
+            Import-Module -LiteralPath $resolved.Path -Force -ErrorAction Stop
+            LogMessage -Message "Imported RandomName module from '$($resolved.Path)'."
+            return
+        } catch {
+            LogMessage -Message "Failed to import RandomName module from '$ModulePath': $($_.Exception.Message)" -IsWarning
         }
-        LogMessage -Message "Loaded random name generator from '$resolved'."
+    }
+
+    # 2) Script-root conventional location
+    $scriptRootCandidates = @(
+        (Join-Path $script:ScriptRoot 'powershell\module\RandomName\RandomName.psd1'),
+        (Join-Path $script:ScriptRoot 'powershell\module\RandomName\RandomName.psm1')
+    )
+    foreach ($c in $scriptRootCandidates) {
+        if (Test-Path -LiteralPath $c) {
+            try {
+                Import-Module -LiteralPath $c -Force -ErrorAction Stop
+                LogMessage -Message "Imported RandomName module from script-root '$c'."
+                return
+            } catch {
+                LogMessage -Message "Failed to import RandomName module from '$c': $($_.Exception.Message)" -IsWarning
+            }
+        }
+    }
+
+    # 3) PSModulePath
+    try {
+        Import-Module -Name RandomName -ErrorAction Stop
+        LogMessage -Message "Imported RandomName module from PSModulePath."
+        return
     } catch {
-        LogMessage -Message "Failed to load random name generator from '$resolved'. $_" -IsError
-        throw
+        LogMessage -Message "Failed to import 'RandomName' from PSModulePath: $($_.Exception.Message)" -IsError
+        throw "Random name provider (module) not found."
     }
 }
 
@@ -1198,7 +1239,7 @@ function RemoveLogEntries {
 # Main script logic
 function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
-    Initialize-RandomNameGenerator -UserProvided $RandomNameScriptPath
+    Import-RandomNameProvider -ModulePath $RandomNameModulePath
 
     # Track prior counters from any persisted state for cross-restart safety
     $priorWarnings = 0; $priorErrors = 0
