@@ -130,23 +130,24 @@ The module tracks which videos have been handled so future runs can skip work.
 - On Windows, matching is case-insensitive to minimize false mismatches.
 - Mixing TSV and legacy lines in the same file is supported; new writes use TSV.
 
-**Legacy wrapper (still supported)**
+**Legacy wrapper (decommissioned)**
+The legacy `src\powershell\videoscreenshot.ps1` wrapper has been **removed**.  
+Please import the module and call `Start-VideoBatch` directly:
 ```powershell
-pwsh -NoProfile -File .\src\powershell\videoscreenshot.ps1 `
-  -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots
+Import-Module src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
+Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots
 ```
 
-## What changed in v1.3.0 (modularization)
-We split the monolithic `videoscreenshot.ps1` into a **PowerShell module** to improve testability and maintainability. The legacy script remains as a **thin wrapper** for back-compat.
-
-The wrapper `videoscreenshot.ps1` still works but will emit a deprecation warning and forwards to `Start-VideoBatch`.
+## Wrapper status
+The legacy `videoscreenshot.ps1` wrapper has been **removed** in v3.0.0.  
+Invoking it now prints guidance to use `Start-VideoBatch` and exits with a non-zero code.
 
 ## Directory layout
 
 ```
 src/
   powershell/
-    videoscreenshot.ps1                 (legacy wrapper)
+    videoscreenshot.ps1                 (decommissioned; prints guidance and exits)
     module/
       Videoscreenshot/
         Videoscreenshot.psd1            (module manifest)
@@ -230,8 +231,10 @@ If any package is missing, the module automatically installs them via python -m 
 
 > Tip: You can change the required package list by editing Config.ps1 (Python.RequiredPackages). This keeps the PowerShell code free of hard-coded package names.
 
-> Note: Stdout/stderr from the Python process are captured for diagnostics. For advanced control over cropping arguments, adjust the Python script directly (the default integration uses safe batch flags: `--skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha`).
-> In `-Debug` runs, the cropper’s stdout/stderr stream live to the console instead of being captured.
+> Note: The cropper’s stdout/stderr always stream live to the console; Ctrl+C cancels cleanly.  
+> For advanced control over cropping arguments, adjust the Python script directly.  
+> The module uses safe defaults: `--skip-bad-images --allow-empty --recurse --preserve-alpha`,  
+> and adds `--reprocess-cropped` (plus `--keep-existing-crops`) when you pass the corresponding PowerShell flags.
 > Note: The cropper’s stdout/stderr stream live to the console (always-on). For advanced control over cropping arguments, adjust the Python script directly. The module uses safe defaults: `--skip-bad-images --allow-empty --recurse --preserve-alpha`, and adds `--reprocess-cropped` (plus `--keep-existing-crops`) when you pass the corresponding PowerShell flags.
 - GDI capture currently targets Windows (uses GDI+/System.Drawing); VLC snapshot mode is cross-platform where VLC is available.
 > See also the docstring in src/python/crop_colours.py for a full list of cropper flags, behaviors, and troubleshooting notes.
