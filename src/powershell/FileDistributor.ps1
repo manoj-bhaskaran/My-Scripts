@@ -6,9 +6,9 @@ This PowerShell script copies files from a source folder to a target folder, dis
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 1.2.0
+ 1.3.0
  
- (Robustness update: Added I/O retry wrappers and centralised error/warning counting. See CHANGELOG.)
+ (Windows paths update: dynamic path resolution; randomname.ps1 search via parameter, script root, or PATH. See CHANGELOG.)
 
 File name conflicts are resolved using a custom random name generator. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
 
@@ -28,10 +28,15 @@ Mandatory. Specifies the path to the target folder where the files will be distr
 Optional. Specifies the maximum number of files allowed in each subfolder of the target folder. Defaults to 20,000.
 
 .PARAMETER LogFilePath
-Optional. Specifies the path to the log file for recording script activities. Defaults to "FileDistributor-log.txt" in the current directory.
+Optional. Specifies the path to the log file for recording script activities.
+Resolution order (Windows): (1) user-provided, (2) script-root relative `.\logs\FileDistributor-log.txt`,
+(3) `%LOCALAPPDATA%\FileDistributor\logs\FileDistributor-log.txt`, (4) `%TEMP%\FileDistributor\logs\FileDistributor-log.txt`.
 
 .PARAMETER Restart
 Optional. If specified, the script will restart from the last checkpoint, resuming its previous state.
+
+.PARAMETER RandomNameScriptPath
+Optional. Path to `randomname.ps1`. Resolution order: (1) user-provided path, (2) script root relative `.\randomname.ps1`, (3) any directory in `%PATH%`. The script errors out if not found.
 
 .PARAMETER ShowProgress
 Optional. Displays progress updates during the script's execution. Use this parameter to enable progress reporting.
@@ -116,6 +121,21 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 1.3.0 — 2025-09-14
+### Added
+- Windows-only dynamic path resolution using the following order:
+  1) user-provided parameter,
+  2) script root–relative,
+  3) `%LOCALAPPDATA%\FileDistributor\...`,
+  4) `%TEMP%\FileDistributor\...`.
+- `-RandomNameScriptPath` parameter; `randomname.ps1` is now resolved via parameter → script root → `%PATH%` (errors out if not found).
+
+### Changed
+- Dropped hard-coded `$ScriptDirectory`; helper scripts now resolved relative to script root.
+- `LogFilePath` and `StateFilePath` now follow the resolution order above (was hard-coded defaults).
+
+---
+
 ## 1.2.0 — 2025-09-14
 ### Added
 - I/O retry wrappers with `-ErrorAction Stop` and exponential backoff for copy/delete and Recycle Bin moves; applies during distribution and redistribution.
@@ -188,8 +208,9 @@ param(
     [string]$SourceFolder = "C:\Users\manoj\OneDrive\Desktop\New folder",
     [string]$TargetFolder = "D:\users\manoj\Documents\FIFA 07\elib",
     [int]$FilesPerFolderLimit = 20000,
-    [string]$LogFilePath = "C:\users\manoj\Documents\Scripts\FileDistributor-log.txt",
-    [string]$StateFilePath = "C:\users\manoj\Documents\Scripts\temp\FileDistributor-State.json",
+    [string]$LogFilePath = $null,
+    [string]$StateFilePath = $null,
+    [string]$RandomNameScriptPath = $null,
     [switch]$Restart,
     [switch]$ShowProgress = $false,
     [int]$UpdateFrequency = 100, # Default: 100 files
@@ -265,7 +286,11 @@ if ($Help) {
 
     Write-Host "`nNOTES" -ForegroundColor Yellow
     Write-Host "Ensure permissions for reading and writing in both source and target directories." -ForegroundColor White
-    Write-Host "The random name generator script should be located at: 'C:\Users\manoj\Documents\Scripts\src\powershell\randomname.ps1'." -ForegroundColor White
+    Write-Host "Random name generator script ('randomname.ps1') resolution order:" -ForegroundColor White
+    Write-Host "  1) -RandomNameScriptPath (if provided)" -ForegroundColor DarkCyan
+    Write-Host "  2) Script root (same folder as this script)" -ForegroundColor DarkCyan
+    Write-Host "  3) Any directory listed in %PATH%" -ForegroundColor DarkCyan
+    Write-Host "The script errors out if 'randomname.ps1' cannot be located." -ForegroundColor White
 
     exit
 }
@@ -274,8 +299,45 @@ if ($Help) {
 $script:Warnings = 0
 $script:Errors = 0
 
-# Define the script directory
-$ScriptDirectory = "C:\Users\manoj\Documents\Scripts\src\powershell"
+# ===== Windows path resolution helpers (executed before any logging) =====
+# Determine script root (works in PS 5.1+ when running as a script)
+$script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Path $MyInvocation.MyCommand.Path -Parent }
+
+function New-Directory {
+    param([Parameter(Mandatory=$true)][string]$DirectoryPath)
+    if (-not (Test-Path -LiteralPath $DirectoryPath)) {
+        try { New-Item -ItemType Directory -Path $DirectoryPath -Force | Out-Null } catch { }
+    }
+    return (Test-Path -LiteralPath $DirectoryPath)
+}
+
+function Resolve-PathWithFallback {
+    param(
+        [string]$UserPath,
+        [Parameter(Mandatory=$true)][string]$ScriptRelativePath,
+        [Parameter(Mandatory=$true)][string]$WindowsDefaultPath,
+        [Parameter(Mandatory=$true)][string]$TempFallbackPath
+    )
+    # 1) User-provided
+    if ($UserPath) {
+        $parent = Split-Path -Path $UserPath -Parent
+        if (New-Directory -DirectoryPath $parent) { return $UserPath }
+    }
+    # 2) Script-root relative
+    $scriptCandidate = Join-Path -Path $script:ScriptRoot -ChildPath $ScriptRelativePath
+    $parent = Split-Path -Path $scriptCandidate -Parent
+    if (New-Directory -DirectoryPath $parent) { return $scriptCandidate }
+    # 3) Windows default (LOCALAPPDATA)
+    $winCandidate = $WindowsDefaultPath
+    $parent = Split-Path -Path $winCandidate -Parent
+    if (New-Directory -DirectoryPath $parent) { return $winCandidate }
+    # 4) TEMP fallback
+    $tempCandidate = $TempFallbackPath
+    $parent = Split-Path -Path $tempCandidate -Parent
+    if (New-Directory -DirectoryPath $parent) { return $tempCandidate }
+    # If all fail, return TEMP even if directory creation failed (subsequent operations will error & be logged)
+    return $TempFallbackPath
+}
 
 # Function to log messages
 function LogMessage {
@@ -335,6 +397,67 @@ function Invoke-WithRetry {
     }
 }
 
+# ===== Resolve effective LogFilePath and StateFilePath (before first LogMessage call) =====
+# Parameter block (updated below) may set these to $null; compute effective paths now.
+# Windows defaults:
+$localAppData = $env:LOCALAPPDATA
+$tempRoot = $env:TEMP
+
+# Build default targets
+$defaultLog_Windows   = Join-Path -Path (Join-Path $localAppData 'FileDistributor\logs') -ChildPath 'FileDistributor-log.txt'
+$defaultLog_Temp      = Join-Path -Path (Join-Path $tempRoot     'FileDistributor\logs') -ChildPath 'FileDistributor-log.txt'
+$defaultLog_ScriptRel = 'logs\FileDistributor-log.txt'
+
+$defaultState_Windows   = Join-Path -Path (Join-Path $localAppData 'FileDistributor\state') -ChildPath 'FileDistributor-State.json'
+$defaultState_Temp      = Join-Path -Path (Join-Path $tempRoot     'FileDistributor\state') -ChildPath 'FileDistributor-State.json'
+$defaultState_ScriptRel = 'state\FileDistributor-State.json'
+
+# If parameters are currently unset, they'll be $null; compute effective values
+$script:LogFilePath  = Resolve-PathWithFallback -UserPath $LogFilePath `
+    -ScriptRelativePath $defaultLog_ScriptRel -WindowsDefaultPath $defaultLog_Windows -TempFallbackPath $defaultLog_Temp
+$script:StateFilePath = Resolve-PathWithFallback -UserPath $StateFilePath `
+    -ScriptRelativePath $defaultState_ScriptRel -WindowsDefaultPath $defaultState_Windows -TempFallbackPath $defaultState_Temp
+
+# From here on, use the resolved script-scoped variables
+$LogFilePath   = $script:LogFilePath
+$StateFilePath = $script:StateFilePath
+
+# ===== Random name generator resolution (Windows, required) =====
+function Resolve-RandomNameScriptPath {
+    param([string]$UserProvided)
+    # 1) User-provided
+    if ($UserProvided -and (Test-Path -LiteralPath $UserProvided)) { return (Resolve-Path -LiteralPath $UserProvided).Path }
+    # 2) Script root relative
+    $scriptRel = Join-Path -Path $script:ScriptRoot -ChildPath 'randomname.ps1'
+    if (Test-Path -LiteralPath $scriptRel) { return (Resolve-Path -LiteralPath $scriptRel).Path }
+    # 3) PATH search
+    foreach ($p in ($env:PATH -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($p)) { continue }
+        $candidate = Join-Path -Path $p -ChildPath 'randomname.ps1'
+        if (Test-Path -LiteralPath $candidate) { return (Resolve-Path -LiteralPath $candidate).Path }
+    }
+    return $null
+}
+
+function Initialize-RandomNameGenerator {
+    param([string]$UserProvided)
+    $resolved = Resolve-RandomNameScriptPath -UserProvided $UserProvided
+    if (-not $resolved) {
+        LogMessage -Message "Unable to locate 'randomname.ps1'. Checked: -RandomNameScriptPath, script root, PATH." -IsError
+        throw "Random name generator script not found."
+    }
+    try {
+        . $resolved
+        if (-not (Get-Command -Name Get-RandomFileName -ErrorAction SilentlyContinue)) {
+            throw "randomname.ps1 did not define Get-RandomFileName."
+        }
+        LogMessage -Message "Loaded random name generator from '$resolved'."
+    } catch {
+        LogMessage -Message "Failed to load random name generator from '$resolved'. $_" -IsError
+        throw
+    }
+}
+
 # I/O wrappers
 function Copy-ItemWithRetry {
     param(
@@ -371,24 +494,7 @@ function Rename-ItemWithRetry {
                      -RetryDelay $RetryDelay -RetryCount $RetryCount
 }
 
-# Check if the random name generator script exists and load it
-$randomNameScriptPath = Join-Path -Path $ScriptDirectory -ChildPath "randomname.ps1"
-
-if (Test-Path -Path $randomNameScriptPath) {
-    try {
-        . $randomNameScriptPath
-        if (-not (Get-Command -Name Get-RandomFileName -ErrorAction SilentlyContinue)) {
-            throw "Failed to load the random name generator script."
-        }
-    }
-    catch {
-        LogMessage -Message "Failed to load the random name generator script from '$randomNameScriptPath'. $_" -IsError
-        throw
-    }
-} else {
-    LogMessage -Message "Random name generator script '$randomNameScriptPath' not found." -IsError
-    throw "Random name generator script not found."
-}
+# (randomname.ps1 will be resolved and loaded inside Main via Initialize-RandomNameGenerator)
 
 function ResolveFileNameConflict {
     param (
@@ -857,6 +963,7 @@ function RemoveLogEntries {
 # Main script logic
 function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
+    Initialize-RandomNameGenerator -UserProvided $RandomNameScriptPath
 
     # Handle log entry removal
     if (-not $Restart) {
@@ -1191,18 +1298,28 @@ function Main {
 
         # Post-processing: Cleanup duplicates
         if ($CleanupDuplicates) {
-            LogMessage -Message "Invoking duplicate file cleanup script..."
-            & (Join-Path -Path $ScriptDirectory -ChildPath "Remove-DuplicateFiles.ps1") -ParentDirectory $TargetFolder -LogFilePath $LogFilePath -DryRun:$false
-            LogMessage -Message "Duplicate file cleanup completed."
+            $dupScript = Join-Path -Path $script:ScriptRoot -ChildPath "Remove-DuplicateFiles.ps1"
+            if (Test-Path -LiteralPath $dupScript) {
+                LogMessage -Message "Invoking duplicate file cleanup script..."
+                & $dupScript -ParentDirectory $TargetFolder -LogFilePath $LogFilePath -DryRun:$false
+                LogMessage -Message "Duplicate file cleanup completed."
+            } else {
+                LogMessage -Message "Duplicate cleanup helper not found at '$dupScript'. Skipping." -IsWarning
+            }
         } else {
             LogMessage -Message "Skipping duplicate file cleanup."
         }
 
         # Post-processing: Cleanup empty folders
         if ($CleanupEmptyFolders) {
-            LogMessage -Message "Invoking empty folder cleanup script..."
-            & (Join-Path -Path $ScriptDirectory -ChildPath "Remove-EmptyFolders.ps1") -ParentDirectory $TargetFolder -LogFilePath $LogFilePath -DryRun:$false
-            LogMessage -Message "Empty folder cleanup completed."
+            $emptyScript = Join-Path -Path $script:ScriptRoot -ChildPath "Remove-EmptyFolders.ps1"
+            if (Test-Path -LiteralPath $emptyScript) {
+                LogMessage -Message "Invoking empty folder cleanup script..."
+                & $emptyScript -ParentDirectory $TargetFolder -LogFilePath $LogFilePath -DryRun:$false
+                LogMessage -Message "Empty folder cleanup completed."
+            } else {
+                LogMessage -Message "Empty-folder cleanup helper not found at '$emptyScript'. Skipping." -IsWarning
+            }
         } else {
             LogMessage -Message "Skipping empty folder cleanup."
         }
