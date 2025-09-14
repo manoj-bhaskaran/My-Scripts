@@ -6,9 +6,9 @@ This PowerShell script copies files from a source folder to a target folder, dis
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 1.5.0
+ 1.6.0
  
- (Distribution update: random-balanced placement; EndOfScript deletions hardened across restarts. See CHANGELOG.)
+ (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
 File name conflicts are resolved using a custom random name generator. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
 
@@ -120,6 +120,21 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
+## 1.6.0 — 2025-09-14
+### Added
+- **Robust state-file handling**:
+  - Atomic state writes using a same-directory `*.tmp` then replace.
+  - A persistent backup at `FileDistributor-State.json.bak`.
+  - A sidecar integrity file `FileDistributor-State.json.sha256` to detect truncation/bit-rot.
+  - Automatic recovery from `.bak` when the primary is unreadable or fails checksum.
+  - Quarantine of corrupt state files to `FileDistributor-State.json.corrupt-<timestamp>.json`.
+  - Loader always returns a **Hashtable**, ensuring downstream `.ContainsKey()` calls work on Windows PowerShell 5.1+ and PowerShell 7+.
+
+### Changed
+- `SaveState` and `LoadState` refactored to use the atomic writer/verified reader and to log precise recovery actions.
+
+---
+
 ## 1.5.0 — 2025-09-14
 ### Changed
 - **Hardened `EndOfScript` deletions across restarts:**
@@ -432,6 +447,96 @@ function Test-EndOfScriptCondition {
             LogMessage -Message "Unknown EndOfScriptDeletionCondition '$Condition'. Failing closed." -IsWarning
             return $false
         }
+    }
+}
+
+# --- Helpers for robust state-file handling ---
+function ConvertTo-Hashtable {
+    param([Parameter(Mandatory=$true)]$Object)
+    if ($null -eq $Object) { return $null }
+    if ($Object -is [hashtable]) { return $Object }
+    if ($Object -is [System.Collections.IDictionary]) { return @{} + $Object }
+    if ($Object -is [System.Management.Automation.PSCustomObject]) {
+        $ht = @{}
+        foreach ($p in $Object.PSObject.Properties) {
+            $ht[$p.Name] = ConvertTo-Hashtable -Object $p.Value
+        }
+        return $ht
+    }
+    if ($Object -is [System.Collections.IEnumerable] -and -not ($Object -is [string])) {
+        $list = @()
+        foreach ($i in $Object) { $list += ,(ConvertTo-Hashtable -Object $i) }
+        return $list
+    }
+    return $Object
+}
+
+function Get-FileSha256Hex {
+    param([Parameter(Mandatory=$true)][string]$Path)
+    try {
+        $h = Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop
+        return $h.Hash.ToUpperInvariant()
+    } catch {
+        LogMessage -Message "Failed to compute SHA256 for '$Path': $($_.Exception.Message)" -IsWarning
+        return $null
+    }
+}
+
+function Write-JsonAtomically {
+    param(
+        [Parameter(Mandatory=$true)][hashtable]$StateObject,
+        [Parameter(Mandatory=$true)][string]$Path
+    )
+    $dir = Split-Path -LiteralPath $Path -Parent
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $tmp = "$Path.tmp"
+    $bak = "$Path.bak"
+    $sha = "$Path.sha256"
+
+    # Backup existing file once per write (best-effort)
+    if (Test-Path -LiteralPath $Path) {
+        try { Copy-Item -LiteralPath $Path -Destination $bak -Force -ErrorAction Stop } catch { LogMessage -Message "Failed to update state backup '$bak': $($_.Exception.Message)" -IsWarning }
+    }
+
+    # Serialize and write to temp, then atomically move
+    $json = $StateObject | ConvertTo-Json -Depth 100
+    Set-Content -LiteralPath $tmp -Value $json -Encoding UTF8
+
+    # Compute hash on the temp bytes and persist sidecar after final move
+    $hash = Get-FileSha256Hex -Path $tmp
+    try {
+        Move-Item -LiteralPath $tmp -Destination $Path -Force
+    } catch {
+        LogMessage -Message "Atomic move for state file failed: $($_.Exception.Message)" -IsError
+        throw
+    }
+    if ($hash) {
+        try { Set-Content -LiteralPath $sha -Value $hash -Encoding ASCII } catch { LogMessage -Message "Failed to write state sidecar '$sha': $($_.Exception.Message)" -IsWarning }
+    }
+}
+
+function Get-StateFromPath {
+    param([Parameter(Mandatory=$true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    $sha = "$Path.sha256"
+    # Verify sidecar hash if present
+    if (Test-Path -LiteralPath $sha) {
+        $expected = (Get-Content -LiteralPath $sha -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+        $actual   = Get-FileSha256Hex -Path $Path
+        if ($expected -and $actual -and ($expected -ne $actual)) {
+            LogMessage -Message "Checksum mismatch for '$Path' (expected $expected, got $actual). Treating as corrupt." -IsWarning
+            return $null
+        }
+    }
+    # Read and parse JSON safely
+    try {
+        $raw = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+        $obj = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
+        $ht  = ConvertTo-Hashtable -Object $obj
+        return $ht
+    } catch {
+        LogMessage -Message "Failed to parse state file '$Path': $($_.Exception.Message)" -IsWarning
+        return $null
     }
 }
 
@@ -922,7 +1027,7 @@ function SaveState {
     }
 
     # Save the state to the file in JSON format with appropriate depth
-    $state | ConvertTo-Json -Depth 100 | Set-Content -Path $StateFilePath
+    Write-JsonAtomically -StateObject $state -Path $StateFilePath
 
     # Log the save operation
     LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')" 
@@ -940,16 +1045,56 @@ function LoadState {
     # Release the file lock before loading state
     ReleaseFileLock -FileStream $fileLock.Value
 
-    if (Test-Path -Path $StateFilePath) {
-        # Load and convert the state file from JSON format
-        $state = Get-Content -Path $StateFilePath | ConvertFrom-Json
-    } else {
-        # Return a default state if the state file does not exist
-        $state = @{ Checkpoint = 0 }
+    $state = $null
+    $primary = $StateFilePath
+    $backup  = "$StateFilePath.bak"
+
+    # Try primary first
+    $state = Get-StateFromPath -Path $primary
+
+    # If primary fails, try backup, recover if successful, or quarantine the corrupt file
+    if (-not $state) {
+        $stateBak = Get-StateFromPath -Path $backup
+        if ($stateBak) {
+            try {
+                Copy-Item -LiteralPath $backup -Destination $primary -Force
+                # also refresh sidecar
+                $bakHashPath = "$backup.sha256"
+                $priHashPath = "$primary.sha256"
+                if (Test-Path -LiteralPath $bakHashPath) {
+                    Copy-Item -LiteralPath $bakHashPath -Destination $priHashPath -Force -ErrorAction SilentlyContinue
+                } else {
+                    $rehash = Get-FileSha256Hex -Path $primary
+                    if ($rehash) { Set-Content -LiteralPath $priHashPath -Value $rehash -Encoding ASCII }
+                }
+                LogMessage -Message "Recovered state from backup '$backup'."
+            } catch {
+                LogMessage -Message "Failed to restore state from backup '$backup': $($_.Exception.Message)" -IsWarning
+            }
+            $state = $stateBak
+        } elseif (Test-Path -LiteralPath $primary) {
+            # Quarantine corrupt primary for diagnostics
+            try {
+                $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
+                $corruptName = "$primary.corrupt-$stamp.json"
+                Rename-Item -LiteralPath $primary -NewName (Split-Path -Leaf $corruptName) -ErrorAction Stop
+                # Sidecar too
+                $priHashPath = "$primary.sha256"
+                if (Test-Path -LiteralPath $priHashPath) {
+                    Rename-Item -LiteralPath $priHashPath -NewName ((Split-Path -Leaf $corruptName) + ".sha256") -ErrorAction SilentlyContinue
+                }
+                LogMessage -Message "Quarantined corrupt state file to '$corruptName'." -IsWarning
+            } catch {
+                LogMessage -Message "Failed to quarantine corrupt state file '$primary': $($_.Exception.Message)" -IsWarning
+            }
+        }
     }
 
+    # Fallback to default state if still not available
+    if (-not $state) { $state = @{ Checkpoint = 0 } }
+
     # Reacquire the file lock after loading state
-    $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount
+    $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
 
     return $state
 }
