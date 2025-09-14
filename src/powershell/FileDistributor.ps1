@@ -6,9 +6,9 @@ This PowerShell script copies files from a source folder to a target folder, dis
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 1.4.0
+ 1.5.0
  
- (Distribution update: random-balanced placement replaces round-robin. See CHANGELOG.)
+ (Distribution update: random-balanced placement; EndOfScript deletions hardened across restarts. See CHANGELOG.)
 
 File name conflicts are resolved using a custom random name generator. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
 
@@ -120,6 +120,19 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
+## 1.5.0 — 2025-09-14
+### Changed
+- **Hardened `EndOfScript` deletions across restarts:**
+  - Introduced a **session-scoped deletion queue** using a persisted `SessionId`; the script only deletes items queued by the **same session** (including `-Restart` of that session).
+  - **Aggregates warnings/errors across restarts** when evaluating deletion conditions (uses the maximum of previously saved and current run counts).
+  - Deletion queue now stores **metadata** for each entry (`Path`, `Size`, `LastWriteTimeUtc`, `QueuedAtUtc`, `SessionId`) and **verifies the file is unchanged** before deleting; mismatches are skipped with a warning.
+  - **Compatibility:** gracefully loads older queues (string paths) and wraps them with metadata at restart; fixed persistence to store the **array, not the `[ref]` wrapper**.
+
+### Notes
+- State saves now include `WarningsSoFar`, `ErrorsSoFar`, and `SessionId` to support safe resumptions.
+
+---
+
 CHANGELOG
 +## 1.4.0 — 2025-09-14
 +### Changed
@@ -305,6 +318,7 @@ if ($Help) {
 # Define script-scoped variables for warnings and errors
 $script:Warnings = 0
 $script:Errors = 0
+$script:SessionId = $null
 
 # ===== Windows path resolution helpers (executed before any logging) =====
 # Determine script root (works in PS 5.1+ when running as a script)
@@ -400,6 +414,23 @@ function Invoke-WithRetry {
             $delay = [Math]::Min([int]($RetryDelay * [Math]::Pow(2, $attempt - 1)), $MaxBackoff)
             LogMessage -Message "Attempt $attempt failed for $Description. Error: $err. Retrying in $delay second(s)..." -IsWarning
             Start-Sleep -Seconds $delay
+        }
+    }
+}
+
+# Evaluate EndOfScript deletion condition using aggregated counts
+function Test-EndOfScriptCondition {
+    param(
+        [Parameter(Mandatory=$true)][string]$Condition, # "NoWarnings" | "WarningsOnly"
+        [int]$Warnings = 0,
+        [int]$Errors = 0
+    )
+    switch ($Condition) {
+        "NoWarnings"  { return ($Warnings -eq 0 -and $Errors -eq 0) }
+        "WarningsOnly"{ return ($Errors -eq 0) }
+        default {
+            LogMessage -Message "Unknown EndOfScriptDeletionCondition '$Condition'. Failing closed." -IsWarning
+            return $false
         }
     }
 }
@@ -706,7 +737,20 @@ function DistributeFilesToSubfolders {
                     if (-not $FilesToDelete.Value) {
                         $FilesToDelete.Value = @()
                     }
-                    $FilesToDelete.Value += $filePath  # Track by path for reliability
+                    # Gather metadata for safe deletion across restarts
+                    $queuedSize = $null; $queuedMtimeUtc = $null
+                    try {
+                        $finfo = Get-Item -LiteralPath $filePath -ErrorAction Stop
+                        $queuedSize = $finfo.Length
+                        $queuedMtimeUtc = $finfo.LastWriteTimeUtc
+                    } catch { }
+                    $FilesToDelete.Value += [pscustomobject]@{
+                        Path = $filePath
+                        Size = $queuedSize
+                        LastWriteTimeUtc = $queuedMtimeUtc
+                        QueuedAtUtc = (Get-Date).ToUniversalTime()
+                        SessionId = $script:SessionId
+                    }
                     LogMessage -Message "Copied from $file to $destinationFile. Original pending deletion at end of script."
                 }
             } catch {
@@ -845,6 +889,15 @@ function SaveState {
         [ref]$fileLock
     )
 
+    # Ensure a session id exists before persisting
+    if (-not $script:SessionId) {
+        $script:SessionId = [guid]::NewGuid().ToString()
+    }
+
+    # Capture aggregated counters for restart safety
+    $warningsSoFar = $script:Warnings
+    $errorsSoFar   = $script:Errors
+
     # Release the file lock before saving state
     ReleaseFileLock -FileStream $fileLock.Value
 
@@ -857,6 +910,9 @@ function SaveState {
     # Combine state information
     $state = @{
         Checkpoint = $Checkpoint
+        SessionId  = $script:SessionId
+        WarningsSoFar = $warningsSoFar
+        ErrorsSoFar   = $errorsSoFar
         Timestamp  = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     }
 
@@ -1018,6 +1074,8 @@ function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
     Initialize-RandomNameGenerator -UserProvided $RandomNameScriptPath
 
+    # Track prior counters from any persisted state for cross-restart safety
+    $priorWarnings = 0; $priorErrors = 0
     # Handle log entry removal
     if (-not $Restart) {
         $beforeTimestamp = $null
@@ -1066,6 +1124,7 @@ function Main {
 
     try {
         # Ensure source and target folders exist
+        if (-not $script:SessionId) { $script:SessionId = [guid]::NewGuid().ToString() }
         if (!(Test-Path -Path $SourceFolder)) {
             LogMessage -Message "Source folder '$SourceFolder' does not exist." -IsError
             throw "Source folder not found."
@@ -1110,6 +1169,16 @@ function Main {
                 $state = LoadState -fileLock $fileLockRef
                 $lastCheckpoint = $state.Checkpoint
                 if ($lastCheckpoint -gt 0) {
+                    # Restore session id (or create if missing for legacy states)
+                    if ($state.PSObject.Properties.Name -contains 'SessionId' -and $state.SessionId) {
+                        $script:SessionId = [string]$state.SessionId
+                    } else {
+                        $script:SessionId = [guid]::NewGuid().ToString()
+                        LogMessage -Message "Legacy state without SessionId; generated new SessionId for this resume." -IsWarning
+                    }
+                    # Capture prior counters to aggregate with current run
+                    if ($state.PSObject.Properties.Name -contains 'WarningsSoFar') { $priorWarnings = [int]$state.WarningsSoFar }
+                    if ($state.PSObject.Properties.Name -contains 'ErrorsSoFar')   { $priorErrors   = [int]$state.ErrorsSoFar } 
                     LogMessage -Message "Restarting from checkpoint $lastCheckpoint" -ConsoleOutput
                 } else {
                     LogMessage -Message "Checkpoint not found. Executing from top..." -IsWarning
@@ -1163,21 +1232,32 @@ function Main {
 
                 # Load FilesToDelete only for EndOfScript mode and lastCheckpoint 3 or 4
                 if ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4 -and $state.ContainsKey("FilesToDelete")) {
-                    $FilesToDelete = $state.FilesToDelete
+                    $loadedQueue = $state.FilesToDelete
+                    # Normalize to object entries and wrap in [ref]
+                    $normalized = @()
+                    foreach ($e in $loadedQueue) {
+                        if ($e -is [string]) {
+                            $normalized += [pscustomobject]@{
+                                Path = $e; Size = $null; LastWriteTimeUtc = $null; QueuedAtUtc = $null; SessionId = $script:SessionId
+                            }
+                        } else {
+                            $normalized += $e
+                        }
+                    }
+                    $FilesToDelete = [ref]$normalized
 
-                    # Handle empty FilesToDelete array
-                    if (-not $FilesToDelete -or $FilesToDelete.Count -eq 0) {
+                    if (-not $FilesToDelete.Value -or $FilesToDelete.Value.Count -eq 0) {
                         Write-Output "No files to delete from the previous session."
                     } else {
-                        Write-Output "Loaded $($FilesToDelete.Count) files to delete from the previous session."
+                        Write-Output "Loaded $($FilesToDelete.Value.Count) files to delete from the previous session."
                     }
                 } elseif ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4) {
                     # If DeleteMode is EndOfScript but no FilesToDelete key exists
                     LogMessage -Message "State file does not contain FilesToDelete key for EndOfScript mode." -IsWarning
-                    $FilesToDelete = @() # Initialise to an empty array
+                    $FilesToDelete = [ref]@() # Initialise to an empty [ref] array
                 } else {
                     # Default initialisation when EndOfScript mode does not apply
-                    $FilesToDelete = @() # Ensure FilesToDelete is always defined
+                    $FilesToDelete = [ref]@() # Ensure FilesToDelete is always defined
                 }
             } else {
 
@@ -1267,7 +1347,7 @@ function Main {
 
             # Conditionally add FilesToDelete for EndOfScript mode
             if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = $FilesToDelete
+                $additionalVars["FilesToDelete"] = $FilesToDelete.Value
             }
 
             # Save the state with the consolidated additional variables
@@ -1294,7 +1374,7 @@ function Main {
         
             # Conditionally add FilesToDelete if DeleteMode is EndOfScript
             if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = $FilesToDelete
+                $additionalVars["FilesToDelete"] = $FilesToDelete.Value
             }
         
             # Save state with checkpoint 4 and additional variables
@@ -1302,22 +1382,55 @@ function Main {
         }        
 
         if ($DeleteMode -eq "EndOfScript") {
-            # Check if conditions for deletion are satisfied
-            if (($EndOfScriptDeletionCondition -eq "NoWarnings" -and $Warnings -eq 0 -and $Errors -eq 0) -or
-                ($EndOfScriptDeletionCondition -eq "WarningsOnly" -and $Errors -eq 0)) {
+            # Use aggregated counters across restarts for safe evaluation
+            $effectiveWarnings = [Math]::Max($Warnings, $priorWarnings)
+            $effectiveErrors   = [Math]::Max($Errors,   $priorErrors)
+
+            if (Test-EndOfScriptCondition -Condition $EndOfScriptDeletionCondition -Warnings $effectiveWarnings -Errors $effectiveErrors) {
                 
-                # Attempt to delete each file in $FilesToDelete.Value
-                foreach ($file in $FilesToDelete.Value) {
+                # Attempt to delete each queued entry (same-session only)
+                foreach ($entry in $FilesToDelete.Value) {
+                    $entryPath = $null; $entrySession = $null; $entrySize = $null; $entryMtimeUtc = $null
+                    if ($entry -is [string]) {
+                        # Legacy entry (should only happen if not normalized); treat conservatively
+                        $entryPath = $entry
+                        $entrySession = $script:SessionId
+                    } else {
+                        $entryPath   = $entry.Path
+                        $entrySession= $entry.SessionId
+                        $entrySize   = $entry.Size
+                        $entryMtimeUtc = $entry.LastWriteTimeUtc
+                    }
+
+                    if ($entrySession -ne $script:SessionId) {
+                        LogMessage -Message "Skipping deletion for '$entryPath' — queued by a different session ($entrySession)." -IsWarning
+                        continue
+                    }
+
                     try {
-                        if (Test-Path -Path $file) {
-                            Remove-File -FilePath $file
-                            LogMessage -Message "Deleted file: $file during EndOfScript cleanup."
+                        if (Test-Path -Path $entryPath) {
+                            # Verify unchanged if metadata exists
+                            $okToDelete = $true
+                            try {
+                                $fi = Get-Item -LiteralPath $entryPath -ErrorAction Stop
+                                if ($null -ne $entrySize -and $fi.Length -ne $entrySize) { $okToDelete = $false }
+                                if ($null -ne $entryMtimeUtc -and $fi.LastWriteTimeUtc -ne $entryMtimeUtc) { $okToDelete = $false }
+                            } catch {
+                                LogMessage -Message "Could not stat '$entryPath' prior to deletion: $($_.Exception.Message)" -IsWarning
+                            }
+
+                            if ($okToDelete) {
+                                Remove-File -FilePath $entryPath
+                                LogMessage -Message "Deleted file: $entryPath during EndOfScript cleanup."
+                            } else {
+                                LogMessage -Message "Skipped deletion for '$entryPath' due to metadata mismatch (size/time changed)." -IsWarning
+                            }
                         } else {
-                            LogMessage -Message "File $file not found during EndOfScript deletion." -IsWarning
+                            LogMessage -Message "File $entryPath not found during EndOfScript deletion." -IsWarning
                         }
                     } catch {
                         # Log a warning for failure to delete
-                        LogMessage -Message "Failed to delete file $file. Error: $($_.Exception.Message)" -IsWarning
+                        LogMessage -Message "Failed to delete file $entryPath. Error: $($_.Exception.Message)" -IsWarning
                     }
                 }
             } else {
