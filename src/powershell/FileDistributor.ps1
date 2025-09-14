@@ -6,9 +6,9 @@ This PowerShell script copies files from a source folder to a target folder, dis
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 1.1.0
+ 1.2.0
  
- (Documentation-only update: Added .VERSION and CHANGELOG in header. No functional changes.)
+ (Robustness update: Added I/O retry wrappers and centralised error/warning counting. See CHANGELOG.)
 
 File name conflicts are resolved using a custom random name generator. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
 
@@ -51,10 +51,10 @@ Optional. Specifies the conditions under which files are deleted in `EndOfScript
 - `WarningsOnly`: Deletes files if there are no errors, even if warnings exist.
 
 .PARAMETER RetryDelay
-Optional. Specifies the delay in seconds before retrying file access if locked. Defaults to 10 seconds.
+Optional. Base delay in seconds before retrying I/O on failure/lock. Exponential backoff is applied. Defaults to 10 seconds. Applies to state-file locking and all file operations.
 
 .PARAMETER RetryCount
-Optional. Specifies the number of times to retry file access if locked. Defaults to 1. A value of 0 means unlimited retries.
+Optional. Number of times to retry I/O on failure. Defaults to 3. A value of 0 means unlimited retries (with backoff cap). Applies to state-file locking and all file operations.
 
 .PARAMETER CleanupDuplicates
 Optional. If specified, invokes the duplicate file removal script after distribution.
@@ -116,6 +116,16 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 1.2.0 — 2025-09-14
+### Added
+- I/O retry wrappers with `-ErrorAction Stop` and exponential backoff for copy/delete and Recycle Bin moves; applies during distribution and redistribution.
+
+### Changed
+- Centralised error/warning counting via `LogMessage`; replaced direct `Write-Error` in parameter validation.
+- Updated `RetryDelay`/`RetryCount` parameter docs to reflect broader usage across all file operations.
+
+---
+
 ## 1.1.0 — 2025-09-14
 ### Changed
 - **Behaviour (backward-compatible):** Removed upfront renaming of source files. Destination names are now always randomised **at copy time** (and during redistribution) while preserving extensions, improving safety and restartability by leaving sources unmodified until a verified copy exists.
@@ -294,6 +304,73 @@ function LogMessage {
     }
 }
 
+# General-purpose retry helper with exponential backoff
+function Invoke-WithRetry {
+    param(
+        [Parameter(Mandatory=$true)][ScriptBlock]$Operation,
+        [Parameter(Mandatory=$true)][string]$Description,
+        [int]$RetryDelay = 10,
+        [int]$RetryCount = 3,
+        [int]$MaxBackoff = 60
+    )
+    $attempt = 0
+    while ($true) {
+        try {
+            & $Operation
+            if ($attempt -gt 0) {
+                LogMessage -Message "Succeeded after $attempt retry attempt(s): $Description"
+            }
+            return
+        } catch {
+            $attempt++
+            $err = $_.Exception.Message
+            if ($RetryCount -ne 0 -and $attempt -ge $RetryCount) {
+                LogMessage -Message "Operation failed after $attempt attempt(s): $Description. Error: $err" -IsError
+                throw
+            }
+            $delay = [Math]::Min([int]($RetryDelay * [Math]::Pow(2, $attempt - 1)), $MaxBackoff)
+            LogMessage -Message "Attempt $attempt failed for $Description. Error: $err. Retrying in $delay second(s)..." -IsWarning
+            Start-Sleep -Seconds $delay
+        }
+    }
+}
+
+# I/O wrappers
+function Copy-ItemWithRetry {
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory=$true)][string]$Destination,
+        [int]$RetryDelay = 10,
+        [int]$RetryCount = 3
+    )
+    Invoke-WithRetry -Operation { Copy-Item -Path $Path -Destination $Destination -Force -ErrorAction Stop } `
+                     -Description "Copy '$Path' -> '$Destination'" `
+                     -RetryDelay $RetryDelay -RetryCount $RetryCount
+}
+
+function Remove-ItemWithRetry {
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [int]$RetryDelay = 10,
+        [int]$RetryCount = 3
+    )
+    Invoke-WithRetry -Operation { Remove-Item -Path $Path -Force -ErrorAction Stop } `
+                     -Description "Delete '$Path'" `
+                     -RetryDelay $RetryDelay -RetryCount $RetryCount
+}
+
+function Rename-ItemWithRetry {
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory=$true)][string]$NewName,
+        [int]$RetryDelay = 10,
+        [int]$RetryCount = 3
+    )
+    Invoke-WithRetry -Operation { Rename-Item -LiteralPath $Path -NewName $NewName -Force -ErrorAction Stop } `
+                     -Description "Rename '$Path' -> '$NewName'" `
+                     -RetryDelay $RetryDelay -RetryCount $RetryCount
+}
+
 # Check if the random name generator script exists and load it
 $randomNameScriptPath = Join-Path -Path $ScriptDirectory -ChildPath "randomname.ps1"
 
@@ -388,8 +465,10 @@ function Move-ToRecycleBin {
         # Get the file to be moved to the Recycle Bin
         $file = Get-Item $FilePath
 
-        # Move the file to the Recycle Bin, suppressing the confirmation dialog (0x100)
-        $recycleBin.MoveHere($file.FullName, 0x100)
+        # Move the file to the Recycle Bin with retry, suppressing confirmation (0x100)
+        Invoke-WithRetry -Operation { $recycleBin.MoveHere($file.FullName, 0x100) } `
+                         -Description "Recycle '$($file.FullName)'" `
+                         -RetryDelay $RetryDelay -RetryCount $RetryCount
 
         # Log success
         LogMessage -Message "Moved $FilePath to Recycle Bin."
@@ -408,7 +487,7 @@ function Remove-File {
     try {
         # Check if the file exists before attempting deletion
         if (Test-Path -Path $FilePath) {
-            Remove-Item -Path $FilePath -Force
+            Remove-ItemWithRetry -Path $FilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
             LogMessage -Message "Deleted file: $FilePath."
         } else {
             LogMessage -Message "File $FilePath not found. Skipping deletion." -IsWarning
@@ -450,7 +529,8 @@ function DistributeFilesToSubfolders {
         # (Optional) Log the rename intent for traceability
         LogMessage -Message "Assigning randomized destination name for '$file' -> '$destinationFile'."
 
-        Copy-Item -Path $file -Destination $destinationFile
+        # Copy with retries and stop-on-error semantics
+        Copy-ItemWithRetry -Path $file -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount
 
         # Verify the file was copied successfully
         if (Test-Path -Path $destinationFile) {
@@ -843,12 +923,12 @@ function Main {
 
         # Validate input parameters
         if (-not ("RecycleBin", "Immediate", "EndOfScript" -contains $DeleteMode)) {
-            Write-Error "Invalid value for DeleteMode: $DeleteMode. Valid options are 'RecycleBin', 'Immediate', 'EndOfScript'."
+            LogMessage -Message "Invalid value for DeleteMode: $DeleteMode. Valid options are 'RecycleBin', 'Immediate', 'EndOfScript'." -IsError
             exit 1
         }
 
         if (-not ("NoWarnings", "WarningsOnly" -contains $EndOfScriptDeletionCondition)) {
-            Write-Error "Invalid value for EndOfScriptDeletionCondition: $EndOfScriptDeletionCondition. Valid options are 'NoWarnings', 'WarningsOnly'."
+            LogMessage -Message "Invalid value for EndOfScriptDeletionCondition: $EndOfScriptDeletionCondition. Valid options are 'NoWarnings', 'WarningsOnly'." -IsError
             exit 1
         }
 
@@ -933,7 +1013,7 @@ function Main {
                     }
                 } elseif ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4) {
                     # If DeleteMode is EndOfScript but no FilesToDelete key exists
-                    Write-Warning "State file does not contain FilesToDelete key for EndOfScript mode."
+                    LogMessage -Message "State file does not contain FilesToDelete key for EndOfScript mode." -IsWarning
                     $FilesToDelete = @() # Initialise to an empty array
                 } else {
                     # Default initialisation when EndOfScript mode does not apply
