@@ -37,7 +37,8 @@ Run the Python cropper after capture completes.
 .PARAMETER CropOnly
 Run only the Python cropper over images in -SaveFolder and skip screenshot capture entirely.
 .PARAMETER PythonScriptPath
-Path to crop_colours.py (required when -RunCropper).
+Path to crop_colours.py. If omitted, the module will invoke the cropper as a
+Python module (`python -m crop_colours`) which requires `crop_colours` to be importable via `PYTHONPATH`.
 .PARAMETER PythonExe
 Python interpreter to use (optional; falls back to py/python in helper).
 .PARAMETER ClearSnapshotsBeforeRun
@@ -93,7 +94,7 @@ function Start-VideoBatch {
   # --- Crop-only fast path ---------------------------------------------------
   if ($CropOnly) {
     # Warn about ignored capture-related parameters if supplied
-    $captureParams = @('UseVlcSnapshots','FramesPerSecond','TimeLimitSeconds','MaxPerVideoSeconds',
+    $captureParams = @('SourceFolder','UseVlcSnapshots','FramesPerSecond','TimeLimitSeconds','MaxPerVideoSeconds',
                        'GdiFullscreen','VlcStartupTimeoutSeconds','VerifyVideos','IncludeExtensions',
                        'ClearSnapshotsBeforeRun','VideoLimit','ResumeFile','ProcessedLogPath')
     $ignored = @()
@@ -104,12 +105,18 @@ function Start-VideoBatch {
       Write-Message -Level Warn -Message ("CropOnly: ignoring capture-related parameter(s): {0}" -f ($ignored -join ', '))
     }
 
-    # Validate inputs for cropper
-    if ([string]::IsNullOrWhiteSpace($PythonScriptPath)) {
-      throw "CropOnly requires -PythonScriptPath pointing to crop_colours.py."
+    # Require an explicit SaveFolder in CropOnly mode (no implicit default)
+    if (-not $PSBoundParameters.ContainsKey('SaveFolder')) {
+      throw "CropOnly requires -SaveFolder pointing to the folder containing images to crop."
     }
-    if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
-      throw "PythonScriptPath not found: $PythonScriptPath"
+    
+    # Validate inputs for cropper
+    if (-not [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
+      if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
+        throw "PythonScriptPath not found: $PythonScriptPath"
+      }
+    } else {
+      Write-Debug "CropOnly: PythonScriptPath not supplied; will attempt module invocation via 'python -m crop_colours'."
     }
     if (-not (Test-Path -LiteralPath $SaveFolder -PathType Container)) {
       throw "SaveFolder not found (CropOnly expects images here): $SaveFolder"
@@ -133,9 +140,7 @@ function Start-VideoBatch {
 
   # Optional cropper pre-validation (fail fast with clear diagnostics)
   if ($RunCropper) {
-    if ([string]::IsNullOrWhiteSpace($PythonScriptPath)) {
-      Write-Message -Level Warn -Message "RunCropper was specified but PythonScriptPath is empty. Cropper will be skipped."
-    } else {
+    if (-not [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
       if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
         throw "PythonScriptPath not found: $PythonScriptPath"
       }
@@ -146,7 +151,10 @@ function Start-VideoBatch {
           throw "Python executable not found or not on PATH: $PythonExe"
         }
       }
-    }
+    } else {
+      # No explicit script path: we'll rely on `python -m crop_colours` (PYTHONPATH/importable module)
+      Write-Debug "RunCropper: PythonScriptPath not supplied; will invoke via 'python -m crop_colours'."
+     }
   }
 
   if (-not (Test-Path -LiteralPath $SourceFolder)) {
@@ -352,7 +360,7 @@ function Start-VideoBatch {
     }
   }
   # After capture, optionally run the cropper once over the output images (SaveFolder)
-  if ($RunCropper -and -not [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
+  if ($RunCropper) {
     try {
       $isDebug = $PSBoundParameters.ContainsKey('Debug')
       $crop = Invoke-Cropper -PythonScriptPath $PythonScriptPath -PythonExe $PythonExe -InputFolder $SaveFolder -NoAutoInstall:$NoAutoInstall -Debug:$isDebug

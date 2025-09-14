@@ -6,28 +6,42 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
-## [2.3.1] - 2025-09-14
+## [2.4.0] – 2025-09-14
 
-### Fixed
-- Exposed the already-implemented **crop-only** behavior by adding the missing `-CropOnly` switch to the **Start-VideoBatch** parameter block.  
-  This resolves: *“A parameter cannot be found that matches parameter name 'CropOnly'.”*
-
-### Notes
-- No functional changes to crop-only logic; this is a CLI surface fix so the existing feature can be invoked.
-- SemVer: **patch** (bug fix; no API/behavior change beyond exposing the intended parameter).
-
-## [2.3.0] - 2025-09-13
 ### Added
-- `Start-VideoBatch`: new `-CropOnly` mode to run the Python cropper over `-SaveFolder` **without** performing any screenshot capture.
-- `Start-VideoBatch` warns and ignores capture-related parameters when `-CropOnly` is used.
-- README: documented crop-only usage.
+- **Python module fallback for cropper:** If `-PythonScriptPath` is omitted, `Invoke-Cropper` now runs `python -m crop_colours`, allowing discovery via `PYTHONPATH`/installed packages. Debug logs indicate which path is taken.
 
 ### Changed
-- Legacy wrapper `videoscreenshot.ps1`: `-CropOnly` now maps to module `-CropOnly` (previously mapped to `-RunCropper`).
-- Wrapper compatibility: when `-CropOnly` is used and `-SaveFolder` is not provided, `-SourceFolder` is treated as the cropper input folder (mapped to `-SaveFolder`) to mirror legacy behavior.
+- **CropOnly behavior tightened:** In `-CropOnly` mode, an explicit `-SaveFolder` is now required; defaulting is no longer implicit. `-SourceFolder` (and other capture-related flags) are explicitly ignored and noted via a single warning line.
+- **RunCropper preflight:** No longer warns when `-PythonScriptPath` is missing; we attempt module invocation instead.
+
+### Documentation
+- Updated README: documented module-based cropper invocation, crop-only requirements, and the list of ignored parameters in crop-only mode.
+
+### Notes
+- Minor release: backward compatible for normal runs; `-CropOnly` callers must now pass `-SaveFolder` explicitly.
+
+## [2.3.x] — 2025-09-13 → 2025-09-14 (condensed)
+
+### Added
+- **Crop-only mode** in `Start-VideoBatch`: run the Python cropper over `-SaveFolder` **without** taking screenshots.  
+- User experience: when `-CropOnly` is used, capture-related parameters are **ignored** with a single clear warning.  
+- Documentation: README updated with crop-only usage and guidance.
+
+### Changed
+- **Legacy wrapper (`videoscreenshot.ps1`) parity:**  
+  - `-CropOnly` in the wrapper now maps to module `-CropOnly` (previously mapped to `-RunCropper`).  
+  - For back-compat, if the wrapper is called with `-CropOnly` **and** no `-SaveFolder`, the wrapper treats `-SourceFolder` as the cropper’s input folder (mapped to `-SaveFolder`) to mirror legacy behavior.
 
 ### Fixed
-- Avoid confusion in wrapper hint: points users to `-CropOnly` for module parity instead of `-RunCropper`.
+- **CLI surface fix (2.3.1):** the already-implemented crop-only logic was inaccessible due to a missing parameter declaration. Added the `-CropOnly` switch to the `Start-VideoBatch` parameter block, resolving:  
+  *“A parameter cannot be found that matches parameter name 'CropOnly'.”*  
+  No changes to the underlying crop-only behavior—this merely exposes the intended flag.
+
+### Notes
+- SemVer summary:  
+  - **2.3.0 (minor):** introduced crop-only mode and wrapper parity changes, plus docs.  
+  - **2.3.1 (patch):** added the missing `-CropOnly` parameter to the function’s param block; no behavioral changes.
 
 ## [2.2.0–2.2.8] — 2025-09-13 (condensed roll-up)
 

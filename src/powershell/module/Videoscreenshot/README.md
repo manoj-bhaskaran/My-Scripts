@@ -38,11 +38,16 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
 ```
 
 ### Cropper integration
-- When `-RunCropper` is set, the module invokes the Python cropper as:
+When `-RunCropper` is set, the module invokes the Python cropper after capture:
+
+- **If `-PythonScriptPath` is provided** (path to `crop_colours.py`), the script file is executed irectly.
+- **If `-PythonScriptPath` is omitted**, the module falls back to **module invocation**:
   ```
-  python crop_colours.py --input <SourceFolder> --skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha
+  python -m crop_colours --input <SaveFolder> --skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha
   ```
-  If you call `Start-VideoBatch -Debug`, the module also adds `--debug` to the Python invocation.
+  Ensure `crop_colours` is importable (e.g., installed or discoverable via `PYTHONPATH`).
+
+If you call `Start-VideoBatch -Debug`, `--debug` is added to the Python invocation.
 
 #### Crop-only mode
 Run the cropper without taking screenshots:
@@ -56,6 +61,15 @@ Notes:
 Notes:
 - The cropper receives absolute paths for --folder and --prefix. It should not rely on current working directory.
 - On failure, the module throws with the cropper’s STDERR (and STDOUT when present) to simplify debugging.
+
+### Crop-only mode
+Skip screenshot capture and only run the cropper:
+```powershell
+Start-VideoBatch -CropOnly -SaveFolder .\shots [-PythonScriptPath .\src\python\crop_colours.py]
+```
+Requirements/behavior:
+- **`-SaveFolder` is required** in crop-only mode and must point to the folder containing images to rocess.
+- `-SourceFolder` and other capture-related flags are **ignored** in crop-only mode.
 
 ### Advanced usage
 

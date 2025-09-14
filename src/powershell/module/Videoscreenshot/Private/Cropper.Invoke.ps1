@@ -3,8 +3,11 @@
   Run the Python cropper (crop_colours.py) over an input folder.
 
 .DESCRIPTION
-  Invokes the cropper script with safe, opinionated defaults (non-destructive and robust):
-      python crop_colours.py --input <folder> --skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha [--debug]
+  Invokes the cropper with safe, opinionated defaults (non-destructive and robust).
+  If -PythonScriptPath is provided, the file is executed directly:
+      python <crop_colours.py> --input <folder> --skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha [--debug]
+  If -PythonScriptPath is omitted, the module form is used (requires PYTHONPATH/importable module):
+      python -m crop_colours --input <folder> --skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha [--debug]
 
   This helper follows the “helpers throw; caller owns user-facing messages” policy:
   - It validates Python is available.
@@ -50,15 +53,23 @@
 function Invoke-Cropper {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$PythonScriptPath,
+        [Parameter()][string]$PythonScriptPath,
         [Parameter()][string]$PythonExe,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$InputFolder,
         [switch]$NoAutoInstall
     )
 
     # ---- Validate inputs ----------------------------------------------------
-    if (-not (Test-Path -LiteralPath $PythonScriptPath -PathType Leaf)) {
-        throw "Cropper script not found: $PythonScriptPath"
+    $useModuleInvoke = $false
+    $resolvedScript  = $null
+    if (-not [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
+        if (-not (Test-Path -LiteralPath $PythonScriptPath -PathType Leaf)) {
+            throw "Cropper script not found: $PythonScriptPath"
+        }
+        $resolvedScript = $PythonScriptPath
+    } else {
+        $useModuleInvoke = $true
+        Write-Debug "Invoke-Cropper: PythonScriptPath not supplied; using module invocation (-m crop_colours)."
     }
     if (-not (Test-Path -LiteralPath $InputFolder -PathType Container)) {
         throw "InputFolder not found for cropper: $InputFolder"
@@ -163,14 +174,19 @@ function Invoke-Cropper {
 
     # ---- Compose cropper arguments (intentionally opinionated) --------------
     # Per design, these flags are not made configurable here.
-    $pyArgs = @(
-        "$PythonScriptPath",
-        '--input', $InputFolder,
-        '--skip-bad-images',
-        '--allow-empty',
-        '--ignore-processed',
-        '--recurse',
-        '--preserve-alpha'
+    $pyArgs = @()
+    if ($useModuleInvoke) {
+        $pyArgs += @('-m','crop_colours')
+    } else {
+        $pyArgs += @("$resolvedScript")
+    }
+    $pyArgs += @(
+      '--input', $InputFolder,
+      '--skip-bad-images',
+      '--allow-empty',
+      '--ignore-processed',
+      '--recurse',
+      '--preserve-alpha'
     )
     # Propagate PowerShell -Debug to Python via --debug
     $wantDebug = $PSBoundParameters.ContainsKey('Debug') -or ($DebugPreference -eq 'Continue')
