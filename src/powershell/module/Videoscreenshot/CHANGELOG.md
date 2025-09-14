@@ -6,6 +6,19 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.4.2] - 2025-09-14
+
+### Fixed
+- **Ctrl+C now interrupts the Python cropper** in both `-RunCropper` and `-CropOnly` flows. The cropper process is launched in the current console with no stream redirection so console control events propagate to Python (raising `KeyboardInterrupt` promptly).
+
+### Changed
+- **Live output passthrough:** cropper stdout/stderr are no longer buffered; they stream directly to the console. The `Invoke-Cropper` result keeps `ExitCode`/`ElapsedSeconds`, while `StdOut`/`StdErr` are intentionally empty (output is on the console).
+
+### Docs
+- README clarified that cropper output is streamed and can be cancelled with Ctrl+C.
+
+**SemVer:** Patch (2.4.2)
+
 ## [2.4.1] - 2025-09-14
 
 ### Changed

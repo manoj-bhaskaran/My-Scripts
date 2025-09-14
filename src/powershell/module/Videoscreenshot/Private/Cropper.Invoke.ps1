@@ -13,11 +13,7 @@
   - It validates Python is available.
   - It validates/installs required Python packages (by default).
   - On any failure, it throws with actionable detail; no user-facing writes except Debug.
-
-  Output behavior:
-  - In normal runs, stdout/stderr are captured and returned to the caller (summarized by Start-VideoBatch).
-  - When invoked with PowerShell -Debug, the cropper is run with '--debug' and its output streams live
-    to the console (no redirection); this allows real-time progress updates.
+  - **Output is streamed live to the console and Ctrl+C interrupts the Python process** (always-on).
     
   Auto-install behavior:
     - By default, required Python packages are auto-installed via `python -m pip install`.
@@ -193,52 +189,42 @@ function Invoke-Cropper {
       '--recurse',
       '--preserve-alpha'
     )
-    # Propagate PowerShell -Debug to Python via --debug, and decide live/redirect mode
+    # Propagate PowerShell -Debug to Python via --debug
     $wantDebug = $PSBoundParameters.ContainsKey('Debug') -or ($DebugPreference -eq 'Continue')
     if ($wantDebug) { $pyArgs += '--debug' }
 
-    # ---- Launch cropper process ---------------------------------------------
+    # ---- Launch cropper process (share console; stream output; allow Ctrl+C) -
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName = $pythonCmd
     foreach ($a in $pyArgs) { $null = $psi.ArgumentList.Add($a) }
     $psi.UseShellExecute = $false
-    # In Debug: inherit parent's stdio so progress logs stream live to console.
-    # Otherwise: capture stdout/stderr for summary/diagnostics.
-    if ($wantDebug) {
-        $psi.RedirectStandardOutput = $false
-        $psi.RedirectStandardError  = $false
-    } else {
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError  = $true
-    }
-    $psi.CreateNoWindow = $true
+    # Always inherit parent's stdio so progress logs stream live to console and Ctrl+C propagates.
+    $psi.RedirectStandardOutput = $false
+    $psi.RedirectStandardError  = $false
+    $psi.CreateNoWindow = $false
 
     $p = [System.Diagnostics.Process]::new()
     $p.StartInfo = $psi
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $null = $p.Start()
-    # Only read streams when redirected; in Debug/live mode they are not redirected.
-    if (-not $wantDebug) {
-        $stdOut = $p.StandardOutput.ReadToEnd()
-        $stdErr = $p.StandardError.ReadToEnd()
-    } else {
-        $stdOut = ''
-        $stdErr = ''
-    }
     $p.WaitForExit()
     $sw.Stop()
 
-    if ($p.ExitCode -ne 0) {
-        $msg = "Cropper failed (exit $($p.ExitCode)). STDERR: $stdErr"
-        if ($stdOut) { $msg += " | STDOUT: $stdOut" }
-        throw $msg
+    # Special-case: Ctrl+C / SIGINT exit codes for clearer messaging
+    $exit = [int]$p.ExitCode
+    if ($exit -ne 0) {
+        if ($exit -eq -1073741510 -or $exit -eq 130) {  # Windows 0xC000013A or POSIX 130
+            throw "Cropper cancelled by user (Ctrl+C). Exit $exit. See console output above for details."
+        }
+        throw "Cropper failed (exit $exit). See console output above for details."
     }
 
     [pscustomobject]@{
-        ExitCode         = [int]$p.ExitCode
+        ExitCode         = $exit
         ElapsedSeconds   = [math]::Round($sw.Elapsed.TotalSeconds, 3) # wall-clock
-        StdOut           = $stdOut
-        StdErr           = $stdErr
+        # Output is streamed live to the console; these are intentionally empty.
+        StdOut           = ''
+        StdErr           = ''
         RequiredPackages = $requiredPackages
     }
 }
