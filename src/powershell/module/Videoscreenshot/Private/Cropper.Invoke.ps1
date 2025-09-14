@@ -206,9 +206,22 @@ function Invoke-Cropper {
     $p = [System.Diagnostics.Process]::new()
     $p.StartInfo = $psi
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $null = $p.Start()
-    $p.WaitForExit()
-    $sw.Stop()
+
+    # Wire Ctrl+C to terminate the child Python process and return control.
+    # NOTE: Avoid using $Sender/$EventArgs (automatic variables) to prevent accidental assignment.
+    $handler = [ConsoleCancelEventHandler]{ param($evtSender, $evtArgs)
+        try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch {}
+        $evtArgs.Cancel = $true   # prevent PowerShell from terminating; we handle cleanup
+        $script:__cropperCancelled = $true
+    }
+    [System.Console]::CancelKeyPress += $handler
+    try {
+        $null = $p.Start()
+        $p.WaitForExit()
+    } finally {
+        [System.Console]::CancelKeyPress -= $handler
+        $sw.Stop()
+    }
 
     # Special-case: Ctrl+C / SIGINT exit codes for clearer messaging
     $exit = [int]$p.ExitCode

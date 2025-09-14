@@ -6,6 +6,16 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.4.3] - 2025-09-14
+
+### Fixed
+- **Ctrl+C cancellation for cropper runs**: `Invoke-Cropper` now forwards Ctrl+C to the Python process and returns control to PowerShell promptly. Previously, the Python script would stop but the wrapper could remain blocked until the process timeout/completion. The handler is installed only for the cropper lifetime and is always removed, avoiding side effects on subsequent runs.
+
+### Notes
+- No parameter or output format changes; this is a runtime behavior fix.
+- Affected: `Private/Cropper.Invoke.ps1`.
+- SemVer: **patch**.
+
 ## [2.4.2] - 2025-09-14
 
 ### Fixed
