@@ -5,6 +5,11 @@ This PowerShell script copies files from a source folder to a target folder, dis
 .DESCRIPTION
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
+ .VERSION
+ 1.0.1
+ 
+ (Documentation-only update: Added .VERSION and CHANGELOG in header. No functional changes.)
+
 File name conflicts are resolved using a custom random name generator. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
 
 - `RecycleBin`: Moves the files to the Recycle Bin.
@@ -110,6 +115,15 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
+CHANGELOG
+- 1.0.1 (2025-09-14)
+  - Added .VERSION section and CHANGELOG to the script header to improve traceability and align with internal documentation standards.
+  - No functional changes; behavior remains identical to v1.0.0.
+- 1.0.0
+  - Initial version (backfilled).
+
+---
+
 Script Workflow:
 
 Initialization:
