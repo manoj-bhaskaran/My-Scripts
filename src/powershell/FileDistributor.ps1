@@ -6,7 +6,7 @@ This PowerShell script copies files from a source folder to a target folder, dis
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 1.6.0
+ 1.7.0
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -37,6 +37,11 @@ Optional. If specified, the script will restart from the last checkpoint, resumi
 
 .PARAMETER RandomNameScriptPath
 Optional. Path to `randomname.ps1`. Resolution order: (1) user-provided path, (2) script root relative `.\randomname.ps1`, (3) any directory in `%PATH%`. The script errors out if not found.
+
+.PARAMETER MaxBackoff
+Optional. Maximum backoff (in seconds) used by the exponential retry helper when `-RetryCount` is non-zero. 
+Defaults to 60 seconds. Applies to state-file locking and all file operations that use the retry helper
+(`Copy-ItemWithRetry`, `Remove-ItemWithRetry`, `Rename-ItemWithRetry`, Recycle Bin moves).
 
 .PARAMETER ShowProgress
 Optional. Displays progress updates during the script's execution. Use this parameter to enable progress reporting.
@@ -83,6 +88,22 @@ Optional. Specifies an age in days. All log entries older than the specified num
 Optional. Displays the script's synopsis/help text and exits without performing any operations.
 
 .EXAMPLES
+Tune retries (unlimited attempts, capped backoff 5 minutes) while copying:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "D:\Target" -RetryDelay 5 -RetryCount 0 -MaxBackoff 300
+
+Use end-of-script deletion gated on no *errors* (warnings allowed), and resume safely:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "D:\Target" -DeleteMode EndOfScript -EndOfScriptDeletionCondition WarningsOnly
+# ...if interrupted, restart with:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "D:\Target" -Restart
+
+Write logs to a script-root relative file (auto-created), show progress every 250 files:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "D:\Target" -ShowProgress -UpdateFrequency 250 -LogFilePath ".\logs\FileDistributor-log.txt"
+
+Use Windows default locations for state/logs (no need to pass paths) and prune logs older than 14 days:
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "D:\Target" -RemoveEntriesOlderThan 14
+
+---
+
 To copy files from "C:\Source" to "C:\Target" with a default file limit:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
 
@@ -120,6 +141,15 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
+## 1.7.0 — 2025-09-14
+### Added
+- `-MaxBackoff` parameter to control the exponential backoff cap used by retrying operations (copy/delete/rename, Recycle Bin moves, and state I/O helpers that use the retry wrapper). Default: 60s.
+
+### Changed
+- Removed user-specific default paths for `-SourceFolder` and `-TargetFolder`. These parameters are now unset by default (must be provided explicitly). Documentation/examples updated accordingly.
+- Help examples expanded to cover retry tuning, restart flow, and end-of-script deletion behavior.
+- Fixed help text drift: `-RetryCount` documentation now reflects the actual default (3).
+
 ## 1.6.0 — 2025-09-14
 ### Added
 - **Robust state-file handling**:
@@ -233,21 +263,22 @@ Post-Processing:
 
 Prerequisites:
 - Ensure permissions for reading and writing in both source and target directories.
-- The random name generator script should be located at: `C:\Users\manoj\Documents\Scripts\src\powershell\randomname.ps1`.
+- Random name generator resolution order (Windows): (1) `-RandomNameScriptPath` if provided, (2) script root `.\randomname.ps1`, (3) any directory listed in `%PATH%`. The script errors out if it cannot be located.
 
 Limitations:
 - The script does not handle nested directories in the source folder; only top-level files are processed.
 #>
 
 param(
-    [string]$SourceFolder = "C:\Users\manoj\OneDrive\Desktop\New folder",
-    [string]$TargetFolder = "D:\users\manoj\Documents\FIFA 07\elib",
+    [string]$SourceFolder = $null,
+    [string]$TargetFolder = $null,
     [int]$FilesPerFolderLimit = 20000,
     [string]$LogFilePath = $null,
     [string]$StateFilePath = $null,
     [string]$RandomNameScriptPath = $null,
     [switch]$Restart,
     [switch]$ShowProgress = $false,
+    [int]$MaxBackoff = 60, # Cap for exponential backoff used by retry helper
     [int]$UpdateFrequency = 100, # Default: 100 files
     [string]$DeleteMode = "RecycleBin", # Options: "RecycleBin", "Immediate", "EndOfScript"
     [string]$EndOfScriptDeletionCondition = "NoWarnings", # Options: "NoWarnings", "WarningsOnly"
@@ -293,7 +324,9 @@ if ($Help) {
     Write-Host "- RetryDelay:" -ForegroundColor Green
     Write-Host "  Optional. Delay in seconds before retrying file access. Defaults to 10 seconds." -ForegroundColor White
     Write-Host "- RetryCount:" -ForegroundColor Green
-    Write-Host "  Optional. Number of retries for file access. Defaults to 1." -ForegroundColor White
+    Write-Host "  Optional. Number of retries for file access. Defaults to 3. A value of 0 means unlimited retries (with backoff cap)." -ForegroundColor White
+    Write-Host "- MaxBackoff:" -ForegroundColor Green
+    Write-Host "  Optional. Maximum backoff (seconds) for exponential retry. Defaults to 60 seconds." -ForegroundColor White
     Write-Host "- CleanupDuplicates:" -ForegroundColor Green
     Write-Host "  Optional. Invokes duplicate file removal script after distribution." -ForegroundColor White
     Write-Host "- CleanupEmptyFolders:" -ForegroundColor Green
@@ -610,7 +643,7 @@ function Copy-ItemWithRetry {
         [int]$RetryCount = 3
     )
     Invoke-WithRetry -Operation { Copy-Item -Path $Path -Destination $Destination -Force -ErrorAction Stop } `
-                     -Description "Copy '$Path' -> '$Destination'" `
+                     -Description "Copy '$Path' -> '$Destination'" -MaxBackoff $MaxBackoff 
                      -RetryDelay $RetryDelay -RetryCount $RetryCount
 }
 
@@ -621,7 +654,7 @@ function Remove-ItemWithRetry {
         [int]$RetryCount = 3
     )
     Invoke-WithRetry -Operation { Remove-Item -Path $Path -Force -ErrorAction Stop } `
-                     -Description "Delete '$Path'" `
+                     -Description "Delete '$Path'" -MaxBackoff $MaxBackoff `
                      -RetryDelay $RetryDelay -RetryCount $RetryCount
 }
 
@@ -633,7 +666,7 @@ function Rename-ItemWithRetry {
         [int]$RetryCount = 3
     )
     Invoke-WithRetry -Operation { Rename-Item -LiteralPath $Path -NewName $NewName -Force -ErrorAction Stop } `
-                     -Description "Rename '$Path' -> '$NewName'" `
+                     -Description "Rename '$Path' -> '$NewName'" -MaxBackoff $MaxBackoff `
                      -RetryDelay $RetryDelay -RetryCount $RetryCount
 }
 
@@ -715,7 +748,7 @@ function Move-ToRecycleBin {
         $file = Get-Item $FilePath
 
         # Move the file to the Recycle Bin with retry, suppressing confirmation (0x100)
-        Invoke-WithRetry -Operation { $recycleBin.MoveHere($file.FullName, 0x100) } `
+        Invoke-WithRetry -Operation { $recycleBin.MoveHere($file.FullName, 0x100) } -MaxBackoff $MaxBackoff `
                          -Description "Recycle '$($file.FullName)'" `
                          -RetryDelay $RetryDelay -RetryCount $RetryCount
 
@@ -1270,6 +1303,17 @@ function Main {
     try {
         # Ensure source and target folders exist
         if (-not $script:SessionId) { $script:SessionId = [guid]::NewGuid().ToString() }
+
+        # Require SourceFolder/TargetFolder explicitly (removed user-specific defaults)
+        if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
+            LogMessage -Message "SourceFolder not specified. Provide -SourceFolder with a valid path." -IsError
+            throw "Missing required parameter: -SourceFolder"
+        }
+        if ([string]::IsNullOrWhiteSpace($TargetFolder)) {
+            LogMessage -Message "TargetFolder not specified. Provide -TargetFolder with a valid path." -IsError
+            throw "Missing required parameter: -TargetFolder"
+        }
+
         if (!(Test-Path -Path $SourceFolder)) {
             LogMessage -Message "Source folder '$SourceFolder' does not exist." -IsError
             throw "Source folder not found."
