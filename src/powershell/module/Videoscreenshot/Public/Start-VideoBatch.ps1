@@ -72,6 +72,7 @@ function Start-VideoBatch {
 
     # Pipeline completion parameters
     [switch]$RunCropper,
+    [switch]$CropOnly,
     [string]$PythonScriptPath,
     [string]$PythonExe,
     [switch]$NoAutoInstall,

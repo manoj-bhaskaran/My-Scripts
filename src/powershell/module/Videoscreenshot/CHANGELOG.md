@@ -6,6 +6,16 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.3.1] - 2025-09-14
+
+### Fixed
+- Exposed the already-implemented **crop-only** behavior by adding the missing `-CropOnly` switch to the **Start-VideoBatch** parameter block.  
+  This resolves: *“A parameter cannot be found that matches parameter name 'CropOnly'.”*
+
+### Notes
+- No functional changes to crop-only logic; this is a CLI surface fix so the existing feature can be invoked.
+- SemVer: **patch** (bug fix; no API/behavior change beyond exposing the intended parameter).
+
 ## [2.3.0] - 2025-09-13
 ### Added
 - `Start-VideoBatch`: new `-CropOnly` mode to run the Python cropper over `-SaveFolder` **without** performing any screenshot capture.
