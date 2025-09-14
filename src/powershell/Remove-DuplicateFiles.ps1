@@ -8,10 +8,13 @@
     one file from each group of duplicates and deletes the rest. Actions are
     logged to a specified log file. The script validates/creates the log
     directory, performs basic permission/access checks before deletion,
-    and reports duplicate counts accurately (extras beyond the retained file)
+    and reports duplicate counts accurately (extras beyond the retained file).
+    It also avoids loading all files into memory at once by using a streaming,
+    two-pass enumeration (count sizes first, then hash only size-collisions).
 
     .PARAMETER ParentDirectory
-    The parent directory to scan for duplicate files. Defaults to "D:\users\Manoj\Documents\FIFA 07\elib" if not provided.
+    The parent directory to scan for duplicate files. If not provided, defaults to the current
+    working directory (Get-Location).
 
 .PARAMETER LogFilePath
     The path to the log file where actions will be recorded. Defaults to "C:\Users\manoj\Documents\Scripts\Remove-DuplicateFiles.log" if not provided.
@@ -23,47 +26,97 @@
     .\Remove-DuplicateFiles.ps1 -ParentDirectory "C:\MyFiles" -LogFilePath "C:\Logs\DuplicateLog.log" -DryRun
 
 .VERSION
-1.0.2
+1.1.0
 
 CHANGELOG
-## 1.0.2 — 2025-09-14
-### Fixed
-- **Log path default**: removed trailing space from default `-LogFilePath`.
-- **Accurate statistics**: `TotalDuplicatesFound` now counts only the *extra* files
-  beyond the one retained in each duplicate set.
-### Added
-- **Log directory validation/creation**: ensure the directory for `-LogFilePath`
-  exists (create if missing).
-- **Permission/access checks before delete**:
-  - Verify the file can be opened for read/write (helps detect locks/ACL issues).
-  - Verify delete capability in the parent directory via a temp file probe
-    (cached per-directory).
-  If a check fails, deletion is skipped and a warning is logged.
+## 1.1.0 — 2025-09-14
+### Changed
+- **Defaults (UX):** Removed hard-coded, user-specific defaults. `-ParentDirectory` now defaults to the current
+  directory; `-LogFilePath` is resolved to script-root `.\logs\Remove-DuplicateFiles.log`, then `%LOCALAPPDATA%`,
+  then `%TEMP%` (directories created if missing).
+### Improved
+- **Performance:** Replaced single-pass, in-memory grouping with a **streaming two-pass** approach:
+  1) count files by size, 2) re-enumerate and hash **only** size-collision files.
+  Duplicates are bucketed on-demand so only duplicate sets are retained in memory.
 
-## 1.0.1 — 2025-09-14
-### Fixed
-- **Duplicate detection now uses content hashing (SHA-256)** instead of metadata
-  (`Name`, `Extension`, `Length`, `LastWriteTime`). This prevents both false positives
-  (different files sharing metadata) and false negatives (same-content files with
-  different names/timestamps).
-- Performance optimized by **pre-grouping on file size** and hashing only files in
-  size-collision groups.
+## 1.0.x — Rollup (through 2025-09-14)
 
-## 1.0.0 — 2025-09-14
 ### Added
-- Initial script to locate duplicate files and delete all but one in each group; metadata-based grouping.
+- Initial script to locate duplicate files and delete all but one in each group.
+- **Safety & operability:**
+  - Log directory validation/creation for `-LogFilePath` (creates parent folders if missing).
+  - Permission/access checks before deletion:
+    - Attempts to open the file for read/write to detect locks/ACL issues.
+    - Probes delete capability in the parent directory via a temporary file (cached per-directory).
+  - Skips deletion and logs a warning if checks fail.
+
+### Changed / Improved
+- **Duplicate detection is now content-based:** uses SHA-256 hashing instead of metadata (`Name`, `Extension`, `Length`, `LastWriteTime`) to eliminate false positives/negatives.
+- **Performance:** pre-groups by file size and hashes only files with size collisions, reducing unnecessary hashing work.
+
+### Fixed
+- Statistics correctness: `TotalDuplicatesFound` now counts only the *extra* files beyond the one retained in each duplicate set.
+- Trailing space removed from the default `-LogFilePath` value.
 
 #>
 
 param (
-    [string]$ParentDirectory = "D:\users\Manoj\Documents\FIFA 07\elib",
-    # (fixed: removed trailing space)
-    [string]$LogFilePath = "C:\Users\manoj\Documents\Scripts\Remove-DuplicateFiles.log",
+    [string]$ParentDirectory = $null,
+    [string]$LogFilePath = $null,
     [switch]$DryRun
 )
 
-# Trim accidental whitespace on the provided path
-$LogFilePath = $LogFilePath.Trim()
+# ----- Dynamic defaults & path resolution -----
+# Determine script root (works when executed as a script)
+$script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Path $MyInvocation.MyCommand.Path -Parent }
+
+function New-Directory {
+    param([Parameter(Mandatory=$true)][string]$DirectoryPath)
+    if (-not (Test-Path -LiteralPath $DirectoryPath)) {
+        try { New-Item -ItemType Directory -Path $DirectoryPath -Force | Out-Null } catch { }
+ }
+    return (Test-Path -LiteralPath $DirectoryPath)
+}
+
+function Resolve-PathWithFallback {
+    param(
+        [string]$UserPath,
+        [Parameter(Mandatory=$true)][string]$ScriptRelativePath,
+        [Parameter(Mandatory=$true)][string]$WindowsDefaultPath,
+        [Parameter(Mandatory=$true)][string]$TempFallbackPath
+    )
+    # 1) User-provided
+    if ($UserPath) {
+        $parent = Split-Path -Path $UserPath -Parent
+        if (New-Directory -DirectoryPath $parent) { return $UserPath.Trim() }
+    }
+    # 2) Script-root relative
+    $scriptCandidate = Join-Path -Path $script:ScriptRoot -ChildPath $ScriptRelativePath
+    $parent = Split-Path -Path $scriptCandidate -Parent
+    if (New-Directory -DirectoryPath $parent) { return $scriptCandidate }
+    # 3) Windows default (LOCALAPPDATA)
+    $winCandidate = $WindowsDefaultPath
+    $parent = Split-Path -Path $winCandidate -Parent
+    if (New-Directory -DirectoryPath $parent) { return $winCandidate }
+    # 4) TEMP fallback
+    $tempCandidate = $TempFallbackPath
+    $parent = Split-Path -Path $tempCandidate -Parent
+    if (New-Directory -DirectoryPath $parent) { return $tempCandidate }
+    return $TempFallbackPath
+}
+
+# Compute effective defaults
+if (-not $ParentDirectory) { $ParentDirectory = (Get-Location).Path }
+
+$localAppData = $env:LOCALAPPDATA
+$tempRoot     = $env:TEMP
+$defaultLog_ScriptRel = 'logs\Remove-DuplicateFiles.log'
+$defaultLog_Windows   = Join-Path -Path (Join-Path $localAppData 'DuplicateCleaner\logs') -ChildPath 'Remove-DuplicateFiles.log'
+$defaultLog_Temp      = Join-Path -Path (Join-Path $tempRoot     'DuplicateCleaner\logs') -ChildPath 'Remove-DuplicateFiles.log'
+
+$LogFilePath = Resolve-PathWithFallback -UserPath $LogFilePath `
+    -ScriptRelativePath $defaultLog_ScriptRel -WindowsDefaultPath $defaultLog_Windows -TempFallbackPath $defaultLog_Temp
+ 
 
 # Ensure the log directory exists and log file is created
 function Initialize-LogDestination {
@@ -153,27 +206,32 @@ if (-not (Test-Path $ParentDirectory)) {
 Log "Starting duplicate file scan in directory: $ParentDirectory"
 Log "Duplicate detection strategy: pre-group by file size, then compare SHA-256 content hashes."
 
-# Get all files in the directory and subdirectories
-$Files = Get-ChildItem -Path $ParentDirectory -Recurse -File
+# -------- Streaming two-pass enumeration to reduce memory pressure --------
+# Pass 1: count files by size (store only counts)
+$sizeCounts = @{}
+Get-ChildItem -Path $ParentDirectory -Recurse -File | ForEach-Object {
+    $len = $_.Length
+    if ($sizeCounts.ContainsKey($len)) { $sizeCounts[$len]++ } else { $sizeCounts[$len] = 1 }
+}
 
-# Step 1: pre-group by file size (cheap) and only hash files within size-collision groups
-$SizeGroups = $Files | Group-Object -Property Length | Where-Object { $_.Count -gt 1 }
+# Pass 2: hash only files in size-collision buckets; retain in-memory only duplicate sets
+$seenByHash     = @{} # hash -> first FileInfo seen
+$dupeBuckets    = @{} # hash -> [FileInfo[]] (includes first once a dup is found)
 
-# Step 2: within each size group, compute SHA-256 and find true duplicate sets
-$DuplicateGroups = @()
-foreach ($sg in $SizeGroups) {
-    # Build [FileInfo, Hash] objects; skip files we failed to hash
-    $hashed = foreach ($f in $sg.Group) {
-        $h = Get-ContentHash -Path $f.FullName
+Get-ChildItem -Path $ParentDirectory -Recurse -File | ForEach-Object {
+    if ($sizeCounts[$_.Length] -gt 1) {
+        $h = Get-ContentHash -Path $_.FullName
         if ($null -ne $h) {
-            [PSCustomObject]@{ File = $f; Hash = $h }
-        }
-    }
-
-    if ($hashed) {
-        $hashGroups = $hashed | Group-Object -Property Hash | Where-Object { $_.Count -gt 1 }
-        if ($hashGroups.Count -gt 0) {
-            $DuplicateGroups += $hashGroups
+            if ($seenByHash.ContainsKey($h)) {
+                if (-not $dupeBuckets.ContainsKey($h)) {
+                    # create bucket and add the first occurrence
+                    $dupeBuckets[$h] = @($seenByHash[$h])
+                }
+                # add the new duplicate occurrence
+                $dupeBuckets[$h] += $_
+            } else {
+                $seenByHash[$h] = $_
+            }
         }
     }
 }
