@@ -6,6 +6,15 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.4.1] - 2025-09-14
+
+### Changed
+- **Real-time cropper output:** `Invoke-Cropper` now streams the Python cropper’s stdout/stderr directly to the console so progress, warnings, and errors appear as they happen (instead of only after the process exits). Existing module logs (e.g., start/finish summaries) are preserved.
+
+### Notes
+- No parameter or API changes.
+- Exit codes and error handling are unchanged; failures still surface clearly to the caller.
+
 ## [2.4.0] – 2025-09-14
 
 ### Added

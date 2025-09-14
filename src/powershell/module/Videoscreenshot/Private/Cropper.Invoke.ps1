@@ -14,6 +14,11 @@
   - It validates/installs required Python packages (by default).
   - On any failure, it throws with actionable detail; no user-facing writes except Debug.
 
+  Output behavior:
+  - In normal runs, stdout/stderr are captured and returned to the caller (summarized by Start-VideoBatch).
+  - When invoked with PowerShell -Debug, the cropper is run with '--debug' and its output streams live
+    to the console (no redirection); this allows real-time progress updates.
+    
   Auto-install behavior:
     - By default, required Python packages are auto-installed via `python -m pip install`.
     - Pass -NoAutoInstall to disable auto-install. In that case, the function throws when
@@ -188,7 +193,7 @@ function Invoke-Cropper {
       '--recurse',
       '--preserve-alpha'
     )
-    # Propagate PowerShell -Debug to Python via --debug
+    # Propagate PowerShell -Debug to Python via --debug, and decide live/redirect mode
     $wantDebug = $PSBoundParameters.ContainsKey('Debug') -or ($DebugPreference -eq 'Continue')
     if ($wantDebug) { $pyArgs += '--debug' }
 
@@ -197,16 +202,29 @@ function Invoke-Cropper {
     $psi.FileName = $pythonCmd
     foreach ($a in $pyArgs) { $null = $psi.ArgumentList.Add($a) }
     $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
+    # In Debug: inherit parent's stdio so progress logs stream live to console.
+    # Otherwise: capture stdout/stderr for summary/diagnostics.
+    if ($wantDebug) {
+        $psi.RedirectStandardOutput = $false
+        $psi.RedirectStandardError  = $false
+    } else {
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError  = $true
+    }
     $psi.CreateNoWindow = $true
 
     $p = [System.Diagnostics.Process]::new()
     $p.StartInfo = $psi
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $null = $p.Start()
-    $stdOut = $p.StandardOutput.ReadToEnd()
-    $stdErr = $p.StandardError.ReadToEnd()
+    # Only read streams when redirected; in Debug/live mode they are not redirected.
+    if (-not $wantDebug) {
+        $stdOut = $p.StandardOutput.ReadToEnd()
+        $stdErr = $p.StandardError.ReadToEnd()
+    } else {
+        $stdOut = ''
+        $stdErr = ''
+    }
     $p.WaitForExit()
     $sw.Stop()
 

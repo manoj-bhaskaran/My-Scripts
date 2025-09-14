@@ -47,7 +47,7 @@ When `-RunCropper` is set, the module invokes the Python cropper after capture:
   ```
   Ensure `crop_colours` is importable (e.g., installed or discoverable via `PYTHONPATH`).
 
-If you call `Start-VideoBatch -Debug`, `--debug` is added to the Python invocation.
+If you call `Start-VideoBatch -Debug`, `--debug` is added to the Python invocation **and the cropper’s stdout/stderr stream live to the console**. In normal runs (without `-Debug`), output is captured and summarized after completion.
 
 #### Crop-only mode
 Run the cropper without taking screenshots:
@@ -220,6 +220,7 @@ If any package is missing, the module automatically installs them via python -m 
 > Tip: You can change the required package list by editing Config.ps1 (Python.RequiredPackages). This keeps the PowerShell code free of hard-coded package names.
 
 > Note: Stdout/stderr from the Python process are captured for diagnostics. For advanced control over cropping arguments, adjust the Python script directly (the default integration uses safe batch flags: `--skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha`).
+> In `-Debug` runs, the cropper’s stdout/stderr stream live to the console instead of being captured.
 - GDI capture currently targets Windows (uses GDI+/System.Drawing); VLC snapshot mode is cross-platform where VLC is available.
 > See also the docstring in src/python/crop_colours.py for a full list of cropper flags, behaviors, and troubleshooting notes.
 ### If you see a version error
