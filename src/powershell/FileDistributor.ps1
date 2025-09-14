@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-This PowerShell script copies files from a source folder to a target folder, distributing them across subfolders while maintaining a maximum file count per subfolder. It supports configurable deletion modes, progress updates, and automatic conflict resolution for file names.
+The script recursively enumerates files from the source directory and ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
 .DESCRIPTION
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 1.7.0
+ 2.0.0
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -141,90 +141,38 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
-## 1.7.0 — 2025-09-14
-### Added
-- `-MaxBackoff` parameter to control the exponential backoff cap used by retrying operations (copy/delete/rename, Recycle Bin moves, and state I/O helpers that use the retry wrapper). Default: 60s.
-
-### Changed
-- Removed user-specific default paths for `-SourceFolder` and `-TargetFolder`. These parameters are now unset by default (must be provided explicitly). Documentation/examples updated accordingly.
-- Help examples expanded to cover retry tuning, restart flow, and end-of-script deletion behavior.
-- Fixed help text drift: `-RetryCount` documentation now reflects the actual default (3).
-
-## 1.6.0 — 2025-09-14
-### Added
-- **Robust state-file handling**:
-  - Atomic state writes using a same-directory `*.tmp` then replace.
-  - A persistent backup at `FileDistributor-State.json.bak`.
-  - A sidecar integrity file `FileDistributor-State.json.sha256` to detect truncation/bit-rot.
-  - Automatic recovery from `.bak` when the primary is unreadable or fails checksum.
-  - Quarantine of corrupt state files to `FileDistributor-State.json.corrupt-<timestamp>.json`.
-  - Loader always returns a **Hashtable**, ensuring downstream `.ContainsKey()` calls work on Windows PowerShell 5.1+ and PowerShell 7+.
-
-### Changed
-- `SaveState` and `LoadState` refactored to use the atomic writer/verified reader and to log precise recovery actions.
-
----
-
-## 1.5.0 — 2025-09-14
-### Changed
-- **Hardened `EndOfScript` deletions across restarts:**
-  - Introduced a **session-scoped deletion queue** using a persisted `SessionId`; the script only deletes items queued by the **same session** (including `-Restart` of that session).
-  - **Aggregates warnings/errors across restarts** when evaluating deletion conditions (uses the maximum of previously saved and current run counts).
-  - Deletion queue now stores **metadata** for each entry (`Path`, `Size`, `LastWriteTimeUtc`, `QueuedAtUtc`, `SessionId`) and **verifies the file is unchanged** before deleting; mismatches are skipped with a warning.
-  - **Compatibility:** gracefully loads older queues (string paths) and wraps them with metadata at restart; fixed persistence to store the **array, not the `[ref]` wrapper**.
-
-### Notes
-- State saves now include `WarningsSoFar`, `ErrorsSoFar`, and `SessionId` to support safe resumptions.
-
----
-
 CHANGELOG
-+## 1.4.0 — 2025-09-14
-+### Changed
-+- **Distribution is now random-balanced (best effort):** Replaced deterministic round-robin with per-file random target selection biased toward the least-filled subfolders, while respecting the per-folder limit. This better aligns with the “random basis” requirement and maintains evenness without new parameters.
-+- Applies to both initial distribution and redistribution (function `DistributeFilesToSubfolders`).
-+
-+---
-+
-## 1.3.0 — 2025-09-14
+## 2.0.0 — 2025-09-14
+### Changed (⚠️ Breaking)
+- **Source enumeration is now recursive by default (and only behavior):** All files under `-SourceFolder` (including nested subdirectories) are processed. Previously only top-level files were handled.
+- Help/description updated to reflect recursion.
+- Limitations updated (top-level only note removed).
+
+## 1.0.0–1.7.0 (rollup) — 2025-09-14
+
 ### Added
-- Windows-only dynamic path resolution using the following order:
-  1) user-provided parameter,
-  2) script root–relative,
-  3) `%LOCALAPPDATA%\FileDistributor\...`,
-  4) `%TEMP%\FileDistributor\...`.
-- `-RandomNameScriptPath` parameter; `randomname.ps1` is now resolved via parameter → script root → `%PATH%` (errors out if not found).
+- Exponential I/O retry wrappers (copy/delete/Recycle Bin moves) with `-ErrorAction Stop` and backoff.
+- `-MaxBackoff` parameter to cap exponential backoff (default 60s).
+- Windows-only dynamic path resolution for logs/state: user-provided → script-root → `%LOCALAPPDATA%` → `%TEMP%`.
+- `-RandomNameScriptPath` parameter; resolves `randomname.ps1` via parameter → script root → `%PATH%` (errors if not found).
+- Robust state-file handling: atomic write via same-directory `*.tmp` then replace, persistent `.bak`, `.sha256` integrity sidecar, auto-recovery from `.bak`, quarantine of corrupt primaries.
+- Script header `.VERSION` and `CHANGELOG` sections.
 
 ### Changed
-- Dropped hard-coded `$ScriptDirectory`; helper scripts now resolved relative to script root.
-- `LogFilePath` and `StateFilePath` now follow the resolution order above (was hard-coded defaults).
-
----
-
-## 1.2.0 — 2025-09-14
-### Added
-- I/O retry wrappers with `-ErrorAction Stop` and exponential backoff for copy/delete and Recycle Bin moves; applies during distribution and redistribution.
-
-### Changed
-- Centralised error/warning counting via `LogMessage`; replaced direct `Write-Error` in parameter validation.
-- Updated `RetryDelay`/`RetryCount` parameter docs to reflect broader usage across all file operations.
-
----
-
-## 1.1.0 — 2025-09-14
-### Changed
-- **Behaviour (backward-compatible):** Removed upfront renaming of source files. Destination names are now always randomised **at copy time** (and during redistribution) while preserving extensions, improving safety and restartability by leaving sources unmodified until a verified copy exists.
-- Checkpoint 1 updated to a pre-copy preparation step (no renaming).
-
----
-
-## 1.0.x — Rollup (through 2025-09-14)
-### Added
-- `.VERSION` and `CHANGELOG` sections in the script header to improve traceability and align with internal standards.
+- **Distribution**: switched from round-robin to random-balanced placement biased to least-filled subfolders; applies to initial distribution and redistribution.
+- **Naming**: removed upfront renaming of sources; destination names always randomized at copy time while preserving extensions.
+- **End-of-script deletions hardened**:
+  - Session-scoped deletion queue using persisted `SessionId`; only deletes items queued by the same session (including `-Restart`).
+  - Aggregates warnings/errors across restarts when evaluating deletion conditions.
+  - Queue stores metadata (`Path`, `Size`, `LastWriteTimeUtc`, `QueuedAtUtc`, `SessionId`) and verifies unchanged files before deletion; mismatches are skipped with a warning.
+  - Back-compat: older string-only queues are wrapped with metadata on resume; persistence fixed to store the array (not a `[ref]`).
+- **State I/O**: `SaveState`/`LoadState` refactored to atomic/verified helpers with precise recovery logging; loader always returns a Hashtable to keep `.ContainsKey()` reliable on Windows PowerShell 5.1+ and PowerShell 7+.
+- **Paths & config**: removed user-specific defaults for `-SourceFolder`/`-TargetFolder` (must be provided); `LogFilePath`/`StateFilePath` now follow the dynamic resolution order; dropped hard-coded `$ScriptDirectory`.
+- **Logging & docs**: centralized error/warning counting via `LogMessage`; updated `RetryDelay`/`RetryCount` docs; expanded examples (retry tuning, restart, end-of-script deletion); fixed `-RetryCount` default doc drift to 3.
 
 ### Notes
-- No functional changes across this patch line; behaviour remains identical to v1.0.0.
-- Included patches: **1.0.0** (initial version, backfilled) and **1.0.1** (documentation-only).
+- State saves now include `WarningsSoFar`, `ErrorsSoFar`, and `SessionId` to enable safe resumptions.
+- No functional changes in the 1.0.x patch rollup; behavior remained identical to 1.0.0 aside from documentation and traceability improvements.
 
 Script Workflow:
 
@@ -265,8 +213,8 @@ Prerequisites:
 - Ensure permissions for reading and writing in both source and target directories.
 - Random name generator resolution order (Windows): (1) `-RandomNameScriptPath` if provided, (2) script root `.\randomname.ps1`, (3) any directory listed in `%PATH%`. The script errors out if it cannot be located.
 
-Limitations:
-- The script does not handle nested directories in the source folder; only top-level files are processed.
+ Limitations:
+ - The script processes files only (directories are ignored) and will recurse all nested folders under the specified source.
 #>
 
 param(
@@ -300,7 +248,7 @@ if ($Help) {
     Write-Host "This PowerShell script copies files from a source folder to a target folder, distributing them across subfolders while maintaining a maximum file count per subfolder. It supports configurable deletion modes, progress updates, and automatic conflict resolution for file names." -ForegroundColor White
 
     Write-Host "`nDESCRIPTION" -ForegroundColor Yellow
-    Write-Host "The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed." -ForegroundColor White
+    Write-Host "The script recursively enumerates files from the source directory and ensures they are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed." -ForegroundColor White
 
     Write-Host "`nPARAMETERS" -ForegroundColor Yellow
     Write-Host "- SourceFolder:" -ForegroundColor Green
@@ -1483,7 +1431,7 @@ function Main {
 
         if ($lastCheckpoint -lt 2) {
             # Count files in the source and target folder before distribution
-            $sourceFiles = Get-ChildItem -Path $SourceFolder -File
+            $sourceFiles = Get-ChildItem -Path $SourceFolder -Recurse -File
             $totalSourceFiles = $sourceFiles.Count
             $totalTargetFilesBefore = (Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object).Count
             $totalTargetFilesBefore = if ($null -eq $totalTargetFilesBefore) { 0 } else { $totalTargetFilesBefore }
