@@ -36,6 +36,11 @@ Timeout for VLC process to initialize.
 Run the Python cropper after capture completes.
 .PARAMETER CropOnly
 Run only the Python cropper over images in -SaveFolder and skip screenshot capture entirely.
+.PARAMETER ReprocessCropped
+Reprocess files even if they were cropped previously (Python: --reprocess-cropped).
+By default, existing crops are deleted and regenerated.
+.PARAMETER KeepExistingCrops
+When used with -ReprocessCropped, do not delete existing crops; new outputs are added alongside.
 .PARAMETER PythonScriptPath
 Path to crop_colours.py. If omitted, the module will invoke the cropper as a
 Python module (`python -m crop_colours`) which requires `crop_colours` to be importable via `PYTHONPATH`.
@@ -74,6 +79,8 @@ function Start-VideoBatch {
     # Pipeline completion parameters
     [switch]$RunCropper,
     [switch]$CropOnly,
+    [switch]$ReprocessCropped,
+    [switch]$KeepExistingCrops,
     [string]$PythonScriptPath,
     [string]$PythonExe,
     [switch]$NoAutoInstall,
@@ -126,7 +133,14 @@ function Start-VideoBatch {
 
     try {
       $isDebug = $PSBoundParameters.ContainsKey('Debug')
-      $crop = Invoke-Cropper -PythonScriptPath $PythonScriptPath -PythonExe $PythonExe -InputFolder $SaveFolder -NoAutoInstall:$NoAutoInstall -Debug:$isDebug
+      $crop = Invoke-Cropper `
+        -PythonScriptPath $PythonScriptPath `
+        -PythonExe $PythonExe `
+        -InputFolder $SaveFolder `
+        -NoAutoInstall:$NoAutoInstall `
+        -ReprocessCropped:$ReprocessCropped `
+        -KeepExistingCrops:$KeepExistingCrops `
+        -Debug:$isDebug
       Write-Message -Level Info -Message ("Cropper finished OK (exit={0}). STDERR: {1}" -f $crop.ExitCode, ([string]::IsNullOrWhiteSpace($crop.StdErr) ? '<none>' : $crop.StdErr))
     } catch {
       Write-Message -Level Warn -Message ("Cropper failed: {0}" -f $_.Exception.Message)
@@ -363,7 +377,14 @@ function Start-VideoBatch {
   if ($RunCropper) {
     try {
       $isDebug = $PSBoundParameters.ContainsKey('Debug')
-      $crop = Invoke-Cropper -PythonScriptPath $PythonScriptPath -PythonExe $PythonExe -InputFolder $SaveFolder -NoAutoInstall:$NoAutoInstall -Debug:$isDebug
+      $crop = Invoke-Cropper `
+        -PythonScriptPath $PythonScriptPath `
+        -PythonExe $PythonExe `
+        -InputFolder $SaveFolder `
+        -NoAutoInstall:$NoAutoInstall `
+        -ReprocessCropped:$ReprocessCropped `
+        -KeepExistingCrops:$KeepExistingCrops `
+        -Debug:$isDebug
       Write-Message -Level Info -Message ("Cropper finished OK (exit={0}). STDERR: {1}" -f $crop.ExitCode, ([string]::IsNullOrWhiteSpace($crop.StdErr) ? '<none>' : $crop.StdErr))
     } catch {
       # Include as much context as we have

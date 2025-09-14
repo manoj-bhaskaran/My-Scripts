@@ -6,6 +6,16 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## 2.5.0
+### Added
+- `-ReprocessCropped` and `-KeepExistingCrops` parameters to control re-cropping behavior.
+
+### Changed
+- Default: skip images that were previously cropped (no longer passes `--ignore-processed` to Python).
+
+### Notes
+- Cropper output streams to console; Ctrl+C cancels the Python process and returns control to PowerShell.
+
 ## [2.4.3] - 2025-09-14
 
 ### Fixed

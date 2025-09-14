@@ -38,16 +38,22 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
 ```
 
 ### Cropper integration
-When `-RunCropper` is set, the module invokes the Python cropper after capture:
+When `-RunCropper` is set, the module invokes the Python cropper after capture. By default the cropper **skips images that were already cropped in previous runs** (tracked via `.processed_images`).
 
-- **If `-PythonScriptPath` is provided** (path to `crop_colours.py`), the script file is executed irectly.
+- **If `-PythonScriptPath` is provided** (path to `crop_colours.py`), the script file is executed directly.
 - **If `-PythonScriptPath` is omitted**, the module falls back to **module invocation**:
   ```
-  python -m crop_colours --input <SaveFolder> --skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha
+  python -m crop_colours --input <SaveFolder> --skip-bad-images --allow-empty --recurse --preserve-alpha
   ```
   Ensure `crop_colours` is importable (e.g., installed or discoverable via `PYTHONPATH`).
 
-If you call `Start-VideoBatch -Debug`, `--debug` is added to the Python invocation **and the cropper’s stdout/stderr stream live to the console**. In normal runs (without `-Debug`), output is captured and summarized after completion.
+To force a full re-crop, use:
+```
+Start-VideoBatch ... -RunCropper -ReprocessCropped         # deletes existing crops then regenerates
+Start-VideoBatch ... -RunCropper -ReprocessCropped -KeepExistingCrops   # keeps existing crops; adds new alongside
+```
+
+If you call `Start-VideoBatch -Debug`, `--debug` is added to the Python invocation for verbose logging. The cropper’s stdout/stderr are **always streamed live to the console**, and Ctrl+C cancels cleanly.
 
 #### Crop-only mode
 Run the cropper without taking screenshots:
@@ -59,8 +65,8 @@ Notes:
 - The cropper operates on images under `-SaveFolder`.
 
 Notes:
-- The cropper receives absolute paths for --folder and --prefix. It should not rely on current working directory.
-- On failure, the module throws with the cropper’s STDERR (and STDOUT when present) to simplify debugging.
+- The cropper receives absolute paths and streams logs to the console; Ctrl+C cancels cleanly.
+- On failure, the module throws a concise error; see on-screen logs for details.
 
 ### Crop-only mode
 Skip screenshot capture and only run the cropper:
@@ -68,8 +74,9 @@ Skip screenshot capture and only run the cropper:
 Start-VideoBatch -CropOnly -SaveFolder .\shots [-PythonScriptPath .\src\python\crop_colours.py]
 ```
 Requirements/behavior:
-- **`-SaveFolder` is required** in crop-only mode and must point to the folder containing images to rocess.
+- **`-SaveFolder` is required** in crop-only mode and must point to the folder containing images to process.
 - `-SourceFolder` and other capture-related flags are **ignored** in crop-only mode.
+- Use `-ReprocessCropped` (and optionally `-KeepExistingCrops`) to control re-cropping semantics.
 
 ### Advanced usage
 
@@ -89,8 +96,10 @@ Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
 
 #### What the cropper flags do
 * --preserve-alpha — consider transparency when trimming borders; useful for PNGs with transparent edges.
-* --ignore-processed — skip images listed in the run’s .processed_images tracking file.
 * --allow-empty — treat an empty input as success (exit code 0).
+* (reprocessing) Default behavior skips previously cropped images.
+  - `--reprocess-cropped` reprocesses everything.
+  - `--keep-existing-crops` (with `--reprocess-cropped`) keeps existing outputs; new files are de-duplicated.
 See the Python script’s docstring for advanced options: src/python/crop_colours.py.
 
 ### Resume / processed logging
@@ -185,6 +194,8 @@ src/
 - -StartupGraceSeconds – grace delay after VLC start before measuring
 - **Cropper**
 - -RunCropper – run Python cropper after frames saved
+- -ReprocessCropped – force re-crop even if images were processed previously (deletes existing crops by default)
+- -KeepExistingCrops – with -ReprocessCropped, keep existing crops and add new outputs alongside
 - -PythonScriptPath, -PythonExe – cropper script & interpreter
 - -ClearSnapshotsBeforeRun – clear existing frames for the current video prefix before capture
 
@@ -221,6 +232,7 @@ If any package is missing, the module automatically installs them via python -m 
 
 > Note: Stdout/stderr from the Python process are captured for diagnostics. For advanced control over cropping arguments, adjust the Python script directly (the default integration uses safe batch flags: `--skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha`).
 > In `-Debug` runs, the cropper’s stdout/stderr stream live to the console instead of being captured.
+> Note: The cropper’s stdout/stderr stream live to the console (always-on). For advanced control over cropping arguments, adjust the Python script directly. The module uses safe defaults: `--skip-bad-images --allow-empty --recurse --preserve-alpha`, and adds `--reprocess-cropped` (plus `--keep-existing-crops`) when you pass the corresponding PowerShell flags.
 - GDI capture currently targets Windows (uses GDI+/System.Drawing); VLC snapshot mode is cross-platform where VLC is available.
 > See also the docstring in src/python/crop_colours.py for a full list of cropper flags, behaviors, and troubleshooting notes.
 ### If you see a version error

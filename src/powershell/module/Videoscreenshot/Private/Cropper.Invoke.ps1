@@ -5,9 +5,9 @@
 .DESCRIPTION
   Invokes the cropper with safe, opinionated defaults (non-destructive and robust).
   If -PythonScriptPath is provided, the file is executed directly:
-      python <crop_colours.py> --input <folder> --skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha [--debug]
+      python <crop_colours.py> --input <folder> --skip-bad-images --allow-empty --recurse --preserve-alpha [--reprocess-cropped [--keep-existing-crops]] [--debug]
   If -PythonScriptPath is omitted, the module form is used (requires PYTHONPATH/importable module):
-      python -m crop_colours --input <folder> --skip-bad-images --allow-empty --ignore-processed --recurse --preserve-alpha [--debug]
+      python -m crop_colours --input <folder> --skip-bad-images --allow-empty --recurse --preserve-alpha [--reprocess-cropped [--keep-existing-crops]] [--debug]
 
   This helper follows the “helpers throw; caller owns user-facing messages” policy:
   - It validates Python is available.
@@ -57,7 +57,9 @@ function Invoke-Cropper {
         [Parameter()][string]$PythonScriptPath,
         [Parameter()][string]$PythonExe,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$InputFolder,
-        [switch]$NoAutoInstall
+        [switch]$NoAutoInstall,
+        [switch]$ReprocessCropped,
+        [switch]$KeepExistingCrops
     )
 
     # ---- Validate inputs ----------------------------------------------------
@@ -185,10 +187,13 @@ function Invoke-Cropper {
       '--input', $InputFolder,
       '--skip-bad-images',
       '--allow-empty',
-      '--ignore-processed',
       '--recurse',
       '--preserve-alpha'
     )
+    if ($ReprocessCropped) {
+        $pyArgs += '--reprocess-cropped'
+        if ($KeepExistingCrops) { $pyArgs += '--keep-existing-crops' }
+    }
     # Propagate PowerShell -Debug to Python via --debug
     $wantDebug = $PSBoundParameters.ContainsKey('Debug') -or ($DebugPreference -eq 'Continue')
     if ($wantDebug) { $pyArgs += '--debug' }

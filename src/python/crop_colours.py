@@ -1,7 +1,7 @@
 """
 Frame cropper for image folders.
 
-Version: 3.4.4
+Version: 4.0.0
 Author: Manoj Bhaskaran
 
 DESCRIPTION
@@ -14,8 +14,8 @@ DESCRIPTION
       - Appends a filename suffix (default: "_cropped")
       - Preserves subfolder structure with --recurse
       - Never overwrites outputs (auto de-duplicates if needed)
-      - Tracks processed files to avoid reprocessing (via .processed_images using absolute paths)
-        Note: Moving input directories invalidates tracking; use --ignore-processed after relocating
+      - Tracks processed files to avoid reprocessing on reruns (via .processed_images using absolute paths)
+        Note: Moving input directories invalidates tracking (absolute paths); remove .processed_images to reset.
 
     Opt-in overwrite:
       - Use --in-place to overwrite originals in-place (atomic temp->replace)
@@ -29,7 +29,7 @@ DESCRIPTION
       - Save retries for transient I/O issues (--retry-writes)
       - Optionally skip corrupt images instead of failing the run (--skip-bad-images)
       - Optional recursion into subfolders (--recurse)
-      - Automatic reprocessing protection via .processed_images tracking
+      - Automatic reprocessing protection via .processed_images tracking and existing output detection
       - Comprehensive summary statistics with timing and success rates
       - Thread-safe processed file tracking with cross-process coordination
       - Alpha channel support for transparent border detection
@@ -57,7 +57,7 @@ USAGE
                       [--resume-file img_000123.png]
                       [--skip-bad-images]
                       [--allow-empty]
-                      [--ignore-processed]
+                      [--reprocess-cropped [--keep-existing-crops]]
                       [--recurse]
                       [--preserve-alpha]
                       [--alpha-threshold N]
@@ -70,10 +70,11 @@ TROUBLESHOOTING
     - "No valid images found":
         Ensure --input has .png/.jpg/.jpeg files. Use --recurse to include subfolders.
         Use --allow-empty to treat empty input as success.
-    - "Already processed X images":
-        The script tracks completed files in .processed_images to avoid reprocessing.
-        Use --ignore-processed to reprocess all files, or delete .processed_images
-        from the input folder to reset tracking.
+    - "Already processed / already cropped":
+        By default, images that were successfully processed before are skipped on rerun.
+        Use --reprocess-cropped to force reprocessing; by default, this deletes any existing
+        crops before regenerating them. To keep existing crops and add new de-duplicated
+        outputs alongside, add --keep-existing-crops.
     - "Failed to load image":
         The file may be corrupt/unsupported. Use --skip-bad-images to continue.
     - "Transparent images not cropping properly":
@@ -96,10 +97,9 @@ FAQS
        A: The original image is written as-is (no-op crop).
 
     Q: How does reprocessing protection work?
-       A: Successfully processed files are recorded in <input>/.processed_images.
-          Delete this file or use --ignore-processed to reprocess everything.
-          Note: Tracking uses absolute paths, so moving the input directory to a different
-          location will bypass reprocessing protection until tracking is rebuilt.
+       A: Successfully processed files are recorded in <input>/.processed_images (absolute paths).
+          Existing crops are also detected when determining whether work is needed.
+          Delete .processed_images to reset tracking or pass --reprocess-cropped to redo work.
           
     Q: How do I handle images with transparent backgrounds?
        A: Use --preserve-alpha to detect borders based on alpha transparency.
@@ -108,101 +108,73 @@ FAQS
        A: Yes. Pass --resume-file <an existing image filename>. Processing starts after that file.
 
 CHANGELOG
-    3.4.3
-      Fix:
-        - Exit codes: Ensure exit code 1 is properly returned when any image processing
-          failures occur, aligning implementation with documented behavior for automation
-      Improve:
-        - Documentation: Clarify file locking as "cross-process coordination" rather than
-          "proper locking", and document absolute path behavior in reprocessing protection
+    ## 4.0.0
+    **Breaking**
+    - Remove `--ignore-processed`. Default behavior now explicitly skips previously cropped images using `.processed_images` tracking and/or existing output detection.
+    **Add**
+    - `--reprocess-cropped` to force a full re-crop.
+    - `--keep-existing-crops` to retain existing crops when reprocessing (new outputs are de-duplicated alongside).
+    **Improve**
+    - Documentation and help text updated to reflect reprocessing semantics and defaults.
+    **Refactor**
+    - Split monolithic `main()` into focused helpers (`_resolve_work_items`, `_maybe_handle_reprocessing`, `_emit_summary`) to reduce cognitive complexity and improve readability/testability without changing behavior.
 
-    3.4.2
-      Fix:
-        - Code cleanup: Remove duplicate start_time assignment in _process_batch that was
-          causing redundant time initialization and potential timing confusion
+    ## 3.x
+    **Breaking / Behavior**
+    - Default is now **non-destructive**: outputs are written to `<input>/Cropped` with suffix `_cropped` (no overwrite).  
+    - Exit semantics refined: when all images are already processed, return **0** (success) instead of **2**.  
+    - Stricter parameter validation across thresholds, padding, min-area, etc.
 
-    3.4.1
-      Fix:
-        - Alpha channel crash: Add proper dimension checking to prevent IndexError when
-          processing grayscale images with --preserve-alpha flag
-        - Resume lookup logic: Improve control flow clarity in Windows case-insensitive matching
-        - Error messages: Add more actionable guidance for resume file and save failures
-        - Type consistency: Use built-in tuple type instead of typing.Tuple for Python 3.9+ style
+    **Add**
+    - `--in-place` to overwrite originals atomically (temp→replace).
+    - Naming controls: `--suffix` (default `_cropped`) and `--no-suffix`.
+    - Progress controls: `--progress-interval` (default 100) with ETA/rate; end-of-run summary stats.
+    - Reprocessing protection via `.processed_images` tracking to avoid redundant work.
+    - `--ignore-processed` to override tracking when needed.
+    - Transparency handling: `--preserve-alpha` plus `--alpha-threshold` for tuning semi-transparent edges.
+    - Consistent logger naming and compatibility with both stdlib logging and `python-logging-framework`.
 
-    3.4.0
-      Fix:
-        - Resume file matching: Use case-insensitive path comparison on Windows to handle
-          mixed case and path separator differences in --resume-file arguments
-        - Exit semantics: Return success (0) instead of error (2) when all images are
-          already processed, improving automation workflow compatibility
-        - Error diagnostics: Include target output path in save failure messages for better debugging
-        - Parameter validation: Add bounds checking for thresholds, padding, and min-area values
-      Add:
-        - --alpha-threshold parameter for fine-tuning transparent border detection sensitivity,
-          useful for handling anti-aliased edges and semi-transparent content
-      Improve:
-        - Type annotations: Modernize to use built-in types (tuple, list) instead of typing module
+    **Fix**
+    - Robust file tracking: add thread-safe/cross-process coordination to prevent `.processed_images` corruption.
+    - Windows compatibility: make `fcntl` import conditional; fall back to Windows locking.
+    - Resume robustness: validate that `--resume-file` is a real, readable image; use case-insensitive path matching on Windows; clearer errors when not found.
+    - Exit codes: ensure **1** is returned when any image processing failures occur.
+    - Eliminate duplicate `start_time` initialization in `_process_batch`.
+    - Alpha crash fix: guard dimensions when using `--preserve-alpha` on grayscale images.
+    - Return type/flow bugs addressed to avoid unintended `sys.exit()` errors.
+    - Diagnostics: include target output path in save-failure messages.
 
-    3.3.1
-      Fix:
-        - Windows compatibility: Made fcntl import conditional to prevent ImportError crashes
-          on Windows systems. Script now properly falls back to Windows-only file locking.
-        - Spurious error logging: Removed unconditional error message that appeared even
-          on successful runs when images were found and processed correctly.
+    **Improve**
+    - Cognitive complexity reduced by decomposing large routines into focused helpers (image collection, progress gating, stats, resume resolution).
+    - Parameter bounds checks with clearer, actionable error messages.
+    - Progress visibility: richer periodic logs with rate and ETA; more actionable end-of-run summary (success/failure/skip counts, success rate).
+    - Documentation: clarify file locking as “cross-process coordination”; document absolute-path behavior in reprocessing protection and Windows path matching.
+    - Type annotations modernized (built-in `tuple`, `list`); style improvements (use `np.nonzero`).
+    - Debug logging made consistent across stdlib and third-party logging backends; debug builds emit environment/version diagnostics (Python/OpenCV/NumPy).
 
-    3.3.0
-      Fix:
-        - Thread safety: Added file locking to prevent corruption of .processed_images tracking
-        - Return type bug in image filtering that could cause sys.exit() errors
-        - Cognitive complexity by decomposing large functions into focused helpers
-        - Debug logging now works correctly with both stdlib and python-logging-framework
-        - Resume file validation now tests actual image readability, not just existence
-      Add:
-        - --preserve-alpha flag for proper transparent border detection in PNG images
-        - Consistent logging names across stdlib and third-party logger backends
+    **Keep**
+    - Core 2.x capabilities: `--recurse`, `--max-workers`, retries, strict validation, non-clobbering writes with auto de-duplication when needed.
 
-    3.2.0
-      Add:
-        - Reprocessing protection: .processed_images tracking prevents redundant work
-        - Enhanced progress reporting with ETA estimates and processing rates  
-        - Comprehensive summary statistics with timing and success rate analysis
-        - --ignore-processed flag to override reprocessing protection when needed
+    ## 2.x
+    **Breaking**
+    - Empty folder exits with code **2** unless `--allow-empty`.
+    - `--resume-file` must exist and be a valid, readable image; otherwise exit **2**.
+    - Corrupt images fail the run by default; use `--skip-bad-images` to continue.
 
-    3.1.0
-      Add:
-        - --progress-interval (default 100 images) to log periodic batch progress
-      Keep:
-        - Safe-by-default outputs and all 3.0.0 features
+    **Add**
+    - `--recurse` for recursive image discovery (`os.walk`).
+    - Preserve relative subfolder structure under `--output`.
+    - `--max-workers`, `--retry-writes`, `--skip-bad-images`, `--allow-empty`.
+    - Expanded docstring with Version/Author, Troubleshooting, FAQs, and dependencies.
 
-    3.0.0
-      Breaking (default behavior changed from 2.x):
-        - Default no longer overwrites inputs. Outputs go to <input>/Cropped with suffix "_cropped".
-        - Non-destructive mode guarantees no clobbering (auto de-duplicates if needed).
-      Add:
-        - --in-place to overwrite originals (atomic replace)
-        - --suffix (default "_cropped") and --no-suffix for naming control in non in-place mode
-      Keep:
-        - 2.x features: --recurse, --max-workers, retries, strict validation, etc.
+    **Fix**
+    - Explicit `None`-check on `cv2.imread` with clearer error messages.
 
-    2.1.0
-      Add:
-        - --recurse for recursive image discovery (os.walk)
-        - Preserve relative subfolder structure in --output
-      Docs:
-        - Clarify python-logging-framework is optional (fallback to stdlib logging)
-      Style:
-        - Use np.nonzero over np.where(condition)
+    **Docs**
+    - Clarify that `python-logging-framework` is optional (falls back to stdlib logging).
 
-    2.0.0
-      Breaking:
-        - Empty folder exits 2 unless --allow-empty.
-        - --resume-file must exist and be a valid image; otherwise exit 2.
-        - Corrupt images fail the run by default; use --skip-bad-images to continue.
-      Add:
-        - --max-workers, --retry-writes, --skip-bad-images, --allow-empty.
-        - Docstring with Version/Author, Troubleshooting, FAQs, and dependencies.
-      Fix:
-        - Explicit None-check on cv2.imread with clear error messages.
+    **Style**
+    - Use `np.nonzero` over `np.where(condition)`.
 
 """
 
@@ -353,8 +325,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                        help="Treat empty input folder as success (exit 0).")
         p.add_argument("--recurse", action="store_true",
                        help="Search subfolders recursively for images.")
-        p.add_argument("--ignore-processed", action="store_true", 
-                       help="Ignore .processed_images tracking and reprocess all files.")
+        p.add_argument("--reprocess-cropped", dest="reprocess_cropped", action="store_true",
+                       help="Reprocess even if images were cropped previously.")
+        p.add_argument("--keep-existing-crops", dest="keep_existing_crops", action="store_true",
+                       help="When used with --reprocess-cropped (non in-place), do not delete existing crops; add new outputs alongside.")
         p.add_argument("--progress-interval", type=int, default=100,
                        help="Log progress every N completed images (default: 100).")
         p.add_argument("--debug", action="store_true", help="Enable debug logging.")
@@ -745,28 +719,26 @@ def process_one(
 
 
 # --- Low-complexity helpers for main() --------------------------------------
-def _filter_processed_images(images: list[str], folder: str, ignore_processed: bool) -> list[str]:
+def _filter_processed_images(
+    images: list[str],
+    processed_set: Optional[set[str]],
+    reprocess_cropped: bool,
+) -> list[str]:
     """
-    Filter out already-processed images unless ignore_processed=True.
-    
-    Returns filtered list and logs the number of filtered items.
-    Extracted to reduce cognitive complexity of main image collection function.
+    Filter out already-processed images (those present in ``processed_set``)
+    unless ``reprocess_cropped`` is True.
     """
-    if ignore_processed:
+    if reprocess_cropped or not processed_set:
         return images
-        
-    processed_set = get_processed_set(folder)
-    if not processed_set:
-        return images
-        
+
     original_count = len(images)
     filtered_images = [img for img in images if img not in processed_set]
     filtered_count = original_count - len(filtered_images)
-    
     if filtered_count > 0:
-        logger.info("Filtered out %d already-processed images (%d remaining)", 
-                    filtered_count, len(filtered_images))
-    
+        logger.info(
+            "Filtered out %d already-processed images (%d remaining)",
+            filtered_count, len(filtered_images),
+        )
     return filtered_images
 
 def _validate_paths(args) -> tuple[Optional[str], Optional[int]]:
@@ -795,13 +767,13 @@ def _validate_paths(args) -> tuple[Optional[str], Optional[int]]:
 
 
 def _collect_and_filter_images(
-    folder: str, 
-    allow_empty: bool, 
-    recurse: bool, 
-    ignore_processed: bool
-) -> tuple[Optional[list[str]], Optional[int]]:   
+    folder: str,
+    allow_empty: bool,
+    recurse: bool,
+    reprocess_cropped: bool,
+) -> tuple[Optional[list[str]], Optional[int]]:
     """
-    Collect images and filter out already-processed ones (unless ignore_processed=True).
+    Collect images and filter out already-processed ones (unless reprocess_cropped=True).
     
     Returns (image_list, exit_code) where exit_code is None on success.
     On empty input after filtering:
@@ -817,8 +789,9 @@ def _collect_and_filter_images(
             return [], 0
         return None, 2
     
-    # Apply processed file filtering
-    filtered_images = _filter_processed_images(images, folder, ignore_processed)
+    # Apply processed file filtering using on-disk tracking file
+    processed_set = get_processed_set(folder)
+    filtered_images = _filter_processed_images(images, processed_set, reprocess_cropped)
     
     # Handle empty results after filtering
     if not filtered_images:
@@ -829,6 +802,35 @@ def _collect_and_filter_images(
         return [], 0
 
     return filtered_images, None
+
+def _delete_existing_crops_for_image(in_path: str, output_dir: str, root: str, *, suffix: str, no_suffix: bool) -> int:
+    """
+    Delete the expected cropped output (and de-duplicated siblings) for an input image.
+    Returns number of files deleted. No-op if paths can't be derived.
+    """
+    try:
+        rel_dir = os.path.relpath(os.path.dirname(in_path), root)
+        out_dir = os.path.join(output_dir, rel_dir) if rel_dir != os.curdir else output_dir
+        os.makedirs(out_dir, exist_ok=True)
+        stem, ext = os.path.splitext(os.path.basename(in_path))
+        mid = "" if no_suffix else suffix
+        # Primary and de-duplicated (_N) variants
+        patterns = [
+            os.path.join(out_dir, f"{stem}{mid}{ext}"),
+            os.path.join(out_dir, f"{stem}{mid}_*{ext}"),
+        ]
+        deleted = 0
+        import glob
+        for pat in patterns:
+            for fp in glob.glob(pat):
+                try:
+                    os.remove(fp)
+                    deleted += 1
+                except Exception:
+                    pass
+        return deleted
+    except Exception:
+        return 0
 
 def _resolve_resume_index(folder: str, images: list[str], resume_file: Optional[str]) -> tuple[Optional[int], Optional[int]]:
     """
@@ -962,51 +964,105 @@ def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, in
     return processed, skipped, failures, elapsed_total
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = parse_args(argv)
-
-    # 1) Validate paths & flags
+def _resolve_work_items(args) -> tuple[Optional[str], Optional[list[str]], Optional[int]]:
+    """
+    Validate paths, collect/filter images, resolve resume, and return the worklist.
+    Returns (folder, to_process, exit_code).  exit_code is None on success.
+    """
     folder, code = _validate_paths(args)
     if code is not None:
-        return code
+        return None, None, code
 
-    # 2) Collect and filter images (early-exit if empty and allowed)
-    images, code = _collect_and_filter_images(folder, args.allow_empty, args.recurse, args.ignore_processed)
+    images, code = _collect_and_filter_images(
+        folder,
+        args.allow_empty,
+        args.recurse,
+        args.reprocess_cropped,
+    )
     if code is not None:
-        return code  # 0 or 2
-    assert images is not None  # for type checkers
+        return folder, None, code  # 0 or 2
+    assert images is not None
 
-    # 3) Resolve resume offset
     start_index, code = _resolve_resume_index(folder, images, args.resume_file)
     if code is not None:
-        return code
+        return folder, None, code
     assert start_index is not None
 
-    # 4) Slice to resume; early-exit if nothing left
     to_process = images[start_index:]
     if not to_process:
         logger.info("Nothing to do (resume points to last file).")
-        return 0
+        return folder, [], 0
 
-    # 5) Parallel processing
-    processed, skipped, failures, elapsed_total = _process_batch(to_process, args, root=folder)
+    return folder, to_process, None
 
-    # 6) Comprehensive summary statistics
-    rate_overall = len(to_process) / elapsed_total if elapsed_total > 0 else 0
-    success_rate = (processed / len(to_process)) * 100 if to_process else 0
-    
+
+def _maybe_handle_reprocessing(to_process: list[str], args, folder: str) -> None:
+    """
+    Handle reprocessing behavior (delete-or-keep existing crops) before regeneration.
+    """
+    if not args.reprocess_cropped or args.in_place:
+        return
+    if not args.keep_existing_crops:
+        # Ensure output is set for non in-place mode (safety; _validate_paths should have set it)
+        if args.output is None:
+            args.output = os.path.join(folder, "Cropped")
+        deleted_total = 0
+        for pth in to_process:
+            deleted_total += _delete_existing_crops_for_image(
+                pth, args.output, folder, suffix=args.suffix, no_suffix=args.no_suffix
+            )
+        logger.info(
+            "Reprocessing enabled: removed %d existing cropped file(s) before regeneration.",
+            deleted_total,
+        )
+    else:
+        logger.info(
+            "Reprocessing enabled: keeping existing crops; new outputs will be added alongside."
+        )
+
+
+def _emit_summary(
+    total: int, processed: int, skipped: int, failures: int, elapsed: float, *, output: Optional[str], in_place: bool
+) -> None:
+    """Emit a consistent end-of-run summary."""
+    rate_overall = total / elapsed if elapsed > 0 else 0
+    success_rate = (processed / total) * 100 if total else 0
     logger.info("=== CROP SUMMARY ===")
-    logger.info("Total images processed: %d", len(to_process))
+    logger.info("Total images processed: %d", total)
     logger.info("Successful crops: %d", processed)
-    logger.info("Skipped (bad images): %d", skipped) 
+    logger.info("Skipped (bad images): %d", skipped)
     logger.info("Failed: %d", failures)
     logger.info("Success rate: %.1f%%", success_rate)
-    logger.info("Total time: %.1f seconds", elapsed_total)
+    logger.info("Total time: %.1f seconds", elapsed)
     logger.info("Processing rate: %.1f images/second", rate_overall)
-    if args.output and not args.in_place:
-        logger.info("Output folder: %s", args.output)
+    if output and not in_place:
+        logger.info("Output folder: %s", output)
 
-    # Return appropriate exit code based on processing results
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = parse_args(argv)
+
+    folder, to_process, code = _resolve_work_items(args)
+    if code is not None:
+        return code
+    assert folder is not None and to_process is not None
+
+    _maybe_handle_reprocessing(to_process, args, folder)
+
+    processed, skipped, failures, elapsed_total = _process_batch(
+        to_process, args, root=folder
+    )
+
+    _emit_summary(
+        len(to_process),
+        processed,
+        skipped,
+        failures,
+        elapsed_total,
+        output=args.output,
+        in_place=args.in_place,
+    )
+
     return 1 if failures > 0 else 0
 
 if __name__ == "__main__":
