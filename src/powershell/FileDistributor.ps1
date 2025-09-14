@@ -6,7 +6,7 @@ This PowerShell script copies files from a source folder to a target folder, dis
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 1.0.1
+ 1.1.0
  
  (Documentation-only update: Added .VERSION and CHANGELOG in header. No functional changes.)
 
@@ -116,13 +116,20 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
-- 1.0.1 (2025-09-14)
-  - Added .VERSION section and CHANGELOG to the script header to improve traceability and align with internal documentation standards.
-  - No functional changes; behavior remains identical to v1.0.0.
-- 1.0.0
-  - Initial version (backfilled).
+## 1.1.0 — 2025-09-14
+### Changed
+- **Behaviour (backward-compatible):** Removed upfront renaming of source files. Destination names are now always randomised **at copy time** (and during redistribution) while preserving extensions, improving safety and restartability by leaving sources unmodified until a verified copy exists.
+- Checkpoint 1 updated to a pre-copy preparation step (no renaming).
 
 ---
+
+## 1.0.x — Rollup (through 2025-09-14)
+### Added
+- `.VERSION` and `CHANGELOG` sections in the script header to improve traceability and align with internal standards.
+
+### Notes
+- No functional changes across this patch line; behaviour remains identical to v1.0.0.
+- Included patches: **1.0.0** (initial version, backfilled) and **1.0.1** (documentation-only).
 
 Script Workflow:
 
@@ -324,54 +331,6 @@ function ResolveFileNameConflict {
     return $newFileName
 }
 
-function RenameFilesInSourceFolder {
-    param (
-        [string]$SourceFolder,
-        [switch]$ShowProgress,
-        [int]$UpdateFrequency
-    )
-
-    # Get all files in the source folder
-    $files = Get-ChildItem -Path $SourceFolder -File
-    $totalFiles = $files.Count
-    $fileCount = 0
-
-    foreach ($file in $files) {
-        try {
-            # Increment file counter
-            $fileCount++
-
-            # Show progress if enabled
-            if ($ShowProgress -and ($fileCount % $UpdateFrequency -eq 0)) {
-                $percentComplete = [math]::Floor(($fileCount / $totalFiles) * 100)
-                Write-Progress -Activity "Renaming Files" `
-                               -Status "Processing file $fileCount of $totalFiles" `
-                               -PercentComplete $percentComplete
-            }
-
-            # Get the file extension
-            $extension = $file.Extension
-            do {
-                # Generate a new random file name
-                $newFileName = (Get-RandomFileName) + $extension
-                $newFilePath = Join-Path -Path $SourceFolder -ChildPath $newFileName
-            } while (Test-Path -Path $newFilePath)
-
-            # Rename the file
-            Rename-Item -LiteralPath $file.FullName -NewName $newFileName -Force
-            LogMessage -Message "Renamed file $($file.FullName) to $newFileName"
-        } catch {
-            # Log error if renaming fails
-            LogMessage -Message "Failed to rename file '$($file.FullName)': $_" -IsError
-        }
-    }
-    # Final progress message
-    if ($ShowProgress) {
-        Write-Progress -Activity "Renaming Files" -Status "Complete" -Completed
-    }
-    LogMessage -Message "Renaming completed: Processed $fileCount of $totalFiles files." -ConsoleOutput
-}
-
 function CreateRandomSubfolders {
     param (
         [string]$TargetPath,
@@ -483,13 +442,13 @@ function DistributeFilesToSubfolders {
         }
 
         $destinationFolder = $subfolderQueue.Current
-        $fileName = [System.IO.Path]::GetFileName($file)
-        $destinationFile = Join-Path -Path $destinationFolder -ChildPath $fileName
-
-        if (Test-Path -Path $destinationFile) {
-            $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $file.Name
-            $destinationFile = Join-Path -Path $destinationFolder -ChildPath $newFileName
-        }
+        # Always generate a randomized destination name (preserve extension),
+        # regardless of conflicts—this enforces "do not retain original names".
+        $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $file.Name
+        $destinationFile = Join-Path -Path $destinationFolder -ChildPath $newFileName
+        
+        # (Optional) Log the rename intent for traceability
+        LogMessage -Message "Assigning randomized destination name for '$file' -> '$destinationFile'."
 
         Copy-Item -Path $file -Destination $destinationFile
 
@@ -1004,12 +963,11 @@ function Main {
         }
 
         if ($lastCheckpoint -lt 1) {
-            # Rename files in the source folder to random names
-            LogMessage -Message "Renaming files in source folder..."
-            RenameFilesInSourceFolder -SourceFolder $SourceFolder -ShowProgress:$ShowProgress -UpdateFrequency $UpdateFrequency
+            # No upfront renaming: we now rename at copy time to preserve source integrity until copy succeeds.
+            LogMessage -Message "Preparing for distribution (no upfront renaming; rename occurs at copy time)." -ConsoleOutput
             $additionalVars = @{
-                deleteMode            = $DeleteMode # Persist DeleteMode
-                SourceFolder          = $SourceFolder # Persist SourceFolder
+                deleteMode   = $DeleteMode # Persist DeleteMode
+                SourceFolder = $SourceFolder # Persist SourceFolder
             }
             SaveState -Checkpoint 1 -AdditionalVariables $additionalVars -fileLock $fileLockRef
         }
