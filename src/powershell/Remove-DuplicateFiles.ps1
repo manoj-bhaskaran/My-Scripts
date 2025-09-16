@@ -26,9 +26,18 @@
     .\Remove-DuplicateFiles.ps1 -ParentDirectory "C:\MyFiles" -LogFilePath "C:\Logs\DuplicateLog.log" -DryRun
 
 .VERSION
-1.1.0
+1.2.0
 
 CHANGELOG
+## 1.2.0 — 2025-09-14
+### Fixed
+- **Undefined variable:** deletion loop now iterates over computed duplicate buckets (previously referenced `$DuplicateGroups`, which was undefined).
+### Added
+- **Progress & UX:** `-ShowProgress` and `-ProgressInterval` (default 500) show progress during pass 1 (counting) and pass 2 (hashing). Optional `-PrioritizeSmallFirst` hashes smaller collision buckets first for faster perceived responsiveness.
+- **Error handling:** fail-fast if the log file cannot be written; robust logging with guarded writes; end-of-run summary of critical failures and non-fatal warnings. Returns non-zero exit when critical logging cannot be established.
+### Improved
+- **Performance visibility:** pass-2 progress computed from the number of files in size-collision buckets; hashing counters surfaced.
+
 ## 1.1.0 — 2025-09-14
 ### Changed
 - **Defaults (UX):** Removed hard-coded, user-specific defaults. `-ParentDirectory` now defaults to the current
@@ -63,7 +72,10 @@ CHANGELOG
 param (
     [string]$ParentDirectory = $null,
     [string]$LogFilePath = $null,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$ShowProgress,
+    [int]$ProgressInterval = 500,
+    [switch]$PrioritizeSmallFirst
 )
 
 # ----- Dynamic defaults & path resolution -----
@@ -136,11 +148,37 @@ function Initialize-LogDestination {
 }
 Initialize-LogDestination -Path $LogFilePath
 
-# Log function
+# --- Logging & error counters ---
+$script:CriticalErrors = 0
+$script:Warnings       = 0
+$script:HashFailures   = 0
+
+function Test-LogWritable {
+    param([Parameter(Mandatory=$true)][string]$Path)
+    try {
+        $probe = "[{0}] __log_writable_probe__" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+        $probe | Out-File -FilePath $Path -Append -ErrorAction Stop
+        return $true
+    } catch {
+        Write-Error "Cannot write to log file '$Path'. Error: $($_.Exception.Message)"
+        return $false
+    }
+}
+if (-not (Test-LogWritable -Path $LogFilePath)) {
+    # Fail fast: we require a writable log for auditability
+    exit 2
+}
+
+# Log function (guarded)
 function Log {
     param ([string]$Message)
-    $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$($Timestamp): $Message" | Out-File -FilePath $LogFilePath -Append
+    try {
+        $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        "$($Timestamp): $Message" | Out-File -FilePath $LogFilePath -Append -ErrorAction Stop
+    } catch {
+        $script:CriticalErrors++
+        Write-Error "Logging failure: $($_.Exception.Message)"
+    }
 }
 
 # ---- Permission / access checks prior to deletion ----
@@ -157,7 +195,9 @@ function Test-CanAccessFile {
         $fs.Close()
         return $true
     } catch {
-        Log "WARN: File not accessible for read/write (locked or permission issue): $Path. Error: $($_.Exception.Message)"
+        $script:Warnings++
+        $script:Warnings++
+        Log "WARN: No write/delete permission in directory '$DirectoryPath'. Error: $($_.Exception.Message)"
         return $false
     }
 }
@@ -190,6 +230,7 @@ function Get-ContentHash {
     try {
         return (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash
     } catch {
+        $script:HashFailures++
         Log "ERROR: Failed to compute hash for: $Path. Error: $_"
         return $null
     }
@@ -209,42 +250,83 @@ Log "Duplicate detection strategy: pre-group by file size, then compare SHA-256 
 # -------- Streaming two-pass enumeration to reduce memory pressure --------
 # Pass 1: count files by size (store only counts)
 $sizeCounts = @{}
+$pass1Count = 0
 Get-ChildItem -Path $ParentDirectory -Recurse -File | ForEach-Object {
     $len = $_.Length
     if ($sizeCounts.ContainsKey($len)) { $sizeCounts[$len]++ } else { $sizeCounts[$len] = 1 }
+    $pass1Count++
+    if ($ShowProgress -and ($pass1Count % $ProgressInterval -eq 0)) {
+        Write-Progress -Activity "Pass 1/2: Scanning files" -Status "Counted $pass1Count file(s)..." -Id 1
+    }
 }
+if ($ShowProgress) { Write-Progress -Activity "Pass 1/2: Scanning files" -Status "Complete" -Completed -Id 1 }
 
 # Pass 2: hash only files in size-collision buckets; retain in-memory only duplicate sets
 $seenByHash     = @{} # hash -> first FileInfo seen
 $dupeBuckets    = @{} # hash -> [FileInfo[]] (includes first once a dup is found)
 
-Get-ChildItem -Path $ParentDirectory -Recurse -File | ForEach-Object {
-    if ($sizeCounts[$_.Length] -gt 1) {
-        $h = Get-ContentHash -Path $_.FullName
-        if ($null -ne $h) {
-            if ($seenByHash.ContainsKey($h)) {
-                if (-not $dupeBuckets.ContainsKey($h)) {
-                    # create bucket and add the first occurrence
-                    $dupeBuckets[$h] = @($seenByHash[$h])
+# Compute total files to hash for progress (sum of collision bucket sizes)
+$collisionTotal = 0
+foreach ($k in $sizeCounts.Keys) { if ($sizeCounts[$k] -gt 1) { $collisionTotal += $sizeCounts[$k] } }
+$hashedSoFar = 0
+
+if ($PrioritizeSmallFirst) {
+    # Optional: process collision buckets from smallest size upward (better responsiveness)
+    $collisionSizes = $sizeCounts.GetEnumerator() | Where-Object { $_.Value -gt 1 } | Sort-Object -Property Key | Select-Object -ExpandProperty Key
+    foreach ($len in $collisionSizes) {
+        Get-ChildItem -Path $ParentDirectory -Recurse -File | Where-Object { $_.Length -eq $len } | ForEach-Object {
+            $h = Get-ContentHash -Path $_.FullName
+            if ($null -ne $h) {
+                if ($seenByHash.ContainsKey($h)) {
+                    if (-not $dupeBuckets.ContainsKey($h)) {
+                        $dupeBuckets[$h] = @($seenByHash[$h])
+                    }
+                    $dupeBuckets[$h] += $_
+                } else {
+                    $seenByHash[$h] = $_
                 }
-                # add the new duplicate occurrence
-                $dupeBuckets[$h] += $_
-            } else {
-                $seenByHash[$h] = $_
+            }
+            $hashedSoFar++
+            if ($ShowProgress -and ($hashedSoFar % $ProgressInterval -eq 0)) {
+                $pct = if ($collisionTotal -gt 0) { [int](($hashedSoFar / $collisionTotal) * 100) } else { 100 }
+                Write-Progress -Activity "Pass 2/2: Hashing size-collision files" -Status "Hashed $hashedSoFar / $collisionTotal" -PercentComplete $pct -Id 2
+            }
+        }
+    }
+} else {
+    # Default: single streaming enumeration, only hash files in collision buckets
+    Get-ChildItem -Path $ParentDirectory -Recurse -File | ForEach-Object {
+        if ($sizeCounts[$_.Length] -gt 1) {
+            $h = Get-ContentHash -Path $_.FullName
+            if ($null -ne $h) {
+                if ($seenByHash.ContainsKey($h)) {
+                    if (-not $dupeBuckets.ContainsKey($h)) {
+                        # create bucket and add the first occurrence
+                        $dupeBuckets[$h] = @($seenByHash[$h])
+                    }
+                    # add the new duplicate occurrence
+                    $dupeBuckets[$h] += $_
+                } else {
+                    $seenByHash[$h] = $_
+                }
+            }
+            $hashedSoFar++
+            if ($ShowProgress -and ($hashedSoFar % $ProgressInterval -eq 0)) {
+                $pct = if ($collisionTotal -gt 0) { [int](($hashedSoFar / $collisionTotal) * 100) } else { 100 }
+                Write-Progress -Activity "Pass 2/2: Hashing size-collision files" -Status "Hashed $hashedSoFar / $collisionTotal" -PercentComplete $pct -Id 2
             }
         }
     }
 }
+if ($ShowProgress) { Write-Progress -Activity "Pass 2/2: Hashing size-collision files" -Status "Complete" -Completed -Id 2 }
 
 # Initialize counters for summary statistics
 $TotalDuplicatesFound = 0
 $TotalDeleted = 0
 $TotalRetained = 0
 
-# Iterate over hash-equal duplicate groups
-foreach ($Group in $DuplicateGroups) {
-    # $Group.Group is an array of PSCustomObjects with .File and .Hash
-    $filesInGroup = $Group.Group | ForEach-Object { $_.File }
+# Iterate over hash-equal duplicate buckets (fixed undefined variable issue)
+foreach ($filesInGroup in $dupeBuckets.Values) {
 
     # Count only the extras beyond the one we retain
     if ($filesInGroup.Count -gt 1) {
@@ -294,6 +376,9 @@ Summary:
 Duplicate files found : $TotalDuplicatesFound
 Duplicate files deleted : $TotalDeleted
 Duplicate files retained : $TotalRetained
+Hash failures : $script:HashFailures
+Warnings : $script:Warnings
+Critical logging errors : $script:CriticalErrors
 "@
 
 Log $Summary
@@ -301,3 +386,6 @@ Write-Host $Summary
 
 Log "Duplicate file scan completed."
 Write-Host "Duplicate file scan completed. Actions logged to $LogFilePath."
+
+# Exit non-zero if critical logging errors occurred
+if ($script:CriticalErrors -gt 0) { exit 2 }
