@@ -17,7 +17,11 @@
     working directory (Get-Location).
 
 .PARAMETER LogFilePath
-    The path to the log file where actions will be recorded. Defaults to "C:\Users\manoj\Documents\Scripts\Remove-DuplicateFiles.log" if not provided.
+    The path to the log file where actions will be recorded. If not provided, the script
+    resolves a writable path using this order (creating folders as needed):
+      1) script-root relative: .\logs\Remove-DuplicateFiles.log
+      2) %LOCALAPPDATA%\DuplicateCleaner\logs\Remove-DuplicateFiles.log
+      3) %TEMP%\DuplicateCleaner\logs\Remove-DuplicateFiles.log
 
 .PARAMETER DryRun
     If specified, the script will only log the actions it would take without actually deleting any files.
@@ -26,7 +30,7 @@
     .\Remove-DuplicateFiles.ps1 -ParentDirectory "C:\MyFiles" -LogFilePath "C:\Logs\DuplicateLog.log" -DryRun
 
 .VERSION
-1.2.0
+1.2.1
 
 CHANGELOG
 ## 1.2.0 — 2025-09-14
@@ -79,7 +83,8 @@ param (
 )
 
 # ----- Dynamic defaults & path resolution -----
-# Determine script root (works when executed as a script)
+# Script-scoped: script root is used by path-resolution helpers and remains
+# constant for the lifetime of this script invocation.
 $script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Path $MyInvocation.MyCommand.Path -Parent }
 
 function New-Directory {
@@ -149,6 +154,8 @@ function Initialize-LogDestination {
 Initialize-LogDestination -Path $LogFilePath
 
 # --- Logging & error counters ---
+# Script-scoped counters used across functions for end-of-run summary and
+# fail-fast decisions when logging is not writable.
 $script:CriticalErrors = 0
 $script:Warnings       = 0
 $script:HashFailures   = 0
@@ -182,7 +189,8 @@ function Log {
 }
 
 # ---- Permission / access checks prior to deletion ----
-# Cache dir probes to avoid repeated temp file work
+# Script-scoped cache: directory delete-permission probes are cached to avoid
+# repeated temp-file creation in the same directory during batch deletions.
 $script:DirDeleteProbeCache = @{}
 
 function Test-CanAccessFile {
@@ -195,9 +203,10 @@ function Test-CanAccessFile {
         $fs.Close()
         return $true
     } catch {
+        # Count once and log a file-specific warning (the DirectoryPath variable
+        # is not in scope here).
         $script:Warnings++
-        $script:Warnings++
-        Log "WARN: No write/delete permission in directory '$DirectoryPath'. Error: $($_.Exception.Message)"
+        Log "WARN: File not accessible for read/write: '$Path'. Error: $($_.Exception.Message)"
         return $false
     }
 }
@@ -271,19 +280,32 @@ foreach ($k in $sizeCounts.Keys) { if ($sizeCounts[$k] -gt 1) { $collisionTotal 
 $hashedSoFar = 0
 
 if ($PrioritizeSmallFirst) {
-    # Optional: process collision buckets from smallest size upward (better responsiveness)
-    $collisionSizes = $sizeCounts.GetEnumerator() | Where-Object { $_.Value -gt 1 } | Sort-Object -Property Key | Select-Object -ExpandProperty Key
+    # Build a single collision index in one streaming pass to avoid re-enumerating
+    # the entire tree for every distinct size.
+    $collisionIndex = @{}  # length -> [FileInfo[]]
+    Get-ChildItem -Path $ParentDirectory -Recurse -File | ForEach-Object {
+        $len = $_.Length
+        if ($sizeCounts[$len] -gt 1) {
+            if (-not $collisionIndex.ContainsKey($len)) {
+                $collisionIndex[$len] = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+            }
+            [void]$collisionIndex[$len].Add($_)
+        }
+    }
+
+    # Process from smallest collision size upward for better perceived responsiveness
+    $collisionSizes = $collisionIndex.Keys | Sort-Object
     foreach ($len in $collisionSizes) {
-        Get-ChildItem -Path $ParentDirectory -Recurse -File | Where-Object { $_.Length -eq $len } | ForEach-Object {
-            $h = Get-ContentHash -Path $_.FullName
+        foreach ($file in $collisionIndex[$len]) {
+            $h = Get-ContentHash -Path $file.FullName
             if ($null -ne $h) {
                 if ($seenByHash.ContainsKey($h)) {
                     if (-not $dupeBuckets.ContainsKey($h)) {
                         $dupeBuckets[$h] = @($seenByHash[$h])
                     }
-                    $dupeBuckets[$h] += $_
+                    $dupeBuckets[$h] += $file
                 } else {
-                    $seenByHash[$h] = $_
+                    $seenByHash[$h] = $file
                 }
             }
             $hashedSoFar++
