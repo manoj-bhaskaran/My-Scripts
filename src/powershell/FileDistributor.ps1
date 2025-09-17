@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.0.3
+ 3.0.4
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -175,6 +175,11 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.0.4 — 2025-09-18
+### Fixed
+- **Destination path collapsing to drive letter (`D\file`)**: Prevent implicit string-casting of `DirectoryInfo` values that could shrink paths to a single-letter drive designator. `DistributeFilesToSubfolders` and `RedistributeFilesInTarget` now accept object arrays and normalize each entry to `.FullName`. `CreateRandomSubfolders` now returns `DirectoryInfo` objects (not strings) so absolute paths are preserved end-to-end.
+- **Hardening**: Added consistent path normalization when building internal subfolder lists.
+
 ## 3.0.3 — 2025-09-18
 ### Fixed
 - **Invoke-WithRetry call typo:** Added missing line-continuation (`` ` ``) after `-MaxBackoff $MaxBackoff` in `Copy-ItemWithRetry` which caused `The term '-RetryDelay' is not recognized...` when the next line was parsed as a new command.
@@ -774,9 +779,9 @@ function CreateRandomSubfolders {
             $folderPath = Join-Path -Path $TargetPath -ChildPath $randomFolderName
         } while (Test-Path -Path $folderPath)
 
-        # Create the new directory
-        New-Item -ItemType Directory -Path $folderPath | Out-Null
-        $createdFolders += $folderPath
+        # Create the new directory and keep a DirectoryInfo so we retain FullName later
+        $dirInfo = New-Item -ItemType Directory -Path $folderPath -Force
+        $createdFolders += $dirInfo
 
         # Log the creation of the folder
         LogMessage -Message "Created folder: $folderPath"
@@ -849,7 +854,7 @@ function Remove-File {
 function DistributeFilesToSubfolders {
     param (
         [string[]]$Files,
-        [string[]]$Subfolders,
+        [object[]]$Subfolders,
         [int]$Limit,
         [switch]$ShowProgress,        # Enable/disable progress updates
         [int]$UpdateFrequency,       # Frequency for progress updates
@@ -912,6 +917,7 @@ function DistributeFilesToSubfolders {
         # Always generate a randomized destination name (preserve extension)
         $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $originalName
  
+        # Build the final destination path
         $destinationFile = Join-Path -Path $destinationFolder -ChildPath $newFileName
         
         # (Optional) Log the rename intent for traceability
@@ -987,7 +993,7 @@ function DistributeFilesToSubfolders {
 function RedistributeFilesInTarget {
     param (
         [string]$TargetFolder,
-        [string[]]$Subfolders,
+        [object[]]$Subfolders,
         [int]$FilesPerFolderLimit,
         [switch]$ShowProgress,
         [int]$UpdateFrequency,
@@ -997,10 +1003,20 @@ function RedistributeFilesInTarget {
         [int]$TotalFiles
     )
 
-    # Step 1: Build initial folder file count map
+    # Step 1: Build initial folder file count map from normalized full paths
     $folderFilesMap = @{}
-    foreach ($subfolder in $Subfolders) {
-        $folderFilesMap[$subfolder] = (Get-ChildItem -Path $subfolder -File).Count
+    $normalizedSubfolders = @()
+    foreach ($sf in $Subfolders) {
+        $sfPath = if ($sf -is [System.IO.FileSystemInfo]) { $sf.FullName } else { [string]$sf }
+        if (-not [string]::IsNullOrWhiteSpace($sfPath)) {
+            $normalizedSubfolders += $sfPath
+            try {
+                $folderFilesMap[$sfPath] = (Get-ChildItem -Path $sfPath -File).Count
+            } catch {
+                $folderFilesMap[$sfPath] = 0
+                LogMessage -Message "Failed to count files in subfolder '$sfPath'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
+            }
+        }
     }
 
     # Step 2: Redistribute files from root of target folder (not subfolders)
@@ -1021,7 +1037,7 @@ function RedistributeFilesInTarget {
 
             # Update maps
             $eligibleTargets = @($newFolder)
-            $Subfolders += $newFolder
+            $Subfolders += (Get-Item -LiteralPath $newFolder)
             $folderFilesMap[$newFolder] = 0
         }
 
@@ -1068,7 +1084,7 @@ function RedistributeFilesInTarget {
 
             # Update maps
             $eligibleTargets = @($newFolder)
-            $Subfolders += $newFolder
+            $Subfolders += (Get-Item -LiteralPath $newFolder)
             $folderFilesMap[$newFolder] = 0
         }
 
