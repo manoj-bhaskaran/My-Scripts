@@ -29,10 +29,26 @@
 .EXAMPLE
     .\Remove-EmptyFolders.ps1
 
+.EXAMPLE
+    # UNC / network path (dry-run first for safety)
+    .\Remove-EmptyFolders.ps1 -ParentDirectory "\\server\share\Data" -DryRun
+
+.EXAMPLE
+    # Invalid path handling (fails fast with an error)
+    .\Remove-EmptyFolders.ps1 -ParentDirectory "Z:\DefinitelyNotHere"
+
 .VERSION
-1.1.0
+1.2.0
 
 CHANGELOG
+## 1.2.0 — 2025-09-14
+### Added
+- **Examples:** Added UNC/network share usage and invalid-path example for clearer guidance.
+### Improved
+- **Dry-run clarity:** Track and report how many folders *would* be deleted (`$WouldDeleteCount`) instead of leaving the count at 0.
+- **Path resolution readability:** Simplified `Resolve-PathWithFallback` to reduce repetition while keeping behavior.
+- **Performance (emptiness probe):** Use `-File`/`-Directory` targeted checks to minimize enumeration work when probing directory contents.
+
 ## 1.1.0 — 2025-09-14
 ### Changed
 - **Defaults (portability):** Removed hard-coded user-specific defaults. `-ParentDirectory` now defaults to the current
@@ -74,23 +90,21 @@ function Resolve-PathWithFallback {
         [Parameter(Mandatory = $true)][string]$WindowsDefaultPath,
         [Parameter(Mandatory = $true)][string]$TempFallbackPath
     )
-    # 1) User-provided
+    # Prefer user-specified path if its parent can be created.
     if ($UserPath) {
         $parent = Split-Path -Path $UserPath -Parent
         if (New-Directory -DirectoryPath $parent) { return $UserPath.Trim() }
     }
-    # 2) Script-root relative
-    $scriptCandidate = Join-Path -Path $script:ScriptRoot -ChildPath $ScriptRelativePath
-    $parent = Split-Path -Path $scriptCandidate -Parent
-    if (New-Directory -DirectoryPath $parent) { return $scriptCandidate }
-    # 3) Windows default (LOCALAPPDATA)
-    $winCandidate = $WindowsDefaultPath
-    $parent = Split-Path -Path $winCandidate -Parent
-    if (New-Directory -DirectoryPath $parent) { return $winCandidate }
-    # 4) TEMP fallback
-    $tempCandidate = $TempFallbackPath
-    $parent = Split-Path -Path $tempCandidate -Parent
-    if (New-Directory -DirectoryPath $parent) { return $tempCandidate }
+    # Otherwise, iterate ordered candidates and return the first whose parent can be created.
+    $candidates = @(
+        (Join-Path -Path $script:ScriptRoot -ChildPath $ScriptRelativePath),
+        $WindowsDefaultPath,
+        $TempFallbackPath
+    )
+    foreach ($cand in $candidates) {
+        $p = Split-Path -Path $cand -Parent
+        if (New-Directory -DirectoryPath $p) { return $cand }
+    }
     return $TempFallbackPath
 }
 
@@ -144,8 +158,9 @@ if (-not (Test-Path -LiteralPath $ParentDirectory -PathType Container)) {
 # Start logging
 Log "Starting empty folder cleanup. Dry-run: $DryRun"
 
-# Initialize a counter for deleted folders
+# Initialize counters
 $DeletedFolderCount = 0
+WouldDeleteCount   = 0
 
 # -------- Performance: bottom-up traversal, immediate-contents check only --------
 # Sort directories deepest-first so that parents are reconsidered after children go away.
@@ -153,8 +168,14 @@ $allDirs = Get-ChildItem -LiteralPath $ParentDirectory -Directory -Recurse -Forc
           | Sort-Object { ($_.FullName -split '[\\/]').Count } -Descending
 
 foreach ($dir in $allDirs) {
-    # Check if directory is empty by probing for any immediate children
-    $hasEntries = Get-ChildItem -LiteralPath $dir.FullName -Force -ErrorAction SilentlyContinue | Select-Object -First 1
+    # Check if directory is empty by probing for any immediate children (targeted, minimal enumeration)
+    $hasEntries = $false
+    if (-not $hasEntries) {
+        $hasEntries = $null -ne (Get-ChildItem -LiteralPath $dir.FullName -File -Force -ErrorAction SilentlyContinue -Name | Select-Object -First 1)
+    }
+    if (-not $hasEntries) {
+        $hasEntries = $null -ne (Get-ChildItem -LiteralPath $dir.FullName -Directory -Force -ErrorAction SilentlyContinue -Name | Select-Object -First 1)
+    }
     if (-not $hasEntries) {
         if ($DryRun) {
             Log "[Dry-Run] Empty folder found: $($dir.FullName)"
@@ -172,9 +193,9 @@ foreach ($dir in $allDirs) {
 
 # End logging
 if ($DryRun) {
-    $completionMessage = "Empty folder cleanup completed. Dry-run mode: No folders were deleted. $DeletedFolderCount folders will be deleted if executed in normal mode."
+    $completionMessage = "Empty folder cleanup completed (dry-run). $WouldDeleteCount folder(s) would be deleted."
 } else {
-    $completionMessage = "Empty folder cleanup completed. $DeletedFolderCount folders were deleted."
+    $completionMessage = "Empty folder cleanup completed. $DeletedFolderCount folder(s) were deleted."
 }
 
 Log $completionMessage
