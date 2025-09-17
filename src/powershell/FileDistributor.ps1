@@ -395,7 +395,7 @@ $script:SessionId = $null
 # Determine script root (works in PS 5.1+ when running as a script)
 $script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Path $MyInvocation.MyCommand.Path -Parent }
 
-unction New-Ref {
+Function New-Ref {
     param($Initial = $null)
     # Create a stable [ref] container and assign its initial value safely
     $r = [ref]$null
