@@ -33,6 +33,14 @@
 1.2.1
 
 CHANGELOG
+## 1.2.1 — 2025-09-14
+### Fixed
+- **Docs:** `.PARAMETER LogFilePath` now documents dynamic default resolution to script-root, `%LOCALAPPDATA%`, then `%TEMP%`.
+- **Warnings:** Removed duplicate `$script:Warnings++` and corrected message in `Test-CanAccessFile`.
+### Improved
+- **Performance:** `-PrioritizeSmallFirst` no longer re-enumerates the entire tree per size; builds a single collision index in one streaming pass, then processes sizes ascending.
+- **Maintainability:** Added inline comments clarifying `$script:` globals as script-scoped counters/caches.
+
 ## 1.2.0 — 2025-09-14
 ### Fixed
 - **Undefined variable:** deletion loop now iterates over computed duplicate buckets (previously referenced `$DuplicateGroups`, which was undefined).
