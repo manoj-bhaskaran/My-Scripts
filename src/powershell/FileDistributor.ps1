@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.0.0
+ 3.0.1
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -31,6 +31,15 @@ Optional. Specifies the maximum number of files allowed in each subfolder of the
 Optional. Specifies the path to the log file for recording script activities.
 Resolution order (Windows): (1) user-provided, (2) script-root relative `.\logs\FileDistributor-log.txt`,
 (3) `%LOCALAPPDATA%\FileDistributor\logs\FileDistributor-log.txt`, (4) `%TEMP%\FileDistributor\logs\FileDistributor-log.txt`.
+If you pass a **directory** path (e.g. `C:\Logs`), the script will create/use
+`FileDistributor-log.txt` inside that directory automatically.
+
+.PARAMETER StateFilePath
+Optional. Specifies the path to the state file used for checkpoint/restart.
+Resolution order (Windows): (1) user-provided, (2) script-root relative `.\state\FileDistributor-State.json`,
+(3) `%LOCALAPPDATA%\FileDistributor\state\FileDistributor-State.json`, (4) `%TEMP%\FileDistributor\state\FileDistributor-State.json`.
+If you pass a **directory** path (e.g. `C:\State`), the script will create/use
+`FileDistributor-State.json` inside that directory automatically.
 
 .PARAMETER Restart
 Optional. If specified, the script will restart from the last checkpoint, resuming its previous state.
@@ -114,6 +123,13 @@ To copy files from "C:\Source" to "C:\Target" with a default file limit:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target"
 
 .EXAMPLE
+# Pass a directory for -LogFilePath and -StateFilePath; default filenames are created inside
+.\FileDistributor.ps1 `
+  -SourceFolder "C:\Source" -TargetFolder "C:\Target" `
+  -LogFilePath "C:\Users\manoj\Documents\Scripts\logs" `
+  -StateFilePath "C:\Users\manoj\Documents\Scripts\logs"
+
+.EXAMPLE
 To copy files with progress updates every 50 files:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -ShowProgress -UpdateFrequency 50
 
@@ -158,6 +174,13 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
+## 3.0.1 — 2025-09-17
+### Fixed
+- **Log/state path normalization:** If `-LogFilePath` or `-StateFilePath` points to an **existing directory**, the script now
+  creates/uses `FileDistributor-log.txt` or `FileDistributor-State.json` **inside that directory** automatically.
+- **Auto-create:** The log directory and file are created before first write to avoid "path is a directory" errors.
+- **Docs:** Parameter docs updated to clarify directory inputs are accepted for both paths.
+
 CHANGELOG
 ## 3.0.0 — 2025-09-14
 ### Changed (⚠️ Breaking)
@@ -381,6 +404,39 @@ function Resolve-PathWithFallback {
     return $TempFallbackPath
 }
 
+# Normalize a path that may actually be a directory; if it's a directory (or ends with a slash),
+# append the provided default filename. No-op if it's already a file path.
+function Resolve-FilePathIfDirectory {
+    param(
+        [Parameter(Mandatory=$true)][ref]$Path,
+        [Parameter(Mandatory=$true)][string]$DefaultFileName
+    )
+    $p = $Path.Value
+    if ([string]::IsNullOrWhiteSpace($p)) { return }
+    try {
+        if (Test-Path -LiteralPath $p -PathType Container) {
+            $Path.Value = (Join-Path -Path $p -ChildPath $DefaultFileName)
+            return
+        }
+    } catch { }
+    # If it doesn't exist but clearly looks like a directory (trailing slash), treat as directory
+    if ($p -match '[\\/]\s*$') {
+        $Path.Value = (Join-Path -Path $p -ChildPath $DefaultFileName)
+        return
+    }
+}
+
+# Ensure the parent directory exists; optionally "touch" the file so that subsequent Add-Content works.
+function Initialize-FilePath {
+    param(
+        [Parameter(Mandatory=$true)][string]$FilePath,
+        [switch]$CreateFile
+    )
+    $dir = Split-Path -LiteralPath $FilePath -Parent
+    if ($dir) { [void][System.IO.Directory]::CreateDirectory($dir) }
+    if ($CreateFile -and -not (Test-Path -LiteralPath $FilePath -PathType Leaf)) { New-Item -ItemType File -Path $FilePath -Force | Out-Null }
+}
+
 # Function to log messages
 function LogMessage {
     param (
@@ -567,10 +623,18 @@ $script:LogFilePath  = Resolve-PathWithFallback -UserPath $LogFilePath `
 $script:StateFilePath = Resolve-PathWithFallback -UserPath $StateFilePath `
     -ScriptRelativePath $defaultState_ScriptRel -WindowsDefaultPath $defaultState_Windows -TempFallbackPath $defaultState_Temp
 
+# If user passed a directory for either path, coerce to default filename within that directory
+Resolve-FilePathIfDirectory -Path ([ref]$script:LogFilePath)   -DefaultFileName 'FileDistributor-log.txt'
+Resolve-FilePathIfDirectory -Path ([ref]$script:StateFilePath) -DefaultFileName 'FileDistributor-State.json'
+
 # From here on, use the resolved script-scoped variables
 $LogFilePath   = $script:LogFilePath
 $StateFilePath = $script:StateFilePath
 
+# Ensure log directory exists and create the file so Add-Content always succeeds
+Initialize-FilePath -FilePath $LogFilePath -CreateFile
+# Ensure state directory exists early (file may be created later by locking/atomic write)
+Initialize-FilePath -FilePath $StateFilePath
 # ===== Random name provider resolution (module-only) =====
 function Import-RandomNameProvider {
     param(
