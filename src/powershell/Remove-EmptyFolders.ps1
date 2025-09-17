@@ -5,6 +5,7 @@
 .DESCRIPTION
     This script recursively searches for empty folders under a given parent directory.
     It supports a dry-run mode to simulate deletions and logs all actions to a specified log file.
+    For safety and portability, it **does not traverse reparse points** (symlinks/junctions) and never walks outside the specified root.
 
 .PARAMETER ParentDirectory
     The parent directory to search for empty folders. If not provided, defaults to the current
@@ -37,10 +38,27 @@
     # Invalid path handling (fails fast with an error)
     .\Remove-EmptyFolders.ps1 -ParentDirectory "Z:\DefinitelyNotHere"
 
+.EXAMPLE
+    # Read-only or permission-restricted directory (use Dry-Run to see what would happen)
+    .\Remove-EmptyFolders.ps1 -ParentDirectory "C:\SomeReadOnlyShare" -DryRun
+
+.EXAMPLE
+    # Large-scale tree: start with Dry-Run to estimate scope before actual deletion
+    .\Remove-EmptyFolders.ps1 -ParentDirectory "E:\MassiveArchive" -DryRun
+
 .VERSION
-1.2.0
+1.3.0
 
 CHANGELOG
+## 1.3.0 — 2025-09-14
+### Changed
+- **Traversal safety:** Do not traverse reparse points (symlinks/junctions); enumeration is restricted to real directories under the specified root.
+### Improved
+- **Logging setup:** Simplified log initialization to a single call per artifact (directory/file) using .NET APIs.
+- **Performance:** Combined the emptiness probe into a single, minimal `Get-ChildItem -Name` call.
+### Added
+- **Examples:** Added read-only/permission-restricted and large-scale tree scenarios.
+
 ## 1.2.0 — 2025-09-14
 ### Added
 - **Examples:** Added UNC/network share usage and invalid-path example for clearer guidance.
@@ -120,18 +138,17 @@ $defaultLog_Temp      = Join-Path -Path (Join-Path $tempRoot     'DuplicateClean
 $LogFilePath = Resolve-PathWithFallback -UserPath $LogFilePath `
     -ScriptRelativePath $defaultLog_ScriptRel -WindowsDefaultPath $defaultLog_Windows -TempFallbackPath $defaultLog_Temp
  
-# Initialize logging
+# Initialize logging (single call per artifact)
 function Initialize-LogDestination {
     param([Parameter(Mandatory = $true)][string]$Path)
     try {
         $dir = Split-Path -Parent -Path $Path
         if ([string]::IsNullOrWhiteSpace($dir)) { return }
-        if (-not (Test-Path -LiteralPath $dir)) {
-            New-Item -ItemType Directory -Path $dir -Force | Out-Null
-        }
-        if (-not (Test-Path -LiteralPath $Path)) {
-            New-Item -ItemType File -Path $Path -Force | Out-Null
-        }
+        # Create or confirm directory with a single .NET call (idempotent)
+        [void][System.IO.Directory]::CreateDirectory($dir)
+        # Open or create the log file in one call, then close immediately
+        $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+        $fs.Close()
     } catch {
         Write-Error "Failed to validate/create log destination '$Path'. Error: $($_.Exception.Message)"
         exit 2
@@ -162,23 +179,38 @@ Log "Starting empty folder cleanup. Dry-run: $DryRun"
 $DeletedFolderCount = 0
 WouldDeleteCount   = 0
 
+# Enumerate subdirectories without traversing reparse points (symlinks/junctions)
+function Get-SubdirsNoReparse {
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $list  = New-Object System.Collections.Generic.List[System.IO.DirectoryInfo]
+    $stack = New-Object System.Collections.Generic.Stack[System.IO.DirectoryInfo]
+    # seed with immediate children of root (skip reparse points)
+    Get-ChildItem -LiteralPath $Root -Directory -Force -ErrorAction SilentlyContinue | Where-Object {
+        -not (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint))
+    } | ForEach-Object { $stack.Push($_) }
+    while ($stack.Count -gt 0) {
+        $d = $stack.Pop()
+        $list.Add($d) | Out-Null
+        # push children of $d that are real directories (no reparse points)
+        Get-ChildItem -LiteralPath $d.FullName -Directory -Force -ErrorAction SilentlyContinue | Where-Object {
+            -not (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint))
+        } | ForEach-Object { $stack.Push($_) }
+    }
+    return $list
+}
+
 # -------- Performance: bottom-up traversal, immediate-contents check only --------
-# Sort directories deepest-first so that parents are reconsidered after children go away.
-$allDirs = Get-ChildItem -LiteralPath $ParentDirectory -Directory -Recurse -Force `
+# Collect subdirectories without reparse points, then sort deepest-first
+$allDirs = Get-SubdirsNoReparse -Root $ParentDirectory `
           | Sort-Object { ($_.FullName -split '[\\/]').Count } -Descending
 
 foreach ($dir in $allDirs) {
-    # Check if directory is empty by probing for any immediate children (targeted, minimal enumeration)
-    $hasEntries = $false
-    if (-not $hasEntries) {
-        $hasEntries = $null -ne (Get-ChildItem -LiteralPath $dir.FullName -File -Force -ErrorAction SilentlyContinue -Name | Select-Object -First 1)
-    }
-    if (-not $hasEntries) {
-        $hasEntries = $null -ne (Get-ChildItem -LiteralPath $dir.FullName -Directory -Force -ErrorAction SilentlyContinue -Name | Select-Object -First 1)
-    }
+    # Single-call emptiness probe: any immediate child (file/dir/link) means NOT empty
+    $hasEntries = $null -ne (Get-ChildItem -LiteralPath $dir.FullName -Force -ErrorAction SilentlyContinue -Name | Select-Object -First 1)
     if (-not $hasEntries) {
         if ($DryRun) {
             Log "[Dry-Run] Empty folder found: $($dir.FullName)"
+            $WouldDeleteCount++
         } else {
             try {
                 Remove-Item -LiteralPath $dir.FullName -Force
