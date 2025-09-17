@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.0.4
+ 3.0.5
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -175,6 +175,11 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.0.5 — 2025-09-18
+### Fixed
+- **Relative destinations like `D\file.jpg`:** Added a normalization guard so any subfolder string that is not an absolute path (or looks like a bare drive letter such as `D` or `D:`) is remapped to the absolute `-TargetFolder` root. This prevents `Join-Path` from producing `D\file` which PowerShell resolves as a relative path (e.g., `C:\Users\<user>\D\file`).
+- **Hardening:** `DistributeFilesToSubfolders` now receives the target root and ensures the chosen destination folder is rooted and exists before copying.
+
 ## 3.0.4 — 2025-09-18
 ### Fixed
 - **Destination path collapsing to drive letter (`D\file`)**: Prevent implicit string-casting of `DirectoryInfo` values that could shrink paths to a single-letter drive designator. `DistributeFilesToSubfolders` and `RedistributeFilesInTarget` now accept object arrays and normalize each entry to `.FullName`. `CreateRandomSubfolders` now returns `DirectoryInfo` objects (not strings) so absolute paths are preserved end-to-end.
@@ -761,6 +766,19 @@ function ResolveFileNameConflict {
     return $newFileName
 }
 
+function Resolve-SubfolderPath {
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory=$true)][string]$TargetRoot
+    )
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $TargetRoot }
+    # Bare drive letter or drive designator should not be used as a destination folder
+    if ($Path -match '^[A-Za-z]$' -or $Path -match '^[A-Za-z]:$') { return $TargetRoot }
+    if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
+    # Anything else that's relative: anchor it under TargetRoot
+    return (Join-Path -Path $TargetRoot -ChildPath $Path)
+}
+
 function CreateRandomSubfolders {
     param (
         [string]$TargetPath,
@@ -855,6 +873,7 @@ function DistributeFilesToSubfolders {
     param (
         [string[]]$Files,
         [object[]]$Subfolders,
+        [Parameter(Mandatory=$true)][string]$TargetRoot,
         [int]$Limit,
         [switch]$ShowProgress,        # Enable/disable progress updates
         [int]$UpdateFrequency,       # Frequency for progress updates
@@ -869,6 +888,8 @@ function DistributeFilesToSubfolders {
     $folderCounts = @{}
     foreach ($sf in $Subfolders) {
         $sfPath = if ($sf -is [System.IO.FileSystemInfo]) { $sf.FullName } else { [string]$sf }
+        # Force absolute, rooted paths under TargetRoot (guards against 'D'/'D:'/relative)
+        $sfPath = Resolve-SubfolderPath -Path $sfPath -TargetRoot $TargetRoot
         if (-not [string]::IsNullOrWhiteSpace($sfPath)) {
             $subfolderPaths += $sfPath
             try {
@@ -913,6 +934,21 @@ function DistributeFilesToSubfolders {
         $minCount = ($eligible | ForEach-Object { $folderCounts[$_] } | Measure-Object -Minimum).Minimum
         $candidates = $eligible | Where-Object { $folderCounts[$_] -eq $minCount }
         $destinationFolder = if ($candidates.Count -gt 1) { $candidates | Get-Random } else { $candidates[0] }
+        # Sanitize/anchor destination in case anything slipped through
+        $destinationFolder = Resolve-SubfolderPath -Path $destinationFolder -TargetRoot $TargetRoot
+        if ($destinationFolder -match '^[A-Za-z]$' -or $destinationFolder -match '^[A-Za-z]:$' -or -not [System.IO.Path]::IsPathRooted($destinationFolder)) {
+            LogMessage -Message "Sanitizing non-rooted destination folder '$destinationFolder' -> '$TargetRoot'." -IsWarning
+            $destinationFolder = $TargetRoot
+        }
+        if (-not (Test-Path -LiteralPath $destinationFolder -PathType Container)) {
+            try {
+                New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
+                LogMessage -Message "Created missing destination folder: $destinationFolder"
+            } catch {
+                LogMessage -Message "Failed to ensure destination folder '$destinationFolder': $($_.Exception.Message)" -IsError
+                continue
+            }
+        }
 
         # Always generate a randomized destination name (preserve extension)
         $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $originalName
@@ -1008,6 +1044,7 @@ function RedistributeFilesInTarget {
     $normalizedSubfolders = @()
     foreach ($sf in $Subfolders) {
         $sfPath = if ($sf -is [System.IO.FileSystemInfo]) { $sf.FullName } else { [string]$sf }
+        $sfPath = Resolve-SubfolderPath -Path $sfPath -TargetRoot $TargetFolder
         if (-not [string]::IsNullOrWhiteSpace($sfPath)) {
             $normalizedSubfolders += $sfPath
             try {
@@ -1043,6 +1080,7 @@ function RedistributeFilesInTarget {
 
         DistributeFilesToSubfolders -Files $rootFiles `
             -Subfolders $eligibleTargets `
+            -TargetRoot $TargetFolder `
             -Limit $FilesPerFolderLimit `
             -ShowProgress:$ShowProgress `
             -UpdateFrequency:$UpdateFrequency `
@@ -1090,6 +1128,7 @@ function RedistributeFilesInTarget {
 
         DistributeFilesToSubfolders -Files $sourceFiles `
             -Subfolders $eligibleTargets `
+            -TargetRoot $TargetFolder `
             -Limit $FilesPerFolderLimit `
             -ShowProgress:$ShowProgress `
             -UpdateFrequency:$UpdateFrequency `
@@ -1601,7 +1640,7 @@ function Main {
         if ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
             LogMessage -Message "Distributing files to subfolders..."
-            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -Limit $FilesPerFolderLimit `
+            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -TargetRoot $TargetFolder -Limit $FilesPerFolderLimit 
                                         -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency `
                                         -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete `
                                         -GlobalFileCounter $GlobalFileCounter -TotalFiles $totalFiles # Pass correct total
