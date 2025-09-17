@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.0.5
+ 3.0.6
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -175,6 +175,12 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.0.6 — 2025-09-18
+### Fixed
+- Crash on fresh runs: avoid overwriting `[ref]` holders (e.g., `$FilesToDelete`) with plain arrays; instead, only assign to their `.Value`. This prevents "The property 'Value' cannot be found..." errors.
+- Added a small helper `New-Ref` to create stable `[ref]` containers.
+- Missing line continuation in a `DistributeFilesToSubfolders` call that could mis-parse parameters.
+
 ## 3.0.5 — 2025-09-18
 ### Fixed
 - **Relative destinations like `D\file.jpg`:** Added a normalization guard so any subfolder string that is not an absolute path (or looks like a bare drive letter such as `D` or `D:`) is remapped to the absolute `-TargetFolder` root. This prevents `Join-Path` from producing `D\file` which PowerShell resolves as a relative path (e.g., `C:\Users\<user>\D\file`).
@@ -388,6 +394,14 @@ $script:SessionId = $null
 # ===== Windows path resolution helpers (executed before any logging) =====
 # Determine script root (works in PS 5.1+ when running as a script)
 $script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Path $MyInvocation.MyCommand.Path -Parent }
+
+unction New-Ref {
+    param($Initial = $null)
+    # Create a stable [ref] container and assign its initial value safely
+    $r = [ref]$null
+    $r.Value = $Initial
+    return $r
+}
 
 function New-Directory {
     param([Parameter(Mandatory=$true)][string]$DirectoryPath)
@@ -1463,8 +1477,9 @@ function Main {
 
         LogMessage -Message "Parameter validation completed"
 
-        $FilesToDelete = [ref]@()  # Initialize FilesToDelete as a [ref] object with an empty array
-        $GlobalFileCounter = [ref]0  # Initialize GlobalFileCounter as a [ref] object with a value of 0
+        # Initialize stable [ref] holders (do not overwrite these variables later, only set .Value)
+        $FilesToDelete = New-Ref @()     # queue for EndOfScript deletions
+        $GlobalFileCounter = New-Ref 0   # running count
 
         $fileLockRef = [ref]$null
 
@@ -1554,7 +1569,7 @@ function Main {
                             $normalized += $e
                         }
                     }
-                    $FilesToDelete = [ref]$normalized
+                    $FilesToDelete.Value = $normalized
 
                     if (-not $FilesToDelete.Value -or $FilesToDelete.Value.Count -eq 0) {
                         Write-Output "No files to delete from the previous session."
@@ -1564,10 +1579,10 @@ function Main {
                 } elseif ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4) {
                     # If DeleteMode is EndOfScript but no FilesToDelete key exists
                     LogMessage -Message "State file does not contain FilesToDelete key for EndOfScript mode." -IsWarning
-                    $FilesToDelete = [ref]@() # Initialise to an empty [ref] array
+                    $FilesToDelete.Value = @() # Re-initialize queue (do not replace the [ref] holder)
                 } else {
                     # Default initialisation when EndOfScript mode does not apply
-                    $FilesToDelete = [ref]@() # Ensure FilesToDelete is always defined
+                    $FilesToDelete.Value = @() # Ensure FilesToDelete is always defined without replacing [ref]
                 }
             } else {
 
@@ -1640,7 +1655,7 @@ function Main {
         if ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
             LogMessage -Message "Distributing files to subfolders..."
-            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -TargetRoot $TargetFolder -Limit $FilesPerFolderLimit 
+            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -TargetRoot $TargetFolder -Limit $FilesPerFolderLimit `
                                         -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency `
                                         -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete `
                                         -GlobalFileCounter $GlobalFileCounter -TotalFiles $totalFiles # Pass correct total
@@ -1765,7 +1780,7 @@ function Main {
         }
 
         # Release the file lock before deleting state file
-        if ($fileLockRef.Value) {
+        if ($fileLockRef -and ($fileLockRef.PSObject.Properties.Name -contains 'Value') -and $fileLockRef.Value) {
             ReleaseFileLock -FileStream $fileLockRef.Value
         }
 
@@ -1805,7 +1820,7 @@ function Main {
     } catch {
         LogMessage -Message "$($_.Exception.Message)" -IsError
     } finally {
-        if ($fileLockRef.Value) {
+        if ($fileLockRef -and ($fileLockRef.PSObject.Properties.Name -contains 'Value') -and $fileLockRef.Value) {
             ReleaseFileLock -FileStream $fileLockRef.Value
         }
     }
