@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.0.2
+ 3.0.3
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -174,6 +174,12 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
+CHANGELOG
+## 3.0.3 — 2025-09-18
+### Fixed
+- **Invoke-WithRetry call typo:** Added missing line-continuation (`` ` ``) after `-MaxBackoff $MaxBackoff` in `Copy-ItemWithRetry` which caused `The term '-RetryDelay' is not recognized...` when the next line was parsed as a new command.
+- **Fresh-run state lock:** Pass `-RetryCount $RetryCount` when calling `AcquireFileLock` after deleting a stale state file for consistency with other call sites.
+
 ## 3.0.2 — 2025-09-17
 ### Fixed
 - **Split-Path param set error:** Replaced `Split-Path -LiteralPath ... -Parent` with a compatible call to avoid `Parameter set cannot be resolved...` in PowerShell 5.1.
@@ -187,7 +193,6 @@ To display the script's help text:
 - **Auto-create:** The log directory and file are created before first write to avoid "path is a directory" errors.
 - **Docs:** Parameter docs updated to clarify directory inputs are accepted for both paths.
 
-CHANGELOG
 ## 3.0.0 — 2025-09-14
 ### Changed (⚠️ Breaking)
 - **Random name provider is now module-only:** the legacy `randomname.ps1` script is no longer supported.
@@ -704,7 +709,7 @@ function Copy-ItemWithRetry {
         [int]$RetryCount = 3
     )
     Invoke-WithRetry -Operation { Copy-Item -Path $Path -Destination $Destination -Force -ErrorAction Stop } `
-                     -Description "Copy '$Path' -> '$Destination'" -MaxBackoff $MaxBackoff 
+                     -Description "Copy '$Path' -> '$Destination'" -MaxBackoff $MaxBackoff `
                      -RetryDelay $RetryDelay -RetryCount $RetryCount
 }
 
@@ -1525,7 +1530,7 @@ function Main {
                     }  
                 }
                 # Acquire the file lock after deleting the file
-                $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay
+                 $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
             }
         } catch {
             LogMessage -Message "An unexpected error occurred: $($_.Exception.Message)" -IsError
