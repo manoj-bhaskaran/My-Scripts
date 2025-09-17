@@ -42,22 +42,22 @@ CHANGELOG
 - **Memory guard:** Added `-CollisionIndexMaxItems` (default **100000**) to cap index growth. If the cap is exceeded,
   the script **discards the index** and **streams** hashing to avoid high memory usage. A log message explains the fallback.
 
-## 1.2.1 — 2025-09-14
+## 1.2.0–1.2.1 — 2025-09-14 *(rollup)*
+
+### Added
+- **Progress & UX:** `-ShowProgress` and `-ProgressInterval` (default 500) to display progress during pass 1 (counting) and pass 2 (hashing).
+- **Optional strategy:** `-PrioritizeSmallFirst` to hash smaller collision buckets first for faster perceived responsiveness.
+- **Error handling:** Fail-fast if the log file cannot be written; guarded logging; end-of-run summary of critical failures and non-fatal warnings. Non-zero exit when logging cannot be established.
+
 ### Fixed
 - **Docs:** `.PARAMETER LogFilePath` now documents dynamic default resolution to script-root, `%LOCALAPPDATA%`, then `%TEMP%`.
-- **Warnings:** Removed duplicate `$script:Warnings++` and corrected message in `Test-CanAccessFile`.
-### Improved
-- **Performance:** `-PrioritizeSmallFirst` no longer re-enumerates the entire tree per size; builds a single collision index in one streaming pass, then processes sizes ascending.
-- **Maintainability:** Added inline comments clarifying `$script:` globals as script-scoped counters/caches.
+- **Warnings counter:** Removed duplicate `$script:Warnings++` and corrected the warning message in `Test-CanAccessFile`.
+- **Undefined variable:** Deletion loop now iterates over computed duplicate buckets (previously referenced undefined `$DuplicateGroups`).
 
-## 1.2.0 — 2025-09-14
-### Fixed
-- **Undefined variable:** deletion loop now iterates over computed duplicate buckets (previously referenced `$DuplicateGroups`, which was undefined).
-### Added
-- **Progress & UX:** `-ShowProgress` and `-ProgressInterval` (default 500) show progress during pass 1 (counting) and pass 2 (hashing). Optional `-PrioritizeSmallFirst` hashes smaller collision buckets first for faster perceived responsiveness.
-- **Error handling:** fail-fast if the log file cannot be written; robust logging with guarded writes; end-of-run summary of critical failures and non-fatal warnings. Returns non-zero exit when critical logging cannot be established.
 ### Improved
-- **Performance visibility:** pass-2 progress computed from the number of files in size-collision buckets; hashing counters surfaced.
+- **Performance:** `-PrioritizeSmallFirst` no longer re-enumerates the entire tree per size; it builds a single collision index in one streaming pass and processes sizes ascending.
+- **Performance visibility:** Pass-2 progress computed from collision-bucket totals; hashing counters surfaced.
+- **Maintainability:** Inline comments clarify `$script:` globals as script-scoped counters/caches.
 
 ## 1.1.0 — 2025-09-14
 ### Changed
