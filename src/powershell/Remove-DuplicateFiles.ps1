@@ -30,9 +30,18 @@
     .\Remove-DuplicateFiles.ps1 -ParentDirectory "C:\MyFiles" -LogFilePath "C:\Logs\DuplicateLog.log" -DryRun
 
 .VERSION
-1.2.1
+1.3.0
 
 CHANGELOG
+## 1.3.0 — 2025-09-14
+### Improved
+- **Memory efficiency (PrioritizeSmallFirst):** The collision index now stores **paths (strings)** instead of
+  `FileInfo` objects, significantly reducing memory overhead for large collision sets.
+- **Adaptive behavior:** Added `-CollisionIndexMode {Auto|Index|Stream}` (default **Auto**). In `Auto`,
+  the script builds a small-first collision index only when helpful; otherwise it falls back to the streaming path.
+- **Memory guard:** Added `-CollisionIndexMaxItems` (default **100000**) to cap index growth. If the cap is exceeded,
+  the script **discards the index** and **streams** hashing to avoid high memory usage. A log message explains the fallback.
+
 ## 1.2.1 — 2025-09-14
 ### Fixed
 - **Docs:** `.PARAMETER LogFilePath` now documents dynamic default resolution to script-root, `%LOCALAPPDATA%`, then `%TEMP%`.
@@ -87,7 +96,10 @@ param (
     [switch]$DryRun,
     [switch]$ShowProgress,
     [int]$ProgressInterval = 500,
-    [switch]$PrioritizeSmallFirst
+    [switch]$PrioritizeSmallFirst,
+    [ValidateSet('Auto','Index','Stream')]
+    [string]$CollisionIndexMode = 'Auto',
+    [int]$CollisionIndexMaxItems = 100000
 )
 
 # ----- Dynamic defaults & path resolution -----
@@ -287,43 +299,7 @@ $collisionTotal = 0
 foreach ($k in $sizeCounts.Keys) { if ($sizeCounts[$k] -gt 1) { $collisionTotal += $sizeCounts[$k] } }
 $hashedSoFar = 0
 
-if ($PrioritizeSmallFirst) {
-    # Build a single collision index in one streaming pass to avoid re-enumerating
-    # the entire tree for every distinct size.
-    $collisionIndex = @{}  # length -> [FileInfo[]]
-    Get-ChildItem -Path $ParentDirectory -Recurse -File | ForEach-Object {
-        $len = $_.Length
-        if ($sizeCounts[$len] -gt 1) {
-            if (-not $collisionIndex.ContainsKey($len)) {
-                $collisionIndex[$len] = New-Object System.Collections.Generic.List[System.IO.FileInfo]
-            }
-            [void]$collisionIndex[$len].Add($_)
-        }
-    }
-
-    # Process from smallest collision size upward for better perceived responsiveness
-    $collisionSizes = $collisionIndex.Keys | Sort-Object
-    foreach ($len in $collisionSizes) {
-        foreach ($file in $collisionIndex[$len]) {
-            $h = Get-ContentHash -Path $file.FullName
-            if ($null -ne $h) {
-                if ($seenByHash.ContainsKey($h)) {
-                    if (-not $dupeBuckets.ContainsKey($h)) {
-                        $dupeBuckets[$h] = @($seenByHash[$h])
-                    }
-                    $dupeBuckets[$h] += $file
-                } else {
-                    $seenByHash[$h] = $file
-                }
-            }
-            $hashedSoFar++
-            if ($ShowProgress -and ($hashedSoFar % $ProgressInterval -eq 0)) {
-                $pct = if ($collisionTotal -gt 0) { [int](($hashedSoFar / $collisionTotal) * 100) } else { 100 }
-                Write-Progress -Activity "Pass 2/2: Hashing size-collision files" -Status "Hashed $hashedSoFar / $collisionTotal" -PercentComplete $pct -Id 2
-            }
-        }
-    }
-} else {
+function Invoke-HashStreaming {
     # Default: single streaming enumeration, only hash files in collision buckets
     Get-ChildItem -Path $ParentDirectory -Recurse -File | ForEach-Object {
         if ($sizeCounts[$_.Length] -gt 1) {
@@ -347,6 +323,74 @@ if ($PrioritizeSmallFirst) {
             }
         }
     }
+}
+
+# Decide hashing strategy based on user intent and memory guard
+$useIndexing = $false
+if ($PrioritizeSmallFirst) {
+    switch ($CollisionIndexMode) {
+        'Index' { $useIndexing = $true }
+        'Stream' { $useIndexing = $false }
+        'Auto'   { $useIndexing = $true }
+    }
+}
+
+if ($useIndexing) {
+    # Build a single collision index using **paths** to minimize memory: length -> [string[]]
+    $collisionIndex = @{}
+    $indexItemCount = 0
+    $fallbackToStream = $false
+
+    Get-ChildItem -Path $ParentDirectory -Recurse -File | ForEach-Object {
+        if ($fallbackToStream) { return }
+        $len = $_.Length
+        if ($sizeCounts[$len] -gt 1) {
+            if (-not $collisionIndex.ContainsKey($len)) {
+                $collisionIndex[$len] = New-Object System.Collections.Generic.List[string]
+            }
+            [void]$collisionIndex[$len].Add($_.FullName)
+            $indexItemCount++
+            if ($indexItemCount -gt $CollisionIndexMaxItems) {
+                Log "INFO: Collision index exceeded $CollisionIndexMaxItems items; falling back to streaming to preserve memory."
+                $fallbackToStream = $true
+            }
+        }
+    }
+
+    if ($fallbackToStream) {
+        # Discard oversized index and stream instead
+        $collisionIndex = $null
+        Invoke-HashStreaming
+    } else {
+        # Process from smallest collision size upward for better perceived responsiveness
+        $collisionSizes = $collisionIndex.Keys | Sort-Object
+        foreach ($len in $collisionSizes) {
+            foreach ($filePath in $collisionIndex[$len]) {
+                $h = Get-ContentHash -Path $filePath
+                if ($null -ne $h) {
+                    if ($seenByHash.ContainsKey($h)) {
+                        if (-not $dupeBuckets.ContainsKey($h)) {
+                            $dupeBuckets[$h] = @($seenByHash[$h])
+                        }
+                        # materialize FileInfo only when needed for duplicate sets
+                        $fileObj = $null
+                        try { $fileObj = Get-Item -LiteralPath $filePath -ErrorAction Stop } catch { $fileObj = $null }
+                        if ($fileObj) { $dupeBuckets[$h] += $fileObj }
+                    } else {
+                        try { $seenByHash[$h] = Get-Item -LiteralPath $filePath -ErrorAction Stop } catch { }
+                    }
+                }
+                $hashedSoFar++
+                if ($ShowProgress -and ($hashedSoFar % $ProgressInterval -eq 0)) {
+                    $pct = if ($collisionTotal -gt 0) { [int](($hashedSoFar / $collisionTotal) * 100) } else { 100 }
+                    Write-Progress -Activity "Pass 2/2: Hashing size-collision files" -Status "Hashed $hashedSoFar / $collisionTotal" -PercentComplete $pct -Id 2
+                }
+            }
+        }
+    }
+} else {
+    # Default: single streaming enumeration, only hash files in collision buckets
+    Invoke-HashStreaming
 }
 if ($ShowProgress) { Write-Progress -Activity "Pass 2/2: Hashing size-collision files" -Status "Complete" -Completed -Id 2 }
 
