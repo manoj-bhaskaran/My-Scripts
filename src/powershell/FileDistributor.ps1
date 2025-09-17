@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.0.1
+ 3.0.2
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -174,6 +174,12 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
+## 3.0.2 — 2025-09-17
+### Fixed
+- **Split-Path param set error:** Replaced `Split-Path -LiteralPath ... -Parent` with a compatible call to avoid `Parameter set cannot be resolved...` in PowerShell 5.1.
+- **State lock reacquire:** Corrected variable name inside `LoadState` and ensured `-RetryCount` is passed when (re)acquiring the file lock.
+- **Lock acquire in fresh-run path:** Now passes `-RetryCount` when acquiring the initial state lock.
+
 ## 3.0.1 — 2025-09-17
 ### Fixed
 - **Log/state path normalization:** If `-LogFilePath` or `-StateFilePath` points to an **existing directory**, the script now
@@ -432,7 +438,8 @@ function Initialize-FilePath {
         [Parameter(Mandatory=$true)][string]$FilePath,
         [switch]$CreateFile
     )
-    $dir = Split-Path -LiteralPath $FilePath -Parent
+    # Use -Path with -Parent to avoid parameter-set ambiguity on older PowerShell versions
+    $dir = Split-Path -Path $FilePath -Parent
     if ($dir) { [void][System.IO.Directory]::CreateDirectory($dir) }
     if ($CreateFile -and -not (Test-Path -LiteralPath $FilePath -PathType Leaf)) { New-Item -ItemType File -Path $FilePath -Force | Out-Null }
 }
@@ -549,7 +556,8 @@ function Write-JsonAtomically {
         [Parameter(Mandatory=$true)][hashtable]$StateObject,
         [Parameter(Mandatory=$true)][string]$Path
     )
-    $dir = Split-Path -LiteralPath $Path -Parent
+    # Use -Path with -Parent to avoid parameter-set ambiguity on older PowerShell versions
+    $dir = Split-Path -Path $Path -Parent
     if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     $tmp = "$Path.tmp"
     $bak = "$Path.bak"
@@ -1180,7 +1188,7 @@ function LoadState {
     if (-not $state) { $state = @{ Checkpoint = 0 } }
 
     # Reacquire the file lock after loading state
-    $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+    $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
 
     return $state
 }
