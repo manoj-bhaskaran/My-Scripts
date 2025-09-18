@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.0.7
+ 3.0.8
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -175,6 +175,12 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.0.8 — 2025-09-18
+### Fixed
+- Added missing line continuation when calling `DistributeFilesToSubfolders` during target-root redistribution.
+  Without the backtick, PowerShell invoked the function with only `-Files`, then interactively prompted for
+  the mandatory `-TargetRoot` (visible especially when resuming from checkpoint 3).
+
 ## 3.0.7 — 2025-09-18
 ### Fixed
 - Progress denominator now reflects the current **phase** (source distribution, target-root redistribution, and per-overloaded-folder redistribution). The per-phase counter resets so logs like “Processed N of M” are accurate.
@@ -1112,7 +1118,7 @@ function RedistributeFilesInTarget {
         # Reset phase counter and compute correct denominator
         $GlobalFileCounter.Value = 0
         $redistributionTotal += $rootFiles.Count
-        DistributeFilesToSubfolders -Files $rootFiles 
+        DistributeFilesToSubfolders -Files $rootFiles `
             -Subfolders $eligibleTargets `
             -TargetRoot $TargetFolder `
             -Limit $FilesPerFolderLimit `
