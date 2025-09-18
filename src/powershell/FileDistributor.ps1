@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.0.6
+ 3.0.7
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -175,6 +175,11 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.0.7 — 2025-09-18
+### Fixed
+- Progress denominator now reflects the current **phase** (source distribution, target-root redistribution, and per-overloaded-folder redistribution). The per-phase counter resets so logs like “Processed N of M” are accurate.
+- Prevent copies from landing in the target **root** during source distribution. If a sanitized destination resolves to the root but subfolders exist, we re-select a real subfolder (least-filled) and log a warning once.
+
 ## 3.0.6 — 2025-09-18
 ### Fixed
 - Crash on fresh runs: avoid overwriting `[ref]` holders (e.g., `$FilesToDelete`) with plain arrays; instead, only assign to their `.Value`. This prevents "The property 'Value' cannot be found..." errors.
@@ -954,6 +959,16 @@ function DistributeFilesToSubfolders {
             LogMessage -Message "Sanitizing non-rooted destination folder '$destinationFolder' -> '$TargetRoot'." -IsWarning
             $destinationFolder = $TargetRoot
         }
+        # Hard guard: if we somehow ended up at the target root but we have subfolders, force a subfolder pick.
+        if ($destinationFolder -ieq $TargetRoot) {
+            $subOnly = $subfolderPaths | Where-Object { $_ -ne $TargetRoot }
+            if ($subOnly.Count -gt 0) {
+                $min2 = ($subOnly | ForEach-Object { $folderCounts[$_] } | Measure-Object -Minimum).Minimum
+                $cand2 = $subOnly | Where-Object { $folderCounts[$_] -eq $min2 }
+                $destinationFolder = if ($cand2.Count -gt 1) { $cand2 | Get-Random } else { $cand2[0] }
+                LogMessage -Message "Destination normalized away from target root; using subfolder '$destinationFolder'." -IsWarning
+            }
+        }
         if (-not (Test-Path -LiteralPath $destinationFolder -PathType Container)) {
             try {
                 New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
@@ -1073,6 +1088,8 @@ function RedistributeFilesInTarget {
     # Step 2: Redistribute files from root of target folder (not subfolders)
     LogMessage -Message "Redistributing files from target folder $TargetFolder to subfolders..."
     $rootFiles = Get-ChildItem -Path $TargetFolder -File
+    $redistributionTotal = 0
+    $redistributionProcessed = 0
 
     if ($rootFiles.Count -gt 0) {
         $eligibleTargets = $folderFilesMap.GetEnumerator() |
@@ -1092,7 +1109,10 @@ function RedistributeFilesInTarget {
             $folderFilesMap[$newFolder] = 0
         }
 
-        DistributeFilesToSubfolders -Files $rootFiles `
+        # Reset phase counter and compute correct denominator
+        $GlobalFileCounter.Value = 0
+        $redistributionTotal += $rootFiles.Count
+        DistributeFilesToSubfolders -Files $rootFiles 
             -Subfolders $eligibleTargets `
             -TargetRoot $TargetFolder `
             -Limit $FilesPerFolderLimit `
@@ -1101,7 +1121,8 @@ function RedistributeFilesInTarget {
             -DeleteMode $DeleteMode `
             -FilesToDelete $FilesToDelete `
             -GlobalFileCounter $GlobalFileCounter `
-            -TotalFiles $TotalFiles
+            -TotalFiles $rootFiles.Count
+        $redistributionProcessed += $GlobalFileCounter.Value
     }
 
     # Step 3: Identify overloaded folders and select random files for redistribution
@@ -1114,6 +1135,7 @@ function RedistributeFilesInTarget {
             $overloadedFiles = Get-ChildItem -Path $folder -File | Get-Random -Count $excess
             $filesToRedistributeMap[$folder] = $overloadedFiles
             LogMessage -Message "Folder $folder is overloaded by $excess file(s), queuing for redistribution."
+            $redistributionTotal += $overloadedFiles.Count
         }
     }
 
@@ -1140,6 +1162,8 @@ function RedistributeFilesInTarget {
             $folderFilesMap[$newFolder] = 0
         }
 
+        # Reset phase counter and use per-batch denominator
+        $GlobalFileCounter.Value = 0
         DistributeFilesToSubfolders -Files $sourceFiles `
             -Subfolders $eligibleTargets `
             -TargetRoot $TargetFolder `
@@ -1149,10 +1173,11 @@ function RedistributeFilesInTarget {
             -DeleteMode $DeleteMode `
             -FilesToDelete $FilesToDelete `
             -GlobalFileCounter $GlobalFileCounter `
-            -TotalFiles $TotalFiles
+            -TotalFiles $sourceFiles.Count
+        $redistributionProcessed += $GlobalFileCounter.Value
     }
 
-    LogMessage -Message "File redistribution completed: Processed $($GlobalFileCounter.Value) of $TotalFiles files in the target folder."
+    LogMessage -Message "File redistribution completed: Processed $redistributionProcessed of $redistributionTotal files in the target folder."
 }
 
 function SaveState {
@@ -1655,10 +1680,12 @@ function Main {
         if ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
             LogMessage -Message "Distributing files to subfolders..."
+            # Reset phase counter and use per-phase total (sources only)
+            $GlobalFileCounter.Value = 0
             DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -TargetRoot $TargetFolder -Limit $FilesPerFolderLimit `
                                         -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency `
                                         -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete `
-                                        -GlobalFileCounter $GlobalFileCounter -TotalFiles $totalFiles # Pass correct total
+                                        -GlobalFileCounter $GlobalFileCounter -TotalFiles $totalSourceFiles
             LogMessage -Message "Completed file distribution"
 
             # Common base for additional variables
@@ -1687,7 +1714,7 @@ function Main {
                                       -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress `
                                       -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode `
                                       -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter `
-                                      -TotalFiles $totalFiles # Pass correct total
+                                      -TotalFiles 0 # Not used now; function computes its own totals
         
             # Base additional variables
             $additionalVars = @{
