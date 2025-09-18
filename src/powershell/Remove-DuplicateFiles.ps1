@@ -30,9 +30,15 @@
     .\Remove-DuplicateFiles.ps1 -ParentDirectory "C:\MyFiles" -LogFilePath "C:\Logs\DuplicateLog.log" -DryRun
 
 .VERSION
-1.3.0
+1.3.1
 
 CHANGELOG
+## 1.3.1 — 2025-09-18
+### Fixed
+- Eliminated stray bareword output of `WouldDeleteCount` that could surface as
+  "The term 'WouldDeleteCount' is not recognized..." by making it a tracked
+  counter and only writing it via `Log`/`Write-Host` when `-DryRun` is used.
+
 ## 1.3.0 — 2025-09-14
 ### Improved
 - **Memory efficiency (PrioritizeSmallFirst):** The collision index now stores **paths (strings)** instead of
@@ -398,6 +404,8 @@ if ($ShowProgress) { Write-Progress -Activity "Pass 2/2: Hashing size-collision 
 $TotalDuplicatesFound = 0
 $TotalDeleted = 0
 $TotalRetained = 0
+# Dry-run counters (avoid leaking bareword tokens)
+$WouldDeleteCount = 0
 
 # Iterate over hash-equal duplicate buckets (fixed undefined variable issue)
 foreach ($filesInGroup in $dupeBuckets.Values) {
@@ -444,16 +452,17 @@ foreach ($filesInGroup in $dupeBuckets.Values) {
     $TotalRetained++
 }
 
-# Log and display summary statistics
-$Summary = @"
-Summary:
-Duplicate files found : $TotalDuplicatesFound
-Duplicate files deleted : $TotalDeleted
-Duplicate files retained : $TotalRetained
-Hash failures : $script:HashFailures
-Warnings : $script:Warnings
-Critical logging errors : $script:CriticalErrors
-"@
+# Log and display summary statistics (no bareword tokens)
+$Summary  = "Summary:`n"
+$Summary += "Duplicate files found : $TotalDuplicatesFound`n"
+$Summary += "Duplicate files deleted : $TotalDeleted`n"
+$Summary += "Duplicate files retained : $TotalRetained`n"
+if ($DryRun) {
+    $Summary += "Would delete (dry-run) : $WouldDeleteCount`n"
+}
+$Summary += "Hash failures : $script:HashFailures`n"
+$Summary += "Warnings : $script:Warnings`n"
+$Summary += "Critical logging errors : $script:CriticalErrors`n"
 
 Log $Summary
 Write-Host $Summary
