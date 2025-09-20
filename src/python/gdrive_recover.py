@@ -11,10 +11,21 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.4.11"
+__version__ = "1.4.12"
 
 # CHANGELOG
 """
+## [1.4.12] - 2025-09-19
+
+### Fixed
+- **Validation for `--extensions`:** normalize and validate user input up front. Reject malformed tokens (spaces, commas, wildcards, path separators, or non-alnum chars), strip leading dots, lowercase, and de-duplicate. This prevents confusing under/over-filtering and wasted API calls.
+
+### Improved
+- **Clear UX for unknown extensions:** if an extension is syntactically valid but not in our `EXTENSION_MIME_TYPES` map, print a note that only client-side filename filtering will apply (server-side query won’t narrow), setting accurate expectations about performance and results.
+
+### Notes
+- No breaking CLI changes. Behavior is stricter for malformed inputs and more explicit for unknown ones.
+
 ## [1.4.11] - 2025-09-19
 
 ### Fixed
@@ -1739,6 +1750,55 @@ def _validate_after_date_arg(args) -> Tuple[bool, int]:
         print(f"❌ Invalid --after-date value '{args.after_date}': {e}")
         return False, 2
 
+def _normalize_and_validate_extensions_arg(args) -> Tuple[bool, int]:
+    """
+    Normalize and validate --extensions; returns (ok, exit_code_if_not_ok).
+    - Strips leading dots, lowercases, de-duplicates.
+    - Rejects tokens containing spaces, commas, wildcards, or path separators.
+    - Requires strictly [a-z0-9] tokens of reasonable length (1–10).
+    - Warns (does not fail) for syntactically valid but unknown extensions
+      that won't narrow the server-side mimeType query.
+    """
+    if not getattr(args, 'extensions', None):
+        return True, 0
+
+    invalid: List[str] = []
+    cleaned: List[str] = []
+    for raw in args.extensions:
+        tok = (raw or "").strip()
+        if not tok:
+            invalid.append(repr(raw))
+            continue
+        # Disallow separators/wildcards and whitespace/comma-separated lists
+        if any(ch in tok for ch in (' ', ',', '*', '?', '\\', '/')):
+            invalid.append(tok)
+            continue
+        tok = tok.lower()
+        if tok.startswith('.'):
+            tok = tok[1:]
+        # Strict token check: alnum (a–z0–9) only, reasonable length
+        if not re.fullmatch(r'[a-z0-9]{1,10}', tok):
+            invalid.append(raw)
+            continue
+        cleaned.append(tok)
+
+    if invalid:
+        print("❌ Invalid --extensions value(s): " + ", ".join(map(str, invalid)))
+        print("   Use space-separated bare extensions like: --extensions jpg png pdf")
+        print("   Do not include wildcards, commas, spaces, or path characters.")
+        return False, 2
+
+    # De-duplicate while preserving order
+    deduped = list(dict.fromkeys(cleaned))
+    args.extensions = deduped
+
+    # Warn (do not fail) for unknown extensions; these won't narrow server-side
+    unknown = [e for e in deduped if e not in EXTENSION_MIME_TYPES]
+    if unknown:
+        print("ℹ️  Note: unknown extension(s) will not narrow server-side queries;")
+        print("   client-side filename filtering will apply instead: " + ", ".join(unknown))
+    return True, 0
+
 def _run_tool(tool: 'DriveTrashRecoveryTool', args) -> bool:
     """Run the selected mode (dry run vs execute)."""
     return tool.dry_run() if args.mode == 'dry_run' else tool.execute_recovery()
@@ -1765,6 +1825,11 @@ def main():
 
     # Validate --download-dir early for recover-and-download
     ok, code = _validate_download_dir_arg(args)
+    if not ok:
+        return code
+
+    # Normalize/validate --extensions (fail fast on malformed inputs)
+    ok, code = _normalize_and_validate_extensions_arg(args)
     if not ok:
         return code
 
