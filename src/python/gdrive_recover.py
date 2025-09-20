@@ -1799,41 +1799,37 @@ class DriveTrashRecoveryTool:
     # --- Streaming download implementation (rate-limit aware) ---
     def _download_file(self, item: RecoveryItem) -> bool:
         """Download a file in chunks to the target path; respects rate limiting and updates stats."""
+        success = False
         try:
             service = self._get_service()
             request = service.files().get_media(fileId=item.id)
             target = Path(item.target_path)
             target.parent.mkdir(parents=True, exist_ok=True)
-            fh = open(target, "wb")
-            try:
-                downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
-                done = False
-                last_print = 0.0
-                while not done:
-                    # throttle each chunk request
-                    self._rate_limit()
-                    status, done = downloader.next_chunk()
-                    now = time.time()
-                    if status and (self.args.verbose > 0) and (now - last_print > 1.0 or done):
-                        pct = int(status.progress() * 100)
-                        print(f"  ↳ downloading {item.name[:40]} … {pct}%")
-                        last_print = now
-                item.status = 'downloaded'
-                with self.stats_lock:
-                    self.stats['downloaded'] += 1
-                return True
-            except Exception as e:
-                item.status = 'failed'
-                item.error_message = f"Download error: {e}"
-                with self.stats_lock:
-                    self.stats['errors'] += 1
-                self.logger.error(item.error_message)
-                return False
-            finally:
+            with open(target, "wb") as fh:
                 try:
-                    fh.close()
-                except Exception:
-                    pass
+                    downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
+                    done = False
+                    last_print = 0.0
+                    while not done:
+                        # throttle each chunk request
+                        self._rate_limit()
+                        status, done = downloader.next_chunk()
+                        now = time.time()
+                        if status and (self.args.verbose > 0) and (now - last_print > 1.0 or done):
+                            pct = int(status.progress() * 100)
+                            print(f"  ↳ downloading {item.name[:40]} … {pct}%")
+                            last_print = now
+                    item.status = 'downloaded'
+                    with self.stats_lock:
+                        self.stats['downloaded'] += 1
+                    success = True
+                except Exception as e:
+                    item.status = 'failed'
+                    item.error_message = f"Download error: {e}"
+                    with self.stats_lock:
+                        self.stats['errors'] += 1
+                    self.logger.error(item.error_message)
+                    success = False
         except HttpError as e:
             status = getattr(e.resp, "status", None)
             detail = self._extract_http_error_detail(e)
@@ -1842,14 +1838,15 @@ class DriveTrashRecoveryTool:
             with self.stats_lock:
                 self.stats['errors'] += 1
             self.logger.error(item.error_message)
-            return False
+            success = False
         except Exception as e:
             item.status = 'failed'
             item.error_message = f"Download error: {e}"
             with self.stats_lock:
                 self.stats['errors'] += 1
             self.logger.error(item.error_message)
-            return False
+            success = False
+        return success
 
 def create_parser() -> argparse.ArgumentParser:
     """Create argument parser."""
