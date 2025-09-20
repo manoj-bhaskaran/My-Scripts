@@ -11,11 +11,21 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.5.3"
+__version__ = "1.5.4"
 
 # CHANGELOG
 """
-## [1.5.3] - 2025-09-21
+## [1.5.4] - 2025-09-20
+
+### Safety & Hotfixes
+- **Client-per-thread Drive service (default ON):** new `--client-per-thread` (on by default) and `--single-client` (to disable).
+  Builds a Drive API client per worker thread to avoid shared-object contention.
+- **State file durability:** atomic writes (`.tmp` + `os.replace`) and advisory lock (`.lock`) across POSIX/Windows.
+  On lock contention, exit with a clear message.
+- **Partial downloads:** write to `*.partial` and rename on success; remove partials on failure/interrupt.
+- **Progress parity nudge:** execution progress now prints at least every 10s with `-v`, in addition to item-interval.
+ 
+## [1.5.3] - 2025-09-20
 
 ### Fixed
 - **Validation chain:** all argument validations now short-circuit on failure (main respected return codes).
@@ -85,7 +95,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
+from threading import Lock, local
 import sys
 
 try:
@@ -208,8 +218,11 @@ class DriveTrashRecoveryTool:
     
     def __init__(self, args):
         self.args = args
-        # Single shared Drive service (simplified vs thread-local)
-        self._service = None
+        # Service/credentials
+        self._service = None  # used when single-client mode
+        self._creds = None    # saved creds for per-thread builds
+        self._thread_local = local()  # holds .service per thread
+        self._client_per_thread = True if getattr(args, "client_per_thread", True) else False
         self.logger = self._setup_logging()
         self._authenticated = False
         # rate limiting
@@ -241,8 +254,15 @@ class DriveTrashRecoveryTool:
 
     def _get_service(self):
         """Return the shared Google Drive service instance."""
-        if self._service is None:
+        if not self._authenticated:
             raise RuntimeError("Service not initialized. Call authenticate() first.")
+        if self._client_per_thread:
+            svc = getattr(self._thread_local, "service", None)
+            if svc is None:
+                # Lazily build a client for this thread using saved creds
+                svc = build('drive', 'v3', credentials=self._creds)
+                self._thread_local.service = svc
+            return svc
         return self._service
 
     # v1.5.2+: token-bucket bursting (opt-in) + legacy fixed-interval pacing
@@ -346,11 +366,17 @@ class DriveTrashRecoveryTool:
                 # Best-effort: mark token hidden on Windows
                 self._harden_token_permissions_windows(token_file)
             
-            # Build and keep a single service instance
-            self._service = build('drive', 'v3', credentials=creds)
+            # Keep creds for per-thread builds; also build a client in current thread
+            self._creds = creds
+            if self._client_per_thread:
+                self._thread_local.service = build('drive', 'v3', credentials=creds)
+                test_service = self._thread_local.service
+            else:
+                self._service = build('drive', 'v3', credentials=creds)
+                test_service = self._service
 
             # Test the connection on the same client
-            about = self._execute(self._get_service().about().get(fields='user'))
+            about = self._execute(test_service.about().get(fields='user'))
             self.logger.info(f"Authenticated as: {about.get('user', {}).get('emailAddress', 'Unknown')}")
             self._authenticated = True
             return True
@@ -1122,11 +1148,69 @@ class DriveTrashRecoveryTool:
             )
             with self.stats_lock:
                 self.stats['errors'] += 1
+ 
+    # ---------- State file locking & atomic writes ----------
+    def _acquire_state_lock(self) -> bool:
+        """
+        Cross-platform advisory lock on <state>.lock.
+        Returns True on success; False if already locked by another process.
+        """
+        self._state_lock_path = f"{self.args.state_file}.lock"
+        self._state_lock_fh = open(self._state_lock_path, 'a+')
+        try:
+            if os.name == "nt":
+                import msvcrt
+                try:
+                    msvcrt.locking(self._state_lock_fh.fileno(), msvcrt.LK_NBLCK, 1)
+                except OSError:
+                    return False
+            else:
+                import fcntl
+                try:
+                    fcntl.flock(self._state_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError:
+                    return False
+            # write owner pid for diagnostics
+            try:
+                self._state_lock_fh.seek(0)
+                self._state_lock_fh.truncate(0)
+                self._state_lock_fh.write(str(os.getpid()))
+                self._state_lock_fh.flush()
+            except Exception:
+                pass
+            return True
+        except Exception as e:
+            self.logger.warning(f"State lock warning: {e}")
+            return True  # best-effort
+ 
+    def _release_state_lock(self) -> None:
+        try:
+            if not hasattr(self, "_state_lock_fh"):
+                return
+            if os.name == "nt":
+                import msvcrt
+                try:
+                    msvcrt.locking(self._state_lock_fh.fileno(), msvcrt.LK_UNLCK, 1)
+                except Exception:
+                    pass
+            else:
+                import fcntl
+                try:
+                    fcntl.flock(self._state_lock_fh.fileno(), fcntl.LOCK_UN)
+                except Exception:
+                    pass
+            self._state_lock_fh.close()
+        except Exception:
+            pass
     
     def _save_state(self):
         try:
-            with open(self.args.state_file, 'w') as f:
-                json.dump(asdict(self.state), f, indent=2)
+             tmp_path = f"{self.args.state_file}.tmp"
+             with open(tmp_path, 'w') as f:
+                 json.dump(asdict(self.state), f, indent=2)
+                 f.flush()
+                 os.fsync(f.fileno())
+             os.replace(tmp_path, self.args.state_file)
         except Exception as e:
             self.logger.error(f"Failed to save state: {e}")
     
@@ -1334,8 +1418,12 @@ class DriveTrashRecoveryTool:
             future.result()
             if self.args.verbose >= 1:
                 interval = self._progress_interval(len(self.items))
-                if processed_count % interval == 0:
+                now = time.time()
+                due_count = (processed_count % interval) == 0
+                due_time = (self._last_exec_progress_ts is None) or ((now - self._last_exec_progress_ts) >= 10)
+                if due_count or due_time:
                     self._print_progress_update(processed_count, start_time)
+                    self._last_exec_progress_ts = now
             if processed_count % 100 == 0:
                 self._save_state()
         except Exception as e:
@@ -1366,7 +1454,11 @@ class DriveTrashRecoveryTool:
         if not self._get_safety_confirmation():
             return False
         self._initialize_recovery_state()
-        return self._process_all_items()
+        try:
+            return self._process_all_items()
+        finally:
+            # Always release state lock
+            self._release_state_lock()
     
     def _print_summary(self, elapsed_time: float):
         print("\n" + "="*80)
@@ -1402,7 +1494,8 @@ class DriveTrashRecoveryTool:
             request = service.files().get_media(fileId=item.id)
             target = Path(item.target_path)
             target.parent.mkdir(parents=True, exist_ok=True)
-            with open(target, "wb") as fh:
+            partial = Path(str(target) + ".partial")
+            with open(partial, "wb") as fh:
                 try:
                     downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
                     done = False
@@ -1418,6 +1511,13 @@ class DriveTrashRecoveryTool:
                     item.status = 'downloaded'
                     with self.stats_lock:
                         self.stats['downloaded'] += 1
+                    # Atomic move into place
+                    try:
+                        if target.exists():
+                            target.unlink()
+                    except Exception:
+                        pass
+                    partial.replace(target)
                     success = True
                 except Exception as e:
                     item.status = 'failed'
@@ -1443,6 +1543,14 @@ class DriveTrashRecoveryTool:
                 self.stats['errors'] += 1
             self.logger.error(item.error_message)
             success = False
+        finally:
+            # Clean up partial on failure
+            try:
+                partial = Path(str(Path(item.target_path)) + ".partial")
+                if not success and partial.exists():
+                    partial.unlink()
+            except Exception:
+                pass
         return success
 
 def create_parser() -> argparse.ArgumentParser:
@@ -1541,6 +1649,13 @@ Rate Limiting:
                                help='Increase verbosity (-v for INFO, -vv for DEBUG)')
         subparser.add_argument('--yes', '-y', action='store_true',
                                help='Skip confirmation prompts (for automation)')
+        # v1.5.4: client-per-thread (default ON) and opt-out switch
+        subparser.add_argument('--client-per-thread', dest='client_per_thread',
+                               action='store_true', default=True,
+                               help='Build a Drive API client per worker thread (default ON)')
+        subparser.add_argument('--single-client', dest='client_per_thread',
+                               action='store_false',
+                               help='Use a single shared Drive API client (advanced)')
     return parser
     
 def _set_mode(args) -> None:
@@ -1718,6 +1833,16 @@ def main() -> int:
         return code
 
     tool = DriveTrashRecoveryTool(args)
+ 
+    # Acquire state lock early; abort on contention
+    try:
+        if not tool._acquire_state_lock():
+            print(f"❌ Another process is using the state file: {args.state_file}")
+            print("   Tip: If the other run is intentional, wait for it to finish or use a different --state-file.")
+            return 2
+    except Exception:
+        # Best-effort: continue even if locking not supported
+        pass
 
     if hasattr(args, "file_ids") and args.file_ids:
         ok = tool._validate_file_ids()
@@ -1725,6 +1850,10 @@ def main() -> int:
             return 2
 
     ran_ok = _run_tool(tool, args)
+    try:
+        tool._release_state_lock()
+    except Exception:
+        pass
     return 0 if ran_ok else 1
 
 if __name__ == "__main__":
