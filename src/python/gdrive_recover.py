@@ -1822,6 +1822,13 @@ class DriveTrashRecoveryTool:
                 with self.stats_lock:
                     self.stats['downloaded'] += 1
                 return True
+            except Exception as e:
+                item.status = 'failed'
+                item.error_message = f"Download error: {e}"
+                with self.stats_lock:
+                    self.stats['errors'] += 1
+                self.logger.error(item.error_message)
+                return False
             finally:
                 try:
                     fh.close()
