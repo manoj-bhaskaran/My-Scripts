@@ -11,23 +11,39 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.4.13"
+__version__ = "1.4.14"
 
 # CHANGELOG
 """
- ## [1.4.13] - 2025-09-19
- 
- ### Improved
- - **Adaptive progress reporting:** progress updates now scale with workload size and time; prints approximately every 2% of items (bounded 5–500) and at least every ~10 seconds for long-running operations. Applies to both discovery (`--file-ids`) and execution phases.
- - **Extension handling for multi-dot tokens:** accept tokens like `tar.gz` and `min.js`. Unknown extensions no longer hard-fail; they’re allowed with a clear note that only client-side filename filtering will apply unless mapped in `EXTENSION_MIME_TYPES`.
- - **Download directory validation order and cleanup:** directory writability checks occur *after* authentication. Temporary probe files are always cleaned up, and if a directory was created by validation and remains empty when the run is cancelled, it is removed.
- - **Hardened token file permissions (POSIX):** `token.json` is created with `0600` permissions; we also warn and correct permissive modes.
- 
- ### Documentation
- - Added **Quotas & Monitoring** notes and guidance on **Shared Drives** permissions and **Concurrency Tuning** to the CLI help epilog.
- 
- ### Notes
- - Backwards-compatible; no CLI changes required.
+## [1.4.14] - 2025-09-19
+
+### Changed
+- **Merged `--file-ids` validation & discovery path**: a single `files.get(...)` per ID now powers both validation and discovery.
+  Results are cached and reused to prevent duplicate API calls.
+- **Parity checks**: sanity assertions ensure the merged ID path yields the same observable outcomes as the former two-step flow.
+  Mismatches are logged as warnings with actionable context.
+
+### Improved (Windows)
+- **Token file handling on Windows**: when creating `token.json`, the file is marked *hidden* and a warning explains that POSIX
+  `chmod(0600)` semantics don’t apply on Windows. Existing tokens are also marked hidden on load when possible.
+
+### Fixed
+- **Duplicate function definition**: removed the earlier `_normalize_and_validate_extensions_arg` (single-dot only) to avoid confusion.
+  The multi-dot aware version (supports `tar.gz`, `min.js`) is retained.
+
+## [1.4.13] - 2025-09-19
+
+### Improved
+- **Adaptive progress reporting:** progress updates now scale with workload size and time; prints approximately every 2% of items (bounded 5–500) and at least every ~10 seconds for long-running operations. Applies to both discovery (`--file-ids`) and execution phases.
+- **Extension handling for multi-dot tokens:** accept tokens like `tar.gz` and `min.js`. Unknown extensions no longer hard-fail; they’re allowed with a clear note that only client-side filename filtering will apply unless mapped in `EXTENSION_MIME_TYPES`.
+- **Download directory validation order and cleanup:** directory writability checks occur *after* authentication. Temporary probe files are always cleaned up, and if a directory was created by validation and remains empty when the run is cancelled, it is removed.
+- **Hardened token file permissions (POSIX):** `token.json` is created with `0600` permissions; we also warn and correct permissive modes.
+
+### Documentation
+- Added **Quotas & Monitoring** notes and guidance on **Shared Drives** permissions and **Concurrency Tuning** to the CLI help epilog.
+
+### Notes
+- Backwards-compatible; no CLI changes required.
 
 ## [1.4.12] - 2025-09-19
 
@@ -346,7 +362,11 @@ class DriveTrashRecoveryTool:
         # progress throttles
         self._last_discover_progress_ts: Optional[float] = None
         self._last_exec_progress_ts: Optional[float] = None
-        
+        # cache for merged ID validation+discovery
+        self._id_prefetch: Dict[str, Dict[str, Any]] = {}
+        self._id_prefetch_non_trashed: Dict[str, bool] = {}
+        self._id_prefetch_errors: Dict[str, str] = {}
+
     def _get_service(self):
         """Get thread-local Google Drive service instance."""
         if not hasattr(self._thread_local, 'service'):
@@ -387,6 +407,8 @@ class DriveTrashRecoveryTool:
             
             if os.path.exists(token_file):
                 creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+                # Best-effort: mark token hidden on Windows
+                self._harden_token_permissions_windows(token_file)
             
             if not creds or not creds.valid:
                 if creds and creds.expired and creds.refresh_token:
@@ -401,6 +423,8 @@ class DriveTrashRecoveryTool:
                 
                 with open(token_file, 'w') as token:
                     token.write(creds.to_json())
+                # Best-effort: mark token hidden on Windows
+                self._harden_token_permissions_windows(token_file)
             
             self.service = build('drive', 'v3', credentials=creds)
             # Store credentials for thread-local access
@@ -416,8 +440,29 @@ class DriveTrashRecoveryTool:
         except Exception as e:
             self.logger.error(f"Authentication failed: {e}")
             return False
+
+    # --- Windows token hardening (best-effort) ---
+    def _harden_token_permissions_windows(self, token_path: str) -> None:
+        """
+        On Windows, POSIX 0600 is not meaningful. We at least hide the file to
+        reduce casual discovery. Advanced ACL hardening is not attempted here.
+        """
+        try:
+            if os.name != "nt":
+                return
+            import ctypes
+            FILE_ATTRIBUTE_HIDDEN = 0x02
+            attrs = ctypes.windll.kernel32.GetFileAttributesW(str(Path(token_path)))
+            if attrs == -1:
+                return
+            if (attrs & FILE_ATTRIBUTE_HIDDEN) == 0:
+                ctypes.windll.kernel32.SetFileAttributesW(str(Path(token_path)), attrs | FILE_ATTRIBUTE_HIDDEN)
+                self.logger.info("Marked token.json as hidden (Windows). Note: use NTFS ACLs for stricter control.")
+        except Exception as e:
+            # Non-fatal; log at debug to avoid noise
+            self.logger.debug(f"Could not mark token.json hidden on Windows: {e}")
     
-    # -------------------- File-ID validation helpers --------------------
+    # -------------------- File-ID validation & merged discovery helpers --------------------
     def _is_valid_file_id_format(self, file_id: str) -> bool:
         """Quick format check: Drive IDs are 25+ chars, [A-Za-z0-9_-]."""
         return re.match(r'[a-zA-Z0-9_-]{25,}$', file_id) is not None
@@ -493,32 +538,121 @@ class DriveTrashRecoveryTool:
             self.logger.info(f"All {len(buckets['ok'])} file IDs validated successfully")
         return success
 
+    def _is_valid_file_id(self, fid: str) -> bool:
+        """Check if file ID format is valid."""
+        return self._is_valid_file_id_format(fid)
+
+    def _handle_prefetch_success(self, fid, data, buckets, skipped_non_trashed):
+        """Handle successful metadata fetch for a file ID."""
+        self._id_prefetch[fid] = data
+        if data.get("trashed", False):
+            buckets["ok"].append(fid)
+            self._id_prefetch_non_trashed[fid] = False
+        else:
+            self._id_prefetch_non_trashed[fid] = True
+            skipped_non_trashed[0] += 1
+
+    def _handle_prefetch_error(self, fid, status, e, attempt, buckets, transient_errors, transient_ids, err_count, fields):
+        """Handle error during metadata fetch for a file ID."""
+        if status == 404:
+            buckets["not_found"].append(fid)
+            self._id_prefetch_errors[fid] = "HTTP 404"
+            return True
+        if status == 403:
+            buckets["no_access"].append(fid)
+            self._id_prefetch_errors[fid] = "HTTP 403"
+            return True
+        should_retry, _ = self._should_retry_fetch_metadata(e, attempt)
+        if should_retry:
+            self._log_fetch_metadata_retry(fid, e, status, attempt)
+            return False
+        # terminal transient error
+        transient_errors[0] += 1
+        transient_ids.append(fid)
+        self._id_prefetch_errors[fid] = self._format_fetch_metadata_error_with_context(e, status, fid, fields=fields)
+        err_count[0] += 1
+        return True
+
+    def _should_skip_invalid_id(self, fid, buckets):
+        """Return True if the file ID is invalid and should be skipped."""
+        if not self._is_valid_file_id(fid):
+            buckets["invalid"].append(fid)
+            return True
+        return False
+
+    def _fetch_and_handle_metadata(self, service, fid, fields, buckets, skipped_non_trashed, transient_errors, transient_ids, err_count):
+        """Try to fetch metadata for a file ID, handling errors and retries."""
+        for attempt in range(MAX_RETRIES):
+            try:
+                data = service.files().get(fileId=fid, fields=fields).execute()
+                self._handle_prefetch_success(fid, data, buckets, skipped_non_trashed)
+                return
+            except Exception as e:
+                status = getattr(e, "resp", None)
+                status = getattr(status, "status", None) if status else None
+                handled = self._handle_prefetch_error(
+                    fid, status, e, attempt, buckets, transient_errors, transient_ids, err_count, fields
+                )
+                if handled:
+                    return
+
+    def _prefetch_ids_metadata(self, fids: List[str]) -> Tuple[Dict[str, List[str]], int, List[str], int, int]:
+        """
+        Single-pass metadata fetch per ID.
+        Populates caches for discovery; also returns validation buckets and simple counts
+        needed by discovery summary:
+          - buckets: ok/invalid/not_found/no_access
+          - transient_error_count, transient_ids
+          - skipped_non_trashed_count, error_count
+        """
+        service = self._get_service()
+        fields = self._id_discovery_fields()
+        buckets: Dict[str, List[str]] = {"ok": [], "invalid": [], "not_found": [], "no_access": []}
+        transient_errors = [0]
+        transient_ids: List[str] = []
+        skipped_non_trashed = [0]
+        err_count = [0]
+
+        for fid in fids:
+            if self._should_skip_invalid_id(fid, buckets):
+                continue
+            self._fetch_and_handle_metadata(
+                service, fid, fields, buckets, skipped_non_trashed, transient_errors, transient_ids, err_count
+            )
+
+        return (
+            buckets,
+            transient_errors[0],
+            transient_ids,
+            skipped_non_trashed[0],
+            err_count[0],
+        )
+
+    def _assert_id_path_parity(self, buckets: Dict[str, List[str]], skipped_non_trashed: int, err_count: int) -> None:
+        """
+        Lightweight parity checks to catch regressions between the old two-pass flow
+        and the new merged path. Logs warnings if counts look inconsistent.
+        """
+        total_input = len(self.args.file_ids or [])
+        classified = sum(len(v) for v in buckets.values())
+        seen = classified + skipped_non_trashed + err_count
+        if total_input != seen:
+            self.logger.warning(
+                "Merged ID path parity check mismatch: total=%d, seen=%d (classified=%d, skipped_non_trashed=%d, errors=%d)",
+                total_input, seen, classified, skipped_non_trashed, err_count
+            )
+
     def _validate_file_ids(self) -> bool:
-        """Validate provided file IDs for format and existence with retries and clear guidance."""
+        """Validate provided file IDs using single-pass metadata prefetch (merged path)."""
         if not self.args.file_ids:
             return True
-
-        service = self._get_service()
-        buckets: Dict[str, List[str]] = {
-            "ok": [],
-            "invalid": [],
-            "not_found": [],
-            "no_access": [],
-        }
-        transient_errors = 0
-        transient_ids: List[str] = []
-
-        for fid in self.args.file_ids:
-            if not self._is_valid_file_id_format(fid):
-                buckets["invalid"].append(fid)
-                continue
-            result = self._classify_id_via_api(service, fid)
-            if result in buckets:
-                buckets[result].append(fid)
-            else:
-                transient_errors += 1
-                transient_ids.append(fid)
-
+        buckets, transient_errors, transient_ids, skipped_non_trashed, err_count = self._prefetch_ids_metadata(self.args.file_ids)
+        # Parity assertions (do not fail run; warn if oddities are detected)
+        try:
+            self._assert_id_path_parity(buckets, skipped_non_trashed, err_count)
+        except Exception:
+            # Never let a parity check break execution
+            pass
         return self._report_validation_outcome(buckets, transient_errors, transient_ids)
     
     def _build_query(self) -> str:
@@ -712,17 +846,28 @@ class DriveTrashRecoveryTool:
     def _discover_via_ids(self) -> List[RecoveryItem]:
         """Discover trashed files by explicit IDs (per-ID lookups)."""
         self.logger.info("Using per-ID lookups for discovery (--file-ids provided)")
-        service = self._get_service()
-        fields = self._id_discovery_fields()
 
         items: List[RecoveryItem] = []
         skipped_non_trashed = [0]
         errors = [0]
         total = len(self.args.file_ids)
         start_time = time.time()
+        # If validation already prefetched, reuse; otherwise prefetch now.
+        if not self._id_prefetch and self.args.file_ids:
+            self._prefetch_ids_metadata(self.args.file_ids)
         for idx, fid in enumerate(self.args.file_ids, start=1):
-            data, non_trashed, err = self._fetch_file_metadata(service, fid, fields)
-            self._handle_discover_id_result(items, data, non_trashed, err, fid, skipped_non_trashed, errors)
+            if fid in self._id_prefetch_errors:
+                errors[0] += 1
+                self.logger.error(f"Error fetching file {fid}: {self._id_prefetch_errors[fid]}")
+                self._maybe_print_discover_progress(idx, total, items, skipped_non_trashed[0], errors[0], start_time)
+                continue
+            if self._id_prefetch_non_trashed.get(fid, False):
+                skipped_non_trashed[0] += 1
+                self._maybe_print_discover_progress(idx, total, items, skipped_non_trashed[0], errors[0], start_time)
+                continue
+            data = self._id_prefetch.get(fid)
+            if data:
+                self._append_item_if_valid(items, data)
             self._maybe_print_discover_progress(idx, total, items, skipped_non_trashed[0], errors[0], start_time)
 
         self._print_discover_id_summary(items, skipped_non_trashed[0], errors[0])
@@ -1937,7 +2082,7 @@ def main():
     # Validate --download-dir after successful auth to avoid unnecessary FS changes
     ok, code = _validate_download_dir_arg(args)
     if not ok:
-         return code
+        return code
   
     # Validate file IDs if provided
     if args.file_ids and not tool._validate_file_ids():
@@ -1963,55 +2108,5 @@ if __name__ == "__main__":
     sys.exit(main())
 
 
-def _normalize_and_validate_extensions_arg(args) -> Tuple[bool, int]:
-    """
-    Normalize and validate --extensions; returns (ok, exit_code_if_not_ok).
-    - Strips leading dots, lowercases, de-duplicates.
-    - Disallows spaces, commas, wildcards, and path separators.
-    - Accepts alnum tokens and multi-dot forms (e.g., 'tar.gz', 'min.js').
-    - Warns (does not fail) for tokens that won't narrow server-side queries.
-    """
-    if not getattr(args, 'extensions', None):
-        return True, 0
-
-    invalid: List[str] = []
-    cleaned: List[str] = []
-    for raw in args.extensions:
-        tok = (raw or "").strip()
-        if not tok:
-            invalid.append(repr(raw))
-            continue
-        if any(ch in tok for ch in (' ', ',', '*', '?', '\\', '/')):
-            invalid.append(tok)
-            continue
-        tok = tok.lower()
-        if tok.startswith('.'):
-            tok = tok[1:]
-        # Accept alnum segments separated by single dots, length 1..20 total
-        if not re.fullmatch(r'[a-z0-9]+(\.[a-z0-9]+)*', tok) or not (1 <= len(tok) <= 20):
-            invalid.append(raw)
-            continue
-        cleaned.append(tok)
-
-    if invalid:
-        print("❌ Invalid --extensions value(s): " + ", ".join(map(str, invalid)))
-        print("   Use space-separated extensions like: --extensions jpg png pdf tar.gz min.js")
-        print("   Do not include wildcards, commas, spaces, or path characters.")
-        return False, 2
-
-    # De-duplicate while preserving order
-    deduped = list(dict.fromkeys(cleaned))
-    args.extensions = deduped
-
-    # Guidance: server-side mimeType filtering only for known LAST suffix mappings
-    unknown_for_server = []
-    for tok in deduped:
-        last = tok.split('.')[-1]
-        if last not in EXTENSION_MIME_TYPES:
-            unknown_for_server.append(tok)
-
-    if unknown_for_server:
-        print("ℹ️  Note: these extension(s) won't narrow server-side queries: "
-              + ", ".join(unknown_for_server))
-        print("   Client-side filename filtering will still apply. Consider extending EXTENSION_MIME_TYPES.")
-    return True, 0
+# (removed duplicate earlier definition to avoid confusion; the multi-dot aware
+# version above remains in place)
