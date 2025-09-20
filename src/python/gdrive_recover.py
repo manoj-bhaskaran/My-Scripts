@@ -15,6 +15,31 @@ __version__ = "1.4.11"
 
 # CHANGELOG
 """
+## [1.4.11] - 2025-09-19
+
+### Fixed
+- **Targeted exception handling in `_get_file_info`:** add API-context to errors (e.g., `files.get(fileId=..., fields=...)`), preserve HTTP status/payload for `HttpError`, and distinguish I/O/transport errors from unexpected ones for clearer diagnostics. Aligns formatting/verbosity with other hot paths.
+- **Early validation of `--download-dir`:** for `recover-and-download`, fail fast if the path points to a file, can’t be created, or isn’t writable. Creates the directory when missing and performs a touch/unlink check to verify permissions.
+
+### Notes
+- Backwards-compatible; no CLI changes. Improves debuggability and fail-fast UX.
+
+## [1.4.10] - 2025-09-19
+
+### Fixed
+- **Consistent API-context logging for recoveries:** `_recover_file` now logs with full API context (e.g., `files.update(fileId=..., trashed=False)`) and decoded payloads. Retries only occur for transient statuses (429/5xx) with jittered backoff; terminal statuses (403/404) are not retried and include clear context in logs.
+- **Clearer transient error feedback during `--file-ids` validation:** `_validate_file_ids` prints the specific IDs that experienced transient errors so users can retry just those IDs. The IDs are also logged.
+- **Progress visibility for large `--file-ids` discoveries:** `_discover_via_ids` prints periodic progress (every 100 IDs) with counts of processed IDs, discovered items, skipped non-trashed, and errors (shown when using `-v` or higher).
+
+### Notes
+- These changes improve debuggability and UX without altering external behavior or CLI flags.
+
+## [1.4.9] - 2025-09-19
+
+### Fixed
+- Tightened exception handling in downloads and post-restore actions; retry only on transient (429/5xx) with backoff, and add clear API context to error messages.
+- Validate `--concurrency` early (reject <1; cap to `min(os.cpu_count()*4, 64)` with a warning).
+
 ## [1.4.8] - 2025-09-19
 
 ### Fixed
@@ -1265,25 +1290,18 @@ class DriveTrashRecoveryTool:
         if action == "trashed":
             service.files().update(fileId=item.id, body={'trashed': True}).execute()
         elif action == "deleted":
-        if action == "trashed":
-            service.files().update(fileId=item.id, body={'trashed': True}).execute()
-        elif action == "deleted":
             service.files().delete(fileId=item.id).execute()
-        # "retain" does nothing
         # "retain" does nothing
 
     def _log_post_restore_success(self, item: RecoveryItem, action: str):
         """Log and update stats for post-restore outcome."""
         if action == "retain":
-        if action == "retain":
             with self.stats_lock:
                 self.stats['post_restore_retained'] += 1
-        elif action == "trashed":
         elif action == "trashed":
             self.logger.info(f"Moved to trash: {item.name}")
             with self.stats_lock:
                 self.stats['post_restore_trashed'] += 1
-        elif action == "deleted":
         elif action == "deleted":
             self.logger.info(f"Permanently deleted: {item.name}")
             with self.stats_lock:
@@ -1337,80 +1355,9 @@ class DriveTrashRecoveryTool:
         self._log_fetch_metadata_retry(item.id, e, status, attempt)
 
     # --- Refactored _apply_post_restore_policy method ---
-    def _handle_post_restore_http_error(self, item, e, api_ctx):
-        """Handle HttpError during post-restore, return True if handled (no retry)."""
-        status = getattr(e.resp, "status", None)
-        payload = getattr(e, 'content', b'')
-        detail = payload.decode(errors='ignore') if hasattr(payload, 'decode') else str(e)
-        if status in (403, 404):
-            self.logger.error(
-                f"Post-restore action failed for {item.name} via {api_ctx or 'N/A'} "
-                f"(no retry): HTTP {status}: {detail}"
-            )
-            return True
-        return False
-
-    def _handle_post_restore_exception(self, item, e, api_ctx, attempt):
-        """Handle generic exception during post-restore with backoff."""
-        self.logger.warning(
-            f"Error during post-restore for {item.name} via {api_ctx or 'N/A'} "
-            f"(attempt {attempt + 1}): {e}"
-        )
-        delay = (RETRY_DELAY ** attempt) * random.uniform(0.5, 1.5)
-        time.sleep(delay)
-
-    def _should_retry_post_restore(self, e, attempt):
-        """Determine if post-restore error is retryable."""
-        should_retry, status = self._should_retry_fetch_metadata(e, attempt)
-        return should_retry, status
-
-    def _extract_http_error_detail(self, e):
-        payload = getattr(e, 'content', b'')
-        return payload.decode(errors='ignore') if hasattr(payload, 'decode') else str(e)
-
-    def _log_post_restore_terminal_error(self, item, e, api_ctx):
-        status = getattr(e.resp, "status", None)
-        detail = self._extract_http_error_detail(e)
-        self.logger.error(
-            f"Post-restore action failed for {item.name} via {api_ctx or 'N/A'}: "
-            f"HTTP {status}: {detail}"
-        )
-
-    def _is_terminal_post_restore_error(self, e):
-        status = getattr(e.resp, "status", None)
-        return status in (403, 404)
-
-    def _handle_post_restore_retry(self, item, e, attempt):
-        status = getattr(e.resp, "status", None)
-        self._log_fetch_metadata_retry(item.id, e, status, attempt)
-
-    # --- Refactored _apply_post_restore_policy method ---
     def _apply_post_restore_policy(self, item: RecoveryItem) -> bool:
         """Apply post-restore policy to successfully downloaded file."""
         service = self._get_service()
-        action, api_ctx = self._get_post_restore_action_and_ctx(item)
-        for attempt in range(MAX_RETRIES):
-            try:
-                if action != "retain":
-                    self._do_post_restore_action(service, item, action)
-                self._log_post_restore_success(item, action)
-                return True
-            except HttpError as e:
-                if self._is_terminal_post_restore_error(e):
-                    self._log_post_restore_terminal_error(item, e, api_ctx)
-                    return False
-                should_retry, _ = self._should_retry_post_restore(e, attempt)
-                if should_retry:
-                    self._handle_post_restore_retry(item, e, attempt)
-                    continue
-                self._log_post_restore_terminal_error(item, e, api_ctx)
-                return False
-            except Exception as e:
-                self._handle_post_restore_exception(item, e, api_ctx, attempt)
-        self.logger.error(
-            f"Post-restore action failed after retries for {item.name} via {api_ctx or 'N/A'}"
-        )
-        return False
         action, api_ctx = self._get_post_restore_action_and_ctx(item)
         for attempt in range(MAX_RETRIES):
             try:
@@ -1739,6 +1686,45 @@ def _set_mode(args) -> None:
     }
     args.mode = mode_map.get(args.command)
 
+def _validate_concurrency_arg(args) -> Tuple[bool, int]:
+    """
+    Validate --concurrency; returns (ok, exit_code_if_not_ok).
+    Enforces >=1 and caps extremely high values to prevent resource exhaustion/rate limits.
+    """
+    try:
+        cpu = os.cpu_count() or 1
+    except Exception:
+        cpu = 1
+    ceiling = min(cpu * 4, 64)
+
+    if args.concurrency < 1:
+        print("❌ Invalid --concurrency value. It must be >= 1.")
+        return False, 2
+    if args.concurrency > ceiling:
+        print(f"⚠️  --concurrency {args.concurrency} is high; capping to {ceiling} to avoid resource exhaustion and 429s.")
+        args.concurrency = ceiling
+    return True, 0
+
+def _validate_download_dir_arg(args) -> Tuple[bool, int]:
+    """
+    Validate --download-dir for recover-and-download mode; fail fast on invalid paths.
+    Creates the directory if missing and verifies writability.
+    """
+    if getattr(args, 'mode', None) != 'recover_and_download':
+        return True, 0
+    try:
+        p = Path(args.download_dir)
+        if p.exists() and not p.is_dir():
+            print(f"❌ --download-dir points to a file: {p}")
+            return False, 2
+        p.mkdir(parents=True, exist_ok=True)
+        probe = p / ".write_test"
+        probe.write_text("ok"); probe.unlink()
+        return True, 0
+    except Exception as e:
+        print(f"❌ --download-dir is not writable or cannot be created: {e}")
+        return False, 2
+
 def _validate_after_date_arg(args) -> Tuple[bool, int]:
     """Validate and normalize --after-date; returns (ok, exit_code_if_not_ok)."""
     if not getattr(args, 'after_date', None):
@@ -1771,7 +1757,17 @@ def main():
     
     # Create tool instance
     tool = DriveTrashRecoveryTool(args)
-    
+
+    # Validate --concurrency early (before heavy work)
+    ok, code = _validate_concurrency_arg(args)
+    if not ok:
+        return code
+
+    # Validate --download-dir early for recover-and-download
+    ok, code = _validate_download_dir_arg(args)
+    if not ok:
+        return code
+
     # Authenticate unconditionally
     if not tool.authenticate():
         print("❌ Authentication failed. Check logs for details.")
