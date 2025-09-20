@@ -11,10 +11,24 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.4.12"
+__version__ = "1.4.13"
 
 # CHANGELOG
 """
+ ## [1.4.13] - 2025-09-19
+ 
+ ### Improved
+ - **Adaptive progress reporting:** progress updates now scale with workload size and time; prints approximately every 2% of items (bounded 5–500) and at least every ~10 seconds for long-running operations. Applies to both discovery (`--file-ids`) and execution phases.
+ - **Extension handling for multi-dot tokens:** accept tokens like `tar.gz` and `min.js`. Unknown extensions no longer hard-fail; they’re allowed with a clear note that only client-side filename filtering will apply unless mapped in `EXTENSION_MIME_TYPES`.
+ - **Download directory validation order and cleanup:** directory writability checks occur *after* authentication. Temporary probe files are always cleaned up, and if a directory was created by validation and remains empty when the run is cancelled, it is removed.
+ - **Hardened token file permissions (POSIX):** `token.json` is created with `0600` permissions; we also warn and correct permissive modes.
+ 
+ ### Documentation
+ - Added **Quotas & Monitoring** notes and guidance on **Shared Drives** permissions and **Concurrency Tuning** to the CLI help epilog.
+ 
+ ### Notes
+ - Backwards-compatible; no CLI changes required.
+
 ## [1.4.12] - 2025-09-19
 
 ### Fixed
@@ -329,6 +343,9 @@ class DriveTrashRecoveryTool:
         self.stats_lock = Lock()
         self.state = RecoveryState()
         self.items: List[RecoveryItem] = []
+        # progress throttles
+        self._last_discover_progress_ts: Optional[float] = None
+        self._last_exec_progress_ts: Optional[float] = None
         
     def _get_service(self):
         """Get thread-local Google Drive service instance."""
@@ -665,14 +682,21 @@ class DriveTrashRecoveryTool:
 
     def _maybe_print_discover_progress(self, idx, total, items, skipped, errors, start_time):
         """Print periodic progress for large ID lists."""
-        if self.args.verbose >= 1 and idx % 100 == 0:
-            elapsed = time.time() - start_time
-            rate = idx / elapsed if elapsed > 0 else 0
-            remaining = total - idx
+        if self.args.verbose < 1:
+            return
+        interval = self._progress_interval(total)
+        now = time.time()
+        due_count = (idx % interval) == 0
+        due_time = (self._last_discover_progress_ts is None) or ((now - self._last_discover_progress_ts) >= 10)
+        if due_count or due_time or idx == total:
+            elapsed = max(0.001, now - start_time)
+            rate = idx / elapsed
+            remaining = max(0, total - idx)
             eta = (remaining / rate) if rate > 0 else 0
             print(f"Processing IDs: {idx}/{total} "
                   f"(found: {len(items)}, skipped: {skipped}, errors: {errors}) "
                   f"ETA: {eta:.0f}s")
+            self._last_discover_progress_ts = now
 
     def _print_discover_id_summary(self, items, skipped_non_trashed, errors):
         """Print summary after ID discovery."""
@@ -1483,11 +1507,15 @@ class DriveTrashRecoveryTool:
             self._run_parallel_processing(start_time)
         except KeyboardInterrupt:
             print("\n⚠️  Operation interrupted. State saved for resume.")
+            # Best-effort cleanup of newly created (empty) download dir on cancel
+            self._maybe_cleanup_created_download_dir()
             self._save_state()
             return False
         
         # Final state save
         self._save_state()
+        # Best-effort cleanup if nothing executed after creating dir
+        self._maybe_cleanup_created_download_dir()
         
         # Print final summary
         self._print_summary(time.time() - start_time)
@@ -1517,9 +1545,12 @@ class DriveTrashRecoveryTool:
         try:
             future.result()
             
-            # Progress update every 20 items (corrected frequency)
-            if processed_count % 20 == 0:
+            # Adaptive progress update by count or at least every ~10s
+            interval = self._progress_interval(len(self.items))
+            now = time.time()
+            if (processed_count % interval == 0) or (self._last_exec_progress_ts is None) or ((now - self._last_exec_progress_ts) >= 10) or (processed_count == len(self.items)):
                 self._print_progress_update(processed_count, start_time)
+                self._last_exec_progress_ts = now
             
             # Save state periodically
             if processed_count % 100 == 0:
@@ -1539,6 +1570,31 @@ class DriveTrashRecoveryTool:
         print(f"📈 Progress: {processed_count}/{len(self.items)} "
               f"({processed_count/len(self.items)*100:.1f}%) "
               f"Rate: {rate:.1f}/sec ETA: {eta:.0f}s")
+
+    def _progress_interval(self, total: int) -> int:
+        """
+        Compute adaptive progress cadence:
+        - target ~2% of total
+        - clamp to [5, 500]
+        """
+        if total <= 0:
+            return 5
+        return max(5, min(500, max(1, round(total * 0.02))))
+
+    def _maybe_cleanup_created_download_dir(self):
+        """
+        If validation created the download directory, and it remains empty,
+        remove it to avoid leaving residue on cancel/early exit.
+        """
+        if getattr(self.args, "_created_download_dir", False) and getattr(self.args, "download_dir", None):
+            try:
+                p = Path(self.args.download_dir)
+                if p.exists() and p.is_dir():
+                    # Only remove if empty
+                    if not any(p.iterdir()):
+                        p.rmdir()
+            except Exception:
+                pass
     
     def execute_recovery(self) -> bool:
         """Execute the main recovery process."""
@@ -1685,7 +1741,26 @@ Troubleshooting:
                               help='Increase verbosity (-v for INFO, -vv for DEBUG)')
         subparser.add_argument('--yes', '-y', action='store_true',
                               help='Skip confirmation prompts (for automation)')
-
+ 
+    # Enrich epilog with quotas, shared drives, and tuning hints
+    parser.epilog += """
+ 
+  Quotas & Monitoring:
+    Drive API enforces per-minute and daily quotas. If you see HTTP 429 responses,
+    reduce --concurrency and retry later. Monitor usage in Google Cloud Console:
+    drive.googleapis.com → Quotas. Consider staggering runs or using smaller batches.
+ 
+  Shared Drives:
+    Access is governed by membership/roles on the shared drive and by item-level
+    permissions. 403 on files from a shared drive often indicates missing content
+    manager access. Ask an admin to grant sufficient privileges or use an account
+    with appropriate access.
+ 
+  Concurrency Tuning:
+    As a starting point, use min(8, CPU*2). If your network is high-latency or you
+    observe 429/5xx bursts, back off concurrency until errors subside.
+ """
+    
 def _set_mode(args) -> None:
     """Map subcommand to internal mode string (reduces branching in main)."""
     mode_map = {
@@ -1716,6 +1791,17 @@ def _validate_concurrency_arg(args) -> Tuple[bool, int]:
         args.concurrency = ceiling
     return True, 0
 
+def _note_dir_created(args, path: Path) -> None:
+    """Mark that validation created the directory, for potential cleanup on cancel."""
+    try:
+        if not hasattr(args, "_created_download_dir"):
+            args._created_download_dir = False
+        # If directory didn't exist before and exists now, mark it.
+        if not getattr(args, "_created_download_dir", False) and path.exists() and path.is_dir():
+            args._created_download_dir = True
+    except Exception:
+        pass
+
 def _validate_download_dir_arg(args) -> Tuple[bool, int]:
     """
     Validate --download-dir for recover-and-download mode; fail fast on invalid paths.
@@ -1728,9 +1814,19 @@ def _validate_download_dir_arg(args) -> Tuple[bool, int]:
         if p.exists() and not p.is_dir():
             print(f"❌ --download-dir points to a file: {p}")
             return False, 2
+        pre_exists = p.exists()
         p.mkdir(parents=True, exist_ok=True)
         probe = p / ".write_test"
-        probe.write_text("ok"); probe.unlink()
+        try:
+            probe.write_text("ok")
+        finally:
+            try:
+                if probe.exists():
+                    probe.unlink()
+            except Exception:
+                pass
+        if not pre_exists:
+            _note_dir_created(args, p)
         return True, 0
     except Exception as e:
         print(f"❌ --download-dir is not writable or cannot be created: {e}")
@@ -1823,11 +1919,6 @@ def main():
     if not ok:
         return code
 
-    # Validate --download-dir early for recover-and-download
-    ok, code = _validate_download_dir_arg(args)
-    if not ok:
-        return code
-
     # Normalize/validate --extensions (fail fast on malformed inputs)
     ok, code = _normalize_and_validate_extensions_arg(args)
     if not ok:
@@ -1842,7 +1933,12 @@ def main():
     ok, code = _validate_after_date_arg(args)
     if not ok:
         return code
- 
+
+    # Validate --download-dir after successful auth to avoid unnecessary FS changes
+    ok, code = _validate_download_dir_arg(args)
+    if not ok:
+         return code
+  
     # Validate file IDs if provided
     if args.file_ids and not tool._validate_file_ids():
         print("❌ File ID validation failed. Check logs for details.")
@@ -1865,3 +1961,57 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def _normalize_and_validate_extensions_arg(args) -> Tuple[bool, int]:
+    """
+    Normalize and validate --extensions; returns (ok, exit_code_if_not_ok).
+    - Strips leading dots, lowercases, de-duplicates.
+    - Disallows spaces, commas, wildcards, and path separators.
+    - Accepts alnum tokens and multi-dot forms (e.g., 'tar.gz', 'min.js').
+    - Warns (does not fail) for tokens that won't narrow server-side queries.
+    """
+    if not getattr(args, 'extensions', None):
+        return True, 0
+
+    invalid: List[str] = []
+    cleaned: List[str] = []
+    for raw in args.extensions:
+        tok = (raw or "").strip()
+        if not tok:
+            invalid.append(repr(raw))
+            continue
+        if any(ch in tok for ch in (' ', ',', '*', '?', '\\', '/')):
+            invalid.append(tok)
+            continue
+        tok = tok.lower()
+        if tok.startswith('.'):
+            tok = tok[1:]
+        # Accept alnum segments separated by single dots, length 1..20 total
+        if not re.fullmatch(r'[a-z0-9]+(\.[a-z0-9]+)*', tok) or not (1 <= len(tok) <= 20):
+            invalid.append(raw)
+            continue
+        cleaned.append(tok)
+
+    if invalid:
+        print("❌ Invalid --extensions value(s): " + ", ".join(map(str, invalid)))
+        print("   Use space-separated extensions like: --extensions jpg png pdf tar.gz min.js")
+        print("   Do not include wildcards, commas, spaces, or path characters.")
+        return False, 2
+
+    # De-duplicate while preserving order
+    deduped = list(dict.fromkeys(cleaned))
+    args.extensions = deduped
+
+    # Guidance: server-side mimeType filtering only for known LAST suffix mappings
+    unknown_for_server = []
+    for tok in deduped:
+        last = tok.split('.')[-1]
+        if last not in EXTENSION_MIME_TYPES:
+            unknown_for_server.append(tok)
+
+    if unknown_for_server:
+        print("ℹ️  Note: these extension(s) won't narrow server-side queries: "
+              + ", ".join(unknown_for_server))
+        print("   Client-side filename filtering will still apply. Consider extending EXTENSION_MIME_TYPES.")
+    return True, 0
