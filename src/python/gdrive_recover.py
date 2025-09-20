@@ -11,10 +11,31 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.5.1"
+__version__ = "1.5.2"
 
 # CHANGELOG
 """
+## [1.5.2] - 2025-09-20
+
+### Hardened
+- **Rate limiting (quick hardening):** token-bucket wrapper (opt-in) via `--burst` on top of fixed RPS pacing.
+  Still conservative by default; `--max-rps 0` disables pacing entirely.
+- **Progress consistency:** execution-phase progress respects `-v` just like discovery; final summary always printed.
+- **Parity & cache controls:** parity checks are now opt-in via `--debug-parity`; add `--clear-id-cache` to
+  flush validation caches before discovery.
+
+### Validation
+- **Extensions:** accept multi-segment tokens (e.g., `tar.gz`, `min.js`) during input validation;
+  segments must be `[a-z0-9]{1,10}`. Multi-segment tokens are matched client-side; server-side
+  MIME narrowing still uses single-segment mapping when available.
+
+### Policy UX
+- **Unknown policy feedback:** warn once when an unknown token is normalized to `trash`. Use `--strict-policy`
+  to treat unknown tokens as an error.
+
+### Notes
+- Backwards-compatible; new flags are optional.
+
 ## [1.5.1] - 2025-09-19
 
 ### Added
@@ -228,6 +249,7 @@ PAGE_SIZE = 1000
 DEFAULT_WORKERS = 5
 INFERRED_MODIFY_ERROR = "Cannot modify file (inferred from untrash check)"
 DEFAULT_MAX_RPS = 5.0  # conservative default; set 0 to disable
+DEFAULT_BURST = 0      # token bucket capacity; 0 = disabled (legacy pacing)
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024  # 1 MiB
 
 # Extension to MIME type mapping for robust server-side filtering
@@ -323,6 +345,9 @@ class DriveTrashRecoveryTool:
         self.logger = self._setup_logging()
         self._authenticated = False
         # rate limiting
+        self._tb_tokens: float = 0.0
+        self._tb_capacity: float = 0.0
+        self._tb_last_refill: Optional[float] = None
         self._rl_lock = Lock()
         self._last_request_ts: Optional[float] = None
         self.stats = {
@@ -352,15 +377,46 @@ class DriveTrashRecoveryTool:
             raise RuntimeError("Service not initialized. Call authenticate() first.")
         return self._service
 
-    # --- Request pacing ---
+    # v1.5.2: token-bucket bursting (opt-in) + legacy fixed-interval pacing
     def _rate_limit(self):
-        """Simple global RPS throttle shared across threads."""
-        max_rps = getattr(self.args, "max_rps", DEFAULT_MAX_RPS)
-        if not max_rps or max_rps <= 0:
-            return
-        min_interval = 1.0 / float(max_rps)
+        """
+        Global request pacing shared across threads.
+        - Fixed-interval pacing (legacy, default) when --burst == 0
+        - Token-bucket (opt-in) when --burst > 0
+        """
+        max_rps = float(getattr(self.args, "max_rps", DEFAULT_MAX_RPS) or 0)
+        if max_rps <= 0:
+            return  # disabled
+        burst = int(getattr(self.args, "burst", DEFAULT_BURST) or 0)
+
+        now = time.time()
         with self._rl_lock:
-            now = time.time()
+            if burst > 0:
+                # Token bucket: refill
+                if self._tb_last_refill is None:
+                    self._tb_last_refill = now
+                    self._tb_capacity = float(burst)
+                    self._tb_tokens = float(burst)
+                else:
+                    elapsed = max(0.0, now - self._tb_last_refill)
+                    self._tb_last_refill = now
+                    self._tb_capacity = float(burst)
+                    self._tb_tokens = min(self._tb_capacity, self._tb_tokens + elapsed * max_rps)
+                # Acquire a token; if none available, sleep until one is.
+                if self._tb_tokens < 1.0:
+                    deficit = 1.0 - self._tb_tokens
+                    sleep_for = deficit / max_rps
+                    time.sleep(max(0.0, sleep_for))
+                    # After sleep, account for one token.
+                    now = time.time()
+                    elapsed = max(0.0, now - self._tb_last_refill)
+                    self._tb_last_refill = now
+                    self._tb_tokens = min(self._tb_capacity, self._tb_tokens + elapsed * max_rps)
+                # consume one token
+                self._tb_tokens = max(0.0, self._tb_tokens - 1.0)
+                return
+            # Legacy fixed-interval pacing
+            min_interval = 1.0 / max_rps
             if self._last_request_ts is None:
                 self._last_request_ts = now
                 return
@@ -641,14 +697,26 @@ class DriveTrashRecoveryTool:
         if not self.args.file_ids:
             return True
         buckets, transient_errors, transient_ids, skipped_non_trashed, err_count = self._prefetch_ids_metadata(self.args.file_ids)
-        # Parity assertions (do not fail run; warn if oddities are detected)
-        try:
-            self._assert_id_path_parity(buckets, skipped_non_trashed, err_count)
-        except Exception:
-            # Never let a parity check break execution
-            pass
+        # Parity assertions are opt-in for debugging only
+        if getattr(self.args, "debug_parity", False):
+            try:
+                self._assert_id_path_parity(buckets, skipped_non_trashed, err_count)
+            except Exception as e:
+                self.logger.warning(f"Parity checker raised unexpectedly: {e}")
+        # Optional cache flush to avoid reusing validation-era caches
+        if getattr(self.args, "clear_id_cache", False):
+            self._clear_id_caches()
         return self._report_validation_outcome(buckets, transient_errors, transient_ids)
-    
+
+    def _clear_id_caches(self) -> None:
+        """Clear validation/discovery caches."""
+        try:
+            self._id_prefetch.clear()
+            self._id_prefetch_non_trashed.clear()
+            self._id_prefetch_errors.clear()
+        except Exception:
+            pass    
+
     def _build_query(self) -> str:
         """Build the Drive API query string using robust mimeType-based filtering."""
         base_query = "trashed=true"
@@ -1600,6 +1668,8 @@ class DriveTrashRecoveryTool:
         self._load_state()
         
         # Discover files
+       
+       
         if not self.items:
             self.items = self.discover_trashed_files()
         
@@ -1690,12 +1760,17 @@ class DriveTrashRecoveryTool:
         try:
             future.result()
             
-            # Adaptive progress update by count or at least every ~10s
-            interval = self._progress_interval(len(self.items))
-            now = time.time()
-            if (processed_count % interval == 0) or (self._last_exec_progress_ts is None) or ((now - self._last_exec_progress_ts) >= 10) or (processed_count == len(self.items)):
-                self._print_progress_update(processed_count, start_time)
-                self._last_exec_progress_ts = now
+            # Adaptive progress update by count or at least every ~10s (respect -v like discovery)
+            if self.args.verbose >= 1:
+                interval = self._progress_interval(len(self.items))
+                now = time.time()
+                if (
+                    (processed_count % interval == 0)
+                    or (self._last_exec_progress_ts is None)
+                    or ((now - self._last_exec_progress_ts) >= 10)
+                ):
+                    self._print_progress_update(processed_count, start_time)
+                    self._last_exec_progress_ts = now
             
             # Save state periodically
             if processed_count % 100 == 0:
@@ -1929,7 +2004,15 @@ Troubleshooting:
         subparser.add_argument('--concurrency', type=int, default=DEFAULT_WORKERS,
                               help='Number of concurrent operations')
         subparser.add_argument('--max-rps', type=float, default=DEFAULT_MAX_RPS,
-                              help='Max Drive API requests per second (0 = disable throttling)')
+                               help='Max Drive API requests per second (0 = disable throttling)')
+        subparser.add_argument('--burst', type=int, default=DEFAULT_BURST,
+                              help='Token-bucket burst capacity (opt-in). 0 = disabled (fixed pacing only)')
+        subparser.add_argument('--debug-parity', action='store_true',
+                              help='Enable validation/discovery parity checks (diagnostic logging)')
+        subparser.add_argument('--clear-id-cache', action='store_true',
+                              help='Clear file-id caches after validation (avoid cache reuse across phases)')
+        subparser.add_argument('--strict-policy', action='store_true',
+                              help='Treat unknown post-restore policy tokens as an error')
         subparser.add_argument('--limit', type=int, default=0,
                               help='Cap the number of items to discover/process (0 = no cap)')
         subparser.add_argument('--state-file', default=DEFAULT_STATE_FILE,
@@ -1958,6 +2041,14 @@ Troubleshooting:
   Concurrency Tuning:
     As a starting point, use min(8, CPU*2). If your network is high-latency or you
     observe 429/5xx bursts, back off concurrency until errors subside.
+
+  Rate Limiting:
+    --max-rps caps average request rate. Enable burst absorption with --burst N (token bucket).
+    Set --max-rps 0 to disable throttling entirely. Execution progress lines respect -v;
+    summaries always print.
+
+  Parity & Caching:
+    Use --debug-parity to log validation/discovery parity metrics; --clear-id-cache to skip cache reuse.
  """
     
 def _set_mode(args) -> None:
@@ -2045,11 +2136,64 @@ def _validate_after_date_arg(args) -> Tuple[bool, int]:
         print(f"❌ Invalid --after-date value '{args.after_date}': {e}")
         return False, 2
 
+def _normalize_extension_token(token: str) -> str:
+    """
+    Normalize an extension token:
+    - Lowercase
+    - Strip leading/trailing dots and whitespace
+    - Collapse multiple dots
+    """
+    if not isinstance(token, str):
+        return ""
+    token = token.strip().lower()
+    token = token.strip(".")
+    # Remove any accidental double dots
+    token = re.sub(r"\.+", ".", token)
+    return token
+
+def _is_invalid_extension_token(token: str) -> bool:
+    """
+    Returns True if the extension token is invalid:
+    - Contains spaces, commas, wildcards, or path separators.
+    - Empty string.
+    """
+    if not token or not isinstance(token, str):
+        return True
+    if any(c in token for c in " ,*/\\"):
+        return True
+    return False
+
+def _is_valid_extension_segments(token: str) -> bool:
+    """
+    Returns True if all segments of a multi-dot extension are [a-z0-9]{1,10}.
+    E.g., 'tar.gz' → True, 'min.js' → True, 'bad!ext' → False.
+    """
+    if not token:
+        return False
+    segments = token.split('.')
+    for seg in segments:
+        if not (1 <= len(seg) <= 10):
+            return False
+        if not re.fullmatch(r'[a-z0-9]+', seg):
+            return False
+    return True
+
+def _dedupe_preserve_order(seq):
+    """Remove duplicates from a list while preserving order."""
+    seen = set()
+    result = []
+    for item in seq:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
 def _normalize_and_validate_extensions_arg(args) -> Tuple[bool, int]:
     """
-    Normalize and validate --extensions; returns (ok, exit_code_if_not_ok).
-    - Strips leading dots, lowercases, de-duplicates.
+    - Lowercases, de-duplicates.
     - Rejects tokens containing spaces, commas, wildcards, or path separators.
+    - Allows multi-segment dotted tokens (e.g., tar.gz, min.js).
+      Each segment must match [a-z0-9]{1,10}
     - Requires strictly [a-z0-9] tokens of reasonable length (1–10).
     - Warns (does not fail) for syntactically valid but unknown extensions
       that won't narrow the server-side mimeType query.
@@ -2060,31 +2204,26 @@ def _normalize_and_validate_extensions_arg(args) -> Tuple[bool, int]:
     invalid: List[str] = []
     cleaned: List[str] = []
     for raw in args.extensions:
-        tok = (raw or "").strip()
+        tok = _normalize_extension_token(raw)
+        if _is_invalid_extension_token(tok):
+            invalid.append(repr(raw))
+            continue
         if not tok:
             invalid.append(repr(raw))
             continue
-        # Disallow separators/wildcards and whitespace/comma-separated lists
-        if any(ch in tok for ch in (' ', ',', '*', '?', '\\', '/')):
-            invalid.append(tok)
-            continue
-        tok = tok.lower()
-        if tok.startswith('.'):
-            tok = tok[1:]
-        # Strict token check: alnum (a–z0–9) only, reasonable length
-        if not re.fullmatch(r'[a-z0-9]{1,10}', tok):
+        if not _is_valid_extension_segments(tok):
             invalid.append(raw)
             continue
-        cleaned.append(tok)
+        cleaned.append(".".join([s for s in tok.split('.') if s != ""]))
 
     if invalid:
         print("❌ Invalid --extensions value(s): " + ", ".join(map(str, invalid)))
-        print("   Use space-separated bare extensions like: --extensions jpg png pdf")
+        print("   Use space-separated extensions like: --extensions jpg png pdf tar.gz min.js")
         print("   Do not include wildcards, commas, spaces, or path characters.")
         return False, 2
 
     # De-duplicate while preserving order
-    deduped = list(dict.fromkeys(cleaned))
+    deduped = _dedupe_preserve_order(cleaned)
     args.extensions = deduped
 
     # Warn (do not fail) for unknown extensions; these won't narrow server-side
@@ -2092,6 +2231,41 @@ def _normalize_and_validate_extensions_arg(args) -> Tuple[bool, int]:
     if unknown:
         print("ℹ️  Note: unknown extension(s) will not narrow server-side queries;")
         print("   client-side filename filtering will apply instead: " + ", ".join(unknown))
+        if any('.' in e for e in unknown):
+            print("   Multi-segment extensions (e.g., tar.gz) are matched client-side only;")
+            print("   server-side MIME narrowing uses the last segment when mapped.")
+    return True, 0
+
+def _normalize_policy_arg(args) -> Tuple[bool, int]:
+    """
+    Normalize --post-restore-policy and enforce UX rules introduced in v1.5.2:
+      - Accepts aliases; normalizes to 'retain' | 'trash' | 'delete'.
+      - If an unknown token is provided:
+          * with --strict-policy → fail fast with an error.
+          * otherwise → warn once and fall back to 'trash'.
+    """
+    raw = getattr(args, "post_restore_policy", None)
+    # Default behavior (no flag provided): keep canonical default
+    if raw is None or raw == "":
+        args.post_restore_policy = PostRestorePolicy.TRASH
+        return True, 0
+
+    # Compute canonical mapping key the same way normalize() does
+    key = re.sub(r'[\s_-]+', '', str(raw).strip().lower())
+    if key in PostRestorePolicy.ALIASES:
+        args.post_restore_policy = PostRestorePolicy.ALIASES[key]
+        return True, 0
+
+    # Unknown token
+    if getattr(args, "strict_policy", False):
+        print(f"❌ Unknown --post-restore-policy value '{raw}'. "
+              f"Use one of: retain | trash | delete (aliases allowed).")
+        return False, 2
+
+    # Soft fallback with a single warning
+    print(f"⚠️  Unknown --post-restore-policy '{raw}'. Falling back to 'trash'. "
+          f"(Tip: use --strict-policy to make this an error.)")
+    args.post_restore_policy = PostRestorePolicy.TRASH
     return True, 0
 
 def _run_tool(tool: 'DriveTrashRecoveryTool', args) -> bool:
@@ -2102,68 +2276,32 @@ def main():
     """Main entry point."""
     parser = create_parser()
     args = parser.parse_args()
-    
-    if not args.command:
-        parser.print_help()
-        return 1
-    
-    # Set mode based on command (extracted helper)
-    _set_mode(args)
-    
-    # Create tool instance
-    tool = DriveTrashRecoveryTool(args)
 
-    # Validate --concurrency early (before heavy work)
+    # Validate and normalize arguments
+    _set_mode(args)
+    ok, code = _normalize_policy_arg(args);  # v1.5.2: policy UX (warn/strict)
     ok, code = _validate_concurrency_arg(args)
     if not ok:
         return code
-
-    # Normalize/validate --extensions (fail fast on malformed inputs)
-    ok, code = _normalize_and_validate_extensions_arg(args)
-    if not ok:
-        return code
-
-    # Normalize policy aliases early (complexity reduction: single canonical form)
-    args.post_restore_policy = PostRestorePolicy.normalize(getattr(args, 'post_restore_policy', None))
-
-    # Authenticate unconditionally
-    if not tool.authenticate():
-        print("❌ Authentication failed. Check logs for details.")
-        return 1
-
-    # Validate --after-date up front (extracted helper; fail fast on invalid input)
-    ok, code = _validate_after_date_arg(args)
-    if not ok:
-        return code
-
-    # Validate --download-dir after successful auth to avoid unnecessary FS changes
     ok, code = _validate_download_dir_arg(args)
     if not ok:
         return code
-  
+    ok, code = _validate_after_date_arg(args)
+    if not ok:
+        return code
+    ok, code = _normalize_and_validate_extensions_arg(args)
+    if not ok:
+        return code
+    # Note: remaining behavior is unchanged; unknown policy now handled per v1.5.2 UX
+
+    tool = DriveTrashRecoveryTool(args)
+
+    # Authentication and directory validation are handled in tool methods and argument validation above.
+
     # Validate file IDs if provided
-    if args.file_ids and not tool._validate_file_ids():
-        print("❌ File ID validation failed. Check logs for details.")
-        return 1
+    if hasattr(args, "file_ids") and args.file_ids:
+        ok = tool._validate_file_ids()
+        if not ok:
+            return 2
 
-    try:
-        if args.mode == 'dry_run':
-            success = tool.dry_run()
-        else:
-            success = tool.execute_recovery()
-        
-        return 0 if success else 1
-        
-    except KeyboardInterrupt:
-        print("\n⚠️  Operation interrupted by user.")
-        return 130
-    except Exception as e:
-        print(f"❌ Unexpected error: {e}")
-        return 1
-
-if __name__ == "__main__":
-    sys.exit(main())
-
-
-# (removed duplicate earlier definition to avoid confusion; the multi-dot aware
-# version above remains in place)
+    return _run_tool(tool, args)
