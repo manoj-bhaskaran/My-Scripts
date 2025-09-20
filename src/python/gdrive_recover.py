@@ -11,109 +11,52 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.4.14"
+__version__ = "1.5.0"
 
 # CHANGELOG
 """
-## [1.4.14] - 2025-09-19
+## [1.5.0] - 2025-09-19
 
-### Changed
-- **Merged `--file-ids` validation & discovery path**: a single `files.get(...)` per ID now powers both validation and discovery.
-  Results are cached and reused to prevent duplicate API calls.
-- **Parity checks**: sanity assertions ensure the merged ID path yields the same observable outcomes as the former two-step flow.
-  Mismatches are logged as warnings with actionable context.
++### Changed
+- **Service simplification**: replace thread-local service factory with a single lazily-initialized Drive
+  client (`self._service`) shared across the app. Keeps behavior, reduces moving parts. (Item 1)
+- **Policy consolidation + aliases**: post-restore policies are now normalized to canonical short
+  forms: `retain`, `trash`, `delete`. Backwards-compatible aliases like `RetainOnDrive`, `MoveToDriveTrash`,
+  `RemoveFromDrive`, `Keep`, `Trash`, `Delete`, `Purge`, etc., are accepted. (Item 5)
+- **Complexity reductions**: tightened small helpers (status symbols, policy mapping/printing) and removed
+  redundant conditionals around post-restore handling. (Item 7)
 
-### Improved (Windows)
-- **Token file handling on Windows**: when creating `token.json`, the file is marked *hidden* and a warning explains that POSIX
-  `chmod(0600)` semantics don’t apply on Windows. Existing tokens are also marked hidden on load when possible.
+### Notes
+- No breaking CLI changes; additional policy aliases are accepted. Minor bump due to refactors.
 
-### Fixed
-- **Duplicate function definition**: removed the earlier `_normalize_and_validate_extensions_arg` (single-dot only) to avoid confusion.
-  The multi-dot aware version (supports `tar.gz`, `min.js`) is retained.
+## [1.4.0–1.4.14] - 2025-09-19 (Consolidated)
 
-## [1.4.13] - 2025-09-19
+### Highlights
+- **Merged `--file-ids` path:** A single `files.get(...)` per ID now powers both validation and discovery, with results cached to avoid duplicate API calls. **Parity checks** warn if outcomes diverge from the former two-step flow.  
+- **Progress you can trust:** Adaptive reporting prints about every ~2% of items (bounded 5–500) and at least every ~10s, across both discovery and execution.
 
-### Improved
-- **Adaptive progress reporting:** progress updates now scale with workload size and time; prints approximately every 2% of items (bounded 5–500) and at least every ~10 seconds for long-running operations. Applies to both discovery (`--file-ids`) and execution phases.
-- **Extension handling for multi-dot tokens:** accept tokens like `tar.gz` and `min.js`. Unknown extensions no longer hard-fail; they’re allowed with a clear note that only client-side filename filtering will apply unless mapped in `EXTENSION_MIME_TYPES`.
-- **Download directory validation order and cleanup:** directory writability checks occur *after* authentication. Temporary probe files are always cleaned up, and if a directory was created by validation and remains empty when the run is cancelled, it is removed.
-- **Hardened token file permissions (POSIX):** `token.json` is created with `0600` permissions; we also warn and correct permissive modes.
+### Improvements
+- **Extensions:** Multi-dot tokens (e.g., `tar.gz`, `min.js`) are accepted. Unknown extensions no longer hard-fail; we clearly note when only client-side filtering applies unless mapped in `EXTENSION_MIME_TYPES`. Input is normalized upfront (strip dots, lowercase, de-dupe) with stricter validation to prevent under/over-filtering.
+- **Download directory UX:** Validate after authentication; touch/unlink probe is always cleaned up. If a directory was created by validation and remains empty after cancel, it is removed.
+- **Auth & tokens:** `token.json` is marked **hidden**; existing tokens are hidden on load when possible.
+- **Resilience & clarity:**  
+  - `_validate_file_ids` uses the same retry/backoff policy as metadata fetches (429/5xx), surfaces transient IDs for targeted retries, and explains zero-actionable results.  
+  - Time filtering relies on `modifiedTime` (since `trashedTime` isn’t supported) with proper timezone handling.  
+  - Concurrency is validated early (reject <1; cap to `min(CPU*4, 64)` with a warning).
+
+### Fixes
+- Consistent API-context logging for `files.update(..., trashed=False)` and other calls; terminal statuses (403/404) are not retried, transient (429/5xx) are retried with jittered backoff.  
+- `_get_file_info` and `_fetch_file_metadata` add method/field context, preserve HTTP status/payload, and distinguish API vs. unexpected I/O errors.  
+- Removed a duplicate `_normalize_and_validate_extensions_arg` (single-dot version); retained the multi-dot aware implementation.
+
+### Refactoring & Maintainability
+- Removed reliance on a shared `self.service` attribute; standardized `_get_service()` usage (thread-local in earlier 1.4.x), reduced complexity in discovery and `main()`, and extracted helpers to keep hot paths simple.  
+- Centralized retry checks and error formatting; reduced `_fetch_file_metadata` complexity.  
+- Standardized CLI error indentation; improved logging in `_handle_item_result`.
 
 ### Documentation
-- Added **Quotas & Monitoring** notes and guidance on **Shared Drives** permissions and **Concurrency Tuning** to the CLI help epilog.
-
-### Notes
-- Backwards-compatible; no CLI changes required.
-
-## [1.4.12] - 2025-09-19
-
-### Fixed
-- **Validation for `--extensions`:** normalize and validate user input up front. Reject malformed tokens (spaces, commas, wildcards, path separators, or non-alnum chars), strip leading dots, lowercase, and de-duplicate. This prevents confusing under/over-filtering and wasted API calls.
-
-### Improved
-- **Clear UX for unknown extensions:** if an extension is syntactically valid but not in our `EXTENSION_MIME_TYPES` map, print a note that only client-side filename filtering will apply (server-side query won’t narrow), setting accurate expectations about performance and results.
-
-### Notes
-- No breaking CLI changes. Behavior is stricter for malformed inputs and more explicit for unknown ones.
-
-## [1.4.11] - 2025-09-19
-
-### Fixed
-- **Targeted exception handling in `_get_file_info`:** add API-context to errors (e.g., `files.get(fileId=..., fields=...)`), preserve HTTP status/payload for `HttpError`, and distinguish I/O/transport errors from unexpected ones for clearer diagnostics. Aligns formatting/verbosity with other hot paths.
-- **Early validation of `--download-dir`:** for `recover-and-download`, fail fast if the path points to a file, can’t be created, or isn’t writable. Creates the directory when missing and performs a touch/unlink check to verify permissions.
-
-### Notes
-- Backwards-compatible; no CLI changes. Improves debuggability and fail-fast UX.
-
-## [1.4.10] - 2025-09-19
-
-### Fixed
-- **Consistent API-context logging for recoveries:** `_recover_file` now logs with full API context (e.g., `files.update(fileId=..., trashed=False)`) and decoded payloads. Retries only occur for transient statuses (429/5xx) with jittered backoff; terminal statuses (403/404) are not retried and include clear context in logs.
-- **Clearer transient error feedback during `--file-ids` validation:** `_validate_file_ids` prints the specific IDs that experienced transient errors so users can retry just those IDs. The IDs are also logged.
-- **Progress visibility for large `--file-ids` discoveries:** `_discover_via_ids` prints periodic progress (every 100 IDs) with counts of processed IDs, discovered items, skipped non-trashed, and errors (shown when using `-v` or higher).
-
-### Notes
-- These changes improve debuggability and UX without altering external behavior or CLI flags.
-
-## [1.4.9] - 2025-09-19
-
-### Fixed
-- Tightened exception handling in downloads and post-restore actions; retry only on transient (429/5xx) with backoff, and add clear API context to error messages.
-- Validate `--concurrency` early (reject <1; cap to `min(os.cpu_count()*4, 64)` with a warning).
-
-## [1.4.8] - 2025-09-19
-
-### Fixed
-- `_validate_file_ids` now uses the same resilient retry/backoff logic as metadata fetches (handles 429/5xx) and provides clearer user guidance for transient errors and 403 permission issues.
-- Console feedback for `--file-ids` improved: if none of the provided IDs are actionable (invalid, not found, or not trashed), the tool now prints an explicit summary explaining why zero items were discovered.
-
-### Refactored
-- Removed reliance on a shared `self.service` attribute. Authentication stores credentials and validates them; all runtime API calls consistently use thread-local clients via `_get_service()` to eliminate confusion and reduce maintenance risk.
-
-## [1.4.7] - 2025-09-19
- 
- ### Fixed
- - Standardized CLI indentation for “Error:” lines across sections to improve readability.
- - Enriched `_fetch_file_metadata` error messages with API method context and `fileId` to aid debugging.
- - Preserved stack traces and distinguished API vs unexpected errors in `_handle_item_result` logging.
- 
-## [1.4.6] - 2025-09-19
-
-### Refactored
-- Extracted all helper functions from inside `_fetch_file_metadata` to top-level methods in the class to further reduce its cognitive complexity and improve maintainability.
-
-## [1.4.0–1.4.5] - 2025-09-19
-
-### Summary (Condensed)
-Between 1.4.0 and 1.4.5 we focused on correctness, resilience, and maintainability around discovery, validation, and metadata fetching:
-
-- **ID Validation & Troubleshooting (1.4.0):** Introduced `_validate_file_ids()` with format and existence checks using Drive v3. Added richer CLI troubleshooting (quota, permissions, auth) and an `INFERRED_MODIFY_ERROR` constant for consistent messaging. Permission checks were modularized (`_get_file_info`, `_check_untrash_privilege`, `_check_download_privilege`, `_check_trash_delete_privileges`), cutting cognitive complexity substantially.
-- **Authentication & Time Handling (1.4.2):** Ensured auth occurs for all modes and is idempotent. Improved time filtering by requesting `modifiedTime`, removing unsupported `trashedTime`, and handling timezones correctly. Backoff logic shifted to exponential with jitter; types were cleaned up; unused variables removed.
-- **`--file-ids` Path & Docs (1.4.3):** Corrected `--file-ids` handling to per-ID lookups (conformant with Drive v3 grammar). Restored thread-safety in downloads via thread-local services. Documented the `python-dateutil` requirement and simplified client-side checks.
-- **Thread-local Services & Discovery Polish (1.4.4):** Standardized `_get_service()` usage across the codebase. Added resilient per-ID discovery with backoff for 429/5xx, minimal field requests, and fail-fast validation for `--after-date`. Reduced complexity of `_discover_via_ids` and `main()` via small helpers.
-- **Metadata Fetch Simplification (1.4.5):** Centralized retry checks and error formatting, reduced `_fetch_file_metadata` complexity to ≤15 while preserving behavior and logging parity.
-
-Overall, these releases made discovery/validation more robust, clarified user guidance, reduced cognitive complexity across hot paths, and aligned field selection and retries with Drive API realities.
+- CLI epilog adds **Quotas & Monitoring**, **Shared Drives** guidance, and **Concurrency Tuning** tips.  
+- Notes: All changes are backwards-compatible with no breaking CLI flags; several behaviors are stricter/clearer to prevent confusion and wasted API calls.
 
 ## [1.3.0] - 2025-09-19
 
@@ -240,7 +183,7 @@ import re
 import random
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, Callable
 from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
@@ -333,17 +276,37 @@ class RecoveryState:
 
 class PostRestorePolicy:
     """Post-restore policy options."""
-    MOVE_TO_DRIVE_TRASH = "MoveToDriveTrash"
-    RETAIN_ON_DRIVE = "RetainOnDrive"
-    REMOVE_FROM_DRIVE = "RemoveFromDrive"
+    # Canonical short forms used internally
+    RETAIN = "retain"
+    TRASH = "trash"
+    DELETE = "delete"
+
+    # Back-compat & friendly aliases → canonical
+    ALIASES: Dict[str, str] = {
+        # canonical
+        "retain": RETAIN, "trash": TRASH, "delete": DELETE,
+        # legacy long forms
+        "retainondrive": RETAIN, "movetodrivetrash": TRASH, "removefromdrive": DELETE,
+        # friendly
+        "keep": RETAIN, "keepondrive": RETAIN, "move2trash": TRASH, "purge": DELETE,
+        # common variants
+        "move-to-drive-trash": TRASH, "move-to-trash": TRASH,
+    }
+
+    @staticmethod
+    def normalize(token: Optional[str]) -> str:
+        if not token:
+            return PostRestorePolicy.TRASH
+        key = re.sub(r'[\s_-]+', '', token.strip().lower())
+        return PostRestorePolicy.ALIASES.get(key, PostRestorePolicy.TRASH)
 
 class DriveTrashRecoveryTool:
     """Main recovery tool class."""
     
     def __init__(self, args):
         self.args = args
-        # Thread-local service is created lazily in _get_service(); no global service kept.
-        self._thread_local = threading.local()  # Thread-local storage for API clients
+        # Single shared Drive service (simplified vs thread-local)
+        self._service = None
         self.logger = self._setup_logging()
         self._authenticated = False
         self.stats = {
@@ -368,15 +331,10 @@ class DriveTrashRecoveryTool:
         self._id_prefetch_errors: Dict[str, str] = {}
 
     def _get_service(self):
-        """Get thread-local Google Drive service instance."""
-        if not hasattr(self._thread_local, 'service'):
-            if not hasattr(self, '_main_credentials') or not self._main_credentials:
-                raise RuntimeError("Main service not initialized. Call authenticate() first.")
-            
-            # Create thread-local copy using stored credentials
-            self._thread_local.service = build('drive', 'v3', credentials=self._main_credentials)
-        
-        return self._thread_local.service
+        """Return the shared Google Drive service instance."""
+        if self._service is None:
+            raise RuntimeError("Service not initialized. Call authenticate() first.")
+        return self._service
     
     def _setup_logging(self) -> logging.Logger:
         """Configure logging based on verbosity level."""
@@ -426,13 +384,11 @@ class DriveTrashRecoveryTool:
                 # Best-effort: mark token hidden on Windows
                 self._harden_token_permissions_windows(token_file)
             
-            self.service = build('drive', 'v3', credentials=creds)
-            # Store credentials for thread-local access
-            self._main_credentials = creds
-            
-            # Test the connection
-            test_service = build('drive', 'v3', credentials=creds)
-            about = test_service.about().get(fields='user').execute()
+            # Build and keep a single service instance
+            self._service = build('drive', 'v3', credentials=creds)
+
+            # Test the connection on the same client
+            about = self._get_service().about().get(fields='user').execute()
             self.logger.info(f"Authenticated as: {about.get('user', {}).get('emailAddress', 'Unknown')}")
             self._authenticated = True
             return True
@@ -703,7 +659,7 @@ class DriveTrashRecoveryTool:
             mime_type=file_data.get('mimeType', ''),
             created_time=file_data.get('createdTime', ''),
             will_download=self.args.mode == 'recover_and_download',
-            post_restore_action=self.args.post_restore_policy
+            post_restore_action=PostRestorePolicy.normalize(self.args.post_restore_policy)
         )
         
         if self.args.mode == 'recover_and_download':
@@ -1163,13 +1119,8 @@ class DriveTrashRecoveryTool:
             print(f"    Error: {result['error']}")
     
     def _get_privilege_status_symbol(self, status: str) -> str:
-        """Get the appropriate symbol for privilege status."""
-        if status == 'pass':
-            return "✓"
-        elif status == 'fail':
-            return "❌"
-        else:
-            return "?"
+        """Symbol for privilege status (small complexity reduction)."""
+        return {'pass': '✓', 'fail': '❌'}.get(status, '?')
     
     def _print_local_directory_status(self, checks: Dict[str, Any]):
         """Print local directory access status."""
@@ -1218,7 +1169,7 @@ class DriveTrashRecoveryTool:
         print(f"Files to recover: {recover_count}")
         print(f"Files to download: {download_count}")
         print(f"Total size: {total_size_mb:.2f} MB")
-        print(f"Post-restore policy: {self.args.post_restore_policy}")
+        print(f"Post-restore policy: {PostRestorePolicy.normalize(self.args.post_restore_policy)}")
     
     def _print_item_details(self, item: RecoveryItem, index: int):
         """Print details for a single item."""
@@ -1319,8 +1270,10 @@ class DriveTrashRecoveryTool:
     
     def _add_config_arguments(self, cmd_parts: List[str]):
         """Add configuration arguments to command."""
-        if self.args.post_restore_policy != PostRestorePolicy.MOVE_TO_DRIVE_TRASH:
-            cmd_parts.extend(['--post-restore-policy', self.args.post_restore_policy])
+        # Only emit flag if different from default 'trash'
+        normalized = PostRestorePolicy.normalize(self.args.post_restore_policy)
+        if normalized != PostRestorePolicy.TRASH:
+            cmd_parts.extend(['--post-restore-policy', normalized])
         
         cmd_parts.extend(['--concurrency', str(self.args.concurrency)])
         
@@ -1409,7 +1362,7 @@ class DriveTrashRecoveryTool:
                 self.stats['skipped'] += 1
             return True
         
-        service = self._get_service()  # Use thread-local service for thread safety
+        service = self._get_service()
         api_ctx = f"files.update(fileId={item.id}, trashed=False)"
         for attempt in range(MAX_RETRIES):
             try:
@@ -1454,16 +1407,16 @@ class DriveTrashRecoveryTool:
     
     # --- Add these helpers outside the class or as class methods (shown here as class methods for context):
 
-    def _get_post_restore_action_and_ctx(self, item: RecoveryItem):
-        """Return (action, api_ctx) tuple for post-restore policy."""
-        if item.post_restore_action == PostRestorePolicy.RETAIN_ON_DRIVE:
+    def _get_post_restore_action_and_ctx(self, item: RecoveryItem) -> Tuple[str, Optional[str]]:
+        """Return (canonical_action, api_ctx) for post-restore policy."""
+        action = PostRestorePolicy.normalize(item.post_restore_action)
+        if action == PostRestorePolicy.RETAIN:
             return "retain", None
-        elif item.post_restore_action == PostRestorePolicy.MOVE_TO_DRIVE_TRASH:
+        if action == PostRestorePolicy.TRASH:
             return "trashed", f"files.update(fileId={item.id}, trashed=True)"
-        elif item.post_restore_action == PostRestorePolicy.REMOVE_FROM_DRIVE:
+        if action == PostRestorePolicy.DELETE:
             return "deleted", f"files.delete(fileId={item.id})"
-        else:
-            return "retain", None
+        return "retain", None
 
     def _do_post_restore_action(self, service, item: RecoveryItem, action: str):
         """Perform the actual API call for the post-restore action."""
@@ -1632,8 +1585,9 @@ class DriveTrashRecoveryTool:
             actions.append("recover from trash")
         if any(item.will_download for item in self.items):
             actions.append("download locally")
-        if self.args.post_restore_policy != PostRestorePolicy.RETAIN_ON_DRIVE:
-            actions.append(f"apply post-restore policy: {self.args.post_restore_policy}")
+        # Only mention if non-default (default canonical is 'trash')
+        if PostRestorePolicy.normalize(self.args.post_restore_policy) != PostRestorePolicy.TRASH:
+            actions.append(f"apply post-restore policy: {PostRestorePolicy.normalize(self.args.post_restore_policy)}")
         return actions
     
     def _initialize_recovery_state(self):
@@ -1816,9 +1770,9 @@ Examples:
   %(prog)s recover-and-download --download-dir ./recovered
 
 Post-restore policies:
-  MoveToDriveTrash (default) - Move back to trash after successful download
-  RetainOnDrive             - Keep files in Drive after download
-  RemoveFromDrive           - Permanently delete from Drive after download
+  trash  (default) / MoveToDriveTrash / Move-To-Drive-Trash / MoveToTrash
+  retain / RetainOnDrive / Keep / KeepOnDrive
+  delete / RemoveFromDrive / Purge / Delete
 
 Troubleshooting:
   * Quota Exhausted:
@@ -1870,12 +1824,10 @@ Troubleshooting:
                               help='Only process files trashed after this date (ISO format)')
         subparser.add_argument('--file-ids', nargs='+',
                               help='Process only specific file IDs')
-        subparser.add_argument('--post-restore-policy', 
-                              choices=[PostRestorePolicy.MOVE_TO_DRIVE_TRASH, 
-                                     PostRestorePolicy.RETAIN_ON_DRIVE,
-                                     PostRestorePolicy.REMOVE_FROM_DRIVE],
-                              default=PostRestorePolicy.MOVE_TO_DRIVE_TRASH,
-                              help='What to do with files on Drive after successful download')
+        # Accept free-form then normalize to canonical (retain/trash/delete)
+        subparser.add_argument('--post-restore-policy',
+                              default=PostRestorePolicy.TRASH,
+                              help='Post-download handling in Drive (aliases accepted): retain|trash|delete')
         subparser.add_argument('--concurrency', type=int, default=DEFAULT_WORKERS,
                               help='Number of concurrent operations')
         subparser.add_argument('--state-file', default=DEFAULT_STATE_FILE,
@@ -2068,6 +2020,9 @@ def main():
     ok, code = _normalize_and_validate_extensions_arg(args)
     if not ok:
         return code
+
+    # Normalize policy aliases early (complexity reduction: single canonical form)
+    args.post_restore_policy = PostRestorePolicy.normalize(getattr(args, 'post_restore_policy', None))
 
     # Authenticate unconditionally
     if not tool.authenticate():
