@@ -11,10 +11,21 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.5.0"
+__version__ = "1.5.1"
 
 # CHANGELOG
 """
+## [1.5.1] - 2025-09-19
+
+### Added
+- **Rate limiting** behind conservative defaults: new `--max-rps` to cap Drive API requests-per-second
+  across validation, discovery, recovery, post-restore actions, and downloads. Defaults to `5.0` RPS.
+- **Streaming downloads**: chunked `MediaIoBaseDownload` with progress output (respects rate limiter).
+- **Execution limiter**: new `--limit` to cap the number of items discovered/processed (useful for canary runs).
+
+### Notes
+- Non-breaking. Defaults are conservative. Set `--max-rps 0` to disable throttling.
+
 ## [1.5.0] - 2025-09-19
 
 +### Changed
@@ -216,6 +227,8 @@ RETRY_DELAY = 2  # seconds
 PAGE_SIZE = 1000
 DEFAULT_WORKERS = 5
 INFERRED_MODIFY_ERROR = "Cannot modify file (inferred from untrash check)"
+DEFAULT_MAX_RPS = 5.0  # conservative default; set 0 to disable
+DOWNLOAD_CHUNK_BYTES = 1024 * 1024  # 1 MiB
 
 # Extension to MIME type mapping for robust server-side filtering
 EXTENSION_MIME_TYPES = {
@@ -309,6 +322,9 @@ class DriveTrashRecoveryTool:
         self._service = None
         self.logger = self._setup_logging()
         self._authenticated = False
+        # rate limiting
+        self._rl_lock = Lock()
+        self._last_request_ts: Optional[float] = None
         self.stats = {
             'found': 0,
             'recovered': 0,
@@ -335,7 +351,29 @@ class DriveTrashRecoveryTool:
         if self._service is None:
             raise RuntimeError("Service not initialized. Call authenticate() first.")
         return self._service
-    
+
+    # --- Request pacing ---
+    def _rate_limit(self):
+        """Simple global RPS throttle shared across threads."""
+        max_rps = getattr(self.args, "max_rps", DEFAULT_MAX_RPS)
+        if not max_rps or max_rps <= 0:
+            return
+        min_interval = 1.0 / float(max_rps)
+        with self._rl_lock:
+            now = time.time()
+            if self._last_request_ts is None:
+                self._last_request_ts = now
+                return
+            delta = now - self._last_request_ts
+            if delta < min_interval:
+                time.sleep(min_interval - delta)
+            self._last_request_ts = time.time()
+
+    def _execute(self, request):
+        """Execute a googleapiclient request with rate limiting."""
+        self._rate_limit()
+        return request.execute()
+
     def _setup_logging(self) -> logging.Logger:
         """Configure logging based on verbosity level."""
         log_level = logging.WARNING
@@ -388,7 +426,7 @@ class DriveTrashRecoveryTool:
             self._service = build('drive', 'v3', credentials=creds)
 
             # Test the connection on the same client
-            about = self._get_service().about().get(fields='user').execute()
+            about = self._execute(self._get_service().about().get(fields='user'))
             self.logger.info(f"Authenticated as: {about.get('user', {}).get('emailAddress', 'Unknown')}")
             self._authenticated = True
             return True
@@ -670,13 +708,13 @@ class DriveTrashRecoveryTool:
     def _fetch_files_page(self, query: str, page_token: Optional[str]) -> Tuple[List[Dict], Optional[str]]:
         """Fetch a single page of files from the API."""
         service = self._get_service()
-        response = service.files().list(
+        response = self._execute(service.files().list(
             q=query,
             spaces='drive',
             fields='nextPageToken, files(id, name, mimeType, size, createdTime, modifiedTime)',
             pageSize=PAGE_SIZE,
             pageToken=page_token
-        ).execute()
+        ))
         
         files = response.get('files', [])
         next_page_token = response.get('nextPageToken')
@@ -746,7 +784,7 @@ class DriveTrashRecoveryTool:
         """
         for attempt in range(MAX_RETRIES):
             try:
-                data = service.files().get(fileId=fid, fields=fields).execute()
+                data = self._execute(service.files().get(fileId=fid, fields=fields))
                 if data.get('trashed', False):
                     return data, False, None
                 return None, True, None
@@ -841,8 +879,11 @@ class DriveTrashRecoveryTool:
                 files, page_token = self._fetch_files_page(query, page_token)
                 for file_data in files:
                     self._append_item_if_valid(items, file_data)
+                    # honor --limit during discovery to stop early
+                    if self.args.limit and self.args.limit > 0 and len(items) >= self.args.limit:
+                        break
                 print(f"Found {len(files)} files in page {page_count} (total: {len(items)})")
-                if not page_token:
+                if (self.args.limit and self.args.limit > 0 and len(items) >= self.args.limit) or (not page_token):
                     break
         except Exception as e:
             self.logger.error(f"Error discovering files: {e}")
@@ -859,6 +900,11 @@ class DriveTrashRecoveryTool:
             query = self._build_query()
             self.logger.info(f"Using query: {query}")
             items = self._discover_via_query(query)
+
+        # Apply --limit post-filter if provided
+        if self.args.limit and self.args.limit > 0 and len(items) > self.args.limit:
+            items = items[: self.args.limit]
+            print(f"⛳ Limiting to first {self.args.limit} item(s) as requested.")
 
         self.stats['found'] = len(items)
         print(f"📊 Total files discovered: {len(items)}")
@@ -923,7 +969,7 @@ class DriveTrashRecoveryTool:
         api_ctx = f"files.get(fileId={file_id}, fields={fields})"
         try:
             service = self._get_service()
-            return service.files().get(fileId=file_id, fields=fields).execute()
+            return self._execute(service.files().get(fileId=file_id, fields=fields))
         except HttpError as e:
             status = getattr(e.resp, "status", None)
             payload = getattr(e, "content", b"")
@@ -1366,10 +1412,10 @@ class DriveTrashRecoveryTool:
         api_ctx = f"files.update(fileId={item.id}, trashed=False)"
         for attempt in range(MAX_RETRIES):
             try:
-                service.files().update(
+                self._execute(service.files().update(
                     fileId=item.id,
                     body={'trashed': False}
-                ).execute()
+                ))
                 
                 item.status = 'recovered'
                 with self.stats_lock:
@@ -1421,9 +1467,9 @@ class DriveTrashRecoveryTool:
     def _do_post_restore_action(self, service, item: RecoveryItem, action: str):
         """Perform the actual API call for the post-restore action."""
         if action == "trashed":
-            service.files().update(fileId=item.id, body={'trashed': True}).execute()
+            self._execute(service.files().update(fileId=item.id, body={'trashed': True}))
         elif action == "deleted":
-            service.files().delete(fileId=item.id).execute()
+            self._execute(service.files().delete(fileId=item.id))
         # "retain" does nothing
 
     def _log_post_restore_success(self, item: RecoveryItem, action: str):
@@ -1750,6 +1796,54 @@ class DriveTrashRecoveryTool:
         success_rate = (self.stats['recovered'] / self.stats['found'] * 100) if self.stats['found'] > 0 else 0
         print(f"\n✅ Success rate: {success_rate:.1f}%")
 
+    # --- Streaming download implementation (rate-limit aware) ---
+    def _download_file(self, item: RecoveryItem) -> bool:
+        """Download a file in chunks to the target path; respects rate limiting and updates stats."""
+        try:
+            service = self._get_service()
+            request = service.files().get_media(fileId=item.id)
+            target = Path(item.target_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            fh = open(target, "wb")
+            try:
+                downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
+                done = False
+                last_print = 0.0
+                while not done:
+                    # throttle each chunk request
+                    self._rate_limit()
+                    status, done = downloader.next_chunk()
+                    now = time.time()
+                    if status and (self.args.verbose > 0) and (now - last_print > 1.0 or done):
+                        pct = int(status.progress() * 100)
+                        print(f"  ↳ downloading {item.name[:40]} … {pct}%")
+                        last_print = now
+                item.status = 'downloaded'
+                with self.stats_lock:
+                    self.stats['downloaded'] += 1
+                return True
+            finally:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+        except HttpError as e:
+            status = getattr(e.resp, "status", None)
+            detail = self._extract_http_error_detail(e)
+            item.status = 'failed'
+            item.error_message = f"files.get_media(fileId={item.id}) failed: HTTP {status}: {detail}"
+            with self.stats_lock:
+                self.stats['errors'] += 1
+            self.logger.error(item.error_message)
+            return False
+        except Exception as e:
+            item.status = 'failed'
+            item.error_message = f"Download error: {e}"
+            with self.stats_lock:
+                self.stats['errors'] += 1
+            self.logger.error(item.error_message)
+            return False
+
 def create_parser() -> argparse.ArgumentParser:
     """Create argument parser."""
     parser = argparse.ArgumentParser(
@@ -1830,6 +1924,10 @@ Troubleshooting:
                               help='Post-download handling in Drive (aliases accepted): retain|trash|delete')
         subparser.add_argument('--concurrency', type=int, default=DEFAULT_WORKERS,
                               help='Number of concurrent operations')
+        subparser.add_argument('--max-rps', type=float, default=DEFAULT_MAX_RPS,
+                              help='Max Drive API requests per second (0 = disable throttling)')
+        subparser.add_argument('--limit', type=int, default=0,
+                              help='Cap the number of items to discover/process (0 = no cap)')
         subparser.add_argument('--state-file', default=DEFAULT_STATE_FILE,
                               help='State file for resume capability')
         subparser.add_argument('--log-file', default=DEFAULT_LOG_FILE,
