@@ -14,11 +14,30 @@ from typing import Iterable, List, Mapping, Sequence, Tuple, Optional, Dict
 
 def _normalize_extension_token(token: str) -> str:
     """
-    Normalize a raw extension token:
-      - strip whitespace
-      - lowercase
-      - remove leading dots
-      - collapse multiple dots to single
+    Normalize a raw extension token to a canonical, comparison-friendly form.
+
+    Steps:
+      1. Strip surrounding whitespace.
+      2. Lowercase.
+      3. Remove all leading dots (e.g., ``".tar.gz" -> "tar.gz"``).
+      4. Collapse multiple consecutive dots to a single dot (``"a..b" -> "a.b"``).
+
+    Parameters
+    ----------
+    token : str
+        Raw user token, potentially with dots/whitespace/case variation.
+
+    Returns
+    -------
+    str
+        Canonicalized token or empty string when input is not a `str`.
+
+    Examples
+    --------
+    >>> _normalize_extension_token(". JPG ")
+    'jpg'
+    >>> _normalize_extension_token("..tar..gz")
+    'tar.gz'
     """
     if not isinstance(token, str):
         return ""
@@ -29,7 +48,24 @@ def _normalize_extension_token(token: str) -> str:
 
 
 def _is_invalid_extension_token(token: str) -> bool:
-    """Quick screen for obviously invalid characters/patterns."""
+    """
+    Quick screen for obviously invalid extension tokens.
+
+    Disallows:
+      - Non-string/empty values (handled by caller, here treated as invalid)
+      - Whitespace, commas, asterisks, slashes, or backslashes
+        (e.g., ``"jpg, png"`` or ``"*.pdf"`` or ``"a/b"``)
+
+    Parameters
+    ----------
+    token : str
+        Canonicalized or raw token to check.
+
+    Returns
+    -------
+    bool
+        ``True`` when the token is structurally invalid and should be rejected.
+    """
     if not token or not isinstance(token, str):
         return True
     if any(c in token for c in " ,*/\\"):
@@ -39,8 +75,23 @@ def _is_invalid_extension_token(token: str) -> bool:
 
 def _is_valid_extension_segments(token: str) -> bool:
     """
-    Validate per segment: 1..10 chars, [a-z0-9].
-    Multi-segment tokens are allowed (e.g., tar.gz, min.js).
+    Validate token segments for allowed length and charset.
+
+    Rules:
+      - Token is split by dots into segments.
+      - Each segment must be 1..10 characters.
+      - Allowed characters are lowercase alphanumerics ``[a-z0-9]`` only.
+      - Multi-segment tokens are allowed (e.g., ``tar.gz``, ``min.js``).
+
+    Parameters
+    ----------
+    token : str
+        The extension token (normalized or raw).
+
+    Returns
+    -------
+    bool
+        ``True`` when every segment passes validation; otherwise ``False``.
     """
     if not token:
         return False
@@ -54,6 +105,19 @@ def _is_valid_extension_segments(token: str) -> bool:
 
 
 def _dedupe_preserve_order(seq: Iterable[str]) -> List[str]:
+    """
+    Remove duplicates while preserving the first occurrence order.
+
+    Parameters
+    ----------
+    seq : Iterable[str]
+        Any iterable of strings.
+
+    Returns
+    -------
+    List[str]
+        New list with duplicates removed, order preserved.
+    """
     seen = set()
     result: List[str] = []
     for item in seq:
@@ -68,12 +132,30 @@ def validate_extensions(
     mime_map: Mapping[str, str],
 ) -> Tuple[List[str], List[str], List[str]]:
     """
-    Normalize and validate extensions independent of argparse state.
+    Normalize and validate user-supplied extension tokens.
 
-    Returns: (cleaned_exts, warnings, errors)
-      - cleaned_exts: normalized, de-duplicated tokens (multi-segment preserved)
-      - warnings: informational notes (e.g., unknown tokens won't narrow server-side)
-      - errors: user-actionable validation failures
+    This function is independent of argparse and can be used in tests directly.
+    It accepts raw tokens, normalizes them (see :func:`_normalize_extension_token`),
+    rejects invalid syntax (see :func:`_is_invalid_extension_token` and
+    :func:`_is_valid_extension_segments`), deduplicates while preserving order,
+    and emits warnings when server-side MIME narrowing is not possible.
+
+    Parameters
+    ----------
+    raw_exts : Sequence[str] | None
+        Raw tokens like ``["jpg", ".png", "tar.gz"]`` or ``None`` for “no filter”.
+    mime_map : Mapping[str, str]
+        Mapping from a **single** extension segment (e.g., ``"jpg"``) to a MIME type.
+        Only the **last** segment of multi-segment tokens participates in server-side
+        narrowing (client-side still checks the full suffix).
+
+    Returns
+    -------
+    Tuple[List[str], List[str], List[str]]
+        ``(cleaned_exts, warnings, errors)`` where:
+          - ``cleaned_exts``: normalized, de-duplicated tokens (multi-segment preserved).
+          - ``warnings``: informational notes when tokens won’t narrow server-side queries.
+          - ``errors``: user-actionable validation failures (e.g., illegal characters).
     """
     if not raw_exts:
         return [], [], []

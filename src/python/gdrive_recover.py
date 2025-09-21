@@ -14,10 +14,18 @@ Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`) 
 """
 
-__version__ = "1.6.6"
+__version__ = "1.6.7"
 
 # CHANGELOG
 """
+## [1.6.7] - 2025-09-21
+
+### UX & Robustness
+- **Docstrings & typing (validators):** Expanded, concrete docstrings and clearer return types for extension helpers.
+- **Error output consistency:** Most error/warning prints now go to **stderr**; optional `--no-emoji` for ASCII-only output.
+- **Lock contention:** New `--lock-timeout <sec>` waits for the state lock for a bounded period (polling). Helpful for orchestrated runs.
+- **Windows PID liveness:** Liveness check now acknowledges *inconclusive* results (OpenProcess limits) and avoids false “stale” claims.
+
 ## [1.6.6] - 2025-09-21
 
 ### Docs (rolling)
@@ -314,6 +322,31 @@ class DriveTrashRecoveryTool:
         self._id_prefetch: Dict[str, Dict[str, Any]] = {}
         self._id_prefetch_non_trashed: Dict[str, bool] = {}
         self._id_prefetch_errors: Dict[str, str] = {}
+
+    # --- Symbol / message helpers (emoji can be disabled via --no-emoji) ---
+    def _use_emoji(self) -> bool:
+        return not getattr(self.args, "no_emoji", False)
+
+    def _sym_ok(self) -> str:
+        return "✓" if self._use_emoji() else "OK"
+
+    def _sym_fail(self) -> str:
+        return "❌" if self._use_emoji() else "ERROR"
+
+    def _sym_warn(self) -> str:
+        return "⚠️" if self._use_emoji() else "WARN"
+
+    def _sym_info(self) -> str:
+        return "ℹ️" if self._use_emoji() else "INFO"
+
+    def _print_err(self, msg: str) -> None:
+        print(f"{self._sym_fail()} {msg}", file=sys.stderr)
+
+    def _print_warn(self, msg: str) -> None:
+        print(f"{self._sym_warn()} {msg}", file=sys.stderr)
+
+    def _print_info(self, msg: str) -> None:
+        print(f"{self._sym_info()} {msg}")
 
     # --- HTTP transport construction (v1.6.0) ---
     class _RequestsHttpAdapter:
@@ -643,12 +676,15 @@ class DriveTrashRecoveryTool:
     # -------------------- File-ID validation & merged discovery helpers --------------------
     def _pid_is_alive(self, pid: int) -> bool:
         """
-        Best-effort check whether a PID appears to be alive.
-        Returns True if the process likely exists, False if it likely does not.
-        Never raises.
+        Best-effort liveness check for a PID on Windows.
+        Returns True if a handle can be opened. Returns False otherwise,
+        but note this may be *inconclusive* due to limited query permissions
+        on some systems; callers should avoid hard “stale” claims solely
+        based on a False result.
         """
         try:
             if pid is None or int(pid) <= 0:
+                # Could not open handle — treat as not alive but potentially inconclusive
                 return False
             # Windows
             try:
@@ -691,23 +727,23 @@ class DriveTrashRecoveryTool:
         if buckets["invalid"]:
             joined = ", ".join(buckets["invalid"])
             self.logger.error(f"Invalid file ID format: {joined}")
-            print(f"❌ Error: Invalid file ID format: {joined}")
+            self._print_err(f"Invalid file ID format: {joined}")
         if buckets["not_found"]:
             joined = ", ".join(buckets["not_found"])
             self.logger.error(f"File IDs not found: {joined}")
-            print(f"❌ Error: File IDs not found: {joined}")
+            self._print_err(f"Invalid file ID format: {joined}")
         if buckets["no_access"]:
             joined = ", ".join(buckets["no_access"])
             self.logger.error(f"Insufficient permissions for file IDs: {joined}")
-            print(f"❌ Error: Insufficient permissions for file IDs: {joined}")
-            print("   Tip: Ensure the authenticated account has access, or re-authenticate with an account that does.")
+            self._print_err(f"Insufficient permissions for file IDs: {joined}")
+            print("   Tip: Ensure the authenticated account has access, or re-authenticate with an account that does.", file=sys.stderr)
         if transient_errors:
-            print(f"⚠️  Validation encountered {transient_errors} transient error(s) (rate-limit/server).")
+            self._print_warn(f"Validation encountered {transient_errors} transient error(s) (rate-limit/server).")
             if transient_ids:
                 joined = ", ".join(transient_ids)
                 print(f"   Affected file IDs: {joined}")
                 self.logger.warning(f"Transient validation errors for file IDs: {joined}")
-            print("   Suggestion: Re-run shortly, lower --concurrency, or re-try just the affected IDs.")
+            print("   Suggestion: Re-run shortly, lower --concurrency, or re-try just the affected IDs.", file=sys.stderr)
 
         success = (
             not buckets["invalid"]
@@ -855,7 +891,7 @@ class DriveTrashRecoveryTool:
             mismatch = self._emit_parity_metrics(buckets, skipped_non_trashed, err_count)
             if mismatch and getattr(self.args, "fail_on_parity_mismatch", False):
                 # v1.6.5: clearer console hint
-                print("❌ Parity check failed during ID prefetch. See logs (use -vv) or --parity-metrics-file.")
+                self._print_err("Parity check failed during ID prefetch. See logs (use -vv) or --parity-metrics-file.")
                 return False
         # Optional cache flush to avoid reusing validation-era caches
         if getattr(self.args, "clear_id_cache", False):
@@ -1014,9 +1050,9 @@ class DriveTrashRecoveryTool:
         if skipped_non_trashed:
             print(f"ℹ️  Skipped {skipped_non_trashed} non-trashed file ID(s).")
         if errors:
-            print(f"ℹ️  Encountered {errors} error(s) while fetching file ID metadata. See log for details.")
+            self._print_info(f"Encountered {errors} error(s) while fetching file ID metadata. See log for details.")
         if not items:
-            print("❎ No actionable trashed files were found from the provided --file-ids.")
+            self._print_warn("No actionable trashed files were found from the provided --file-ids.")
             print("   All provided IDs may be invalid, not found, non-trashed, or inaccessible.")
             print("   Tip: Re-check IDs from their Drive URLs and ensure they are currently in Trash.")
 
@@ -2043,7 +2079,7 @@ class DriveTrashRecoveryTool:
         print(f"Errors encountered: {self.stats['errors']}")
         print(f"Execution time: {elapsed_time:.1f} seconds")
         if self.stats['errors'] > 0:
-            print(f"\n⚠️  Check log file for error details: {self.args.log_file}")
+            self._print_warn(f"Check log file for error details: {self.args.log_file}")
         if self.state.processed_items:
             print(f"\n📂 State file: {self.args.state_file}")
             print("   Use same command to resume if interrupted")
@@ -2292,6 +2328,8 @@ Concurrent-run guardrail (v1.6.0):
     download_parser.add_argument('--download-dir', required=True, help='Local directory for downloads')
     
     for subparser in [dry_run_parser, recover_parser, download_parser]:
+        subparser.add_argument('--no-emoji', action='store_true',
+                               help='Disable emoji in console output (use ASCII labels instead)') 
         subparser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
         subparser.add_argument('--extensions', nargs='+', help='File extensions to filter (e.g., jpg png pdf)')
         subparser.add_argument('--after-date', help='Only process files trashed after this date (ISO format)')
@@ -2349,6 +2387,9 @@ Concurrent-run guardrail (v1.6.0):
         # v1.6.0: concurrent-run guardrail override
         subparser.add_argument('--force', action='store_true',
                                help='Bypass concurrent-run guardrail when the lockfile is held')
+        # v1.6.7: bounded wait for lock
+        subparser.add_argument('--lock-timeout', type=float, default=0.0,
+                               help='If the state lock is held, wait up to this many seconds for it to be released (0 = no wait)')
     return parser
     
 def _set_mode(args) -> None:
@@ -2369,7 +2410,7 @@ def _validate_concurrency_arg(args) -> Tuple[bool, int]:
         print("❌ Invalid --concurrency value. It must be >= 1.")
         return False, 2
     if args.concurrency > ceiling:
-        print(f"⚠️  --concurrency {args.concurrency} is high; capping to {ceiling} to avoid resource exhaustion and 429s.")
+        print(f"WARN --concurrency {args.concurrency} is high; capping to {ceiling} to avoid resource exhaustion and 429s.")
         args.concurrency = ceiling
     return True, 0
 
@@ -2379,7 +2420,7 @@ def _validate_download_dir_arg(args) -> Tuple[bool, int]:
     try:
         p = Path(args.download_dir)
         if p.exists() and not p.is_dir():
-            print(f"❌ --download-dir points to a file: {p}")
+            print(f"ERROR --download-dir points to a file: {p}", file=sys.stderr)
             return False, 2
         p.mkdir(parents=True, exist_ok=True)
         probe = p / ".write_test"
@@ -2393,7 +2434,7 @@ def _validate_download_dir_arg(args) -> Tuple[bool, int]:
                 pass
         return True, 0
     except Exception as e:
-        print(f"❌ --download-dir is not writable or cannot be created: {e}")
+        print(f"ERROR --download-dir is not writable or cannot be created: {e}", file=sys.stderr)
         return False, 2
 
 def _validate_after_date_arg(args) -> Tuple[bool, int]:
@@ -2406,7 +2447,7 @@ def _validate_after_date_arg(args) -> Tuple[bool, int]:
         args.after_date = parsed.isoformat()
         return True, 0
     except Exception as e:
-        print(f"❌ Invalid --after-date value '{args.after_date}': {e}")
+        print(f"ERROR Invalid --after-date value '{args.after_date}': {e}", file=sys.stderr)
         return False, 2
 
 def _run_tool(tool: 'DriveTrashRecoveryTool', args) -> bool:
@@ -2458,7 +2499,7 @@ def _normalize_and_validate_extensions(args) -> Tuple[bool, int]:
     )
     if ext_errors:
         for msg in ext_errors:
-            print(f"❌ {msg}")
+            print(f"ERROR {msg}", file=sys.stderr)
         print("   Use space-separated extensions like: --extensions jpg png pdf tar.gz min.js")
         print("   Do not include wildcards, commas, spaces, or path characters.")
         return False, 2
@@ -2484,32 +2525,48 @@ def _read_lockfile_metadata(lockfile_path):
 
 def _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, force):
     """Print user-facing messages about lockfile status."""
-    print(f"❌ Another run appears to be active for state '{args.state_file}'.")
-    print(f"   Owner PID: {owner_pid}{pid_alive_note}   Run-ID: {run_id}")
-    if pid_alive_note:
-        print("   The lock looks stale. If you're sure the previous process is gone, rerun with --force to take over.")
+    print(f"ERROR Another run appears to be active for state '{args.state_file}'.", file=sys.stderr)
+    print(f"   Owner PID: {owner_pid}{pid_alive_note}   Run-ID: {run_id}", file=sys.stderr)
+    if "(not running)" in pid_alive_note:
+        print("   The lock looks stale. If you're sure the previous process is gone, rerun with --force to take over.", file=sys.stderr)
     else:
-        print("   Tip: If that run is still working, let it finish. Otherwise, confirm it's stopped and rerun with --force.")
+        print("   Tip: If that run is still working, let it finish. Otherwise, confirm it's stopped and rerun with --force.", file=sys.stderr)
     if force:
-        if pid_alive_note:
-            print("⚠️  --force supplied: taking over a **stale** lock (previous PID not detected).")
+        if "(not running)" in pid_alive_note:
+            print("WARN --force supplied: taking over a **stale** lock (previous PID not detected).", file=sys.stderr)
         else:
-            print("⚠️  --force supplied: bypassing concurrent-run guardrail.")
+            print("WARN --force supplied: bypassing concurrent-run guardrail.", file=sys.stderr)
 
 def _check_pid_alive(owner_pid, tool):
-    """Check if the recorded PID is alive, return a note string if not."""
+    """Check if the recorded PID is alive, return a note string."""
     pid_alive_note = ""
     try:
         pid_int = int(owner_pid)
-        if not tool._pid_is_alive(pid_int):
-            pid_alive_note = " (note: recorded PID does not appear to be running)"
+        alive = tool._pid_is_alive(pid_int)
+        if not alive:
+            # Could be inconclusive on Windows due to limited query permissions
+            pid_alive_note = " (note: recorded PID not confirmed; may not be running)"
     except Exception:
         pass
     return pid_alive_note
 
 def _acquire_or_bypass_lock(tool, args) -> Tuple[bool, int]:
     try:
-        if not tool._acquire_state_lock():
+        start_wait = time.time()
+        timeout = float(getattr(args, "lock_timeout", 0.0) or 0.0)
+        poll = 0.5
+        acquired = tool._acquire_state_lock()
+        while (not acquired) and timeout > 0 and (time.time() - start_wait) < timeout:
+            # Bounded wait/poll
+            remaining = max(0.0, timeout - (time.time() - start_wait))
+            if int(remaining) == remaining:
+                remaining_str = f"{int(remaining)}s"
+            else:
+                remaining_str = f"{remaining:.1f}s"
+            print(f"Waiting for state lock (remaining {remaining_str})...", file=sys.stderr)
+            time.sleep(poll)
+            acquired = tool._acquire_state_lock()
+        if not acquired:
             lockfile_path = f"{args.state_file}.lock"
             owner_pid, run_id = _read_lockfile_metadata(lockfile_path)
             pid_alive_note = _check_pid_alive(owner_pid, tool)
