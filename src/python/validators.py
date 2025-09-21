@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+import re
+from typing import Iterable, List, Mapping, Sequence, Tuple
+
+
+def _normalize_extension_token(token: str) -> str:
+    """
+    Normalize a raw extension token:
+      - strip whitespace
+      - lowercase
+      - remove leading dots
+      - collapse multiple dots to single
+    """
+    if not isinstance(token, str):
+        return ""
+    token = token.strip().lower()
+    token = token.strip(".")
+    token = re.sub(r"\.+", ".", token)
+    return token
+
+
+def _is_invalid_extension_token(token: str) -> bool:
+    """Quick screen for obviously invalid characters/patterns."""
+    if not token or not isinstance(token, str):
+        return True
+    if any(c in token for c in " ,*/\\"):
+        return True
+    return False
+
+
+def _is_valid_extension_segments(token: str) -> bool:
+    """
+    Validate per segment: 1..10 chars, [a-z0-9].
+    Multi-segment tokens are allowed (e.g., tar.gz, min.js).
+    """
+    if not token:
+        return False
+    segments = token.split('.')
+    for seg in segments:
+        if not (1 <= len(seg) <= 10):
+            return False
+        if not re.fullmatch(r'[a-z0-9]+', seg):
+            return False
+    return True
+
+
+def _dedupe_preserve_order(seq: Iterable[str]) -> List[str]:
+    seen = set()
+    result: List[str] = []
+    for item in seq:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
+def validate_extensions(
+    raw_exts: Sequence[str] | None,
+    mime_map: Mapping[str, str],
+) -> Tuple[List[str], List[str], List[str]]:
+    """
+    Normalize and validate extensions independent of argparse state.
+
+    Returns: (cleaned_exts, warnings, errors)
+      - cleaned_exts: normalized, de-duplicated tokens (multi-segment preserved)
+      - warnings: informational notes (e.g., unknown tokens won't narrow server-side)
+      - errors: user-actionable validation failures
+    """
+    if not raw_exts:
+        return [], [], []
+
+    invalid: List[str] = []
+    cleaned: List[str] = []
+    for raw in raw_exts:
+        tok = _normalize_extension_token(raw)
+        if _is_invalid_extension_token(tok) or not tok or not _is_valid_extension_segments(tok):
+            invalid.append(repr(raw))
+            continue
+        # Keep multi-segment token as-is; server-side lookup will use last segment
+        cleaned.append(".".join([s for s in tok.split('.') if s != ""]))
+
+    if invalid:
+        return [], [], [f"Invalid --extensions value(s): {', '.join(invalid)}"]
+
+    deduped = _dedupe_preserve_order(cleaned)
+
+    # Build warnings:
+    warnings: List[str] = []
+    unknown: List[str] = []
+    for e in deduped:
+        last_seg = e.split('.')[-1] if e else e
+        if last_seg not in mime_map:
+            unknown.append(e)
+    if unknown:
+        warnings.append(
+            "Note: unknown extension(s) will not narrow server-side queries; "
+            "client-side filename filtering will apply instead: " + ", ".join(unknown)
+        )
+        if any('.' in e for e in unknown):
+            warnings.append(
+                "Multi-segment extensions (e.g., tar.gz) are matched client-side against the full suffix; "
+                "server-side MIME narrowing uses the last segment when mapped."
+            )
+
+    return deduped, warnings, []
+
+
+def normalize_policy_token(
+    raw: str | None,
+    *,
+    strict: bool,
+    aliases: Mapping[str, str],
+    default_value: str,
+) -> Tuple[str, List[str], List[str]]:
+    """
+    Normalize a post-restore policy token using provided aliases.
+
+    Returns: (normalized_value, warnings, errors)
+      - if strict and unknown -> errors contains message
+      - if not strict and unknown -> fallback to default_value and warnings contains note
+    """
+    if raw is None or raw == "":
+        return default_value, [], []
+
+    key = re.sub(r'[\s_-]+', '', str(raw).strip().lower())
+    if key in aliases:
+        return aliases[key], [], []
+
+    if strict:
+        return default_value, [], [f"Unknown --post-restore-policy value '{raw}'. Use one of: retain | trash | delete (aliases allowed)."]
+
+    return default_value, [f"Unknown --post-restore-policy '{raw}'. Falling back to '{default_value}'. (Tip: use --strict-policy to make this an error.)"], []

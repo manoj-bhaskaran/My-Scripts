@@ -11,10 +11,22 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.5.6"
+__version__ = "1.5.7"
 
 # CHANGELOG
 """
+## [1.5.7] - 2025-09-26
+
+### Extension Semantics & Validation Cohesion
+- **Multi-segment MIME mapping:** when building the server-side query, multi-segment
+  tokens (e.g., `tar.gz`, `min.js`) use the **last segment** for MIME narrowing if
+  it is known (`gz` / `js`). The **full token** is still used for client-side filename
+  suffix matching.
+- **Validators module:** moved extension and policy validators into `validators.py`,
+  added full type hints, and made them pure functions that accept explicit parameters
+  (no implicit coupling to `argparse` objects). mypy passes on the module; unit tests
+  call these functions directly.
+
 ## [1.5.6] - 2025-09-24
 
 ### Memory Footprint & Streaming
@@ -110,8 +122,8 @@ import shutil
 import re
 import random
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
+from pathlib import Path
 from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock, local
@@ -123,6 +135,9 @@ except ImportError:
     print("ERROR: Missing optional dependency 'python-dateutil' required for --after-date parsing.")
     print("Install with: pip install python-dateutil")
     sys.exit(1)
+
+# v1.5.7: pure validators (extensions & policy)
+from validators import validate_extensions, normalize_policy_token
 
 try:
     from googleapiclient.discovery import build
@@ -653,13 +668,17 @@ class DriveTrashRecoveryTool:
         """Build the Drive API query string using robust mimeType-based filtering."""
         base_query = "trashed=true"
         
-        # Add extension filter using mimeType queries for better reliability
+        # Add extension filter using mimeType queries for better reliability.
+        # v1.5.7: for multi-segment tokens (e.g., tar.gz), use the LAST segment
+        # for server-side MIME narrowing when mapped (gz). Full token remains
+        # for client-side suffix checks.
         if self.args.extensions:
             mime_conditions = []
             for ext in self.args.extensions:
                 ext_normalized = ext.lower().strip('.')
-                if ext_normalized in EXTENSION_MIME_TYPES:
-                    mime_type = EXTENSION_MIME_TYPES[ext_normalized]
+                last_seg = ext_normalized.split('.')[-1] if ext_normalized else ext_normalized
+                if last_seg in EXTENSION_MIME_TYPES:
+                    mime_type = EXTENSION_MIME_TYPES[last_seg]
                     mime_conditions.append(f"mimeType = '{mime_type}'")
             if mime_conditions:
                 extensions_query = f"({' or '.join(mime_conditions)})"
@@ -1825,6 +1844,14 @@ Rate Limiting:
   Set --max-rps 0 to disable throttling entirely. Execution progress lines respect -v;
   summaries always print.
 
+Extension Filtering Semantics (v1.5.7):
+  * Multi-segment tokens like 'tar.gz' or 'min.js' are accepted.
+  * Server-side MIME narrowing uses the LAST segment (e.g., 'gz', 'js') when it is
+    known/mapped; otherwise no server-side narrowing is applied for that token.
+  * Client-side filtering uses the FULL token against the filename suffix, so
+    'archive.tar.gz' matches 'tar.gz' and 'script.min.js' matches 'min.js'.
+  * This makes the behavior explicit and predictable for mixed extensions.
+
 Memory & Streaming (v1.5.6):
   Execution now supports streaming discovery with bounded memory usage. Use
   --process-batch-size to control how many items are resident at once. Batches
@@ -1940,90 +1967,6 @@ def _validate_after_date_arg(args) -> Tuple[bool, int]:
         print(f"❌ Invalid --after-date value '{args.after_date}': {e}")
         return False, 2
 
-def _normalize_extension_token(token: str) -> str:
-    if not isinstance(token, str):
-        return ""
-    token = token.strip().lower()
-    token = token.strip(".")
-    token = re.sub(r"\.+", ".", token)
-    return token
-
-def _is_invalid_extension_token(token: str) -> bool:
-    if not token or not isinstance(token, str):
-        return True
-    if any(c in token for c in " ,*/\\"):
-        return True
-    return False
-
-def _is_valid_extension_segments(token: str) -> bool:
-    if not token:
-        return False
-    segments = token.split('.')
-    for seg in segments:
-        if not (1 <= len(seg) <= 10):
-            return False
-        if not re.fullmatch(r'[a-z0-9]+', seg):
-            return False
-    return True
-
-def _dedupe_preserve_order(seq):
-    seen = set()
-    result = []
-    for item in seq:
-        if item not in seen:
-            seen.add(item)
-            result.append(item)
-    return result
-
-def _normalize_and_validate_extensions_arg(args) -> Tuple[bool, int]:
-    if not getattr(args, 'extensions', None):
-        return True, 0
-    invalid: List[str] = []
-    cleaned: List[str] = []
-    for raw in args.extensions:
-        tok = _normalize_extension_token(raw)
-        if _is_invalid_extension_token(tok):
-            invalid.append(repr(raw))
-            continue
-        if not tok:
-            invalid.append(repr(raw))
-            continue
-        if not _is_valid_extension_segments(tok):
-            invalid.append(raw)
-            continue
-        cleaned.append(".".join([s for s in tok.split('.') if s != ""]))
-    if invalid:
-        print("❌ Invalid --extensions value(s): " + ", ".join(map(str, invalid)))
-        print("   Use space-separated extensions like: --extensions jpg png pdf tar.gz min.js")
-        print("   Do not include wildcards, commas, spaces, or path characters.")
-        return False, 2
-    deduped = _dedupe_preserve_order(cleaned)
-    args.extensions = deduped
-    unknown = [e for e in deduped if e not in EXTENSION_MIME_TYPES]
-    if unknown:
-        print("ℹ️  Note: unknown extension(s) will not narrow server-side queries;")
-        print("   client-side filename filtering will apply instead: " + ", ".join(unknown))
-        if any('.' in e for e in unknown):
-            print("   Multi-segment extensions (e.g., tar.gz) are matched client-side only;")
-            print("   server-side MIME narrowing uses the last segment when mapped.")
-    return True, 0
-
-def _normalize_policy_arg(args) -> Tuple[bool, int]:
-    raw = getattr(args, "post_restore_policy", None)
-    if raw is None or raw == "":
-        args.post_restore_policy = PostRestorePolicy.TRASH
-        return True, 0
-    key = re.sub(r'[\s_-]+', '', str(raw).strip().lower())
-    if key in PostRestorePolicy.ALIASES:
-        args.post_restore_policy = PostRestorePolicy.ALIASES[key]
-        return True, 0
-    if getattr(args, "strict_policy", False):
-        print(f"❌ Unknown --post-restore-policy value '{raw}'. Use one of: retain | trash | delete (aliases allowed).")
-        return False, 2
-    print(f"⚠️  Unknown --post-restore-policy '{raw}'. Falling back to 'trash'. (Tip: use --strict-policy to make this an error.)")
-    args.post_restore_policy = PostRestorePolicy.TRASH
-    return True, 0
-
 def _run_tool(tool: 'DriveTrashRecoveryTool', args) -> bool:
     return tool.dry_run() if args.mode == 'dry_run' else tool.execute_recovery()
 
@@ -2036,9 +1979,20 @@ def main() -> int:
 
     _set_mode(args)
 
-    ok, code = _normalize_policy_arg(args)
-    if not ok:
-        return code
+    # v1.5.7: policy normalization via pure validator
+    norm_policy, policy_warnings, policy_errors = normalize_policy_token(
+        args.post_restore_policy,
+        strict=getattr(args, "strict_policy", False),
+        aliases=PostRestorePolicy.ALIASES,
+        default_value=PostRestorePolicy.TRASH,
+    )
+    if policy_errors:
+        for msg in policy_errors:
+            print(f"❌ {msg}")
+        return 2
+    for msg in policy_warnings:
+        print(f"⚠️  {msg}")
+    args.post_restore_policy = norm_policy
 
     ok, code = _validate_concurrency_arg(args)
     if not ok:
@@ -2052,9 +2006,20 @@ def main() -> int:
     if not ok:
         return code
 
-    ok, code = _normalize_and_validate_extensions_arg(args)
-    if not ok:
-        return code
+    # v1.5.7: extensions normalization/validation via pure validator
+    cleaned_exts, ext_warnings, ext_errors = validate_extensions(
+        getattr(args, "extensions", None),
+        EXTENSION_MIME_TYPES,
+    )
+    if ext_errors:
+        for msg in ext_errors:
+            print(f"❌ {msg}")
+        print("   Use space-separated extensions like: --extensions jpg png pdf tar.gz min.js")
+        print("   Do not include wildcards, commas, spaces, or path characters.")
+        return 2
+    for msg in ext_warnings:
+        print(f"ℹ️  {msg}")
+    args.extensions = cleaned_exts
 
     tool = DriveTrashRecoveryTool(args)
  
