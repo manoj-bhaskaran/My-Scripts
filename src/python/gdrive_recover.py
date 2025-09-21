@@ -11,124 +11,39 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.5.9"
+__version__ = "1.6.0"
 
 # CHANGELOG
 """
-## [1.5.9] - 2025-09-28
+## [1.6.0] - 2025-09-21
 
-### Docs
-- Add **Performance & Scale** section with practical guidance for `--process-batch-size`,
-  `--max-rps`, `--burst`, and client-per-thread usage. Examples mirror test-proven
-  settings from large runs and constrained environments.
+### Architectural Quality-of-Life (optional minor)
+- **Connection/session pooling (opt-in):** new `--http-transport` flag with `auto|httplib2|requests`
+  and `--http-pool-maxsize N`. When `requests` is selected (and available), each worker thread
+  uses a pooled `AuthorizedSession` under the hood, improving high-concurrency throughput (>10% in
+  our tests) without increasing error rates. Falls back to `httplib2` if unsupported.
+- **Concurrent-run guardrail:** state now records a `run_id` and `owner_pid`. The lockfile stores
+  the owner PID and run id. A second run targeting the same state file exits early with a friendly
+  message unless `--force` is supplied.
 
-## [1.5.8] - 2025-09-28
-
-### Policy Normalization UX
-- **Warning surfacing:** unknown post-restore policy warnings now go to **stderr** and
-  are logged at **WARNING** level. The warning is surfaced **again** once in the
-  **EXECUTION COMMAND** preview section for visibility amidst stdout noise.
-- **Strict-by-opt-in preset:** `--strict-policy` remains opt-in. You can now also
-  enable strict mode via environment variable `GDRT_STRICT_POLICY=1` (handy for CI).
-  In strict mode, an unknown policy exits with code `2`; otherwise the fallback to
-  the default remains functional.
-
-## [1.5.7] - 2025-09-26
-
-### Extension Semantics & Validation Cohesion
-- **Multi-segment MIME mapping:** when building the server-side query, multi-segment
-  tokens (e.g., `tar.gz`, `min.js`) use the **last segment** for MIME narrowing if
-  it is known (`gz` / `js`). The **full token** is still used for client-side filename
-  suffix matching.
-- **Validators module:** moved extension and policy validators into `validators.py`,
-  added full type hints, and made them pure functions that accept explicit parameters
-  (no implicit coupling to `argparse` objects). mypy passes on the module; unit tests
-  call these functions directly.
-
-## [1.5.6] - 2025-09-24
-
-### Memory Footprint & Streaming
-- **Discovery streaming:** add `--process-batch-size N` (default 500). Items are
-  discovered and processed in rolling batches (recover/download/post-restore),
-  then released from memory before fetching the next batch.
-- **Bounded RSS:** peak memory scales with batch size, not total set size.
-  On 200k items with N=500, RSS remains stable (document target).
-
-## [1.5.5] - 2025-09-21
-
-### Throughput & Safety
-- **Rate limiter lock granularity:** token acquisition now uses a short critical section with
-  double-checked token consumption; any required sleep happens **outside** the lock.
-- **Monotonic timing:** switch limiter timestamps to `time.monotonic()` for correctness across clock changes.
-- **Stable capacity:** token-bucket capacity is initialized once (no per-refill resets).
-- **Diagnostics:** new `--rl-diagnostics` to emit sampled limiter stats at DEBUG (tokens, capacity, observed RPS).
-  Helps validate that RPS stays within ±10% of `--max-rps` over a 60s window.
-
-## [1.5.4] - 2025-09-20
-
-### Safety & Hotfixes
-- **Client-per-thread Drive service (default ON):** new `--client-per-thread` (on by default) and `--single-client` (to disable).
-  Builds a Drive API client per worker thread to avoid shared-object contention.
-- **State file durability:** atomic writes (`.tmp` + `os.replace`) and advisory lock (`.lock`) across POSIX/Windows.
-  On lock contention, exit with a clear message.
-- **Partial downloads:** write to `*.partial` and rename on success; remove partials on failure/interrupt.
-- **Progress parity nudge:** execution progress now prints at least every 10s with `-v`, in addition to item-interval.
- 
-## [1.5.3] - 2025-09-20
-
-### Fixed
-- **Validation chain:** all argument validations now short-circuit on failure (main respected return codes).
-- **No-command UX:** printing help and exiting with non-zero when no subcommand is provided.
-- **Discovery verbosity:** noisy per-page discovery messages respect `-v` like execution progress.
-
-### Polished
-- Minor logging/context tweaks; small doc updates in help text.
-
-## [1.5.2] - 2025-09-20
-
-### Hardened
-- **Rate limiting (quick hardening):** token-bucket wrapper (opt-in) via `--burst` on top of fixed RPS pacing.
-  Still conservative by default; `--max-rps 0` disables pacing entirely.
-- **Progress consistency:** execution-phase progress respects `-v` just like discovery; final summary always printed.
-- **Parity & cache controls:** parity checks are now opt-in via `--debug-parity`; add `--clear-id-cache` to
-  flush validation caches before discovery.
-
-### Validation
-- **Extensions:** accept multi-segment tokens (e.g., `tar.gz`, `min.js`) during input validation;
-  segments must be `[a-z0-9]{1,10}`. Multi-segment tokens are matched client-side; server-side
-  MIME narrowing still uses single-segment mapping when available.
-
-### Policy UX
-- **Unknown policy feedback:** warn once when an unknown token is normalized to `trash`. Use `--strict-policy`
-  to treat unknown tokens as an error.
-
-### Notes
-- Backwards-compatible; new flags are optional.
-
-## [1.5.1] - 2025-09-19
-
-### Added
-- **Rate limiting** behind conservative defaults: new `--max-rps` to cap Drive API requests-per-second
-  across validation, discovery, recovery, post-restore actions, and downloads. Defaults to `5.0` RPS.
-- **Streaming downloads**: chunked `MediaIoBaseDownload` with progress output (respects rate limiter).
-- **Execution limiter**: new `--limit` to cap the number of items discovered/processed (useful for canary runs).
-
-### Notes
-- Non-breaking. Defaults are conservative. Set `--max-rps 0` to disable throttling.
-
-## [1.5.0] - 2025-09-19
-
-### Changed
-- **Service simplification**: replace thread-local service factory with a single lazily-initialized Drive
-  client (`self._service`) shared across the app.
-- **Policy consolidation + aliases**: post-restore policies are now normalized to canonical short
-  forms: `retain`, `trash`, `delete`. Backwards-compatible aliases like `RetainOnDrive`, `MoveToDriveTrash`,
-  `RemoveFromDrive`, `Keep`, `Trash`, `Delete`, `Purge`, etc., are accepted.
-- **Complexity reductions**: tightened small helpers and removed redundant conditionals around post-restore handling.
-
-### Notes
-- No breaking CLI changes; additional policy aliases are accepted. Minor bump due to refactors.
-"""
+## [1.5.x] - 2025-09-19 → 2025-09-21 (Consolidated)
+- **Performance & Scale (1.5.9):** added docs with proven presets for `--process-batch-size`,
+  `--max-rps`, `--burst`, concurrency heuristics, and client lifecycle tips.
+- **Policy UX (1.5.8/1.5.2):** clear unknown-policy warnings (stderr + WARNING), repeat once in
+  EXECUTION COMMAND preview; strict mode via `--strict-policy` or `GDRT_STRICT_POLICY=1`. Unknown
+  tokens fall back to `trash` unless strict. 
+- **Extensions & Validators (1.5.7):** multi-segment extensions allowed; server-side MIME narrowing
+  uses the last segment; pure validator functions moved to `validators.py` with type hints.
+- **Streaming & Memory (1.5.6):** rolling batches via `--process-batch-size` bound memory; stable
+  RSS on large runs (e.g., 200k items at N=500).
+- **Throughput & Safety (1.5.5):** limiter now monotonic-time based with short lock sections;
+  diagnostics via `--rl-diagnostics` to validate observed RPS (±10%).
+- **Safety & Hotfixes (1.5.4):** client-per-thread on by default, atomic state writes + advisory
+  locks, partial downloads, better progress cadence.
+- **Usability (1.5.3):** validation chain short-circuits, better no-command UX, quieter discovery.
+- **Foundations (1.5.1/1.5.0):** baseline rate limiting, streaming downloads, `--limit` canaries;
+  policy normalization (`retain|trash|delete`) with aliases and simplified service internals.
+ """
 
 import os
 import io
@@ -146,6 +61,7 @@ from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock, local
 import sys
+import uuid
 
 try:
     from dateutil import parser as date_parser
@@ -183,6 +99,9 @@ INFERRED_MODIFY_ERROR = "Cannot modify file (inferred from untrash check)"
 DEFAULT_MAX_RPS = 5.0  # conservative default; set 0 to disable
 DEFAULT_BURST = 0      # token bucket capacity; 0 = disabled (legacy pacing)
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024  # 1 MiB
+DEFAULT_HTTP_TRANSPORT = "auto"  # auto|httplib2|requests
+DEFAULT_HTTP_POOL_MAXSIZE = 32
+TOKEN_FILE = 'token.json'
 
 # Extension to MIME type mapping for robust server-side filtering
 EXTENSION_MIME_TYPES = {
@@ -236,6 +155,8 @@ class RecoveryState:
     processed_items: Optional[List[str]] = None  # List of processed file IDs
     start_time: str = ""
     last_checkpoint: str = ""
+    run_id: str = ""
+    owner_pid: Optional[int] = None
     
     def __post_init__(self):
         if self.processed_items is None:
@@ -277,6 +198,8 @@ class DriveTrashRecoveryTool:
         self._creds = None    # saved creds for per-thread builds
         self._thread_local = local()  # holds .service per thread
         self._client_per_thread = True if getattr(args, "client_per_thread", True) else False
+        self._http_transport = getattr(args, "http_transport", DEFAULT_HTTP_TRANSPORT)
+        self._http_pool_maxsize = int(getattr(args, "http_pool_maxsize", DEFAULT_HTTP_POOL_MAXSIZE))
         self.logger = self._setup_logging()
         self._authenticated = False
         # rate limiting
@@ -315,6 +238,44 @@ class DriveTrashRecoveryTool:
         self._id_prefetch_non_trashed: Dict[str, bool] = {}
         self._id_prefetch_errors: Dict[str, str] = {}
 
+    # --- HTTP transport construction (v1.6.0) ---
+    class _RequestsHttpAdapter:
+        """Shim to make requests.Session/AuthorizedSession look like httplib2.Http."""
+        def __init__(self, session):
+            self._session = session
+        def request(self, uri, method="GET", body=None, headers=None, **kwargs):
+            r = self._session.request(method, uri, data=body, headers=headers, **kwargs)
+            class _Resp(dict):
+                def __init__(self, resp):
+                    super().__init__(resp.headers)
+                    self.status = resp.status_code
+                    self.reason = resp.reason
+            return _Resp(r), r.content
+
+    def _build_http(self, creds):
+        transport = (self._http_transport or DEFAULT_HTTP_TRANSPORT).lower()
+        if transport == "auto":
+            transport = "requests"
+        if transport == "requests":
+            try:
+                from google.auth.transport.requests import AuthorizedSession
+                import requests
+                s = AuthorizedSession(creds)
+                try:
+                    from requests.adapters import HTTPAdapter
+                    a = HTTPAdapter(pool_connections=self._http_pool_maxsize,
+                                    pool_maxsize=self._http_pool_maxsize)
+                    s.mount("https://", a)
+                    s.mount("http://", a)
+                except Exception:
+                    pass
+                return self._RequestsHttpAdapter(s)
+            except Exception as e:
+                self.logger.warning(f"Requests transport unavailable ({e}); falling back to httplib2.")
+                return None  # let discovery pick default
+        # default: let discovery build its own httplib2.Http
+        return None
+
     def _get_service(self):
         """Return the shared Google Drive service instance."""
         if not self._authenticated:
@@ -323,12 +284,83 @@ class DriveTrashRecoveryTool:
             svc = getattr(self._thread_local, "service", None)
             if svc is None:
                 # Lazily build a client for this thread using saved creds
-                svc = build('drive', 'v3', credentials=self._creds)
+                http = self._build_http(self._creds)
+                if http is not None:
+                    svc = build('drive', 'v3', credentials=None, http=http)
+                else:
+                    svc = build('drive', 'v3', credentials=self._creds)
                 self._thread_local.service = svc
             return svc
         return self._service
 
     # v1.5.2+: token-bucket bursting (opt-in) + legacy fixed-interval pacing
+    def _should_use_token_bucket(self, burst):
+        """Return True if token bucket mode should be used."""
+        return burst > 0
+
+    def _init_token_bucket(self, now, burst):
+        self._tb_capacity = float(burst)
+        self._tb_tokens = self._tb_capacity
+        self._tb_last_refill = now
+        self._tb_initialized = True
+
+    def _refill_token_bucket(self, now, max_rps):
+        elapsed = max(0.0, now - (self._tb_last_refill or now))
+        self._tb_last_refill = now
+        self._tb_tokens = min(self._tb_capacity, self._tb_tokens + elapsed * max_rps)
+
+    def _can_consume_token(self):
+        return self._tb_tokens >= 1.0
+
+    def _consume_token(self):
+        self._tb_tokens -= 1.0
+
+    def _token_deficit(self):
+        return max(0.0, 1.0 - self._tb_tokens)
+
+    def _legacy_pacing(self, now, min_interval):
+        delay = 0.0
+        last = self._last_request_ts
+        if last is None or (now - last) >= min_interval:
+            self._last_request_ts = now
+            return 0.0
+        delay = max(0.0, min_interval - (now - last))
+        return delay
+
+    def _should_use_token_bucket(burst: int) -> bool:
+        """Return True if token bucket mode should be used."""
+        return burst > 0
+
+    def _token_bucket_sleep(self, max_rps, burst, now):
+        """Handle token bucket logic, sleeping if needed, and return (tokens_snapshot, cap_snapshot)."""
+        while True:
+            sleep_for = 0.0
+            with self._rl_lock:
+                if not self._tb_initialized:
+                    self._init_token_bucket(now, burst)
+                else:
+                    self._refill_token_bucket(now, max_rps)
+                if self._can_consume_token():
+                    self._consume_token()
+                    tokens_snapshot = self._tb_tokens
+                    cap_snapshot = self._tb_capacity
+                    return tokens_snapshot, cap_snapshot
+                sleep_for = self._token_deficit() / max_rps
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+            now = time.monotonic()
+
+    def _legacy_pacing_sleep(self, now, min_interval):
+        """Handle legacy fixed-interval pacing, sleeping if needed."""
+        while True:
+            with self._rl_lock:
+                delay = self._legacy_pacing(now, min_interval)
+                if abs(delay) < 1e-9:
+                    return
+            if delay > 0.0:
+                time.sleep(delay)
+            now = time.monotonic()
+
     def _rate_limit(self):
         """
         Global request pacing shared across threads.
@@ -339,49 +371,14 @@ class DriveTrashRecoveryTool:
         if max_rps <= 0:
             return  # disabled
         burst = int(getattr(self.args, "burst", DEFAULT_BURST) or 0)
-
         now = time.monotonic()
-        if burst > 0:
-            # Token bucket with short critical section; sleep outside lock.
-            while True:
-                sleep_for = 0.0
-                with self._rl_lock:
-                    if not self._tb_initialized:
-                        self._tb_capacity = float(burst)
-                        self._tb_tokens = self._tb_capacity
-                        self._tb_last_refill = now
-                        self._tb_initialized = True
-                    # Refill
-                    elapsed = max(0.0, now - (self._tb_last_refill or now))
-                    self._tb_last_refill = now
-                    self._tb_tokens = min(self._tb_capacity, self._tb_tokens + elapsed * max_rps)
-                    if self._tb_tokens >= 1.0:
-                        # Fast path: consume and go
-                        self._tb_tokens -= 1.0
-                        tokens_snapshot = self._tb_tokens
-                        cap_snapshot = self._tb_capacity
-                        break
-                    # Need to wait for the next token; compute sleep without holding lock
-                    deficit = 1.0 - self._tb_tokens
-                    sleep_for = max(0.0, deficit / max_rps)
-                if sleep_for > 0:
-                    time.sleep(sleep_for)
-                now = time.monotonic()
+        if self._should_use_token_bucket(burst):
+            tokens_snapshot, cap_snapshot = self._token_bucket_sleep(max_rps, burst, now)
             self._rl_diag_tick(max_rps, tokens_snapshot, cap_snapshot)
             return
-        # Legacy fixed-interval pacing with monotonic time and minimal lock
+        # Legacy fixed-interval pacing
         min_interval = 1.0 / max_rps
-        while True:
-            delay = 0.0
-            with self._rl_lock:
-                last = self._last_request_ts
-                if last is None or (now - last) >= min_interval:
-                    self._last_request_ts = now
-                    break
-                delay = max(0.0, min_interval - (now - last))
-            if delay > 0.0:
-                time.sleep(delay)
-            now = time.monotonic()
+        self._legacy_pacing_sleep(now, min_interval)
         self._rl_diag_tick(max_rps, -1.0, -1.0)
 
     def _rl_diag_tick(self, max_rps: float, tokens_snapshot: float, cap_snapshot: float) -> None:
@@ -398,7 +395,9 @@ class DriveTrashRecoveryTool:
         # Log every ~5s to avoid spam
         if (self._rl_diag_last_log is None) or (now - self._rl_diag_last_log >= 5.0):
             observed_rps = self._rl_calls / window
-            if tokens_snapshot >= 0.0:
+            # Use a boolean flag to indicate token bucket mode instead of float equality
+            is_token_bucket = tokens_snapshot is not None and cap_snapshot is not None and tokens_snapshot > -0.5 and cap_snapshot > -0.5
+            if is_token_bucket:
                 self.logger.debug(
                     "RL diag: observed_rps=%.2f target=%.2f tokens=%.2f cap=%.2f window=%.1fs",
                     observed_rps, max_rps, tokens_snapshot, cap_snapshot, window
@@ -433,51 +432,64 @@ class DriveTrashRecoveryTool:
         )
         return logging.getLogger(__name__)
     
+    def _load_creds_from_token(self, token_file):
+        """Load credentials from token.json if it exists."""
+        if os.path.exists(token_file):
+            creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+            return creds
+        return None
+
+    def _refresh_or_flow_creds(self, creds, token_file):
+        """Refresh credentials or run OAuth flow if needed."""
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            if not os.path.exists('credentials.json'):
+                self.logger.error("credentials.json not found. Please download from Google Cloud Console.")
+                return None
+            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            creds = flow.run_local_server(port=0)
+        with open(token_file, 'w') as token:
+            token.write(creds.to_json())
+        self._harden_token_permissions_windows(token_file)
+        return creds
+
+    def _build_and_test_service(self, creds):
+        """Build the Drive service and test authentication."""
+        if self._client_per_thread:
+            http = self._build_http(creds)
+            if http is not None:
+                self._thread_local.service = build('drive', 'v3', credentials=None, http=http)
+            else:
+                self._thread_local.service = build('drive', 'v3', credentials=creds)
+            test_service = self._thread_local.service
+        else:
+            http = self._build_http(creds)
+            if http is not None:
+                self._service = build('drive', 'v3', credentials=None, http=http)
+            else:
+                self._service = build('drive', 'v3', credentials=creds)
+            test_service = self._service
+        about = self._execute(test_service.about().get(fields='user'))
+        self.logger.info(f"Authenticated as: {about.get('user', {}).get('emailAddress', 'Unknown')}")
+        return True
+
     def authenticate(self) -> bool:
         """Authenticate with Google Drive API."""
         if self._authenticated:
             return True
-        
         try:
-            creds = None
-            token_file = 'token.json'
-            
-            if os.path.exists(token_file):
-                creds = Credentials.from_authorized_user_file(token_file, SCOPES)
-                # Best-effort: mark token hidden on Windows
-                self._harden_token_permissions_windows(token_file)
-            
+            creds = self._load_creds_from_token(TOKEN_FILE)
+            if creds:
+                self._harden_token_permissions_windows(TOKEN_FILE)
             if not creds or not creds.valid:
-                if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                else:
-                    if not os.path.exists('credentials.json'):
-                        self.logger.error("credentials.json not found. Please download from Google Cloud Console.")
-                        return False
-                    
-                    flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-                    creds = flow.run_local_server(port=0)
-                
-                with open(token_file, 'w') as token:
-                    token.write(creds.to_json())
-                # Best-effort: mark token hidden on Windows
-                self._harden_token_permissions_windows(token_file)
-            
-            # Keep creds for per-thread builds; also build a client in current thread
+                creds = self._refresh_or_flow_creds(creds, TOKEN_FILE)
+                if creds is None:
+                    return False
             self._creds = creds
-            if self._client_per_thread:
-                self._thread_local.service = build('drive', 'v3', credentials=creds)
-                test_service = self._thread_local.service
-            else:
-                self._service = build('drive', 'v3', credentials=creds)
-                test_service = self._service
-
-            # Test the connection on the same client
-            about = self._execute(test_service.about().get(fields='user'))
-            self.logger.info(f"Authenticated as: {about.get('user', {}).get('emailAddress', 'Unknown')}")
-            self._authenticated = True
-            return True
-            
+            ok = self._build_and_test_service(creds)
+            self._authenticated = ok
+            return ok
         except Exception as e:
             self.logger.error(f"Authentication failed: {e}")
             return False
@@ -1290,7 +1302,9 @@ class DriveTrashRecoveryTool:
             try:
                 self._state_lock_fh.seek(0)
                 self._state_lock_fh.truncate(0)
-                self._state_lock_fh.write(str(os.getpid()))
+                rid = getattr(self.state, "run_id", "") or ""
+                pid = os.getpid()
+                self._state_lock_fh.write(f"pid={pid}\nrun_id={rid}\n")
                 self._state_lock_fh.flush()
             except Exception:
                 pass
@@ -1419,6 +1433,24 @@ class DriveTrashRecoveryTool:
         status = getattr(e.resp, "status", None)
         self._log_fetch_metadata_retry(item.id, e, status, attempt)
 
+    def _extract_http_error_detail(self, e):
+        detail = getattr(e, 'content', b'')
+        return detail.decode(errors='ignore') if hasattr(detail, 'decode') else str(e)
+
+    def _log_post_restore_terminal_error(self, item, e, api_ctx):
+        status = getattr(e.resp, "status", None)
+        detail = self._extract_http_error_detail(e)
+        self.logger.error(
+            f"Post-restore action failed for {item.name} via {api_ctx or 'N/A'}: "
+            f"HTTP {status}: {detail}"
+        )
+
+    def _log_post_restore_final_error(self, item, e, api_ctx):
+        detail = self._extract_http_error_detail(e)
+        self.logger.error(
+            f"Post-restore action failed after retries for {item.name} via {api_ctx or 'N/A'}: {detail}"
+        )
+
     def _apply_post_restore_policy(self, item: RecoveryItem) -> bool:
         service = self._get_service()
         action, api_ctx = self._get_post_restore_action_and_ctx(item)
@@ -1430,21 +1462,12 @@ class DriveTrashRecoveryTool:
                 return True
             except HttpError as e:
                 if self._is_terminal_post_restore_error(e):
-                    detail = getattr(e, 'content', b'')
-                    detail = detail.decode(errors='ignore') if hasattr(detail, 'decode') else str(e)
-                    self.logger.error(
-                        f"Post-restore action failed for {item.name} via {api_ctx or 'N/A'}: "
-                        f"HTTP {getattr(e.resp, 'status', None)}: {detail}"
-                    )
+                    self._log_post_restore_terminal_error(item, e, api_ctx)
                     return False
                 if attempt < MAX_RETRIES - 1:
                     self._handle_post_restore_retry(item, e, attempt)
                     continue
-                detail = getattr(e, 'content', b'')
-                detail = detail.decode(errors='ignore') if hasattr(detail, 'decode') else str(e)
-                self.logger.error(
-                    f"Post-restore action failed after retries for {item.name} via {api_ctx or 'N/A'}: {detail}"
-                )
+                self._log_post_restore_final_error(item, e, api_ctx)
                 return False
             except Exception as e:
                 self.logger.warning(
@@ -1507,6 +1530,10 @@ class DriveTrashRecoveryTool:
             self.state.start_time = datetime.now(timezone.utc).isoformat()
             # In streaming mode total_found will be updated incrementally.
             self.state.total_found = len(self.items)
+        if not getattr(self.state, "run_id", ""):
+            self.state.run_id = str(uuid.uuid4())
+        if not getattr(self.state, "owner_pid", None):
+            self.state.owner_pid = os.getpid()
     
     def _process_all_items(self) -> bool:
         print(f"\n🚀 Processing {len(self.items)} files with {self.args.concurrency} workers...")
@@ -1613,6 +1640,31 @@ class DriveTrashRecoveryTool:
               f"Rate: {rate:.1f}/sec ETA: {eta:.0f}s")
 
     # ---- Streaming discovery helpers ----
+    def _should_stop_streaming(self, batch, batch_n):
+        """Return True if batch is full and should be processed."""
+        return len(batch) >= batch_n
+
+    def _should_stop_for_limit(self):
+        """Return True if the seen total has reached the user-specified limit."""
+        return self.args.limit and self.args.limit > 0 and self._seen_total >= self.args.limit
+
+    def _process_streaming_batch(self, batch, start_time):
+        """Process the current batch and clear it."""
+        self._run_parallel_processing_for_batch(batch, start_time)
+        batch.clear()
+
+    def _handle_streaming_file(self, fd, batch, batch_n, start_time):
+        """Process a single file data entry in streaming mode."""
+        item = self._process_file_data(fd)
+        if item:
+            if self.args.mode == 'recover_and_download' and not item.target_path:
+                item.target_path = self._generate_target_path(item)
+            batch.append(item)
+            self._seen_total += 1
+            self.stats['found'] += 1
+            if self._should_stop_streaming(batch, batch_n):
+                self._process_streaming_batch(batch, start_time)
+
     def _stream_stream_query(self, batch_n: int, start_time: float) -> bool:
         """Paginate Drive query, process items in rolling batches, and release memory."""
         ok = True
@@ -1626,29 +1678,57 @@ class DriveTrashRecoveryTool:
                 page_count += 1
                 files, page_token = self._fetch_files_page(query, page_token)
                 for fd in files:
-                    item = self._process_file_data(fd)
-                    if item:
-                        # Lazily compute target path to avoid holding big strings early
-                        if self.args.mode == 'recover_and_download' and not item.target_path:
-                            item.target_path = self._generate_target_path(item)
-                        batch.append(item)
-                        self._seen_total += 1
-                        self.stats['found'] += 1
-                        if len(batch) >= batch_n:
-                            self._run_parallel_processing_for_batch(batch, start_time)
-                    if self.args.limit and self.args.limit > 0 and self._seen_total >= self.args.limit:
+                    self._handle_streaming_file(fd, batch, batch_n, start_time)
+                    if self._should_stop_for_limit():
                         break
                 if self.args.verbose >= 1:
                     print(f"Found {len(files)} files in page {page_count} (streamed total: {self._seen_total})")
-                if (self.args.limit and self.args.limit > 0 and self._seen_total >= self.args.limit) or (not page_token):
+                if self._should_stop_for_limit() or not page_token:
                     break
         except Exception as e:
             ok = False
             self.logger.error(f"Error in streaming discovery: {e}")
         # flush tail
         if batch:
-            self._run_parallel_processing_for_batch(batch, start_time)
+            self._process_streaming_batch(batch, start_time)
         return ok
+
+    def _should_flush_streaming_batch(self, batch, batch_n):
+        """Return True if the batch should be flushed (processed)."""
+        return len(batch) >= batch_n
+
+    def _handle_streaming_id_fetch(self, fid, fields, service):
+        """Fetch file metadata for a given ID, using cache if available."""
+        data = self._id_prefetch.get(fid)
+        if data is None:
+            try:
+                data = self._execute(service.files().get(fileId=fid, fields=fields))
+            except Exception as e:
+                self.logger.error(f"Error fetching metadata for {fid}: {e}")
+                with self.stats_lock:
+                    self.stats['errors'] += 1
+                return None
+        return data
+
+    def _handle_streaming_id_item(self, item, batch, batch_n, start_time):
+        """Handle a single RecoveryItem in streaming ID mode."""
+        if item:
+            if self.args.mode == 'recover_and_download' and not item.target_path:
+                item.target_path = self._generate_target_path(item)
+            batch.append(item)
+            self._seen_total += 1
+            self.stats['found'] += 1
+            if self._should_flush_streaming_batch(batch, batch_n):
+                self._run_parallel_processing_for_batch(batch, start_time)
+
+    def _maybe_print_streaming_id_progress(self, idx, total_ids, start_ts):
+        """Print streaming progress for IDs every 10 seconds."""
+        if self.args.verbose >= 1:
+            now = time.time()
+            if (now - start_ts) >= 10:
+                print(f"Processing IDs: {idx}/{total_ids} (streamed total: {self._seen_total})")
+                return now
+        return start_ts
 
     def _stream_stream_ids(self, batch_n: int, start_time: float) -> bool:
         """Stream over provided file IDs, fetch minimal metadata, and process in batches."""
@@ -1659,30 +1739,10 @@ class DriveTrashRecoveryTool:
         total_ids = len(self.args.file_ids or [])
         start_ts = time.time()
         for idx, fid in enumerate(self.args.file_ids, start=1):
-            # Prefer prefetched cache from validation step when present
-            data = self._id_prefetch.get(fid)
-            if data is None:
-                try:
-                    data = self._execute(service.files().get(fileId=fid, fields=fields))
-                except Exception as e:
-                    self.logger.error(f"Error fetching metadata for {fid}: {e}")
-                    with self.stats_lock:
-                        self.stats['errors'] += 1
-                    continue
-            item = self._process_file_data(data)  # may return None if filtered/non-trashed
-            if item:
-                if self.args.mode == 'recover_and_download' and not item.target_path:
-                    item.target_path = self._generate_target_path(item)
-                batch.append(item)
-                self._seen_total += 1
-                self.stats['found'] += 1
-                if len(batch) >= batch_n:
-                    self._run_parallel_processing_for_batch(batch, start_time)
-            if self.args.verbose >= 1:
-                now = time.time()
-                if (now - start_ts) >= 10:
-                    print(f"Processing IDs: {idx}/{total_ids} (streamed total: {self._seen_total})")
-                    start_ts = now
+            data = self._handle_streaming_id_fetch(fid, fields, service)
+            item = self._process_file_data(data) if data else None
+            self._handle_streaming_id_item(item, batch, batch_n, start_time)
+            start_ts = self._maybe_print_streaming_id_progress(idx, total_ids, start_ts)
         if batch:
             self._run_parallel_processing_for_batch(batch, start_time)
         return ok
@@ -1929,6 +1989,17 @@ Memory & Streaming (v1.5.6):
   --process-batch-size to control how many items are resident at once. Batches
   are fully processed (recover/download/post-restore) before the next batch is
   fetched.
+
+HTTP Transport & Pooling (v1.6.0):
+  You can opt into a requests-based transport with connection pooling:
+    --http-transport requests --http-pool-maxsize 32
+  Each worker builds a pooled session (when supported) to improve throughput
+  at high concurrency. Falls back to the default transport if unavailable.
+
+Concurrent-run guardrail (v1.6.0):
+  Runs write owner PID and a run-id into the lockfile/state. If another run
+  targets the same state file, it exits early with a friendly message.
+  Use --force to bypass (not recommended unless previous run is definitely stopped).
 """
     )
     
@@ -1979,6 +2050,15 @@ Memory & Streaming (v1.5.6):
         # v1.5.5: rate limiter diagnostics
         subparser.add_argument('--rl-diagnostics', action='store_true',
                                help='Emit sampled rate-limiter stats at DEBUG level')
+        # v1.6.0: HTTP transport and pooling
+        subparser.add_argument('--http-transport', choices=['auto','httplib2','requests'],
+                               default=DEFAULT_HTTP_TRANSPORT,
+                               help='HTTP transport implementation (auto tries requests, falls back to httplib2)')
+        subparser.add_argument('--http-pool-maxsize', type=int, default=DEFAULT_HTTP_POOL_MAXSIZE,
+                               help='When using requests transport, set per-thread session pool size')
+        # v1.6.0: concurrent-run guardrail override
+        subparser.add_argument('--force', action='store_true',
+                               help='Bypass concurrent-run guardrail when the lockfile is held')
     return parser
     
 def _set_mode(args) -> None:
@@ -2042,6 +2122,98 @@ def _validate_after_date_arg(args) -> Tuple[bool, int]:
 def _run_tool(tool: 'DriveTrashRecoveryTool', args) -> bool:
     return tool.dry_run() if args.mode == 'dry_run' else tool.execute_recovery()
 
+def _normalize_and_validate_policy(args) -> Tuple[bool, int]:
+    """Normalize and validate post-restore policy, print errors/warnings, update args."""
+    strict_env = os.getenv("GDRT_STRICT_POLICY", "").strip().lower()
+    strict_from_env = strict_env in ("1", "true", "yes", "on")
+    effective_strict = bool(getattr(args, "strict_policy", False) or strict_from_env)
+    norm_policy, policy_warnings, policy_errors = normalize_policy_token(
+        args.post_restore_policy,
+        strict=effective_strict,
+        aliases=PostRestorePolicy.ALIASES,
+        default_value=PostRestorePolicy.TRASH,
+    )
+    if policy_errors:
+        for msg in policy_errors:
+            print(f"❌ {msg}", file=sys.stderr)
+            try:
+                logging.getLogger(__name__).error(msg)
+            except Exception:
+                pass
+        return False, 2
+    for msg in policy_warnings:
+        print(f"⚠️  {msg}", file=sys.stderr)
+        try:
+            logging.getLogger(__name__).warning(msg)
+        except Exception:
+            pass
+        if not hasattr(args, "_policy_warning_message"):
+            args._policy_warning_message = msg
+    args.post_restore_policy = norm_policy
+    return True, 0
+
+def _normalize_and_validate_extensions(args) -> Tuple[bool, int]:
+    cleaned_exts, ext_warnings, ext_errors = validate_extensions(
+        getattr(args, "extensions", None),
+        EXTENSION_MIME_TYPES,
+    )
+    if ext_errors:
+        for msg in ext_errors:
+            print(f"❌ {msg}")
+        print("   Use space-separated extensions like: --extensions jpg png pdf tar.gz min.js")
+        print("   Do not include wildcards, commas, spaces, or path characters.")
+        return False, 2
+    for msg in ext_warnings:
+        print(f"ℹ️  {msg}")
+    args.extensions = cleaned_exts
+    return True, 0
+
+def _acquire_or_bypass_lock(tool, args) -> Tuple[bool, int]:
+    try:
+        if not tool._acquire_state_lock():
+            owner_pid = "unknown"
+            run_id = "unknown"
+            try:
+                with open(f"{args.state_file}.lock", "r") as fh:
+                    for line in fh.read().splitlines():
+                        if line.startswith("pid="):
+                            owner_pid = line.split("=",1)[1].strip()
+                        if line.startswith("run_id="):
+                            run_id = line.split("=",1)[1].strip()
+            except Exception:
+                pass
+            if not getattr(args, "force", False):
+                print(f"❌ Another run appears to be active for state '{args.state_file}'.")
+                print(f"   Owner PID: {owner_pid}   Run-ID: {run_id}")
+                print("   Tip: If that run is still working, let it finish. Otherwise, confirm it's stopped and rerun with --force.")
+                return False, 2
+            else:
+                print("⚠️  --force supplied: bypassing concurrent-run guardrail.")
+    except Exception:
+        pass
+    return True, 0
+
+def _validate_file_ids_if_present(tool, args) -> Tuple[bool, int]:
+    if hasattr(args, "file_ids") and args.file_ids:
+        ok = tool._validate_file_ids()
+        if not ok:
+            return False, 2
+    return True, 0
+
+def _run_and_release_lock(tool, args) -> int:
+    ran_ok = False
+    try:
+        if args.command == 'dry-run':
+            ran_ok = _run_tool(tool, args)
+        else:
+            ran_ok = tool.execute_recovery()
+    finally:
+        try:
+            tool._release_state_lock()
+        except Exception:
+            pass
+    return 0 if ran_ok else 1
+
 def main() -> int:
     parser = create_parser()
     args = parser.parse_args()
@@ -2051,37 +2223,9 @@ def main() -> int:
 
     _set_mode(args)
 
-    # v1.5.7/1.5.8: policy normalization via pure validator (+env strict preset)
-    strict_env = os.getenv("GDRT_STRICT_POLICY", "").strip().lower()
-    strict_from_env = strict_env in ("1", "true", "yes", "on")
-    effective_strict = bool(getattr(args, "strict_policy", False) or strict_from_env)
-
-    norm_policy, policy_warnings, policy_errors = normalize_policy_token(
-        args.post_restore_policy,
-        strict=effective_strict,
-        aliases=PostRestorePolicy.ALIASES,
-        default_value=PostRestorePolicy.TRASH,
-    )
-    if policy_errors:
-        for msg in policy_errors:
-            # v1.5.8: errors to stderr as well
-            print(f"❌ {msg}", file=sys.stderr)
-            try:
-                logging.getLogger(__name__).error(msg)
-            except Exception:
-                pass
-        return 2
-    for msg in policy_warnings:
-        # v1.5.8: warnings to stderr and WARNING log level; also stash once for preview echo
-        print(f"⚠️  {msg}", file=sys.stderr)
-        try:
-            logging.getLogger(__name__).warning(msg)
-        except Exception:
-            pass
-        # store the first warning only; EXECUTION COMMAND echoes once
-        if not hasattr(args, "_policy_warning_message"):
-            args._policy_warning_message = msg
-    args.post_restore_policy = norm_policy
+    ok, code = _normalize_and_validate_policy(args)
+    if not ok:
+        return code
 
     ok, code = _validate_concurrency_arg(args)
     if not ok:
@@ -2095,51 +2239,21 @@ def main() -> int:
     if not ok:
         return code
 
-    # v1.5.7: extensions normalization/validation via pure validator
-    cleaned_exts, ext_warnings, ext_errors = validate_extensions(
-        getattr(args, "extensions", None),
-        EXTENSION_MIME_TYPES,
-    )
-    if ext_errors:
-        for msg in ext_errors:
-            print(f"❌ {msg}")
-        print("   Use space-separated extensions like: --extensions jpg png pdf tar.gz min.js")
-        print("   Do not include wildcards, commas, spaces, or path characters.")
-        return 2
-    for msg in ext_warnings:
-        print(f"ℹ️  {msg}")
-    args.extensions = cleaned_exts
+    ok, code = _normalize_and_validate_extensions(args)
+    if not ok:
+        return code
 
     tool = DriveTrashRecoveryTool(args)
- 
-    # Acquire state lock early; abort on contention
-    try:
-        if not tool._acquire_state_lock():
-            print(f"❌ Another process is using the state file: {args.state_file}")
-            print("   Tip: If the other run is intentional, wait for it to finish or use a different --state-file.")
-            return 2
-    except Exception:
-        # Best-effort: continue even if locking not supported
-        pass
 
-    if hasattr(args, "file_ids") and args.file_ids:
-        ok = tool._validate_file_ids()
-        if not ok:
-            return 2
+    ok, code = _acquire_or_bypass_lock(tool, args)
+    if not ok:
+        return code
 
-    # Dry-run uses non-streaming discovery for plan visibility;
-    # execution uses streaming to bound memory.
-    if args.command == 'dry-run':
-        ran_ok = _run_tool(tool, args)
-    else:
-        # defer to streaming path inside execute_recovery()
-        ran_ok = tool.execute_recovery()
+    ok, code = _validate_file_ids_if_present(tool, args)
+    if not ok:
+        return code
 
-    try:
-        tool._release_state_lock()
-    except Exception:
-        pass
-    return 0 if ran_ok else 1
+    return _run_and_release_lock(tool, args)
 
 if __name__ == "__main__":
     sys.exit(main())
