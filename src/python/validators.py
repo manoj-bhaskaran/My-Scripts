@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, List, Mapping, Sequence, Tuple
+from typing import Iterable, List, Mapping, Sequence, Tuple, Optional, Dict
 
 
 def _normalize_extension_token(token: str) -> str:
@@ -106,6 +106,39 @@ def validate_extensions(
 
     return deduped, warnings, []
 
+def _levenshtein(a: str, b: str) -> int:
+    """Simple Levenshtein distance (O(len(a)*len(b))) without external deps."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            ins = cur[j-1] + 1
+            dele = prev[j] + 1
+            sub = prev[j-1] + (ca != cb)
+            cur.append(min(ins, dele, sub))
+        prev = cur
+    return prev[-1]
+
+def _suggest_token(raw: str, candidates: Sequence[str]) -> Optional[str]:
+    """Return best suggestion within distance ≤ 2, else None."""
+    try:
+        key = re.sub(r'[\s_-]+', '', str(raw).strip().lower())
+    except Exception:
+        key = str(raw or "").strip().lower()
+    best: Tuple[int, Optional[str]] = (10**9, None)
+    for c in candidates:
+        d = _levenshtein(key, c)
+        if d < best[0]:
+            best = (d, c)
+            if d == 0:
+                break
+    return best[1] if best[0] <= 2 else None
 
 def normalize_policy_token(
     raw: str | None,
@@ -113,22 +146,36 @@ def normalize_policy_token(
     strict: bool,
     aliases: Mapping[str, str],
     default_value: str,
-) -> Tuple[str, List[str], List[str]]:
+) -> Tuple[str, List[str], List[str], Dict[str, dict]]:
     """
     Normalize a post-restore policy token using provided aliases.
 
-    Returns: (normalized_value, warnings, errors)
+    Returns: (normalized_value, warnings, errors, telemetry)
       - if strict and unknown -> errors contains message
       - if not strict and unknown -> fallback to default_value and warnings contains note
+      - telemetry includes an 'unknown_policy' object when unknown
     """
     if raw is None or raw == "":
-        return default_value, [], []
+        return default_value, [], [], {}
 
     key = re.sub(r'[\s_-]+', '', str(raw).strip().lower())
     if key in aliases:
-        return aliases[key], [], []
+        return aliases[key], [], [], {}
+
+    # Unknown token handling
+    suggestion = _suggest_token(key, list(aliases.keys()))
+    suggestion_text = f" Did you mean '{suggestion}'?" if suggestion else ""
+
+    telemetry = {"unknown_policy": {"token": str(raw), "normalized": key, "suggestion": suggestion}}
 
     if strict:
-        return default_value, [], [f"Unknown --post-restore-policy value '{raw}'. Use one of: retain | trash | delete (aliases allowed)."]
+        return default_value, [], [
+            f"Unknown --post-restore-policy value '{raw}'. Use one of: retain | trash | delete (aliases allowed).{suggestion_text}"
+        ], telemetry
 
-    return default_value, [f"Unknown --post-restore-policy '{raw}'. Falling back to '{default_value}'. (Tip: use --strict-policy to make this an error.)"], []
+    return (
+        default_value,
+        [f"Unknown --post-restore-policy '{raw}'. Falling back to '{default_value}'.{suggestion_text} (Tip: use --strict-policy to make this an error.)"],
+        [],
+        telemetry,
+    )

@@ -11,10 +11,22 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.6.1"
+__version__ = "1.6.2"
 
 # CHANGELOG
 """
+## [1.6.2] - 2025-09-22
+
+### Observability & Operator Safeguards
+- **Parity → observability:** Parity checker is now behind `--debug-parity` and emits a structured JSON metric
+  (counts & mismatch flag) to logs. Optional `--parity-metrics-file <path>` writes the same JSON to disk.
+- **CI enforcement:** `--fail-on-parity-mismatch` causes runs to exit non-zero when a parity mismatch is detected.
+- **Policy UX hints:** Unknown post-restore policies now include a “did you mean …?” suggestion (Levenshtein ≤ 2).
+  We also emit a structured metric for unknown tokens to help track frequency in logs.
+
+### Notes
+- Features are off by default; enable flags when needed. No behavior change for valid inputs.
+
 ## [1.6.1] - 2025-09-21
 
 ### Locking & Safety Hotfix
@@ -691,31 +703,57 @@ class DriveTrashRecoveryTool:
             err_count[0],
         )
 
-    def _assert_id_path_parity(self, buckets: Dict[str, List[str]], skipped_non_trashed: int, err_count: int) -> None:
+    def _emit_parity_metrics(self, buckets: Dict[str, List[str]], skipped_non_trashed: int, err_count: int) -> bool:
         """
-        Lightweight parity checks to catch regressions between the old two-pass flow
-        and the new merged path. Logs warnings if counts look inconsistent.
+        Compute and emit structured parity metrics. Returns True if mismatch detected.
         """
-        total_input = len(self.args.file_ids or [])
-        classified = sum(len(v) for v in buckets.values())
-        seen = classified + skipped_non_trashed + err_count
-        if total_input != seen:
-            self.logger.warning(
-                "Merged ID path parity check mismatch: total=%d, seen=%d (classified=%d, skipped_non_trashed=%d, errors=%d)",
-                total_input, seen, classified, skipped_non_trashed, err_count
-            )
+        try:
+            total_input = len(self.args.file_ids or [])
+            classified = sum(len(v) for v in buckets.values())
+            seen = classified + skipped_non_trashed + err_count
+            mismatch = (total_input != seen)
+            metrics = {
+                "metric": "parity_check",
+                "total_input": total_input,
+                "classified": classified,
+                "skipped_non_trashed": skipped_non_trashed,
+                "errors": err_count,
+                "seen": seen,
+                "mismatch": mismatch,
+            }
+            # Always emit a machine-parseable line in logs
+            self.logger.info("METRIC %s", json.dumps(metrics))
+            # Optionally write JSON to a file for CI/artifacts
+            out_file = getattr(self.args, "parity_metrics_file", None)
+            if out_file:
+                try:
+                    with open(out_file, "w") as fh:
+                        json.dump(metrics, fh, indent=2)
+                except Exception as e:
+                    self.logger.warning("Failed to write --parity-metrics-file '%s': %s", out_file, e)
+            # Human-friendly warning (only when mismatched and debug enabled)
+            if mismatch:
+                self.logger.warning(
+                    "Parity mismatch: total=%d, seen=%d (classified=%d, skipped_non_trashed=%d, errors=%d)",
+                    total_input, seen, classified, skipped_non_trashed, err_count
+                )
+            return mismatch
+        except Exception as e:
+            self.logger.debug("Parity metrics emission failed: %s", e)
+            return False
 
     def _validate_file_ids(self) -> bool:
         """Validate provided file IDs using single-pass metadata prefetch (merged path)."""
         if not self.args.file_ids:
             return True
         buckets, transient_errors, transient_ids, skipped_non_trashed, err_count = self._prefetch_ids_metadata(self.args.file_ids)
-        # Parity assertions are opt-in for debugging only
+        # Parity metrics are opt-in for debugging/CI only
+        mismatch = False
         if getattr(self.args, "debug_parity", False):
-            try:
-                self._assert_id_path_parity(buckets, skipped_non_trashed, err_count)
-            except Exception as e:
-                self.logger.warning(f"Parity checker raised unexpectedly: {e}")
+            mismatch = self._emit_parity_metrics(buckets, skipped_non_trashed, err_count)
+            if mismatch and getattr(self.args, "fail_on_parity_mismatch", False):
+                print("❌ Parity mismatch detected during validation (see logs/metrics).")
+                return False
         # Optional cache flush to avoid reusing validation-era caches
         if getattr(self.args, "clear_id_cache", False):
             self._clear_id_caches()
@@ -2085,6 +2123,9 @@ Concurrent-run guardrail (v1.6.0):
                                help='Enable validation/discovery parity checks (diagnostic logging)')
         subparser.add_argument('--clear-id-cache', action='store_true',
                                help='Clear file-id caches after validation (avoid cache reuse across phases)')
+        subparser.add_argument('--fail-on-parity-mismatch', action='store_true',
+                               help='Exit non-zero if a parity mismatch is detected (use with --debug-parity; useful in CI)')
+        subparser.add_argument('--parity-metrics-file', help='Write parity metrics JSON to this path')         
         subparser.add_argument('--strict-policy', action='store_true',
                                help='Treat unknown post-restore policy tokens as an error')
         subparser.add_argument('--limit', type=int, default=0,
@@ -2186,12 +2227,21 @@ def _normalize_and_validate_policy(args) -> Tuple[bool, int]:
     strict_env = os.getenv("GDRT_STRICT_POLICY", "").strip().lower()
     strict_from_env = strict_env in ("1", "true", "yes", "on")
     effective_strict = bool(getattr(args, "strict_policy", False) or strict_from_env)
-    norm_policy, policy_warnings, policy_errors = normalize_policy_token(
+    norm_policy, policy_warnings, policy_errors, telemetry = normalize_policy_token(
         args.post_restore_policy,
         strict=effective_strict,
         aliases=PostRestorePolicy.ALIASES,
         default_value=PostRestorePolicy.TRASH,
     )
+    # Emit structured telemetry for unknown tokens to help operators track frequency
+    try:
+        if telemetry and 'unknown_policy' in telemetry:
+            logging.getLogger(__name__).info("METRIC %s", json.dumps({
+                "metric": "unknown_policy_token",
+                **telemetry["unknown_policy"],
+            }))
+    except Exception:
+        pass
     if policy_errors:
         for msg in policy_errors:
             print(f"❌ {msg}", file=sys.stderr)
