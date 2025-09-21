@@ -11,11 +11,18 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.6.4"
+__version__ = "1.6.5"
 
 # CHANGELOG
 """
-## [1.6.4] - 2025-09-23
+## [1.6.5] - 2025-09-24
+
+### Streaming file-ID prefetch parity warnings
+- **Quieter by default:** Parity checker emits DEBUG-level logs instead of INFO.
+- **Clearer wording:** Log/console messages use concise “Parity check …” phrasing.
+- **Behavior unchanged:** Mismatch still warns; `--fail-on-parity-mismatch` continues to exit non-zero.
+
+## [1.6.4] - 2025-09-21
 
 ### State file evolution & compatibility
 - **Schema versioning:** RecoveryState now includes `"schema_version": 1`.
@@ -28,7 +35,7 @@ __version__ = "1.6.4"
   won’t understand v1 fields); behavior is read-tolerant but not write-preserving
   for unknown properties.
 
-## [1.6.3] - 2025-09-23
+## [1.6.3] - 2025-09-21
 
 ### HTTP transport polish & documentation
 - **Requests shim:** `_RequestsHttpAdapter` now exposes minimal, no-op attributes commonly found on `httplib2.Http`
@@ -48,7 +55,7 @@ __version__ = "1.6.4"
   (file sizes, concurrency, network), environment (CPU, NIC), and API quotas. Our ad-hoc tests were run on a
   multi-core VM against mixed small/medium binaries using per-thread pooled sessions.
 
-## [1.6.2] - 2025-09-22
+## [1.6.2] - 2025-09-21
 
 ### Observability & Operator Safeguards
 - **Parity → observability:** Parity checker is now behind `--debug-parity` and emits a structured JSON metric
@@ -799,7 +806,7 @@ class DriveTrashRecoveryTool:
             seen = classified + skipped_non_trashed + err_count
             mismatch = (total_input != seen)
             metrics = {
-                "metric": "parity_check",
+                "metric": "parity_check",  # v1.6.5 wording tightened
                 "total_input": total_input,
                 "classified": classified,
                 "skipped_non_trashed": skipped_non_trashed,
@@ -807,8 +814,9 @@ class DriveTrashRecoveryTool:
                 "seen": seen,
                 "mismatch": mismatch,
             }
-            # Always emit a machine-parseable line in logs
-            self.logger.info("METRIC %s", json.dumps(metrics))
+            # v1.6.5: emit at DEBUG by default to be quieter in normal runs
+            # (use -vv or --debug-parity to surface more detail)
+            self.logger.debug("METRIC %s", json.dumps(metrics))
             # Optionally write JSON to a file for CI/artifacts
             out_file = getattr(self.args, "parity_metrics_file", None)
             if out_file:
@@ -817,10 +825,10 @@ class DriveTrashRecoveryTool:
                         json.dump(metrics, fh, indent=2)
                 except Exception as e:
                     self.logger.warning("Failed to write --parity-metrics-file '%s': %s", out_file, e)
-            # Human-friendly warning (only when mismatched and debug enabled)
+            # v1.6.5: concise warning on mismatch (level WARNING), otherwise stay quiet
             if mismatch:
                 self.logger.warning(
-                    "Parity mismatch: total=%d, seen=%d (classified=%d, skipped_non_trashed=%d, errors=%d)",
+                    "Parity check mismatch: input=%d, seen=%d (classified=%d, skipped_non_trashed=%d, errors=%d).",
                     total_input, seen, classified, skipped_non_trashed, err_count
                 )
             return mismatch
@@ -838,7 +846,8 @@ class DriveTrashRecoveryTool:
         if getattr(self.args, "debug_parity", False):
             mismatch = self._emit_parity_metrics(buckets, skipped_non_trashed, err_count)
             if mismatch and getattr(self.args, "fail_on_parity_mismatch", False):
-                print("❌ Parity mismatch detected during validation (see logs/metrics).")
+                # v1.6.5: clearer console hint
+                print("❌ Parity check failed during ID prefetch. See logs (use -vv) or --parity-metrics-file.")
                 return False
         # Optional cache flush to avoid reusing validation-era caches
         if getattr(self.args, "clear_id_cache", False):
