@@ -97,6 +97,7 @@ def validate_extensions(
             "Note: unknown extension(s) will not narrow server-side queries; "
             "client-side filename filtering will apply instead: " + ", ".join(unknown)
         )
+        # (v1.5.8) Messaging unchanged; emission behavior handled by caller (stderr/log level).
         if any('.' in e for e in unknown):
             warnings.append(
                 "Multi-segment extensions (e.g., tar.gz) are matched client-side against the full suffix; "

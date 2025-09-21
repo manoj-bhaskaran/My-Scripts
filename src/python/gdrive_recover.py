@@ -11,10 +11,21 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.5.7"
+__version__ = "1.5.8"
 
 # CHANGELOG
 """
+## [1.5.8] - 2025-09-28
+
+### Policy Normalization UX
+- **Warning surfacing:** unknown post-restore policy warnings now go to **stderr** and
+  are logged at **WARNING** level. The warning is surfaced **again** once in the
+  **EXECUTION COMMAND** preview section for visibility amidst stdout noise.
+- **Strict-by-opt-in preset:** `--strict-policy` remains opt-in. You can now also
+  enable strict mode via environment variable `GDRT_STRICT_POLICY=1` (handy for CI).
+  In strict mode, an unknown policy exits with code `2`; otherwise the fallback to
+  the default remains functional.
+
 ## [1.5.7] - 2025-09-26
 
 ### Extension Semantics & Validation Cohesion
@@ -151,6 +162,7 @@ except ImportError:
     print("Install with: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib")
     sys.exit(1)
 
+# Environment toggle for strict policy (v1.5.8)
 # Configuration constants
 SCOPES = ['https://www.googleapis.com/auth/drive']
 DEFAULT_STATE_FILE = 'gdrive_recovery_state.json'
@@ -1154,7 +1166,17 @@ class DriveTrashRecoveryTool:
         self._add_verbosity_arguments(cmd_parts)
         print("To execute this plan, run:")
         print(f"  {' '.join(cmd_parts)}")
-    
+
+        # v1.5.8: Repeat unknown-policy warning once in the EXECUTION COMMAND section
+        warn_msg = getattr(self.args, "_policy_warning_message", None)
+        if warn_msg:
+            # Log at WARNING and emit to stderr for visibility amid stdout noise.
+            try:
+                self.logger.warning(warn_msg)
+            except Exception:
+                pass
+            print(f"⚠️  {warn_msg}", file=sys.stderr)
+
     def _add_file_arguments(self, cmd_parts: List[str]):
         if self.args.after_date:
             cmd_parts.extend(['--after-date', self.args.after_date])
@@ -1844,6 +1866,12 @@ Rate Limiting:
   Set --max-rps 0 to disable throttling entirely. Execution progress lines respect -v;
   summaries always print.
 
+Policy Normalization UX (v1.5.8):
+  * Unknown policy warnings print to **stderr** and log at WARNING.
+  * Warning is repeated once in the EXECUTION COMMAND preview.
+  * Strict mode remains opt-in: use --strict-policy or set env GDRT_STRICT_POLICY=1
+    (useful in CI). In strict mode, unknown policy exits with code 2.
+
 Extension Filtering Semantics (v1.5.7):
   * Multi-segment tokens like 'tar.gz' or 'min.js' are accepted.
   * Server-side MIME narrowing uses the LAST segment (e.g., 'gz', 'js') when it is
@@ -1979,19 +2007,36 @@ def main() -> int:
 
     _set_mode(args)
 
-    # v1.5.7: policy normalization via pure validator
+    # v1.5.7/1.5.8: policy normalization via pure validator (+env strict preset)
+    strict_env = os.getenv("GDRT_STRICT_POLICY", "").strip().lower()
+    strict_from_env = strict_env in ("1", "true", "yes", "on")
+    effective_strict = bool(getattr(args, "strict_policy", False) or strict_from_env)
+
     norm_policy, policy_warnings, policy_errors = normalize_policy_token(
         args.post_restore_policy,
-        strict=getattr(args, "strict_policy", False),
+        strict=effective_strict,
         aliases=PostRestorePolicy.ALIASES,
         default_value=PostRestorePolicy.TRASH,
     )
     if policy_errors:
         for msg in policy_errors:
-            print(f"❌ {msg}")
+            # v1.5.8: errors to stderr as well
+            print(f"❌ {msg}", file=sys.stderr)
+            try:
+                logging.getLogger(__name__).error(msg)
+            except Exception:
+                pass
         return 2
     for msg in policy_warnings:
-        print(f"⚠️  {msg}")
+        # v1.5.8: warnings to stderr and WARNING log level; also stash once for preview echo
+        print(f"⚠️  {msg}", file=sys.stderr)
+        try:
+            logging.getLogger(__name__).warning(msg)
+        except Exception:
+            pass
+        # store the first warning only; EXECUTION COMMAND echoes once
+        if not hasattr(args, "_policy_warning_message"):
+            args._policy_warning_message = msg
     args.post_restore_policy = norm_policy
 
     ok, code = _validate_concurrency_arg(args)
