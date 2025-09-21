@@ -11,10 +11,20 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.5.4"
+__version__ = "1.5.5"
 
 # CHANGELOG
 """
+## [1.5.5] - 2025-09-21
+
+### Throughput & Safety
+- **Rate limiter lock granularity:** token acquisition now uses a short critical section with
+  double-checked token consumption; any required sleep happens **outside** the lock.
+- **Monotonic timing:** switch limiter timestamps to `time.monotonic()` for correctness across clock changes.
+- **Stable capacity:** token-bucket capacity is initialized once (no per-refill resets).
+- **Diagnostics:** new `--rl-diagnostics` to emit sampled limiter stats at DEBUG (tokens, capacity, observed RPS).
+  Helps validate that RPS stays within ±10% of `--max-rps` over a 60s window.
+
 ## [1.5.4] - 2025-09-20
 
 ### Safety & Hotfixes
@@ -228,9 +238,15 @@ class DriveTrashRecoveryTool:
         # rate limiting
         self._tb_tokens: float = 0.0
         self._tb_capacity: float = 0.0
-        self._tb_last_refill: Optional[float] = None
+        self._tb_last_refill: Optional[float] = None  # monotonic seconds
+        self._tb_initialized: bool = False
         self._rl_lock = Lock()
-        self._last_request_ts: Optional[float] = None
+        self._last_request_ts: Optional[float] = None  # monotonic seconds
+        # rl diagnostics
+        self._rl_diag_enabled: bool = bool(getattr(args, "rl_diagnostics", False))
+        self._rl_calls: int = 0
+        self._rl_window_start: Optional[float] = None  # monotonic
+        self._rl_diag_last_log: Optional[float] = None
         self.stats = {
             'found': 0,
             'recovered': 0,
@@ -277,41 +293,75 @@ class DriveTrashRecoveryTool:
             return  # disabled
         burst = int(getattr(self.args, "burst", DEFAULT_BURST) or 0)
 
-        now = time.time()
-        with self._rl_lock:
-            if burst > 0:
-                # Token bucket: refill
-                if self._tb_last_refill is None:
+        now = time.monotonic()
+        if burst > 0:
+            # Token bucket with short critical section; sleep outside lock.
+            while True:
+                sleep_for = 0.0
+                with self._rl_lock:
+                    if not self._tb_initialized:
+                        self._tb_capacity = float(burst)
+                        self._tb_tokens = self._tb_capacity
+                        self._tb_last_refill = now
+                        self._tb_initialized = True
+                    # Refill
+                    elapsed = max(0.0, now - (self._tb_last_refill or now))
                     self._tb_last_refill = now
-                    self._tb_capacity = float(burst)
-                    self._tb_tokens = float(burst)
-                else:
-                    elapsed = max(0.0, now - self._tb_last_refill)
-                    self._tb_last_refill = now
-                    self._tb_capacity = float(burst)
                     self._tb_tokens = min(self._tb_capacity, self._tb_tokens + elapsed * max_rps)
-                # Acquire a token; if none available, sleep until one is.
-                if self._tb_tokens < 1.0:
+                    if self._tb_tokens >= 1.0:
+                        # Fast path: consume and go
+                        self._tb_tokens -= 1.0
+                        tokens_snapshot = self._tb_tokens
+                        cap_snapshot = self._tb_capacity
+                        break
+                    # Need to wait for the next token; compute sleep without holding lock
                     deficit = 1.0 - self._tb_tokens
-                    sleep_for = deficit / max_rps
-                    time.sleep(max(0.0, sleep_for))
-                    # After sleep, account for one token.
-                    now = time.time()
-                    elapsed = max(0.0, now - self._tb_last_refill)
-                    self._tb_last_refill = now
-                    self._tb_tokens = min(self._tb_capacity, self._tb_tokens + elapsed * max_rps)
-                # consume one token
-                self._tb_tokens = max(0.0, self._tb_tokens - 1.0)
-                return
-            # Legacy fixed-interval pacing
-            min_interval = 1.0 / max_rps
-            if self._last_request_ts is None:
-                self._last_request_ts = now
-                return
-            delta = now - self._last_request_ts
-            if delta < min_interval:
-                time.sleep(min_interval - delta)
-            self._last_request_ts = time.time()
+                    sleep_for = max(0.0, deficit / max_rps)
+                if sleep_for > 0:
+                    time.sleep(sleep_for)
+                now = time.monotonic()
+            self._rl_diag_tick(max_rps, tokens_snapshot, cap_snapshot)
+            return
+        # Legacy fixed-interval pacing with monotonic time and minimal lock
+        min_interval = 1.0 / max_rps
+        while True:
+            delay = 0.0
+            with self._rl_lock:
+                last = self._last_request_ts
+                if last is None or (now - last) >= min_interval:
+                    self._last_request_ts = now
+                    break
+                delay = max(0.0, min_interval - (now - last))
+            if delay > 0.0:
+                time.sleep(delay)
+            now = time.monotonic()
+        self._rl_diag_tick(max_rps, -1.0, -1.0)
+
+    def _rl_diag_tick(self, max_rps: float, tokens_snapshot: float, cap_snapshot: float) -> None:
+        """Emit sampled diagnostics for the rate limiter when enabled and DEBUG logging is active."""
+        if not self._rl_diag_enabled or not self.logger.isEnabledFor(logging.DEBUG):
+            return
+        now = time.monotonic()
+        self._rl_calls += 1
+        if self._rl_window_start is None:
+            self._rl_window_start = now
+            self._rl_diag_last_log = now
+            return
+        window = max(1e-6, now - self._rl_window_start)
+        # Log every ~5s to avoid spam
+        if (self._rl_diag_last_log is None) or (now - self._rl_diag_last_log >= 5.0):
+            observed_rps = self._rl_calls / window
+            if tokens_snapshot >= 0.0:
+                self.logger.debug(
+                    "RL diag: observed_rps=%.2f target=%.2f tokens=%.2f cap=%.2f window=%.1fs",
+                    observed_rps, max_rps, tokens_snapshot, cap_snapshot, window
+                )
+            else:
+                self.logger.debug(
+                    "RL diag: observed_rps=%.2f target=%.2f mode=fixed-interval window=%.1fs",
+                    observed_rps, max_rps, window
+                )
+            self._rl_diag_last_log = now
 
     def _execute(self, request):
         """Execute a googleapiclient request with rate limiting."""
@@ -1609,6 +1659,7 @@ Concurrency Tuning:
 
 Rate Limiting:
   --max-rps caps average request rate. Enable burst absorption with --burst N (token bucket).
+  Use --rl-diagnostics and -vv to log sampled limiter stats (tokens, capacity, observed RPS).
   Set --max-rps 0 to disable throttling entirely. Execution progress lines respect -v;
   summaries always print.
 """
@@ -1656,6 +1707,9 @@ Rate Limiting:
         subparser.add_argument('--single-client', dest='client_per_thread',
                                action='store_false',
                                help='Use a single shared Drive API client (advanced)')
+        # v1.5.5: rate limiter diagnostics
+        subparser.add_argument('--rl-diagnostics', action='store_true',
+                               help='Emit sampled rate-limiter stats at DEBUG level')
     return parser
     
 def _set_mode(args) -> None:
