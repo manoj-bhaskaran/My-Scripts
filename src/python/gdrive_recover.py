@@ -11,10 +11,19 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.5.5"
+__version__ = "1.5.6"
 
 # CHANGELOG
 """
+## [1.5.6] - 2025-09-24
+
+### Memory Footprint & Streaming
+- **Discovery streaming:** add `--process-batch-size N` (default 500). Items are
+  discovered and processed in rolling batches (recover/download/post-restore),
+  then released from memory before fetching the next batch.
+- **Bounded RSS:** peak memory scales with batch size, not total set size.
+  On 200k items with N=500, RSS remains stable (document target).
+
 ## [1.5.5] - 2025-09-21
 
 ### Throughput & Safety
@@ -131,6 +140,7 @@ except ImportError:
 SCOPES = ['https://www.googleapis.com/auth/drive']
 DEFAULT_STATE_FILE = 'gdrive_recovery_state.json'
 DEFAULT_LOG_FILE = 'gdrive_recovery.log'
+DEFAULT_PROCESS_BATCH = 500
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
 PAGE_SIZE = 1000
@@ -261,6 +271,9 @@ class DriveTrashRecoveryTool:
         self.state = RecoveryState()
         self.items: List[RecoveryItem] = []
         # progress throttles
+        self._streaming: bool = False
+        self._processed_total: int = 0
+        self._seen_total: int = 0
         self._last_discover_progress_ts: Optional[float] = None
         self._last_exec_progress_ts: Optional[float] = None
         # cache for merged ID validation+discovery
@@ -832,6 +845,11 @@ class DriveTrashRecoveryTool:
         return items
 
     def discover_trashed_files(self) -> List[RecoveryItem]:
+        """
+        Non-streaming discovery used primarily by dry-run. For execution we prefer
+        streaming to bound memory. Callers that need bounded memory should use
+        `_process_streaming()` instead of filling `self.items`.
+        """
         print("🔍 Discovering trashed files...")
         if self.args.file_ids:
             items = self._discover_via_ids()
@@ -1439,6 +1457,7 @@ class DriveTrashRecoveryTool:
     def _initialize_recovery_state(self):
         if not self.state.start_time:
             self.state.start_time = datetime.now(timezone.utc).isoformat()
+            # In streaming mode total_found will be updated incrementally.
             self.state.total_found = len(self.items)
     
     def _process_all_items(self) -> bool:
@@ -1453,7 +1472,26 @@ class DriveTrashRecoveryTool:
         self._save_state()
         self._print_summary(time.time() - start_time)
         return True
-    
+
+    def _process_streaming(self) -> bool:
+        """Stream discovery and process in bounded batches to limit memory usage."""
+        self._streaming = True
+        batch_n = int(getattr(self.args, "process_batch_size", DEFAULT_PROCESS_BATCH) or DEFAULT_PROCESS_BATCH)
+        print(f"\n🚀 Streaming execution with batch size {batch_n} and {self.args.concurrency} workers...")
+        start_time = time.time()
+        try:
+            if self.args.file_ids:
+                ok = self._stream_stream_ids(batch_n, start_time)
+            else:
+                ok = self._stream_stream_query(batch_n, start_time)
+        except KeyboardInterrupt:
+            print("\n⚠️  Operation interrupted. State saved for resume.")
+            self._save_state()
+            return False
+        self._save_state()
+        self._print_summary(time.time() - start_time)
+        return ok    
+
     def _run_parallel_processing(self, start_time: float):
         processed_count = 0
         with ThreadPoolExecutor(max_workers=self.args.concurrency) as executor:
@@ -1462,7 +1500,43 @@ class DriveTrashRecoveryTool:
                 item = future_to_item[future]
                 processed_count += 1
                 self._handle_item_result(future, item, processed_count, start_time)
-    
+
+    def _run_parallel_processing_for_batch(self, batch: List[RecoveryItem], start_time: float):
+        """Run the worker pool for a single batch and drop references afterward."""
+        with ThreadPoolExecutor(max_workers=self.args.concurrency) as executor:
+            future_to_item = {executor.submit(self._process_item, item): item for item in batch}
+            for future in as_completed(future_to_item):
+                item = future_to_item[future]
+                self._processed_total += 1
+                self._handle_item_result_stream(future, item, start_time)
+        # Drop references to allow GC and keep RSS bounded
+        batch.clear()
+
+    def _handle_item_result_stream(self, future, item: RecoveryItem, start_time: float):
+        try:
+            future.result()
+            if self.args.verbose >= 1:
+                now = time.time()
+                due_time = (self._last_exec_progress_ts is None) or ((now - self._last_exec_progress_ts) >= 10)
+                if due_time:
+                    self._print_stream_progress(start_time)
+                    self._last_exec_progress_ts = now
+            if self._processed_total % 100 == 0:
+                self._save_state()
+        except Exception as e:
+            self.logger.error(f"Unexpected error processing {item.name}: {e}")
+            with self.stats_lock:
+                self.stats['errors'] += 1
+
+    def _print_stream_progress(self, start_time: float):
+        elapsed = time.time() - start_time
+        rate = self._processed_total / elapsed if elapsed > 0 else 0
+        if self.args.file_ids:
+            pct = (self._processed_total / max(1, len(self.args.file_ids)) * 100.0)
+            print(f"📈 Progress: {self._processed_total}/{len(self.args.file_ids)} ({pct:.1f}%) Rate: {rate:.1f}/sec")
+        else:
+            print(f"📈 Progress: processed={self._processed_total} discovered={self._seen_total} Rate: {rate:.1f}/sec")
+ 
     def _handle_item_result(self, future, item: RecoveryItem, processed_count: int, start_time: float):
         try:
             future.result()
@@ -1490,6 +1564,81 @@ class DriveTrashRecoveryTool:
               f"({pct:.1f}%) "
               f"Rate: {rate:.1f}/sec ETA: {eta:.0f}s")
 
+    # ---- Streaming discovery helpers ----
+    def _stream_stream_query(self, batch_n: int, start_time: float) -> bool:
+        """Paginate Drive query, process items in rolling batches, and release memory."""
+        ok = True
+        page_token: Optional[str] = None
+        query = self._build_query()
+        self.logger.info(f"Using query (streaming): {query}")
+        batch: List[RecoveryItem] = []
+        page_count = 0
+        try:
+            while True:
+                page_count += 1
+                files, page_token = self._fetch_files_page(query, page_token)
+                for fd in files:
+                    item = self._process_file_data(fd)
+                    if item:
+                        # Lazily compute target path to avoid holding big strings early
+                        if self.args.mode == 'recover_and_download' and not item.target_path:
+                            item.target_path = self._generate_target_path(item)
+                        batch.append(item)
+                        self._seen_total += 1
+                        self.stats['found'] += 1
+                        if len(batch) >= batch_n:
+                            self._run_parallel_processing_for_batch(batch, start_time)
+                    if self.args.limit and self.args.limit > 0 and self._seen_total >= self.args.limit:
+                        break
+                if self.args.verbose >= 1:
+                    print(f"Found {len(files)} files in page {page_count} (streamed total: {self._seen_total})")
+                if (self.args.limit and self.args.limit > 0 and self._seen_total >= self.args.limit) or (not page_token):
+                    break
+        except Exception as e:
+            ok = False
+            self.logger.error(f"Error in streaming discovery: {e}")
+        # flush tail
+        if batch:
+            self._run_parallel_processing_for_batch(batch, start_time)
+        return ok
+
+    def _stream_stream_ids(self, batch_n: int, start_time: float) -> bool:
+        """Stream over provided file IDs, fetch minimal metadata, and process in batches."""
+        ok = True
+        batch: List[RecoveryItem] = []
+        fields = self._id_discovery_fields()
+        service = self._get_service()
+        total_ids = len(self.args.file_ids or [])
+        start_ts = time.time()
+        for idx, fid in enumerate(self.args.file_ids, start=1):
+            # Prefer prefetched cache from validation step when present
+            data = self._id_prefetch.get(fid)
+            if data is None:
+                try:
+                    data = self._execute(service.files().get(fileId=fid, fields=fields))
+                except Exception as e:
+                    self.logger.error(f"Error fetching metadata for {fid}: {e}")
+                    with self.stats_lock:
+                        self.stats['errors'] += 1
+                    continue
+            item = self._process_file_data(data)  # may return None if filtered/non-trashed
+            if item:
+                if self.args.mode == 'recover_and_download' and not item.target_path:
+                    item.target_path = self._generate_target_path(item)
+                batch.append(item)
+                self._seen_total += 1
+                self.stats['found'] += 1
+                if len(batch) >= batch_n:
+                    self._run_parallel_processing_for_batch(batch, start_time)
+            if self.args.verbose >= 1:
+                now = time.time()
+                if (now - start_ts) >= 10:
+                    print(f"Processing IDs: {idx}/{total_ids} (streamed total: {self._seen_total})")
+                    start_ts = now
+        if batch:
+            self._run_parallel_processing_for_batch(batch, start_time)
+        return ok
+
     def _progress_interval(self, total: int) -> int:
         if total <= 0:
             return 5
@@ -1499,16 +1648,29 @@ class DriveTrashRecoveryTool:
         success, has_files = self._prepare_recovery()
         if not success:
             return False
-        if not has_files:
-            return True
-        if not self._get_safety_confirmation():
+        # In streaming mode we may not pre-populate items; only require discovery
+        # ahead of time for dry-run.
+        streaming_mode = (self.args.mode != 'dry_run')
+        if streaming_mode:
+            # We may know the count if --file-ids is supplied
+            est = len(self.args.file_ids) if self.args.file_ids else None
+            if self.args.yes:
+                confirmed = True
+            else:
+                msg = f"\nProceed to {', '.join(self._build_action_list())}"
+                msg += f" for ~{est} files? (y/N): " if est else " in streaming mode? (y/N): "
+                confirmed = input(msg).strip().lower() == 'y'
+            if not confirmed:
+                print("Operation cancelled.")
+                return False
+            self._initialize_recovery_state()
+            try:
+                return self._process_streaming()
+            finally:
+                self._release_state_lock()
+        if not has_files:  # non-streaming (dry-run) path
             return False
-        self._initialize_recovery_state()
-        try:
-            return self._process_all_items()
-        finally:
-            # Always release state lock
-            self._release_state_lock()
+        return True
     
     def _print_summary(self, elapsed_time: float):
         print("\n" + "="*80)
@@ -1662,6 +1824,12 @@ Rate Limiting:
   Use --rl-diagnostics and -vv to log sampled limiter stats (tokens, capacity, observed RPS).
   Set --max-rps 0 to disable throttling entirely. Execution progress lines respect -v;
   summaries always print.
+
+Memory & Streaming (v1.5.6):
+  Execution now supports streaming discovery with bounded memory usage. Use
+  --process-batch-size to control how many items are resident at once. Batches
+  are fully processed (recover/download/post-restore) before the next batch is
+  fetched.
 """
     )
     
@@ -1694,6 +1862,8 @@ Rate Limiting:
                                help='Cap the number of items to discover/process (0 = no cap)')
         subparser.add_argument('--state-file', default=DEFAULT_STATE_FILE,
                                help='State file for resume capability')
+        subparser.add_argument('--process-batch-size', type=int, default=DEFAULT_PROCESS_BATCH,
+                               help='Streaming batch size for execution; items are processed and released per-batch')
         subparser.add_argument('--log-file', default=DEFAULT_LOG_FILE,
                                help='Log file path')
         subparser.add_argument('--verbose', '-v', action='count', default=0,
@@ -1903,7 +2073,14 @@ def main() -> int:
         if not ok:
             return 2
 
-    ran_ok = _run_tool(tool, args)
+    # Dry-run uses non-streaming discovery for plan visibility;
+    # execution uses streaming to bound memory.
+    if args.command == 'dry-run':
+        ran_ok = _run_tool(tool, args)
+    else:
+        # defer to streaming path inside execute_recovery()
+        ran_ok = tool.execute_recovery()
+
     try:
         tool._release_state_lock()
     except Exception:
