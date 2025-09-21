@@ -11,10 +11,22 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.6.0"
+__version__ = "1.6.1"
 
 # CHANGELOG
 """
+## [1.6.1] - 2025-09-21
+
+### Locking & Safety Hotfix
+- **Fail-closed locking:** `_acquire_state_lock()` no longer returns success on unexpected exceptions. It now logs an error and returns **False**.
+- **Lock verification:** After acquiring and writing the lock file, the code re-reads the file to verify the current PID and run-id were persisted; mismatches cause the acquire to fail.
+- **PID liveness hint:** When a lock is held, startup now checks whether the recorded PID appears alive and surfaces a user-visible message. If the PID is not alive, the message suggests retrying with `--force` to take over the stale lock.
+- **Safer file writes:** The lock file write is followed by `flush()` and `os.fsync()` to reduce the chance of truncated lock metadata on crash.
+
+### Notes
+- This release focuses on correctness and diagnostics and does not change the semantics of `--force` (still required to bypass a held lock).
+
+
 ## [1.6.0] - 2025-09-21
 
 ### Architectural Quality-of-Life (optional minor)
@@ -516,6 +528,29 @@ class DriveTrashRecoveryTool:
             self.logger.debug(f"Could not mark token.json hidden on Windows: {e}")
     
     # -------------------- File-ID validation & merged discovery helpers --------------------
+    def _pid_is_alive(self, pid: int) -> bool:
+        """
+        Best-effort check whether a PID appears to be alive.
+        Returns True if the process likely exists, False if it likely does not.
+        Never raises.
+        """
+        try:
+            if pid is None or int(pid) <= 0:
+                return False
+            # Windows
+            try:
+                import ctypes
+                PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+                handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+                if handle:
+                    ctypes.windll.kernel32.CloseHandle(handle)
+                    return True
+                return False
+            except Exception:
+                return False
+        except Exception:
+            return False
+
     def _is_valid_file_id_format(self, file_id: str) -> bool:
         """Quick format check: Drive IDs are 25+ chars, [A-Za-z0-9_-]."""
         return re.match(r'[a-zA-Z0-9_-]{25,}$', file_id) is not None
@@ -1298,7 +1333,7 @@ class DriveTrashRecoveryTool:
                     fcntl.flock(self._state_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except OSError:
                     return False
-            # write owner pid for diagnostics
+            # write owner pid for diagnostics and run-id for correlation
             try:
                 self._state_lock_fh.seek(0)
                 self._state_lock_fh.truncate(0)
@@ -1306,12 +1341,36 @@ class DriveTrashRecoveryTool:
                 pid = os.getpid()
                 self._state_lock_fh.write(f"pid={pid}\nrun_id={rid}\n")
                 self._state_lock_fh.flush()
+                try:
+                    os.fsync(self._state_lock_fh.fileno())
+                except Exception:
+                    # Best-effort; not fatal if fsync is unavailable
+                    pass
+                # Verify lock metadata was persisted as expected
+                try:
+                    self._state_lock_fh.seek(0)
+                    content = self._state_lock_fh.read()
+                except Exception:
+                    content = ""
+                expected_pid = f"pid={pid}"
+                expected_rid = f"run_id={rid}"
+                if (expected_pid not in content) or (expected_rid not in content):
+                    self.logger.error(
+                        "Lock verification failed: expected pid/run_id not present in lock file content."
+                    )
+                    return False
             except Exception:
-                pass
+                # If we cannot persist/verify lock metadata, fail closed
+                self.logger.error("Failed to write/verify lock metadata; refusing to proceed.")
+                return False
             return True
         except Exception as e:
-            self.logger.warning(f"State lock warning: {e}")
-            return True  # best-effort
+            # Fail-closed instead of best-effort success
+            try:
+                self.logger.error(f"State lock error: {e}")
+            except Exception:
+                pass
+            return False
  
     def _release_state_lock(self) -> None:
         try:
@@ -2180,15 +2239,28 @@ def _acquire_or_bypass_lock(tool, args) -> Tuple[bool, int]:
                             owner_pid = line.split("=",1)[1].strip()
                         if line.startswith("run_id="):
                             run_id = line.split("=",1)[1].strip()
+                # Best-effort liveness hint
+                try:
+                    pid_int = int(owner_pid)
+                    if not tool._pid_is_alive(pid_int):
+                        pid_alive_note = " (note: recorded PID does not appear to be running)"
+                except Exception:
+                    pass
             except Exception:
                 pass
             if not getattr(args, "force", False):
                 print(f"❌ Another run appears to be active for state '{args.state_file}'.")
-                print(f"   Owner PID: {owner_pid}   Run-ID: {run_id}")
-                print("   Tip: If that run is still working, let it finish. Otherwise, confirm it's stopped and rerun with --force.")
+                print(f"   Owner PID: {owner_pid}{pid_alive_note}   Run-ID: {run_id}")
+                if pid_alive_note:
+                    print("   The lock looks stale. If you're sure the previous process is gone, rerun with --force to take over.")
+                else:
+                    print("   Tip: If that run is still working, let it finish. Otherwise, confirm it's stopped and rerun with --force.")
                 return False, 2
             else:
-                print("⚠️  --force supplied: bypassing concurrent-run guardrail.")
+                if pid_alive_note:
+                    print("⚠️  --force supplied: taking over a **stale** lock (previous PID not detected).")
+                else:
+                    print("⚠️  --force supplied: bypassing concurrent-run guardrail.")
     except Exception:
         pass
     return True, 0
