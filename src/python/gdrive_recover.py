@@ -11,10 +11,23 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.6.3"
+__version__ = "1.6.4"
 
 # CHANGELOG
 """
+## [1.6.4] - 2025-09-23
+
+### State file evolution & compatibility
+- **Schema versioning:** RecoveryState now includes `"schema_version": 1`.
+- **Backward/forward compatible loader:** Unknown JSON fields are ignored; missing
+  new fields fall back to dataclass defaults.
+- **One-time migration note:** When loading a state without `schema_version` (treated
+  as v0), the tool prints a single informational message and logs a warning; the file
+  is written back with `schema_version: 1` on the next save.
+- **Docs:** Downgrading to older versions may drop unknown fields (older versions
+  won’t understand v1 fields); behavior is read-tolerant but not write-preserving
+  for unknown properties.
+
 ## [1.6.3] - 2025-09-23
 
 ### HTTP transport polish & documentation
@@ -101,7 +114,7 @@ import random
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple, Optional
 from pathlib import Path
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock, local
 import sys
@@ -198,6 +211,7 @@ class RecoveryItem:
 @dataclass
 class RecoveryState:
     """Persistent state for resume capability."""
+    schema_version: int = 1  # v1.6.4: add schema versioning (v1); v0 implied if missing on load
     total_found: int = 0
     processed_items: Optional[List[str]] = None  # List of processed file IDs
     start_time: str = ""
@@ -1404,7 +1418,46 @@ class DriveTrashRecoveryTool:
         try:
             with open(self.args.state_file, 'r') as f:
                 data = json.load(f)
-                self.state = RecoveryState(**data)
+
+            # v1.6.4: tolerate unknown fields & migrate schema v0→v1
+            # - Unknown keys are ignored (forward-compat tolerant)
+            # - Missing fields take dataclass defaults (back-compat tolerant)
+            raw_version = 0
+            try:
+                raw_version = int(data.get('schema_version', 0) or 0)
+            except Exception:
+                raw_version = 0
+
+            # Filter to known RecoveryState fields
+            rs_fields = {f.name for f in fields(RecoveryState)}
+            known_kwargs = {k: v for k, v in data.items() if k in rs_fields}
+
+            # Construct state with known fields; defaults apply to any missing
+            self.state = RecoveryState(**known_kwargs)  # type: ignore[arg-type]
+
+            # If legacy (v0), migrate in-memory and warn once; next save writes v1
+            if raw_version == 0:
+                # Promote to v1 in-memory
+                self.state.schema_version = 1
+                msg = (
+                    "Loaded legacy state (schema v0). This will be upgraded to schema v1 "
+                    "on next save for better compatibility."
+                )
+                print(f"ℹ️  {msg}")
+                try:
+                    self.logger.warning("State schema v0 detected; promoting to v1 on next save.")
+                except Exception:
+                    pass
+            elif raw_version != self.state.schema_version:
+                # Preserve detected version number when newer, but proceed
+                # (we still ignore unknown fields by design).
+                try:
+                    self.logger.info("Loaded state with schema v%d; proceeding with tolerant parsing.", raw_version)
+                except Exception:
+                    pass
+                # Keep the in-memory version at our current writer version to ensure saves use v1.
+                self.state.schema_version = 1
+
             print(f"📂 Loaded previous state: {len(self.state.processed_items)} items already processed")
             return True
         except HttpError as e:
@@ -1506,6 +1559,11 @@ class DriveTrashRecoveryTool:
         try:
              tmp_path = f"{self.args.state_file}.tmp"
              with open(tmp_path, 'w') as f:
+                 # v1.6.4: ensure schema version is present on save
+                 try:
+                     self.state.schema_version = int(getattr(self.state, "schema_version", 0) or 1)
+                 except Exception:  # best-effort guard
+                     self.state.schema_version = 1
                  json.dump(asdict(self.state), f, indent=2)
                  f.flush()
                  os.fsync(f.fileno())
