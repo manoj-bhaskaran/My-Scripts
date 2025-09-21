@@ -9,13 +9,22 @@ This tool provides:
 - Comprehensive Dry Run mode with full planning and privilege validation
 - Resume capability for interrupted operations
 - Progress tracking and detailed summaries
+
+Requirements:
+- Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`) 
 """
 
-__version__ = "1.6.5"
+__version__ = "1.6.6"
 
 # CHANGELOG
 """
-## [1.6.5] - 2025-09-24
+## [1.6.6] - 2025-09-21
+
+### Docs (rolling)
+- Explicitly state Python **3.10+** requirement (PEP 604 unions) in header and --help epilog; note applies to `validators.py`.
+- Add quick nudge in --help epilog to see README “Compatibility” for transport/library version matrix.
+
+## [1.6.5] - 2025-09-21
 
 ### Streaming file-ID prefetch parity warnings
 - **Quieter by default:** Parity checker emits DEBUG-level logs instead of INFO.
@@ -569,11 +578,10 @@ class DriveTrashRecoveryTool:
         self.logger.info(f"Authenticated as: {about.get('user', {}).get('emailAddress', 'Unknown')}")
         # Best-effort adapter smoke tests: small list + tiny media read (first byte)
         try:
-            lst = self._execute(test_service.files().list(pageSize=1, fields='files(id, size, mimeType)').__class__(
-            ))  # no-op to keep mypy happy in some editors
+            self._execute(test_service.files().list(pageSize=1, fields='files(id, size, mimeType)'))
         except Exception:
             # Some environments might fail list if Drive is empty; ignore.
-            lst = {'files': []}
+            pass
         try:
             files = self._execute(test_service.files().list(pageSize=1, fields='files(id, size, mimeType)'))
             f = next((x for x in files.get('files', []) if 'size' in x), None)
@@ -2206,6 +2214,15 @@ Performance & Scale (v1.5.9):
         --process-batch-size 250 --concurrency 8 \
         --max-rps 5 --burst 20 --client-per-thread -v
 
+Requirements & Compatibility:
+  • Python: 3.10+ (the codebase uses PEP 604 union types like 'str | None';
+    this also applies to validators.py). If you must run on Python 3.9,
+    consider a 1.5.x tag or refactor types to typing.Optional / typing.Union.
+  • Transports: see README → Compatibility for the version matrix covering
+    python (3.10+), google-api-python-client, google-auth, and requests per
+    transport (httplib2 vs requests). This is especially relevant when using
+    --http-transport requests and connection pooling.
+
 Policy Normalization UX (v1.5.8):
   * Unknown policy warnings print to **stderr** and log at WARNING.
   * Warning is repeated once in the EXECUTION COMMAND preview.
@@ -2229,6 +2246,8 @@ Memory & Streaming (v1.5.6):
 HTTP Transport & Pooling (v1.6.0):
   You can opt into a requests-based transport with connection pooling:
     --http-transport requests --http-pool-maxsize 32
+  (See README → Compatibility for minimal library versions per transport.)
+
   Each worker builds a pooled session (when supported) to improve throughput
   at high concurrency. Falls back to the default transport if unavailable.
 
@@ -2448,40 +2467,58 @@ def _normalize_and_validate_extensions(args) -> Tuple[bool, int]:
     args.extensions = cleaned_exts
     return True, 0
 
+def _read_lockfile_metadata(lockfile_path):
+    """Read PID and run_id from the lockfile, return (owner_pid, run_id)."""
+    owner_pid = "unknown"
+    run_id = "unknown"
+    try:
+        with open(lockfile_path, "r") as fh:
+            for line in fh.read().splitlines():
+                if line.startswith("pid="):
+                    owner_pid = line.split("=", 1)[1].strip()
+                if line.startswith("run_id="):
+                    run_id = line.split("=", 1)[1].strip()
+    except Exception:
+        pass
+    return owner_pid, run_id
+
+def _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, force):
+    """Print user-facing messages about lockfile status."""
+    print(f"❌ Another run appears to be active for state '{args.state_file}'.")
+    print(f"   Owner PID: {owner_pid}{pid_alive_note}   Run-ID: {run_id}")
+    if pid_alive_note:
+        print("   The lock looks stale. If you're sure the previous process is gone, rerun with --force to take over.")
+    else:
+        print("   Tip: If that run is still working, let it finish. Otherwise, confirm it's stopped and rerun with --force.")
+    if force:
+        if pid_alive_note:
+            print("⚠️  --force supplied: taking over a **stale** lock (previous PID not detected).")
+        else:
+            print("⚠️  --force supplied: bypassing concurrent-run guardrail.")
+
+def _check_pid_alive(owner_pid, tool):
+    """Check if the recorded PID is alive, return a note string if not."""
+    pid_alive_note = ""
+    try:
+        pid_int = int(owner_pid)
+        if not tool._pid_is_alive(pid_int):
+            pid_alive_note = " (note: recorded PID does not appear to be running)"
+    except Exception:
+        pass
+    return pid_alive_note
+
 def _acquire_or_bypass_lock(tool, args) -> Tuple[bool, int]:
     try:
         if not tool._acquire_state_lock():
-            owner_pid = "unknown"
-            run_id = "unknown"
-            try:
-                with open(f"{args.state_file}.lock", "r") as fh:
-                    for line in fh.read().splitlines():
-                        if line.startswith("pid="):
-                            owner_pid = line.split("=",1)[1].strip()
-                        if line.startswith("run_id="):
-                            run_id = line.split("=",1)[1].strip()
-                # Best-effort liveness hint
-                try:
-                    pid_int = int(owner_pid)
-                    if not tool._pid_is_alive(pid_int):
-                        pid_alive_note = " (note: recorded PID does not appear to be running)"
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            if not getattr(args, "force", False):
-                print(f"❌ Another run appears to be active for state '{args.state_file}'.")
-                print(f"   Owner PID: {owner_pid}{pid_alive_note}   Run-ID: {run_id}")
-                if pid_alive_note:
-                    print("   The lock looks stale. If you're sure the previous process is gone, rerun with --force to take over.")
-                else:
-                    print("   Tip: If that run is still working, let it finish. Otherwise, confirm it's stopped and rerun with --force.")
+            lockfile_path = f"{args.state_file}.lock"
+            owner_pid, run_id = _read_lockfile_metadata(lockfile_path)
+            pid_alive_note = _check_pid_alive(owner_pid, tool)
+            force = getattr(args, "force", False)
+            if not force:
+                _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, False)
                 return False, 2
             else:
-                if pid_alive_note:
-                    print("⚠️  --force supplied: taking over a **stale** lock (previous PID not detected).")
-                else:
-                    print("⚠️  --force supplied: bypassing concurrent-run guardrail.")
+                _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, True)
     except Exception:
         pass
     return True, 0

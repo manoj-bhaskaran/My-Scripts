@@ -1,3 +1,11 @@
+"""
+Validator helpers for extension tokens and policy normalization.
+
+Python requirement: 3.10+
+This module uses PEP 604 union types (e.g., Sequence[str] | None). If you need
+to run on Python 3.9, replace these with typing.Union / typing.Optional or use
+an earlier 1.5.x release line.
+"""
 from __future__ import annotations
 
 import re
