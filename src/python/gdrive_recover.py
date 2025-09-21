@@ -11,10 +11,17 @@ This tool provides:
 - Progress tracking and detailed summaries
 """
 
-__version__ = "1.5.8"
+__version__ = "1.5.9"
 
 # CHANGELOG
 """
+## [1.5.9] - 2025-09-28
+
+### Docs
+- Add **Performance & Scale** section with practical guidance for `--process-batch-size`,
+  `--max-rps`, `--burst`, and client-per-thread usage. Examples mirror test-proven
+  settings from large runs and constrained environments.
+
 ## [1.5.8] - 2025-09-28
 
 ### Policy Normalization UX
@@ -1865,6 +1872,43 @@ Rate Limiting:
   Use --rl-diagnostics and -vv to log sampled limiter stats (tokens, capacity, observed RPS).
   Set --max-rps 0 to disable throttling entirely. Execution progress lines respect -v;
   summaries always print.
+
+Performance & Scale (v1.5.9):
+  These settings are distilled from test-proven runs (incl. 200k+ items) and are meant
+  as safe starting points. Tune gradually while watching logs and API error rates.
+
+  • Batch size (`--process-batch-size`)
+      - Memory-constrained (≤2 GB RAM): 200–500
+      - General purpose: 500 (default) to 1000
+      - Very large sets with ample RAM/IO: 750–1500
+    Notes: Peak RSS scales roughly with batch size. We observed stable RSS on 200k items
+           at N=500 with steady throughput.
+
+  • Rate (`--max-rps`) and Burst (`--burst`)
+      - Conservative default: --max-rps 5.0
+      - Typical: --max-rps 6–10 with --burst 20–50
+      - CI/cold networks: start at --max-rps 5 --burst 20 and increase slowly
+    Notes: Burst enables short bursts to absorb network jitter while keeping average RPS
+           within target. Use `--rl-diagnostics -vv` to confirm observed RPS within ±10%.
+
+  • Concurrency (`--concurrency`)
+      - Rule of thumb: min(8, CPU*2); cap remains enforced internally to avoid 429s.
+      - If you see 429/5xx spikes, reduce concurrency first, then RPS.
+
+  • Client lifecycle
+      - `--client-per-thread` (default ON) avoids shared-object contention. Keep it on
+        unless you have a strong reason to use `--single-client`.
+
+  • Example presets (copy/paste):
+      # Large set (≈200k items), 8-core VM, 8–12 RPS target
+      %(prog)s recover-and-download --download-dir ./out \
+        --process-batch-size 500 --concurrency 16 \
+        --max-rps 8 --burst 32 --client-per-thread -v
+
+     # Memory-constrained VM (2 GB RAM), steady & safe
+      %(prog)s recover-only \
+        --process-batch-size 250 --concurrency 8 \
+        --max-rps 5 --burst 20 --client-per-thread -v
 
 Policy Normalization UX (v1.5.8):
   * Unknown policy warnings print to **stderr** and log at WARNING.
