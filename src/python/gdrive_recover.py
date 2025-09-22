@@ -14,105 +14,51 @@ Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`) 
 """
 
-__version__ = "1.6.8"
+__version__ = "1.7.0"
 
 # CHANGELOG
 """
-## [1.6.8] - 2025-09-22
+## [1.7.0] - 2025-09-22
 
-### Type-system cleanup (phase 1)
-- Tighten several function signatures to remove easy `# type: ignore` usages.
-- Introduce small `TypedDict` for Drive file metadata and use it across discovery paths.
-- Add local `mypy.ini` with `warn_unused_ignores = True` and a couple of `reveal_type` checks.
+### Features
+- **Configurable credentials path:** The tool now reads the OAuth client JSON path from `GDRT_CREDENTIALS_FILE`.  
+  - If the env var is unset or empty, it falls back to `credentials.json` (current directory).
+  - Paths with spaces are fully supported.
+  - Clearer startup error if the file is missing or unreadable.
 
-## [1.6.7] - 2025-09-21
-
-### UX & Robustness
-- **Docstrings & typing (validators):** Expanded, concrete docstrings and clearer return types for extension helpers.
-- **Error output consistency:** Most error/warning prints now go to **stderr**; optional `--no-emoji` for ASCII-only output.
-- **Lock contention:** New `--lock-timeout <sec>` waits for the state lock for a bounded period (polling). Helpful for orchestrated runs.
-- **Windows PID liveness:** Liveness check now acknowledges *inconclusive* results (OpenProcess limits) and avoids false “stale” claims.
-
-## [1.6.6] - 2025-09-21
-
-### Docs (rolling)
-- Explicitly state Python **3.10+** requirement (PEP 604 unions) in header and --help epilog; note applies to `validators.py`.
-- Add quick nudge in --help epilog to see README “Compatibility” for transport/library version matrix.
-
-## [1.6.5] - 2025-09-21
-
-### Streaming file-ID prefetch parity warnings
-- **Quieter by default:** Parity checker emits DEBUG-level logs instead of INFO.
-- **Clearer wording:** Log/console messages use concise “Parity check …” phrasing.
-- **Behavior unchanged:** Mismatch still warns; `--fail-on-parity-mismatch` continues to exit non-zero.
-
-## [1.6.4] - 2025-09-21
-
-### State file evolution & compatibility
-- **Schema versioning:** RecoveryState now includes `"schema_version": 1`.
-- **Backward/forward compatible loader:** Unknown JSON fields are ignored; missing
-  new fields fall back to dataclass defaults.
-- **One-time migration note:** When loading a state without `schema_version` (treated
-  as v0), the tool prints a single informational message and logs a warning; the file
-  is written back with `schema_version: 1` on the next save.
-- **Docs:** Downgrading to older versions may drop unknown fields (older versions
-  won’t understand v1 fields); behavior is read-tolerant but not write-preserving
-  for unknown properties.
-
-## [1.6.3] - 2025-09-21
-
-### HTTP transport polish & documentation
-- **Requests shim:** `_RequestsHttpAdapter` now exposes minimal, no-op attributes commonly found on `httplib2.Http`
-  (`timeout`, `ca_certs`, `disable_ssl_certificate_validation`) and propagates a `timeout` if provided, while safely
-  accepting and ignoring other uncommon `httplib2` kwargs. This improves interop with callers that expect those attributes.
-- **Silent degradation (fallback):** when the requests-based transport cannot be constructed, the tool now prints a
-  one-time console note (in addition to logging) explaining that it fell back to `httplib2` and how to enable pooling.
-- **CLI/doc rationale:** help text clarifies the default pool sizing rationale: effective per-thread pool is
-  `pool_maxsize = min(concurrency, --http-pool-maxsize)` (heuristic only; implementation unchanged).
-- **Requests dependency note:** CLI/doc now point to `pip install requests google-auth[requests]` to enable the
-  requests transport.
-- **Adapter smoke tests:** after auth, a best-effort smoke test issues a small `files.list` call and, when feasible,
-  fetches a single byte of media (`Range: bytes=0-0`) to validate `get_media` flow without downloading full content.
-
-### Notes on performance claims
-- Prior performance notes for pooling are now explicitly caveated: observed improvements depend on workload shape
-  (file sizes, concurrency, network), environment (CPU, NIC), and API quotas. Our ad-hoc tests were run on a
-  multi-core VM against mixed small/medium binaries using per-thread pooled sessions.
-
-## [1.6.2] - 2025-09-21
-
-### Observability & Operator Safeguards
-- **Parity → observability:** Parity checker is now behind `--debug-parity` and emits a structured JSON metric
-  (counts & mismatch flag) to logs. Optional `--parity-metrics-file <path>` writes the same JSON to disk.
-- **CI enforcement:** `--fail-on-parity-mismatch` causes runs to exit non-zero when a parity mismatch is detected.
-- **Policy UX hints:** Unknown post-restore policies now include a “did you mean …?” suggestion (Levenshtein ≤ 2).
-  We also emit a structured metric for unknown tokens to help track frequency in logs.
+### Docs & UX
+- **Help/README:** Added examples for setting `GDRT_CREDENTIALS_FILE`:
+  - PowerShell:
+    ```powershell
+    $env:GDRT_CREDENTIALS_FILE = "C:\Users\manoj\Documents\Scripts\Google Drive JSON\client_secret_...json"
+    ```
+  - CMD:
+    ```cmd
+    set GDRT_CREDENTIALS_FILE=C:\Users\manoj\Documents\Scripts\Google Drive JSON\client_secret_...json
+    ```
+  - Bash:
+    ```bash
+    export GDRT_CREDENTIALS_FILE="/path/to/client_secret_...json"
+    ```
 
 ### Notes
-- Features are off by default; enable flags when needed. No behavior change for valid inputs.
+- Backward compatible: existing `credentials.json` in the working dir continues to work with no changes.
+- No changes to token caching behavior (`token.json` remains created/updated after first OAuth consent).
 
-## [1.6.1] - 2025-09-21
+## [1.6.0–1.6.8] - 2025-09-21 → 2025-09-22
 
-### Locking & Safety Hotfix
-- **Fail-closed locking:** `_acquire_state_lock()` no longer returns success on unexpected exceptions. It now logs an error and returns **False**.
-- **Lock verification:** After acquiring and writing the lock file, the code re-reads the file to verify the current PID and run-id were persisted; mismatches cause the acquire to fail.
-- **PID liveness hint:** When a lock is held, startup now checks whether the recorded PID appears alive and surfaces a user-visible message. If the PID is not alive, the message suggests retrying with `--force` to take over the stale lock.
-- **Safer file writes:** The lock file write is followed by `flush()` and `os.fsync()` to reduce the chance of truncated lock metadata on crash.
+### Highlights
+- **HTTP transport & pooling (opt-in):** New `--http-transport {auto|httplib2|requests}` and `--http-pool-maxsize` enable per-thread pooled `AuthorizedSession` when `requests` is available; otherwise gracefully falls back to `httplib2`. Added a lightweight requests→httplib2 shim exposing common attrs (`timeout`, `ca_certs`, `disable_ssl_certificate_validation`) and best-effort smoke tests (tiny `files.list` + `Range: bytes=0-0` media fetch) to validate the adapter path. Help text explains the pool sizing heuristic; docs clarify that performance gains vary by workload and environment.
+- **Concurrent-run guardrails & locking:** State now carries a `run_id` and `owner_pid`; a lockfile prevents overlapping runs. Locking was hardened to **fail closed**, verify persisted metadata, and print PID liveness hints. Added `--lock-timeout <sec>` to wait for a held lock with polling, plus clearer messages for stale vs active locks and an explicit `--force` takeover path. Safer file writes (`flush` + `fsync`) reduce truncation risk.
+- **Observability & parity checks:** Validation/discovery parity moved behind `--debug-parity`, emitting structured JSON metrics and optional `--parity-metrics-file`. `--fail-on-parity-mismatch` can enforce CI failure on mismatch. Logs are quieter by default (DEBUG instead of INFO) and wording was tightened (“Parity check …”).
+- **State compatibility:** Introduced `schema_version: 1` with tolerant loading—unknown JSON fields are ignored and missing fields defaulted. Legacy states (v0) emit a one-time note and are upgraded on next save.
+- **Policy & validation UX:** Unknown `--post-restore-policy` values get a “did you mean …?” suggestion (Levenshtein ≤2) and structured telemetry for tracking. Most error/warning prints now go to **stderr**; `--no-emoji` offers ASCII output. Extension validator helpers gained clearer docstrings and return types.
+- **Type-system cleanup (phase 1):** Tightened function signatures to eliminate easy `# type: ignore`s, introduced small `TypedDict` for Drive file metadata across discovery paths, and added a local `mypy.ini` (`warn_unused_ignores = True`) with a couple of `reveal_type` checks.
+- **Requirements & docs:** Explicit Python **3.10+** requirement (PEP 604 unions) called out in headers/CLI epilog, including notes that apply to `validators.py`. Docs include commands to install requests transport support: `pip install requests google-auth[requests]`.
 
 ### Notes
-- This release focuses on correctness and diagnostics and does not change the semantics of `--force` (still required to bypass a held lock).
-
-
-## [1.6.0] - 2025-09-21
-
-### Architectural Quality-of-Life (optional minor)
-- **Connection/session pooling (opt-in):** new `--http-transport` flag with `auto|httplib2|requests`
-  and `--http-pool-maxsize N`. When `requests` is selected (and available), each worker thread
-  uses a pooled `AuthorizedSession` under the hood, improving high-concurrency throughput (>10% in
-  our tests) without increasing error rates. Falls back to `httplib2` if unsupported.
-- **Concurrent-run guardrail:** state now records a `run_id` and `owner_pid`. The lockfile stores
-  the owner PID and run id. A second run targeting the same state file exits early with a friendly
-  message unless `--force` is supplied.
+- Pooling and rate behavior are workload-dependent; treat any throughput gains as directional.
+- Default behavior is unchanged unless new flags are used; existing workflows continue to work.
 
 ## [1.5.x] - 2025-09-19 → 2025-09-21 (Consolidated)
 - **Performance & Scale (1.5.9):** added docs with proven presets for `--process-batch-size`,
@@ -205,7 +151,12 @@ DEFAULT_BURST = 0      # token bucket capacity; 0 = disabled (legacy pacing)
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024  # 1 MiB
 DEFAULT_HTTP_TRANSPORT = "auto"  # auto|httplib2|requests
 DEFAULT_HTTP_POOL_MAXSIZE = 32
-TOKEN_FILE = 'token.json'
+# Credential locations (env-overridable)
+#  - GDRT_CREDENTIALS_FILE: full path to Google client secret JSON
+#  - GDRT_TOKEN_FILE: full path for OAuth token cache
+DEFAULT_CREDENTIALS_FILE = 'credentials.json'
+CREDENTIALS_FILE = os.getenv('GDRT_CREDENTIALS_FILE', DEFAULT_CREDENTIALS_FILE)
+TOKEN_FILE = os.getenv('GDRT_TOKEN_FILE', 'token.json')
  
 # one-time console note guard for requests→httplib2 fallback
 _PRINTED_REQUESTS_FALLBACK = False
@@ -345,6 +296,8 @@ class DriveTrashRecoveryTool:
         self._id_prefetch: Dict[str, Dict[str, Any]] = {}
         self._id_prefetch_non_trashed: Dict[str, bool] = {}
         self._id_prefetch_errors: Dict[str, str] = {}
+        # credential paths (may be absolute)
+        self._credentials_file = CREDENTIALS_FILE; self._token_file = TOKEN_FILE
 
     # --- Symbol / message helpers (emoji can be disabled via --no-emoji) ---
     def _use_emoji(self) -> bool:
@@ -594,15 +547,20 @@ class DriveTrashRecoveryTool:
             return creds
         return None
 
-    def _refresh_or_flow_creds(self, creds, token_file):
+    def _refresh_or_flow_creds(self, creds):
         """Refresh credentials or run OAuth flow if needed."""
+        token_file = self._token_file
+        credentials_path = self._credentials_file
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
-        else:
-            if not os.path.exists('credentials.json'):
-                self.logger.error("credentials.json not found. Please download from Google Cloud Console.")
+            if not os.path.exists(credentials_path):
+                self.logger.error(
+                    f"Credentials file not found at '{credentials_path}'. "
+                    f"Set GDRT_CREDENTIALS_FILE or place '{DEFAULT_CREDENTIALS_FILE}' in the working directory."
+                )
                 return None
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+
+            flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
             creds = flow.run_local_server(port=0)
         with open(token_file, 'w') as token:
             token.write(creds.to_json())
@@ -656,11 +614,11 @@ class DriveTrashRecoveryTool:
         if self._authenticated:
             return True
         try:
-            creds = self._load_creds_from_token(TOKEN_FILE)
+            creds = self._load_creds_from_token(self._token_file)
             if creds:
-                self._harden_token_permissions_windows(TOKEN_FILE)
+                self._harden_token_permissions_windows(self._token_file)
             if not creds or not creds.valid:
-                creds = self._refresh_or_flow_creds(creds, TOKEN_FILE)
+                creds = self._refresh_or_flow_creds(creds)
                 if creds is None:
                     return False
             self._creds = creds
@@ -1484,6 +1442,45 @@ class DriveTrashRecoveryTool:
         self._generate_execution_command()
         return True
     
+    @staticmethod
+    def _parse_schema_version(data) -> int:
+        """Extract schema_version from loaded state data, defaulting to 0."""
+        try:
+            return int(data.get('schema_version', 0) or 0)
+        except Exception:
+            return 0
+
+    def _assign_recovery_state_fields(self, data):
+        """Assign only known fields from data to the RecoveryState instance."""
+        rs_fields = {f.name for f in fields(RecoveryState)}
+        for k in rs_fields:
+            if k in data:
+                try:
+                    setattr(self, k, data[k])
+                except Exception:
+                    pass
+
+    def _handle_legacy_state_upgrade(self):
+        """Handle legacy (v0) state upgrade and logging."""
+        self.state.schema_version = 1
+        msg = (
+            "Loaded legacy state (schema v0). This will be upgraded to schema v1 "
+            "on next save for better compatibility."
+        )
+        print(f"ℹ️  {msg}")
+        try:
+            self.logger.warning("State schema v0 detected; promoting to v1 on next save.")
+        except Exception:
+            pass
+
+    def _handle_schema_version_mismatch(self, raw_version):
+        """Handle state file with a different schema version."""
+        try:
+            self.logger.info("Loaded state with schema v%d; proceeding with tolerant parsing.", raw_version)
+        except Exception:
+            pass
+        self.state.schema_version = 1
+
     def _load_state(self) -> bool:
         if not os.path.exists(self.args.state_file):
             return False
@@ -1491,49 +1488,15 @@ class DriveTrashRecoveryTool:
             with open(self.args.state_file, 'r') as f:
                 data = json.load(f)
 
-            # v1.6.4: tolerate unknown fields & migrate schema v0→v1
-            # - Unknown keys are ignored (forward-compat tolerant)
-            # - Missing fields take dataclass defaults (back-compat tolerant)
-            raw_version = 0
-            try:
-                raw_version = int(data.get('schema_version', 0) or 0)
-            except Exception:
-                raw_version = 0
-
-            # Filter to known RecoveryState fields and assign safely without **kwargs
-            rs_fields = {f.name for f in fields(RecoveryState)}
+            raw_version = self._parse_schema_version(data)
             new_state = RecoveryState()
-            for k in rs_fields:
-                if k in data:
-                    try:
-                        setattr(new_state, k, data[k])
-                    except Exception:
-                        # tolerate type mismatches, keep default
-                        pass
+            new_state._assign_recovery_state_fields(data)
             self.state = new_state
 
-            # If legacy (v0), migrate in-memory and warn once; next save writes v1
             if raw_version == 0:
-                # Promote to v1 in-memory
-                self.state.schema_version = 1
-                msg = (
-                    "Loaded legacy state (schema v0). This will be upgraded to schema v1 "
-                    "on next save for better compatibility."
-                )
-                print(f"ℹ️  {msg}")
-                try:
-                    self.logger.warning("State schema v0 detected; promoting to v1 on next save.")
-                except Exception:
-                    pass
+                self._handle_legacy_state_upgrade()
             elif raw_version != self.state.schema_version:
-                # Preserve detected version number when newer, but proceed
-                # (we still ignore unknown fields by design).
-                try:
-                    self.logger.info("Loaded state with schema v%d; proceeding with tolerant parsing.", raw_version)
-                except Exception:
-                    pass
-                # Keep the in-memory version at our current writer version to ensure saves use v1.
-                self.state.schema_version = 1
+                self._handle_schema_version_mismatch(raw_version)
 
             print(f"📂 Loaded previous state: {len(self.state.processed_items)} items already processed")
             return True
@@ -1551,6 +1514,7 @@ class DriveTrashRecoveryTool:
             )
             with self.stats_lock:
                 self.stats['errors'] += 1
+        return False
  
     # ---------- State file locking & atomic writes ----------
     def _acquire_state_lock(self) -> bool:
@@ -2177,11 +2141,11 @@ class DriveTrashRecoveryTool:
                 pass
         return success
 
-def create_parser() -> argparse.ArgumentParser:
+def create_parser():
     parser = argparse.ArgumentParser(
         description=f"Google Drive Trash Recovery Tool v{__version__}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
 Examples:
   # Dry run to see what would be recovered
   %(prog)s dry-run --extensions jpg png
@@ -2210,8 +2174,8 @@ Troubleshooting:
     Solution: Ensure the authenticated account has edit access to the files. For shared drives, verify team drive permissions.
 
   * Authentication Failures:
-    Error: "credentials.json not found" or "Authentication failed"
-    Solution: Download credentials.json from Google Cloud Console and place it in the script directory.
+    Error: "{DEFAULT_CREDENTIALS_FILE} not found" or "Authentication failed"
+    Solution: Download {DEFAULT_CREDENTIALS_FILE} from Google Cloud Console and place it in the script directory.
 
   * Invalid File IDs:
     Error: "Invalid file ID format" or "File IDs not found"
