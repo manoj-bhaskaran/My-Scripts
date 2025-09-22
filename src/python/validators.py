@@ -6,11 +6,10 @@ This module uses PEP 604 union types (e.g., Sequence[str] | None). If you need
 to run on Python 3.9, replace these with typing.Union / typing.Optional or use
 an earlier 1.5.x release line.
 """
-from __future__ import annotations
 
 import re
 from typing import Iterable, List, Mapping, Sequence, Tuple, Optional, Dict
-
+from typing import TYPE_CHECKING, Callable
 
 def _normalize_extension_token(token: str) -> str:
     """
@@ -195,6 +194,13 @@ def validate_extensions(
             )
 
     return deduped, warnings, []
+
+# --- Lightweight, local mypy reveal_type checks (ignored at runtime) ---
+if TYPE_CHECKING:
+    # mypy will evaluate these; they don't run at runtime.
+    from typing import reveal_type as _reveal
+    _reveal(validate_extensions)  # expect: def (Sequence[str] | None, Mapping[str, str]) -> tuple[list[str], list[str], list[str]]
+    _reveal(normalize_policy_token)  # expect: def (raw: builtins.str | None, *, strict: builtins.bool, aliases: Mapping[builtins.str, builtins.str], default_value: builtins.str) -> tuple[builtins.str, list[builtins.str], list[builtins.str], Dict[builtins.str, dict]]
 
 def _levenshtein(a: str, b: str) -> int:
     """Simple Levenshtein distance (O(len(a)*len(b))) without external deps."""

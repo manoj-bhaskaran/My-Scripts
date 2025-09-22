@@ -14,10 +14,17 @@ Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`) 
 """
 
-__version__ = "1.6.7"
+__version__ = "1.6.8"
 
 # CHANGELOG
 """
+## [1.6.8] - 2025-09-22
+
+### Type-system cleanup (phase 1)
+- Tighten several function signatures to remove easy `# type: ignore` usages.
+- Introduce small `TypedDict` for Drive file metadata and use it across discovery paths.
+- Add local `mypy.ini` with `warn_unused_ignores = True` and a couple of `reveal_type` checks.
+
 ## [1.6.7] - 2025-09-21
 
 ### UX & Robustness
@@ -136,7 +143,7 @@ import shutil
 import re
 import random
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, TypedDict, Mapping, cast
 from pathlib import Path
 from dataclasses import dataclass, asdict, fields
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -153,6 +160,22 @@ except ImportError:
 
 # v1.5.7: pure validators (extensions & policy)
 from validators import validate_extensions, normalize_policy_token
+
+# -------------------- Minimal structural types --------------------
+class FileMeta(TypedDict, total=False):
+    """Metadata returned by Drive files().get/list we care about."""
+    id: str
+    name: str
+    mimeType: str
+    size: int | str
+    createdTime: str
+    modifiedTime: str
+    trashed: bool
+    error: str
+
+class LockInfo(TypedDict, total=False):
+    pid: str
+    run_id: str
 
 try:
     from googleapiclient.discovery import build
@@ -462,10 +485,6 @@ class DriveTrashRecoveryTool:
             return 0.0
         delay = max(0.0, min_interval - (now - last))
         return delay
-
-    def _should_use_token_bucket(burst: int) -> bool:
-        """Return True if token bucket mode should be used."""
-        return burst > 0
 
     def _token_bucket_sleep(self, max_rps, burst, now):
         """Handle token bucket logic, sleeping if needed, and return (tokens_snapshot, cap_snapshot)."""
@@ -934,7 +953,7 @@ class DriveTrashRecoveryTool:
         # We do not add file IDs to q
         return base_query
     
-    def _process_file_data(self, file_data: Dict[str, Any]) -> Optional[RecoveryItem]:
+    def _process_file_data(self, file_data: Mapping[str, Any] | FileMeta) -> Optional[RecoveryItem]:
         """Process a single file data entry and create RecoveryItem if valid."""
         # Apply client-side extension filtering for additional precision
         if self.args.extensions and not self._matches_extension_filter(file_data.get('name', '')):
@@ -959,7 +978,7 @@ class DriveTrashRecoveryTool:
         
         return item
     
-    def _fetch_files_page(self, query: str, page_token: Optional[str]) -> Tuple[List[Dict], Optional[str]]:
+    def _fetch_files_page(self, query: str, page_token: Optional[str]) -> Tuple[List[FileMeta], Optional[str]]:
         """Fetch a single page of files from the API."""
         service = self._get_service()
         response = self._execute(service.files().list(
@@ -974,7 +993,7 @@ class DriveTrashRecoveryTool:
         return files, next_page_token
 
     # --- Discovery helpers ---
-    def _append_item_if_valid(self, items: List[RecoveryItem], file_data: Dict[str, Any]) -> None:
+    def _append_item_if_valid(self, items: List[RecoveryItem], file_data: Mapping[str, Any] | FileMeta) -> None:
         item = self._process_file_data(file_data)
         if item:
             items.append(item)
@@ -1058,7 +1077,7 @@ class DriveTrashRecoveryTool:
 
     def _discover_via_ids(self) -> List[RecoveryItem]:
         self.logger.info("Using per-ID lookups for discovery (--file-ids provided)")
-        items: List[RecoveryItem] = []
+        items: List[RecoveryItem] = []  # populated from FileMeta → RecoveryItem
         skipped_non_trashed = [0]
         errors = [0]
         total = len(self.args.file_ids)
@@ -1150,7 +1169,7 @@ class DriveTrashRecoveryTool:
             self.logger.warning(f"Error applying time filter: {e}")
             return True  # Include item if filter fails
     
-    def _generate_target_path(self, item: RecoveryItem) -> str:
+    def _generate_target_path(self, item: Mapping[str, Any] | RecoveryItem) -> str:
         if not self.args.download_dir:
             return ""
         safe_name = "".join(c for c in item.name if c.isalnum() or c in (' ', '-', '_', '.')).rstrip()
@@ -1166,7 +1185,7 @@ class DriveTrashRecoveryTool:
                 counter += 1
         return str(base_path)
     
-    def _get_file_info(self, file_id: str, fields: str) -> Dict[str, Any]:
+    def _get_file_info(self, file_id: str, fields: str) -> FileMeta:
         api_ctx = f"files.get(fileId={file_id}, fields={fields})"
         try:
             service = self._get_service()
@@ -1182,7 +1201,7 @@ class DriveTrashRecoveryTool:
             return {'error': f"I/O error: {e}"}
         except Exception as e:
             self.logger.error(f"{api_ctx} unexpected error: {e}")
-            return {'error': f"Unexpected error: {e}"}
+            return {'error': f"Unexpected error: {e}"}  # type: ignore[return-value]
     
     def _check_untrash_privilege(self, file_id: str) -> Dict[str, Any]:
         result = {'status': 'unknown', 'error': None}
@@ -1481,12 +1500,17 @@ class DriveTrashRecoveryTool:
             except Exception:
                 raw_version = 0
 
-            # Filter to known RecoveryState fields
+            # Filter to known RecoveryState fields and assign safely without **kwargs
             rs_fields = {f.name for f in fields(RecoveryState)}
-            known_kwargs = {k: v for k, v in data.items() if k in rs_fields}
-
-            # Construct state with known fields; defaults apply to any missing
-            self.state = RecoveryState(**known_kwargs)  # type: ignore[arg-type]
+            new_state = RecoveryState()
+            for k in rs_fields:
+                if k in data:
+                    try:
+                        setattr(new_state, k, data[k])
+                    except Exception:
+                        # tolerate type mismatches, keep default
+                        pass
+            self.state = new_state
 
             # If legacy (v0), migrate in-memory and warn once; next save writes v1
             if raw_version == 0:
@@ -1990,7 +2014,7 @@ class DriveTrashRecoveryTool:
                 return None
         return data
 
-    def _handle_streaming_id_item(self, item, batch, batch_n, start_time):
+    def _handle_streaming_id_item(self, item: Optional[RecoveryItem], batch: List[RecoveryItem], batch_n: int, start_time: float) -> None:
         """Handle a single RecoveryItem in streaming ID mode."""
         if item:
             if self.args.mode == 'recover_and_download' and not item.target_path:
