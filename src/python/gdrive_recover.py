@@ -21,7 +21,7 @@ r"""
 ## [1.7.1] - 2025-09-19
 
 ### Fixes
-- Resolve `SyntaxError: (unicode error) 'unicodeescape'` on Windows by marking long module docstrings and the argparse `epilog` as raw strings (`r"""..."""`). This prevents `\U` in example Windows paths from being parsed as Unicode escapes.
+- Resolve `SyntaxError: (unicode error) 'unicodeescape'` on Windows by marking long module docstrings and the argparse `epilog` as raw strings. This prevents `\U` in example Windows paths from being parsed as Unicode escapes.
 - No functional or API changes; runtime behavior and CLI remain the same.
 
 ### Developer Notes
