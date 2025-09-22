@@ -14,10 +14,20 @@ Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`) 
 """
 
-__version__ = "1.7.3"
+__version__ = "1.7.5"
 
 # CHANGELOG
 r"""
+## [1.7.5] - 2025-09-22
+
+### Fixed
+- **Windows/OneDrive file lock race:** Downloads could fail with `WinError 32` when OneDrive briefly locked the destination path during the final rename of `*.partial → final`. Introduced `_atomic_replace_with_retry()` which retries `os.replace()` for a short window and removes zero-byte stubs if present. This makes `recover-and-download` resilient to transient locks without user intervention.
+
+### Notes
+- Backward compatible; no CLI or API changes.
+- Dry-run and recovery logic are unchanged.
+- For immediate mitigation without updating, users can pause OneDrive sync or download to a non-synced folder.
+
 ## [1.7.4] - 2025-09-22
 
 ### Fixed
@@ -1398,8 +1408,8 @@ class DriveTrashRecoveryTool:
             end_idx = min(start_idx + page_size, len(self.items))
             print(f"\nPage {page + 1}/{total_pages} (items {start_idx + 1}-{end_idx}):")
             print("-" * 80)
-            for i, item in enumerate(self.items[start_idx:end_idx], start_idx + 1):
-                self._print_item_details(item, i)
+            for _, item in enumerate(self.items[start_idx:end_idx], start_idx + 1):
+                self._print_item_details(item, _)
             if page < total_pages - 1:
                 response = input("Press Enter for next page, 'q' to stop viewing, or 's' to skip to summary: ").strip().lower()
                 if response == 'q':
@@ -2128,6 +2138,36 @@ class DriveTrashRecoveryTool:
         print(f"\n✅ Success rate: {success_rate:.1f}%")
 
     # --- Streaming download implementation (rate-limit aware) ---
+    def _atomic_replace_with_retry(self, src: Path, dst: Path, attempts: int = 60, sleep_s: float = 0.5) -> bool:
+        """
+        Windows/OneDrive-safe replace with retries.
+        Retries when the destination (or source) is temporarily locked by another process.
+        """
+        last_err = None
+        for _ in range(max(1, attempts)):
+            try:
+                # Best-effort: if dst exists, try to remove it first (it may be a 0-byte OneDrive stub)
+                if dst.exists():
+                    try:
+                        dst.unlink()
+                    except Exception:
+                        pass
+                os.replace(src, dst)  # atomic on same volume
+                return True
+            except PermissionError as e:
+                # Windows/OneDrive often yields WinError 32 here; back off and retry
+                last_err = e
+            except OSError as e:
+                # Treat sharing violations the same way
+                if getattr(e, "winerror", None) == 32:
+                    last_err = e
+                else:
+                    raise
+            time.sleep(sleep_s)
+        if last_err:
+            self.logger.error(f"Atomic replace failed after retries: {last_err}")
+        return False
+
     def _download_file(self, item: RecoveryItem) -> bool:
         success = False
         try:
@@ -2153,12 +2193,12 @@ class DriveTrashRecoveryTool:
                     with self.stats_lock:
                         self.stats['downloaded'] += 1
                     # Atomic move into place
-                    try:
-                        if target.exists():
-                            target.unlink()
-                    except Exception:
-                        pass
-                    partial.replace(target)
+                    if not self._atomic_replace_with_retry(partial, target):
+                        # If we still can't move (persistent lock), surface a clear error
+                        raise PermissionError(
+                            f"Could not move '{partial}' to '{target}' "
+                            f"(destination locked by another process)"
+                        )
                     success = True
                 except Exception as e:
                     item.status = 'failed'
