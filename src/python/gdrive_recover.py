@@ -18,6 +18,18 @@ __version__ = "1.7.3"
 
 # CHANGELOG
 r"""
+## [1.7.4] - 2025-09-22
+
+### Fixed
+- **Dry-run crash on Windows/Linux:** Guard accesses to `args.download_dir` with `getattr(..., None)` so `dry-run` and `recover-only` modes don’t raise `AttributeError: 'Namespace' object has no attribute 'download_dir'`.  
+  Affected spots:
+  - Privilege checks (`_check_privileges`) when probing local download dir.
+  - Local directory status printer (`_print_local_directory_status`).
+
+### Notes
+- Behavior for `recover-and-download` is unchanged; `--download-dir` remains required there.
+- No API or CLI changes; safe, backward-compatible patch release.
+
 ## [1.7.3] - 2025-09-22
 
 ### Authentication robustness & DX
@@ -1288,9 +1300,10 @@ class DriveTrashRecoveryTool:
             checks['operation_privileges'] = self._test_operation_privileges(sample_items)
         except Exception as e:
             checks['drive_error'] = str(e)
-        if self.args.download_dir:
+        dl_dir = getattr(self.args, "download_dir", None)
+        if dl_dir:
             try:
-                download_path = Path(self.args.download_dir)
+                download_path = Path(dl_dir)
                 download_path.mkdir(parents=True, exist_ok=True)
                 test_file = download_path / '.write_test'
                 test_file.write_text('test')
@@ -1325,7 +1338,7 @@ class DriveTrashRecoveryTool:
             print(f"    Error: {result['error']}")
     
     def _print_local_directory_status(self, checks: Dict[str, Any]):
-        if not self.args.download_dir:
+        if not getattr(self.args, "download_dir", None):
             return
         local_status = "✓ PASS" if checks['local_writable'] else "❌ FAIL"
         print(f"Local Directory Writable: {local_status}")
