@@ -650,7 +650,7 @@ class DriveTrashRecoveryTool:
             if creds:
                 self._harden_token_permissions_windows(self._token_file)
             if not creds or not creds.valid:
-                creds = self._refresh_or_flow_creds(creds)
+                creds = self._refresh_or_flow_creds(creds, self._token_file)
                 if creds is None:
                     return False
             self._creds = creds
