@@ -14,10 +14,19 @@ Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`) 
 """
 
-__version__ = "1.7.1"
+__version__ = "1.7.2"
 
 # CHANGELOG
 r"""
+## [1.7.2] - 2025-09-22
+
+### Fixed
+- **Dry-run authentication:** `dry_run()` now calls `authenticate()` before any Drive API calls. Previously, dry-run could crash with “Service not initialized. Call authenticate() first.” when listing files without prior auth.
+- **Error reporting:** Dry-run now surfaces clear, user-facing errors when authentication fails (e.g., missing/invalid credentials) instead of a stack trace.
+
+### Notes
+- No behavior change to recovery logic; this is a safety/robustness patch only.
+
 ## [1.7.1] - 2025-09-19
 
 ### Fixes
@@ -1440,6 +1449,14 @@ class DriveTrashRecoveryTool:
         print("\n" + "="*80)
         print("🔍 DRY RUN MODE - No changes will be made")
         print("="*80)
+        # Authenticate up front; dry-run still needs list access
+        try:
+            if not self.authenticate():
+                self._print_err("Authentication failed. Ensure your credentials are configured and try again.")
+                return False
+        except Exception as e:
+            self._print_err(f"Authentication failed: {e}")
+            return False
         self.items = self.discover_trashed_files()
         if not self.items:
             print("No files found matching criteria.")
