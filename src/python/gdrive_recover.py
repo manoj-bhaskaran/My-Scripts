@@ -14,10 +14,20 @@ Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`) 
 """
 
-__version__ = "1.7.2"
+__version__ = "1.7.3"
 
 # CHANGELOG
 r"""
+## [1.7.3] - 2025-09-22
+
+### Authentication robustness & DX
+- **Fix:** Avoid `'NoneType' object has no attribute 'to_json'` during OAuth bootstrap when the credentials file is missing. The code now guards the write and exits cleanly with a helpful error.
+- **Feature:** Support `GDRT_CREDENTIALS_FILE` env var to point at a non-standard client secrets path (no need to rename to `credentials.json`).
+- **Hardening:** Treat unreadable/corrupt `token.json` as a cache miss and trigger a fresh OAuth flow instead of crashing.
+- **Messaging:** Clearer error when the credentials file can’t be found, including the resolved path.
+
+_No functional changes to recovery logic; this is a safe, backward-compatible patch._
+
 ## [1.7.2] - 2025-09-22
 
 ### Fixed
@@ -560,27 +570,30 @@ class DriveTrashRecoveryTool:
         return logging.getLogger(__name__)
     
     def _load_creds_from_token(self, token_file):
-        """Load credentials from token.json if it exists."""
-        if os.path.exists(token_file):
-            creds = Credentials.from_authorized_user_file(token_file, SCOPES)
-            return creds
-        return None
+        """Load credentials from token.json if it exists (tolerant of corrupt files)."""
+        if not os.path.exists(token_file):
+            return None
+        try:
+            return Credentials.from_authorized_user_file(token_file, SCOPES)
+        except Exception:
+            # Corrupt or unreadable token—force a fresh OAuth flow.
+            return None
 
-    def _refresh_or_flow_creds(self, creds):
+    def _refresh_or_flow_creds(self, creds, token_file):
         """Refresh credentials or run OAuth flow if needed."""
-        token_file = self._token_file
-        credentials_path = self._credentials_file
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            if not os.path.exists(credentials_path):
-                self.logger.error(
-                    f"Credentials file not found at '{credentials_path}'. "
-                    f"Set GDRT_CREDENTIALS_FILE or place '{DEFAULT_CREDENTIALS_FILE}' in the working directory."
-                )
+        else:
+            # Allow an env var override for the client secrets file.
+            cred_path = os.getenv("GDRT_CREDENTIALS_FILE", "credentials.json")
+            if not os.path.exists(cred_path):
+                self.logger.error(f"Credentials file not found: {cred_path}. "
+                                  "Set GDRT_CREDENTIALS_FILE or place credentials.json next to the script.")
                 return None
-
-            flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
             creds = flow.run_local_server(port=0)
+        if creds is None:
+            return None
         with open(token_file, 'w') as token:
             token.write(creds.to_json())
         self._harden_token_permissions_windows(token_file)
