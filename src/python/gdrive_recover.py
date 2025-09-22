@@ -1,4 +1,4 @@
-"""
+r"""
 Google Drive Trash Recovery Tool
 A comprehensive tool to recover files from Google Drive Trash at scale with configurable options.
 
@@ -14,10 +14,20 @@ Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`) 
 """
 
-__version__ = "1.7.0"
+__version__ = "1.7.1"
 
 # CHANGELOG
-"""
+r"""
+## [1.7.1] - 2025-09-19
+
+### Fixes
+- Resolve `SyntaxError: (unicode error) 'unicodeescape'` on Windows by marking long module docstrings and the argparse `epilog` as raw strings (`r"""..."""`). This prevents `\U` in example Windows paths from being parsed as Unicode escapes.
+- No functional or API changes; runtime behavior and CLI remain the same.
+
+### Developer Notes
+- When embedding Windows-style paths in source strings or help text, prefer raw strings or escape backslashes.
+- Added a brief comment near the affected strings to prevent regressions.
+
 ## [1.7.0] - 2025-09-22
 
 ### Features
@@ -2145,7 +2155,7 @@ def create_parser():
     parser = argparse.ArgumentParser(
         description=f"Google Drive Trash Recovery Tool v{__version__}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=f"""
+        epilog=r"""
 Examples:
   # Dry run to see what would be recovered
   %(prog)s dry-run --extensions jpg png
