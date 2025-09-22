@@ -11,6 +11,9 @@ import re
 from typing import Iterable, List, Mapping, Sequence, Tuple, Optional, Dict
 from typing import TYPE_CHECKING, Callable
 
+# Constant for whitespace, underscore, and hyphen collapsing
+_WS_UNDERSCORE_HYPHEN_RE = r'[\s_-]+'
+
 def _normalize_extension_token(token: str) -> str:
     """
     Normalize a raw extension token to a canonical, comparison-friendly form.
@@ -195,6 +198,47 @@ def validate_extensions(
 
     return deduped, warnings, []
 
+def normalize_policy_token(
+    raw: str | None,
+    *,
+    strict: bool,
+    aliases: Mapping[str, str],
+    default_value: str,
+) -> Tuple[str, List[str], List[str], Dict[str, dict]]:
+    """
+    Normalize a post-restore policy token using provided aliases.
+
+    Returns: (normalized_value, warnings, errors, telemetry)
+      - if strict and unknown -> errors contains message
+      - if not strict and unknown -> fallback to default_value and warnings contains note
+      - telemetry includes an 'unknown_policy' object when unknown
+    """
+    key = re.sub(_WS_UNDERSCORE_HYPHEN_RE, '', str(raw).strip().lower())
+    if key in aliases:
+        return aliases[key], [], [], {}
+
+    key = re.sub(_WS_UNDERSCORE_HYPHEN_RE, '', str(raw).strip().lower())
+    if key in aliases:
+        return aliases[key], [], [], {}
+
+    # Unknown token handling
+    suggestion = _suggest_token(key, list(aliases.keys()))
+    suggestion_text = f" Did you mean '{suggestion}'?" if suggestion else ""
+
+    telemetry = {"unknown_policy": {"token": str(raw), "normalized": key, "suggestion": suggestion}}
+
+    if strict:
+        return default_value, [], [
+            f"Unknown --post-restore-policy value '{raw}'. Use one of: retain | trash | delete (aliases allowed).{suggestion_text}"
+        ], telemetry
+
+    return (
+        default_value,
+        [f"Unknown --post-restore-policy '{raw}'. Falling back to '{default_value}'.{suggestion_text} (Tip: use --strict-policy to make this an error.)"],
+        [],
+        telemetry,
+    )
+
 # --- Lightweight, local mypy reveal_type checks (ignored at runtime) ---
 if TYPE_CHECKING:
     # mypy will evaluate these; they don't run at runtime.
@@ -221,10 +265,13 @@ def _levenshtein(a: str, b: str) -> int:
         prev = cur
     return prev[-1]
 
-def _suggest_token(raw: str, candidates: Sequence[str]) -> Optional[str]:
-    """Return best suggestion within distance ≤ 2, else None."""
+def _suggest_token(raw: str, candidates: List[str]) -> Optional[str]:
+    """
+    Suggest the closest token from candidates using Levenshtein distance.
+    Returns the closest match if distance <= 2, else None.
+    """
     try:
-        key = re.sub(r'[\s_-]+', '', str(raw).strip().lower())
+        key = re.sub(_WS_UNDERSCORE_HYPHEN_RE, '', str(raw).strip().lower())
     except Exception:
         key = str(raw or "").strip().lower()
     best: Tuple[int, Optional[str]] = (10**9, None)
