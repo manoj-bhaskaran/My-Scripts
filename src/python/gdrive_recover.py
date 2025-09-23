@@ -14,10 +14,25 @@ Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`) 
 """
 
-__version__ = "1.8.0"
+__version__ = "1.8.1"
 
 # CHANGELOG
 r"""
+## [1.8.1] - 2025-09-23
+
+### Fixed
+- **Streaming “found” double-counting:** In `recover-only` and `recover-and-download` modes we were pre-discovering items in `_prepare_recovery()` and then counting them again during streaming discovery. This inflated `Total files found` (e.g., `--limit 1` could show 2 found) and skewed the success rate.
+  - Introduced `streaming_mode` flow in `_prepare_recovery(streaming_mode: bool)` that **skips pre-discovery** when streaming and resets `stats['found']`, `_seen_total`, and `_processed_total` so streaming is the single source of truth.
+  - Updated `execute_recovery()` to pass `streaming_mode = (args.mode != 'dry_run')`.
+
+### Impact
+- Accurate `Total files found`, `Files recovered/downloaded`, and **Success rate** in streaming modes.
+- `--limit` now cleanly caps **streamed** discovery without preloaded items leaking into counts.
+
+### Notes
+- No CLI or API changes; backward-compatible patch.
+- Dry-run behavior unchanged (it still performs one-shot discovery and reports counts once).
+
 ## [1.8.0] - 2025-09-23
 
 ### Added
@@ -1778,16 +1793,29 @@ class DriveTrashRecoveryTool:
         self._mark_processed(item.id)
         return success
     
-    def _prepare_recovery(self) -> Tuple[bool, bool]:
+    def _prepare_recovery(self, streaming_mode: bool) -> Tuple[bool, bool]:
+        """
+        Prepare auth/state. In streaming modes (recover-only / recover-and-download),
+        DO NOT pre-discover items, because streaming discovery will do that and update
+        stats incrementally. Pre-discovering here would double-count 'found'.
+        """
         if not self.authenticate():
             return False, False
         self._load_state()
-        if not self.items:
-            self.items = self.discover_trashed_files()
-        has_files = len(self.items) > 0
-        if not has_files:
-            print("No files found to process.")
-        return True, has_files
+        if streaming_mode:
+            # Ensure counters are clean for streaming; discovery will bump these.
+            self.items = self.items or []
+            self._seen_total = 0
+            self._processed_total = 0
+            self.stats['found'] = 0
+            return True, True   # we can’t know yet; streaming will determine
+        else:
+            if not self.items:
+                self.items = self.discover_trashed_files()
+            has_files = len(self.items) > 0
+            if not has_files:
+                print("No files found to process.")
+            return True, has_files
     
     def _get_safety_confirmation(self) -> bool:
         if self.args.yes:
@@ -2039,12 +2067,11 @@ class DriveTrashRecoveryTool:
         return max(5, min(500, max(1, round(total * 0.02))))
 
     def execute_recovery(self) -> bool:
-        success, has_files = self._prepare_recovery()
+        # In streaming mode we must avoid pre-discovery to prevent double counting.
+        streaming_mode = (self.args.mode != 'dry_run')
+        success, has_files = self._prepare_recovery(streaming_mode)
         if not success:
             return False
-        # In streaming mode we may not pre-populate items; only require discovery
-        # ahead of time for dry-run.
-        streaming_mode = (self.args.mode != 'dry_run')
         if streaming_mode:
             # We may know the count if --file-ids is supplied
             est = len(self.args.file_ids) if self.args.file_ids else None
