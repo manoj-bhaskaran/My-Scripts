@@ -14,87 +14,42 @@ Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`) 
 """
 
-__version__ = "1.7.5"
+__version__ = "1.8.0"
 
 # CHANGELOG
 r"""
-## [1.7.5] - 2025-09-22
+## [1.8.0] - 2025-09-23
 
-### Fixed
-- **Windows/OneDrive file lock race:** Downloads could fail with `WinError 32` when OneDrive briefly locked the destination path during the final rename of `*.partial → final`. Introduced `_atomic_replace_with_retry()` which retries `os.replace()` for a short window and removes zero-byte stubs if present. This makes `recover-and-download` resilient to transient locks without user intervention.
+### Added
+- **`--direct-download`**: New opt-in flag to stream file bytes **directly to the final filename**
+  (no `.partial` and no final rename). This avoids destination-lock races from thumbnailers/AV/OneDrive.
+  Trade-off: an unexpected interruption may leave a partially written file at its final path.
 
-### Notes
-- Backward compatible; no CLI or API changes.
-- Dry-run and recovery logic are unchanged.
-- For immediate mitigation without updating, users can pause OneDrive sync or download to a non-synced folder.
+## [1.7.0–1.7.5] — 2025-09-22
 
-## [1.7.4] - 2025-09-22
+### Highlights
+- **Configurable credentials path** via `GDRT_CREDENTIALS_FILE`. Falls back to `credentials.json` if unset; paths with spaces are supported. Clearer startup error when missing/unreadable.  
+- **Windows/OneDrive lock resilience:** Added `_atomic_replace_with_retry()` to handle transient `WinError 32` during final `*.partial → final` rename, including cleanup of zero-byte stubs.
 
-### Fixed
-- **Dry-run crash on Windows/Linux:** Guard accesses to `args.download_dir` with `getattr(..., None)` so `dry-run` and `recover-only` modes don’t raise `AttributeError: 'Namespace' object has no attribute 'download_dir'`.  
-  Affected spots:
-  - Privilege checks (`_check_privileges`) when probing local download dir.
-  - Local directory status printer (`_print_local_directory_status`).
+### Fixes & Robustness
+- **Dry-run auth flow:** `dry_run()` now authenticates before any Drive calls, eliminating “Service not initialized” crashes.
+- **Dry-run on Windows/Linux:** Guarded `args.download_dir` access with `getattr(..., None)` so `dry-run` and `recover-only` don’t raise `AttributeError`.
+- **OAuth bootstrap:** Avoid `'NoneType' object has no attribute 'to_json'` when credentials are missing; guarded writes and provide a helpful exit.
+- **Token cache hardening:** Treat unreadable/corrupt `token.json` as a cache miss and trigger a fresh OAuth flow instead of crashing.
+- **Windows path literals:** Marked long docstrings/argparse `epilog` as raw strings to prevent `unicodeescape` errors from `\U` in examples.
 
-### Notes
-- Behavior for `recover-and-download` is unchanged; `--download-dir` remains required there.
-- No API or CLI changes; safe, backward-compatible patch release.
-
-## [1.7.3] - 2025-09-22
-
-### Authentication robustness & DX
-- **Fix:** Avoid `'NoneType' object has no attribute 'to_json'` during OAuth bootstrap when the credentials file is missing. The code now guards the write and exits cleanly with a helpful error.
-- **Feature:** Support `GDRT_CREDENTIALS_FILE` env var to point at a non-standard client secrets path (no need to rename to `credentials.json`).
-- **Hardening:** Treat unreadable/corrupt `token.json` as a cache miss and trigger a fresh OAuth flow instead of crashing.
-- **Messaging:** Clearer error when the credentials file can’t be found, including the resolved path.
-
-_No functional changes to recovery logic; this is a safe, backward-compatible patch._
-
-## [1.7.2] - 2025-09-22
-
-### Fixed
-- **Dry-run authentication:** `dry_run()` now calls `authenticate()` before any Drive API calls. Previously, dry-run could crash with “Service not initialized. Call authenticate() first.” when listing files without prior auth.
-- **Error reporting:** Dry-run now surfaces clear, user-facing errors when authentication fails (e.g., missing/invalid credentials) instead of a stack trace.
-
-### Notes
-- No behavior change to recovery logic; this is a safety/robustness patch only.
-
-## [1.7.1] - 2025-09-19
-
-### Fixes
-- Resolve `SyntaxError: (unicode error) 'unicodeescape'` on Windows by marking long module docstrings and the argparse `epilog` as raw strings. This prevents `\U` in example Windows paths from being parsed as Unicode escapes.
-- No functional or API changes; runtime behavior and CLI remain the same.
-
-### Developer Notes
-- When embedding Windows-style paths in source strings or help text, prefer raw strings or escape backslashes.
-- Added a brief comment near the affected strings to prevent regressions.
-
-## [1.7.0] - 2025-09-22
-
-### Features
-- **Configurable credentials path:** The tool now reads the OAuth client JSON path from `GDRT_CREDENTIALS_FILE`.  
-  - If the env var is unset or empty, it falls back to `credentials.json` (current directory).
-  - Paths with spaces are fully supported.
-  - Clearer startup error if the file is missing or unreadable.
+### Developer Experience & Messaging
+- Clearer auth errors including resolved credential path.
+- Improved error reporting in dry-run when auth fails (user-facing messages instead of stack traces).
 
 ### Docs & UX
-- **Help/README:** Added examples for setting `GDRT_CREDENTIALS_FILE`:
-  - PowerShell:
-    ```powershell
-    $env:GDRT_CREDENTIALS_FILE = "C:\Users\manoj\Documents\Scripts\Google Drive JSON\client_secret_...json"
-    ```
-  - CMD:
-    ```cmd
-    set GDRT_CREDENTIALS_FILE=C:\Users\manoj\Documents\Scripts\Google Drive JSON\client_secret_...json
-    ```
-  - Bash:
-    ```bash
-    export GDRT_CREDENTIALS_FILE="/path/to/client_secret_...json"
-    ```
+- Added examples for setting `GDRT_CREDENTIALS_FILE` in PowerShell, CMD, and Bash.
 
 ### Notes
-- Backward compatible: existing `credentials.json` in the working dir continues to work with no changes.
-- No changes to token caching behavior (`token.json` remains created/updated after first OAuth consent).
+- Backward compatible; no CLI or API changes to existing commands/flags.
+- `recover-and-download` behavior is unchanged except for added resilience during the final rename on Windows.
+- For immediate mitigation of destination-lock issues without updating, pause OneDrive sync or download to a non-synced folder.
+- No changes to token caching semantics (`token.json` still created/updated after first OAuth consent).
 
 ## [1.6.0–1.6.8] - 2025-09-21 → 2025-09-22
 
@@ -2175,38 +2130,66 @@ class DriveTrashRecoveryTool:
             request = service.files().get_media(fileId=item.id)
             target = Path(item.target_path)
             target.parent.mkdir(parents=True, exist_ok=True)
-            partial = Path(str(target) + ".partial")
-            with open(partial, "wb") as fh:
-                try:
-                    downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
-                    done = False
-                    last_print = 0.0
-                    while not done:
-                        self._rate_limit()
-                        status, done = downloader.next_chunk()
-                        now = time.time()
-                        if status and (self.args.verbose > 0) and (now - last_print > 1.0 or done):
-                            pct = int(status.progress() * 100)
-                            print(f"  ↳ downloading {item.name[:40]} … {pct}%")
-                            last_print = now
-                    item.status = 'downloaded'
-                    with self.stats_lock:
-                        self.stats['downloaded'] += 1
-                    # Atomic move into place
-                    if not self._atomic_replace_with_retry(partial, target):
-                        # If we still can't move (persistent lock), surface a clear error
-                        raise PermissionError(
-                            f"Could not move '{partial}' to '{target}' "
-                            f"(destination locked by another process)"
-                        )
-                    success = True
-                except Exception as e:
-                    item.status = 'failed'
-                    item.error_message = f"Download error: {e}"
-                    with self.stats_lock:
-                        self.stats['errors'] += 1
-                    self.logger.error(item.error_message)
-                    success = False
+            # When --direct-download is set, write straight to the final path.
+            if getattr(self.args, "direct_download", False):
+                with open(target, "wb") as fh:
+                    try:
+                        downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
+                        done = False
+                        last_print = 0.0
+                        while not done:
+                            self._rate_limit()
+                            status, done = downloader.next_chunk()
+                            now = time.time()
+                            if status and (self.args.verbose > 0) and (now - last_print > 1.0 or done):
+                                pct = int(status.progress() * 100)
+                                print(f"  ↳ downloading {item.name[:40]} … {pct}%")
+                                last_print = now
+                        item.status = 'downloaded'
+                        with self.stats_lock:
+                            self.stats['downloaded'] += 1
+                        success = True
+                    except Exception as e:
+                        item.status = 'failed'
+                        item.error_message = f"Download error: {e}"
+                        with self.stats_lock:
+                            self.stats['errors'] += 1
+                        self.logger.error(item.error_message)
+                        success = False
+            else:
+                # Default: write to .partial and atomically rename to final path.
+                partial = Path(str(target) + ".partial")
+                with open(partial, "wb") as fh:
+                    try:
+                        downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
+                        done = False
+                        last_print = 0.0
+                        while not done:
+                            self._rate_limit()
+                            status, done = downloader.next_chunk()
+                            now = time.time()
+                            if status and (self.args.verbose > 0) and (now - last_print > 1.0 or done):
+                                pct = int(status.progress() * 100)
+                                print(f"  ↳ downloading {item.name[:40]} … {pct}%")
+                                last_print = now
+                        item.status = 'downloaded'
+                        with self.stats_lock:
+                            self.stats['downloaded'] += 1
+                        # Atomic move into place
+                        if not self._atomic_replace_with_retry(partial, target):
+                            # If we still can't move (persistent lock), surface a clear error
+                            raise PermissionError(
+                                f"Could not move '{partial}' to '{target}' "
+                                f"(destination locked by another process)"
+                            )
+                        success = True
+                    except Exception as e:
+                        item.status = 'failed'
+                        item.error_message = f"Download error: {e}"
+                        with self.stats_lock:
+                            self.stats['errors'] += 1
+                        self.logger.error(item.error_message)
+                        success = False
         except HttpError as e:
             status = getattr(e.resp, "status", None)
             detail = getattr(e, 'content', b'')
@@ -2225,13 +2208,14 @@ class DriveTrashRecoveryTool:
             self.logger.error(item.error_message)
             success = False
         finally:
-            # Clean up partial on failure
-            try:
-                partial = Path(str(Path(item.target_path)) + ".partial")
-                if not success and partial.exists():
-                    partial.unlink()
-            except Exception:
-                pass
+            # Clean up .partial on failure (rename mode only)
+            if not getattr(self.args, "direct_download", False):
+                try:
+                    partial = Path(str(Path(item.target_path)) + ".partial")
+                    if not success and partial.exists():
+                        partial.unlink()
+                except Exception:
+                    pass
         return success
 
 def create_parser():
@@ -2471,6 +2455,14 @@ Concurrent-run guardrail (v1.6.0):
         # v1.6.7: bounded wait for lock
         subparser.add_argument('--lock-timeout', type=float, default=0.0,
                                help='If the state lock is held, wait up to this many seconds for it to be released (0 = no wait)')
+    # Only meaningful for recover-and-download
+    download_parser.add_argument(
+        '--direct-download',
+        action='store_true',
+        help=('Write bytes directly to the final filename (no ".partial" and no rename). '
+              'This can avoid destination-lock races from AV/thumbnailers/OneDrive, '
+              'but an interruption may leave a partially written file.')
+    )    
     return parser
     
 def _set_mode(args) -> None:
