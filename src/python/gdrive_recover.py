@@ -2123,6 +2123,38 @@ class DriveTrashRecoveryTool:
             self.logger.error(f"Atomic replace failed after retries: {last_err}")
         return False
 
+    def _download_with_downloader(self, downloader, item, show_progress=True):
+        """Download using MediaIoBaseDownload, with optional progress printing."""
+        done = False
+        last_print = 0.0
+        while not done:
+            self._rate_limit()
+            status, done = downloader.next_chunk()
+            now = time.time()
+            if show_progress and status and (self.args.verbose > 0) and (now - last_print > 1.0 or done):
+                pct = int(status.progress() * 100)
+                print(f"  ↳ downloading {item.name[:40]} … {pct}%")
+                last_print = now
+
+    def _handle_download_success(self, item):
+        item.status = 'downloaded'
+        with self.stats_lock:
+            self.stats['downloaded'] += 1
+
+    def _handle_download_failure(self, item, msg):
+        item.status = 'failed'
+        item.error_message = msg
+        with self.stats_lock:
+            self.stats['errors'] += 1
+        self.logger.error(msg)
+
+    def _cleanup_partial_file(self, partial):
+        try:
+            if partial.exists():
+                partial.unlink()
+        except Exception:
+            pass
+
     def _download_file(self, item: RecoveryItem) -> bool:
         success = False
         try:
@@ -2130,92 +2162,47 @@ class DriveTrashRecoveryTool:
             request = service.files().get_media(fileId=item.id)
             target = Path(item.target_path)
             target.parent.mkdir(parents=True, exist_ok=True)
-            # When --direct-download is set, write straight to the final path.
             if getattr(self.args, "direct_download", False):
                 with open(target, "wb") as fh:
                     try:
                         downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
-                        done = False
-                        last_print = 0.0
-                        while not done:
-                            self._rate_limit()
-                            status, done = downloader.next_chunk()
-                            now = time.time()
-                            if status and (self.args.verbose > 0) and (now - last_print > 1.0 or done):
-                                pct = int(status.progress() * 100)
-                                print(f"  ↳ downloading {item.name[:40]} … {pct}%")
-                                last_print = now
-                        item.status = 'downloaded'
-                        with self.stats_lock:
-                            self.stats['downloaded'] += 1
+                        self._download_with_downloader(downloader, item)
+                        self._handle_download_success(item)
                         success = True
                     except Exception as e:
-                        item.status = 'failed'
-                        item.error_message = f"Download error: {e}"
-                        with self.stats_lock:
-                            self.stats['errors'] += 1
-                        self.logger.error(item.error_message)
+                        self._handle_download_failure(item, f"Download error: {e}")
                         success = False
             else:
-                # Default: write to .partial and atomically rename to final path.
                 partial = Path(str(target) + ".partial")
                 with open(partial, "wb") as fh:
                     try:
                         downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
-                        done = False
-                        last_print = 0.0
-                        while not done:
-                            self._rate_limit()
-                            status, done = downloader.next_chunk()
-                            now = time.time()
-                            if status and (self.args.verbose > 0) and (now - last_print > 1.0 or done):
-                                pct = int(status.progress() * 100)
-                                print(f"  ↳ downloading {item.name[:40]} … {pct}%")
-                                last_print = now
-                        item.status = 'downloaded'
-                        with self.stats_lock:
-                            self.stats['downloaded'] += 1
+                        self._download_with_downloader(downloader, item)
+                        self._handle_download_success(item)
                         # Atomic move into place
                         if not self._atomic_replace_with_retry(partial, target):
-                            # If we still can't move (persistent lock), surface a clear error
                             raise PermissionError(
                                 f"Could not move '{partial}' to '{target}' "
                                 f"(destination locked by another process)"
                             )
                         success = True
                     except Exception as e:
-                        item.status = 'failed'
-                        item.error_message = f"Download error: {e}"
-                        with self.stats_lock:
-                            self.stats['errors'] += 1
-                        self.logger.error(item.error_message)
+                        self._handle_download_failure(item, f"Download error: {e}")
                         success = False
         except HttpError as e:
             status = getattr(e.resp, "status", None)
             detail = getattr(e, 'content', b'')
             detail = detail.decode(errors='ignore') if hasattr(detail, 'decode') else str(e)
-            item.status = 'failed'
-            item.error_message = f"files.get_media(fileId={item.id}) failed: HTTP {status}: {detail}"
-            with self.stats_lock:
-                self.stats['errors'] += 1
-            self.logger.error(item.error_message)
+            self._handle_download_failure(item, f"files.get_media(fileId={item.id}) failed: HTTP {status}: {detail}")
             success = False
         except Exception as e:
-            item.status = 'failed'
-            item.error_message = f"Download error: {e}"
-            with self.stats_lock:
-                self.stats['errors'] += 1
-            self.logger.error(item.error_message)
+            self._handle_download_failure(item, f"Download error: {e}")
             success = False
         finally:
-            # Clean up .partial on failure (rename mode only)
             if not getattr(self.args, "direct_download", False):
-                try:
-                    partial = Path(str(Path(item.target_path)) + ".partial")
-                    if not success and partial.exists():
-                        partial.unlink()
-                except Exception:
-                    pass
+                partial = Path(str(Path(item.target_path)) + ".partial")
+                if not success:
+                    self._cleanup_partial_file(partial)
         return success
 
 def create_parser():
