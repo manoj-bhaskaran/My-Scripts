@@ -176,8 +176,8 @@ if (-not (Test-Path -LiteralPath $ParentDirectory -PathType Container)) {
 Log "Starting empty folder cleanup. Dry-run: $DryRun"
 
 # Initialize counters
-$DeletedFolderCount = 0
-WouldDeleteCount   = 0
+[int]$DeletedFolderCount  = 0
+[int]$WouldDeleteCount    = 0
 
 # Enumerate subdirectories without traversing reparse points (symlinks/junctions)
 function Get-SubdirsNoReparse {

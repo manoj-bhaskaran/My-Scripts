@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.0.9
+ 3.0.10
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -175,6 +175,12 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.0.10 — 2025-09-25
+### Fixed
+- **Empty-folder cleanup helper crash:** `Remove-EmptyFolders.ps1` referenced `WouldDeleteCount` without `$`, causing “The term 'WouldDeleteCount' is not recognized…” at runtime. Initialised and correctly referenced as `$WouldDeleteCount` (typed `[int]`).
+### Notes
+- No changes to distribution logic. If you run post-processing, pull the updated helper (recommended helper version ≥ 1.3.1).
+
 ## 3.0.9 — 2025-09-25
 ### Fixed
 - **Subfolder list normalisation could collapse to target root** when restarting from a state file containing malformed entries (e.g., `''`, `'D'`, `'D:'`, or relative paths). This caused initial copies to land in the **target root**.
@@ -203,41 +209,30 @@ CHANGELOG
 - Added a small helper `New-Ref` to create stable `[ref]` containers.
 - Missing line continuation in a `DistributeFilesToSubfolders` call that could mis-parse parameters.
 
-## 3.0.5 — 2025-09-18
-### Fixed
-- **Relative destinations like `D\file.jpg`:** Added a normalization guard so any subfolder string that is not an absolute path (or looks like a bare drive letter such as `D` or `D:`) is remapped to the absolute `-TargetFolder` root. This prevents `Join-Path` from producing `D\file` which PowerShell resolves as a relative path (e.g., `C:\Users\<user>\D\file`).
-- **Hardening:** `DistributeFilesToSubfolders` now receives the target root and ensures the chosen destination folder is rooted and exists before copying.
-
-## 3.0.4 — 2025-09-18
-### Fixed
-- **Destination path collapsing to drive letter (`D\file`)**: Prevent implicit string-casting of `DirectoryInfo` values that could shrink paths to a single-letter drive designator. `DistributeFilesToSubfolders` and `RedistributeFilesInTarget` now accept object arrays and normalize each entry to `.FullName`. `CreateRandomSubfolders` now returns `DirectoryInfo` objects (not strings) so absolute paths are preserved end-to-end.
-- **Hardening**: Added consistent path normalization when building internal subfolder lists.
-
-## 3.0.3 — 2025-09-18
-### Fixed
-- **Invoke-WithRetry call typo:** Added missing line-continuation (`` ` ``) after `-MaxBackoff $MaxBackoff` in `Copy-ItemWithRetry` which caused `The term '-RetryDelay' is not recognized...` when the next line was parsed as a new command.
-- **Fresh-run state lock:** Pass `-RetryCount $RetryCount` when calling `AcquireFileLock` after deleting a stale state file for consistency with other call sites.
-
-## 3.0.2 — 2025-09-17
-### Fixed
-- **Split-Path param set error:** Replaced `Split-Path -LiteralPath ... -Parent` with a compatible call to avoid `Parameter set cannot be resolved...` in PowerShell 5.1.
-- **State lock reacquire:** Corrected variable name inside `LoadState` and ensured `-RetryCount` is passed when (re)acquiring the file lock.
-- **Lock acquire in fresh-run path:** Now passes `-RetryCount` when acquiring the initial state lock.
-
-## 3.0.1 — 2025-09-17
-### Fixed
-- **Log/state path normalization:** If `-LogFilePath` or `-StateFilePath` points to an **existing directory**, the script now
-  creates/uses `FileDistributor-log.txt` or `FileDistributor-State.json` **inside that directory** automatically.
-- **Auto-create:** The log directory and file are created before first write to avoid "path is a directory" errors.
-- **Docs:** Parameter docs updated to clarify directory inputs are accepted for both paths.
-
-## 3.0.0 — 2025-09-14
+## 3.0.0–3.0.5 (rollup) — 2025-09-18
 ### Changed (⚠️ Breaking)
-- **Random name provider is now module-only:** the legacy `randomname.ps1` script is no longer supported.
-- Removed the `-RandomNameScriptPath` parameter.
-- The script now imports **RandomName** via: `-RandomNameModulePath` → script-root `powershell\module\RandomName\RandomName.psd1/.psm1` → `Import-Module RandomName` from `$env:PSModulePath`.
+- **Random name provider is now module-only.** The legacy `randomname.ps1` script is no longer supported; `-RandomNameScriptPath` has been removed. The script imports **RandomName** via this order: `-RandomNameModulePath` → script-root `powershell\module\RandomName\RandomName.psd1/.psm1` → `Import-Module RandomName` from `$env:PSModulePath`.
+
 ### Added
-- `-RandomNameModulePath` parameter to explicitly point to the RandomName module.
+- **`-RandomNameModulePath`** parameter to explicitly point to the RandomName module.
+
+### Fixed
+- **Path safety & normalization:**
+  - Prevent **relative/drive-like destinations** (e.g., `D\file.jpg`, bare `D`/`D:`). Non-absolute subfolder strings are remapped under the absolute **-TargetFolder** to avoid `Join-Path` producing relative paths.
+  - Stop **destination collapsing to drive letters** caused by implicit `DirectoryInfo` string-casts. `DistributeFilesToSubfolders` and `RedistributeFilesInTarget` now accept object arrays and normalize entries to `.FullName`. `CreateRandomSubfolders` now returns `DirectoryInfo` objects so absolute paths are preserved end-to-end.
+  - Consistent path normalization when building internal subfolder lists.
+  - `DistributeFilesToSubfolders` now always receives **TargetRoot** and verifies that chosen destinations are rooted and exist before copying.
+- **Retry & locking robustness:**
+  - Added missing line-continuation after `-MaxBackoff $MaxBackoff` in `Copy-ItemWithRetry` that could cause `The term '-RetryDelay' is not recognized...`.
+  - Always pass `-RetryCount $RetryCount` when acquiring or re-acquiring the state-file lock, including fresh-run after deleting a stale state file; corrected a variable name inside `LoadState`.
+- **PowerShell 5.1 compatibility:**
+  - Replaced `Split-Path -LiteralPath ... -Parent` usage with a compatible call to avoid “Parameter set cannot be resolved…” errors.
+- **Log/State path handling:**
+  - If `-LogFilePath` or `-StateFilePath` points to an **existing directory**, automatically create/use `FileDistributor-log.txt` or `FileDistributor-State.json` **inside** that directory.
+  - Ensure the log directory and file are created before first write, preventing “path is a directory” errors.
+
+### Documentation
+- Clarified that **directory** inputs are accepted for `-LogFilePath` and `-StateFilePath`, with automatic filename creation.
 
 ## 2.0.0 — 2025-09-14
 ### Changed (⚠️ Breaking)
