@@ -175,12 +175,6 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
-## 3.0.10 — 2025-09-25
-### Fixed
-- **Empty-folder cleanup helper crash:** `Remove-EmptyFolders.ps1` referenced `WouldDeleteCount` without `$`, causing “The term 'WouldDeleteCount' is not recognized…” at runtime. Initialised and correctly referenced as `$WouldDeleteCount` (typed `[int]`).
-### Notes
-- No changes to distribution logic. If you run post-processing, pull the updated helper (recommended helper version ≥ 1.3.1).
-
 ## 3.0.9 — 2025-09-25
 ### Fixed
 - **Subfolder list normalisation could collapse to target root** when restarting from a state file containing malformed entries (e.g., `''`, `'D'`, `'D:'`, or relative paths). This caused initial copies to land in the **target root**.
