@@ -47,9 +47,15 @@
     .\Remove-EmptyFolders.ps1 -ParentDirectory "E:\MassiveArchive" -DryRun
 
 .VERSION
-1.3.0
+1.3.1
 
 CHANGELOG
+## 1.3.1 — 2025-09-25
+### Fixed
+- **Empty-folder cleanup helper crash:** `Remove-EmptyFolders.ps1` referenced `WouldDeleteCount` without `$`, causing “The term 'WouldDeleteCount' is not recognized…” at runtime. Initialised and correctly referenced as `$WouldDeleteCount` (typed `[int]`).
+### Notes
+- No changes to distribution logic. If you run post-processing, pull the updated helper (recommended helper version ≥ 1.3.1).
+
 ## 1.3.0 — 2025-09-14
 ### Changed
 - **Traversal safety:** Do not traverse reparse points (symlinks/junctions); enumeration is restricted to real directories under the specified root.
