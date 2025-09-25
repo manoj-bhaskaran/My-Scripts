@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.0.8
+ 3.0.9
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -175,6 +175,17 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.0.9 — 2025-09-25
+### Fixed
+- **Subfolder list normalisation could collapse to target root** when restarting from a state file containing malformed entries (e.g., `''`, `'D'`, `'D:'`, or relative paths). This caused initial copies to land in the **target root**.
+- **Double deletion scenario with `-DeleteMode EndOfScript`**: target-root “redistribution” queued root copies for deletion while sources were also queued, leading to removal of both.
+### Changes
+- Hardened `ConvertItemsToPaths` to handle mixed `DirectoryInfo`/string inputs and skip empty values.
+- In `DistributeFilesToSubfolders`, filtered out the target root and non-folders from candidate subfolders; added a last-resort “emergency subfolder” creation to avoid root destinations.
+- In `RedistributeFilesInTarget`, excluded the target root from the subfolder map and validated existence.
+### Notes
+- If you previously ran with `-Restart`, delete any stale state files (and `.bak`/`.sha256`) before rerunning to avoid inheriting malformed subfolder lists.
+
 ## 3.0.8 — 2025-09-18
 ### Fixed
 - Added missing line continuation when calling `DistributeFilesToSubfolders` during target-root redistribution.
@@ -925,8 +936,12 @@ function DistributeFilesToSubfolders {
             }
         }
     }
+    # Drop TargetRoot and any non-folders; require at least one real subfolder
+    $subfolderPaths = $subfolderPaths |
+        Where-Object { $_ -and (($_ -ne $TargetRoot) -and (Test-Path -LiteralPath $_ -PathType Container)) }
+
     if ($subfolderPaths.Count -eq 0) {
-        LogMessage -Message "No subfolders provided to DistributeFilesToSubfolders. Aborting distribution for this batch." -IsError
+        LogMessage -Message "No valid subfolders (all collapsed to root or missing). Aborting this batch." -IsError
         return
     }
 
@@ -965,7 +980,7 @@ function DistributeFilesToSubfolders {
             LogMessage -Message "Sanitizing non-rooted destination folder '$destinationFolder' -> '$TargetRoot'." -IsWarning
             $destinationFolder = $TargetRoot
         }
-        # Hard guard: if we somehow ended up at the target root but we have subfolders, force a subfolder pick.
+        # Hard guard: if destination still resolves to root, pick/construct a real subfolder
         if ($destinationFolder -ieq $TargetRoot) {
             $subOnly = $subfolderPaths | Where-Object { $_ -ne $TargetRoot }
             if ($subOnly.Count -gt 0) {
@@ -973,6 +988,12 @@ function DistributeFilesToSubfolders {
                 $cand2 = $subOnly | Where-Object { $folderCounts[$_] -eq $min2 }
                 $destinationFolder = if ($cand2.Count -gt 1) { $cand2 | Get-Random } else { $cand2[0] }
                 LogMessage -Message "Destination normalized away from target root; using subfolder '$destinationFolder'." -IsWarning
+            } else {
+                # Last resort: create an emergency subfolder to avoid root copy
+                $destinationFolder = Join-Path -Path $TargetRoot -ChildPath (Get-RandomFileName)
+                New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
+                $folderCounts[$destinationFolder] = 0
+                LogMessage -Message "Created emergency destination subfolder '$destinationFolder' to avoid using target root." -IsWarning
             }
         }
         if (-not (Test-Path -LiteralPath $destinationFolder -PathType Container)) {
@@ -1081,7 +1102,10 @@ function RedistributeFilesInTarget {
         $sfPath = if ($sf -is [System.IO.FileSystemInfo]) { $sf.FullName } else { [string]$sf }
         $sfPath = Resolve-SubfolderPath -Path $sfPath -TargetRoot $TargetFolder
         if (-not [string]::IsNullOrWhiteSpace($sfPath)) {
-            $normalizedSubfolders += $sfPath
+            # Ignore TargetFolder itself; we only want real subfolders
+            if ($sfPath -ne $TargetFolder -and (Test-Path -LiteralPath $sfPath -PathType Container)) {
+                $normalizedSubfolders += $sfPath
+            }
             try {
                 $folderFilesMap[$sfPath] = (Get-ChildItem -Path $sfPath -File).Count
             } catch {
@@ -1300,12 +1324,15 @@ function LoadState {
 
 # Function to extract paths from items
 function ConvertItemsToPaths {
-    param (
-        [array]$Items
-    )
-
-    # Return the array of item full paths
-    return $Items.FullName
+    param ([array]$Items)
+    if (-not $Items) { return @() }
+    $out = @()
+    foreach ($i in $Items) {
+        if ($i -is [System.IO.FileSystemInfo]) { $out += $i.FullName }
+        elseif ([string]::IsNullOrWhiteSpace([string]$i)) { continue }
+        else { $out += [string]$i }
+    }
+    return $out
 }
 
 # Function to convert paths to items
