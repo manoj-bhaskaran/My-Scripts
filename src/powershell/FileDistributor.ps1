@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.6
+ 3.1.7
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,21 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.7 — 2025-09-28
+### Fixed
+- **Directory enumeration with special characters:** Fixed `Get-ChildItem` enumeration failing to detect existing subfolders when target paths contain special characters or spaces. Replaced `-Path` with `-LiteralPath` and added `-Force` parameter to handle hidden/system directories and paths with special characters.
+- **Robust subfolder detection:** Enhanced directory enumeration to use `.PSIsContainer` property filtering instead of `-Directory` parameter, improving reliability with non-standard folder attributes.
+- **Empty subfolder collection root cause:** Resolved core issue where existing subfolders were not being detected during initial enumeration, causing empty collections throughout the processing pipeline and triggering emergency subfolder creation with associated warnings.
+
+### Added
+- **Comprehensive enumeration diagnostics:** Added detailed DEBUG logging for directory enumeration process, including path validation, item counts, and error handling to aid in troubleshooting filesystem access issues.
+- **Error handling for enumeration failures:** Added try-catch wrapper around subfolder enumeration with graceful fallback to empty collection and detailed error logging.
+
+### Notes
+- Eliminates "Sanitizing non-rooted destination folder" warnings caused by empty subfolder collections when valid subfolders exist but were not being detected.
+- Addresses paths containing spaces, special characters, or non-standard directory attributes that prevented proper enumeration.
+- Root cause was `Get-ChildItem -Path` parameter not handling literal paths with special characters correctly.
+
 ## 3.1.6 — 2025-09-28
 ### Fixed
 - **State persistence for special characters:** Fixed subfolder path conversion between state save/load cycles when paths contain special characters like `()!@$`, preventing subfolder collections from being lost during checkpoint restoration.
@@ -1895,13 +1910,21 @@ function Main {
             LogMessage -Message "Source File Count (selected): $totalSourceFiles of $totalSourceFilesAll total. Target File Count Before: $totalTargetFilesBefore."
 
             # Get subfolders in the target folder
-            $subfolders = Get-ChildItem -Path $TargetFolder -Directory | Where-Object { 
-                $_ -and 
-                $_.FullName -and 
-                -not [string]::IsNullOrWhiteSpace($_.FullName) 
+            LogMessage -Message "DEBUG: About to enumerate subfolders in: '$TargetFolder'"
+            LogMessage -Message "DEBUG: Target folder exists: $(Test-Path -LiteralPath $TargetFolder)"
+            LogMessage -Message "DEBUG: Target folder is directory: $(Test-Path -LiteralPath $TargetFolder -PathType Container)"
+            
+            try {
+                $allItems = Get-ChildItem -LiteralPath $TargetFolder -Force -ErrorAction Stop
+                LogMessage -Message "DEBUG: Total items found: $($allItems.Count)"
+                
+                $subfolders = $allItems | Where-Object { $_.PSIsContainer -and $_.FullName -and -not [string]::IsNullOrWhiteSpace($_.FullName) }
+                LogMessage -Message "DEBUG: Directory items found: $($subfolders.Count)"
+                LogMessage -Message ("DEBUG: Initial subfolders collected: {0}" -f ($subfolders | ForEach-Object { "'$($_.FullName)'" } | Join-String ', '))
+            } catch {
+                LogMessage -Message "DEBUG: Error during Get-ChildItem: $($_.Exception.Message)" -IsError
+                $subfolders = @()
             }
-            LogMessage -Message ("DEBUG: Initial subfolders collected: {0}" -f ($subfolders | ForEach-Object { "'$($_.FullName)'" } | Join-String ', '))
-
             # Determine if subfolders need to be created
             LogMessage -Message "Total Files Before: $totalFiles."
             $currentFolderCount = $subfolders.Count
@@ -1929,7 +1952,9 @@ function Main {
 
         if ($lastCheckpoint -lt 3) {
             # Add this diagnostic before calling DistributeFilesToSubfolders
+            if ($state.subfolders) {
             LogMessage -Message ("DEBUG: State subfolders raw: {0}" -f ($state.subfolders -join '; '))
+            }
             LogMessage -Message ("DEBUG: Converted subfolders: {0}" -f ($subfolders | ForEach-Object { "'$($_.FullName)'" } | Join-String ', '))
             # Distribute files from the source folder to subfolders
             if ($totalSourceFiles -gt 0) {
