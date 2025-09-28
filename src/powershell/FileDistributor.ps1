@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.0.10
+ 3.1.0
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -60,6 +60,12 @@ Optional. Specifies how the original files should be handled after successful co
 - `RecycleBin`: Moves the files to the Recycle Bin (default).
 - `Immediate`: Deletes the files immediately after copying.
 - `EndOfScript`: Deletes the files at the end of the script if conditions are met.
+
+.PARAMETER MaxFilesToCopy
+Optional. Limits how many files (from the recursive source enumeration) will be copied this run.
+`-1` (default) means **all** files. `0` means **none** will be copied. Post-processing steps
+(target redistribution, duplicate cleanup, empty-folder cleanup) still run. Only files actually
+copied in this session are eligible for deletion per `-DeleteMode`.
 
 .PARAMETER EndOfScriptDeletionCondition
 Optional. Specifies the conditions under which files are deleted in `EndOfScript` mode. Options are:
@@ -175,58 +181,56 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
-## 3.0.9 — 2025-09-25
-### Fixed
-- **Subfolder list normalisation could collapse to target root** when restarting from a state file containing malformed entries (e.g., `''`, `'D'`, `'D:'`, or relative paths). This caused initial copies to land in the **target root**.
-- **Double deletion scenario with `-DeleteMode EndOfScript`**: target-root “redistribution” queued root copies for deletion while sources were also queued, leading to removal of both.
-### Changes
-- Hardened `ConvertItemsToPaths` to handle mixed `DirectoryInfo`/string inputs and skip empty values.
-- In `DistributeFilesToSubfolders`, filtered out the target root and non-folders from candidate subfolders; added a last-resort “emergency subfolder” creation to avoid root destinations.
-- In `RedistributeFilesInTarget`, excluded the target root from the subfolder map and validated existence.
+## 3.1.0 — 2025-09-28
+### Added
+- **`-MaxFilesToCopy`**: Limit how many files from the recursive source enumeration are copied in this run.  
+  - `-1` (default) = copy **all** files (unchanged behavior)  
+  - `0` = copy **none** (skips source distribution but still performs target redistribution and optional post-processing)  
+  - `N > 0` = copy the **first N** enumerated files (selection policy can be adjusted to random if desired).  
+  Only files actually copied are eligible for deletion per `-DeleteMode`. State/resume is aware of this setting.
+
+### Changed
+- **State & restart safety**: Persist `MaxFilesToCopy`, `totalSourceFilesAll` (full enumeration), and the *selected* `sourceFiles`. On `-Restart`, the provided `MaxFilesToCopy` must match the saved value to ensure deterministic continuation.
+- **Progress & summary**: Logs now distinguish **enumerated** vs **selected** counts; distribution phase is skipped cleanly when no files are selected.
+
 ### Notes
-- If you previously ran with `-Restart`, delete any stale state files (and `.bak`/`.sha256`) before rerunning to avoid inheriting malformed subfolder lists.
+- Post-processing (target-root redistribution, duplicate cleanup, empty-folder cleanup) still runs even when zero files are copied, enabling maintenance-only runs.
 
-## 3.0.8 — 2025-09-18
-### Fixed
-- Added missing line continuation when calling `DistributeFilesToSubfolders` during target-root redistribution.
-  Without the backtick, PowerShell invoked the function with only `-Files`, then interactively prompted for
-  the mandatory `-TargetRoot` (visible especially when resuming from checkpoint 3).
+## 3.0.0–3.0.9 (rollup) — 2025-09-18 → 2025-09-25
 
-## 3.0.7 — 2025-09-18
-### Fixed
-- Progress denominator now reflects the current **phase** (source distribution, target-root redistribution, and per-overloaded-folder redistribution). The per-phase counter resets so logs like “Processed N of M” are accurate.
-- Prevent copies from landing in the target **root** during source distribution. If a sanitized destination resolves to the root but subfolders exist, we re-select a real subfolder (least-filled) and log a warning once.
-
-## 3.0.6 — 2025-09-18
-### Fixed
-- Crash on fresh runs: avoid overwriting `[ref]` holders (e.g., `$FilesToDelete`) with plain arrays; instead, only assign to their `.Value`. This prevents "The property 'Value' cannot be found..." errors.
-- Added a small helper `New-Ref` to create stable `[ref]` containers.
-- Missing line continuation in a `DistributeFilesToSubfolders` call that could mis-parse parameters.
-
-## 3.0.0–3.0.5 (rollup) — 2025-09-18
 ### Changed (⚠️ Breaking)
-- **Random name provider is now module-only.** The legacy `randomname.ps1` script is no longer supported; `-RandomNameScriptPath` has been removed. The script imports **RandomName** via this order: `-RandomNameModulePath` → script-root `powershell\module\RandomName\RandomName.psd1/.psm1` → `Import-Module RandomName` from `$env:PSModulePath`.
+- **Random name provider is module-only.** Removed legacy `randomname.ps1` and `-RandomNameScriptPath`. Import order: `-RandomNameModulePath` → script-root `powershell\module\RandomName\RandomName.psd1/.psm1` → `Import-Module RandomName` from `$env:PSModulePath`.
 
 ### Added
-- **`-RandomNameModulePath`** parameter to explicitly point to the RandomName module.
+- **`-RandomNameModulePath`** to explicitly point to the RandomName module.
 
 ### Fixed
-- **Path safety & normalization:**
-  - Prevent **relative/drive-like destinations** (e.g., `D\file.jpg`, bare `D`/`D:`). Non-absolute subfolder strings are remapped under the absolute **-TargetFolder** to avoid `Join-Path` producing relative paths.
-  - Stop **destination collapsing to drive letters** caused by implicit `DirectoryInfo` string-casts. `DistributeFilesToSubfolders` and `RedistributeFilesInTarget` now accept object arrays and normalize entries to `.FullName`. `CreateRandomSubfolders` now returns `DirectoryInfo` objects so absolute paths are preserved end-to-end.
-  - Consistent path normalization when building internal subfolder lists.
-  - `DistributeFilesToSubfolders` now always receives **TargetRoot** and verifies that chosen destinations are rooted and exist before copying.
-- **Retry & locking robustness:**
-  - Added missing line-continuation after `-MaxBackoff $MaxBackoff` in `Copy-ItemWithRetry` that could cause `The term '-RetryDelay' is not recognized...`.
-  - Always pass `-RetryCount $RetryCount` when acquiring or re-acquiring the state-file lock, including fresh-run after deleting a stale state file; corrected a variable name inside `LoadState`.
-- **PowerShell 5.1 compatibility:**
-  - Replaced `Split-Path -LiteralPath ... -Parent` usage with a compatible call to avoid “Parameter set cannot be resolved…” errors.
-- **Log/State path handling:**
-  - If `-LogFilePath` or `-StateFilePath` points to an **existing directory**, automatically create/use `FileDistributor-log.txt` or `FileDistributor-State.json` **inside** that directory.
-  - Ensure the log directory and file are created before first write, preventing “path is a directory” errors.
+- **Path safety & normalization**
+  - Block **relative/drive-like destinations** (e.g., `D\file.jpg`, `D`, `D:`). Non-absolute subfolder strings are remapped under **-TargetFolder**; chosen destinations are verified to be rooted and existing before copy.
+  - Prevent destination collapsing to drive letters due to implicit `DirectoryInfo` casts. `DistributeFilesToSubfolders`/`RedistributeFilesInTarget` accept object arrays and normalize to `.FullName`; `CreateRandomSubfolders` returns `DirectoryInfo`. Consistent normalization when building subfolder lists.
 
-### Documentation
-- Clarified that **directory** inputs are accepted for `-LogFilePath` and `-StateFilePath`, with automatic filename creation.
+- **Root-landing & restart hygiene (3.0.7–3.0.9)**
+  - Avoid placing files in target **root** during source distribution; if a sanitized destination resolves to root while subfolders exist, re-select the least-filled subfolder.
+  - On restart, **malformed subfolder entries** in state (e.g., `''`, `D`, `D:`, relative) no longer collapse to root. We filter out target root and non-folders; if none remain, create an **emergency** subfolder to avoid root placement.
+  - Hardened `ConvertItemsToPaths` to handle `DirectoryInfo`/string mixes and skip empty values.
+  - `RedistributeFilesInTarget` excludes the target root from its subfolder map and validates existence.
+
+- **Deletion safety**
+  - Prevent **double deletion** when `-DeleteMode EndOfScript`: target-root redistribution no longer queues root copies alongside sources in a way that removes both.
+
+- **Progress & reliability**
+  - Phase-aware progress denominators (source distribution, root redistribution, per-folder redistribution).
+  - Fixed missing backticks in calls (including `Copy-ItemWithRetry` and a `DistributeFilesToSubfolders` invocation) that could mis-parse parameters.
+  - Consistently pass `-RetryCount $RetryCount` when (re)acquiring the state lock; corrected a variable name in `LoadState`.
+
+- **PowerShell 5.1 compatibility**
+  - Replaced `Split-Path -LiteralPath ... -Parent` usages to avoid “Parameter set cannot be resolved…” errors.
+
+- **Log/State path handling**
+  - If `-LogFilePath`/`-StateFilePath` points to an **existing directory**, automatically use `FileDistributor-log.txt` / `FileDistributor-State.json` inside it and ensure directories/files exist before first write.
+
+### Notes
+- If you previously ran with `-Restart`, delete stale state files (and `.bak`/`.sha256`) before rerunning to avoid inheriting malformed subfolder lists.
 
 ## 2.0.0 — 2025-09-14
 ### Changed (⚠️ Breaking)
@@ -1480,7 +1484,7 @@ function Main {
         }
     }
 
-    LogMessage -Message "Validating parameters: SourceFolder - $SourceFolder, TargetFolder - $TargetFolder, FilePerFolderLimit - $FilesPerFolderLimit"
+    LogMessage -Message "Validating parameters: SourceFolder - $SourceFolder, TargetFolder - $TargetFolder, FilePerFolderLimit - $FilesPerFolderLimit, MaxFilesToCopy - $MaxFilesToCopy"
 
     try {
         # Ensure source and target folders exist
@@ -1520,6 +1524,12 @@ function Main {
         if (-not ("NoWarnings", "WarningsOnly" -contains $EndOfScriptDeletionCondition)) {
             LogMessage -Message "Invalid value for EndOfScriptDeletionCondition: $EndOfScriptDeletionCondition. Valid options are 'NoWarnings', 'WarningsOnly'." -IsError
             exit 1
+        }
+
+        # Validate MaxFilesToCopy
+        if ($MaxFilesToCopy -lt -1) {
+            LogMessage -Message "Invalid MaxFilesToCopy '$MaxFilesToCopy'. Using -1 (no limit)." -IsWarning
+            $MaxFilesToCopy = -1
         }
 
         LogMessage -Message "Parameter validation completed"
@@ -1592,6 +1602,16 @@ function Main {
                 if ($lastCheckpoint -in 2, 3, 4) {
                     $totalSourceFiles = $state.totalSourceFiles
                     $totalTargetFilesBefore = $state.totalTargetFilesBefore
+                    if ($state.PSObject.Properties.Name -contains 'totalSourceFilesAll') {
+                        $totalSourceFilesAll = $state.totalSourceFilesAll
+                    }
+                    if ($state.PSObject.Properties.Name -contains 'MaxFilesToCopy') {
+                        $savedMax = [int]$state.MaxFilesToCopy
+                        if ($MaxFilesToCopy -ne $savedMax) {
+                            throw "MaxFilesToCopy mismatch: Restarted script must use the saved MaxFilesToCopy ($savedMax). Aborting."
+                        }
+                        $MaxFilesToCopy = $savedMax
+                    }
                 }
 
                 if ($lastCheckpoint -in 2, 3) {
@@ -1666,12 +1686,24 @@ function Main {
 
         if ($lastCheckpoint -lt 2) {
             # Count files in the source and target folder before distribution
-            $sourceFiles = Get-ChildItem -Path $SourceFolder -Recurse -File
+            $sourceFilesAll = Get-ChildItem -Path $SourceFolder -Recurse -File
+            $totalSourceFilesAll = $sourceFilesAll.Count
+
+            # Apply copy cap
+            if ($MaxFilesToCopy -eq 0) {
+                $sourceFiles = @()
+            } elseif ($MaxFilesToCopy -gt 0) {
+                # Selection policy: maintain enumeration order; change to | Get-Random -Count $MaxFilesToCopy to sample
+                $sourceFiles = $sourceFilesAll | Select-Object -First $MaxFilesToCopy
+            } else {
+                $sourceFiles = $sourceFilesAll
+            }
             $totalSourceFiles = $sourceFiles.Count
+
             $totalTargetFilesBefore = (Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object).Count
             $totalTargetFilesBefore = if ($null -eq $totalTargetFilesBefore) { 0 } else { $totalTargetFilesBefore }
-            $totalFiles = $totalSourceFiles + $totalTargetFilesBefore # Correctly calculate total files
-            LogMessage -Message "Source File Count: $totalSourceFiles. Target File Count Before: $totalTargetFilesBefore."
+            $totalFiles = $totalSourceFiles + $totalTargetFilesBefore # per-phase denominator
+            LogMessage -Message "Source File Count (selected): $totalSourceFiles of $totalSourceFilesAll total. Target File Count Before: $totalTargetFilesBefore."
 
             # Get subfolders in the target folder
             $subfolders = Get-ChildItem -Path $TargetFolder -Directory
@@ -1688,12 +1720,14 @@ function Main {
             }
 
             $additionalVars = @{
-                sourceFiles = ConvertItemsToPaths($sourceFiles)
-                totalSourceFiles = $totalSourceFiles
+                sourceFiles = ConvertItemsToPaths($sourceFiles)             # selected-only
+                totalSourceFiles = $totalSourceFiles                        # selected-only
+                totalSourceFilesAll = $totalSourceFilesAll                  # full enumeration
                 totalTargetFilesBefore = $totalTargetFilesBefore
                 subfolders = ConvertItemsToPaths($subfolders)
                 deleteMode            = $DeleteMode # Persist DeleteMode
                 SourceFolder          = $SourceFolder # Persist SourceFolder
+                MaxFilesToCopy        = $MaxFilesToCopy
             }
 
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars -fileLock $fileLockRef
@@ -1701,22 +1735,28 @@ function Main {
 
         if ($lastCheckpoint -lt 3) {
             # Distribute files from the source folder to subfolders
-            LogMessage -Message "Distributing files to subfolders..."
-            # Reset phase counter and use per-phase total (sources only)
-            $GlobalFileCounter.Value = 0
-            DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -TargetRoot $TargetFolder -Limit $FilesPerFolderLimit `
-                                        -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency `
-                                        -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete `
-                                        -GlobalFileCounter $GlobalFileCounter -TotalFiles $totalSourceFiles
-            LogMessage -Message "Completed file distribution"
+            if ($totalSourceFiles -gt 0) {
+                LogMessage -Message "Distributing files to subfolders (selected: $totalSourceFiles of $totalSourceFilesAll)..."
+                # Reset phase counter and use per-phase total (sources only)
+                $GlobalFileCounter.Value = 0
+                DistributeFilesToSubfolders -Files $sourceFiles -Subfolders $subfolders -TargetRoot $TargetFolder -Limit $FilesPerFolderLimit `
+                                            -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency `
+                                            -DeleteMode $DeleteMode -FilesToDelete $FilesToDelete `
+                                            -GlobalFileCounter $GlobalFileCounter -TotalFiles $totalSourceFiles
+                LogMessage -Message "Completed file distribution"
+            } else {`
+                LogMessage -Message "MaxFilesToCopy is 0 or no files selected; skipping source distribution phase."
+            }
 
             # Common base for additional variables
             $additionalVars = @{
                 totalSourceFiles      = $totalSourceFiles
+                totalSourceFilesAll   = $totalSourceFilesAll
                 totalTargetFilesBefore = $totalTargetFilesBefore
                 subfolders            = ConvertItemsToPaths($subfolders)
                 deleteMode            = $DeleteMode # Persist DeleteMode
                 SourceFolder          = $SourceFolder # Persist SourceFolder
+                MaxFilesToCopy        = $MaxFilesToCopy
             }
 
             # Conditionally add FilesToDelete for EndOfScript mode
@@ -1741,9 +1781,11 @@ function Main {
             # Base additional variables
             $additionalVars = @{
                 totalSourceFiles      = $totalSourceFiles
+                totalSourceFilesAll   = $totalSourceFilesAll
                 totalTargetFilesBefore = $totalTargetFilesBefore
                 deleteMode            = $DeleteMode # Persist DeleteMode
                 SourceFolder          = $SourceFolder # Persist SourceFolder
+                MaxFilesToCopy        = $MaxFilesToCopy
             }
         
             # Conditionally add FilesToDelete if DeleteMode is EndOfScript
@@ -1818,7 +1860,8 @@ function Main {
         $totalTargetFilesAfter = if ($null -eq $totalTargetFilesAfter) { 0 } else { $totalTargetFilesAfter }
 
         # Log summary message
-        LogMessage -Message "Original number of files in the source folder: $totalSourceFiles" -ConsoleOutput
+        LogMessage -Message "Original number of files in the source folder (enumerated): $totalSourceFilesAll" -ConsoleOutput
+        LogMessage -Message "Files selected for copying this run: $totalSourceFiles" -ConsoleOutput
         LogMessage -Message "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -ConsoleOutput
         LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
 
