@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.1
+ 3.1.2
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,18 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.2 — 2025-09-28
+### Fixed
+- **Destination clamp & validation:** Eliminated cases where a non-rooted or outside-root candidate (e.g., bare `'D'` / `'D:'`) could leak into the copy path, producing outputs like `C:\Users\manoj\D\*.jpg`. Final destination is now *always* clamped to a valid subfolder under `-TargetFolder`.
+- **Under-root enforcement:** Candidate subfolders are filtered to ensure they are rooted, exist, and start with the target root path (not equal to the root itself).
+
+### Added
+- **Defensive “last-mile” checks:** Before composing the final destination file path, an explicit guard revalidates the resolved folder and falls back to a safe subfolder (or creates an emergency one) if needed.
+- **Debug tracing:** Extra DEBUG log lines record the candidate sets during redistribution and the final resolved destination folder (rooted flag and target-root prefix), aiding postmortems.
+
+### Notes
+- Touches only `DistributeFilesToSubfolders` and `RedistributeFilesInTarget`. No changes to parameters, state format, or external behavior beyond stricter path safety.
+
 ## 3.1.1 — 2025-09-28
 ### Fixed
 - **Spurious “using subfolder 'D'” warnings:** `Resolve-SubfolderPath` no longer promotes **bare drive strings** (`'D'`, `'D:'`) or empty entries to the target root. It now returns `$null` for invalid specs, and callers drop `$null`. We also de-duplicate and validate subfolder candidates, and explicitly exclude the target root when picking redistribution targets.
@@ -950,7 +962,12 @@ function DistributeFilesToSubfolders {
     # Sanitize: unique, exclude TargetRoot, must exist as a directory
     $subfolderPaths = $subfolderPaths |
         Select-Object -Unique |
-        Where-Object { $_ -and ($_ -ne $TargetRoot) -and (Test-Path -LiteralPath $_ -PathType Container) }
+        Where-Object {
+            $_ -and
+            ($_ -ne $TargetRoot) -and
+            (Test-Path -LiteralPath $_ -PathType Container) -and
+            ($_ -like "$TargetRoot*")             # ensure it’s truly under the target root
+        }
  
     if ($subfolderPaths.Count -eq 0) {
         LogMessage -Message "No valid subfolders (all collapsed to root or missing). Aborting this batch." -IsError
@@ -1017,6 +1034,34 @@ function DistributeFilesToSubfolders {
                 continue
             }
         }
+
+        # Final clamp before path composition — blocks 'D', 'D:', relative, or outside-root destinations
+        $bad = (
+          [string]::IsNullOrWhiteSpace($destinationFolder) -or
+          $destinationFolder -match '^[A-Za-z]$'      -or  # 'D'
+          $destinationFolder -match '^[A-Za-z]:$'     -or  # 'D:'
+          -not [System.IO.Path]::IsPathRooted($destinationFolder) -or
+          ($destinationFolder -notlike "$TargetRoot*")
+        )
+        if ($bad) {
+            $safe = $subfolderPaths | Where-Object {
+                $_ -ne $TargetRoot -and (Test-Path -LiteralPath $_ -PathType Container) -and ($_ -like "$TargetRoot*")
+            }
+            if ($safe.Count -gt 0) {
+                $destinationFolder = $safe | Get-Random
+                LogMessage -Message "Destination normalized away from target root; using subfolder '$destinationFolder'." -IsWarning
+            } else {
+                $destinationFolder = Join-Path -Path $TargetRoot -ChildPath (Get-RandomFileName)
+                New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
+                $folderCounts[$destinationFolder] = 0
+                LogMessage -Message "Created emergency destination subfolder '$destinationFolder' to avoid using target root." -IsWarning
+            }
+        }
+        # Debug trace of the final destination selection
+        LogMessage -Message ("DEBUG dest='{0}' rooted={1} startsWithTarget={2}" -f `
+          $destinationFolder, `
+          [System.IO.Path]::IsPathRooted($destinationFolder), `
+          ($destinationFolder -like "$TargetRoot*"))
 
         # Always generate a randomized destination name (preserve extension)
         $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $originalName
@@ -1155,6 +1200,9 @@ function RedistributeFilesInTarget {
         # Reset phase counter and compute correct denominator
         $GlobalFileCounter.Value = 0
         $redistributionTotal += $rootFiles.Count
+
+        LogMessage -Message ("DEBUG (redistribute-root) candidates={0}" -f ($eligibleTargets -join '; '))
+
         DistributeFilesToSubfolders -Files $rootFiles `
             -Subfolders $eligibleTargets `
             -TargetRoot $TargetFolder `
@@ -1207,6 +1255,9 @@ function RedistributeFilesInTarget {
         }
 
         # Reset phase counter and use per-batch denominator
+        LogMessage -Message ("DEBUG (redistribute-overload from '{0}') candidates={1}" -f `
+          $sourceFolder, ($eligibleTargets -join '; '))
+
         $GlobalFileCounter.Value = 0
         DistributeFilesToSubfolders -Files $sourceFiles `
             -Subfolders $eligibleTargets `
