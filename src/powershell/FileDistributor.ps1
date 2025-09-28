@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.4
+ 3.1.5
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,20 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.5 — 2025-09-28
+### Fixed
+- **Subfolder collection validation:** Added comprehensive null/empty string filtering in initial subfolder collection from `Get-ChildItem`, preventing empty values from entering the processing pipeline.
+- **Input validation in core functions:** Enhanced `ConvertItemsToPaths`, `ConvertPathsToItems`, `DistributeFilesToSubfolders`, and `RedistributeFilesInTarget` with robust null/empty checking at entry points.
+- **Path resolution errors:** Fixed cases where filesystem objects with missing or invalid `FullName` properties could cause empty string destination paths.
+
+### Added
+- **Comprehensive DEBUG logging:** Added detailed tracing of subfolder collections at multiple pipeline stages to aid in diagnosing path resolution issues.
+- **Defensive programming:** Added null checks and validation throughout the subfolder processing chain to prevent cascading failures.
+
+### Notes
+- Eliminates "Sanitizing non-rooted destination folder ''" warnings by preventing empty strings from entering the destination selection logic.
+- No changes to external behavior or state format; purely defensive improvements to input validation.
+
 ## 3.1.4 — 2025-09-28
 ### Fixed
 - **Empty subfolder handling:** Fixed `RedistributeFilesInTarget` passing empty strings or null values to `DistributeFilesToSubfolders`, which caused "Sanitizing non-rooted destination folder ''" warnings and improper fallback to bare drive letters.
@@ -960,6 +974,26 @@ function DistributeFilesToSubfolders {
         [int]$TotalFiles             # Total number of files to process
     )
 
+    # CRITICAL: Filter out null/empty entries immediately
+    $validSubfolders = @()
+    foreach ($sf in $Subfolders) {
+        if ($null -eq $sf) { continue }
+        if ($sf -is [System.IO.FileSystemInfo] -and $sf.FullName -and -not [string]::IsNullOrWhiteSpace($sf.FullName)) {
+            $validSubfolders += $sf
+        } elseif (-not [string]::IsNullOrWhiteSpace([string]$sf)) {
+            $validSubfolders += [string]$sf
+        }
+    }
+
+    # Add DEBUG logging to see what we're actually working with
+    LogMessage -Message ("DEBUG: Subfolders after validation: {0}" -f ($validSubfolders | ForEach-Object { 
+        if ($_ -is [System.IO.FileSystemInfo]) { "'$($_.FullName)'" } else { "'$_'" }
+    } | Join-String ', '))
+
+    if ($validSubfolders.Count -eq 0) {
+        LogMessage -Message "No valid subfolders provided to DistributeFilesToSubfolders. Aborting." -IsError
+        return
+    }
     # Normalize subfolder inputs to full path strings and seed counts for balance tracking
     $subfolderPaths = @()
     $folderCounts = @{}
@@ -1169,6 +1203,34 @@ function RedistributeFilesInTarget {
         [ref]$GlobalFileCounter,
         [int]$TotalFiles
     )
+
+    # Filter and validate subfolders immediately
+    $validSubfolders = @()
+    foreach ($sf in $Subfolders) {
+        if ($null -eq $sf) { continue }
+        if ($sf -is [System.IO.FileSystemInfo] -and $sf.FullName -and -not [string]::IsNullOrWhiteSpace($sf.FullName)) {
+            $validSubfolders += $sf
+        } elseif (-not [string]::IsNullOrWhiteSpace([string]$sf)) {
+            try {
+                $item = Get-Item -LiteralPath ([string]$sf) -ErrorAction Stop
+                if ($item -and $item.FullName) {
+                    $validSubfolders += $item
+                }
+            } catch {
+                LogMessage -Message "Failed to resolve subfolder path '$sf': $($_.Exception.Message)" -IsWarning
+            }
+        }
+    }
+
+    LogMessage -Message ("DEBUG: Valid subfolders for redistribution: {0}" -f ($validSubfolders | ForEach-Object { "'$($_.FullName)'" } | Join-String ', '))
+
+    if ($validSubfolders.Count -eq 0) {
+        LogMessage -Message "No valid subfolders available for redistribution. Creating emergency subfolder." -IsWarning
+        $randomName = Get-RandomFileName
+        $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
+        New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
+        $validSubfolders = @(Get-Item -LiteralPath $newFolder)
+    }
 
     # Step 1: Build initial folder file count map from normalized full paths
     $folderFilesMap = @{}
@@ -1420,21 +1482,36 @@ function ConvertItemsToPaths {
     if (-not $Items) { return @() }
     $out = @()
     foreach ($i in $Items) {
-        if ($i -is [System.IO.FileSystemInfo]) { $out += $i.FullName }
-        elseif ([string]::IsNullOrWhiteSpace([string]$i)) { continue }
-        else { $out += [string]$i }
+        if ($null -eq $i) { continue }
+        if ($i -is [System.IO.FileSystemInfo] -and $i.FullName) { 
+            if (-not [string]::IsNullOrWhiteSpace($i.FullName)) {
+                $out += $i.FullName 
+            }
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace([string]$i)) { 
+            $out += [string]$i 
+        }
     }
     return $out
 }
 
 # Function to convert paths to items
 function ConvertPathsToItems {
-    param (
-        [array]$Paths
-    )
-
-    # Use pipeline to retrieve items for all paths and return them as an array
-    return $Paths | ForEach-Object { Get-Item -Path $_ }
+    param ([array]$Paths)
+    if (-not $Paths) { return @() }
+    $out = @()
+    foreach ($path in $Paths) {
+        if ([string]::IsNullOrWhiteSpace($path)) { continue }
+        try {
+            $item = Get-Item -LiteralPath $path -ErrorAction Stop
+            if ($item -and $item.FullName -and -not [string]::IsNullOrWhiteSpace($item.FullName)) {
+                $out += $item
+            }
+        } catch {
+            LogMessage -Message "Failed to convert path to item: '$path' - $($_.Exception.Message)" -IsWarning
+        }
+    }
+    return $out
 }
 
 # Function to acquire a lock on the state file
@@ -1805,7 +1882,12 @@ function Main {
             LogMessage -Message "Source File Count (selected): $totalSourceFiles of $totalSourceFilesAll total. Target File Count Before: $totalTargetFilesBefore."
 
             # Get subfolders in the target folder
-            $subfolders = Get-ChildItem -Path $TargetFolder -Directory
+            $subfolders = Get-ChildItem -Path $TargetFolder -Directory | Where-Object { 
+                $_ -and 
+                $_.FullName -and 
+                -not [string]::IsNullOrWhiteSpace($_.FullName) 
+            }
+            LogMessage -Message ("DEBUG: Initial subfolders collected: {0}" -f ($subfolders | ForEach-Object { "'$($_.FullName)'" } | Join-String ', '))
 
             # Determine if subfolders need to be created
             LogMessage -Message "Total Files Before: $totalFiles."
