@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.3
+ 3.1.4
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,18 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.4 — 2025-09-28
+### Fixed
+- **Empty subfolder handling:** Fixed `RedistributeFilesInTarget` passing empty strings or null values to `DistributeFilesToSubfolders`, which caused "Sanitizing non-rooted destination folder ''" warnings and improper fallback to bare drive letters.
+- **Object type consistency:** Ensure `RedistributeFilesInTarget` passes `DirectoryInfo` objects instead of string paths to `DistributeFilesToSubfolders` for consistent processing.
+
+### Added
+- **Enhanced DEBUG logging:** Added detailed logging of subfolder inputs passed to `DistributeFilesToSubfolders` to aid in diagnosing path resolution issues.
+- **Input validation:** Added filtering to remove null/empty string entries from eligible target collections before subfolder processing.
+
+### Notes
+- Addresses spurious warnings about empty destination folders and bare drive letter normalization during target redistribution phase.
+
 ## 3.1.3 — 2025-09-28
 ### Added
 - **Subfolder input diagnostics:** Added DEBUG logging to trace subfolder inputs passed to `DistributeFilesToSubfolders` and `RedistributeFilesInTarget`, helping diagnose cases where empty strings or invalid paths (like bare drive letters) enter the subfolder selection process.
@@ -1188,9 +1200,17 @@ function RedistributeFilesInTarget {
         $eligibleTargets = $folderFilesMap.GetEnumerator() |
             Where-Object { $_.Key -ne $TargetFolder -and $_.Value -lt $FilesPerFolderLimit } |
             ForEach-Object { $_.Key } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |  # Filter out empty strings
             Select-Object -Unique
 
-        if ($eligibleTargets.Count -eq 0) {
+        # Convert to DirectoryInfo objects to ensure proper handling
+        $eligibleTargetObjects = $eligibleTargets | ForEach-Object { 
+            if (Test-Path -LiteralPath $_ -PathType Container) {
+                Get-Item -LiteralPath $_
+            }
+        } | Where-Object { $_ -ne $null }
+
+        if ($eligibleTargetObjects.Count -eq 0) {
             # Create a new subfolder using Get-RandomFileName
             $randomName = Get-RandomFileName
             $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
@@ -1198,8 +1218,8 @@ function RedistributeFilesInTarget {
             LogMessage -Message "Created new target subfolder: $newFolder for redistribution from root folder."
 
             # Update maps
-            $eligibleTargets = @($newFolder)
-            $Subfolders += (Get-Item -LiteralPath $newFolder)
+            $eligibleTargetObjects = @(Get-Item -LiteralPath $newFolder)
+            $Subfolders += $eligibleTargetObjects[0]
             $folderFilesMap[$newFolder] = 0
         }
 
