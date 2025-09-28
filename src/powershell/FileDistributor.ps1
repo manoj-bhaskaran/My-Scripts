@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.5
+ 3.1.6
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,19 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.6 — 2025-09-28
+### Fixed
+- **State persistence for special characters:** Fixed subfolder path conversion between state save/load cycles when paths contain special characters like `()!@$`, preventing subfolder collections from being lost during checkpoint restoration.
+- **Empty subfolder validation:** Enhanced `ConvertPathsToItems` and `ConvertItemsToPaths` functions to properly handle filesystem paths with special characters and prevent empty collections from propagating through the processing pipeline.
+- **Emergency subfolder creation:** Improved fallback logic when subfolder validation results in empty collections, ensuring proper subfolder availability for file distribution.
+
+### Added
+- **State conversion diagnostics:** Added DEBUG logging for subfolder state persistence and restoration to trace collection loss during save/load cycles.
+- **Special character handling:** Enhanced path conversion functions to handle Windows filesystem paths containing PowerShell special characters.
+
+### Notes
+- Resolves issue where valid subfolders were being filtered out during state restoration, causing fallback to emergency subfolder creation and "Sanitizing non-rooted destination folder" warnings.
+- Root cause was special characters in randomly generated subfolder names interfering with string-to-object conversion pipeline.
 ## 3.1.5 — 2025-09-28
 ### Fixed
 - **Subfolder collection validation:** Added comprehensive null/empty string filtering in initial subfolder collection from `Get-ChildItem`, preventing empty values from entering the processing pipeline.
@@ -1915,6 +1928,9 @@ function Main {
         }
 
         if ($lastCheckpoint -lt 3) {
+            # Add this diagnostic before calling DistributeFilesToSubfolders
+            LogMessage -Message ("DEBUG: State subfolders raw: {0}" -f ($state.subfolders -join '; '))
+            LogMessage -Message ("DEBUG: Converted subfolders: {0}" -f ($subfolders | ForEach-Object { "'$($_.FullName)'" } | Join-String ', '))
             # Distribute files from the source folder to subfolders
             if ($totalSourceFiles -gt 0) {
                 LogMessage -Message "Distributing files to subfolders (selected: $totalSourceFiles of $totalSourceFilesAll)..."
