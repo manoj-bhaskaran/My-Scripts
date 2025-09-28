@@ -311,6 +311,7 @@ param(
     [string]$SourceFolder = $null,
     [string]$TargetFolder = $null,
     [int]$FilesPerFolderLimit = 20000,
+    [int]$MaxFilesToCopy = -1, # -1 = all, 0 = none, N = first N files from enumeration
     [string]$LogFilePath = $null,
     [string]$StateFilePath = $null,
     [string]$RandomNameModulePath = $null,
