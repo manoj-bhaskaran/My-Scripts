@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.0
+ 3.1.1
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,14 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.1 — 2025-09-28
+### Fixed
+- **Spurious “using subfolder 'D'” warnings:** `Resolve-SubfolderPath` no longer promotes **bare drive strings** (`'D'`, `'D:'`) or empty entries to the target root. It now returns `$null` for invalid specs, and callers drop `$null`. We also de-duplicate and validate subfolder candidates, and explicitly exclude the target root when picking redistribution targets.
+- **Sidecar write lock:** Writing `FileDistributor-State.json.sha256` now uses `Invoke-WithRetry` to tolerate transient AV/indexer locks.
+
+### Reliability
+- **Redistribution root exclusion:** Root is excluded from eligible target sets during (a) redistribution of files from the target root and (b) redistribution of overloaded folders, avoiding unnecessary root-normalization steps (and related warnings).
+
 ## 3.1.0 — 2025-09-28
 ### Added
 - **`-MaxFilesToCopy`**: Limit how many files from the recursive source enumeration are copied in this run.  
@@ -626,7 +634,15 @@ function Write-JsonAtomically {
         throw
     }
     if ($hash) {
-        try { Set-Content -LiteralPath $sha -Value $hash -Encoding ASCII } catch { LogMessage -Message "Failed to write state sidecar '$sha': $($_.Exception.Message)" -IsWarning }
+        try {
+            Invoke-WithRetry -Operation {
+                Set-Content -LiteralPath $sha -Value $hash -Encoding ASCII -ErrorAction Stop
+            } -Description "Write state sidecar '$sha'" `
+              -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+        } catch {
+            # best-effort: keep as warning
+            LogMessage -Message "Failed to write state sidecar '$sha': $($_.Exception.Message)" -IsWarning
+        }
     }
 }
 
@@ -801,9 +817,10 @@ function Resolve-SubfolderPath {
         [Parameter(Mandatory=$true)][string]$Path,
         [Parameter(Mandatory=$true)][string]$TargetRoot
     )
-    if ([string]::IsNullOrWhiteSpace($Path)) { return $TargetRoot }
-    # Bare drive letter or drive designator should not be used as a destination folder
-    if ($Path -match '^[A-Za-z]$' -or $Path -match '^[A-Za-z]:$') { return $TargetRoot }
+    # Return $null for invalid entries; callers must drop $null.
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+    # Bare drive letter or designator are invalid subfolder specs (e.g., 'D' or 'D:')
+    if ($Path -match '^[A-Za-z]$' -or $Path -match '^[A-Za-z]:$') { return $null }
     if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
     # Anything else that's relative: anchor it under TargetRoot
     return (Join-Path -Path $TargetRoot -ChildPath $Path)
@@ -930,10 +947,11 @@ function DistributeFilesToSubfolders {
             }
         }
     }
-    # Drop TargetRoot and any non-folders; require at least one real subfolder
+    # Sanitize: unique, exclude TargetRoot, must exist as a directory
     $subfolderPaths = $subfolderPaths |
-        Where-Object { $_ -and (($_ -ne $TargetRoot) -and (Test-Path -LiteralPath $_ -PathType Container)) }
-
+        Select-Object -Unique |
+        Where-Object { $_ -and ($_ -ne $TargetRoot) -and (Test-Path -LiteralPath $_ -PathType Container) }
+ 
     if ($subfolderPaths.Count -eq 0) {
         LogMessage -Message "No valid subfolders (all collapsed to root or missing). Aborting this batch." -IsError
         return
@@ -1117,8 +1135,9 @@ function RedistributeFilesInTarget {
 
     if ($rootFiles.Count -gt 0) {
         $eligibleTargets = $folderFilesMap.GetEnumerator() |
-            Where-Object { $_.Value -lt $FilesPerFolderLimit } |
-            ForEach-Object { $_.Key }
+            Where-Object { $_.Key -ne $TargetFolder -and $_.Value -lt $FilesPerFolderLimit } |
+            ForEach-Object { $_.Key } |
+            Select-Object -Unique
 
         if ($eligibleTargets.Count -eq 0) {
             # Create a new subfolder using Get-RandomFileName
@@ -1169,9 +1188,10 @@ function RedistributeFilesInTarget {
 
         $eligibleTargets = $folderFilesMap.GetEnumerator() |
             Where-Object {
-                $_.Key -ne $sourceFolder -and $_.Value -lt $FilesPerFolderLimit
+                $_.Key -ne $TargetFolder -and $_.Key -ne $sourceFolder -and $_.Value -lt $FilesPerFolderLimit
             } |
-            ForEach-Object { $_.Key }
+            ForEach-Object { $_.Key } |
+            Select-Object -Unique
 
         if ($eligibleTargets.Count -eq 0) {
             # Create a new subfolder using Get-RandomFileName
