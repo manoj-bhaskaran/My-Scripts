@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.2
+ 3.1.3
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,12 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.3 — 2025-09-28
+### Added
+- **Subfolder input diagnostics:** Added DEBUG logging to trace subfolder inputs passed to `DistributeFilesToSubfolders` and `RedistributeFilesInTarget`, helping diagnose cases where empty strings or invalid paths (like bare drive letters) enter the subfolder selection process.
+
+### Notes
+- Debug messages log the raw subfolder list before normalization to aid in troubleshooting path resolution warnings.
 ## 3.1.2 — 2025-09-28
 ### Fixed
 - **Destination clamp & validation:** Eliminated cases where a non-rooted or outside-root candidate (e.g., bare `'D'` / `'D:'`) could leak into the copy path, producing outputs like `C:\Users\manoj\D\*.jpg`. Final destination is now *always* clamped to a valid subfolder under `-TargetFolder`.
@@ -1202,6 +1208,7 @@ function RedistributeFilesInTarget {
         $redistributionTotal += $rootFiles.Count
 
         LogMessage -Message ("DEBUG (redistribute-root) candidates={0}" -f ($eligibleTargets -join '; '))
+        LogMessage -Message "DEBUG: Subfolders being passed: $($subfolders | ForEach-Object { "'$_'" } | Join-String ', ')"
 
         DistributeFilesToSubfolders -Files $rootFiles `
             -Subfolders $eligibleTargets `
