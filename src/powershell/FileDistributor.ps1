@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.21
+ 3.1.22
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -182,6 +182,14 @@ To display the script's help text:
 .NOTES
 CHANGELOG
 # CHANGELOG
+## 3.1.22 — 2025-09-30
+### Fixed
+- **State-file locking uses exponential backoff + jitter:** `AcquireFileLock` now honors `-MaxBackoff` and applies capped exponential backoff with a small random jitter; final failure logs the **last exception message**. Previously it used a fixed sleep, contrary to the docs.
+- **Null-safe lock release:** `ReleaseFileLock` now handles a null stream gracefully, preventing “You cannot call a method on a null-valued expression” during shutdown or early save/load transitions.
+
+### Changed
+- **Log label typo:** Parameter validation log now prints `FilesPerFolderLimit` (was `FilePerFolderLimit`).
+
 ## 3.1.21 — 2025-09-30
 ### Fixed
 - **Null dereference in distribution debug logging:** In `DistributeFilesToSubfolders`, `$destNormalized` was computed **before** last-mile fallback/emergency selection and was not recomputed afterward. Subsequent calls to `$destNormalized.StartsWith(...)` and `IsPathRooted($destNormalized)` could throw *“You cannot call a method on a null-valued expression.”* We now recompute `$destNormalized` after any fallback/creation and make the debug logging null-safe.
@@ -1398,7 +1406,7 @@ function SaveState {
     LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')" 
 
     # Reacquire the file lock after saving state
-    $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+    $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
 }
 
 # Function to load state
@@ -1459,7 +1467,7 @@ function LoadState {
     if (-not $state) { $state = @{ Checkpoint = 0 } }
 
     # Reacquire the file lock after loading state
-    $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+    $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
 
     return $state
 }
@@ -1558,7 +1566,8 @@ function AcquireFileLock {
     param (
         [string]$FilePath,
         [int]$RetryDelay,
-        [int]$RetryCount
+        [int]$RetryCount,
+        [int]$MaxBackoff
     )
 
     $attempts = 0
@@ -1568,13 +1577,17 @@ function AcquireFileLock {
             LogMessage -Message "Acquired lock on $FilePath"
             return $fileStream
         } catch {
-            $attempts++
+           $attempts++
+            $lastErr = $_.Exception.Message
             if ($RetryCount -ne 0 -and $attempts -ge $RetryCount) {
-                LogMessage -Message "Failed to acquire lock on $FilePath after $attempts attempts. Aborting." -IsError
-                throw "Failed to acquire lock on $FilePath after $attempts attempts."
+                LogMessage -Message "Failed to acquire lock on $FilePath after $attempts attempt(s). Last error: $lastErr" -IsError
+                throw "Failed to acquire lock on $FilePath after $attempts attempt(s). Last error: $lastErr"
             }
-            LogMessage -Message "Failed to acquire lock on $FilePath. Retrying in $RetryDelay seconds... (Attempt $attempts)" -IsWarning
-            Start-Sleep -Seconds $RetryDelay
+            $delay = [Math]::Min([int]([Math]::Max(1, $RetryDelay) * [Math]::Pow(2, $attempts - 1)), [Math]::Max(1, $MaxBackoff))
+            $jitterMs = Get-Random -Minimum 50 -Maximum 250
+            LogMessage -Message "Attempt $attempts failed to lock '$FilePath'. Error: $lastErr. Retrying in ${delay}s (+${jitterMs}ms jitter)..." -IsWarning
+            Start-Sleep -Seconds $delay
+            Start-Sleep -Milliseconds $jitterMs
         }
     }
 }
@@ -1585,9 +1598,14 @@ function ReleaseFileLock {
         [System.IO.FileStream]$FileStream
     )
 
-    $fileName = $FileStream.Name
-    $FileStream.Close()
-    $FileStream.Dispose()
+    if ($null -eq $FileStream) {
+        LogMessage -Message "ReleaseFileLock called with null stream; nothing to release."
+        return
+    }
+    $fileName = "<unknown>"
+    try { $fileName = $FileStream.Name } catch { }
+    try { $FileStream.Close() } catch { }
+    try { $FileStream.Dispose() } catch { }
     LogMessage -Message "Released lock on $fileName"
 }
 
@@ -1699,7 +1717,7 @@ function Main {
         }
     }
 
-    LogMessage -Message "Validating parameters: SourceFolder - $SourceFolder, TargetFolder - $TargetFolder, FilePerFolderLimit - $FilesPerFolderLimit, MaxFilesToCopy - $MaxFilesToCopy"
+    LogMessage -Message "Validating parameters: SourceFolder - $SourceFolder, TargetFolder - $TargetFolder, FilesPerFolderLimit - $FilesPerFolderLimit, MaxFilesToCopy - $MaxFilesToCopy"
 
     try {
         # Ensure source and target folders exist
@@ -1760,7 +1778,7 @@ function Main {
             $lastCheckpoint = 0
             if ($Restart) {
                 # Acquire a lock on the state file
-                $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+                $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
 
                 LogMessage -Message "Restart requested. Loading checkpoint..." -ConsoleOutput
                 $state = LoadState -fileLock $fileLockRef
@@ -1882,7 +1900,7 @@ function Main {
                     }  
                 }
                 # Acquire the file lock after deleting the file
-                 $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
+                 $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
             }
         } catch {
             LogMessage -Message "An unexpected error occurred: $($_.Exception.Message)" -IsError
