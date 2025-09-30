@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.23
+ 3.1.24
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -182,6 +182,10 @@ To display the script's help text:
 .NOTES
 CHANGELOG
 # CHANGELOG
+## 3.1.24 — 2025-09-30
+### Added
+- **Debug logging for destination selection:** Added a DEBUG log in `DistributeFilesToSubfolders` to trace the selected destination path before normalization/resolution, aiding diagnosis of null/escape warnings.
+
 ## 3.1.23 — 2025-09-30
 ### Changed
 - **Bullet-proof chooser:** `DistributeFilesToSubfolders` now builds the candidate set from a fresh enumeration of the target root combined with caller input, canonicalizes with `GetFullPath`, enforces “under target root & not the root itself,” and dedupes. Wildcard tests are removed; only path-aware checks are used. If no valid candidates remain, an **emergency** subfolder is created.
@@ -1106,6 +1110,8 @@ function DistributeFilesToSubfolders {
         $minCount   = ($eligible | ForEach-Object { $folderCounts[$_] } | Measure-Object -Minimum).Minimum
         $candidates = $eligible | Where-Object { $folderCounts[$_] -eq $minCount }
         $destinationFolder = if ($candidates.Count -gt 1) { $candidates | Get-Random } else { $candidates[0] }
+
+        LogMessage -Message "Selected destination before resolve: '$destinationFolder'"
 
         # Last-mile guards (never root, always under TargetRoot, must exist)
         $destinationFolder = Resolve-SubfolderPath -Path $destinationFolder -TargetRoot $TargetRoot
