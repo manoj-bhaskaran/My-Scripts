@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.19
+ 3.1.20
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,25 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.20 — 2025-09-30
+### Fixed
+- **Redistribute phase: false “escaped target root ('')” warnings:** `targetRootNormalized` could be blank inside
+  `RedistributeFilesInTarget` (scope/param slip). Now we recompute with
+  `[IO.Path]::GetFullPath($TargetFolder)` at function entry and/or pass it in explicitly.
+  The guard now triggers only when:
+    - `startsWithTarget` is false, or
+    - the destination **equals** the target root (root write), or
+    - normalization fails.
+  Logging now prints the real root and a consistent DEBUG line (`destNormalized=…, targetRootNormalized=…, rooted=…, startsWithTarget=…`).
+  This removes contradictory lines like: `escaped target root ('') …` followed by `rooted=True startsWithTarget=True`.
+
+- **Root writes blocked:** even if under the target, a destination equal to the root is re-routed into a validated subfolder.
+
+- **State sidecar contention:** reduced retry wait from 10s to 1s with short jitter and clearer error text (includes last exception message). Still honors max-attempt backoff.
+
+### Changed
+- **Noise trim:** keep one consolidated DEBUG line per redistribution decision; drop duplicate “Converted subfolders” spew.
+
 ## 3.1.19 — 2025-09-30
 ### Fixed
 - **Last-mile destination normalization in `DistributeFilesToSubfolders`:** Replaced wildcard checks with
@@ -223,79 +242,36 @@ CHANGELOG
 - Root cause was architectural: the function performed validation correctly but ignored its own validated results, running a second normalization pass that removed all entries. This caused cascading failures including "No valid subfolders" errors and emergency subfolder creation.
 - This completes the subfolder validation fixes from v3.1.11-3.1.15 by addressing the actual logic flow issue rather than just path handling.
 
-## 3.1.15 — 2025-09-30
-### Fixed
-- **Redistribution subfolder validation:** Fixed `RedistributeFilesInTarget` where subfolder validation logic was incorrectly filtering out all valid `DirectoryInfo` objects during the type-checking phase. The function now properly handles mixed input types (both `FileSystemInfo` objects and string paths) by implementing a two-phase validation process: first converting all inputs to `DirectoryInfo` objects, then extracting and validating their paths. This resolves the empty subfolder collection issue that caused cascading "Sanitizing non-rooted destination folder ''" warnings and emergency subfolder creation.
+## 3.1.0–3.1.15 (rollup) — 2025-09-28 → 2025-09-30
 
-### Changed
-- **Enhanced redistribution diagnostics:** Added comprehensive DEBUG logging to track subfolder object counts and types throughout the validation pipeline, making it easier to identify where collections are being inadvertently filtered out.
-
-### Notes
-- Root cause was the validation logic checking `Test-Path` on paths before properly converting string inputs to `DirectoryInfo` objects, causing the type-based filtering to eliminate valid entries.
-- This completes the subfolder validation fixes started in v3.1.11-3.1.13 by addressing the actual type conversion and validation order issue rather than just the path normalization.
-
-## 3.1.14 — 2025-09-30
-### Fixed
-- **Line continuation syntax error:** Removed inline comment after backtick in `RedistributeFilesInTarget` function call that was breaking PowerShell line continuation, causing the `-TargetRoot` parameter to be disconnected from its value and prompting for mandatory parameter input at runtime.
-
-### Notes
-- PowerShell doesn't support inline comments after line continuation backticks. The comment `# Use the normalized collection` was causing the multi-line command to be incorrectly parsed, resulting in incomplete parameter passing to `DistributeFilesToSubfolders`.
-
-## 3.1.13 — 2025-09-30
-### Fixed
-- **Redistribution subfolder passing:** Fixed `RedistributeFilesInTarget` incorrectly passing string paths (`$eligibleTargets`) instead of filesystem objects (`$eligibleTargetObjects`) to `DistributeFilesToSubfolders` for root file redistribution. The function was converting paths to objects but then discarding the converted collection, causing all subfolders to be filtered out as invalid.
-- **Eliminated cascading path failures:** Resolved the root cause of "Sanitizing non-rooted destination folder ''" and "using subfolder 'D'" warnings by ensuring the validated subfolder collection is properly maintained and passed through the entire redistribution pipeline.
-
-### Changed
-- **Simplified redistribution logic:** Removed redundant path-to-object conversion in root redistribution phase since `$normalizedSubfolders` already contains validated paths. The function now uses the pre-validated collection directly, eliminating unnecessary filtering steps that were excluding valid subfolders.
-
-### Notes
-- This completes the fix for the redistribution pipeline issues introduced when handling special characters in paths. The previous fixes (v3.1.11-3.1.12) addressed validation but didn't fix the actual parameter passing bug.
-- Root cause: The function meticulously validated and converted subfolders but then passed the wrong variable to the distribution function, causing the entire validated collection to be ignored.
-
-## 3.1.12 — 2025-09-30
-### Fixed
-- **Subfolder validation in redistribution:** Fixed `RedistributeFilesInTarget` where the subfolder validation and normalization pipelines were separated, causing validated paths to be lost during actual processing. Unified the validation logic to verify path existence with `Test-Path`, normalize using `Resolve-SubfolderPath`, and filter out target root in a single pass before building the file count map. This eliminates empty subfolder collections that triggered emergency fallback behavior and "Sanitizing non-rooted destination folder" warnings.
-
-### Changed
-- **Redistribution path processing:** Consolidated duplicate subfolder validation logic into a single unified pipeline that processes both `FileSystemInfo` objects and string paths, verifies existence, normalizes to absolute paths, and filters invalid entries before any redistribution operations begin.
-
-### Notes
-- Root cause was dual processing pipelines where initial validation (`$validSubfolders`) was separate from normalization (`$normalizedSubfolders`), causing validated paths to be discarded. The unified approach ensures all validated paths survive into the redistribution phase.
-- This fix completes the resolution started in v3.1.11 by addressing the root architectural issue rather than just the validation logic.
-
-## 3.1.11 — 2025-09-30
-### Fixed
-- **Subfolder validation in redistribution:** Fixed `RedistributeFilesInTarget` failing to properly validate string-based subfolder paths after state restoration. The function now correctly handles both `DirectoryInfo` objects and string paths, converting strings to filesystem objects and verifying their existence before use. This resolves the issue where valid subfolders were filtered out entirely, causing empty subfolder collections and triggering emergency fallback behavior with "Sanitizing non-rooted destination folder" warnings.
-
-### Notes
-- Root cause was the validation logic in `RedistributeFilesInTarget` not properly handling string inputs from `ConvertPathsToItems`. The function expected `FileSystemInfo` objects but received string paths, causing all entries to fail validation checks.
-- This fix eliminates the cascading failures that produced "using subfolder 'D'" errors and unnecessary emergency subfolder creation during redistribution.
-
-## 3.1.0–3.1.10 (rollup) — 2025-09-28 → 2025-09-30
 ### Added
-- **`-MaxFilesToCopy`**: Limit files copied this run (`-1` all, `0` none, `N` first N). Persisted and enforced on restart.
-- **Deep diagnostics & DEBUG tracing**: Item-by-item logging in `ConvertItemsToPaths` and `ConvertPathsToItems`; candidate set dumps in distribution/redistribution; state save/load counts; rooted/under-target flags before final destination; detailed errors on `Get-Item`.
-- **Defensive “last-mile” checks**: Revalidate the chosen destination just before composing the final path; fall back to a safe subfolder (or create one).
+- **`-MaxFilesToCopy`** to cap per-run copies (`-1` all, `0` none, `N` first N), persisted and enforced on restart.
+- **Deep diagnostics/DEBUG** across enumeration, conversions, state I/O, candidate dumps, and rooted/under-target checks.
+- **Defensive “last-mile” checks** that revalidate the final destination and fall back to a safe subfolder (or create one).
 
 ### Changed
-- **State & restart safety**: Persist `MaxFilesToCopy`, full enumeration (`totalSourceFilesAll`), and the deterministic *selected* `sourceFiles`. On `-Restart`, the provided `MaxFilesToCopy` must match.
-- **Enumeration reliability**: Prefer `Get-ChildItem -LiteralPath -Force` and filter via `.PSIsContainer` for robust subfolder detection (spaces/special chars/hidden).
-- **Progress & summaries**: Logs distinguish **enumerated** vs **selected**; clean skip when zero files are selected.
+- **State & restart safety:** persist `MaxFilesToCopy`, full enumeration (`totalSourceFilesAll`), and deterministic *selected* `sourceFiles`; restarts must match.
+- **Enumeration reliability:** prefer `Get-ChildItem -LiteralPath -Force` with `.PSIsContainer` filtering.
+- **Progress & summaries:** logs distinguish **enumerated** vs **selected** and cleanly no-op when zero are selected.
+- **Redistribution pipeline:** unified/streamlined; uses the pre-validated subfolder set and adds DEBUG tracing of object counts/types.
 
 ### Fixed
-- **Path safety & validation**: Block non-rooted / drive-like / empty candidates (`''`, `D`, `D:`) so outputs like `C:\Users\manoj\D\*.jpg` cannot occur. Final destinations are always subfolders under `-TargetFolder`.
-- **`Resolve-SubfolderPath`**: Returns `$null` for invalid specs; callers drop `$null`. Candidate sets are deduped, must exist, be rooted, and start with the target root (not equal to it).
-- **Empty/invalid inputs**: Hardened `ConvertItemsToPaths`, `ConvertPathsToItems`, `DistributeFilesToSubfolders`, and `RedistributeFilesInTarget` with strict null/empty filtering and consistent object types.
-- **Enumeration filter bug**: Replaced overly strict `Where-Object` that zeroed out valid directories; fixes “0 subfolders collected” after “40 found”.
-- **State persistence with special characters**: Preserve/restore subfolder paths containing `()!@$~` correctly.
-- **Redistribution correctness**: Exclude target **root** from eligible targets and prevent empty entries between phases.
-- **Sidecar reliability**: Writing `FileDistributor-State.json.sha256` uses retry helper to tolerate transient locks.
-- **Logging syntax**: Corrected `-join` placement in “Converted subfolders” DEBUG output.
+- **Path safety & normalization:** block empty/relative/drive-like specs (`''`, `D`, `D:`); require rooted, existing destinations under `-TargetFolder`; never use the root.
+- **`Resolve-SubfolderPath`:** returns `$null` for invalid specs; callers drop them. Candidate sets are deduped, must exist, be rooted, and start with the target root (not equal to it).
+- **Input hardening:** stricter null/empty handling and consistent object types in `ConvertItemsToPaths`, `ConvertPathsToItems`, distribution, and redistribution.
+- **Enumeration filter bug:** replaced an over-strict filter that zeroed valid directories.
+- **Special-char persistence:** subfolder paths containing `()!@$~` are preserved/restored.
+- **Redistribution correctness:** exclude target **root** from targets; prevent empty candidate sets; create an emergency subfolder when needed; avoid double deletion with `EndOfScript`.
+- **Sidecar reliability:** write `FileDistributor-State.json.sha256` with retry; minor logging/var fixes.
+- **3.1.11–3.1.15 pipeline fixes:** 
+  - Properly validate mixed inputs by first converting strings→`DirectoryInfo`, then extracting/validating paths (two-phase).
+  - Unify validation + normalization so validated paths survive and are passed to `DistributeFilesToSubfolders`.
+  - Correct variable passed for root redistribution (use validated objects, not raw strings).
+  - Remove an inline comment after a backtick that broke line continuation and parameter binding.
 
 ### Notes
-- Eliminates spurious warnings like *“Sanitizing non-rooted destination folder ''”* and *“using subfolder 'D'”* by preventing bad candidates up front and by fixing enumeration/restore paths.
-- No breaking changes to parameters or state format beyond persisting `MaxFilesToCopy`; behavior is unchanged except for stricter path safety and clearer diagnostics.
+- Eliminates spurious warnings like *“Sanitizing non-rooted destination folder ''”* and *“using subfolder 'D'”* by fixing validation order, parameter passing, and syntax.
+- No breaking changes to parameters/state beyond persisting `MaxFilesToCopy`; behavior is unchanged aside from stricter safety and clearer diagnostics.
 
 ## 3.0.0–3.0.9 (rollup) — 2025-09-18 → 2025-09-25
 
@@ -728,10 +704,17 @@ function Write-JsonAtomically {
     }
     if ($hash) {
         try {
+            # Use a shorter, lighter retry for the sidecar to avoid long stalls
+            $sidecarRetryDelay = 1
+            $sidecarMaxBackoff = [Math]::Min(5, $MaxBackoff)
+            # Preserve "unlimited" semantics if RetryCount==0; otherwise ensure at least one retry
+            $sidecarRetryCount = if ($RetryCount -eq 0) { 0 } else { [Math]::Max(1, $RetryCount) }
             Invoke-WithRetry -Operation {
                 Set-Content -LiteralPath $sha -Value $hash -Encoding ASCII -ErrorAction Stop
             } -Description "Write state sidecar '$sha'" `
-              -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+              -RetryDelay $sidecarRetryDelay `
+              -RetryCount $sidecarRetryCount `
+              -MaxBackoff $sidecarMaxBackoff
         } catch {
             # best-effort: keep as warning
             LogMessage -Message "Failed to write state sidecar '$sha': $($_.Exception.Message)" -IsWarning
@@ -1128,10 +1111,12 @@ function DistributeFilesToSubfolders {
             }
         }
 
-        LogMessage -Message ("DEBUG dest='{0}' rooted={1} startsWithTarget={2}" -f `
-            $destinationFolder, `
-            [System.IO.Path]::IsPathRooted($destinationFolder), `
-            ([IO.Path]::GetFullPath($destinationFolder)).StartsWith([IO.Path]::GetFullPath($TargetRoot), [System.StringComparison]::OrdinalIgnoreCase))
+        # Single, consistent DEBUG line using normalized paths
+        $startsWithTarget = $destNormalized.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase)
+        LogMessage -Message ("DEBUG: destNormalized='{0}' targetRootNormalized='{1}' rooted={2} startsWithTarget={3}" -f `
+            $destNormalized, `
+            $targetNormalized, `
+            [System.IO.Path]::IsPathRooted($destNormalized), $startsWithTarget)
 
         # Randomized destination name (preserve extension)
         $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $originalName
@@ -1262,7 +1247,7 @@ function RedistributeFilesInTarget {
 
     # Step 2: Redistribute files from root of target folder (not subfolders)
     LogMessage -Message "Redistributing files from target folder $TargetFolder to subfolders..."
-    $rootFiles = Get-ChildItem -Path $TargetFolder -File
+    $rootFiles = Get-ChildItem -LiteralPath $TargetFolder -File -ErrorAction Stop
     $redistributionTotal = 0
     $redistributionProcessed = 0
 
