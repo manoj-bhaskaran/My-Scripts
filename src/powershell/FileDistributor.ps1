@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.12
+ 3.1.13
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,18 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.13 — 2025-09-30
+### Fixed
+- **Redistribution subfolder passing:** Fixed `RedistributeFilesInTarget` incorrectly passing string paths (`$eligibleTargets`) instead of filesystem objects (`$eligibleTargetObjects`) to `DistributeFilesToSubfolders` for root file redistribution. The function was converting paths to objects but then discarding the converted collection, causing all subfolders to be filtered out as invalid.
+- **Eliminated cascading path failures:** Resolved the root cause of "Sanitizing non-rooted destination folder ''" and "using subfolder 'D'" warnings by ensuring the validated subfolder collection is properly maintained and passed through the entire redistribution pipeline.
+
+### Changed
+- **Simplified redistribution logic:** Removed redundant path-to-object conversion in root redistribution phase since `$normalizedSubfolders` already contains validated paths. The function now uses the pre-validated collection directly, eliminating unnecessary filtering steps that were excluding valid subfolders.
+
+### Notes
+- This completes the fix for the redistribution pipeline issues introduced when handling special characters in paths. The previous fixes (v3.1.11-3.1.12) addressed validation but didn't fix the actual parameter passing bug.
+- Root cause: The function meticulously validated and converted subfolders but then passed the wrong variable to the distribution function, causing the entire validated collection to be ignored.
+
 ## 3.1.12 — 2025-09-30
 ### Fixed
 - **Subfolder validation in redistribution:** Fixed `RedistributeFilesInTarget` where the subfolder validation and normalization pipelines were separated, causing validated paths to be lost during actual processing. Unified the validation logic to verify path existence with `Test-Path`, normalize using `Resolve-SubfolderPath`, and filter out target root in a single pass before building the file count map. This eliminates empty subfolder collections that triggered emergency fallback behavior and "Sanitizing non-rooted destination folder" warnings.
@@ -1325,40 +1337,24 @@ function RedistributeFilesInTarget {
     $redistributionProcessed = 0
 
     if ($rootFiles.Count -gt 0) {
-        $eligibleTargets = $folderFilesMap.GetEnumerator() |
-            Where-Object { $_.Key -ne $TargetFolder -and $_.Value -lt $FilesPerFolderLimit } |
-            ForEach-Object { $_.Key } |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-            Select-Object -Unique
-
-        # Convert to DirectoryInfo objects to ensure proper handling
-        $eligibleTargetObjects = $eligibleTargets | ForEach-Object { 
-            if (Test-Path -LiteralPath $_ -PathType Container) {
-                Get-Item -LiteralPath $_
-            }
-        } | Where-Object { $_ -ne $null }
-
-        if ($eligibleTargetObjects.Count -eq 0) {
-            # Create a new subfolder using Get-RandomFileName
+        # Use the already normalized subfolders directly
+        if ($normalizedSubfolders.Count -eq 0) {
+            # Create a new subfolder if none exist
             $randomName = Get-RandomFileName
             $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
             New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
             LogMessage -Message "Created new target subfolder: $newFolder for redistribution from root folder."
-
-            # Update maps
-            $eligibleTargetObjects = @(Get-Item -LiteralPath $newFolder)
-            $Subfolders += $eligibleTargetObjects[0]
-            $folderFilesMap[$newFolder] = 0
+            $normalizedSubfolders = @($newFolder)
         }
 
         # Reset phase counter and compute correct denominator
         $GlobalFileCounter.Value = 0
         $redistributionTotal += $rootFiles.Count
 
-        LogMessage -Message ("DEBUG (redistribute-root) candidates={0}" -f ($eligibleTargets -join '; '))
+        LogMessage -Message ("DEBUG (redistribute-root) candidates={0}" -f ($normalizedSubfolders -join '; '))
 
         DistributeFilesToSubfolders -Files $rootFiles `
-            -Subfolders $eligibleTargets `
+            -Subfolders $normalizedSubfolders `  # Use the normalized collection
             -TargetRoot $TargetFolder `
             -Limit $FilesPerFolderLimit `
             -ShowProgress:$ShowProgress `
