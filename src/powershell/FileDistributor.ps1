@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.25
+ 3.1.26
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -182,6 +182,10 @@ To display the script's help text:
 .NOTES
 CHANGELOG
 # CHANGELOG
+## 3.1.26 — 2025-09-30
+### Fixed
+- **Scalar pipeline output in candidate selection:** Wrapped `$candidates` assignment in `@()` to force array output, preventing string indexing that extracted drive letter 'D' as destination when only one candidate exists. This resolves "Destination escaped target root ('<null>')" warnings during single-min-count redistribution.
+
 ## 3.1.25 — 2025-09-30
 ### Added
 - **Enhanced debug logging for destination selection:** Added DEBUG logs in `DistributeFilesToSubfolders` for eligible/min/candidates counts and in `Resolve-SubfolderPath` for GetFullPath attempts/exceptions, to diagnose null destinations and "escaped target root" warnings.
@@ -1058,7 +1062,7 @@ function DistributeFilesToSubfolders {
         }
 
         $minCount   = ($eligible | ForEach-Object { $folderCounts[$_] } | Measure-Object -Minimum).Minimum
-        $candidates = $eligible | Where-Object { $folderCounts[$_] -eq $minCount }
+        $candidates = @($eligible | Where-Object { $folderCounts[$_] -eq $minCount })
         $destinationFolder = if ($candidates.Count -gt 1) { $candidates | Get-Random } else { $candidates[0] }
 
         LogMessage -Message "DEBUG: Eligible count: $($eligible.Count), Min count: $minCount, Candidates count: $($candidates.Count)"
