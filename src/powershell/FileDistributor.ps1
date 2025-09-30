@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.18
+ 3.1.19
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,17 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.19 — 2025-09-30
+### Fixed
+- **Last-mile destination normalization in `DistributeFilesToSubfolders`:** Replaced wildcard checks with
+  `[IO.Path]::GetFullPath(...)` + case-insensitive `StartsWith(...)` against the normalized target root. This prevents
+  root escapes, mixed-case false positives, and accidental root placement. When a bad/ROOT destination is detected, the
+  code now selects a safe validated subfolder (or creates an emergency one) and logs a clear warning.
+  (Also improves the DEBUG line to report `startsWithTarget` using normalized paths.)
+
+### Changed
+- **Noise reduction:** Removed a verbose “Subfolder types” DEBUG log from `Main`.
+
 ## 3.1.18 — 2025-09-30
 ### Fixed
 - **Distribution fatal bug:** Removed a stray reference to `$validSubfolders` and the
@@ -1075,20 +1086,30 @@ function DistributeFilesToSubfolders {
 
         # Last-mile guards (never root, always under TargetRoot, must exist)
         $destinationFolder = Resolve-SubfolderPath -Path $destinationFolder -TargetRoot $TargetRoot
-        $bad = (
-            [string]::IsNullOrWhiteSpace($destinationFolder) -or
-            $destinationFolder -match '^[A-Za-z]$' -or
-            $destinationFolder -match '^[A-Za-z]:$' -or
-            -not [System.IO.Path]::IsPathRooted($destinationFolder) -or
-            ($destinationFolder -notlike "$TargetRoot*")
+        $destNormalized   = if ($destinationFolder) { [IO.Path]::GetFullPath($destinationFolder) } else { $null }
+        $targetNormalized = [IO.Path]::GetFullPath($TargetRoot)
+
+        $isBad = (
+            [string]::IsNullOrWhiteSpace($destNormalized) -or
+            $destNormalized -match '^[A-Za-z]$' -or
+            $destNormalized -match '^[A-Za-z]:$' -or
+            -not [System.IO.Path]::IsPathRooted($destNormalized) -or
+            (-not $destNormalized.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase))
         )
-        if ($bad -or $destinationFolder -ieq $TargetRoot) {
+
+        if ($destNormalized -eq $targetNormalized -or $isBad) {
             $safe = $subfolderPaths | Where-Object {
-                $_ -ne $TargetRoot -and (Test-Path -LiteralPath $_ -PathType Container) -and ($_ -like "$TargetRoot*")
+                $_ -ne $TargetRoot -and (Test-Path -LiteralPath $_ -PathType Container) -and `
+                ([IO.Path]::GetFullPath($_)).StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase)
             }
             if ($safe.Count -gt 0) {
-                $destinationFolder = $safe | Get-Random
-                LogMessage -Message "Destination normalized away from target root; using subfolder '$destinationFolder'." -IsWarning
+                $fallback = $safe | Get-Random
+                if ($destNormalized -eq $targetNormalized) {
+                    LogMessage -Message "Destination resolved to the target ROOT; selecting a subfolder instead: '$fallback'." -IsWarning
+                } else {
+                    LogMessage -Message "Destination escaped target root ('$destNormalized'); forcing subfolder '$fallback'." -IsWarning
+                }
+                $destinationFolder = $fallback
             } else {
                 $destinationFolder = Join-Path -Path $TargetRoot -ChildPath (Get-RandomFileName)
                 New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
@@ -1108,7 +1129,9 @@ function DistributeFilesToSubfolders {
         }
 
         LogMessage -Message ("DEBUG dest='{0}' rooted={1} startsWithTarget={2}" -f `
-            $destinationFolder, [System.IO.Path]::IsPathRooted($destinationFolder), ($destinationFolder -like "$TargetRoot*"))
+            $destinationFolder, `
+            [System.IO.Path]::IsPathRooted($destinationFolder), `
+            ([IO.Path]::GetFullPath($destinationFolder)).StartsWith([IO.Path]::GetFullPath($TargetRoot), [System.StringComparison]::OrdinalIgnoreCase))
 
         # Randomized destination name (preserve extension)
         $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $originalName
@@ -1990,7 +2013,6 @@ function Main {
             # Redistribute files within the target folder and subfolders if needed
             LogMessage -Message "Redistributing files in target folders..."
             LogMessage -Message ("DEBUG: About to call RedistributeFilesInTarget with {0} subfolders" -f $subfolders.Count)
-            LogMessage -Message ("DEBUG: Subfolder types: {0}" -f ($subfolders | ForEach-Object { $_.GetType().Name } | Select-Object -Unique | Join-String ', '))
             RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders `
                                       -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress `
                                       -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode `
