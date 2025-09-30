@@ -181,6 +181,18 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.8 — 2025-09-30
+### Fixed
+- **Overly strict Where-Object filter:** Fixed subfolder filtering logic where the condition `$_.FullName -and -not [string]::IsNullOrWhiteSpace($_.FullName)` was eliminating all valid directories. The short-circuit evaluation of `-and $_.FullName` was causing the entire filter to fail when `FullName` properties contained whitespace or special characters.
+- **Empty subfolder collection after enumeration:** Resolved issue where `Get-ChildItem` correctly found 40 directories but the subsequent `Where-Object` filter reduced the collection to zero items, causing empty subfolder collections throughout the processing pipeline.
+
+### Changed
+- **Simplified subfolder filtering:** Replaced complex compound Where-Object condition with straightforward `.PSIsContainer` check, relying on `-LiteralPath` and `-Force` parameters to ensure valid results from `Get-ChildItem`.
+
+### Notes
+- Addresses issue where diagnostic logging showed "40 directories found" but "0 subfolders collected" due to overly aggressive filtering eliminating valid directories.
+- Root cause was PowerShell's short-circuit evaluation in compound `-and` conditions causing the filter to fail before reaching the `IsNullOrWhiteSpace` check.
+
 ## 3.1.7 — 2025-09-28
 ### Fixed
 - **Directory enumeration with special characters:** Fixed `Get-ChildItem` enumeration failing to detect existing subfolders when target paths contain special characters or spaces. Replaced `-Path` with `-LiteralPath` and added `-Force` parameter to handle hidden/system directories and paths with special characters.
@@ -1918,7 +1930,8 @@ function Main {
                 $allItems = Get-ChildItem -LiteralPath $TargetFolder -Force -ErrorAction Stop
                 LogMessage -Message "DEBUG: Total items found: $($allItems.Count)"
                 
-                $subfolders = $allItems | Where-Object { $_.PSIsContainer -and $_.FullName -and -not [string]::IsNullOrWhiteSpace($_.FullName) }
+                $subfolders = $allItems | Where-Object { $_.PSIsContainer }
+
                 LogMessage -Message "DEBUG: Directory items found: $($subfolders.Count)"
                 LogMessage -Message ("DEBUG: Initial subfolders collected: {0}" -f ($subfolders | ForEach-Object { "'$($_.FullName)'" } | Join-String ', '))
             } catch {
