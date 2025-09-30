@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.14
+ 3.1.15
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,17 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.15 — 2025-09-30
+### Fixed
+- **Redistribution subfolder validation:** Fixed `RedistributeFilesInTarget` where subfolder validation logic was incorrectly filtering out all valid `DirectoryInfo` objects during the type-checking phase. The function now properly handles mixed input types (both `FileSystemInfo` objects and string paths) by implementing a two-phase validation process: first converting all inputs to `DirectoryInfo` objects, then extracting and validating their paths. This resolves the empty subfolder collection issue that caused cascading "Sanitizing non-rooted destination folder ''" warnings and emergency subfolder creation.
+
+### Changed
+- **Enhanced redistribution diagnostics:** Added comprehensive DEBUG logging to track subfolder object counts and types throughout the validation pipeline, making it easier to identify where collections are being inadvertently filtered out.
+
+### Notes
+- Root cause was the validation logic checking `Test-Path` on paths before properly converting string inputs to `DirectoryInfo` objects, causing the type-based filtering to eliminate valid entries.
+- This completes the subfolder validation fixes started in v3.1.11-3.1.13 by addressing the actual type conversion and validation order issue rather than just the path normalization.
+
 ## 3.1.14 — 2025-09-30
 ### Fixed
 - **Line continuation syntax error:** Removed inline comment after backtick in `RedistributeFilesInTarget` function call that was breaking PowerShell line continuation, causing the `-TargetRoot` parameter to be disconnected from its value and prompting for mandatory parameter input at runtime.
@@ -219,97 +230,30 @@ CHANGELOG
 - Root cause was the validation logic in `RedistributeFilesInTarget` not properly handling string inputs from `ConvertPathsToItems`. The function expected `FileSystemInfo` objects but received string paths, causing all entries to fail validation checks.
 - This fix eliminates the cascading failures that produced "using subfolder 'D'" errors and unnecessary emergency subfolder creation during redistribution.
 
-## 3.1.10 — 2025-09-30
-### Fixed
-- **ConvertPathsToItems diagnostics:** Added comprehensive DEBUG logging to `ConvertPathsToItems` function matching the detail level of `ConvertItemsToPaths` to trace state restoration failures.
-- **Logging syntax error:** Fixed incorrect parenthesis placement in "DEBUG: Converted subfolders" logging statement where `-join` operator was outside the format operator, causing empty output display.
-
+## 3.1.0–3.1.10 (rollup) — 2025-09-28 → 2025-09-30
 ### Added
-- **Path-to-object conversion tracing:** Added item-by-item logging in `ConvertPathsToItems` showing path processing, Get-Item success/failure, type conversion, and error messages.
-- **State restoration diagnostics:** Enhanced logging to show raw state subfolder count and converted object count to identify where state restoration fails.
-
-### Notes
-- Diagnostic enhancement reveals that `ConvertItemsToPaths` successfully converts 40 DirectoryInfo objects to paths (confirmed by "Output count: 40"), but the paths disappear when restored from state via `ConvertPathsToItems`.
-- Root cause investigation: Conversion to paths succeeds, state save succeeds (40 paths stored), but restoration from state to objects fails silently.
-- Logging will expose whether Get-Item fails on paths with special characters, paths become invalid during JSON serialization, or another issue prevents object restoration.
-
-## 3.1.9 — 2025-09-30
-### Added
-- **Comprehensive path conversion diagnostics:** Added detailed DEBUG logging throughout `ConvertItemsToPaths` function to trace individual item processing, type detection, property access, and conversion outcomes.
-- **Item-by-item conversion tracing:** Log each item's index, type, name, and full path during conversion to identify exactly where the path-to-string conversion pipeline fails.
-- **Conversion success/failure tracking:** Log input count, output count, and specific reasons for skipping items (null, whitespace, missing properties) to pinpoint conversion failures.
+- **`-MaxFilesToCopy`**: Limit files copied this run (`-1` all, `0` none, `N` first N). Persisted and enforced on restart.
+- **Deep diagnostics & DEBUG tracing**: Item-by-item logging in `ConvertItemsToPaths` and `ConvertPathsToItems`; candidate set dumps in distribution/redistribution; state save/load counts; rooted/under-target flags before final destination; detailed errors on `Get-Item`.
+- **Defensive “last-mile” checks**: Revalidate the chosen destination just before composing the final path; fall back to a safe subfolder (or create one).
 
 ### Changed
-- **Enhanced error visibility:** Improved logging granularity in `ConvertItemsToPaths` to expose silent failures when `DirectoryInfo` objects with valid paths produce empty conversion results.
-- **Type detection logging:** Added explicit logging of object types encountered during conversion to identify type recognition issues.
-
-### Notes
-- Diagnostic enhancement to resolve mystery where 40 `DirectoryInfo` objects are correctly enumerated but `ConvertItemsToPaths` returns an empty array, causing empty subfolder collections throughout the pipeline.
-- Root cause investigation: Despite successful enumeration showing 40 directories and `.Count` confirming 40 items, the conversion to string paths for state storage produces zero results.
-- Logging will reveal whether the issue is type detection failure, property access failure, or silent exceptions during conversion.
-
-## 3.1.8 — 2025-09-30
-### Fixed
-- **Overly strict Where-Object filter:** Fixed subfolder filtering logic where the condition `$_.FullName -and -not [string]::IsNullOrWhiteSpace($_.FullName)` was eliminating all valid directories. The short-circuit evaluation of `-and $_.FullName` was causing the entire filter to fail when `FullName` properties contained whitespace or special characters.
-- **Empty subfolder collection after enumeration:** Resolved issue where `Get-ChildItem` correctly found 40 directories but the subsequent `Where-Object` filter reduced the collection to zero items, causing empty subfolder collections throughout the processing pipeline.
-
-### Changed
-- **Simplified subfolder filtering:** Replaced complex compound Where-Object condition with straightforward `.PSIsContainer` check, relying on `-LiteralPath` and `-Force` parameters to ensure valid results from `Get-ChildItem`.
-
-### Notes
-- Addresses issue where diagnostic logging showed "40 directories found" but "0 subfolders collected" due to overly aggressive filtering eliminating valid directories.
-- Root cause was PowerShell's short-circuit evaluation in compound `-and` conditions causing the filter to fail before reaching the `IsNullOrWhiteSpace` check.
-
-## 3.1.7 — 2025-09-28
-### Fixed
-- **Directory enumeration with special characters:** Fixed `Get-ChildItem` enumeration failing to detect existing subfolders when target paths contain special characters or spaces. Replaced `-Path` with `-LiteralPath` and added `-Force` parameter to handle hidden/system directories and paths with special characters.
-- **Robust subfolder detection:** Enhanced directory enumeration to use `.PSIsContainer` property filtering instead of `-Directory` parameter, improving reliability with non-standard folder attributes.
-- **Empty subfolder collection root cause:** Resolved core issue where existing subfolders were not being detected during initial enumeration, causing empty collections throughout the processing pipeline and triggering emergency subfolder creation with associated warnings.
-
-### Added
-- **Comprehensive enumeration diagnostics:** Added detailed DEBUG logging for directory enumeration process, including path validation, item counts, and error handling to aid in troubleshooting filesystem access issues.
-- **Error handling for enumeration failures:** Added try-catch wrapper around subfolder enumeration with graceful fallback to empty collection and detailed error logging.
-
-### Notes
-- Eliminates "Sanitizing non-rooted destination folder" warnings caused by empty subfolder collections when valid subfolders exist but were not being detected.
-- Addresses paths containing spaces, special characters, or non-standard directory attributes that prevented proper enumeration.
-- Root cause was `Get-ChildItem -Path` parameter not handling literal paths with special characters correctly.
-
-## 3.1.6 — 2025-09-28
-### Fixed
-- **State persistence for special characters:** Fixed subfolder path conversion between state save/load cycles when paths contain special characters like `()!@$`, preventing subfolder collections from being lost during checkpoint restoration.
-- **Empty subfolder validation:** Enhanced `ConvertPathsToItems` and `ConvertItemsToPaths` functions to properly handle filesystem paths with special characters and prevent empty collections from propagating through the processing pipeline.
-- **Emergency subfolder creation:** Improved fallback logic when subfolder validation results in empty collections, ensuring proper subfolder availability for file distribution.
-
-### Added
-- **State conversion diagnostics:** Added DEBUG logging for subfolder state persistence and restoration to trace collection loss during save/load cycles.
-- **Special character handling:** Enhanced path conversion functions to handle Windows filesystem paths containing PowerShell special characters.
-
-### Notes
-- Resolves issue where valid subfolders were being filtered out during state restoration, causing fallback to emergency subfolder creation and "Sanitizing non-rooted destination folder" warnings.
-- Root cause was special characters in randomly generated subfolder names interfering with string-to-object conversion pipeline.
-
-## 3.1.0–3.1.5 (rollup) — 2025-09-28
-### Added
-- **`-MaxFilesToCopy`**: Limit how many files are copied this run (`-1` all, `0` none, `N` first N). Only copied files are eligible for deletion; value is persisted and enforced on restart.
-- **Diagnostics & DEBUG tracing**: Log subfolder candidate sets and final resolved destinations (rooted/under-target flags) in distribution and redistribution.
-- **Defensive “last-mile” checks**: Revalidate the chosen destination folder just before composing the path; fall back to a safe subfolder (or create an emergency one) if needed.
-
-### Changed
-- **State & restart safety**: Persist `MaxFilesToCopy`, full enumeration (`totalSourceFilesAll`), and the deterministic *selected* `sourceFiles`. On `-Restart`, the provided `MaxFilesToCopy` must match the saved value.
-- **Progress & summaries**: Logs distinguish **enumerated** vs **selected** counts; distribution phase cleanly skips when zero files are selected.
+- **State & restart safety**: Persist `MaxFilesToCopy`, full enumeration (`totalSourceFilesAll`), and the deterministic *selected* `sourceFiles`. On `-Restart`, the provided `MaxFilesToCopy` must match.
+- **Enumeration reliability**: Prefer `Get-ChildItem -LiteralPath -Force` and filter via `.PSIsContainer` for robust subfolder detection (spaces/special chars/hidden).
+- **Progress & summaries**: Logs distinguish **enumerated** vs **selected**; clean skip when zero files are selected.
 
 ### Fixed
-- **Path safety & validation**: Block non-rooted/drive-like/empty candidates (e.g., `''`, `'D'`, `'D:'`) from destination selection that previously yielded paths like `C:\Users\manoj\D\*.jpg`. Final destinations are always valid subfolders under `-TargetFolder`.
-- **`Resolve-SubfolderPath`**: Returns `$null` for invalid specs; callers drop `$null`. Candidate sets are de-duplicated, must be rooted, exist, and start with the target root (but not equal to it).
+- **Path safety & validation**: Block non-rooted / drive-like / empty candidates (`''`, `D`, `D:`) so outputs like `C:\Users\manoj\D\*.jpg` cannot occur. Final destinations are always subfolders under `-TargetFolder`.
+- **`Resolve-SubfolderPath`**: Returns `$null` for invalid specs; callers drop `$null`. Candidate sets are deduped, must exist, be rooted, and start with the target root (not equal to it).
 - **Empty/invalid inputs**: Hardened `ConvertItemsToPaths`, `ConvertPathsToItems`, `DistributeFilesToSubfolders`, and `RedistributeFilesInTarget` with strict null/empty filtering and consistent object types.
-- **Redistribution correctness**: Exclude target **root** from eligible targets and prevent empty entries from being passed between phases.
-- **Sidecar reliability**: Writing `FileDistributor-State.json.sha256` now uses the retry helper to tolerate transient locks.
-- **Path resolution edge cases**: Guard against filesystem objects missing `FullName` that could yield empty destination paths.
+- **Enumeration filter bug**: Replaced overly strict `Where-Object` that zeroed out valid directories; fixes “0 subfolders collected” after “40 found”.
+- **State persistence with special characters**: Preserve/restore subfolder paths containing `()!@$~` correctly.
+- **Redistribution correctness**: Exclude target **root** from eligible targets and prevent empty entries between phases.
+- **Sidecar reliability**: Writing `FileDistributor-State.json.sha256` uses retry helper to tolerate transient locks.
+- **Logging syntax**: Corrected `-join` placement in “Converted subfolders” DEBUG output.
 
 ### Notes
-- Removes spurious warnings like *“Sanitizing non-rooted destination folder ''”* and *“using subfolder 'D'”* by preventing bad candidates up front.
-- No breaking changes to parameters or state format beyond persisting `MaxFilesToCopy`; behavior is otherwise unchanged except for stricter path safety and clearer logging.
+- Eliminates spurious warnings like *“Sanitizing non-rooted destination folder ''”* and *“using subfolder 'D'”* by preventing bad candidates up front and by fixing enumeration/restore paths.
+- No breaking changes to parameters or state format beyond persisting `MaxFilesToCopy`; behavior is unchanged except for stricter path safety and clearer diagnostics.
 
 ## 3.0.0–3.0.9 (rollup) — 2025-09-18 → 2025-09-25
 
@@ -1289,28 +1233,44 @@ function RedistributeFilesInTarget {
     $folderFilesMap = @{}
     $normalizedSubfolders = @()
     
+    # FIXED: First, ensure we have actual DirectoryInfo objects
+    $validSubfolderObjects = @()
     foreach ($sf in $Subfolders) {
         if ($null -eq $sf) { continue }
         
-        # Extract path from either FileSystemInfo objects or strings
-        $sfPath = $null
-        if ($sf -is [System.IO.FileSystemInfo]) {
-            $sfPath = $sf.FullName
-        } else {
-            $sfPath = [string]$sf
+        # Convert to DirectoryInfo if it's a string
+        if ($sf -is [string]) {
+            if ([string]::IsNullOrWhiteSpace($sf)) { continue }
+            try {
+                $dirInfo = Get-Item -LiteralPath $sf -ErrorAction Stop
+                if ($dirInfo -is [System.IO.DirectoryInfo]) {
+                    $validSubfolderObjects += $dirInfo
+                }
+            } catch {
+                LogMessage -Message "Failed to resolve subfolder path '$sf': $($_.Exception.Message)" -IsWarning
+            }
+        } elseif ($sf -is [System.IO.FileSystemInfo]) {
+            $validSubfolderObjects += $sf
         }
+    }
+    
+    LogMessage -Message "DEBUG: Valid subfolder objects collected: $($validSubfolderObjects.Count)"
+    
+    # Now process the validated objects
+    foreach ($dirInfo in $validSubfolderObjects) {
+        $sfPath = $dirInfo.FullName
         
         if ([string]::IsNullOrWhiteSpace($sfPath)) { continue }
-        
-        # Verify the path exists and is a directory
-        if (-not (Test-Path -LiteralPath $sfPath -PathType Container)) {
-            LogMessage -Message "Skipping non-existent subfolder path '$sfPath' during redistribution validation" -IsWarning
-            continue
-        }
         
         # Resolve to absolute path and verify it's under target root (but not the root itself)
         $sfPath = Resolve-SubfolderPath -Path $sfPath -TargetRoot $TargetFolder
         if (-not $sfPath -or $sfPath -eq $TargetFolder) { continue }
+        
+        # Verify it still exists
+        if (-not (Test-Path -LiteralPath $sfPath -PathType Container)) {
+            LogMessage -Message "Subfolder no longer exists: '$sfPath'" -IsWarning
+            continue
+        }
         
         # Add to collections
         $normalizedSubfolders += $sfPath
@@ -1326,7 +1286,7 @@ function RedistributeFilesInTarget {
     # Make unique
     $normalizedSubfolders = $normalizedSubfolders | Select-Object -Unique
     
-    LogMessage -Message ("DEBUG: Valid subfolders for redistribution: {0}" -f ($normalizedSubfolders -join ', '))
+    LogMessage -Message ("DEBUG: Normalized subfolders for redistribution ({0} items): {1}" -f $normalizedSubfolders.Count, ($normalizedSubfolders -join ', '))
 
     if ($normalizedSubfolders.Count -eq 0) {
         LogMessage -Message "No valid subfolders available for redistribution. Creating emergency subfolder." -IsWarning
@@ -2089,6 +2049,8 @@ function Main {
         if ($lastCheckpoint -lt 4) {
             # Redistribute files within the target folder and subfolders if needed
             LogMessage -Message "Redistributing files in target folders..."
+            LogMessage -Message ("DEBUG: About to call RedistributeFilesInTarget with {0} subfolders" -f $subfolders.Count)
+            LogMessage -Message ("DEBUG: Subfolder types: {0}" -f ($subfolders | ForEach-Object { $_.GetType().Name } | Select-Object -Unique | Join-String ', '))
             RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders `
                                       -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress `
                                       -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode `
