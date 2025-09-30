@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.11
+ 3.1.12
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,17 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.12 — 2025-09-30
+### Fixed
+- **Subfolder validation in redistribution:** Fixed `RedistributeFilesInTarget` where the subfolder validation and normalization pipelines were separated, causing validated paths to be lost during actual processing. Unified the validation logic to verify path existence with `Test-Path`, normalize using `Resolve-SubfolderPath`, and filter out target root in a single pass before building the file count map. This eliminates empty subfolder collections that triggered emergency fallback behavior and "Sanitizing non-rooted destination folder" warnings.
+
+### Changed
+- **Redistribution path processing:** Consolidated duplicate subfolder validation logic into a single unified pipeline that processes both `FileSystemInfo` objects and string paths, verifies existence, normalizes to absolute paths, and filters invalid entries before any redistribution operations begin.
+
+### Notes
+- Root cause was dual processing pipelines where initial validation (`$validSubfolders`) was separate from normalization (`$normalizedSubfolders`), causing validated paths to be discarded. The unified approach ensures all validated paths survive into the redistribution phase.
+- This fix completes the resolution started in v3.1.11 by addressing the root architectural issue rather than just the validation logic.
+
 ## 3.1.11 — 2025-09-30
 ### Fixed
 - **Subfolder validation in redistribution:** Fixed `RedistributeFilesInTarget` failing to properly validate string-based subfolder paths after state restoration. The function now correctly handles both `DirectoryInfo` objects and string paths, converting strings to filesystem objects and verifying their existence before use. This resolves the issue where valid subfolders were filtered out entirely, causing empty subfolder collections and triggering emergency fallback behavior with "Sanitizing non-rooted destination folder" warnings.
@@ -1255,52 +1266,56 @@ function RedistributeFilesInTarget {
         [int]$TotalFiles
     )
 
-    # Filter and validate subfolders immediately
-    $validSubfolders = @()
+    # Build initial folder file count map from normalized full paths
+    $folderFilesMap = @{}
+    $normalizedSubfolders = @()
+    
     foreach ($sf in $Subfolders) {
         if ($null -eq $sf) { continue }
-        if ($sf -is [System.IO.FileSystemInfo] -and $sf.FullName -and -not [string]::IsNullOrWhiteSpace($sf.FullName)) {
-            $validSubfolders += $sf
-        } elseif (-not [string]::IsNullOrWhiteSpace([string]$sf)) {
-            try {
-                $item = Get-Item -LiteralPath ([string]$sf) -ErrorAction Stop
-                if ($item -and $item.FullName) {
-                    $validSubfolders += $item
-                }
-            } catch {
-                LogMessage -Message "Failed to resolve subfolder path '$sf': $($_.Exception.Message)" -IsWarning
-            }
+        
+        # Extract path from either FileSystemInfo objects or strings
+        $sfPath = $null
+        if ($sf -is [System.IO.FileSystemInfo]) {
+            $sfPath = $sf.FullName
+        } else {
+            $sfPath = [string]$sf
+        }
+        
+        if ([string]::IsNullOrWhiteSpace($sfPath)) { continue }
+        
+        # Verify the path exists and is a directory
+        if (-not (Test-Path -LiteralPath $sfPath -PathType Container)) {
+            LogMessage -Message "Skipping non-existent subfolder path '$sfPath' during redistribution validation" -IsWarning
+            continue
+        }
+        
+        # Resolve to absolute path and verify it's under target root (but not the root itself)
+        $sfPath = Resolve-SubfolderPath -Path $sfPath -TargetRoot $TargetFolder
+        if (-not $sfPath -or $sfPath -eq $TargetFolder) { continue }
+        
+        # Add to collections
+        $normalizedSubfolders += $sfPath
+        
+        try {
+            $folderFilesMap[$sfPath] = (Get-ChildItem -LiteralPath $sfPath -File -ErrorAction Stop).Count
+        } catch {
+            $folderFilesMap[$sfPath] = 0
+            LogMessage -Message "Failed to count files in subfolder '$sfPath'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
         }
     }
+    
+    # Make unique
+    $normalizedSubfolders = $normalizedSubfolders | Select-Object -Unique
+    
+    LogMessage -Message ("DEBUG: Valid subfolders for redistribution: {0}" -f ($normalizedSubfolders -join ', '))
 
-    LogMessage -Message ("DEBUG: Valid subfolders for redistribution: {0}" -f ($validSubfolders | ForEach-Object { "'$($_.FullName)'" } | Join-String ', '))
-
-    if ($validSubfolders.Count -eq 0) {
+    if ($normalizedSubfolders.Count -eq 0) {
         LogMessage -Message "No valid subfolders available for redistribution. Creating emergency subfolder." -IsWarning
         $randomName = Get-RandomFileName
         $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
         New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
-        $validSubfolders = @(Get-Item -LiteralPath $newFolder)
-    }
-
-    # Step 1: Build initial folder file count map from normalized full paths
-    $folderFilesMap = @{}
-    $normalizedSubfolders = @()
-    foreach ($sf in $Subfolders) {
-        $sfPath = if ($sf -is [System.IO.FileSystemInfo]) { $sf.FullName } else { [string]$sf }
-        $sfPath = Resolve-SubfolderPath -Path $sfPath -TargetRoot $TargetFolder
-        if (-not [string]::IsNullOrWhiteSpace($sfPath)) {
-            # Ignore TargetFolder itself; we only want real subfolders
-            if ($sfPath -ne $TargetFolder -and (Test-Path -LiteralPath $sfPath -PathType Container)) {
-                $normalizedSubfolders += $sfPath
-            }
-            try {
-                $folderFilesMap[$sfPath] = (Get-ChildItem -Path $sfPath -File).Count
-            } catch {
-                $folderFilesMap[$sfPath] = 0
-                LogMessage -Message "Failed to count files in subfolder '$sfPath'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
-            }
-        }
+        $normalizedSubfolders = @($newFolder)
+        $folderFilesMap[$newFolder] = 0
     }
 
     # Step 2: Redistribute files from root of target folder (not subfolders)
@@ -1313,7 +1328,7 @@ function RedistributeFilesInTarget {
         $eligibleTargets = $folderFilesMap.GetEnumerator() |
             Where-Object { $_.Key -ne $TargetFolder -and $_.Value -lt $FilesPerFolderLimit } |
             ForEach-Object { $_.Key } |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |  # Filter out empty strings
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
             Select-Object -Unique
 
         # Convert to DirectoryInfo objects to ensure proper handling
@@ -1341,7 +1356,6 @@ function RedistributeFilesInTarget {
         $redistributionTotal += $rootFiles.Count
 
         LogMessage -Message ("DEBUG (redistribute-root) candidates={0}" -f ($eligibleTargets -join '; '))
-        LogMessage -Message "DEBUG: Subfolders being passed: $($subfolders | ForEach-Object { "'$_'" } | Join-String ', ')"
 
         DistributeFilesToSubfolders -Files $rootFiles `
             -Subfolders $eligibleTargets `
