@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.15
+ 3.1.16
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,14 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.16 — 2025-09-30
+### Fixed
+- **Subfolder distribution logic:** Fixed `DistributeFilesToSubfolders` where the initial subfolder validation successfully collected valid `DirectoryInfo` objects but then discarded them in favor of reprocessing the original `$Subfolders` parameter with redundant normalization logic. The function now uses the already-validated `$validSubfolders` collection directly, eliminating the dual-processing pipeline that was filtering out all valid entries and causing empty subfolder collections during redistribution.
+
+### Notes
+- Root cause was architectural: the function performed validation correctly but ignored its own validated results, running a second normalization pass that removed all entries. This caused cascading failures including "No valid subfolders" errors and emergency subfolder creation.
+- This completes the subfolder validation fixes from v3.1.11-3.1.15 by addressing the actual logic flow issue rather than just path handling.
+
 ## 3.1.15 — 2025-09-30
 ### Fixed
 - **Redistribution subfolder validation:** Fixed `RedistributeFilesInTarget` where subfolder validation logic was incorrectly filtering out all valid `DirectoryInfo` objects during the type-checking phase. The function now properly handles mixed input types (both `FileSystemInfo` objects and string paths) by implementing a two-phase validation process: first converting all inputs to `DirectoryInfo` objects, then extracting and validating their paths. This resolves the empty subfolder collection issue that caused cascading "Sanitizing non-rooted destination folder ''" warnings and emergency subfolder creation.
@@ -973,12 +981,12 @@ function DistributeFilesToSubfolders {
         [object[]]$Subfolders,
         [Parameter(Mandatory=$true)][string]$TargetRoot,
         [int]$Limit,
-        [switch]$ShowProgress,        # Enable/disable progress updates
-        [int]$UpdateFrequency,       # Frequency for progress updates
-        [string]$DeleteMode,         # Specifies the deletion mode
-        [ref]$FilesToDelete,         # Reference to the files pending deletion
-        [ref]$GlobalFileCounter,     # Reference to a global file counter
-        [int]$TotalFiles             # Total number of files to process
+        [switch]$ShowProgress,
+        [int]$UpdateFrequency,
+        [string]$DeleteMode,
+        [ref]$FilesToDelete,
+        [ref]$GlobalFileCounter,
+        [int]$TotalFiles
     )
 
     # Filter and validate subfolders immediately
@@ -1010,15 +1018,33 @@ function DistributeFilesToSubfolders {
 
     LogMessage -Message ("DEBUG: Valid subfolders for redistribution: {0}" -f ($validSubfolders | ForEach-Object { "'$($_.FullName)'" } | Join-String ', '))
 
-    # Add DEBUG logging to see what we're actually working with
-    LogMessage -Message ("DEBUG: Subfolders after validation: {0}" -f ($validSubfolders | ForEach-Object { 
-        if ($_ -is [System.IO.FileSystemInfo]) { "'$($_.FullName)'" } else { "'$_'" }
-    } | Join-String ', '))
-
     if ($validSubfolders.Count -eq 0) {
         LogMessage -Message "No valid subfolders provided to DistributeFilesToSubfolders. Aborting." -IsError
         return
     }
+
+    # NOW USE THE VALIDATED COLLECTION - extract paths and initialize counts
+    $subfolderPaths = @()
+    $folderCounts = @{}
+    foreach ($sf in $validSubfolders) {
+        $sfPath = $sf.FullName
+        # Exclude target root itself
+        if ($sfPath -ne $TargetRoot) {
+            $subfolderPaths += $sfPath
+            try {
+                $folderCounts[$sfPath] = (Get-ChildItem -Path $sfPath -File | Measure-Object).Count
+            } catch {
+                $folderCounts[$sfPath] = 0
+                LogMessage -Message "Failed to count files in subfolder '$sfPath'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
+            }
+        }
+    }
+
+    if ($subfolderPaths.Count -eq 0) {
+        LogMessage -Message "No valid subfolders after excluding target root. Aborting this batch." -IsError
+        return
+    }
+
     # Normalize subfolder inputs to full path strings and seed counts for balance tracking
     $subfolderPaths = @()
     $folderCounts = @{}
