@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.22
+ 3.1.23
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -182,6 +182,14 @@ To display the script's help text:
 .NOTES
 CHANGELOG
 # CHANGELOG
+## 3.1.23 — 2025-09-30
+### Changed
+- **Bullet-proof chooser:** `DistributeFilesToSubfolders` now builds the candidate set from a fresh enumeration of the target root combined with caller input, canonicalizes with `GetFullPath`, enforces “under target root & not the root itself,” and dedupes. Wildcard tests are removed; only path-aware checks are used. If no valid candidates remain, an **emergency** subfolder is created.
+### Fixed
+- **Reject drive-relative specs early:** `Resolve-SubfolderPath` now drops `C:foo`/`D:bar` (and bare `C`/`C:`), normalizes rooted paths via `GetFullPath`, and anchors relatives under `TargetRoot`.
+### Notes
+- `$destNormalized` is already recomputed after any fallback (added in 3.1.21) and remains in place to keep debug logging null-safe.
+
 ## 3.1.22 — 2025-09-30
 ### Fixed
 - **State-file locking uses exponential backoff + jitter:** `AcquireFileLock` now honors `-MaxBackoff` and applies capped exponential backoff with a small random jitter; final failure logs the **last exception message**. Previously it used a fixed sleep, contrary to the docs.
@@ -910,12 +918,13 @@ function Resolve-SubfolderPath {
         [Parameter(Mandatory=$true)][string]$Path,
         [Parameter(Mandatory=$true)][string]$TargetRoot
     )
-    # Return $null for invalid entries; callers must drop $null.
     if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
-    # Bare drive letter or designator are invalid subfolder specs (e.g., 'D' or 'D:')
-    if ($Path -match '^[A-Za-z]$' -or $Path -match '^[A-Za-z]:$') { return $null }
-    if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
-    # Anything else that's relative: anchor it under TargetRoot
+    # Reject bare drive and drive-relative forms
+    if ($Path -match '^[A-Za-z]$' -or $Path -match '^[A-Za-z]:$' -or $Path -match '^[A-Za-z]:[^\\/].*') { return $null }
+
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        try { return [IO.Path]::GetFullPath($Path) } catch { return $null }
+    }
     return (Join-Path -Path $TargetRoot -ChildPath $Path)
 }
 
@@ -1023,26 +1032,40 @@ function DistributeFilesToSubfolders {
         [int]$TotalFiles
     )
 
-    # --- Single-pass normalization of subfolders ---
-    $subfolderPaths = $Subfolders |
-    ForEach-Object {
-        if ($null -eq $_) { return }
-        $p = if ($_ -is [System.IO.FileSystemInfo]) { $_.FullName } else { [string]$_ }
-        if ([string]::IsNullOrWhiteSpace($p)) { return }
+    # --- Build canonical candidate set strictly from the target root ---
+    $targetNormalized = [IO.Path]::GetFullPath($TargetRoot)
 
-        $p = Resolve-SubfolderPath -Path $p -TargetRoot $TargetRoot
-        if ([string]::IsNullOrWhiteSpace($p)) { return }
-        if ($p -eq $TargetRoot) { return }
-        if ($p -notlike "$TargetRoot*") { return }
-        if (-not (Test-Path -LiteralPath $p -PathType Container)) { return }
+    $subfolderPaths =
+        @(
+            # 1) Whatever caller passed (normalize or discard)
+            $Subfolders | ForEach-Object {
+                if ($_ -is [IO.FileSystemInfo]) { $_.FullName } else { [string]$_ }
+            }
+            # 2) Always include a fresh scan of the actual target root
+            (Get-ChildItem -LiteralPath $TargetRoot -Directory -Force -ErrorAction SilentlyContinue |
+                ForEach-Object { $_.FullName })
+        ) |
+        Where-Object { $_ } |
+        ForEach-Object {
+            # Drop invalid/drive-relative, then canonicalize
+            $p = Resolve-SubfolderPath -Path $_ -TargetRoot $TargetRoot
+            if ([string]::IsNullOrWhiteSpace($p)) { return }
+            try { [IO.Path]::GetFullPath($p) } catch { return }
+        } |
+        Where-Object {
+            # Under target AND not the root itself
+            $_ -ne $TargetRoot -and
+            $_.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase) -and
+            (Test-Path -LiteralPath $_ -PathType Container)
+        } |
+        Select-Object -Unique
 
-        $p
-    } |
-    Select-Object -Unique
-
-    if ($subfolderPaths.Count -eq 0) {
-        LogMessage -Message "No valid subfolders provided to DistributeFilesToSubfolders. Aborting." -IsError
-        return
+    if (($subfolderPaths | Measure-Object).Count -eq 0) {
+        # Create a guaranteed-safe place to land
+        $emergency = Join-Path -Path $TargetRoot -ChildPath (Get-RandomFileName)
+        New-Item -ItemType Directory -Path $emergency -Force | Out-Null
+        $subfolderPaths = @($emergency)
+        LogMessage -Message "Created emergency destination subfolder '$emergency' (no valid candidates)." -IsWarning
     }
 
     $folderCounts = @{}
