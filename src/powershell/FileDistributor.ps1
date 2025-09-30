@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.7
+ 3.1.9
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,21 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.9 — 2025-09-30
+### Added
+- **Comprehensive path conversion diagnostics:** Added detailed DEBUG logging throughout `ConvertItemsToPaths` function to trace individual item processing, type detection, property access, and conversion outcomes.
+- **Item-by-item conversion tracing:** Log each item's index, type, name, and full path during conversion to identify exactly where the path-to-string conversion pipeline fails.
+- **Conversion success/failure tracking:** Log input count, output count, and specific reasons for skipping items (null, whitespace, missing properties) to pinpoint conversion failures.
+
+### Changed
+- **Enhanced error visibility:** Improved logging granularity in `ConvertItemsToPaths` to expose silent failures when `DirectoryInfo` objects with valid paths produce empty conversion results.
+- **Type detection logging:** Added explicit logging of object types encountered during conversion to identify type recognition issues.
+
+### Notes
+- Diagnostic enhancement to resolve mystery where 40 `DirectoryInfo` objects are correctly enumerated but `ConvertItemsToPaths` returns an empty array, causing empty subfolder collections throughout the pipeline.
+- Root cause investigation: Despite successful enumeration showing 40 directories and `.Count` confirming 40 items, the conversion to string paths for state storage produces zero results.
+- Logging will reveal whether the issue is type detection failure, property access failure, or silent exceptions during conversion.
+
 ## 3.1.8 — 2025-09-30
 ### Fixed
 - **Overly strict Where-Object filter:** Fixed subfolder filtering logic where the condition `$_.FullName -and -not [string]::IsNullOrWhiteSpace($_.FullName)` was eliminating all valid directories. The short-circuit evaluation of `-and $_.FullName` was causing the entire filter to fail when `FullName` properties contained whitespace or special characters.
@@ -1519,19 +1534,49 @@ function LoadState {
 # Function to extract paths from items
 function ConvertItemsToPaths {
     param ([array]$Items)
-    if (-not $Items) { return @() }
+    
+    LogMessage -Message "DEBUG: ConvertItemsToPaths - Input count: $(if ($Items) { $Items.Count } else { '0 (null)' })"
+    
+    if (-not $Items) { 
+        LogMessage -Message "DEBUG: ConvertItemsToPaths - Returning empty array (null input)"
+        return @() 
+    }
+    
     $out = @()
+    $index = 0
     foreach ($i in $Items) {
-        if ($null -eq $i) { continue }
-        if ($i -is [System.IO.FileSystemInfo] -and $i.FullName) { 
-            if (-not [string]::IsNullOrWhiteSpace($i.FullName)) {
-                $out += $i.FullName 
+        $index++
+        
+        if ($null -eq $i) { 
+            LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is null, skipping"
+            continue 
+        }
+        
+        $itemType = $i.GetType().Name
+        LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index type: $itemType"
+        
+        if ($i -is [System.IO.FileSystemInfo]) {
+            if ($i.FullName) {
+                $fullPath = $i.FullName
+                if (-not [string]::IsNullOrWhiteSpace($fullPath)) {
+                    LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index: '$($i.Name)' -> '$fullPath'"
+                    $out += $fullPath 
+                } else {
+                    LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has whitespace-only FullName: '$($i.Name)'"
+                }
+            } else {
+                LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has no FullName property: '$($i.Name)'"
             }
         }
         elseif (-not [string]::IsNullOrWhiteSpace([string]$i)) { 
+            LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is string: '$i'"
             $out += [string]$i 
+        } else {
+            LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index skipped (empty/whitespace)"
         }
     }
+    
+    LogMessage -Message "DEBUG: ConvertItemsToPaths - Output count: $($out.Count)"
     return $out
 }
 
@@ -1933,7 +1978,16 @@ function Main {
                 $subfolders = $allItems | Where-Object { $_.PSIsContainer }
 
                 LogMessage -Message "DEBUG: Directory items found: $($subfolders.Count)"
-                LogMessage -Message ("DEBUG: Initial subfolders collected: {0}" -f ($subfolders | ForEach-Object { "'$($_.FullName)'" } | Join-String ', '))
+                if ($subfolders -and $subfolders.Count -gt 0) {
+                    $subfolderNames = @($subfolders | ForEach-Object { 
+                        if ($_ -and $_.FullName) { 
+                            "'$($_.FullName)'" 
+                        } 
+                    })
+                    LogMessage -Message ("DEBUG: Initial subfolders collected ({0} items): {1}" -f $subfolders.Count, ($subfolderNames -join ', '))
+                } else {
+                    LogMessage -Message "DEBUG: Initial subfolders collected: NONE"
+                }
             } catch {
                 LogMessage -Message "DEBUG: Error during Get-ChildItem: $($_.Exception.Message)" -IsError
                 $subfolders = @()
