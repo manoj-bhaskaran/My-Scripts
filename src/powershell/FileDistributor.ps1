@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.13
+ 3.1.14
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,13 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.14 — 2025-09-30
+### Fixed
+- **Line continuation syntax error:** Removed inline comment after backtick in `RedistributeFilesInTarget` function call that was breaking PowerShell line continuation, causing the `-TargetRoot` parameter to be disconnected from its value and prompting for mandatory parameter input at runtime.
+
+### Notes
+- PowerShell doesn't support inline comments after line continuation backticks. The comment `# Use the normalized collection` was causing the multi-line command to be incorrectly parsed, resulting in incomplete parameter passing to `DistributeFilesToSubfolders`.
+
 ## 3.1.13 — 2025-09-30
 ### Fixed
 - **Redistribution subfolder passing:** Fixed `RedistributeFilesInTarget` incorrectly passing string paths (`$eligibleTargets`) instead of filesystem objects (`$eligibleTargetObjects`) to `DistributeFilesToSubfolders` for root file redistribution. The function was converting paths to objects but then discarding the converted collection, causing all subfolders to be filtered out as invalid.
@@ -1354,7 +1361,7 @@ function RedistributeFilesInTarget {
         LogMessage -Message ("DEBUG (redistribute-root) candidates={0}" -f ($normalizedSubfolders -join '; '))
 
         DistributeFilesToSubfolders -Files $rootFiles `
-            -Subfolders $normalizedSubfolders `  # Use the normalized collection
+            -Subfolders $normalizedSubfolders `
             -TargetRoot $TargetFolder `
             -Limit $FilesPerFolderLimit `
             -ShowProgress:$ShowProgress `
