@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.20
+ 3.1.21
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,15 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+# CHANGELOG
+## 3.1.21 — 2025-09-30
+### Fixed
+- **Null dereference in distribution debug logging:** In `DistributeFilesToSubfolders`, `$destNormalized` was computed **before** last-mile fallback/emergency selection and was not recomputed afterward. Subsequent calls to `$destNormalized.StartsWith(...)` and `IsPathRooted($destNormalized)` could throw *“You cannot call a method on a null-valued expression.”* We now recompute `$destNormalized` after any fallback/creation and make the debug logging null-safe.
+- **Clearer warning text when destination is unknown:** The “escaped target root” warning now prints `<null>` instead of an empty string when the destination cannot be normalized.
+
+### Notes
+- This addresses the runtime failure observed just after the warning *“Destination escaped target root (''); forcing subfolder …”*. The guard/diagnostic now consistently uses normalized values and cannot crash even if the initial destination was empty or invalid.
+
 ## 3.1.20 — 2025-09-30
 ### Fixed
 - **Redistribute phase: false “escaped target root ('')” warnings:** `targetRootNormalized` could be blank inside
@@ -1090,7 +1099,8 @@ function DistributeFilesToSubfolders {
                 if ($destNormalized -eq $targetNormalized) {
                     LogMessage -Message "Destination resolved to the target ROOT; selecting a subfolder instead: '$fallback'." -IsWarning
                 } else {
-                    LogMessage -Message "Destination escaped target root ('$destNormalized'); forcing subfolder '$fallback'." -IsWarning
+                    $destDisplay = if ($destNormalized) { $destNormalized } else { '<null>' }
+                    LogMessage -Message "Destination escaped target root ('$destDisplay'); forcing subfolder '$fallback'." -IsWarning
                 }
                 $destinationFolder = $fallback
             } else {
@@ -1101,6 +1111,10 @@ function DistributeFilesToSubfolders {
             }
         }
 
+        # Recompute normalized destination AFTER any fallback/emergency selection.
+        # (Fixes null dereference when logging/inspecting $destNormalized.)
+        $destNormalized = if ($destinationFolder) { [IO.Path]::GetFullPath($destinationFolder) } else { $null }
+ 
         if (-not (Test-Path -LiteralPath $destinationFolder -PathType Container)) {
             try {
                 New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
@@ -1111,12 +1125,10 @@ function DistributeFilesToSubfolders {
             }
         }
 
-        # Single, consistent DEBUG line using normalized paths
-        $startsWithTarget = $destNormalized.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase)
-        LogMessage -Message ("DEBUG: destNormalized='{0}' targetRootNormalized='{1}' rooted={2} startsWithTarget={3}" -f `
-            $destNormalized, `
-            $targetNormalized, `
-            [System.IO.Path]::IsPathRooted($destNormalized), $startsWithTarget)
+        # Single, consistent DEBUG line using normalized paths (null-safe)
+        $rooted = if ($destNormalized) { [System.IO.Path]::IsPathRooted($destNormalized) } else { $false }
+        $startsWithTarget = if ($destNormalized) { $destNormalized.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase) } else { $false }
+        LogMessage -Message ("DEBUG: destNormalized='{0}' targetRootNormalized='{1}' rooted={2} startsWithTarget={3}" -f $destNormalized, $targetNormalized, $rooted, $startsWithTarget)
 
         # Randomized destination name (preserve extension)
         $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $originalName
