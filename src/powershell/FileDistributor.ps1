@@ -1553,23 +1553,23 @@ function ConvertItemsToPaths {
         }
         
         $itemType = $i.GetType().Name
-        LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index type: $itemType"
+        LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index type is $itemType"
         
         if ($i -is [System.IO.FileSystemInfo]) {
             if ($i.FullName) {
                 $fullPath = $i.FullName
                 if (-not [string]::IsNullOrWhiteSpace($fullPath)) {
-                    LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index: '$($i.Name)' -> '$fullPath'"
+                    LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index converting '$($i.Name)' to '$fullPath'"
                     $out += $fullPath 
                 } else {
-                    LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has whitespace-only FullName: '$($i.Name)'"
+                    LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has whitespace-only FullName for '$($i.Name)'"
                 }
             } else {
-                LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has no FullName property: '$($i.Name)'"
+                LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has no FullName property for '$($i.Name)'"
             }
         }
         elseif (-not [string]::IsNullOrWhiteSpace([string]$i)) { 
-            LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is string: '$i'"
+            LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is string '$i'"
             $out += [string]$i 
         } else {
             LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index skipped (empty/whitespace)"
