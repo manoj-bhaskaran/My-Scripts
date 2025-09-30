@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.17
+ 3.1.18
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,18 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.18 — 2025-09-30
+### Fixed
+- **Distribution fatal bug:** Removed a stray reference to `$validSubfolders` and the
+  triple-pass reset that discarded validated subfolders inside `DistributeFilesToSubfolders`.
+  The function now performs a single-pass normalization (object→path), anchors under
+  `-TargetFolder`, excludes the root, verifies existence, and seeds counts before placement.
+  This resolves the “No valid subfolders … Aborting” behaviour after successful enumeration.
+
+### Changed
+- **Lock release hardening:** `ReleaseFileLock` is now null-safe to avoid errors when a
+  release is attempted without a successfully acquired lock.
+
 ## 3.1.17 — 2025-09-30
 ### Fixed
 - **Subfolder processing in DistributeFilesToSubfolders:** Eliminated the dual-processing architecture where subfolders were validated in one block, then completely reprocessed with different logic that discarded the validation results. The function now uses a single-pass normalization that extracts paths from either `FileSystemInfo` objects or strings, validates existence, excludes the target root, and initializes file counts in one cohesive operation. This resolves the empty subfolder collection issue that persisted after v3.1.16.
@@ -1000,164 +1012,77 @@ function DistributeFilesToSubfolders {
         [int]$TotalFiles
     )
 
-    # Normalize all inputs to full path strings and initialize file counts
-    $subfolderPaths = @()
-    $folderCounts = @{}
-    
-    foreach ($sf in $Subfolders) {
-        if ($null -eq $sf) { continue }
-        
-        # Extract path from either FileSystemInfo object or string
-        $sfPath = if ($sf -is [System.IO.FileSystemInfo]) { $sf.FullName } else { [string]$sf }
-        
-        if ([string]::IsNullOrWhiteSpace($sfPath)) { continue }
-        
-        # Exclude target root itself and verify path exists
-        if ($sfPath -ne $TargetRoot -and (Test-Path -LiteralPath $sfPath -PathType Container)) {
-            $subfolderPaths += $sfPath
-            try {
-                $folderCounts[$sfPath] = (Get-ChildItem -Path $sfPath -File | Measure-Object).Count
-            } catch {
-                $folderCounts[$sfPath] = 0
-                LogMessage -Message "Failed to count files in subfolder '$sfPath'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
-            }
-        }
-    }
+    # --- Single-pass normalization of subfolders ---
+    $subfolderPaths = $Subfolders |
+    ForEach-Object {
+        if ($null -eq $_) { return }
+        $p = if ($_ -is [System.IO.FileSystemInfo]) { $_.FullName } else { [string]$_ }
+        if ([string]::IsNullOrWhiteSpace($p)) { return }
 
-    # Make unique
-    $subfolderPaths = $subfolderPaths | Select-Object -Unique
+        $p = Resolve-SubfolderPath -Path $p -TargetRoot $TargetRoot
+        if ([string]::IsNullOrWhiteSpace($p)) { return }
+        if ($p -eq $TargetRoot) { return }
+        if ($p -notlike "$TargetRoot*") { return }
+        if (-not (Test-Path -LiteralPath $p -PathType Container)) { return }
 
-    LogMessage -Message ("DEBUG: Valid subfolders for redistribution: {0}" -f ($subfolderPaths -join ', '))
+        $p
+    } |
+    Select-Object -Unique
 
     if ($subfolderPaths.Count -eq 0) {
         LogMessage -Message "No valid subfolders provided to DistributeFilesToSubfolders. Aborting." -IsError
         return
     }
 
-    # NOW USE THE VALIDATED COLLECTION - extract paths and initialize counts
-    $subfolderPaths = @()
     $folderCounts = @{}
-    foreach ($sf in $validSubfolders) {
-        $sfPath = $sf.FullName
-        # Exclude target root itself
-        if ($sfPath -ne $TargetRoot) {
-            $subfolderPaths += $sfPath
-            try {
-                $folderCounts[$sfPath] = (Get-ChildItem -Path $sfPath -File | Measure-Object).Count
-            } catch {
-                $folderCounts[$sfPath] = 0
-                LogMessage -Message "Failed to count files in subfolder '$sfPath'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
-            }
+    foreach ($p in $subfolderPaths) {
+        try {
+            $folderCounts[$p] = (Get-ChildItem -LiteralPath $p -File -Force | Measure-Object).Count
+        } catch {
+            $folderCounts[$p] = 0
+            LogMessage -Message "Failed to count files in subfolder '$p'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
         }
     }
 
-    if ($subfolderPaths.Count -eq 0) {
-        LogMessage -Message "No valid subfolders after excluding target root. Aborting this batch." -IsError
-        return
-    }
+    LogMessage -Message ("DEBUG: Eligible subfolders ({0}): {1}" -f $subfolderPaths.Count, ($subfolderPaths -join ', '))
 
-    # Normalize subfolder inputs to full path strings and seed counts for balance tracking
-    $subfolderPaths = @()
-    $folderCounts = @{}
-    foreach ($sf in $Subfolders) {
-        $sfPath = if ($sf -is [System.IO.FileSystemInfo]) { $sf.FullName } else { [string]$sf }
-        # Force absolute, rooted paths under TargetRoot (guards against 'D'/'D:'/relative)
-        $sfPath = Resolve-SubfolderPath -Path $sfPath -TargetRoot $TargetRoot
-        if (-not [string]::IsNullOrWhiteSpace($sfPath)) {
-            $subfolderPaths += $sfPath
-            try {
-                $folderCounts[$sfPath] = (Get-ChildItem -Path $sfPath -File | Measure-Object).Count
-            } catch {
-                $folderCounts[$sfPath] = 0
-                LogMessage -Message "Failed to count files in subfolder '$sfPath'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
-            }
-        }
-    }
-    # Sanitize: unique, exclude TargetRoot, must exist as a directory
-    $subfolderPaths = $subfolderPaths |
-        Select-Object -Unique |
-        Where-Object {
-            $_ -and
-            ($_ -ne $TargetRoot) -and
-            (Test-Path -LiteralPath $_ -PathType Container) -and
-            ($_ -like "$TargetRoot*")             # ensure it’s truly under the target root
-        }
- 
-    if ($subfolderPaths.Count -eq 0) {
-        LogMessage -Message "No valid subfolders (all collapsed to root or missing). Aborting this batch." -IsError
-        return
-    }
-
-    # Randomize processing order of files to reduce bias
+    # --- Randomize processing order of files to reduce bias ---
     $filesToProcess = $Files
     try {
-        if ($Files.Count -gt 1) {
-            $filesToProcess = $Files | Get-Random -Count $Files.Count
-        }
+        if ($Files.Count -gt 1) { $filesToProcess = $Files | Get-Random -Count $Files.Count }
     } catch {
         $filesToProcess = $Files
         LogMessage -Message "Could not shuffle file list due to: $($_.Exception.Message). Proceeding without shuffle." -IsWarning
     }
 
     foreach ($file in $filesToProcess) {
-        # Resolve file path and name safely (supports FileInfo or string path)
         $filePath = if ($file -is [System.IO.FileSystemInfo]) { $file.FullName } else { [string]$file }
         $originalName = if ($file -is [System.IO.FileSystemInfo]) { $file.Name } else { [System.IO.Path]::GetFileName($filePath) }
 
-        # Build eligible target list (under limit), bias toward least-filled
+        # Choose eligible targets (under limit), biased to least-filled
         $eligible = @()
         foreach ($p in $subfolderPaths) {
             if ($folderCounts[$p] -lt $Limit) { $eligible += $p }
         }
         if ($eligible.Count -eq 0) {
-            # Best-effort fallback if all at/over limit
             $eligible = $subfolderPaths
             LogMessage -Message "All subfolders appear at/over limit ($Limit). Selecting among all subfolders (best effort)." -IsWarning
         }
-        $minCount = ($eligible | ForEach-Object { $folderCounts[$_] } | Measure-Object -Minimum).Minimum
+
+        $minCount   = ($eligible | ForEach-Object { $folderCounts[$_] } | Measure-Object -Minimum).Minimum
         $candidates = $eligible | Where-Object { $folderCounts[$_] -eq $minCount }
         $destinationFolder = if ($candidates.Count -gt 1) { $candidates | Get-Random } else { $candidates[0] }
-        # Sanitize/anchor destination in case anything slipped through
-        $destinationFolder = Resolve-SubfolderPath -Path $destinationFolder -TargetRoot $TargetRoot
-        if ($destinationFolder -match '^[A-Za-z]$' -or $destinationFolder -match '^[A-Za-z]:$' -or -not [System.IO.Path]::IsPathRooted($destinationFolder)) {
-            LogMessage -Message "Sanitizing non-rooted destination folder '$destinationFolder' -> '$TargetRoot'." -IsWarning
-            $destinationFolder = $TargetRoot
-        }
-        # Hard guard: if destination still resolves to root, pick/construct a real subfolder
-        if ($destinationFolder -ieq $TargetRoot) {
-            $subOnly = $subfolderPaths | Where-Object { $_ -ne $TargetRoot }
-            if ($subOnly.Count -gt 0) {
-                $min2 = ($subOnly | ForEach-Object { $folderCounts[$_] } | Measure-Object -Minimum).Minimum
-                $cand2 = $subOnly | Where-Object { $folderCounts[$_] -eq $min2 }
-                $destinationFolder = if ($cand2.Count -gt 1) { $cand2 | Get-Random } else { $cand2[0] }
-                LogMessage -Message "Destination normalized away from target root; using subfolder '$destinationFolder'." -IsWarning
-            } else {
-                # Last resort: create an emergency subfolder to avoid root copy
-                $destinationFolder = Join-Path -Path $TargetRoot -ChildPath (Get-RandomFileName)
-                New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
-                $folderCounts[$destinationFolder] = 0
-                LogMessage -Message "Created emergency destination subfolder '$destinationFolder' to avoid using target root." -IsWarning
-            }
-        }
-        if (-not (Test-Path -LiteralPath $destinationFolder -PathType Container)) {
-            try {
-                New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
-                LogMessage -Message "Created missing destination folder: $destinationFolder"
-            } catch {
-                LogMessage -Message "Failed to ensure destination folder '$destinationFolder': $($_.Exception.Message)" -IsError
-                continue
-            }
-        }
 
-        # Final clamp before path composition — blocks 'D', 'D:', relative, or outside-root destinations
+        # Last-mile guards (never root, always under TargetRoot, must exist)
+        $destinationFolder = Resolve-SubfolderPath -Path $destinationFolder -TargetRoot $TargetRoot
         $bad = (
-          [string]::IsNullOrWhiteSpace($destinationFolder) -or
-          $destinationFolder -match '^[A-Za-z]$'      -or  # 'D'
-          $destinationFolder -match '^[A-Za-z]:$'     -or  # 'D:'
-          -not [System.IO.Path]::IsPathRooted($destinationFolder) -or
-          ($destinationFolder -notlike "$TargetRoot*")
+            [string]::IsNullOrWhiteSpace($destinationFolder) -or
+            $destinationFolder -match '^[A-Za-z]$' -or
+            $destinationFolder -match '^[A-Za-z]:$' -or
+            -not [System.IO.Path]::IsPathRooted($destinationFolder) -or
+            ($destinationFolder -notlike "$TargetRoot*")
         )
-        if ($bad) {
+        if ($bad -or $destinationFolder -ieq $TargetRoot) {
             $safe = $subfolderPaths | Where-Object {
                 $_ -ne $TargetRoot -and (Test-Path -LiteralPath $_ -PathType Container) -and ($_ -like "$TargetRoot*")
             }
@@ -1171,34 +1096,30 @@ function DistributeFilesToSubfolders {
                 LogMessage -Message "Created emergency destination subfolder '$destinationFolder' to avoid using target root." -IsWarning
             }
         }
-        # Debug trace of the final destination selection
-        LogMessage -Message ("DEBUG dest='{0}' rooted={1} startsWithTarget={2}" -f `
-          $destinationFolder, `
-          [System.IO.Path]::IsPathRooted($destinationFolder), `
-          ($destinationFolder -like "$TargetRoot*"))
 
-        # Always generate a randomized destination name (preserve extension)
+        if (-not (Test-Path -LiteralPath $destinationFolder -PathType Container)) {
+            try {
+                New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
+                LogMessage -Message "Created missing destination folder: $destinationFolder"
+            } catch {
+                LogMessage -Message "Failed to ensure destination folder '$destinationFolder': $($_.Exception.Message)" -IsError
+                continue
+            }
+        }
+
+        LogMessage -Message ("DEBUG dest='{0}' rooted={1} startsWithTarget={2}" -f `
+            $destinationFolder, [System.IO.Path]::IsPathRooted($destinationFolder), ($destinationFolder -like "$TargetRoot*"))
+
+        # Randomized destination name (preserve extension)
         $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $originalName
- 
-        # Build the final destination path
         $destinationFile = Join-Path -Path $destinationFolder -ChildPath $newFileName
-        
-        # (Optional) Log the rename intent for traceability
         LogMessage -Message "Assigning randomized destination name for '$filePath' -> '$destinationFile'."
 
-        # Copy with retries and stop-on-error semantics
         Copy-ItemWithRetry -Path $filePath -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount
 
-        # Verify the file was copied successfully
-        if (Test-Path -Path $destinationFile) {
-            # Update in-memory count for balance tracking
-            if ($folderCounts.ContainsKey($destinationFolder)) {
-                $folderCounts[$destinationFolder]++
-            } else {
-                $folderCounts[$destinationFolder] = 1
-            }
+        if (Test-Path -LiteralPath $destinationFile) {
+            if ($folderCounts.ContainsKey($destinationFolder)) { $folderCounts[$destinationFolder]++ } else { $folderCounts[$destinationFolder] = 1 }
             try {
-                # Handle file deletion based on DeleteMode
                 if ($DeleteMode -eq "RecycleBin") {
                     Move-ToRecycleBin -FilePath $filePath
                     LogMessage -Message "Copied from $file to $destinationFile and moved original to Recycle Bin."
@@ -1206,23 +1127,12 @@ function DistributeFilesToSubfolders {
                     Remove-File -FilePath $filePath
                     LogMessage -Message "Copied from $file to $destinationFile and immediately deleted original."
                 } elseif ($DeleteMode -eq "EndOfScript") {
-                    # Ensure FilesToDelete.Value is initialized as an array
-                    if (-not $FilesToDelete.Value) {
-                        $FilesToDelete.Value = @()
-                    }
-                    # Gather metadata for safe deletion across restarts
+                    if (-not $FilesToDelete.Value) { $FilesToDelete.Value = @() }
                     $queuedSize = $null; $queuedMtimeUtc = $null
-                    try {
-                        $finfo = Get-Item -LiteralPath $filePath -ErrorAction Stop
-                        $queuedSize = $finfo.Length
-                        $queuedMtimeUtc = $finfo.LastWriteTimeUtc
-                    } catch { }
+                    try { $finfo = Get-Item -LiteralPath $filePath -ErrorAction Stop; $queuedSize = $finfo.Length; $queuedMtimeUtc = $finfo.LastWriteTimeUtc } catch { }
                     $FilesToDelete.Value += [pscustomobject]@{
-                        Path = $filePath
-                        Size = $queuedSize
-                        LastWriteTimeUtc = $queuedMtimeUtc
-                        QueuedAtUtc = (Get-Date).ToUniversalTime()
-                        SessionId = $script:SessionId
+                        Path = $filePath; Size = $queuedSize; LastWriteTimeUtc = $queuedMtimeUtc
+                        QueuedAtUtc = (Get-Date).ToUniversalTime(); SessionId = $script:SessionId
                     }
                     LogMessage -Message "Copied from $file to $destinationFile. Original pending deletion at end of script."
                 }
@@ -1233,23 +1143,16 @@ function DistributeFilesToSubfolders {
             LogMessage -Message "Failed to copy $file to $destinationFile. Original file not moved." -IsError
         }
 
-        # Increment the global file counter
         $GlobalFileCounter.Value++
 
-        # Show progress if enabled and only after every $UpdateFrequency files
         if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
             $percentComplete = [math]::Floor(($GlobalFileCounter.Value / $TotalFiles) * 100)
-            Write-Progress -Activity "Distributing Files" `
-                           -Status "Processed $($GlobalFileCounter.Value) of $TotalFiles files" `
-                           -PercentComplete $percentComplete
+            Write-Progress -Activity "Distributing Files" -Status "Processed $($GlobalFileCounter.Value) of $TotalFiles files" -PercentComplete $percentComplete
             LogMessage -Message "Processed $($GlobalFileCounter.Value) of $TotalFiles files." -ConsoleOutput
         }
     }
 
-    # Final progress message
-    if ($ShowProgress) {
-        Write-Progress -Activity "Distributing Files" -Status "Complete" -Completed
-    }
+    if ($ShowProgress) { Write-Progress -Activity "Distributing Files" -Status "Complete" -Completed }
     LogMessage -Message "File distribution completed: Processed $($GlobalFileCounter.Value) of $TotalFiles files." -ConsoleOutput
 }
 
