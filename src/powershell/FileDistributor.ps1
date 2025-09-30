@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.26
+ 3.2.0
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -182,72 +182,37 @@ To display the script's help text:
 .NOTES
 CHANGELOG
 # CHANGELOG
-## 3.1.26 — 2025-09-30
-### Fixed
-- **Scalar pipeline output in candidate selection:** Wrapped `$candidates` assignment in `@()` to force array output, preventing string indexing that extracted drive letter 'D' as destination when only one candidate exists. This resolves "Destination escaped target root ('<null>')" warnings during single-min-count redistribution.
-
-## 3.1.25 — 2025-09-30
+## 3.2.0 — 2025-09-30
 ### Added
-- **Enhanced debug logging for destination selection:** Added DEBUG logs in `DistributeFilesToSubfolders` for eligible/min/candidates counts and in `Resolve-SubfolderPath` for GetFullPath attempts/exceptions, to diagnose null destinations and "escaped target root" warnings.
+- **Conditional debug logging:** Debug messages ("DEBUG:") are now only written to the log file and console (via Write-Debug) when the script is run with the built-in -Debug switch. Added [CmdletBinding()] to enable common parameters, $script:DebugMode to detect mode, [switch]$IsDebug to LogMessage, and conditioned logging/output accordingly. This reduces log clutter in normal runs.
 
-## 3.1.24 — 2025-09-30
-### Added
-- **Debug logging for destination selection:** Added a DEBUG log in `DistributeFilesToSubfolders` to trace the selected destination path before normalization/resolution, aiding diagnosis of null/escape warnings.
-
-## 3.1.23 — 2025-09-30
-### Changed
-- **Bullet-proof chooser:** `DistributeFilesToSubfolders` now builds the candidate set from a fresh enumeration of the target root combined with caller input, canonicalizes with `GetFullPath`, enforces “under target root & not the root itself,” and dedupes. Wildcard tests are removed; only path-aware checks are used. If no valid candidates remain, an **emergency** subfolder is created.
-### Fixed
-- **Reject drive-relative specs early:** `Resolve-SubfolderPath` now drops `C:foo`/`D:bar` (and bare `C`/`C:`), normalizes rooted paths via `GetFullPath`, and anchors relatives under `TargetRoot`.
-### Notes
-- `$destNormalized` is already recomputed after any fallback (added in 3.1.21) and remains in place to keep debug logging null-safe.
-
-## 3.1.22 — 2025-09-30
-### Fixed
-- **State-file locking uses exponential backoff + jitter:** `AcquireFileLock` now honors `-MaxBackoff` and applies capped exponential backoff with a small random jitter; final failure logs the **last exception message**. Previously it used a fixed sleep, contrary to the docs.
-- **Null-safe lock release:** `ReleaseFileLock` now handles a null stream gracefully, preventing “You cannot call a method on a null-valued expression” during shutdown or early save/load transitions.
-
-### Changed
-- **Log label typo:** Parameter validation log now prints `FilesPerFolderLimit` (was `FilePerFolderLimit`).
-
-## 3.1.21 — 2025-09-30
-### Fixed
-- **Null dereference in distribution debug logging:** In `DistributeFilesToSubfolders`, `$destNormalized` was computed **before** last-mile fallback/emergency selection and was not recomputed afterward. Subsequent calls to `$destNormalized.StartsWith(...)` and `IsPathRooted($destNormalized)` could throw *“You cannot call a method on a null-valued expression.”* We now recompute `$destNormalized` after any fallback/creation and make the debug logging null-safe.
-- **Clearer warning text when destination is unknown:** The “escaped target root” warning now prints `<null>` instead of an empty string when the destination cannot be normalized.
-
-### Notes
-- This addresses the runtime failure observed just after the warning *“Destination escaped target root (''); forcing subfolder …”*. The guard/diagnostic now consistently uses normalized values and cannot crash even if the initial destination was empty or invalid.
-
-## 3.1.0–3.1.20 (rollup) — 2025-09-28 → 2025-09-30
+## 3.1.0–3.1.26 (rollup) — 2025-09-28 → 2025-09-30
 
 ### Added
-- **`-MaxFilesToCopy`** to cap per-run copies (`-1` all, `0` none, `N` first N); persisted and restart-aware.
-- **Deep diagnostics** across enumeration, conversions, state I/O, candidate dumps, and rooted/under-target checks.
-- **Defensive last-mile checks** that re-validate final destinations and, if invalid/root, auto-select a safe validated subfolder (create an emergency one if needed).
+- **`-MaxFilesToCopy`:** Cap per-run copies (`-1` all, `0` none, `N` first N); persisted and restart-aware.
+- **Deeper diagnostics:** DEBUG tracing across enumeration, conversions, state I/O, candidate counts (eligible/min/candidates), and pre-normalization destination selection. `Resolve-SubfolderPath` logs `GetFullPath` attempts/exceptions.
+- **Defensive last-mile checks:** Re-validate final destination; if invalid or the target root, auto-select a safe validated subfolder (create an emergency one if needed).
 
 ### Changed
-- **State & restarts:** Persist `MaxFilesToCopy`, full enumeration totals, and deterministic *selected* files; restarts must match.
-- **Enumeration:** Prefer `Get-ChildItem -LiteralPath -Force` with `.PSIsContainer` filtering.
-- **Progress & summaries:** Clearly separate **enumerated** vs **selected**; clean no-op when zero are selected.
-- **Redistribution pipeline:** Single-pass, unified flow using the pre-validated subfolder set; consistent DEBUG line
-  `destNormalized=…, targetRootNormalized=…, rooted=…, startsWithTarget=…`.
-- **Noise reduction:** Drop verbose/duplicate “Converted subfolders”/“Subfolder types” logs; keep one consolidated DEBUG line per decision.
-- **Lock release:** `ReleaseFileLock` is now null-safe.
-- **Sidecar contention backoff:** Retry wait reduced from 10s → 1s with short jitter and clearer error text; still honors max-attempt backoff.
+- **Chooser hardening:** `DistributeFilesToSubfolders` builds candidates from a fresh enumeration of the target root plus caller input; canonicalizes with `GetFullPath`, enforces “under target root & not the root,” and dedupes. Wildcard tests removed.
+- **State & restarts:** Persist enumeration totals and deterministic *selected* files; restarts must match.
+- **Enumeration:** Prefer `Get-ChildItem -LiteralPath -Force` with `.PSIsContainer`.
+- **Progress/noise:** Separate **enumerated** vs **selected**; keep one consolidated DEBUG line per decision; drop verbose/duplicate logs.
+- **Locking/backoff:** State-file locking now uses capped exponential backoff + small jitter and logs the last exception on failure; sidecar contention wait reduced 10s → 1s (still honors max-attempt backoff).
+- **Typo fix:** Log label now prints `FilesPerFolderLimit`.
 
 ### Fixed
 - **Root safety:** Block writes to the target **root** even if “under target”; reroute to a validated subfolder.
-- **Normalization & escapes:** Replace wildcard checks with `[IO.Path]::GetFullPath(...)` and case-insensitive `StartsWith(...)` against the normalized target root; prevent root escapes, mixed-case false positives, and accidental root placement.
-- **False “escaped target root ('')” warnings:** Recompute `targetRootNormalized` via `[IO.Path]::GetFullPath($TargetFolder)` at function entry (or pass explicitly). Guard triggers only when `startsWithTarget` is false, destination equals root, or normalization fails.
-- **Subfolder validation architecture:** Remove dual-processing. Single-pass normalization from `FileSystemInfo`/string → path; validate existence, exclude root, seed counts, and pass the surviving set to distribution/redistribution.
-- **Enumeration filter bug:** Replaced an over-strict filter that zeroed valid directories.
-- **Special-char persistence:** Preserve/restore subfolder paths containing `()!@$~`.
-- **Redistribution correctness:** Exclude target **root** from candidates; ensure non-empty candidate sets; avoid double deletion with `EndOfScript`.
-- **Sidecar reliability:** Robust writes for `FileDistributor-State.json.sha256` with retry; minor logging/var fixes.
+- **Normalization & escapes:** Replace wildcard checks with `[IO.Path]::GetFullPath(...)` + case-insensitive `StartsWith(...)` against a normalized target root; prevent root escapes, mixed-case false positives, and accidental root placement.
+- **False “escaped target root ('')” warnings:** Recompute `targetRootNormalized` at function entry (or pass explicitly). Guard triggers only when `startsWithTarget` is false, destination equals root, or normalization fails.
+- **Null-safe debug logging:** Recompute `$destNormalized` after fallback/emergency creation; warnings print `<null>` when unknown; all `StartsWith`/`IsPathRooted` calls are null-safe.
+- **Candidate selection (scalar pipeline):** Wrap `$candidates` in `@()` to force array semantics; prevents string indexing that yielded drive letter `D` for single-item sets and eliminated “Destination escaped target root ('<null>')” during single-min-count redistribution.
+- **Input/path hygiene:** Early-reject `C`, `C:`, `C:foo` forms; anchor relatives under `TargetRoot`; preserve special chars `()!@$~`.
+- **Stability:** `ReleaseFileLock` is null-safe; enumeration filter no longer zeroes valid directories; sidecar writes (`FileDistributor-State.json.sha256`) are retried with clearer errors.
 
 ### Notes
-- Eliminates spurious warnings like “Sanitizing non-rooted destination folder ''” and “using subfolder 'D'” via corrected validation order, parameter passing, and syntax.
-- No breaking parameter/state changes beyond persisting `MaxFilesToCopy`; behavior is stricter and diagnostics are clearer.
+- Eliminates spurious warnings like “Sanitizing non-rooted destination folder ''” and “using subfolder 'D'.”
+- No breaking parameter/state changes beyond persisting `MaxFilesToCopy`; behavior is stricter and diagnostics clearer.
 
 ## 3.0.0–3.0.9 (rollup) — 2025-09-18 → 2025-09-25
 
@@ -360,6 +325,7 @@ Limitations:
  - The script processes files only (directories are ignored) and will recurse all nested folders under the specified source.
 #>
 
+[CmdletBinding()]
 param(
     [string]$SourceFolder = $null,
     [string]$TargetFolder = $null,
@@ -546,24 +512,26 @@ function Initialize-FilePath {
 function LogMessage {
     param (
         [string]$Message,
-        [switch]$ConsoleOutput,  # Explicit control for always printing to the console
-        [switch]$IsError,        # Indicates if the message is an error
-        [switch]$IsWarning       # Indicates if the message is a warning
+        [switch]$ConsoleOutput, # Explicit control for always printing to the console
+        [switch]$IsError, # Indicates if the message is an error
+        [switch]$IsWarning, # Indicates if the message is a warning
+        [switch]$IsDebug # Indicates if the message is debug-level
     )
+    if ($IsDebug -and -not $script:DebugMode) { return }
     # Get the timestamp and format the log entry
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "$($timestamp): $($Message)"
-
-    # Append the log entry to the log file
+    # Append the log entry to the log file (always, unless skipped above for debug)
     $logEntry | Add-Content -Path $LogFilePath
-
-    # Use appropriate PowerShell cmdlet for errors, warnings, or console output
+    # Use appropriate PowerShell cmdlet for errors, warnings, debug, or console output
     if ($IsError) {
         Write-Error -Message $logEntry
         $script:Errors++
     } elseif ($IsWarning) {
         Write-Warning -Message $logEntry
         $script:Warnings++
+    } elseif ($IsDebug) {
+        Write-Debug -Message $logEntry
     } elseif ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
         Write-Host -Object $logEntry
     }
@@ -875,7 +843,7 @@ function Resolve-SubfolderPath {
     if ([System.IO.Path]::IsPathRooted($Path)) {
         try {
             # Add this before GetFullPath:
-            LogMessage -Message "DEBUG: Attempting GetFullPath for '$Path'"
+            LogMessage -Message "DEBUG: Attempting GetFullPath for '$Path'" -IsDebug
             return [IO.Path]::GetFullPath($Path)
         } catch {
             # Add this in catch:
@@ -1036,7 +1004,7 @@ function DistributeFilesToSubfolders {
         }
     }
 
-    LogMessage -Message ("DEBUG: Eligible subfolders ({0}): {1}" -f $subfolderPaths.Count, ($subfolderPaths -join ', '))
+    LogMessage -Message ("DEBUG: Eligible subfolders ({0}): {1}" -f $subfolderPaths.Count, ($subfolderPaths -join ', ')) -IsDebug
 
     # --- Randomize processing order of files to reduce bias ---
     $filesToProcess = $Files
@@ -1065,7 +1033,7 @@ function DistributeFilesToSubfolders {
         $candidates = @($eligible | Where-Object { $folderCounts[$_] -eq $minCount })
         $destinationFolder = if ($candidates.Count -gt 1) { $candidates | Get-Random } else { $candidates[0] }
 
-        LogMessage -Message "DEBUG: Eligible count: $($eligible.Count), Min count: $minCount, Candidates count: $($candidates.Count)"
+        LogMessage -Message "DEBUG: Eligible count: $($eligible.Count), Min count: $minCount, Candidates count: $($candidates.Count)" -IsDebug
         LogMessage -Message "Selected destination before resolve: '$destinationFolder'"
 
         # Last-mile guards (never root, always under TargetRoot, must exist)
@@ -1120,7 +1088,7 @@ function DistributeFilesToSubfolders {
         # Single, consistent DEBUG line using normalized paths (null-safe)
         $rooted = if ($destNormalized) { [System.IO.Path]::IsPathRooted($destNormalized) } else { $false }
         $startsWithTarget = if ($destNormalized) { $destNormalized.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase) } else { $false }
-        LogMessage -Message ("DEBUG: destNormalized='{0}' targetRootNormalized='{1}' rooted={2} startsWithTarget={3}" -f $destNormalized, $targetNormalized, $rooted, $startsWithTarget)
+        LogMessage -Message ("DEBUG: destNormalized='{0}' targetRootNormalized='{1}' rooted={2} startsWithTarget={3}" -f $destNormalized, $targetNormalized, $rooted, $startsWithTarget) -IsDebug
 
         # Randomized destination name (preserve extension)
         $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $originalName
@@ -1206,7 +1174,7 @@ function RedistributeFilesInTarget {
         }
     }
     
-    LogMessage -Message "DEBUG: Valid subfolder objects collected: $($validSubfolderObjects.Count)"
+    LogMessage -Message "DEBUG: Valid subfolder objects collected: $($validSubfolderObjects.Count)" -IsDebug
     
     # Now process the validated objects
     foreach ($dirInfo in $validSubfolderObjects) {
@@ -1238,7 +1206,7 @@ function RedistributeFilesInTarget {
     # Make unique
     $normalizedSubfolders = $normalizedSubfolders | Select-Object -Unique
     
-    LogMessage -Message ("DEBUG: Normalized subfolders for redistribution ({0} items): {1}" -f $normalizedSubfolders.Count, ($normalizedSubfolders -join ', '))
+    LogMessage -Message ("DEBUG: Normalized subfolders for redistribution ({0} items): {1}" -f $normalizedSubfolders.Count, ($normalizedSubfolders -join ', ')) -IsDebug
 
     if ($normalizedSubfolders.Count -eq 0) {
         LogMessage -Message "No valid subfolders available for redistribution. Creating emergency subfolder." -IsWarning
@@ -1270,7 +1238,7 @@ function RedistributeFilesInTarget {
         $GlobalFileCounter.Value = 0
         $redistributionTotal += $rootFiles.Count
 
-        LogMessage -Message ("DEBUG (redistribute-root) candidates={0}" -f ($normalizedSubfolders -join '; '))
+        LogMessage -Message ("DEBUG (redistribute-root) candidates={0}" -f ($normalizedSubfolders -join '; ')) -IsDebug
 
         DistributeFilesToSubfolders -Files $rootFiles `
             -Subfolders $normalizedSubfolders `
@@ -1325,7 +1293,7 @@ function RedistributeFilesInTarget {
 
         # Reset phase counter and use per-batch denominator
         LogMessage -Message ("DEBUG (redistribute-overload from '{0}') candidates={1}" -f `
-          $sourceFolder, ($eligibleTargets -join '; '))
+          $sourceFolder, ($eligibleTargets -join '; ')) -IsDebug
 
         $GlobalFileCounter.Value = 0
         DistributeFilesToSubfolders -Files $sourceFiles `
@@ -1460,10 +1428,10 @@ function LoadState {
 function ConvertItemsToPaths {
     param ([array]$Items)
     
-    LogMessage -Message "DEBUG: ConvertItemsToPaths - Input count: $(if ($Items) { $Items.Count } else { '0 (null)' })"
+    LogMessage -Message "DEBUG: ConvertItemsToPaths - Input count: $(if ($Items) { $Items.Count } else { '0 (null)' })" -IsDebug
     
     if (-not $Items) { 
-        LogMessage -Message "DEBUG: ConvertItemsToPaths - Returning empty array (null input)"
+        LogMessage -Message "DEBUG: ConvertItemsToPaths - Returning empty array (null input)" -IsDebug
         return @() 
     }
     
@@ -1473,35 +1441,35 @@ function ConvertItemsToPaths {
         $index++
         
         if ($null -eq $i) { 
-            LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is null, skipping"
+            LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is null, skipping" -IsDebug
             continue 
         }
         
         $itemType = $i.GetType().Name
-        LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index type is $itemType"
+        LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index type is $itemType" -IsDebug
         
         if ($i -is [System.IO.FileSystemInfo]) {
             if ($i.FullName) {
                 $fullPath = $i.FullName
                 if (-not [string]::IsNullOrWhiteSpace($fullPath)) {
-                    LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index converting '$($i.Name)' to '$fullPath'"
+                    LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index converting '$($i.Name)' to '$fullPath'" -IsDebug
                     $out += $fullPath 
                 } else {
-                    LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has whitespace-only FullName for '$($i.Name)'"
+                    LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has whitespace-only FullName for '$($i.Name)'" -IsDebug
                 }
             } else {
                 LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has no FullName property for '$($i.Name)'"
             }
         }
         elseif (-not [string]::IsNullOrWhiteSpace([string]$i)) { 
-            LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is string '$i'"
+            LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is string '$i'" -IsDebug
             $out += [string]$i 
         } else {
             LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index skipped (empty/whitespace)"
         }
     }
     
-    LogMessage -Message "DEBUG: ConvertItemsToPaths - Output count: $($out.Count)"
+    LogMessage -Message "DEBUG: ConvertItemsToPaths - Output count: $($out.Count)" -IsDebug
     return $out
 }
 
@@ -1509,10 +1477,10 @@ function ConvertItemsToPaths {
 function ConvertPathsToItems {
     param ([array]$Paths)
     
-    LogMessage -Message "DEBUG: ConvertPathsToItems - Input count: $(if ($Paths) { $Paths.Count } else { '0 (null)' })"
+    LogMessage -Message "DEBUG: ConvertPathsToItems - Input count: $(if ($Paths) { $Paths.Count } else { '0 (null)' })" -IsDebug
     
     if (-not $Paths) { 
-        LogMessage -Message "DEBUG: ConvertPathsToItems - Returning empty array (null input)"
+        LogMessage -Message "DEBUG: ConvertPathsToItems - Returning empty array (null input)" -IsDebug
         return @() 
     }
     
@@ -1522,11 +1490,11 @@ function ConvertPathsToItems {
         $index++
         
         if ([string]::IsNullOrWhiteSpace($path)) { 
-            LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index is null/whitespace, skipping"
+            LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index is null/whitespace, skipping" -IsDebug
             continue 
         }
         
-        LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index processing path '$path'"
+        LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index processing path '$path'" -IsDebug
         
         try {
             $item = Get-Item -LiteralPath $path -ErrorAction Stop
@@ -1653,6 +1621,7 @@ function RemoveLogEntries {
 # Main script logic
 function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
+    $script:DebugMode = ($DebugPreference -ne 'SilentlyContinue')
     Import-RandomNameProvider -ModulePath $RandomNameModulePath
 
     # Track prior counters from any persisted state for cross-restart safety
@@ -1923,24 +1892,24 @@ function Main {
             LogMessage -Message "Source File Count (selected): $totalSourceFiles of $totalSourceFilesAll total. Target File Count Before: $totalTargetFilesBefore."
 
             # Get subfolders in the target folder
-            LogMessage -Message "DEBUG: About to enumerate subfolders in: '$TargetFolder'"
-            LogMessage -Message "DEBUG: Target folder exists: $(Test-Path -LiteralPath $TargetFolder)"
-            LogMessage -Message "DEBUG: Target folder is directory: $(Test-Path -LiteralPath $TargetFolder -PathType Container)"
+            LogMessage -Message "DEBUG: About to enumerate subfolders in: '$TargetFolder'" -IsDebug
+            LogMessage -Message "DEBUG: Target folder exists: $(Test-Path -LiteralPath $TargetFolder)" -IsDebug
+            LogMessage -Message "DEBUG: Target folder is directory: $(Test-Path -LiteralPath $TargetFolder -PathType Container)" -IsDebug
             
             try {
                 $allItems = Get-ChildItem -LiteralPath $TargetFolder -Force -ErrorAction Stop
-                LogMessage -Message "DEBUG: Total items found: $($allItems.Count)"
+                LogMessage -Message "DEBUG: Total items found: $($allItems.Count)" -IsDebug
                 
                 $subfolders = $allItems | Where-Object { $_.PSIsContainer }
 
-                LogMessage -Message "DEBUG: Directory items found: $($subfolders.Count)"
+                LogMessage -Message "DEBUG: Directory items found: $($subfolders.Count)" -IsDebug
                 if ($subfolders -and $subfolders.Count -gt 0) {
                     $subfolderNames = @($subfolders | ForEach-Object { 
                         if ($_ -and $_.FullName) { 
                             "'$($_.FullName)'" 
                         } 
                     })
-                    LogMessage -Message ("DEBUG: Initial subfolders collected ({0} items): {1}" -f $subfolders.Count, ($subfolderNames -join ', '))
+                    LogMessage -Message ("DEBUG: Initial subfolders collected ({0} items): {1}" -f $subfolders.Count, ($subfolderNames -join ', ')) -IsDebug
                 } else {
                     LogMessage -Message "DEBUG: Initial subfolders collected: NONE"
                 }
@@ -1976,15 +1945,15 @@ function Main {
         if ($lastCheckpoint -lt 3) {
             # Add this diagnostic before calling DistributeFilesToSubfolders
             if ($state.subfolders) {
-                LogMessage -Message ("DEBUG: State subfolders raw count: {0}" -f $state.subfolders.Count)
+                LogMessage -Message ("DEBUG: State subfolders raw count: {0}" -f $state.subfolders.Count) -IsDebug
             }
             if ($subfolders -and $subfolders.Count -gt 0) {
                 $subfolderNames = @($subfolders | ForEach-Object { 
                     if ($_ -and $_.FullName) { "'$($_.FullName)'" } 
                 })
-                LogMessage -Message ("DEBUG: Converted subfolders ({0} items): {1}" -f $subfolders.Count, ($subfolderNames -join ', '))
+                LogMessage -Message ("DEBUG: Converted subfolders ({0} items): {1}" -f $subfolders.Count, ($subfolderNames -join ', ')) -IsDebug
             } else {
-                LogMessage -Message "DEBUG: Converted subfolders: NONE (count: $(if ($subfolders) { $subfolders.Count } else { 'null' }))"
+                LogMessage -Message "DEBUG: Converted subfolders: NONE (count: $(if ($subfolders) { $subfolders.Count } else { 'null' }))" -IsDebug
             }
 
             # Common base for additional variables
@@ -2011,7 +1980,7 @@ function Main {
         if ($lastCheckpoint -lt 4) {
             # Redistribute files within the target folder and subfolders if needed
             LogMessage -Message "Redistributing files in target folders..."
-            LogMessage -Message ("DEBUG: About to call RedistributeFilesInTarget with {0} subfolders" -f $subfolders.Count)
+            LogMessage -Message ("DEBUG: About to call RedistributeFilesInTarget with {0} subfolders" -f $subfolders.Count) -IsDebug
             RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders `
                                       -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress `
                                       -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode `
