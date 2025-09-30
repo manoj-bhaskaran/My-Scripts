@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.1.10
+ 3.1.11
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -181,6 +181,14 @@ To display the script's help text:
 
 .NOTES
 CHANGELOG
+## 3.1.11 — 2025-09-30
+### Fixed
+- **Subfolder validation in redistribution:** Fixed `RedistributeFilesInTarget` failing to properly validate string-based subfolder paths after state restoration. The function now correctly handles both `DirectoryInfo` objects and string paths, converting strings to filesystem objects and verifying their existence before use. This resolves the issue where valid subfolders were filtered out entirely, causing empty subfolder collections and triggering emergency fallback behavior with "Sanitizing non-rooted destination folder" warnings.
+
+### Notes
+- Root cause was the validation logic in `RedistributeFilesInTarget` not properly handling string inputs from `ConvertPathsToItems`. The function expected `FileSystemInfo` objects but received string paths, causing all entries to fail validation checks.
+- This fix eliminates the cascading failures that produced "using subfolder 'D'" errors and unnecessary emergency subfolder creation during redistribution.
+
 ## 3.1.10 — 2025-09-30
 ### Fixed
 - **ConvertPathsToItems diagnostics:** Added comprehensive DEBUG logging to `ConvertPathsToItems` function matching the detail level of `ConvertItemsToPaths` to trace state restoration failures.
@@ -999,16 +1007,34 @@ function DistributeFilesToSubfolders {
         [int]$TotalFiles             # Total number of files to process
     )
 
-    # CRITICAL: Filter out null/empty entries immediately
+    # Filter and validate subfolders immediately
     $validSubfolders = @()
     foreach ($sf in $Subfolders) {
         if ($null -eq $sf) { continue }
-        if ($sf -is [System.IO.FileSystemInfo] -and $sf.FullName -and -not [string]::IsNullOrWhiteSpace($sf.FullName)) {
-            $validSubfolders += $sf
-        } elseif (-not [string]::IsNullOrWhiteSpace([string]$sf)) {
-            $validSubfolders += [string]$sf
+        
+        $sfPath = $null
+        if ($sf -is [System.IO.FileSystemInfo]) {
+            $sfPath = $sf.FullName
+        } else {
+            $sfPath = [string]$sf
+        }
+        
+        if ([string]::IsNullOrWhiteSpace($sfPath)) { continue }
+        
+        # Verify the path exists and is a directory
+        if (Test-Path -LiteralPath $sfPath -PathType Container) {
+            try {
+                $item = Get-Item -LiteralPath $sfPath -ErrorAction Stop
+                if ($item -and $item.FullName) {
+                    $validSubfolders += $item
+                }
+            } catch {
+                LogMessage -Message "Failed to resolve subfolder path '$sfPath': $($_.Exception.Message)" -IsWarning
+            }
         }
     }
+
+    LogMessage -Message ("DEBUG: Valid subfolders for redistribution: {0}" -f ($validSubfolders | ForEach-Object { "'$($_.FullName)'" } | Join-String ', '))
 
     # Add DEBUG logging to see what we're actually working with
     LogMessage -Message ("DEBUG: Subfolders after validation: {0}" -f ($validSubfolders | ForEach-Object { 
