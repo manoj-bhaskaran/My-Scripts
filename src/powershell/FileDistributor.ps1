@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.2.0
+ 3.3.0
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -180,8 +180,19 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
-CHANGELOG
 # CHANGELOG
+## 3.3.0 — 2025-10-02
+### Added
+- **Checkpoint 4 + Source → Target distribution phase:** Selected source files (subject to `-MaxFilesToCopy`) are now copied into eligible target subfolders **before** any within-target redistribution (root or overloaded folders). This phase respects `-FilesPerFolderLimit` and your `-DeleteMode` (including `EndOfScript`, which queues originals for final cleanup).
+### Changed
+- The earlier “within-target redistribution completed” checkpoint has been **renumbered from CP4 to CP5**.
+### Restart semantics
+- Resume at **CP3** → runs the new Source→Target copy and saves **CP4**.
+- Resume at **CP4** → skips Source→Target copy and runs within-target redistribution, then saves **CP5**.
+- Resume at **CP5** → skips redistribution and proceeds to end-of-script actions (e.g., deletions).
+### Notes
+- No breaking parameter changes. Logging now includes a banner: *“Distributing N source file(s) to subfolders…”* for the new phase.
+
 ## 3.2.0 — 2025-09-30
 ### Added
 - **Conditional debug logging:** Debug messages ("DEBUG:") are now only written to the log file and console (via Write-Debug) when the script is run with the built-in -Debug switch. Added [CmdletBinding()] to enable common parameters, $script:DebugMode to detect mode, [switch]$IsDebug to LogMessage, and conditioned logging/output accordingly. This reduces log clutter in normal runs.
@@ -1784,32 +1795,41 @@ function Main {
                     throw "State file does not contain DeleteMode. Unable to enforce."
                 }
 
-                # Load checkpoint-specific additional variables
-                if ($lastCheckpoint -in 2, 3, 4) {
-                    $totalSourceFiles = $state.totalSourceFiles
-                    $totalTargetFilesBefore = $state.totalTargetFilesBefore
-                    if ($state.PSObject.Properties.Name -contains 'totalSourceFilesAll') {
-                        $totalSourceFilesAll = $state.totalSourceFilesAll
-                    }
-                    if ($state.PSObject.Properties.Name -contains 'MaxFilesToCopy') {
-                        $savedMax = [int]$state.MaxFilesToCopy
+                # Load checkpoint-specific state (scalars + collections) in one place
+                if ($lastCheckpoint -in 2..5 -and $null -ne $state) {
+
+                    # --- Scalars (cheap; always safe to load) ---
+                    if ($state.ContainsKey('totalSourceFiles'))       { $totalSourceFiles       = [int]$state['totalSourceFiles'] }
+                    if ($state.ContainsKey('totalTargetFilesBefore')) { $totalTargetFilesBefore = [int]$state['totalTargetFilesBefore'] }
+                    if ($state.ContainsKey('totalSourceFilesAll'))    { $totalSourceFilesAll    = [int]$state['totalSourceFilesAll'] }
+
+                    if ($state.ContainsKey('MaxFilesToCopy')) {
+                        $savedMax = [int]$state['MaxFilesToCopy']
                         if ($MaxFilesToCopy -ne $savedMax) {
                             throw "MaxFilesToCopy mismatch: Restarted script must use the saved MaxFilesToCopy ($savedMax). Aborting."
                         }
                         $MaxFilesToCopy = $savedMax
                     }
-                }
 
-                if ($lastCheckpoint -in 2, 3) {
-                    $subfolders = ConvertPathsToItems($state.subfolders)
-                }
+                    # --- Collections (path -> object conversions only when needed) ---
+                    if ($state.ContainsKey('subfolders')) {
+                        # Needed by both phases and for post-phase logging
+                        $subfolders = ConvertPathsToItems($state['subfolders'])
+                    }
 
-                if ($lastCheckpoint -eq 2) {
-                    $sourceFiles = ConvertPathsToItems($state.sourceFiles)
+                    if ($lastCheckpoint -in 2,3 -and $state.ContainsKey('sourceFiles')) {
+                        # Only needed to run/finish the Source→Target copy before CP4 is saved
+                        $sourceFiles = ConvertPathsToItems($state['sourceFiles'])
+                    }
+
+                    # End-of-script deletion queue becomes relevant once phases may have queued deletes
+                    if ($DeleteMode -eq 'EndOfScript' -and $lastCheckpoint -in 3,4,5 -and $state.ContainsKey('FilesToDelete')) {
+                        $FilesToDelete = New-Ref @($state['FilesToDelete'])
+                    }
                 }
 
                 # Load FilesToDelete only for EndOfScript mode and lastCheckpoint 3 or 4
-                if ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4 -and $state.ContainsKey("FilesToDelete")) {
+                if ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4, 5 -and $state.ContainsKey("FilesToDelete")) {
                     $loadedQueue = $state.FilesToDelete
                     # Normalize to object entries and wrap in [ref]
                     $normalized = @()
@@ -1974,11 +1994,41 @@ function Main {
 
             # Save the state with the consolidated additional variables
             SaveState -Checkpoint 3 -AdditionalVariables $additionalVars -fileLock $fileLockRef
+        }
+        # --- NEW: Source → Target distribution phase (Checkpoint 4) ---
+        if ($lastCheckpoint -lt 4 -and $totalSourceFiles -gt 0 -and $null -ne $sourceFiles -and $sourceFiles.Count -gt 0 -and $subfolders -and $subfolders.Count -gt 0) {
+            LogMessage -Message ("Distributing {0} source file(s) to subfolders..." -f $totalSourceFiles)
+            $GlobalFileCounter.Value = 0
+            DistributeFilesToSubfolders -Files $sourceFiles `
+                                       -Subfolders $subfolders `
+                                       -TargetRoot $TargetFolder `
+                                       -Limit $FilesPerFolderLimit `
+                                       -ShowProgress:$ShowProgress `
+                                       -UpdateFrequency:$UpdateFrequency `
+                                       -DeleteMode $DeleteMode `
+                                       -FilesToDelete $FilesToDelete `
+                                       -GlobalFileCounter $GlobalFileCounter `
+                                       -TotalFiles $totalSourceFiles
 
+            # Persist after Source → Target copy (Checkpoint 4)
+            $additionalVars = @{
+                sourceFiles            = ConvertItemsToPaths($sourceFiles)
+                totalSourceFiles       = $totalSourceFiles
+                totalSourceFilesAll    = $totalSourceFilesAll
+                totalTargetFilesBefore = $totalTargetFilesBefore
+                subfolders             = ConvertItemsToPaths($subfolders)
+                deleteMode             = $DeleteMode
+                SourceFolder           = $SourceFolder
+                MaxFilesToCopy         = $MaxFilesToCopy
+            }
+            if ($DeleteMode -eq "EndOfScript") {
+                $additionalVars["FilesToDelete"] = $FilesToDelete.Value
+            }
+            SaveState -Checkpoint 4 -AdditionalVariables $additionalVars -fileLock $fileLockRef
         }
 
-        if ($lastCheckpoint -lt 4) {
-            # Redistribute files within the target folder and subfolders if needed
+        if ($lastCheckpoint -lt 5) {
+            # Redistribute files within the target folder and subfolders if needed (now Checkpoint 5)
             LogMessage -Message "Redistributing files in target folders..."
             LogMessage -Message ("DEBUG: About to call RedistributeFilesInTarget with {0} subfolders" -f $subfolders.Count) -IsDebug
             RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders `
@@ -1987,6 +2037,7 @@ function Main {
                                       -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter `
                                       -TotalFiles 0 # Not used now; function computes its own totals
         
+            # Save post-redistribution state (Checkpoint 5)
             # Base additional variables
             $additionalVars = @{
                 totalSourceFiles      = $totalSourceFiles
@@ -2003,7 +2054,7 @@ function Main {
             }
         
             # Save state with checkpoint 4 and additional variables
-            SaveState -Checkpoint 4 -AdditionalVariables $additionalVars -fileLock $fileLockRef
+            SaveState -Checkpoint 5 -AdditionalVariables $additionalVars -fileLock $fileLockRef
         }        
 
         if ($DeleteMode -eq "EndOfScript") {
