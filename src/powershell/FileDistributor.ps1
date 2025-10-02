@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.3.0
+ 3.4.0
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -106,6 +106,9 @@ Optional. Path to the **RandomName** module (either a `.psd1`/`.psm1` file or th
 3) `Import-Module RandomName` via `$env:PSModulePath`.
 The script errors out if the module cannot be located.
 
+.PARAMETER ConsolidateToMinimum
+Optional. **Opt-in** consolidation phase. When specified, after Source→Target distribution and target-root redistribution, pack all files into the **minimum number of subfolders** allowed by `FilesPerFolderLimit`. Randomly selects the required number of *keeper* subfolders, moves files from the others, and deletes any subfolders that become empty.
+
 .EXAMPLE
 Tune retries (unlimited attempts, capped backoff 5 minutes) while copying:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "D:\Target" -RetryDelay 5 -RetryCount 0 -MaxBackoff 300
@@ -164,6 +167,10 @@ To truncate the log file and start afresh:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateLog
 
 .EXAMPLE
+Pack existing files into the minimum required subfolders (e.g., 168,869 files at limit 20,000 → 9 keepers):
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -ConsolidateToMinimum
+
+.EXAMPLE
 To truncate the log file if it exceeds 10 megabytes:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateIfLarger 10M
 
@@ -181,6 +188,18 @@ To display the script's help text:
 
 .NOTES
 # CHANGELOG
+## 3.4.0 — 2025-10-02
+### Added
+- **`-ConsolidateToMinimum` (opt-in):** New command-line switch that packs files into the **minimum number of subfolders** while honoring `FilesPerFolderLimit`. Runs **after** Source→Target copy and target-root redistribution **only when specified**.
+  - Computes `needed = ceil(total_files / FilesPerFolderLimit)`.
+  - Randomly chooses `needed` existing subfolders as keepers; moves files from other subfolders into keepers (never exceeding the limit).
+  - Deletes subfolders that become empty after the move.
+  - Uses existing safety semantics (randomized destination names, `DeleteMode`, retries, progress).
+### Restart semantics
+- Introduces **Checkpoint 6** recorded after consolidation. Consolidation runs when `-ConsolidateToMinimum` is specified and `lastCheckpoint < 6`; otherwise it is skipped.
+### Notes
+- No breaking changes. Consolidation is *not* performed unless `-ConsolidateToMinimum` is passed.
+
 ## 3.3.0 — 2025-10-02
 ### Added
 - **Checkpoint 4 + Source → Target distribution phase:** Selected source files (subject to `-MaxFilesToCopy`) are now copied into eligible target subfolders **before** any within-target redistribution (root or overloaded folders). This phase respects `-FilesPerFolderLimit` and your `-DeleteMode` (including `EndOfScript`, which queues originals for final cleanup).
@@ -359,7 +378,8 @@ param(
     [string]$TruncateIfLarger,
     [string]$RemoveEntriesBefore,
     [int]$RemoveEntriesOlderThan,
-    [switch]$Help
+    [switch]$Help,
+    [switch]$ConsolidateToMinimum
 )
 
 # Display help and exit if -Help is specified
@@ -1323,6 +1343,186 @@ function RedistributeFilesInTarget {
     LogMessage -Message "File redistribution completed: Processed $redistributionProcessed of $redistributionTotal files in the target folder."
 }
 
+function ConsolidateSubfoldersToMinimum {
+    param (
+        [Parameter(Mandatory=$true)][string]$TargetFolder,
+        [Parameter(Mandatory=$true)][int]$FilesPerFolderLimit,
+        [switch]$ShowProgress,
+        [int]$UpdateFrequency = 100,
+        [Parameter(Mandatory=$true)][string]$DeleteMode,
+        [Parameter(Mandatory=$true)][ref]$FilesToDelete,
+        [Parameter(Mandatory=$true)][ref]$GlobalFileCounter
+    )
+
+    LogMessage -Message "Consolidation: computing minimal subfolder set..."
+
+    # Enumerate subfolders and counts
+    $subfolders = @()
+    try {
+        $subfolders = Get-ChildItem -LiteralPath $TargetFolder -Directory -Force -ErrorAction Stop
+    } catch {
+        LogMessage -Message "Consolidation: failed to enumerate subfolders under '$TargetFolder': $($_.Exception.Message)" -IsError
+        return
+    }
+    if (-not $subfolders -or $subfolders.Count -eq 0) {
+        LogMessage -Message "Consolidation: no subfolders present; nothing to do."
+        return
+    }
+
+    $folderCounts = @{}
+    $totalFiles = 0
+    foreach ($sf in $subfolders) {
+        $p = $sf.FullName
+        $count = 0
+        try {
+            $count = (Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop | Measure-Object).Count
+        } catch {
+            LogMessage -Message "Consolidation: failed to count files in '$p': $($_.Exception.Message)" -IsWarning
+        }
+        $folderCounts[$p] = [int]$count
+        $totalFiles += [int]$count
+    }
+
+    # If any files remain in the target root, include them in total (should be 0 after prior phases)
+    try {
+        $rootResidual = (Get-ChildItem -LiteralPath $TargetFolder -File -Force -ErrorAction Stop | Measure-Object).Count
+        if ($rootResidual -gt 0) {
+            LogMessage -Message "Consolidation: found $rootResidual file(s) in target root. They will be moved during consolidation." -IsWarning
+            $totalFiles += [int]$rootResidual
+        }
+    } catch { }
+
+    if ($totalFiles -le 0) {
+        LogMessage -Message "Consolidation: no files to consolidate."
+        return
+    }
+
+    $needed = [Math]::Ceiling([double]$totalFiles / [double]$FilesPerFolderLimit)
+    if ($needed -lt 1) { $needed = 1 }
+
+    $existingCount = $subfolders.Count
+    LogMessage -Message ("Consolidation: totalFiles={0}, limit={1}, existingSubfolders={2}, needed={3}" -f $totalFiles, $FilesPerFolderLimit, $existingCount, $needed)
+
+    if ($existingCount -le $needed) {
+        LogMessage -Message "Consolidation: already at or below minimal subfolder count ($existingCount ≤ $needed). Nothing to do."
+        return
+    }
+
+    # Choose keepers randomly
+    $keepers = @($subfolders | Get-Random -Count $needed | ForEach-Object { $_.FullName })
+    $others  = @($subfolders | Where-Object { $keepers -notcontains $_.FullName } | ForEach-Object { $_.FullName })
+    LogMessage -Message ("Consolidation: selected {0} keeper(s), {1} to drain." -f $keepers.Count, $others.Count)
+
+    # Capacity and live counts for keepers
+    $liveCounts = @{}; $capacity = @{}
+    foreach ($k in $keepers) {
+        $c = if ($folderCounts.ContainsKey($k)) { [int]$folderCounts[$k] } else { 0 }
+        $liveCounts[$k] = $c
+        $capacity[$k]   = [Math]::Max(0, $FilesPerFolderLimit - $c)
+    }
+
+    # Collect files to move from non-keepers (and optionally root residuals)
+    $filesToMove = @()
+    foreach ($o in $others) {
+        try { $filesToMove += (Get-ChildItem -LiteralPath $o -File -Force -ErrorAction Stop) } catch {
+            LogMessage -Message "Consolidation: failed enumerating files in '$o': $($_.Exception.Message)" -IsWarning
+        }
+    }
+    try { $filesToMove += (Get-ChildItem -LiteralPath $TargetFolder -File -Force -ErrorAction Stop) } catch {}
+
+    if (-not $filesToMove -or $filesToMove.Count -eq 0) {
+        LogMessage -Message "Consolidation: nothing to move; proceeding to delete empty subfolders (if any)."
+    } else {
+        # Shuffle to reduce bias
+        try { if ($filesToMove.Count -gt 1) { $filesToMove = $filesToMove | Get-Random -Count $filesToMove.Count } } catch { }
+
+        $totalMoves = $filesToMove.Count
+        $GlobalFileCounter.Value = 0
+        LogMessage -Message ("Consolidation: moving {0} file(s) into {1} keeper(s)..." -f $totalMoves, $keepers.Count)
+
+        foreach ($file in $filesToMove) {
+            # Find eligible keepers with remaining capacity
+            $eligible = @()
+            foreach ($k in $keepers) { if ($capacity[$k] -gt 0) { $eligible += $k } }
+            if ($eligible.Count -eq 0) {
+                # Safety: all keepers exhausted; create a new keeper (rare unless counts changed concurrently)
+                $newK = Join-Path -Path $TargetFolder -ChildPath (Get-RandomFileName)
+                try { New-Item -ItemType Directory -Path $newK -Force | Out-Null } catch { }
+                $keepers += $newK
+                $liveCounts[$newK] = 0
+                $capacity[$newK]   = $FilesPerFolderLimit
+                $eligible = @($newK)
+                LogMessage -Message "Consolidation: keeper capacity exhausted; created additional keeper '$newK'." -IsWarning
+            }
+
+            # Choose destination: among eligible, pick those with minimum current count to balance
+            $minCount = ($eligible | ForEach-Object { $liveCounts[$_] } | Measure-Object -Minimum).Minimum
+            $cands    = @($eligible | Where-Object { $liveCounts[$_] -eq $minCount })
+            $destFolder = if ($cands.Count -gt 1) { $cands | Get-Random } else { $cands[0] }
+
+            $originalName  = $file.Name
+            $newFileName   = ResolveFileNameConflict -TargetFolder $destFolder -OriginalFileName $originalName
+            $destination   = Join-Path -Path $destFolder -ChildPath $newFileName
+
+            Copy-ItemWithRetry -Path $file.FullName -Destination $destination -RetryDelay $RetryDelay -RetryCount $RetryCount
+
+            if (Test-Path -LiteralPath $destination) {
+                # Update counts/capacity
+                $liveCounts[$destFolder]++
+                $capacity[$destFolder] = [Math]::Max(0, $FilesPerFolderLimit - $liveCounts[$destFolder])
+
+                # Handle the original per DeleteMode
+                try {
+                    if ($DeleteMode -eq "RecycleBin") {
+                        Move-ToRecycleBin -FilePath $file.FullName
+                    } elseif ($DeleteMode -eq "Immediate") {
+                        Remove-File -FilePath $file.FullName
+                    } elseif ($DeleteMode -eq "EndOfScript") {
+                        if (-not $FilesToDelete.Value) { $FilesToDelete.Value = @() }
+                        $queuedSize = $null; $queuedMtimeUtc = $null
+                        try { $fi = Get-Item -LiteralPath $file.FullName -ErrorAction Stop; $queuedSize = $fi.Length; $queuedMtimeUtc = $fi.LastWriteTimeUtc } catch { }
+                        $FilesToDelete.Value += [pscustomobject]@{
+                            Path = $file.FullName; Size = $queuedSize; LastWriteTimeUtc = $queuedMtimeUtc
+                            QueuedAtUtc = (Get-Date).ToUniversalTime(); SessionId = $script:SessionId
+                        }
+                    }
+                } catch {
+                    LogMessage -Message "Consolidation: post-copy handling failed for '$($file.FullName)': $($_.Exception.Message)" -IsWarning
+                }
+            } else {
+                LogMessage -Message "Consolidation: failed to copy '$($file.FullName)' to '$destination'." -IsError
+            }
+
+            $GlobalFileCounter.Value++
+            if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
+                $percent = [math]::Floor(($GlobalFileCounter.Value / $totalMoves) * 100)
+                Write-Progress -Activity "Consolidating subfolders" -Status "Moved $($GlobalFileCounter.Value) of $totalMoves" -PercentComplete $percent
+            }
+        }
+        if ($ShowProgress) { Write-Progress -Activity "Consolidating subfolders" -Status "Complete" -Completed }
+    }
+
+    # Delete empty non-keeper subfolders
+    $deleted = 0; $skipped = 0
+    foreach ($o in $others) {
+        try {
+            $entries = (Get-ChildItem -LiteralPath $o -Force -ErrorAction Stop | Measure-Object).Count
+            if ($entries -eq 0) {
+                Remove-ItemWithRetry -Path $o -RetryDelay $RetryDelay -RetryCount $RetryCount
+                LogMessage -Message "Consolidation: deleted empty subfolder '$o'."
+                $deleted++
+            } else {
+                $skipped++
+                LogMessage -Message "Consolidation: subfolder '$o' not empty after move; skipping deletion." -IsWarning
+            }
+        } catch {
+            $skipped++
+            LogMessage -Message "Consolidation: failed to delete su^bfolder '$o': $($_.Exception.Message)" -IsWarning
+        }
+    }
+    LogMessage -Message ("Consolidation: removed {0} empty subfolder(s); {1} skipped." -f $deleted, $skipped)
+}
+
 function SaveState {
     param (
         [int]$Checkpoint,
@@ -1796,7 +1996,7 @@ function Main {
                 }
 
                 # Load checkpoint-specific state (scalars + collections) in one place
-                if ($lastCheckpoint -in 2..5 -and $null -ne $state) {
+                if ($lastCheckpoint -in 2..6 -and $null -ne $state) {
 
                     # --- Scalars (cheap; always safe to load) ---
                     if ($state.ContainsKey('totalSourceFiles'))       { $totalSourceFiles       = [int]$state['totalSourceFiles'] }
@@ -1823,7 +2023,7 @@ function Main {
                     }
 
                     # End-of-script deletion queue becomes relevant once phases may have queued deletes
-                    if ($DeleteMode -eq 'EndOfScript' -and $lastCheckpoint -in 3,4,5 -and $state.ContainsKey('FilesToDelete')) {
+                    if ($DeleteMode -eq 'EndOfScript' -and $lastCheckpoint -in 3,4,5,6 -and $state.ContainsKey('FilesToDelete')) {
                         $FilesToDelete = New-Ref @($state['FilesToDelete'])
                     }
                 }
@@ -2056,6 +2256,34 @@ function Main {
             # Save state with checkpoint 4 and additional variables
             SaveState -Checkpoint 5 -AdditionalVariables $additionalVars -fileLock $fileLockRef
         }        
+
+        # --- Optional: Consolidate into minimum # of subfolders (Checkpoint 6) ---
+        if ($ConsolidateToMinimum -and $lastCheckpoint -lt 6) {
+            LogMessage -Message "Consolidating files into the minimum number of subfolders... (opt-in)"
+
+            ConsolidateSubfoldersToMinimum -TargetFolder $TargetFolder `
+                                           -FilesPerFolderLimit $FilesPerFolderLimit `
+                                           -ShowProgress:$ShowProgress `
+                                           -UpdateFrequency:$UpdateFrequency `
+                                           -DeleteMode $DeleteMode `
+                                           -FilesToDelete $FilesToDelete `
+                                           -GlobalFileCounter $GlobalFileCounter
+
+            # Save post-consolidation state (Checkpoint 6)
+            $additionalVars = @{
+                totalSourceFiles        = $totalSourceFiles
+                totalSourceFilesAll     = $totalSourceFilesAll
+                totalTargetFilesBefore  = $totalTargetFilesBefore
+                subfolders              = ConvertItemsToPaths( (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force | ForEach-Object { $_ }) )
+                deleteMode              = $DeleteMode
+                SourceFolder            = $SourceFolder
+                MaxFilesToCopy          = $MaxFilesToCopy
+            }
+            if ($DeleteMode -eq "EndOfScript") {
+                $additionalVars["FilesToDelete"] = $FilesToDelete.Value
+            }
+            SaveState -Checkpoint 6 -AdditionalVariables $additionalVars -fileLock $fileLockRef
+        }
 
         if ($DeleteMode -eq "EndOfScript") {
             # Use aggregated counters across restarts for safe evaluation
