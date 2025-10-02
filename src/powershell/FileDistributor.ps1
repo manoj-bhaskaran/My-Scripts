@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.4.0
+ 3.5.0
  
  (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
 
@@ -109,6 +109,12 @@ The script errors out if the module cannot be located.
 .PARAMETER ConsolidateToMinimum
 Optional. **Opt-in** consolidation phase. When specified, after Source→Target distribution and target-root redistribution, pack all files into the **minimum number of subfolders** allowed by `FilesPerFolderLimit`. Randomly selects the required number of *keeper* subfolders, moves files from the others, and deletes any subfolders that become empty.
 
+.PARAMETER RebalanceToAverage
+Optional. **Opt-in** *rebalancing* phase. When specified, after Source→Target distribution and target-root redistribution, compute the **average files per existing subfolder** and move files **among existing subfolders only** so that no subfolder deviates by more than **±10%** from that average.
+- Does **not** create or delete subfolders.
+- Always honors `FilesPerFolderLimit`.
+- Incompatible with `-ConsolidateToMinimum`; both switches **cannot** be used together (the script will error).
+
 .EXAMPLE
 Tune retries (unlimited attempts, capped backoff 5 minutes) while copying:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "D:\Target" -RetryDelay 5 -RetryCount 0 -MaxBackoff 300
@@ -171,6 +177,10 @@ Pack existing files into the minimum required subfolders (e.g., 168,869 files at
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -ConsolidateToMinimum
 
 .EXAMPLE
+Rebalance existing subfolders to within ±10% of the current average (no new folders, no deletions):
+.\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -RebalanceToAverage
+
+.EXAMPLE
 To truncate the log file if it exceeds 10 megabytes:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateIfLarger 10M
 
@@ -188,6 +198,18 @@ To display the script's help text:
 
 .NOTES
 # CHANGELOG
+## 3.5.0 — 2025-10-02
+### Added
+- **`-RebalanceToAverage` (opt-in):** After Source→Target and target-root redistribution, compute the **average files per existing subfolder** and move files so every subfolder is within **±10%** of that average. No subfolders are created or deleted, and `FilesPerFolderLimit` is always respected.
+  - Identifies **donor** folders (`count > ceil(avg*1.1)` capped by limit) and **receiver** folders (`count < floor(avg*0.9)`), then transfers randomly selected files to meet deficits without exceeding per-folder limits.
+  - Rebalancing uses existing safety semantics (randomized destination names, `DeleteMode`, retries, progress).
+### Incompatibility
+- `-RebalanceToAverage` is **mutually exclusive** with `-ConsolidateToMinimum`; specifying both results in an error.
+### Restart semantics
+- Introduces **Checkpoint 7** recorded after rebalancing. Rebalancing runs when `-RebalanceToAverage` is specified and `lastCheckpoint < 7`; otherwise it is skipped.
+### Notes
+- No breaking changes; feature is *not* performed unless `-RebalanceToAverage` is passed.
+
 ## 3.4.0 — 2025-10-02
 ### Added
 - **`-ConsolidateToMinimum` (opt-in):** New command-line switch that packs files into the **minimum number of subfolders** while honoring `FilesPerFolderLimit`. Runs **after** Source→Target copy and target-root redistribution **only when specified**.
@@ -379,7 +401,8 @@ param(
     [string]$RemoveEntriesBefore,
     [int]$RemoveEntriesOlderThan,
     [switch]$Help,
-    [switch]$ConsolidateToMinimum
+    [switch]$ConsolidateToMinimum,
+    [switch]$RebalanceToAverage
 )
 
 # Display help and exit if -Help is specified
@@ -1343,6 +1366,176 @@ function RedistributeFilesInTarget {
     LogMessage -Message "File redistribution completed: Processed $redistributionProcessed of $redistributionTotal files in the target folder."
 }
 
+function RebalanceSubfoldersByAverage {
+    param (
+        [Parameter(Mandatory=$true)][string]$TargetFolder,
+        [Parameter(Mandatory=$true)][int]$FilesPerFolderLimit,
+        [switch]$ShowProgress,
+        [int]$UpdateFrequency = 100,
+        [Parameter(Mandatory=$true)][string]$DeleteMode,
+        [Parameter(Mandatory=$true)][ref]$FilesToDelete,
+        [Parameter(Mandatory=$true)][ref]$GlobalFileCounter
+    )
+
+    LogMessage -Message "Rebalance: computing average and deviation thresholds (±10%)..."
+
+    # Enumerate subfolders and counts
+    $subfolders = @()
+    try {
+        $subfolders = Get-ChildItem -LiteralPath $TargetFolder -Directory -Force -ErrorAction Stop
+    } catch {
+        LogMessage -Message "Rebalance: failed to enumerate subfolders under '$TargetFolder': $($_.Exception.Message)" -IsError
+        return
+    }
+    if (-not $subfolders -or $subfolders.Count -le 1) {
+        LogMessage -Message "Rebalance: need at least two subfolders. Nothing to do."
+        return
+    }
+
+    $folderCounts = @{}
+    $totalFiles = 0
+    foreach ($sf in $subfolders) {
+        $p = $sf.FullName
+        $count = 0
+        try {
+            $count = (Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop | Measure-Object).Count
+        } catch {
+            LogMessage -Message "Rebalance: failed to count files in '$p': $($_.Exception.Message)" -IsWarning
+        }
+        $folderCounts[$p] = [int]$count
+        $totalFiles += [int]$count
+    }
+
+    if ($totalFiles -le 0) {
+        LogMessage -Message "Rebalance: no files to rebalance."
+        return
+    }
+
+    $avg   = [double]$totalFiles / [double]$subfolders.Count
+    $low   = [int][math]::Floor($avg * 0.9)
+    $highC = [int][math]::Ceiling($avg * 1.1)
+    $high  = [Math]::Min($highC, $FilesPerFolderLimit)
+
+    LogMessage -Message ("Rebalance: totalFiles={0}, subfolders={1}, avg={2:N2}, lowerBound={3}, upperBound={4} (limit={5})" -f $totalFiles, $subfolders.Count, $avg, $low, $high, $FilesPerFolderLimit)
+
+    # Classify donors and receivers
+    $donors   = @()
+    $receivers= @()
+    foreach ($sf in $subfolders) {
+        $p = $sf.FullName
+        $c = [int]$folderCounts[$p]
+        $surplus = $c - $high
+        $deficit = $low - $c
+        if ($surplus -gt 0) {
+            $donors   += [pscustomobject]@{ Path=$p; Surplus=$surplus }
+        } elseif ($deficit -gt 0) {
+            $receivers+= [pscustomobject]@{ Path=$p; Deficit=$deficit }
+        }
+    }
+
+    if (-not $donors -and -not $receivers) {
+        LogMessage -Message "Rebalance: all subfolders already within ±10% of average. Nothing to do."
+        return
+    }
+    if (-not $receivers) {
+        LogMessage -Message "Rebalance: no receivers below lower bound; cannot reduce above-average folders without capacity. Nothing to do."
+        return
+    }
+
+    $totalSurplus = ($donors   | Measure-Object -Property Surplus -Sum).Sum
+    $totalDeficit = ($receivers| Measure-Object -Property Deficit -Sum).Sum
+    $plannedMoves = [int][Math]::Min([int]$totalSurplus, [int]$totalDeficit)
+
+    LogMessage -Message ("Rebalance: donors={0} (surplus={1}), receivers={2} (deficit={3}), plannedMoves={4}" -f $donors.Count, $totalSurplus, $receivers.Count, $totalDeficit, $plannedMoves)
+
+    if ($plannedMoves -le 0) {
+        LogMessage -Message "Rebalance: no feasible moves. Nothing to do."
+        return
+    }
+
+    # Sort donors by largest surplus first; receivers tracked by mutable deficits
+    $donors = $donors | Sort-Object -Property Surplus -Descending
+    $receiverMap = @{}
+    foreach ($r in $receivers) { $receiverMap[$r.Path] = [int]$r.Deficit }
+
+    # Build a helper to pick the receiver with the largest remaining deficit
+    function Get-BestReceiver([hashtable]$map) {
+        if ($map.Keys.Count -eq 0) { return $null }
+        $bestKey = $null; $bestVal = -1
+        foreach ($k in $map.Keys) {
+            $v = [int]$map[$k]
+            if ($v -gt $bestVal) { $bestVal = $v; $bestKey = $k }
+        }
+        if ($bestVal -le 0) { return $null }
+        return $bestKey
+    }
+
+    $GlobalFileCounter.Value = 0
+    foreach ($d in $donors) {
+        if ($GlobalFileCounter.Value -ge $plannedMoves) { break }
+        $src = $d.Path
+        $moveCount = [int][Math]::Min([int]$d.Surplus, [int]($plannedMoves - $GlobalFileCounter.Value))
+        if ($moveCount -le 0) { continue }
+
+        # Randomly choose exactly what we need from this donor
+        $candidates = @()
+        try {
+            $allFiles = Get-ChildItem -LiteralPath $src -File -Force -ErrorAction Stop
+            if ($allFiles.Count -gt 0) {
+                $moveCount = [Math]::Min($moveCount, $allFiles.Count)
+                $candidates = if ($moveCount -lt $allFiles.Count) { $allFiles | Get-Random -Count $moveCount } else { $allFiles }
+            }
+        } catch {
+            LogMessage -Message "Rebalance: failed to enumerate files in donor '$src': $($_.Exception.Message)" -IsWarning
+            continue
+        }
+        if (-not $candidates) { continue }
+
+        foreach ($file in $candidates) {
+            if ($GlobalFileCounter.Value -ge $plannedMoves) { break }
+            $destFolder = Get-BestReceiver $receiverMap
+            if (-not $destFolder) { break } # no more capacity anywhere
+
+            # Prepare destination and copy
+            $newName = ResolveFileNameConflict -TargetFolder $destFolder -OriginalFileName $file.Name
+            $dest = Join-Path -Path $destFolder -ChildPath $newName
+
+            Copy-ItemWithRetry -Path $file.FullName -Destination $dest -RetryDelay $RetryDelay -RetryCount $RetryCount
+            if (Test-Path -LiteralPath $dest) {
+                # Update receiver deficit and donor surplus
+                $receiverMap[$destFolder] = [Math]::Max(0, ([int]$receiverMap[$destFolder]) - 1)
+                if ($receiverMap[$destFolder] -le 0) { $receiverMap.Remove($destFolder) }
+
+                # Handle original via DeleteMode
+                try {
+                    if ($DeleteMode -eq "RecycleBin") {
+                        Move-ToRecycleBin -FilePath $file.FullName
+                    } elseif ($DeleteMode -eq "Immediate") {
+                        Remove-File -FilePath $file.FullName
+                    } elseif ($DeleteMode -eq "EndOfScript") {
+                        if (-not $FilesToDelete.Value) { $FilesToDelete.Value = @() }
+                        $qSize = $null; $qMtime = $null
+                        try { $fi = Get-Item -LiteralPath $file.FullName -ErrorAction Stop; $qSize=$fi.Length; $qMtime=$fi.LastWriteTimeUtc } catch {}
+                        $FilesToDelete.Value += [pscustomobject]@{ Path=$file.FullName; Size=$qSize; LastWriteTimeUtc=$qMtime; QueuedAtUtc=(Get-Date).ToUniversalTime(); SessionId=$script:SessionId }
+                    }
+                } catch {
+                    LogMessage -Message "Rebalance: post-copy handling failed for '$($file.FullName)': $($_.Exception.Message)" -IsWarning
+                }
+                $GlobalFileCounter.Value++
+                if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
+                    $pct = [math]::Floor(($GlobalFileCounter.Value / $plannedMoves) * 100)
+                    Write-Progress -Activity "Rebalancing subfolders" -Status "Moved $($GlobalFileCounter.Value) of $plannedMoves" -PercentComplete $pct
+                }
+            } else {
+                LogMessage -Message "Rebalance: failed to copy '$($file.FullName)' to '$dest'." -IsError
+            }
+        }
+    }
+
+    if ($ShowProgress) { Write-Progress -Activity "Rebalancing subfolders" -Status "Complete" -Completed }
+    LogMessage -Message ("Rebalance: moved {0} file(s) of planned {1}." -f $GlobalFileCounter.Value, $plannedMoves)
+}
+
 function ConsolidateSubfoldersToMinimum {
     param (
         [Parameter(Mandatory=$true)][string]$TargetFolder,
@@ -1918,6 +2111,12 @@ function Main {
             exit 1
         }
 
+        # Enforce mutual exclusivity
+        if ($ConsolidateToMinimum -and $RebalanceToAverage) {
+            LogMessage -Message "Parameters -ConsolidateToMinimum and -RebalanceToAverage are mutually exclusive. Choose one." -IsError
+            throw "Mutually exclusive options: -ConsolidateToMinimum and -RebalanceToAverage"
+        }
+
         if (-not ("NoWarnings", "WarningsOnly" -contains $EndOfScriptDeletionCondition)) {
             LogMessage -Message "Invalid value for EndOfScriptDeletionCondition: $EndOfScriptDeletionCondition. Valid options are 'NoWarnings', 'WarningsOnly'." -IsError
             exit 1
@@ -1996,7 +2195,7 @@ function Main {
                 }
 
                 # Load checkpoint-specific state (scalars + collections) in one place
-                if ($lastCheckpoint -in 2..6 -and $null -ne $state) {
+                if ($lastCheckpoint -in 2..7 -and $null -ne $state) {
 
                     # --- Scalars (cheap; always safe to load) ---
                     if ($state.ContainsKey('totalSourceFiles'))       { $totalSourceFiles       = [int]$state['totalSourceFiles'] }
@@ -2023,13 +2222,13 @@ function Main {
                     }
 
                     # End-of-script deletion queue becomes relevant once phases may have queued deletes
-                    if ($DeleteMode -eq 'EndOfScript' -and $lastCheckpoint -in 3,4,5,6 -and $state.ContainsKey('FilesToDelete')) {
+                    if ($DeleteMode -eq 'EndOfScript' -and $lastCheckpoint -in 3,4,5,6,7 -and $state.ContainsKey('FilesToDelete')) {
                         $FilesToDelete = New-Ref @($state['FilesToDelete'])
                     }
                 }
 
-                # Load FilesToDelete only for EndOfScript mode and lastCheckpoint 3 or 4
-                if ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4, 5 -and $state.ContainsKey("FilesToDelete")) {
+                # Load FilesToDelete only for EndOfScript mode and lastCheckpoint 3..7
+                if ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4, 5, 6, 7 -and $state.ContainsKey("FilesToDelete")) {
                     $loadedQueue = $state.FilesToDelete
                     # Normalize to object entries and wrap in [ref]
                     $normalized = @()
@@ -2049,7 +2248,7 @@ function Main {
                     } else {
                         Write-Output "Loaded $($FilesToDelete.Value.Count) files to delete from the previous session."
                     }
-                } elseif ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4) {
+                } elseif ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4, 5, 6, 7) {
                     # If DeleteMode is EndOfScript but no FilesToDelete key exists
                     LogMessage -Message "State file does not contain FilesToDelete key for EndOfScript mode." -IsWarning
                     $FilesToDelete.Value = @() # Re-initialize queue (do not replace the [ref] holder)
@@ -2283,6 +2482,34 @@ function Main {
                 $additionalVars["FilesToDelete"] = $FilesToDelete.Value
             }
             SaveState -Checkpoint 6 -AdditionalVariables $additionalVars -fileLock $fileLockRef
+        }
+
+        # --- Optional: Rebalance among existing subfolders (Checkpoint 7) ---
+        if ($RebalanceToAverage -and $lastCheckpoint -lt 7) {
+            LogMessage -Message "Rebalancing files among existing subfolders to within ±10% of average... (opt-in)"
+
+            RebalanceSubfoldersByAverage -TargetFolder $TargetFolder `
+                                         -FilesPerFolderLimit $FilesPerFolderLimit `
+                                         -ShowProgress:$ShowProgress `
+                                         -UpdateFrequency:$UpdateFrequency `
+                                         -DeleteMode $DeleteMode `
+                                         -FilesToDelete $FilesToDelete `
+                                         -GlobalFileCounter $GlobalFileCounter
+
+            # Save post-rebalance state (Checkpoint 7)
+            $additionalVars = @{
+                totalSourceFiles        = $totalSourceFiles
+                totalSourceFilesAll     = $totalSourceFilesAll
+                totalTargetFilesBefore  = $totalTargetFilesBefore
+                subfolders              = ConvertItemsToPaths( (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force | ForEach-Object { $_ }) )
+                deleteMode              = $DeleteMode
+                SourceFolder            = $SourceFolder
+                MaxFilesToCopy          = $MaxFilesToCopy
+            }
+            if ($DeleteMode -eq "EndOfScript") {
+                $additionalVars["FilesToDelete"] = $FilesToDelete.Value
+            }
+            SaveState -Checkpoint 7 -AdditionalVariables $additionalVars -fileLock $fileLockRef
         }
 
         if ($DeleteMode -eq "EndOfScript") {
