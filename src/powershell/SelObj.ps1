@@ -2,6 +2,13 @@
 .SYNOPSIS
 This PowerShell script selects and opens a random file from a random subfolder or the main target folder in the specified directory.
 
+.VERSION
+1.0.0
+
+.CHANGELOG
+- 1.0.0 (31-05-2025): Initial release with random subfolder/main-folder selection
+  and random file open logic; excludes hidden/system files.
+
 .DESCRIPTION
 The script first checks for subfolders in the specified target directory. If subfolders are found, it randomly selects one of them. If there are files in the main target folder, it includes the main folder in the list of subfolders. It then randomly selects a file from the chosen folder to open.
 
@@ -35,6 +42,10 @@ Limitations:
 - The script only processes top-level files and subfolders within the target directory.
 #>
 
++ # Script metadata
++ # Expose version programmatically for logs/tests if needed.
++ $Script:ScriptVersion = '1.0.0'
++ 
 param(
     [string]$FilePath = "D:\users\Manoj\Documents\FIFA 07\elib"
 )
