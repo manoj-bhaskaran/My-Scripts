@@ -24,7 +24,7 @@ This collection of scripts addresses a variety of personal computing and data ma
 This repository is organised into logical directories to enhance discoverability and maintainability following a recent refactoring. Understanding this structure will help you locate specific types of scripts:
 
 * `src/`: Contains all source code for the scripts, further categorised by programming language.
-    * `src/powershell/`: PowerShell scripts for various tasks, including system administration and automation.
+    * * `src/powershell/`: PowerShell scripts for various tasks, including system administration and automation. This folder also contains the **Videoscreenshot** PowerShell module under `src/powershell/module/Videoscreenshot/` with its own README and changelog.
     * `src/python/`: Python scripts for data processing, specialised image processing, and other utility functions.
     * `src/batch/`: Batch scripts for common command-line operations.
     * `src/sql/`: SQL query files, organised by the specific external database they target (e.g., `gnucash_db`).
@@ -33,7 +33,7 @@ This repository is organised into logical directories to enhance discoverability
 * `config/`: Configuration files used by various scripts.
 * `tests/`: Unit and integration tests for validating script functionality.
 * `timeline_data/`: Database Definition Language (DDL) files, organised by database type, specifically for personal PostgreSQL databases.
-* `windows_task_scheduler/`: XML files defining tasks for Windows Task Scheduler.
+* `Windows Task Scheduler/`: XML files defining tasks for Windows Task Scheduler.
 * `.github/`: GitHub-specific files, such as workflow definitions.
 
 ---
@@ -42,10 +42,10 @@ This repository is organised into logical directories to enhance discoverability
 
 To make use of the scripts in this repository, you'll need the following installed on your system:
 
-* **PowerShell 7+**
+* **PowerShell 5.1+ (Windows) or PowerShell 7+**
 * **Python 3+**
 * **Git**
-* Specific Python package requirements can be found in the `requirements.txt` file located in the root of the repository.
+* Python package requirements are script- or project-specific; see headers within individual scripts or any `requirements.txt` files colocated under `src/python/` subfolders.
 
 ---
 
