@@ -3,9 +3,13 @@
 This PowerShell script selects and opens a random file from a random subfolder or the main target folder in the specified directory.
 
 .VERSION
-2.1.0
+2.1.1
 
 # Changelog
+## [2.1.1] — 04-10-2025
+### Fixed
+- Fixed PowerShell syntax error where param block was not positioned correctly after script metadata assignment, causing "param is not recognized" error.
+
 ## [2.1.0] — 04-10-2025
 ### Added
 - Documentation now explicitly states **only `.jpg`, `.jpeg`, `.png`** images are considered.
@@ -83,13 +87,13 @@ Limitations:
 - Large directories with many subfolders/images may impact performance; consider pre-indexing, sampling, or adding filters to narrow scope.
 #>
 
-# Script metadata
-# Expose version programmatically for logs/tests if needed.
-$Script:ScriptVersion = '2.1.0'
- 
 param(
     [string]$FilePath = "D:\users\Manoj\Documents\FIFA 07\elib"
 )
+
+# Script metadata
+# Expose version programmatically for logs/tests if needed.
+$Script:ScriptVersion = '2.1.1'
 
 # Get all subfolders
 # --- Hardening & image-only behavior (2.0.0) ---
