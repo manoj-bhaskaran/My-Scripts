@@ -19,7 +19,7 @@ function New-VideoRunContext {
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$RunGuid
   )
   $mod = Get-Module -Name 'Videoscreenshot'
-  $version = if ($mod) { $mod.Version.ToString() } else { '1.3.4' }
+  $version = if ($mod) { $mod.Version.ToString() } else { '3.0.1' }
   $cfg = Get-DefaultConfig
   # stats object is per-run and intentionally mutable but isolated inside the context
   $stats = [pscustomobject]@{
