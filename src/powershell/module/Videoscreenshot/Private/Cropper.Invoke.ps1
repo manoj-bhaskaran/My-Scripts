@@ -214,17 +214,34 @@ function Invoke-Cropper {
 
     # Wire Ctrl+C to terminate the child Python process and return control.
     # NOTE: Avoid using $Sender/$EventArgs (automatic variables) to prevent accidental assignment.
-    $handler = [ConsoleCancelEventHandler]{ param($evtSender, $evtArgs)
-        try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch {}
-        $evtArgs.Cancel = $true   # prevent PowerShell from terminating; we handle cleanup
-        $script:__cropperCancelled = $true
+    # Note: CancelKeyPress may not be available in all PowerShell hosts (ISE, VS Code, etc.)
+    $handler = $null
+    $cancelKeyPressSupported = $false
+    try {
+        $handler = [ConsoleCancelEventHandler]{ param($evtSender, $evtArgs)
+            try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch {}
+            $evtArgs.Cancel = $true   # prevent PowerShell from terminating; we handle cleanup
+            $script:__cropperCancelled = $true
+        }
+        [System.Console]::CancelKeyPress += $handler
+        $cancelKeyPressSupported = $true
+        Write-Debug "Invoke-Cropper: Ctrl+C handling enabled."
+    } catch {
+        Write-Debug ("Invoke-Cropper: Ctrl+C handling not available in this host: {0}" -f $_.Exception.Message)
+        $handler = $null
     }
-    [System.Console]::CancelKeyPress += $handler
+    
     try {
         $null = $p.Start()
         $p.WaitForExit()
     } finally {
-        [System.Console]::CancelKeyPress -= $handler
+        if ($cancelKeyPressSupported -and $null -ne $handler) {
+            try {
+                [System.Console]::CancelKeyPress -= $handler
+            } catch {
+                Write-Debug ("Invoke-Cropper: Error removing Ctrl+C handler: {0}" -f $_.Exception.Message)
+            }
+        }
         $sw.Stop()
     }
 

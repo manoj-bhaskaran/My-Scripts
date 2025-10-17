@@ -6,6 +6,10 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [3.0.1] - 2025-10-14
+### Fixed
+- **Ctrl+C handling compatibility**: Fixed `CancelKeyPress` error in PowerShell hosts where the Console.CancelKeyPress event is not available (VS Code integrated terminal, PowerShell ISE, remote sessions). The function now gracefully falls back when Ctrl+C handling is unavailable, allowing the cropper to run normally in all environments.
+
 ## [3.0.0] - 2025-09-14
 ### Breaking
 - Decommission `src\powershell\videoscreenshot.ps1`. Invoking it now prints guidance to use `Start-VideoBatch` and exits with a non-zero code.
