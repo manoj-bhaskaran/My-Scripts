@@ -1,3 +1,20 @@
+<#
+.SYNOPSIS
+    Convert image files to JPEG using WinRT APIs.
+.DESCRIPTION
+    Converts various image formats to JPEG format using Windows Runtime APIs.
+    Optionally fixes extension of JPEG files without the .jpg extension.
+.PARAMETER Files
+    Array of image file names to convert to JPEG
+.PARAMETER FixExtensionIfJpeg
+    Fix extension of JPEG files without the .jpg extension
+.NOTES
+    VERSION: 2.0.0
+    CHANGELOG:
+        2.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
+        1.0.0 - Initial release
+#>
+
 Param (
     [Parameter(
         Mandatory = $true,
@@ -18,6 +35,14 @@ Param (
 
 Begin
 {
+    # Import logging framework
+    Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+    # Initialize logger
+    Initialize-Logger -ScriptName "ConvertTo-Jpeg" -LogLevel 20
+
+    Write-LogInfo "Starting JPEG conversion process"
+
     # Technique for await-ing WinRT APIs: https://fleexlab.blogspot.com/2018/02/using-winrts-iasyncoperation-in.html
     Add-Type -AssemblyName System.Runtime.WindowsRuntime
     $runtimeMethods = [System.WindowsRuntimeSystemExtensions].GetMethods()
@@ -44,9 +69,13 @@ Begin
 Process
 {
     # Summary of imaging APIs: https://docs.microsoft.com/en-us/windows/uwp/audio-video-camera/imaging
+    $processedCount = 0
+    $skippedCount = 0
+    $errorCount = 0
+
     foreach ($file in $Files)
     {
-        Write-Host $file -NoNewline
+        Write-LogDebug "Processing file: $file"
         try
         {
             try
@@ -61,7 +90,8 @@ Process
             catch
             {
                 # Ignore non-image files
-                Write-Host " [Unsupported]"
+                Write-LogWarning "Unsupported file format: $file"
+                $skippedCount++
                 continue
             }
             if ($decoder.DecoderInformation.CodecId -eq [Windows.Graphics.Imaging.BitmapDecoder]::JpegDecoderId)
@@ -72,12 +102,14 @@ Process
                     # Rename JPEG-encoded files to have ".jpg" extension
                     $newName = $inputFile.Name -replace ($extension + "$"), ".jpg"
                     AwaitAction ($inputFile.RenameAsync($newName))
-                    Write-Host " => $newName"
+                    Write-LogInfo "Renamed JPEG file: $file => $newName"
+                    $processedCount++
                 }
                 else
                 {
                     # Skip JPEG-encoded files
-                    Write-Host " [Already JPEG]"
+                    Write-LogDebug "Already JPEG: $file"
+                    $skippedCount++
                 }
                 continue
             }
@@ -93,12 +125,14 @@ Process
 
             # Do it
             AwaitAction ($encoder.FlushAsync())
-            Write-Host " -> $outputFileName"
+            Write-LogInfo "Converted to JPEG: $file -> $outputFileName"
+            $processedCount++
         }
         catch
         {
             # Report full details
-            throw $_.Exception.ToString()
+            Write-LogError "Failed to convert $file: $($_.Exception.ToString())"
+            $errorCount++
         }
         finally
         {
@@ -107,4 +141,6 @@ Process
             if ($outputStream -ne $null) { [System.IDisposable]$outputStream.Dispose() }
         }
     }
+
+    Write-LogInfo "JPEG conversion completed. Processed: $processedCount, Skipped: $skippedCount, Errors: $errorCount"
 }

@@ -93,36 +93,43 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 1.2.2
+    Version  : 2.0.0
     Author   : Manoj Bhaskaran
     Requires : PowerShell 5.1 or 7+, Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
-    1.0.0  Initial release: extraction (PerArchiveSubfolder/Flat via temp), collision policy,
-           move zips to parent, optional delete, summary.
+    2.0.0  Refactored to use PowerShellLoggingFramework.psm1 for standardized logging:
+           - Removed Write-Info helper function
+           - Replaced Write-Info calls with Write-LogInfo
+           - Replaced Write-Verbose calls with Write-LogDebug
+           - All log messages now written to standardized log files
+           - Retained user-facing summary output as Write-Host for UX
+
+    1.2.2  Fixes & UX: Move Format-Bytes to Helpers (scope); adaptive summary layout
+           (table for wide consoles, list for narrow) to prevent header wrapping.
+    1.2.1  Docs/UX polish: .NOTES calls out Zip Slip protection; parameter doc & NOTES
+           reiterate 255-char rationale; verbose truncation message retained (with
+           original length); clarify ExtractToFile overwrite flag comment; progress shows
+           total bytes target; FAQ explains CompressionRatio; minor comments on caching.
+    1.2.0  Flat mode now streams via ZipArchive (no temp folder; pre-check collisions);
+           function-level help & more inline comments; cache minor lookups;
+           progress shows cumulative bytes moved; docs extend security caveats and
+           rationale for 255-char limit; notes clarify ratio meaning.
+    1.1.2  Quick wins: path separator normalization for comparisons, verbose notice
+           on truncation, bytes shown in move progress, compression ratio rounded
+           to 1 decimal, `.EXAMPLE` for MaxSafeNameLength + -Verbose, notes on
+           typical MaxSafeNameLength values, FAQ includes 7-Zip example.
+    1.1.1  Safety/UX: guard against same/overlapping source/destination, optional
+           MaxSafeNameLength, per-file move progress, compression ratio, de-duped
+           suffix logic, directory write probe, docs for novices, PS 5.1 note.
     1.1.0  Added progress bars, converted -DeleteSource to [switch] (no default),
            aliases for Source/Destination, compressed-bytes metric, clearer error
            for password-protected zips, unique subfolder naming if exists, parent
            writability check, optional -CleanNonZips, consistent summary printing,
            table summary, ms in duration, and expanded docs/FAQ.
-    1.1.1  Safety/UX: guard against same/overlapping source/destination, optional
-           MaxSafeNameLength, per-file move progress, compression ratio, de-duped
-           suffix logic, directory write probe, docs for novices, PS 5.1 note.
-    1.1.2  Quick wins: path separator normalization for comparisons, verbose notice
-           on truncation, bytes shown in move progress, compression ratio rounded
-           to 1 decimal, `.EXAMPLE` for MaxSafeNameLength + -Verbose, notes on
-           typical MaxSafeNameLength values, FAQ includes 7-Zip example.
-    1.2.0  Flat mode now streams via ZipArchive (no temp folder; pre-check collisions);
-           function-level help & more inline comments; cache minor lookups;
-           progress shows cumulative bytes moved; docs extend security caveats and
-           rationale for 255-char limit; notes clarify ratio meaning.
-    1.2.1  Docs/UX polish: .NOTES calls out Zip Slip protection; parameter doc & NOTES
-           reiterate 255-char rationale; verbose truncation message retained (with
-           original length); clarify ExtractToFile overwrite flag comment; progress shows
-           total bytes target; FAQ explains CompressionRatio; minor comments on caching.
-    1.2.2  Fixes & UX: Move Format-Bytes to Helpers (scope); adaptive summary layout
-           (table for wide consoles, list for narrow) to prevent header wrapping.
+    1.0.0  Initial release: extraction (PerArchiveSubfolder/Flat via temp), collision policy,
+           move zips to parent, optional delete, summary.
 
     ── Setup / Module check ─────────────────────────────────────────────────────
     Expand-Archive is provided by Microsoft.PowerShell.Archive.
@@ -213,16 +220,13 @@ param(
     [switch]$Quiet
 )
 
-#region Helpers
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
 
-<#
-.SYNOPSIS
-    Writes an info line unless -Quiet is set.
-#>
-function Write-Info {
-    param([string]$Message)
-    if (-not $Quiet) { Write-Host $Message }
-}
+# Initialize logger (script name will be extracted from the script file name)
+Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
+
+#region Helpers
 
 <#
 .SYNOPSIS
@@ -305,7 +309,7 @@ function Get-SafeName {
     if ([string]::IsNullOrWhiteSpace($san)) { $san = 'archive' }
     if ($MaxLength -gt 0 -and $san.Length -gt $MaxLength) {
         # Include original name length for debugging
-        Write-Verbose ("Truncating name from {0} to {1} chars: '{2}'" -f $san.Length, $MaxLength, $san)
+        Write-LogDebug ("Truncating name from {0} to {1} chars: '{2}'" -f $san.Length, $MaxLength, $san)
         $san = $san.Substring(0, $MaxLength)
     }
     return $san
@@ -359,7 +363,7 @@ function Get-ZipFileStats {
             $zip.Dispose()
         }
     } catch {
-        Write-Verbose "Failed to read zip stats for: $ZipPath. $_"
+        Write-LogDebug "Failed to read zip stats for: $ZipPath. $_"
     }
     return $result
 }
@@ -431,7 +435,7 @@ function Expand-ZipSmart {
                 $dest = Join-Path $DestinationRoot $rel
                 $destFull = [System.IO.Path]::GetFullPath($dest)
                 if (-not $destFull.StartsWith($destRootFullWithSep, [System.StringComparison]::OrdinalIgnoreCase)) {
-                    Write-Verbose "Skipped path traversal: $($entry.FullName)"
+                    Write-LogDebug "Skipped path traversal: $($entry.FullName)"
                     continue
                 }
 
@@ -580,14 +584,14 @@ try {
     }
 
     if (-not (Test-LongPathsEnabled)) {
-        Write-Verbose "LongPathsEnabled=0; consider enabling to avoid path-length issues."
+        Write-LogDebug "LongPathsEnabled=0; consider enabling to avoid path-length issues."
     }
 
     $zips = @(Get-ChildItem -LiteralPath $SourceDirectory -Filter *.zip -File -ErrorAction Stop)
     $zipCount = $zips.Count
 
-    Write-Info "Found $zipCount zip file(s) in: $SourceDirectory"
-    Write-Info "Extracting to: $DestinationDirectory (Mode: $ExtractMode, Policy: $CollisionPolicy)"
+    Write-LogInfo "Found $zipCount zip file(s) in: $SourceDirectory"
+    Write-LogInfo "Extracting to: $DestinationDirectory (Mode: $ExtractMode, Policy: $CollisionPolicy)"
 
     if ($zipCount -gt 0) {
         $index = 0
@@ -614,12 +618,12 @@ try {
                     $totalUncompressedBytes  += $stats.UncompressedBytes
                     $totalCompressedZipBytes += $stats.CompressedBytes
                     $processedZips++
-                    Write-Verbose "Extracted '$($zip.Name)': files=$($stats.FileCount), uncompressed=$($stats.UncompressedBytes), compressed=$($stats.CompressedBytes)"
+                    Write-LogDebug "Extracted '$($zip.Name)': files=$($stats.FileCount), uncompressed=$($stats.UncompressedBytes), compressed=$($stats.CompressedBytes)"
                 }
             } catch {
                 $msg = $_.Exception.Message
                 $errors.Add("Extraction failed for '$($zip.FullName)': $msg") | Out-Null
-                Write-Verbose $msg
+                Write-LogDebug $msg
             }
         }
 
@@ -635,7 +639,7 @@ try {
         }
     } catch {
         $msg = "Moving .zip files to parent failed: $($_.Exception.Message)"
-        Write-Verbose $msg
+        Write-LogDebug $msg
         $errors.Add($msg) | Out-Null
     }
 
@@ -648,7 +652,7 @@ try {
             $nonZips = @($remaining | Where-Object { -not $_.PSIsContainer -and $_.Extension -ne '.zip' -or $_.PSIsContainer })
             if ($nonZips.Count -gt 0 -and -not $CleanNonZips) {
                 $errors.Add("DeleteSource skipped: non-zip items remain. Use -CleanNonZips to remove them.") | Out-Null
-                Write-Verbose ("Remaining items: `n" + ($nonZips | Select-Object -ExpandProperty FullName | Out-String))
+                Write-LogDebug ("Remaining items: `n" + ($nonZips | Select-Object -ExpandProperty FullName | Out-String))
             } else {
                 if ($CleanNonZips -and $nonZips.Count -gt 0) {
                     if ($PSCmdlet.ShouldProcess($SourceDirectory, "Clean non-zip items before delete")) {
@@ -664,7 +668,7 @@ try {
             }
         } catch {
             $msg = "Failed to delete source directory '$SourceDirectory': $($_.Exception.Message)"
-            Write-Verbose $msg
+            Write-LogDebug $msg
             $errors.Add($msg) | Out-Null
         }
     }
