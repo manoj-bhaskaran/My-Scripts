@@ -6,9 +6,11 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
 
  .VERSION
- 3.5.0
- 
- (Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling. See CHANGELOG.)
+ 4.0.0
+
+ CHANGELOG:
+   4.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
+   3.5.0 - Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling
 
 File name conflicts are resolved using the **RandomName** module’s `Get-RandomFileName`. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
 
@@ -405,6 +407,12 @@ param(
     [switch]$RebalanceToAverage
 )
 
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName "FileDistributor" -LogLevel 20
+
 # Display help and exit if -Help is specified
 if ($Help) {
     Write-Host "FileDistributor.ps1 - File Distribution Script" -ForegroundColor Cyan
@@ -566,28 +574,37 @@ function Initialize-FilePath {
 function LogMessage {
     param (
         [string]$Message,
-        [switch]$ConsoleOutput, # Explicit control for always printing to the console
-        [switch]$IsError, # Indicates if the message is an error
-        [switch]$IsWarning, # Indicates if the message is a warning
-        [switch]$IsDebug # Indicates if the message is debug-level
+        [switch]$ConsoleOutput,
+        [switch]$IsError,
+        [switch]$IsWarning,
+        [switch]$IsDebug
     )
-    if ($IsDebug -and -not $script:DebugMode) { return }
-    # Get the timestamp and format the log entry
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$($timestamp): $($Message)"
-    # Append the log entry to the log file (always, unless skipped above for debug)
-    $logEntry | Add-Content -Path $LogFilePath
-    # Use appropriate PowerShell cmdlet for errors, warnings, debug, or console output
+
+    # Map to PowerShellLoggingFramework functions
     if ($IsError) {
-        Write-Error -Message $logEntry
+        Write-LogError $Message
         $script:Errors++
+        if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
+            Write-Host "ERROR: $Message" -ForegroundColor Red
+        }
     } elseif ($IsWarning) {
-        Write-Warning -Message $logEntry
+        Write-LogWarning $Message
         $script:Warnings++
+        if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
+            Write-Host "WARNING: $Message" -ForegroundColor Yellow
+        }
     } elseif ($IsDebug) {
-        Write-Debug -Message $logEntry
-    } elseif ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
-        Write-Host -Object $logEntry
+        if ($script:DebugMode) {
+            Write-LogDebug $Message
+            if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
+                Write-Host "DEBUG: $Message" -ForegroundColor Cyan
+            }
+        }
+    } else {
+        Write-LogInfo $Message
+        if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
+            Write-Host $Message
+        }
     }
 }
 

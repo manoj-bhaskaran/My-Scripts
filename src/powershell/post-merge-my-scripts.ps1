@@ -22,12 +22,21 @@
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 2.6
-    Last Updated: 2025-08-16
+    Version: 3.0.0
+    Last Updated: 2025-11-16
+    CHANGELOG:
+        3.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
+        2.6   - Previous version with custom Write-Message function
 #>
 
 [CmdletBinding()]
 param()
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName "post-merge-my-scripts" -LogLevel 20
 
 # Initialize early so functions can read it safely
 $script:IsVerbose = $false
@@ -56,11 +65,9 @@ function Write-Message {
         [string]$Source = "post-merge",
         [switch]$ToHost
     )
-    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $line = "[{0}][{1}] {2}" -f $ts, $Source, $Message
-    try { Add-Content -Path $script:LogFile -Value $line -Encoding utf8 -ErrorAction Stop } catch { Write-Host $line }
+    Write-LogInfo "$Source - $Message"
     if ($script:IsVerbose -or $ToHost) {
-        Write-Host $line
+        Write-Host "$Source - $Message"
     }
 }
 
