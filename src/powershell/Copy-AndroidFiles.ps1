@@ -108,9 +108,17 @@
 
 .NOTES
     VERSION
-      1.3.9
+      2.0.0
 
     CHANGELOG
+        2.0.0
+        - Refactored to use PowerShellLoggingFramework.psm1 for standardized logging
+        - Replaced Write-Host with Write-LogInfo for informational messages
+        - Replaced Write-Warning with Write-LogWarning for warnings
+        - Replaced Write-Verbose with Write-LogDebug for debug messages
+        - Retained ADB-specific DebugMode for low-level adb diagnostics
+        - All log messages now written to standardized log files
+
         1.3.9
         - Verify summary now shows Local before → after (+Δ) for both file count and size (MB)
         - Baseline adapts to mode:
@@ -235,6 +243,12 @@ param(
   [Parameter()] [int]$ProgressIntervalSeconds = 5,
   [Parameter()] [switch]$DebugMode
 )
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger (script name will be extracted from the script file name)
+Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 
 $ErrorActionPreference = 'Stop'
 
@@ -587,7 +601,7 @@ fi
   }
 }
 
-Write-Verbose "Destination: $Dest"
+Write-LogDebug "Destination: $Dest"
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 
 # Pre-checks
@@ -622,7 +636,7 @@ if ($PrecheckSpace.IsPresent -and $totalBytes -gt 0) {
 if ($Mode -eq 'pull') {
 
   if ($Resume) {
-    Write-Host "Resumable pull (skip existing): `"$PhonePath`" → `"$Dest`""
+    Write-LogInfo "Resumable pull (skip existing): `"$PhonePath`" → `"$Dest`""
     # Build remote file list (size \t path)
     $listCmd = "find ""$PhonePath"" -type f -print0 2>/dev/null | xargs -0 stat -c ""%s`t%n"" 2>/dev/null"
     $raw = adb shell $listCmd
@@ -656,7 +670,7 @@ if ($Mode -eq 'pull') {
       $copied++
     }
     Write-Progress -Activity "Resumable adb pull" -Completed
-    Write-Host "Resume pull complete. Files processed: $count, newly copied: $copied."
+    Write-LogInfo "Resume pull complete. Files processed: $count, newly copied: $copied."
 
     if ($Verify) {
         $localRootAfter = $Dest
@@ -688,12 +702,12 @@ if ($Mode -eq 'pull') {
         $rows | Format-Table -AutoSize | Out-String | Write-Host
 
         if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
-            Write-Warning "Local file count < remote file count. Some files may be missing."
+            Write-LogWarning "Local file count < remote file count. Some files may be missing."
         }
     }
   }
   else {
-    Write-Host "ADB pull `"$PhonePath`" → `"$Dest`""
+    Write-LogInfo "ADB pull `"$PhonePath`" → `"$Dest`""
     if ($ShowProgress) {
       $destBefore = Get-LocalDirSize -Path $Dest
       $sp = @{
@@ -724,7 +738,7 @@ if ($Mode -eq 'pull') {
     } else {
       adb pull "$PhonePath" "$Dest"
     }
-    Write-Host "Pull complete."
+    Write-LogInfo "Pull complete."
 
     if ($Verify) {
         # adb pull usually creates a subfolder under Dest named $leaf
@@ -759,7 +773,7 @@ if ($Mode -eq 'pull') {
         $rows | Format-Table -AutoSize | Out-String | Write-Host
 
         if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
-            Write-Warning "Local file count < remote file count. Some files may be missing."
+            Write-LogWarning "Local file count < remote file count. Some files may be missing."
         }
     }
   }
@@ -767,14 +781,14 @@ if ($Mode -eq 'pull') {
 else {
   # TAR mode
   if ($StreamTar) {
-    Write-Host "Streaming TAR directly to extractor (no temp .tar): `"$PhonePath`" → `"$Dest`""
+    Write-LogInfo "Streaming TAR directly to extractor (no temp .tar): `"$PhonePath`" → `"$Dest`""
     if ($ShowProgress -and $totalBytes -gt 0) {
-      Write-Host ("Estimated size: {0} MB" -f [math]::Round($totalBytes/1MB))
+      Write-LogInfo ("Estimated size: {0} MB" -f [math]::Round($totalBytes/1MB))
     }
     # Use cmd.exe pipeline for robust stdin handling to tar.exe across shells
     $cmd = "adb exec-out tar -C '$parent' -cf - '$leaf' | tar -xf - -C '$Dest'"
     cmd /c $cmd | Out-Host
-    Write-Host "Streaming tar extraction finished. Verify contents."
+    Write-LogInfo "Streaming tar extraction finished. Verify contents."
 
     if ($Verify) {
         $localRootAfter = $Dest
@@ -806,7 +820,7 @@ else {
         $rows | Format-Table -AutoSize | Out-String | Write-Host
 
         if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
-            Write-Warning "Extracted count < remote count. Some files may be missing."
+            Write-LogWarning "Extracted count < remote count. Some files may be missing."
         }
     }
   }
@@ -818,7 +832,7 @@ else {
     while ($true) {
       try {
         $attempt++
-        Write-Host "Attempt $attempt of $MaxRetries — streaming TAR from `"$PhonePath`" → `"$tarFile`""
+        Write-LogInfo "Attempt $attempt of $MaxRetries — streaming TAR from `"$PhonePath`" → `"$tarFile`""
         $sp = @{
             FilePath               = 'adb'
             ArgumentList           = @('exec-out','tar','-C',"$parent",'-cf','-',$leaf)
@@ -850,9 +864,9 @@ else {
         if ($proc.ExitCode -ne 0) { throw "adb tar stream failed with exit code $($proc.ExitCode)." }
 
         $finalSize = (Get-Item $tarFile).Length
-        Write-Host ("TAR complete. Size: {0:N0} bytes ({1} MB)" -f $finalSize, [math]::Round($finalSize/1MB))
+        Write-LogInfo ("TAR complete. Size: {0:N0} bytes ({1} MB)" -f $finalSize, [math]::Round($finalSize/1MB))
 
-        Write-Host "Extracting `"$tarFile`" → `"$Dest`""
+        Write-LogInfo "Extracting `"$tarFile`" → `"$Dest`""
         tar -xf $tarFile -C $Dest
 
         if ($Verify) {
@@ -891,16 +905,16 @@ else {
 
         # Cleanup
         Remove-Item $tarFile -Force
-        Write-Host "Done."
+        Write-LogInfo "Done."
         break
       }
       catch {
         $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-        Write-Warning ("{0}: {1}" -f $ts, $_)
+        Write-LogWarning ("{0}: {1}" -f $ts, $_)
         if (Test-Path $tarFile) { Remove-Item $tarFile -Force -ErrorAction SilentlyContinue }
         if ($attempt -ge $MaxRetries) { throw "Tar mode failed after $MaxRetries attempts." }
         Start-Sleep 2
-        Write-Host ("{0}: Retrying..." -f $ts)
+        Write-LogInfo ("{0}: Retrying..." -f $ts)
       }
     }
   }
