@@ -27,9 +27,11 @@ This repository is organised into logical directories to enhance discoverability
 * `src/`: Contains all source code for the scripts, further categorised by programming language.
     * * `src/powershell/`: PowerShell scripts for various tasks, including system administration and automation. This folder also contains the **Videoscreenshot** PowerShell module under `src/powershell/module/Videoscreenshot/` with its own README and changelog.
     * `src/python/`: Python scripts for data processing, specialised image processing, and other utility functions.
-    * `src/batch/`: Batch scripts for common command-line operations.
+    * `src/batch/`: Batch scripts for common command-line operations. Log files are stored in `src/batch/logs/`.
     * `src/sql/`: SQL query files, organised by the specific external database they target (e.g., `gnucash_db`).
-    * `src/common/`: Shared modules or functions used across different scripts (e.g., a common logging framework).
+    * `src/common/`: Shared modules or functions used across different scripts, including:
+        * **PowerShellLoggingFramework.psm1**: Centralized logging framework used by all PowerShell scripts
+* `logs/`: Directory where PowerShell scripts write their log files (automatically created)
 * `docs/`: Comprehensive documentation, usage guides, and any architectural notes.
 * `config/`: Configuration files used by various scripts.
 * `tests/`: Unit and integration tests for validating script functionality.
@@ -47,6 +49,104 @@ To make use of the scripts in this repository, you'll need the following install
 * **Python 3+**
 * **Git**
 * Python package requirements are script- or project-specific; see headers within individual scripts or any `requirements.txt` files colocated under `src/python/` subfolders.
+
+## Logging Framework
+
+All PowerShell scripts in this repository use a centralized logging framework (`PowerShellLoggingFramework.psm1`) that provides:
+
+* **Standardized Logging**: Consistent timestamp formats, log levels, and output structure
+* **Automatic Log Files**: Logs are automatically written to `logs/{ScriptName}_powershell_YYYY-MM-DD.log`
+* **Log Levels**: DEBUG (10), INFO (20), WARNING (30), ERROR (40), CRITICAL (50)
+* **Flexible Output**: Plain-text or JSON structured logging
+* **Metadata Support**: Optional metadata tagging for enhanced context
+
+### Log Levels
+
+The framework supports five log levels, controllable via the `-LogLevel` parameter when initializing the logger:
+
+* **10 (DEBUG)**: Detailed information for debugging
+* **20 (INFO)**: General informational messages (default)
+* **30 (WARNING)**: Warning messages for potentially problematic situations
+* **40 (ERROR)**: Error messages for failures
+* **50 (CRITICAL)**: Critical errors that may cause script termination
+
+### Example Usage
+
+```powershell
+# Import the logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger with script name and log level
+Initialize-Logger -ScriptName "MyScript" -LogLevel 20
+
+# Use logging functions
+Write-LogInfo "Script started successfully"
+Write-LogDebug "Processing file: example.txt"
+Write-LogWarning "File not found, using default"
+Write-LogError "Failed to connect to database"
+```
+
+For more details, see the [PowerShellLoggingFramework documentation](src/common/PowerShellLoggingFramework.psm1).
+
+---
+
+## Logging
+
+All scripts in this repository implement standardized logging to help with debugging, auditing, and monitoring script execution.
+
+### Logging Standard
+
+The repository follows a consistent logging format across all script types:
+
+```
+[YYYY-MM-DD HH:mm:ss.fff TIMEZONE] [LEVEL] [ScriptName] [HostName] [PID] Message
+```
+
+**Example:**
+```
+[2025-11-16 14:30:45.123 Eastern Standard Time] [INFO] [RunDeleteOldDownloads.bat] [WORKSTATION] [12345] Script started
+```
+
+### Log Levels
+
+- **DEBUG** (10): Detailed diagnostic information
+- **INFO** (20): General informational messages (default)
+- **WARNING** (30): Warning messages for potentially problematic situations
+- **ERROR** (40): Error messages for failures that don't stop execution
+- **CRITICAL** (50): Critical errors that may stop execution
+
+### PowerShell Scripts
+
+PowerShell scripts use the **PowerShellLoggingFramework.psm1** module located in `src/common/`.
+
+**Log File Location:** `<script_directory>/logs/<script_name>_powershell_YYYY-MM-DD.log`
+
+**Usage Example:**
+```powershell
+Import-Module ".\src\common\PowerShellLoggingFramework.psm1"
+Initialize-Logger -ScriptName "MyScript.ps1"
+Write-LogInfo "Script started"
+Write-LogError "An error occurred"
+```
+
+### Batch Scripts
+
+Batch scripts (.bat, .cmd) implement inline logging functions that conform to the same standard format.
+
+**Log File Location:** `src/batch/logs/<script_name>_batch_YYYY-MM-DD.log`
+
+**Features:**
+- Automatic log directory creation
+- Timestamps with millisecond precision
+- Hostname and Process ID tracking
+- Multiple log levels (INFO, WARNING, ERROR)
+- Same-day log file appending
+
+**Available Batch Scripts:**
+- **RunDeleteOldDownloads.bat** (v3.0.0): Wrapper for PowerShell file cleanup script
+- **printcancel.cmd** (v2.0.0): Printer spooler maintenance utility
+
+For detailed information about logging implementation and testing, see `docs/batch-logging-test-plan.md`.
 
 ---
 

@@ -46,6 +46,16 @@
     .\Sync-MacriumBackups.ps1 -Interactive
 
     Runs the sync with rclone --progress output shown on the console, suitable for manual invocation.
+
+.NOTES
+    Version: 2.0.0
+
+    CHANGELOG
+    ## 2.0.0 - 2025-11-16
+    ### Changed
+    - Migrated to PowerShellLoggingFramework.psm1 for standardized logging
+    - Removed custom Write-Log function
+    - Replaced Write-Log calls with Write-LogInfo, Write-LogError, Write-LogWarning
 #>
 param(
     [string]$SourcePath = "E:\Macrium Backups",
@@ -57,41 +67,32 @@ param(
     [switch]$Interactive
 )
 
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
+
 Add-Type -Namespace SleepControl -Name PowerMgmt -MemberDefinition @"
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern uint SetThreadExecutionState(uint esFlags);
 "@ -Language CSharp
 
-function Write-Log {
-    param (
-        [string]$Message,
-        [string]$Level = "INFO"
-    )
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $entry = "$timestamp [$Level] $Message"
-
-    Add-Content -Path $LogFile -Value $entry
-
-    if ($Interactive) {
-        Write-Host $entry
-    }
-}
-
 function Test-BackupPath {
     if (-not (Test-Path $SourcePath)) {
-        Write-Log "Backup source path '$SourcePath' is not accessible." "ERROR"
+        Write-LogError "Backup source path '$SourcePath' is not accessible."
         exit 1
     }
-    Write-Log "Validated source path '$SourcePath'"
+    Write-LogInfo "Validated source path '$SourcePath'"
 }
 
 function Test-Rclone {
     $rcloneCheck = & rclone about $RcloneRemote 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Log "Rclone Google Drive validation failed: $rcloneCheck" "ERROR"
+        Write-LogError "Rclone Google Drive validation failed: $rcloneCheck"
         exit 1
     }
-    Write-Log "Validated Google Drive remote "`"$RcloneRemote`"""
+    Write-LogInfo "Validated Google Drive remote `"$RcloneRemote`""
 }
 
 function Test-Network {
@@ -100,55 +101,55 @@ function Test-Network {
     $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
 
     if ($currentSSID -eq $PreferredSSID) {
-        Write-Log "Connected to preferred network '$PreferredSSID'"
+        Write-LogInfo "Connected to preferred network '$PreferredSSID'"
     } elseif ($currentSSID -eq $FallbackSSID) {
         # Try to switch to preferred if available
         $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
         if ($availableNetworks -match $PreferredSSID) {
-            Write-Log "Switching from '$FallbackSSID' to preferred network '$PreferredSSID'"
+            Write-LogInfo "Switching from '$FallbackSSID' to preferred network '$PreferredSSID'"
             netsh wlan connect name=$PreferredSSID
             Start-Sleep -Seconds 10
             $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
             if ($currentSSID -eq $PreferredSSID) {
-                Write-Log "Switched successfully to '$PreferredSSID'"
+                Write-LogInfo "Switched successfully to '$PreferredSSID'"
             } else {
-                Write-Log "Failed to switch to '$PreferredSSID'. Continuing on '$FallbackSSID'" "WARNING"
+                Write-LogWarning "Failed to switch to '$PreferredSSID'. Continuing on '$FallbackSSID'"
             }
         } else {
-            Write-Log "Preferred network '$PreferredSSID' not available. Staying on '$FallbackSSID'"
+            Write-LogInfo "Preferred network '$PreferredSSID' not available. Staying on '$FallbackSSID'"
         }
     } else {
-        Write-Log "Not connected to either '$PreferredSSID' or '$FallbackSSID'. Trying to connect..."
+        Write-LogInfo "Not connected to either '$PreferredSSID' or '$FallbackSSID'. Trying to connect..."
 
         $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
         if ($availableNetworks -match $PreferredSSID) {
-            Write-Log "Connecting to preferred network '$PreferredSSID'"
+            Write-LogInfo "Connecting to preferred network '$PreferredSSID'"
             netsh wlan connect name=$PreferredSSID
         } elseif ($availableNetworks -match $FallbackSSID) {
-            Write-Log "Connecting to fallback network '$FallbackSSID'"
+            Write-LogInfo "Connecting to fallback network '$FallbackSSID'"
             netsh wlan connect name=$FallbackSSID
         } else {
-            Write-Log "Neither '$PreferredSSID' nor '$FallbackSSID' WiFi networks are available." "ERROR"
+            Write-LogError "Neither '$PreferredSSID' nor '$FallbackSSID' WiFi networks are available."
             exit 1
         }
 
         Start-Sleep -Seconds 10
         $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
         if ($currentSSID -ne $PreferredSSID -and $currentSSID -ne $FallbackSSID) {
-            Write-Log "Failed to connect to preferred or fallback WiFi networks." "ERROR"
+            Write-LogError "Failed to connect to preferred or fallback WiFi networks."
             exit 1
         }
 
-        Write-Log "Connected to WiFi network '$currentSSID'"
+        Write-LogInfo "Connected to WiFi network '$currentSSID'"
     }
 
     # Step 2: Internet test
     if (-not (Test-Connection -ComputerName "8.8.8.8" -Count 2 -Quiet)) {
-        Write-Log "No internet connection. Sync aborted." "ERROR"
+        Write-LogError "No internet connection. Sync aborted."
         exit 1
     }
 
-    Write-Log "Internet connectivity validated"
+    Write-LogInfo "Internet connectivity validated"
 }
 
 function Get-ChunkSize {
@@ -168,7 +169,7 @@ function Get-ChunkSize {
         $chunk = 64  # Default fallback
     }
 
-    Write-Log "Available memory: ${freeMB}MB. Dynamic chunk size set to ${chunk}MB"
+    Write-LogInfo "Available memory: ${freeMB}MB. Dynamic chunk size set to ${chunk}MB"
     return "$chunk" + "M"
 }
 
@@ -191,18 +192,18 @@ function Sync-Backups {
     } else {
         $rcloneArgs += "--log-level=INFO"
     }
-    Write-Log "Starting sync with chunk size: $chunkSize"
+    Write-LogInfo "Starting sync with chunk size: $chunkSize"
     if ($Interactive) {
-        Write-Log "Running rclone in interactive mode (output goes to console)"
+        Write-LogInfo "Running rclone in interactive mode (output goes to console)"
         & rclone @rcloneArgs
     } else {
-        Write-Log "Running rclone in non-interactive mode (output redirected to log)"
+        Write-LogInfo "Running rclone in non-interactive mode (output redirected to log)"
         & rclone @rcloneArgs *>> $LogFile
     }
     if ($LASTEXITCODE -eq 0) {
-        Write-Log "Sync completed successfully"
+        Write-LogInfo "Sync completed successfully"
     } else {
-        Write-Log "Sync failed with exit code $LASTEXITCODE" "ERROR"
+        Write-LogError "Sync failed with exit code $LASTEXITCODE"
     }
 }
 
@@ -214,10 +215,10 @@ if (-not (Test-Path $logDir)) {
 
 # Execution Flow
 try {
-    Write-Log "Starting Macrium backup sync script"
+    Write-LogInfo "Starting Macrium backup sync script"
     # Prevent sleep & display timeout
     [SleepControl.PowerMgmt]::SetThreadExecutionState([uint32]"0x80000003") | Out-Null
-    Write-Log "System sleep and display timeout temporarily disabled"
+    Write-LogInfo "System sleep and display timeout temporarily disabled"
 
     # Main execution
     Test-BackupPath
@@ -228,6 +229,6 @@ try {
 finally {
     # Restore normal sleep behavior
     [SleepControl.PowerMgmt]::SetThreadExecutionState([uint32]"0x80000000") | Out-Null
-    Write-Log "System sleep and display timeout restored"
-    Write-Log "Script execution completed"
+    Write-LogInfo "System sleep and display timeout restored"
+    Write-LogInfo "Script execution completed"
 }

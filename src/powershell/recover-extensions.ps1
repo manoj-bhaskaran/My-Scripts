@@ -9,6 +9,15 @@ and required packages are installed from requirements.txt.
 
 .PARAMETERS
 Same as the Python script: FolderPath, LogFilePath, UnknownsFolder, DryRun, MoveUnknowns, Debug, LogWriteIntervalSeconds
+
+.NOTES
+Version: 2.0.0
+
+CHANGELOG
+## 2.0.0 - 2025-11-16
+### Changed
+- Migrated to PowerShellLoggingFramework.psm1 for standardized logging
+- Replaced Write-Host calls with Write-LogInfo
 #>
 
 param(
@@ -21,6 +30,12 @@ param(
     [int]$LogWriteIntervalSeconds = 5
 )
 
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
+
 # Fixed script paths
 $BaseDir = "C:\Users\manoj\Documents\Scripts\src\python"
 $PythonScript = Join-Path $BaseDir "recover_extensions.py"
@@ -30,12 +45,12 @@ $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 
 # Create virtual environment if needed
 if (-not (Test-Path $VenvPython)) {
-    Write-Host "Creating virtual environment..."
+    Write-LogInfo "Creating virtual environment..."
     python -m venv $VenvDir
 }
 
 # Install/update dependencies
-Write-Host "Installing dependencies from requirements.txt..."
+Write-LogInfo "Installing dependencies from requirements.txt..."
 & $VenvPython -m pip install --upgrade pip *> $null
 & $VenvPython -m pip install -r $RequirementsFile *> $null
 
@@ -51,5 +66,5 @@ if ($MoveUnknowns) { $ArgsList += "--move-unknowns" }
 if ($Debug) { $ArgsList += "--debug" }
 
 # Execute the script
-Write-Host "Running Python script..."
+Write-LogInfo "Running Python script..."
 & $VenvPython $PythonScript @ArgsList

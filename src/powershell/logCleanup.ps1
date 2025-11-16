@@ -1,13 +1,37 @@
-# Define the path to the directory and the log file
+<#
+.SYNOPSIS
+    Cleans up old PostgreSQL log files from the data/log directory.
+
+.DESCRIPTION
+    This script removes log files older than 90 days from the PostgreSQL log directory
+    and logs the cleanup operations using the PowerShellLoggingFramework.
+
+.NOTES
+    Version: 2.0.0
+
+    CHANGELOG
+    ## 2.0.0 - 2025-11-16
+    ### Changed
+    - Migrated to PowerShellLoggingFramework.psm1 for standardized logging
+    - Replaced Add-Content manual logging with Write-LogInfo
+    - Added proper script documentation and version tracking
+#>
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
+
+# Define the path to the directory
 $logDirectory = "D:\Program Files\PostgreSQL\17\data\log"
-$logFile = "D:\Program Files\PostgreSQL\17\data\log_cleanup.log"
 
 # Get the current date
 $currentDate = Get-Date
 
 # Start the log entry
-Add-Content -Path $logFile -Value "Log Cleanup Script - $(Get-Date)"
-Add-Content -Path $logFile -Value "-----------------------------------"
+Write-LogInfo "Log Cleanup Script - $(Get-Date)"
+Write-LogInfo "-----------------------------------"
 
 # Get all files in the directory
 $files = Get-ChildItem -Path $logDirectory -File
@@ -22,10 +46,10 @@ foreach ($file in $files) {
         # Delete the file
         Remove-Item -Path $file.FullName -Force
         $logMessage = "Deleted: $($file.FullName) - Last Modified: $($file.LastWriteTime)"
-        Add-Content -Path $logFile -Value $logMessage
+        Write-LogInfo $logMessage
     }
 }
 
 # End the log entry
-Add-Content -Path $logFile -Value "Log Cleanup Completed - $(Get-Date)"
-Add-Content -Path $logFile -Value "-----------------------------------`n"
+Write-LogInfo "Log Cleanup Completed - $(Get-Date)"
+Write-LogInfo "-----------------------------------"
