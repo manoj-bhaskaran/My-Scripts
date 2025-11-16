@@ -29,14 +29,14 @@
         2.6   - Previous version with custom Write-Message function
 #>
 
+[CmdletBinding()]
+param()
+
 # Import logging framework
 Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
 
 # Initialize logger
 Initialize-Logger -ScriptName "post-merge-my-scripts" -LogLevel 20
-
-[CmdletBinding()]
-param()
 
 # Initialize early so functions can read it safely
 $script:IsVerbose = $false
