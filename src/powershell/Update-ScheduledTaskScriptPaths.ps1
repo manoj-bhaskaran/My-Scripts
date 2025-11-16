@@ -21,7 +21,16 @@
         D:\My Scripts\Windows Task Scheduler
 
 .NOTES
-    Implements improvements:
+    Version: 2.0.0
+
+    CHANGELOG
+    ## 2.0.0 - 2025-11-16
+    ### Changed
+    - Migrated to PowerShellLoggingFramework.psm1 for standardized logging
+    - Replaced Write-Host calls with Write-LogInfo
+    - Replaced Write-Warning calls with Write-LogWarning
+
+    ## 1.0.0 - Previous
     - Uses Export-ScheduledTask for exporting (Reverted to this for robustness)
     - Parses XML using XPath with NamespaceManager for full Exec node visibility
     - Handles regex path matching with subfolder tolerance and optional quotes
@@ -30,6 +39,12 @@
     - Writes detailed status messages per task
     - Validates presence of nodes before accessing them
 #>
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 
 $targetRoot1 = "C:\Users\manoj\Documents\Scripts"
 $targetRoot2 = "D:\My Scripts"
@@ -43,13 +58,13 @@ $extensionMap = @{
 
 # Ensure the output directory exists
 if (-not (Test-Path -Path $outputDir)) {
-    Write-Host "Creating output directory: $outputDir" -ForegroundColor DarkCyan
+    Write-LogInfo "Creating output directory: $outputDir"
     New-Item -ItemType Directory -Path $outputDir | Out-Null
 } else {
-    Write-Host "Output directory already exists: $outputDir" -ForegroundColor DarkCyan
+    Write-LogInfo "Output directory already exists: $outputDir"
 }
 
-Write-Host "Starting scan and export of scheduled tasks..." -ForegroundColor Green
+Write-LogInfo "Starting scan and export of scheduled tasks..."
 
 Get-ScheduledTask | Where-Object {
     # Exclude Microsoft and Windows system tasks
@@ -58,7 +73,7 @@ Get-ScheduledTask | Where-Object {
     $taskName = $_.TaskName
     $taskPath = $_.TaskPath
     $fullTaskName = "$taskPath$taskName"
-    Write-Host "`n🔍 Scanning task: $fullTaskName" -ForegroundColor Cyan
+    Write-LogInfo "Scanning task: $fullTaskName"
 
     try {
         # Export the task definition as XML. Export-ScheduledTask typically outputs UTF-16 XML.
@@ -72,12 +87,12 @@ Get-ScheduledTask | Where-Object {
             if ($xmlDeclaration.Encoding -and $xmlDeclaration.Encoding -ne "utf-8") {
                 $xmlDeclaration.Encoding = "utf-8"
                 $modified = $true # Mark as modified because we changed the declaration
-                Write-Host "✅ Updated XML declaration encoding attribute to 'utf-8' for $fullTaskName" -ForegroundColor Green
+                Write-LogInfo "Updated XML declaration encoding attribute to 'utf-8' for $fullTaskName"
             } else {
-                 Write-Host "ℹ XML declaration encoding already 'utf-8' or not specified for $fullTaskName" -ForegroundColor DarkGray
+                 Write-LogDebug "XML declaration encoding already 'utf-8' or not specified for $fullTaskName"
             }
         } else {
-            Write-Warning "⚠ XML declaration not found as first child for task: $fullTaskName. Cannot update encoding attribute." -ForegroundColor Yellow
+            Write-LogWarning "XML declaration not found as first child for task: $fullTaskName. Cannot update encoding attribute."
             # If a task XML does not have an XML declaration, it's technically malformed,
             # but Export-ScheduledTask usually ensures one is present.
         }
@@ -98,16 +113,16 @@ Get-ScheduledTask | Where-Object {
 
         # Node presence checks and colored output
         if (-not $commandNode) {
-            Write-Host "⚠ Command node missing in task: $fullTaskName (Skipping modifications for this task)" -ForegroundColor Yellow
+            Write-LogWarning "Command node missing in task: $fullTaskName (Skipping modifications for this task)"
             # If no command node, no point in processing further for this task
             return
         }
         if (-not $argumentsNode) {
-            Write-Host "ℹ Arguments node missing in task: $fullTaskName" -ForegroundColor DarkGray
+            Write-LogDebug "Arguments node missing in task: $fullTaskName"
         }
 
-        Write-Host "🔧 Original Command:   $originalCommand" -ForegroundColor DarkYellow
-        Write-Host "🔧 Original Arguments: $originalArguments" -ForegroundColor DarkYellow
+        Write-LogDebug "Original Command:   $originalCommand"
+        Write-LogDebug "Original Arguments: $originalArguments"
 
         # Flag to track if any modifications were made to the task definition
         # (This will also be true if only the XML declaration was updated)
@@ -138,7 +153,7 @@ Get-ScheduledTask | Where-Object {
                     if ($commandNode.InnerText -ne $newCommand) {
                         $commandNode.InnerText = $newCommand
                         $modified = $true
-                        Write-Host "🔄 Updated Command path for ${taskName}: '$newCommand'" -ForegroundColor Magenta
+                        Write-LogInfo "Updated Command path for ${taskName}: '$newCommand'"
                     }
                 }
 
@@ -154,7 +169,7 @@ Get-ScheduledTask | Where-Object {
                     if ($argumentsNode.InnerText -ne $newArguments) {
                         $argumentsNode.InnerText = $newArguments
                         $modified = $true
-                        Write-Host "🔄 Updated Arguments path for ${taskName}: '$newArguments'" -ForegroundColor Magenta
+                        Write-LogInfo "Updated Arguments path for ${taskName}: '$newArguments'"
                     }
                 }
             }
@@ -172,19 +187,19 @@ Get-ScheduledTask | Where-Object {
                 $writer = [System.IO.StreamWriter]::new($outPath, $false, $utf8NoBomEncoding)
                 $xmlDoc.Save($writer)
                 $writer.Dispose() # Crucial to release the file handle
-                Write-Host "✅ Updated and exported: $taskName to '$outPath' (UTF-8 No BOM)" -ForegroundColor Green
+                Write-LogInfo "Updated and exported: $taskName to '$outPath' (UTF-8 No BOM)"
             }
             catch {
-                Write-Warning "⚠ Failed to write task XML for ${fullTaskName}: $($_.Exception.Message)"
+                Write-LogWarning "Failed to write task XML for ${fullTaskName}: $($_.Exception.Message)"
             }
         } else {
-            Write-Host "ℹ No functional changes needed for: $taskName (XML declaration might have been updated, but paths were not changed)" -ForegroundColor Gray
+            Write-LogDebug "No functional changes needed for: $taskName (XML declaration might have been updated, but paths were not changed)"
         }
     }
     catch {
         # Catch any errors during Export-ScheduledTask or XML processing for a specific task
-        Write-Warning "⚠ Failed to process task: $fullTaskName ($($_.Exception.Message))"
+        Write-LogWarning "Failed to process task: $fullTaskName ($($_.Exception.Message))"
     }
 }
 
-Write-Host "`nScan and export process completed." -ForegroundColor Green
+Write-LogInfo "Scan and export process completed."
