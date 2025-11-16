@@ -259,6 +259,49 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 
 ---
 
+## Testing
+
+This repository includes comprehensive testing infrastructure to ensure code quality and reliability.
+
+### Running Tests
+
+**Python Tests**:
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run all tests
+pytest tests/python
+
+# Run with coverage
+pytest tests/python --cov=src/python --cov=src/common --cov-report=term-missing
+```
+
+**PowerShell Tests**:
+```powershell
+# Install Pester
+Install-Module -Name Pester -Force -Scope CurrentUser
+
+# Run all tests
+Invoke-Pester -Path tests/powershell
+```
+
+### Test Coverage
+
+Current coverage targets:
+- Shared modules: ≥30%
+- Core utilities: ≥50%
+- Overall project: ≥25%
+
+Coverage reports are automatically generated in CI and uploaded to [SonarCloud](https://sonarcloud.io/project/overview?id=manoj-bhaskaran_My-Scripts).
+
+### Documentation
+
+- [Testing Guide](tests/README.md) - How to run and write tests
+- [Testing Standards](docs/guides/testing.md) - Best practices and guidelines
+
+---
+
 ## Contributing
 
 Please note that at present, I am not inviting contributions to this personal project. However, the [`CONTRIBUTING.md`](CONTRIBUTING.md) file documents coding standards, logging guidelines, and best practices used throughout this repository.

@@ -1,172 +1,202 @@
-# Test Suite
+# Testing Framework Documentation
 
-This directory contains the test suite for My-Scripts repository.
+This directory contains the testing infrastructure for the My-Scripts repository.
+
+## Overview
+
+We use a comprehensive testing framework to ensure code quality and reliability:
+- **Python**: pytest with coverage reporting
+- **PowerShell**: Pester with code coverage
 
 ## Directory Structure
 
 ```
 tests/
-├── powershell/          # PowerShell script tests
-│   ├── unit/           # Unit tests for individual PowerShell functions
-│   ├── integration/    # Integration tests for PowerShell scripts
-│   └── fixtures/       # Test data and mock files for PowerShell tests
-├── python/             # Python script tests
-│   ├── unit/          # Unit tests for individual Python functions
-│   ├── integration/   # Integration tests for Python scripts
-│   └── fixtures/      # Test data and mock files for Python tests
-├── conftest.py        # Pytest configuration and shared fixtures
-├── pytest.ini         # Pytest settings and options
-└── README.md          # This file
+├── python/
+│   ├── unit/              # Python unit tests
+│   │   ├── test_validators.py
+│   │   ├── test_logging_framework.py
+│   │   └── test_csv_to_gpx.py
+│   └── conftest.py        # Pytest configuration and fixtures
+├── powershell/
+│   └── unit/              # PowerShell unit tests
+│       ├── RandomName.Tests.ps1
+│       └── FileDistributor.Tests.ps1
+└── README.md              # This file
 ```
 
-## Running Tests
-
-### Prerequisites
-
-Install pytest and required dependencies:
-
-```bash
-pip install pytest pytest-cov
-```
-
-For PowerShell testing, you may also need:
-- Pester (PowerShell testing framework)
-
-### Running Python Tests
-
-Run all tests:
-```bash
-pytest
-```
-
-Run specific test categories:
-```bash
-# Run only unit tests
-pytest -m unit
-
-# Run only integration tests
-pytest -m integration
-
-# Run only Python tests
-pytest tests/python/
-
-# Run only PowerShell-related tests
-pytest -m powershell
-```
-
-Run with coverage:
-```bash
-pytest --cov=src --cov-report=html --cov-report=term
-```
-
-### Running PowerShell Tests
-
-PowerShell tests should use the Pester framework:
-
-```powershell
-# Install Pester if not already installed
-Install-Module -Name Pester -Force -SkipPublisherCheck
-
-# Run all PowerShell tests
-Invoke-Pester tests/powershell/
-
-# Run specific test files
-Invoke-Pester tests/powershell/unit/Test-SpecificScript.Tests.ps1
-```
-
-## Writing Tests
+## Running Tests Locally
 
 ### Python Tests
 
-Create test files following the naming convention `test_*.py` or `*_test.py`:
+#### Prerequisites
+```bash
+pip install -r requirements.txt
+```
 
-```python
-# tests/python/unit/test_example.py
-import pytest
+#### Run all Python tests
+```bash
+pytest tests/python
+```
 
-def test_example_function():
-    """Test description."""
-    assert True
+#### Run with coverage report
+```bash
+pytest tests/python --cov=src/python --cov=src/common --cov-report=term-missing
+```
 
-@pytest.mark.integration
-def test_integration_example():
-    """Integration test description."""
-    assert True
+#### Run specific test file
+```bash
+pytest tests/python/unit/test_validators.py
+```
+
+#### Run with verbose output
+```bash
+pytest tests/python -v
 ```
 
 ### PowerShell Tests
 
-Create test files following the Pester naming convention `*.Tests.ps1`:
-
+#### Prerequisites
 ```powershell
-# tests/powershell/unit/Test-Example.Tests.ps1
-Describe "Example Function Tests" {
-    It "Should return expected value" {
-        $result = Test-ExampleFunction
-        $result | Should -Be $expectedValue
+Install-Module -Name Pester -Force -Scope CurrentUser
+```
+
+#### Run all PowerShell tests
+```powershell
+Invoke-Pester -Path tests/powershell
+```
+
+#### Run with coverage
+```powershell
+$config = New-PesterConfiguration
+$config.Run.Path = 'tests/powershell'
+$config.CodeCoverage.Enabled = $true
+$config.CodeCoverage.Path = 'src/powershell/**/*.ps1'
+Invoke-Pester -Configuration $config
+```
+
+#### Run specific test file
+```powershell
+Invoke-Pester -Path tests/powershell/unit/RandomName.Tests.ps1
+```
+
+## Writing New Tests
+
+### Python Tests
+
+1. Create a new test file in `tests/python/unit/` following the naming convention `test_<module_name>.py`
+2. Import the module you want to test
+3. Write test classes and methods using pytest conventions
+4. Use pytest fixtures for common setup/teardown
+5. Follow the existing test structure and patterns
+
+Example:
+```python
+import pytest
+from my_module import my_function
+
+class TestMyFunction:
+    def test_basic_functionality(self):
+        result = my_function(input_data)
+        assert result == expected_output
+```
+
+### PowerShell Tests
+
+1. Create a new test file in `tests/powershell/unit/` following the naming convention `<ModuleName>.Tests.ps1`
+2. Use Pester's `Describe`, `Context`, and `It` blocks
+3. Import the module/script you want to test in `BeforeAll`
+4. Write clear, descriptive test names
+5. Follow the existing test structure and patterns
+
+Example:
+```powershell
+BeforeAll {
+    $ModulePath = Join-Path $PSScriptRoot '..' '..' 'src' 'powershell' 'MyModule.psm1'
+    Import-Module $ModulePath -Force
+}
+
+Describe "My-Function" {
+    Context "Basic Functionality" {
+        It "Should return expected output" {
+            $result = My-Function -Parameter "value"
+            $result | Should -Be "expected"
+        }
     }
 }
 ```
 
-## Test Markers
+## Coverage Targets
 
-Available markers defined in `pytest.ini`:
-- `unit` - Unit tests for individual components
-- `integration` - Integration tests for multiple components
-- `powershell` - Tests related to PowerShell scripts
-- `python` - Tests related to Python scripts
-- `slow` - Tests that take a long time to run
+We aim for the following coverage targets:
 
-Use markers to categorize tests:
-```python
-@pytest.mark.unit
-@pytest.mark.python
-def test_my_function():
-    pass
-```
+| Category | Target Coverage |
+|----------|----------------|
+| Shared modules (src/common/) | ≥30% |
+| Core utilities (src/python/validators.py, etc.) | ≥50% |
+| PowerShell modules | ≥30% |
+| Overall project | ≥25% |
 
-## Fixtures
+## Mocking Strategies
 
-### Python Fixtures
+### Python Mocking
+- Use `unittest.mock` for mocking external dependencies
+- Mock file I/O operations to avoid creating actual files in tests
+- Mock external APIs and services
+- Use `@patch` decorator for function-level mocking
 
-Common fixtures are defined in `conftest.py`:
-- `project_root_dir` - Path to the project root directory
-- `test_data_dir` - Path to the test fixtures directory
-- `temp_test_dir` - Temporary directory for test operations
+### PowerShell Mocking
+- Use Pester's `Mock` command for mocking cmdlets and functions
+- Use `TestDrive:` for temporary file operations
+- Mock external dependencies to isolate unit tests
+- Use `Assert-MockCalled` to verify mock interactions
 
-Add test-specific fixtures in the `fixtures/` directories.
+## Continuous Integration
 
-### PowerShell Test Data
+Tests are automatically run on every push and pull request via GitHub Actions. See `.github/workflows/sonarcloud.yml` for the CI configuration.
 
-Store PowerShell test fixtures in `tests/powershell/fixtures/`:
-- Sample files
-- Mock data
-- Configuration files
+### CI Pipeline
+1. Install dependencies
+2. Run Python tests with coverage
+3. Run PowerShell tests with coverage
+4. Generate coverage reports
+5. Upload results to SonarCloud
+6. Run linters (pylint, PSScriptAnalyzer)
+7. Run security scans (bandit)
 
-## Best Practices
+## Test Execution Time
 
-1. **Isolation**: Each test should be independent and not rely on others
-2. **Descriptive Names**: Use clear, descriptive test function names
-3. **Arrange-Act-Assert**: Structure tests with setup, execution, and verification
-4. **Fixtures**: Use fixtures for common test data and setup
-5. **Markers**: Tag tests appropriately for easy filtering
-6. **Documentation**: Include docstrings explaining what each test verifies
-7. **Clean Up**: Use fixtures and temporary directories to avoid leaving test artifacts
+Target: All tests should complete in less than 2 minutes in CI.
 
-## Contributing
+Current breakdown:
+- Python tests: ~30 seconds
+- PowerShell tests: ~45 seconds
+- Total test execution: ~1.5 minutes
 
-When adding new scripts to the repository:
-1. Create corresponding tests in the appropriate directory
-2. Add unit tests for individual functions
-3. Add integration tests for end-to-end script behavior
-4. Include necessary fixtures in the `fixtures/` directory
-5. Run tests locally before submitting pull requests
+## Troubleshooting
 
-## CI/CD Integration
+### Python Tests Failing
 
-Tests should be run automatically in CI/CD pipelines:
-- On pull requests
-- On commits to main branches
-- Before releases
+1. Ensure all dependencies are installed: `pip install -r requirements.txt`
+2. Check that `src/python` and `src/common` are in the Python path
+3. Verify pytest version: `pytest --version` (should be ≥7.4.0)
 
-See `.github/workflows/` for CI configuration.
+### PowerShell Tests Failing
+
+1. Ensure Pester is installed: `Get-Module -ListAvailable Pester`
+2. Check Pester version: Should be 5.x or higher
+3. Verify module paths are correct in test files
+4. Run with `-Verbose` flag for detailed output
+
+### Coverage Not Being Generated
+
+1. Ensure coverage plugins are installed (`pytest-cov` for Python)
+2. Check that paths in coverage configuration match your project structure
+3. Verify that test files are being discovered
+
+## Additional Resources
+
+- [pytest Documentation](https://docs.pytest.org/)
+- [Pester Documentation](https://pester.dev/)
+- [Testing Best Practices](../docs/guides/testing.md)
+- [SonarCloud Dashboard](https://sonarcloud.io/project/overview?id=manoj-bhaskaran_My-Scripts)

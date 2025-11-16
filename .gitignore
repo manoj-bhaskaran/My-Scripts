@@ -12,4 +12,11 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+# Test coverage files
+.coverage
+coverage.xml
+htmlcov/
+*.pyc
+__pycache__/
+.pytest_cache/
 logs/
