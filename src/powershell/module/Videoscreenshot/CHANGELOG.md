@@ -1,10 +1,14 @@
 # Videoscreenshot Module – Changelog
 
-All notable changes to the **PowerShell Videoscreenshot module** are documented here.  
+All notable changes to the **PowerShell Videoscreenshot module** are documented here.
 The project follows [Semantic Versioning](https://semver.org) and the structure is inspired by
 [Keep a Changelog](https://keepachangelog.com).
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
+
+## [3.0.2] - 2025-11-16
+### Fixed
+- **Duplicate screenshots (vlcScreenshot mode)**: Fixed issue #436 where the final frame of a video was captured repeatedly in some runs. `Wait-ForSnapshotFrames` now monitors the VLC process and exits early (with a 2-second grace period) after VLC terminates, preventing duplicate frames caused by continued polling after video completion.
 
 ## [3.0.1] - 2025-10-14
 ### Fixed
