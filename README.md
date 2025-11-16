@@ -1,10 +1,20 @@
 # My Scripts Collection
 
+[![SonarCloud](https://sonarcloud.io/api/project_badges/measure?project=manoj-bhaskaran_My-Scripts&metric=alert_status)](https://sonarcloud.io/dashboard?id=manoj-bhaskaran_My-Scripts)
+
+**Version:** 1.0.0 | **Last Updated:** 2025-11-16
+
 ---
 
 ## Description
 
 This repository serves as my personal project space for developing various utility scripts and automation tools. It's designed to streamline everyday tasks and personal data management. This collection includes a diverse range of scripts crafted for specific needs, ensuring efficient handling of my digital assets and workflows.
+
+**Repository Stats:**
+- 79 executable scripts (PowerShell, Python, SQL, Bash, Batch)
+- 9 shared modules (logging, database utilities, media processing)
+- 10 functional domains (backup, file management, media, cloud, git, etc.)
+- Coherence Score: 7/10
 
 ---
 
@@ -46,6 +56,46 @@ To make use of the scripts in this repository, you'll need the following install
 * **Python 3+**
 * **Git**
 * Python package requirements are script- or project-specific; see headers within individual scripts or any `requirements.txt` files colocated under `src/python/` subfolders.
+
+---
+
+## Repository Review
+
+A comprehensive review of this repository was conducted on **2025-11-16** using Claude.ai / code. The review assessed:
+- Repository organization and coherence
+- Folder structure and naming conventions
+- Documentation completeness
+- Test coverage and testing approach
+- Tooling and automation
+
+**Key Findings:**
+- ✅ **Verdict**: Remain as single monolithic repository (not split)
+- ✅ **Strengths**: Clear organization, sophisticated modules, exemplary logging specification, comprehensive CI/CD
+- ⚠️ **Areas for Improvement**: Test infrastructure (0% coverage), naming consistency, documentation gaps
+
+**Review Documents:**
+- [Comprehensive Review Report](analysis/my-scripts-claude-review.md) – Detailed analysis and recommendations
+- [Issue Drafts](analysis/my-scripts-issues/README.md) – 14 actionable improvement tasks
+
+**Roadmap:**
+The review generated a [prioritized roadmap](analysis/my-scripts-issues/README.md#recommended-implementation-order) with 4 phases:
+1. **Foundation** (Weeks 1-2): Testing infrastructure, versioning, git hooks
+2. **Standardization** (Weeks 3-4): Naming conventions, installation guide, module deployment
+3. **Organization** (Weeks 5-6): Folder restructuring, documentation, shared utilities
+4. **Polish** (Weeks 7-8): Architecture docs, code formatting, automated releases
+
+---
+
+## Versioning
+
+This repository follows [Semantic Versioning](https://semver.org/):
+- **MAJOR**: Breaking changes to script interfaces or module APIs
+- **MINOR**: New features (new scripts, module enhancements)
+- **PATCH**: Bug fixes and minor improvements
+
+Current version: **1.0.0**
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 
 ---
 
