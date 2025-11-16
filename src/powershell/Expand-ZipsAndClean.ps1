@@ -128,8 +128,23 @@
            for password-protected zips, unique subfolder naming if exists, parent
            writability check, optional -CleanNonZips, consistent summary printing,
            table summary, ms in duration, and expanded docs/FAQ.
-    1.0.0  Initial release: extraction (PerArchiveSubfolder/Flat via temp), collision policy,
-           move zips to parent, optional delete, summary.
+    1.1.1  Safety/UX: guard against same/overlapping source/destination, optional
+           MaxSafeNameLength, per-file move progress, compression ratio, de-duped
+           suffix logic, directory write probe, docs for novices, PS 5.1 note.
+    1.1.2  Quick wins: path separator normalization for comparisons, verbose notice
+           on truncation, bytes shown in move progress, compression ratio rounded
+           to 1 decimal, `.EXAMPLE` for MaxSafeNameLength + -Verbose, notes on
+           typical MaxSafeNameLength values, FAQ includes 7-Zip example.
+    1.2.0  Flat mode now streams via ZipArchive (no temp folder; pre-check collisions);
+           function-level help & more inline comments; cache minor lookups;
+           progress shows cumulative bytes moved; docs extend security caveats and
+           rationale for 255-char limit; notes clarify ratio meaning.
+    1.2.1  Docs/UX polish: .NOTES calls out Zip Slip protection; parameter doc & NOTES
+           reiterate 255-char rationale; verbose truncation message retained (with
+           original length); clarify ExtractToFile overwrite flag comment; progress shows
+           total bytes target; FAQ explains CompressionRatio; minor comments on caching.
+    1.2.2  Fixes & UX: Move Format-Bytes to Helpers (scope); adaptive summary layout
+           (table for wide consoles, list for narrow) to prevent header wrapping.
 
     ── Setup / Module check ─────────────────────────────────────────────────────
     Expand-Archive is provided by Microsoft.PowerShell.Archive.
