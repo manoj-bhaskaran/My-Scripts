@@ -13,6 +13,7 @@ This repository serves as my personal project space for developing various utili
 This collection of scripts addresses a variety of personal computing and data management requirements:
 
 * **Automated Data Backups:** Scripts for taking comprehensive backups of my computer's data and seamlessly uploading them to Google Drive.
+* **System Maintenance:** Automated Windows system health checks with scheduled tasks for SFC and DISM operations, including comprehensive logging and monitoring.
 * **Image Processing Utilities:** Specific utilities for personal image manipulation and processing tasks.
 * **Database Management:** Tools for taking backups of personal PostgreSQL databases and managing their Data Definition Language (DDL).
 * **Google Timeline Data Processing:** Utilities designed to process and derive insights from personal Google Timeline data.
@@ -187,6 +188,24 @@ Write-LogInfo "Script started successfully"
 - **Log Purge Guide:** [`CONTRIBUTING.md`](CONTRIBUTING.md#log-purge-mechanism) - Retention management and scheduling
 
 All logs are stored in the `logs/` directory with the naming pattern: `<script_name>_<language>_YYYY-MM-DD.log`
+
+---
+
+## Featured Scripts and Tools
+
+### System Maintenance
+
+* **[Monthly System Health Check](docs/system-health-check.md)** - Automated Windows system integrity checks (SFC/DISM) with scheduled tasks and comprehensive logging. Runs monthly to ensure your system stays healthy.
+  * Scripts: `Invoke-SystemHealthCheck.ps1`, `Install-SystemHealthCheckTask.ps1`
+  * Location: `src/powershell/`
+
+### Video Processing
+
+* **Videoscreenshot Module** - PowerShell module for automated video screenshot capture and image cropping.
+  * Documentation: `src/powershell/module/Videoscreenshot/README.md`
+  * Location: `src/powershell/module/Videoscreenshot/`
+
+For detailed documentation on specific scripts, see the `docs/` directory or the script headers.
 
 ---
 
