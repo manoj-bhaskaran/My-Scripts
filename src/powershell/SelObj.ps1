@@ -3,9 +3,14 @@
 This PowerShell script selects and opens a random file from a random subfolder or the main target folder in the specified directory.
 
 .VERSION
-2.1.1
+2.2.0
 
 # Changelog
+## [2.2.0] — 2025-11-16
+### Changed
+- Refactored to use PowerShellLoggingFramework for standardized logging
+- Replaced Write-Warning and Write-Host with Write-LogWarning and Write-LogInfo
+
 ## [2.1.1] — 04-10-2025
 ### Fixed
 - Fixed PowerShell syntax error where param block was not positioned correctly after script metadata assignment, causing "param is not recognized" error.
@@ -58,7 +63,7 @@ Optional. Specifies the path to the target directory where the files are located
 Script Workflow:
 1. **Initialization**:
    - Defines the target directory using the provided parameter or defaults to the specified path.
-   
+
 2. **Subfolder Management**:
    - Gets all **visible** (non-hidden, non-system) subfolders in the target directory.
    - Checks if there are **image files** in the main target folder and includes it in the list of subfolders if applicable.
@@ -93,12 +98,21 @@ param(
 
 # Script metadata
 # Expose version programmatically for logs/tests if needed.
-$Script:ScriptVersion = '2.1.1'
+$Script:ScriptVersion = '2.2.0'
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName "SelObj" -LogLevel 20
+
+Write-LogInfo "Starting random image file selection from: $FilePath"
 
 # Get all subfolders
 # --- Hardening & image-only behavior (2.0.0) ---
 # Guard: target path must exist
 if (-not (Test-Path -Path $FilePath -PathType Container)) {
+    Write-LogError "Target path not found or not a directory: $FilePath"
     throw "Target path not found or not a directory: $FilePath"
 }
 
@@ -106,11 +120,15 @@ if (-not (Test-Path -Path $FilePath -PathType Container)) {
 # To include more types (e.g., .gif, .webp), append to this list.
 $allowedExt = '.jpg','.jpeg','.png'
 
+Write-LogDebug "Allowed extensions: $($allowedExt -join ', ')"
+
 # Get all visible (non-hidden/system) subfolders under target (no -Force)
 # (Folders: hidden/system excluded by default; adjust if you wish to include them.)
 
 $subfolders = Get-ChildItem -Path $FilePath -Directory |
     Where-Object { -not (($_.Attributes -band [IO.FileAttributes]::Hidden) -or ($_.Attributes -band [IO.FileAttributes]::System)) }
+
+Write-LogDebug "Found $($subfolders.Count) visible subfolder(s)"
 
 # Check if there are any files in the main target folder
 $mainFolderFiles = Get-ChildItem -Path $FilePath -File |
@@ -121,14 +139,17 @@ $mainFolderFiles = Get-ChildItem -Path $FilePath -File |
 if ($mainFolderFiles.Count -gt 0) {
     # Add the main target folder to the list of subfolders
     $subfolders += Get-Item -Path $FilePath
+    Write-LogDebug "Main folder contains $($mainFolderFiles.Count) image file(s), added to candidates"
 }
 
 # Select a random folder (including the main target folder if applicable)
 if (-not $subfolders) {
-    Write-Warning "No candidate folders found under '$FilePath' (visible, non-system)."
+    Write-LogWarning "No candidate folders found under '$FilePath' (visible, non-system)."
     return
 }
 $randomFolder = $subfolders | Get-Random
+
+Write-LogInfo "Selected folder: $($randomFolder.FullName)"
 
 # Get all files from the random folder excluding hidden and system files
 # (Files: enforce image-only and exclude hidden/system attributes.)
@@ -138,17 +159,23 @@ $files = Get-ChildItem -Path $randomFolder.FullName -File |
         ($allowedExt -contains $_.Extension.ToLower())
     }
 
+Write-LogDebug "Found $($files.Count) image file(s) in selected folder"
+
 # Check if there are any files in the selected folder
 if ($files.Count -gt 0) {
     # Select a random file and open it
     $randomFile = $files | Get-Random
+    Write-LogInfo "Opening file: $($randomFile.Name)"
+
     # Opening the selected image; wrap in try/catch for user-friendly feedback
     try {
         Invoke-Item $randomFile.FullName
+        Write-LogInfo "Successfully opened: $($randomFile.FullName)"
     }
     catch {
+        Write-LogError "Failed to open '$($randomFile.FullName)': $($_.Exception.Message)"
         Write-Warning ("Failed to open '{0}': {1}" -f $randomFile.FullName, $_.Exception.Message)
     }
 } else {
-    Write-Host "No image files found in the randomly selected folder: $($randomFolder.FullName)"
+    Write-LogWarning "No image files found in the randomly selected folder: $($randomFolder.FullName)"
 }
