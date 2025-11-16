@@ -38,6 +38,18 @@ jobs:
           sudo apt update && sudo apt install -y python3 python3-pip
           python3 -m pip install --upgrade pip
           pip install pylint bandit
+          pip install -r requirements.txt
+
+      - name: Run Python Tests with Coverage
+        run: |
+          pytest tests/python --cov=src/python --cov=src/common --cov-report=xml --cov-report=term
+        continue-on-error: false
+
+      - name: Upload Python Test Coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: Python-Coverage-Report
+          path: coverage.xml
 
       - name: Run Pylint (Python Linting)
         run: |
@@ -57,6 +69,40 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y powershell
+
+      - name: Install Pester (PowerShell Testing Framework)
+        shell: pwsh
+        run: |
+          Install-Module -Name Pester -Force -Scope CurrentUser -SkipPublisherCheck
+
+      - name: Run PowerShell Tests
+        shell: pwsh
+        run: |
+          Import-Module Pester
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'tests/powershell'
+          $config.Run.Exit = $true
+          $config.CodeCoverage.Enabled = $true
+          $config.CodeCoverage.Path = 'src/powershell/**/*.ps1'
+          $config.CodeCoverage.OutputPath = 'powershell-coverage.xml'
+          $config.CodeCoverage.OutputFormat = 'JaCoCo'
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputPath = 'powershell-testresults.xml'
+          $config.TestResult.OutputFormat = 'NUnitXml'
+          Invoke-Pester -Configuration $config
+        continue-on-error: false
+
+      - name: Upload PowerShell Test Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: PowerShell-Test-Results
+          path: powershell-testresults.xml
+
+      - name: Upload PowerShell Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: PowerShell-Coverage-Report
+          path: powershell-coverage.xml
 
       - name: Install PSScriptAnalyzer (PowerShell Linter)
         shell: pwsh
@@ -118,8 +164,10 @@ jobs:
         run: |
           sonar-scanner -Dsonar.projectKey=manoj-bhaskaran_My-Scripts \
                         -Dsonar.organization=manoj-bhaskaran \
-                        -Dsonar.sources=. \
+                        -Dsonar.sources=src \
+                        -Dsonar.tests=tests \
                         -Dsonar.inclusions="**/*.py,**/*.ps1,**/*.bat,**/*.sql" \
                         -Dsonar.host.url=https://sonarcloud.io \
-                        -Dsonar.python.coverage.reportPaths= \
-                        -Dsonar.coverage.exclusions="**/*"
+                        -Dsonar.python.coverage.reportPaths=coverage.xml \
+                        -Dsonar.coverage.jacoco.xmlReportPaths=powershell-coverage.xml \
+                        -Dsonar.coverage.exclusions="**/tests/**,**/test_*,**/*.Tests.ps1"
