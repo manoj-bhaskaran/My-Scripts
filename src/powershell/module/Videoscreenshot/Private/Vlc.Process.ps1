@@ -333,8 +333,24 @@ function Stop-Vlc {
     [Parameter(Mandatory)][psobject]$Context,
     [Parameter(Mandatory)][Diagnostics.Process]$Process
   )
+  # Refresh process state to get latest HasExited value
+  try { $null = $Process.Refresh() } catch {}
+
+  # If already exited, no need to wait (common case with --play-and-exit)
+  if ($Process.HasExited) {
+    Write-Debug "VLC already exited (PID $($Process.Id))"
+    return
+  }
+
+  # Try graceful shutdown
   try { $null = $Process.CloseMainWindow() } catch {}
-  try { $null = $Process.WaitForExit($Context.Config.StopVlcWaitMs) } catch {}
+
+  # Only wait if still running
+  if (-not $Process.HasExited) {
+    try { $null = $Process.WaitForExit($Context.Config.StopVlcWaitMs) } catch {}
+  }
+
+  # Force kill if still running
   if (-not $Process.HasExited) {
     Write-Debug "VLC still running; forcing PID $($Process.Id)"
     try { Stop-Process -Id $Process.Id -Force; $null = Wait-Process -Id $Process.Id -Timeout $Context.Config.WaitProcessTimeoutSeconds -ErrorAction SilentlyContinue; $null = $Process.Refresh() } catch {}

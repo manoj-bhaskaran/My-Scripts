@@ -6,6 +6,10 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [3.0.2] - 2025-11-16
+### Fixed
+- **vlcScreenshot mode performance**: Eliminated 5-second delay between videos by checking if VLC has already exited before waiting. VLC launched with `--play-and-exit` typically exits on its own, making transitions nearly instantaneous. Fixes extreme slowness when processing batches of short videos (issue #435).
+
 ## [3.0.1] - 2025-10-14
 ### Fixed
 - **Ctrl+C handling compatibility**: Fixed `CancelKeyPress` error in PowerShell hosts where the Console.CancelKeyPress event is not available (VS Code integrated terminal, PowerShell ISE, remote sessions). The function now gracefully falls back when Ctrl+C handling is unavailable, allowing the cropper to run normally in all environments.
