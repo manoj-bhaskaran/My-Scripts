@@ -1,3 +1,30 @@
+"""
+Efficient duplicate file detector using a staged method.
+
+This script identifies duplicate files in a directory by comparing file sizes
+and MD5 hashes. It uses a multi-stage approach with checkpointing for resilience.
+
+VERSION: 1.0.0
+
+CHANGELOG:
+----------
+[1.0.0] - 2025-11-16
+### Changed
+- Refactored _hash_and_write_duplicates function to reduce cognitive complexity
+  from 23 to 15 or below (addresses issue #384)
+- Extracted nested helper functions to module level for better maintainability:
+  - _write_csv_header_if_needed: Writes CSV headers when needed
+  - _compute_md5_safe: Safely computes MD5 hashes with error handling
+  - _hash_files_in_parallel: Parallel MD5 hash computation
+  - _group_files_by_hash: Groups files by their hash values
+  - _write_hash_groups_to_csv: Writes duplicate groups to CSV
+  - _process_size_group: Processes a group of same-size files
+### Improved
+- Code maintainability and testability through function decomposition
+- Reduced nesting levels and simplified control flow
+- Better separation of concerns with focused, single-responsibility functions
+"""
+
 import os
 import csv
 import hashlib
@@ -15,6 +42,7 @@ from collections import defaultdict
 from logging.handlers import QueueHandler, QueueListener
 from threading import Lock
 
+__version__ = "1.0.0"
 FILE_UNIT = " file(s)"
 
 def load_checkpoint(path):
@@ -255,6 +283,124 @@ def _count_hashable_files(grouped_rows):
 
     return sum(len(group_list) for _, group_list in grouped_rows)
 
+def _write_csv_header_if_needed(writer, mode):
+    """
+    Writes the CSV header row if the file is being opened in write mode.
+
+    This ensures that column headers are written only when creating a new file,
+    and not when appending to an existing one.
+
+    Args:
+        writer (csv.writer): CSV writer object used to write to the output file.
+        mode (str): File open mode. Expected values are 'w' (write) or 'a' (append).
+    """
+    if mode == "w":
+        writer.writerow(["group_id", "size", "md5_hash", "file_path"])
+
+def _compute_md5_safe(path):
+    """
+    Computes the MD5 hash of a file while safely handling exceptions.
+
+    This wrapper suppresses any exceptions that occur during hashing,
+    such as file access errors, and logs a warning instead of interrupting execution.
+
+    Args:
+        path (str): Full path to the file to be hashed.
+
+    Returns:
+        str or None: The computed MD5 hash as a hexadecimal string if successful,
+                    or None if an error occurred during hashing.
+    """
+    try:
+        return compute_md5(path)
+    except Exception as e:
+        plog.log_warning(f"Hashing failed for {path}: {e}")
+        return None
+
+def _hash_files_in_parallel(paths):
+    """
+    Computes MD5 hashes for a list of file paths using parallel processing.
+
+    Args:
+        paths (List[str]): List of file paths to hash.
+
+    Returns:
+        List[str or None]: List of MD5 hashes corresponding to each file path.
+                          None entries indicate files that failed to hash.
+    """
+    with ThreadPoolExecutor() as executor:
+        return list(executor.map(_compute_md5_safe, paths))
+
+def _group_files_by_hash(paths, md5_list):
+    """
+    Groups file paths by their MD5 hash values.
+
+    Args:
+        paths (List[str]): List of file paths.
+        md5_list (List[str or None]): List of MD5 hashes corresponding to the file paths.
+
+    Returns:
+        dict: Dictionary mapping MD5 hashes to lists of file paths with that hash.
+    """
+    hash_groups = defaultdict(list)
+    for path, md5 in zip(paths, md5_list):
+        if md5:
+            hash_groups[md5].append(path)
+    return hash_groups
+
+def _write_hash_groups_to_csv(hash_groups, size, group_id_start, writer):
+    """
+    Writes duplicate file groups to CSV and returns the count of new groups written.
+
+    Args:
+        hash_groups (dict): Dictionary mapping MD5 hashes to lists of duplicate file paths.
+        size (int): File size shared by all files in these groups.
+        group_id_start (int): Starting group ID for numbering duplicate sets.
+        writer (csv.writer): CSV writer object for writing duplicate records.
+
+    Returns:
+        int: Number of new duplicate groups written to the CSV.
+    """
+    new_sets = 0
+    current_group_id = group_id_start
+
+    for md5, dup_paths in hash_groups.items():
+        if len(dup_paths) > 1:
+            current_group_id += 1
+            new_sets += 1
+            for path in dup_paths:
+                writer.writerow([current_group_id, size, md5, path])
+
+    return new_sets
+
+def _process_size_group(size, group_list, group_id_start, writer, pbar):
+    """
+    Processes a group of files with the same size to identify and record duplicates.
+
+    This function computes MD5 hashes for all files in the group, groups files with identical
+    hashes, and writes duplicate sets to the output CSV. It updates the progress bar as each
+    file is processed.
+
+    Args:
+        size (int): File size shared by all files in the group.
+        group_list (List[Tuple[int, str]]): List of (size, file_path) tuples for the group.
+        group_id_start (int): The starting group ID for numbering duplicate sets.
+        writer (csv.writer): CSV writer object for writing duplicate records.
+        pbar (tqdm.tqdm): Progress bar instance for tracking hashing progress.
+
+    Returns:
+        int: Number of new duplicate groups written to the CSV.
+    """
+    paths = [path for _, path in group_list]
+    md5_list = _hash_files_in_parallel(paths)
+
+    # Update progress bar for all hashed files
+    for _ in md5_list:
+        pbar.update(1)
+
+    hash_groups = _group_files_by_hash(paths, md5_list)
+    return _write_hash_groups_to_csv(hash_groups, size, group_id_start, writer)
+
 def _hash_and_write_duplicates(grouped_rows, output_file, total_files, skip_sizes=None, starting_group_id=1):
     """
     Hashes files in each size-based group and appends new duplicate entries to the output CSV.
@@ -266,84 +412,14 @@ def _hash_and_write_duplicates(grouped_rows, output_file, total_files, skip_size
         skip_sizes (Set[int], optional): Sizes to skip (already processed). Defaults to empty set.
         starting_group_id (int, optional): Group ID to begin from. Defaults to 1.
     """
-
     if skip_sizes is None:
         skip_sizes = set()
 
-    def write_csv_header_if_needed(writer, mode):
-        """
-        Writes the CSV header row if the file is being opened in write mode.
-
-        This ensures that column headers are written only when creating a new file,
-        and not when appending to an existing one.
-
-        Args:
-            writer (csv.writer): CSV writer object used to write to the output file.
-            mode (str): File open mode. Expected values are 'w' (write) or 'a' (append).
-        """
-        if mode == "w":
-            writer.writerow(["group_id", "size", "md5_hash", "file_path"])
-
-    def compute_md5_safe(path):
-        """
-        Computes the MD5 hash of a file while safely handling exceptions.
-
-        This wrapper suppresses any exceptions that occur during hashing,
-        such as file access errors, and logs a warning instead of interrupting execution.
-
-        Args:
-            path (str): Full path to the file to be hashed.
-
-        Returns:
-            str or None: The computed MD5 hash as a hexadecimal string if successful,
-                        or None if an error occurred during hashing.
-        """
-        try:
-            return compute_md5(path)
-        except Exception as e:
-            plog.log_warning(f"Hashing failed for {path}: {e}")
-            return None
-
-    def process_group(size, group_list, group_id_start, writer, pbar):
-        """
-        Processes a group of files with the same size to identify and record duplicates.
-
-        This function computes MD5 hashes for all files in the group, groups files with identical
-        hashes, and writes duplicate sets to the output CSV. It updates the progress bar as each
-        file is processed.
-
-        Args:
-            size (int): File size shared by all files in the group.
-            group_list (List[Tuple[int, str]]): List of (size, file_path) tuples for the group.
-            group_id_start (int): The starting group ID for numbering duplicate sets.
-            writer (csv.writer): CSV writer object for writing duplicate records.
-            pbar (tqdm.tqdm): Progress bar instance for tracking hashing progress.
-
-        Returns:
-            int: Number of new duplicate groups written to the CSV.
-        """
-        paths = [path for _, path in group_list]
-        md5_list = list(ThreadPoolExecutor().map(compute_md5_safe, paths))
-
-        hash_groups = defaultdict(list)
-        for path, md5 in zip(paths, md5_list):
-            if md5:
-                hash_groups[md5].append(path)
-            pbar.update(1)
-
-        new_sets = 0
-        for md5, dup_paths in hash_groups.items():
-            if len(dup_paths) > 1:
-                group_id_start += 1
-                new_sets += 1
-                for path in dup_paths:
-                    writer.writerow([group_id_start, size, md5, path])
-        return new_sets
-
     open_mode = "a" if os.path.exists(output_file) else "w"
+
     with open(output_file, open_mode, newline='', encoding='utf-8') as f_out:
         writer = csv.writer(f_out)
-        write_csv_header_if_needed(writer, open_mode)
+        _write_csv_header_if_needed(writer, open_mode)
 
         total_new_sets = 0
         group_id = starting_group_id - 1
@@ -353,7 +429,8 @@ def _hash_and_write_duplicates(grouped_rows, output_file, total_files, skip_size
                 if size in skip_sizes:
                     pbar.update(len(group_list))
                     continue
-                new_sets = process_group(size, group_list, group_id, writer, pbar)
+
+                new_sets = _process_size_group(size, group_list, group_id, writer, pbar)
                 group_id += new_sets
                 total_new_sets += new_sets
 
