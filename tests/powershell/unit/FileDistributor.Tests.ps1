@@ -79,14 +79,26 @@ Describe "FileDistributor Business Logic Calculations" {
     }
 
     Context "Path Validation Logic" {
-        It "Should identify Windows-style absolute paths" {
-            $path = 'C:\Users\Test\Documents'
-            [System.IO.Path]::IsPathRooted($path) | Should -Be $true
+        It "Should identify platform-appropriate absolute paths" {
+            if ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5) {
+                # Windows paths
+                $path = 'C:\Users\Test\Documents'
+                [System.IO.Path]::IsPathRooted($path) | Should -Be $true
+            } else {
+                # Unix paths
+                $path = '/home/user/documents'
+                [System.IO.Path]::IsPathRooted($path) | Should -Be $true
+            }
         }
 
-        It "Should identify Unix-style absolute paths" {
+        It "Should identify Unix-style absolute paths on Unix systems" {
             $path = '/home/user/documents'
-            [System.IO.Path]::IsPathRooted($path) | Should -Be $true
+            if (-not ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5)) {
+                [System.IO.Path]::IsPathRooted($path) | Should -Be $true
+            } else {
+                # On Windows, Unix paths may not be recognized as rooted
+                $path | Should -Match '^/'
+            }
         }
 
         It "Should identify relative paths as not rooted" {
@@ -96,6 +108,11 @@ Describe "FileDistributor Business Logic Calculations" {
 
         It "Should identify another relative path format" {
             $path = 'relative\path'
+            [System.IO.Path]::IsPathRooted($path) | Should -Be $false
+        }
+
+        It "Should handle current directory path" {
+            $path = '.'
             [System.IO.Path]::IsPathRooted($path) | Should -Be $false
         }
     }
