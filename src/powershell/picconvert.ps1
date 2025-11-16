@@ -100,9 +100,15 @@
 
 .NOTES
     VERSION
-      1.1.5
+      2.0.0
 
     CHANGELOG
+      2.0.0
+        - Refactored to use PowerShellLoggingFramework for standardized logging
+        - Replaced Write-Info, Write-Warn, Write-ErrTrack with Write-Log* functions
+        - Removed custom logging helper functions
+
+      1.1.5
       1.1.5
         - Rename phase now also converts *.jpg_large → *.jpg (in addition to *.jpeg → *.jpg).
         - Updated documentation, progress text, and summary label accordingly.
@@ -141,6 +147,12 @@
       - **Log size warnings:** Use -LogWarnSizeMB to adjust or silence warnings
         about large append-only log files.
 #>
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName "picconvert" -LogLevel 20
 
 [CmdletBinding(SupportsShouldProcess=$true)]
 param(
@@ -215,13 +227,11 @@ if ($IncludeExtensions) {
 
 # region: Helpers ---------------------------------------------------------------------------------
 
-function Write-Info { param([string]$Message) Write-Host "[INFO] $Message" }
-function Write-Warn { param([string]$Message) Write-Warning $Message }
 function Write-ErrTrack {
     param([string]$Message)
     $script:ErrCount++
     $script:ErrList.Add($Message) | Out-Null
-    Write-Error $Message
+    Write-LogError $Message
 }
 
 function Initialize-Directories {
@@ -250,7 +260,7 @@ function Initialize-Directories {
             try {
                 New-Item -ItemType Directory -Path $DestDir -Force | Out-Null
                 $script:RootDirsCreated++
-                Write-Info "Created destination directory: $DestDir"
+                Write-LogInfo "Created destination directory: $DestDir"
             } catch {
                 throw "Failed to create DestDir '$DestDir': $($_.Exception.Message)"
             }
@@ -565,7 +575,7 @@ Elapsed (total)       : {2:c}
             if (Test-Path -LiteralPath $resolvedLogPath) {
                 $sizeMB = ([IO.FileInfo]$resolvedLogPath).Length / 1MB
                 if ($sizeMB -ge $LogWarnSizeMB) {
-                    Write-Warn ("Log file is {0:N1} MB (>= {1} MB). Consider rotating or changing -LogFilePath." -f $sizeMB, $LogWarnSizeMB)
+                    Write-LogWarning ("Log file is {0:N1} MB (>= {1} MB). Consider rotating or changing -LogFilePath." -f $sizeMB, $LogWarnSizeMB)
                 }
             }
 
@@ -582,9 +592,9 @@ Elapsed (total)       : {2:c}
             Add-Content -Path $resolvedLogPath -Value ("[{0}] Error details (count={1})" -f (Get-Date), $ErrCount)
             $script:ErrList | Add-Content -Path $resolvedLogPath
 
-            Write-Warn "Errors were logged to: $resolvedLogPath"
+            Write-LogWarning "Errors were logged to: $resolvedLogPath"
         } catch {
-            Write-Warn "Failed to write error log to '$resolvedLogPath': $($_.Exception.Message)"
+            Write-LogWarning "Failed to write error log to '$resolvedLogPath': $($_.Exception.Message)"
         }
     }
 }
@@ -594,7 +604,7 @@ Elapsed (total)       : {2:c}
 # region: Main ------------------------------------------------------------------------------------
 
 try {
-    Write-Info "Starting picconvert 1.1.5"
+    Write-LogInfo "Starting picconvert 2.0.0"
     Initialize-Directories -SourceDir $SourceDir -DestDir $DestDir
 
     # Phase 1: Gather all source files (for rename); ALWAYS include .jpeg and .jpg_large
@@ -603,24 +613,24 @@ try {
 
     # Rename pass focuses on .jpeg and .jpg_large (case-insensitive)
     if ($renameCandidates.Count -gt 0) {
-        Write-Info "Renaming .jpeg/.jpg_large files to .jpg (count: $($renameCandidates.Count)) ..."
+        Write-LogInfo "Renaming .jpeg/.jpg_large files to .jpg (count: $($renameCandidates.Count)) ..."
         $null, $elapsedRename = Rename-JpegFiles -Files $renameCandidates -ShowProgress:$ShowProgress
     } else {
-        Write-Info "No .jpeg or .jpg_large files found to rename."
+        Write-LogInfo "No .jpeg or .jpg_large files found to rename."
         $elapsedRename = [TimeSpan]::Zero
     }
 
     # Phase 2: Refresh file list post-rename for the copy phase (respect -IncludeExtensions here)
     $postRenameFiles = Get-SourceFiles -SourceDir $SourceDir -IncludeExtensions $IncludeExtensions
     $totalAfter = $postRenameFiles.Count
-    Write-Info "Files considered for copy after rename step: $totalAfter"
+    Write-LogInfo "Files considered for copy after rename step: $totalAfter"
 
     # Phase 3: Copy into per-extension subfolders (with rules and deletion)
     if ($totalAfter -gt 0) {
-        Write-Info "Copying files into extension-based subfolders under: $DestDir (Limit: $FilesPerFolderLimit)"
+        Write-LogInfo "Copying files into extension-based subfolders under: $DestDir (Limit: $FilesPerFolderLimit)"
         $null, $elapsedCopy = Copy-FilesToBatches -Files $postRenameFiles -DestDir $DestDir -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress
     } else {
-        Write-Info "No files found to copy."
+        Write-LogInfo "No files found to copy."
         $elapsedCopy = [TimeSpan]::Zero
     }
 

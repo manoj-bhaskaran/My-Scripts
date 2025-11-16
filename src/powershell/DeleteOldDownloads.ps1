@@ -1,5 +1,5 @@
 <#PSScriptInfo
-.VERSION 1.2.1
+.VERSION 2.0.0
 #>
 
 <#
@@ -47,6 +47,11 @@
         -LogFilePath "C:\Users\manoj\Documents\Scripts\DeletedDownloadsLog.txt"
 
 .NOTES
+    VERSION: 2.0.0
+    CHANGELOG:
+        2.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
+        1.2.1 - Previous version with custom Write-Log function
+
     Scheduling (Task Scheduler, recommended on PS 7+):
       Program/script:  C:\Program Files\PowerShell\7\pwsh.exe
       Arguments:       -NoProfile -ExecutionPolicy Bypass -File "C:\Users\manoj\Documents\Scripts\DeleteOldDownloads.ps1"
@@ -66,6 +71,12 @@
       - Appends UTF-8 lines with timestamps and INFO/ERROR/WARN/DEBUG.
       - Verifies deletion with Test-Path and records the result.
 #>
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName "DeleteOldDownloads" -LogLevel 20
 
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param(
@@ -100,7 +111,7 @@ param(
 #region --- Setup & Utilities ---
 
 # Script version for logs (canonical version lives in PSScriptInfo header)
-$Script:Version = '1.2.1'
+$Script:Version = '2.0.0'
 
 # Detect legacy engine (Windows PowerShell 5.1) vs PowerShell 7+
 $script:IsLegacyPS = $PSVersionTable.PSVersion.Major -lt 6
@@ -119,20 +130,7 @@ catch {
     Write-Warning "Failed to prepare log file path '$LogFilePath': $($_.Exception.Message)"
 }
 
-function Write-Log {
-    param(
-        [Parameter(Mandatory)][string]$Message,
-        [ValidateSet('INFO','ERROR','WARN','DEBUG')]
-        [string]$Level = 'INFO'
-    )
-    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    try {
-        Add-Content -Path $LogFilePath -Value "[$ts] [$Level] $Message"
-    }
-    catch {
-        Write-Warning "Log write failed: $($_.Exception.Message)"
-    }
-}
+# Removed custom Write-Log function - now using PowerShellLoggingFramework
 
 # Add \\?\ extended path prefix on Windows PowerShell 5.1 to bypass MAX_PATH.
 function Get-ExtendedLiteralPath {
@@ -167,7 +165,7 @@ function ConvertTo-ExtensionList {
 # Validate folder exists
 if (-not (Test-Path -LiteralPath $FolderPath)) {
     Write-Error "Folder '$FolderPath' does not exist."
-    Write-Log  "Folder '$FolderPath' does not exist." 'ERROR'
+    Write-LogError "Folder '$FolderPath' does not exist."
     exit 1
 }
 
@@ -184,7 +182,7 @@ if ($ExcludeExtensions) { $ExcludeExtensions = $ExcludeExtensions | ForEach-Obje
 $engine     = if ($script:IsLegacyPS) { 'Windows PowerShell' } else { 'PowerShell' }
 $engineVer  = $PSVersionTable.PSVersion.ToString()
 $scriptName = $MyInvocation.MyCommand.Name
-Write-Log "===== $scriptName started | v$Script:Version | $engine $engineVer | Folder='$FolderPath' | Days=$Days | Recurse=$Recurse | DeleteEmptyFolders=$DeleteEmptyFolders ====="
+Write-LogInfo "===== $scriptName started | v$Script:Version | $engine $engineVer | Folder='$FolderPath' | Days=$Days | Recurse=$Recurse | DeleteEmptyFolders=$DeleteEmptyFolders ====="
 
 #endregion --- Run Header ---
 
@@ -223,18 +221,18 @@ try {
 
     $inWhatIf = $WhatIfPreference -eq $true
 
-    Write-Log ("Found {0} candidate file(s) older than {1} days (cutoff: {2})" -f $total, $Days, $cutoff.ToString('yyyy-MM-dd HH:mm:ss'))
+    Write-LogInfo ("Found {0} candidate file(s) older than {1} days (cutoff: {2})" -f $total, $Days, $cutoff.ToString('yyyy-MM-dd HH:mm:ss'))
 
     if ($total -eq 0) {
-        Write-Log "No files to delete."
+        Write-LogInfo "No files to delete."
     } else {
         foreach ($file in $candidates) {
             $display = $file.FullName
             $msg = "Deleting: {0} | Last Modified: {1}" -f $display, $file.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
-            Write-Log $msg
+            Write-LogInfo $msg
 
             if ($inWhatIf) {
-                Write-Log ("WhatIf: Would delete: {0}" -f $display) 'DEBUG'
+                Write-LogDebug ("WhatIf: Would delete: {0}" -f $display)
                 continue
             }
 
@@ -255,15 +253,15 @@ try {
 
                     # Verify removal
                     if (Test-Path -LiteralPath $literalForOps) {
-                        Write-Log ("FAILED (still exists after delete): {0}" -f $display) 'ERROR'
+                        Write-LogError ("FAILED (still exists after delete): {0}" -f $display)
                         $failed++
                     } else {
-                        Write-Log ("Deleted OK: {0}" -f $display)
+                        Write-LogInfo ("Deleted OK: {0}" -f $display)
                         $deleted++
                     }
                 }
                 catch {
-                    Write-Log ("FAILED: {0}`n  Error: {1}" -f $display, $_.Exception.Message) 'ERROR'
+                    Write-LogError ("FAILED: {0}`n  Error: {1}" -f $display, $_.Exception.Message)
                     $failed++
                 }
             }
@@ -272,7 +270,7 @@ try {
 
     # Optionally delete empty subfolders (deepest-first)
     if ($Recurse -and $DeleteEmptyFolders) {
-        Write-Log "Scanning for empty folders to remove..."
+        Write-LogInfo "Scanning for empty folders to remove..."
         $dirs = Get-ChildItem -LiteralPath $FolderPath -Directory -Recurse -Force -ErrorAction SilentlyContinue |
                 Sort-Object FullName -Descending
 
@@ -281,7 +279,7 @@ try {
             $dirPath    = Get-ExtendedLiteralPath -Path $dir.FullName
 
             if ($inWhatIf) {
-                Write-Log ("WhatIf: Would remove empty folder: {0}" -f $dirDisplay) 'DEBUG'
+                Write-LogDebug ("WhatIf: Would remove empty folder: {0}" -f $dirDisplay)
                 continue
             }
 
@@ -292,7 +290,7 @@ try {
                 $dirIsEmpty = -not $e.MoveNext()
             }
             catch {
-                Write-Log ("WARN: Unable to enumerate directory: {0}`n  Error: {1}" -f $dirDisplay, $_.Exception.Message) 'WARN'
+                Write-LogWarning ("Unable to enumerate directory: {0}`n  Error: {1}" -f $dirDisplay, $_.Exception.Message)
                 $failedDirs++
                 $dirIsEmpty = $false
             }
@@ -300,11 +298,11 @@ try {
             if ($dirIsEmpty -and $PSCmdlet.ShouldProcess($dirDisplay, 'Remove empty directory')) {
                 try {
                     Remove-Item -LiteralPath $dirPath -Force -ErrorAction Stop
-                    Write-Log ("Removed empty folder: {0}" -f $dirDisplay)
+                    Write-LogInfo ("Removed empty folder: {0}" -f $dirDisplay)
                     $removedDirs++
                 }
                 catch {
-                    Write-Log ("FAILED to remove folder: {0}`n  Error: {1}" -f $dirDisplay, $_.Exception.Message) 'ERROR'
+                    Write-LogError ("FAILED to remove folder: {0}`n  Error: {1}" -f $dirDisplay, $_.Exception.Message)
                     $failedDirs++
                 }
             }
@@ -312,9 +310,9 @@ try {
     }
 
     # Final summary + unified PassThru object and exit code
-    Write-Log ("Summary: Candidates={0}, Deleted={1}, Failed={2}, EmptyFoldersRemoved={3}, EmptyFolderFailures={4}" -f `
+    Write-LogInfo ("Summary: Candidates={0}, Deleted={1}, Failed={2}, EmptyFoldersRemoved={3}, EmptyFolderFailures={4}" -f `
         $total, $deleted, $failed, $removedDirs, $failedDirs)
-    Write-Log "===== $scriptName ended ====="
+    Write-LogInfo "===== $scriptName ended ====="
 
     $exitCode = if ( ($failed -gt 0) -or ($failedDirs -gt 0) ) { 2 } else { 0 }
 
@@ -333,7 +331,7 @@ try {
     exit $exitCode
 }
 catch {
-    Write-Log ("FATAL: {0}" -f $_.Exception.ToString()) 'ERROR'
+    Write-LogError ("FATAL: {0}" -f $_.Exception.ToString())
     Write-Error $_
     exit 1
 }

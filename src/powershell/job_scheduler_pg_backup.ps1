@@ -1,6 +1,6 @@
 <#
  .VERSION
-     1.8
+     2.0.0
 .SYNOPSIS
     Runs a PostgreSQL backup for the job_scheduler database via the PostgresBackup module.
 
@@ -14,14 +14,27 @@
     - Returns exit code 0 on success, 1 on failure (Task Scheduler friendly).
 
 .NOTES
+    CHANGELOG
+    ## 2.0.0 - 2025-11-16
+    ### Changed
+    - Migrated to PowerShellLoggingFramework.psm1 for standardized logging
+    - Removed custom Write-HostInfo helper function
+    - Replaced Write-HostInfo calls with Write-LogInfo
+    - Replaced Write-Error with Write-LogError
 
-    Authentication uses .pgpass for backup_user. ass.
+    Authentication uses .pgpass for backup_user.
     Requires:
       - PostgresBackup module deployed/available on PSModulePath
       - .pgpass (or equivalent) if running with empty password
     Author: Manoj Bhaskaran
-    Last Updated: 2025-08-17
+    Last Updated: 2025-11-16
 #>
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 
 # === Preflight & Hardening (v1.6) ===
 $ErrorActionPreference = 'Stop'
@@ -77,18 +90,12 @@ function New-DirectoryIfMissing {
     }
 }
 
-function Write-HostInfo {
-    param([string]$Message)
-    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    Write-Host "[$ts] $Message"
-}
-
 # ----- Ensure folders -----
 try {
     New-DirectoryIfMissing -Path $BackupRoot
     New-DirectoryIfMissing -Path $LogsRoot
 } catch {
-    Write-HostInfo "ERROR: Failed to ensure backup/log directories: $_"
+    Write-LogError "ERROR: Failed to ensure backup/log directories: $_"
     exit 1
 }
 
@@ -96,13 +103,13 @@ try {
 $Timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $LogFile   = Join-Path $LogsRoot ("{0}_backup_{1}.log" -f $Database, $Timestamp)
 
-Write-HostInfo "Backup root  : $BackupRoot"
-Write-HostInfo "Logs root    : $LogsRoot"
-Write-HostInfo "Log file     : $LogFile"
-Write-HostInfo "Database     : $Database"
-Write-HostInfo "User         : $UserName"
+Write-LogInfo "Backup root  : $BackupRoot"
+Write-LogInfo "Logs root    : $LogsRoot"
+Write-LogInfo "Log file     : $LogFile"
+Write-LogInfo "Database     : $Database"
+Write-LogInfo "User         : $UserName"
 if ($PSBoundParameters.ContainsKey('ModuleVersion')) {
-    Write-HostInfo "Module ver   : $ModuleVersion (requested)"
+    Write-LogInfo "Module ver   : $ModuleVersion (requested)"
 }
 
 # ----- Import the PostgresBackup module -----
@@ -113,13 +120,13 @@ try {
         Import-Module -Name PostgresBackup -ErrorAction Stop
     }
 } catch {
-    Write-HostInfo "ERROR: Failed to import PostgresBackup module: $_"
+    Write-LogError "ERROR: Failed to import PostgresBackup module: $_"
     exit 1
 }
 
 # ----- Invoke backup -----
 try {
-    Write-HostInfo "Starting backup via PostgresBackup::Backup-PostgresDatabase"
+    Write-LogInfo "Starting backup via PostgresBackup::Backup-PostgresDatabase"
     Backup-PostgresDatabase `
         -dbname          $Database `
         -backup_folder   $BackupRoot `
@@ -129,11 +136,11 @@ try {
         -min_backups     $MinBackups
 
     # If the function throws, we won't reach here; success means exit code 0.
-    Write-HostInfo "Backup completed successfully."
+    Write-LogInfo "Backup completed successfully."
     exit 0
 } catch {
     # The module also logs failures to $LogFile; we still surface a clear status/exit code here.
-    Write-HostInfo "ERROR: Backup failed: $_"
+    Write-LogError "ERROR: Backup failed: $_"
     exit 1
 }
 }
@@ -156,6 +163,6 @@ catch {
         ("ScriptStack: " + $_.ScriptStackTrace),
         ("StackTrace: " + $e.StackTrace)
     ) -join "`r`n"
-    Write-Error $msg
+    Write-LogError $msg
     exit 1
 }

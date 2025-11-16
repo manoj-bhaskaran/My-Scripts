@@ -24,9 +24,18 @@
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 2.5
-    Last Updated: 2025-08-16
+    Version: 3.0.0
+    Last Updated: 2025-11-16
+    CHANGELOG:
+        3.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
+        2.5   - Previous version with custom Write-Message function
 #>
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName "post-commit-my-scripts" -LogLevel 20
 
 [CmdletBinding()]
 param ()
@@ -67,14 +76,12 @@ Set-StrictMode -Version Latest
 function Write-Message {
     param(
         [string]$Message,
-        [string]$Source = "post-commit",  # or "post-merge" in that file
+        [string]$Source = "post-commit",
         [switch]$ToHost
     )
-    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $line = "[{0}][{1}] {2}" -f $ts, $Source, $Message
-    try { Add-Content -Path $script:LogFile -Value $line -Encoding utf8 -ErrorAction Stop } catch { Write-Host $line }
+    Write-LogInfo "$Source - $Message"
     if ($script:IsVerbose -or $ToHost) {
-        Write-Host $line
+        Write-Host "$Source - $Message"
     }
 }
 

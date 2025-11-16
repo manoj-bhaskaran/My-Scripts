@@ -47,12 +47,20 @@
     .\Remove-EmptyFolders.ps1 -ParentDirectory "E:\MassiveArchive" -DryRun
 
 .VERSION
-1.3.1
+2.0.0
 
 CHANGELOG
+## 2.0.0 - 2025-11-16
+### Changed
+- Migrated to PowerShellLoggingFramework.psm1 for standardized logging
+- Removed custom Log function
+- Replaced Log calls with Write-LogInfo, Write-LogError
+- Replaced Write-Host with Write-LogInfo
+- Replaced Write-Error with Write-LogError
+
 ## 1.3.1 — 2025-09-25
 ### Fixed
-- **Empty-folder cleanup helper crash:** `Remove-EmptyFolders.ps1` referenced `WouldDeleteCount` without `$`, causing “The term 'WouldDeleteCount' is not recognized…” at runtime. Initialised and correctly referenced as `$WouldDeleteCount` (typed `[int]`).
+- **Empty-folder cleanup helper crash:** `Remove-EmptyFolders.ps1` referenced `WouldDeleteCount` without `$`, causing "The term 'WouldDeleteCount' is not recognized…" at runtime. Initialised and correctly referenced as `$WouldDeleteCount` (typed `[int]`).
 
 ## 1.3.0 — 2025-09-14
 ### Changed
@@ -91,6 +99,12 @@ param (
     [string]$LogFilePath = $null,
     [switch]$DryRun
 )
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 
 # ----- Dynamic defaults & path resolution -----
 # Determine script root (works when executed as a script)
@@ -141,43 +155,16 @@ $defaultLog_Temp      = Join-Path -Path (Join-Path $tempRoot     'DuplicateClean
 
 $LogFilePath = Resolve-PathWithFallback -UserPath $LogFilePath `
     -ScriptRelativePath $defaultLog_ScriptRel -WindowsDefaultPath $defaultLog_Windows -TempFallbackPath $defaultLog_Temp
- 
-# Initialize logging (single call per artifact)
-function Initialize-LogDestination {
-    param([Parameter(Mandatory = $true)][string]$Path)
-    try {
-        $dir = Split-Path -Parent -Path $Path
-        if ([string]::IsNullOrWhiteSpace($dir)) { return }
-        # Create or confirm directory with a single .NET call (idempotent)
-        [void][System.IO.Directory]::CreateDirectory($dir)
-        # Open or create the log file in one call, then close immediately
-        $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
-        $fs.Close()
-    } catch {
-        Write-Error "Failed to validate/create log destination '$Path'. Error: $($_.Exception.Message)"
-        exit 2
-    }
-}
-Initialize-LogDestination -Path $LogFilePath
-
-function Log {
-    param (
-        [string]$Message
-    )
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$($timestamp): $Message" | Out-File -FilePath $LogFilePath -Append
-}
 
 # ----- Input validation -----
 if (-not (Test-Path -LiteralPath $ParentDirectory -PathType Container)) {
     $msg = "Parent directory '$ParentDirectory' does not exist or is not a directory."
-    Log "ERROR: $msg"
-    Write-Error $msg
+    Write-LogError "ERROR: $msg"
     exit 1
 }
 
 # Start logging
-Log "Starting empty folder cleanup. Dry-run: $DryRun"
+Write-LogInfo "Starting empty folder cleanup. Dry-run: $DryRun"
 
 # Initialize counters
 [int]$DeletedFolderCount  = 0
@@ -213,15 +200,15 @@ foreach ($dir in $allDirs) {
     $hasEntries = $null -ne (Get-ChildItem -LiteralPath $dir.FullName -Force -ErrorAction SilentlyContinue -Name | Select-Object -First 1)
     if (-not $hasEntries) {
         if ($DryRun) {
-            Log "[Dry-Run] Empty folder found: $($dir.FullName)"
+            Write-LogInfo "[Dry-Run] Empty folder found: $($dir.FullName)"
             $WouldDeleteCount++
         } else {
             try {
                 Remove-Item -LiteralPath $dir.FullName -Force
-                Log "Deleted empty folder: $($dir.FullName)"
+                Write-LogInfo "Deleted empty folder: $($dir.FullName)"
                 $DeletedFolderCount++
             } catch {
-                Log "Failed to delete folder $($dir.FullName): $($_.Exception.Message)"
+                Write-LogError "Failed to delete folder $($dir.FullName): $($_.Exception.Message)"
             }
         }
     }
@@ -234,5 +221,4 @@ if ($DryRun) {
     $completionMessage = "Empty folder cleanup completed. $DeletedFolderCount folder(s) were deleted."
 }
 
-Log $completionMessage
-Write-Host $completionMessage
+Write-LogInfo $completionMessage

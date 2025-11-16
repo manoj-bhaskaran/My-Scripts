@@ -30,9 +30,16 @@
     .\Remove-DuplicateFiles.ps1 -ParentDirectory "C:\MyFiles" -LogFilePath "C:\Logs\DuplicateLog.log" -DryRun
 
 .VERSION
-1.3.1
+2.0.0
 
 CHANGELOG
+## 2.0.0 — 2025-11-16
+### Changed
+- Refactored to use PowerShellLoggingFramework for standardized logging
+- Replaced custom Log function with Write-Log* functions from the framework
+- Updated version to 2.0.0
+
+## 1.3.1
 ## 1.3.1 — 2025-09-18
 ### Fixed
 - Eliminated stray bareword output of `WouldDeleteCount` that could surface as
@@ -95,6 +102,12 @@ CHANGELOG
 - Trailing space removed from the default `-LogFilePath` value.
 
 #>
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName "Remove-DuplicateFiles" -LogLevel 20
 
 param (
     [string]$ParentDirectory = $null,
@@ -202,16 +215,10 @@ if (-not (Test-LogWritable -Path $LogFilePath)) {
     exit 2
 }
 
-# Log function (guarded)
+# Log function wrapper (for backward compatibility with existing code)
 function Log {
     param ([string]$Message)
-    try {
-        $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        "$($Timestamp): $Message" | Out-File -FilePath $LogFilePath -Append -ErrorAction Stop
-    } catch {
-        $script:CriticalErrors++
-        Write-Error "Logging failure: $($_.Exception.Message)"
-    }
+    Write-LogInfo $Message
 }
 
 # ---- Permission / access checks prior to deletion ----
@@ -232,7 +239,7 @@ function Test-CanAccessFile {
         # Count once and log a file-specific warning (the DirectoryPath variable
         # is not in scope here).
         $script:Warnings++
-        Log "WARN: File not accessible for read/write: '$Path'. Error: $($_.Exception.Message)"
+        Write-LogWarning "File not accessible for read/write: '$Path'. Error: $($_.Exception.Message)"
         return $false
     }
 }
@@ -249,7 +256,7 @@ function Test-CanDeleteInDirectory {
         Remove-Item -LiteralPath $tmp -Force
         $probeOk = $true
     } catch {
-        Log "WARN: No write/delete permission in directory '$DirectoryPath'. Error: $($_.Exception.Message)"
+        Write-LogWarning "No write/delete permission in directory '$DirectoryPath'. Error: $($_.Exception.Message)"
         $probeOk = $false
     }
     $script:DirDeleteProbeCache[$DirectoryPath] = $probeOk
@@ -266,7 +273,7 @@ function Get-ContentHash {
         return (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash
     } catch {
         $script:HashFailures++
-        Log "ERROR: Failed to compute hash for: $Path. Error: $_"
+        Write-LogError "Failed to compute hash for: $Path. Error: $_"
         return $null
     }
 }
@@ -274,13 +281,13 @@ function Get-ContentHash {
 
 # Validate the parent directory
 if (-not (Test-Path $ParentDirectory)) {
-    Log "ERROR: Parent directory '$ParentDirectory' does not exist."
+    Write-LogError "Parent directory '$ParentDirectory' does not exist."
     Write-Error "Parent directory '$ParentDirectory' does not exist."
     exit 1
 }
 
-Log "Starting duplicate file scan in directory: $ParentDirectory"
-Log "Duplicate detection strategy: pre-group by file size, then compare SHA-256 content hashes."
+Write-LogInfo "Starting duplicate file scan in directory: $ParentDirectory"
+Write-LogInfo "Duplicate detection strategy: pre-group by file size, then compare SHA-256 content hashes."
 
 # -------- Streaming two-pass enumeration to reduce memory pressure --------
 # Pass 1: count files by size (store only counts)
@@ -366,6 +373,7 @@ if ($useIndexing) {
     if ($fallbackToStream) {
         # Discard oversized index and stream instead
         $collisionIndex = $null
+        Write-LogInfo "Collision index exceeded $CollisionIndexMaxItems items; falling back to streaming to preserve memory."
         Invoke-HashStreaming
     } else {
         # Process from smallest collision size upward for better perceived responsiveness
@@ -420,7 +428,7 @@ foreach ($filesInGroup in $dupeBuckets.Values) {
 
     foreach ($File in $FilesToDelete) {
         if ($DryRun) {
-            Log "Dry-Run: Would delete file: $($File.FullName)"
+            Write-LogInfo "Dry-Run: Would delete file: $($File.FullName)"
         } else {
             # Permission / access checks
             $parentDir = Split-Path -Parent -Path $File.FullName
@@ -428,27 +436,27 @@ foreach ($filesInGroup in $dupeBuckets.Values) {
             $fileAccessible = Test-CanAccessFile -Path $File.FullName
 
             if (-not $canDeleteHere) {
-                Log "SKIP: Lacking delete rights in '$parentDir'. Skipping: $($File.FullName)"
+                Write-LogWarning "SKIP: Lacking delete rights in '$parentDir'. Skipping: $($File.FullName)"
                 continue
             }
             if (-not $fileAccessible) {
-                Log "SKIP: File appears locked or not writable. Skipping: $($File.FullName)"
+                Write-LogWarning "SKIP: File appears locked or not writable. Skipping: $($File.FullName)"
                 continue
             }
 
             try {
                 Remove-Item -Path $File.FullName -Force
-                Log "Deleted file: $($File.FullName)"
+                Write-LogInfo "Deleted file: $($File.FullName)"
                 $TotalDeleted++
             } catch {
-                Log "ERROR: Failed to delete file: $($File.FullName). Error: $_"
+                Write-LogError "Failed to delete file: $($File.FullName). Error: $_"
             }
         }
     }
 
     # Log the retained file
     $RetainedFile = $filesInGroup | Select-Object -First 1
-    Log "Retained file: $($RetainedFile.FullName)"
+    Write-LogInfo "Retained file: $($RetainedFile.FullName)"
     $TotalRetained++
 }
 
@@ -464,11 +472,11 @@ $Summary += "Hash failures : $script:HashFailures`n"
 $Summary += "Warnings : $script:Warnings`n"
 $Summary += "Critical logging errors : $script:CriticalErrors`n"
 
-Log $Summary
+Write-LogInfo $Summary
 Write-Host $Summary
 
-Log "Duplicate file scan completed."
-Write-Host "Duplicate file scan completed. Actions logged to $LogFilePath."
+Write-LogInfo "Duplicate file scan completed."
+Write-Host "Duplicate file scan completed."
 
 # Exit non-zero if critical logging errors occurred
 if ($script:CriticalErrors -gt 0) { exit 2 }
