@@ -79,11 +79,15 @@ jobs:
         shell: pwsh
         run: |
           Import-Module Pester
+
+          # Resolve PowerShell files for code coverage
+          $psFiles = Get-ChildItem -Path 'src/powershell' -Include '*.ps1','*.psm1' -Recurse -File | Select-Object -ExpandProperty FullName
+
           $config = New-PesterConfiguration
           $config.Run.Path = 'tests/powershell'
           $config.Run.Exit = $true
           $config.CodeCoverage.Enabled = $true
-          $config.CodeCoverage.Path = 'src/powershell/**/*.ps1'
+          $config.CodeCoverage.Path = $psFiles
           $config.CodeCoverage.OutputPath = 'powershell-coverage.xml'
           $config.CodeCoverage.OutputFormat = 'JaCoCo'
           $config.TestResult.Enabled = $true
