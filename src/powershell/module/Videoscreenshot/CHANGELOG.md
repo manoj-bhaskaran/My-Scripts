@@ -9,6 +9,7 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 ## [3.0.2] - 2025-11-16
 ### Fixed
 - **Duplicate screenshots (vlcScreenshot mode)**: Fixed issue #436 where the final frame of a video was captured repeatedly in some runs. `Wait-ForSnapshotFrames` now monitors the VLC process and exits early (with a 2-second grace period) after VLC terminates, preventing duplicate frames caused by continued polling after video completion.
+- **vlcScreenshot mode performance**: Eliminated 5-second delay between videos by checking if VLC has already exited before waiting. VLC launched with `--play-and-exit` typically exits on its own, making transitions nearly instantaneous. Fixes extreme slowness when processing batches of short videos (issue #435).
 
 ## [3.0.1] - 2025-10-14
 ### Fixed
