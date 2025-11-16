@@ -14,3 +14,6 @@ networkx
 openpyxl
 psycopg2
 pytz
+pytest
+pytest-cov
+pytest-mock
