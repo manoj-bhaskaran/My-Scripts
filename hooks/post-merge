@@ -1,0 +1,53 @@
+#!/bin/sh
+# Post-merge hook: Runs Invoke-PostMergeHook.ps1
+# Version: 1.0.0
+# Last Updated: 2025-11-18
+
+# Logging setup
+REPO_ROOT=$(git rev-parse --show-toplevel)
+LOG_DIR="$REPO_ROOT/logs"
+LOG_FILE="$LOG_DIR/git-hooks_$(date +%Y-%m-%d).log"
+HOSTNAME=$(hostname)
+PID=$$
+
+# Create log directory if it doesn't exist
+mkdir -p "$LOG_DIR"
+
+# Log function
+log_message() {
+    local level=$1
+    local message=$2
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timezone=$(date +%Z)
+    echo "[$timestamp $timezone] [$level] [post-merge] [$HOSTNAME] [$PID] $message" >> "$LOG_FILE"
+}
+
+log_message "INFO" "Post-merge hook started"
+
+# Check if pwsh is available
+if ! command -v pwsh >/dev/null 2>&1; then
+    log_message "WARNING" "PowerShell (pwsh) not found. Skipping post-merge script execution."
+    echo "WARNING: PowerShell (pwsh) not found. Skipping post-merge hook."
+    exit 0
+fi
+
+# Execute the PowerShell script
+SCRIPT_PATH="$REPO_ROOT/src/powershell/Invoke-PostMergeHook.ps1"
+
+if [ -f "$SCRIPT_PATH" ]; then
+    log_message "INFO" "Executing PowerShell script: $SCRIPT_PATH"
+    pwsh -NoProfile -ExecutionPolicy Bypass -File "$SCRIPT_PATH"
+    EXIT_CODE=$?
+
+    if [ $EXIT_CODE -eq 0 ]; then
+        log_message "INFO" "Post-merge hook completed successfully"
+    else
+        log_message "ERROR" "Post-merge hook failed with exit code $EXIT_CODE"
+    fi
+
+    exit $EXIT_CODE
+else
+    log_message "WARNING" "PowerShell script not found: $SCRIPT_PATH"
+    echo "WARNING: Post-merge script not found at $SCRIPT_PATH"
+    exit 0
+fi

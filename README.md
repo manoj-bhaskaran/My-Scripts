@@ -329,6 +329,62 @@ For complete naming standards, examples, and migration guidance:
 
 ---
 
+## Git Hooks
+
+This repository uses git hooks for quality enforcement to catch issues before they're committed or pushed.
+
+### Active Hooks
+
+- **pre-commit**: Validates code quality before commits
+  - Checks for debug statements
+  - Runs PowerShell linting (PSScriptAnalyzer)
+  - Runs Python linting (pylint)
+  - Warns about large files (>10MB)
+
+- **commit-msg**: Enforces [Conventional Commits](https://www.conventionalcommits.org/) format
+  - Required format: `type(scope): description`
+  - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`, `build`, `revert`
+  - Example: `feat(logging): add structured JSON output`
+
+- **post-commit**: Runs repository-specific automation
+  - Mirrors committed files to staging directory
+  - Deploys PowerShell modules per configuration
+  - Requires PowerShell 7+ (pwsh)
+
+- **post-merge**: Runs post-merge automation
+  - Updates staging directory with merged changes
+  - Deploys updated modules
+  - Handles dependency updates and log rotation
+
+### Installation
+
+After cloning the repository, install the hooks:
+
+```bash
+./scripts/install-hooks.sh
+```
+
+The hooks will be installed to `.git/hooks/` and will run automatically.
+
+### Bypassing Hooks
+
+To bypass hooks for emergency commits (use sparingly):
+
+```bash
+git commit --no-verify -m "fix: emergency hotfix"
+```
+
+### Documentation
+
+See [docs/guides/git-hooks.md](docs/guides/git-hooks.md) for complete documentation including:
+- Detailed hook behavior and requirements
+- Installation and troubleshooting
+- Testing procedures
+- When and how to bypass hooks safely
+- FAQ and common issues
+
+---
+
 ## Contributing
 
 Please note that at present, I am not inviting contributions to this personal project. However, the [`CONTRIBUTING.md`](CONTRIBUTING.md) file documents coding standards, logging guidelines, and best practices used throughout this repository.

@@ -1,0 +1,82 @@
+#!/bin/sh
+# Commit-msg hook: Validate conventional commit format
+# Version: 1.0.0
+# Last Updated: 2025-11-18
+
+# Logging setup
+REPO_ROOT=$(git rev-parse --show-toplevel)
+LOG_DIR="$REPO_ROOT/logs"
+LOG_FILE="$LOG_DIR/git-hooks_$(date +%Y-%m-%d).log"
+HOSTNAME=$(hostname)
+PID=$$
+
+# Create log directory if it doesn't exist
+mkdir -p "$LOG_DIR"
+
+# Log function
+log_message() {
+    local level=$1
+    local message=$2
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timezone=$(date +%Z)
+    echo "[$timestamp $timezone] [$level] [commit-msg] [$HOSTNAME] [$PID] $message" >> "$LOG_FILE"
+}
+
+log_message "INFO" "Commit-msg hook started"
+
+# Read the commit message
+COMMIT_MSG_FILE=$1
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Get just the first line (subject line)
+COMMIT_SUBJECT=$(echo "$COMMIT_MSG" | head -n 1)
+
+log_message "INFO" "Validating commit message: $COMMIT_SUBJECT"
+
+# Skip validation for merge commits
+if echo "$COMMIT_SUBJECT" | grep -qE "^Merge (branch|pull request|remote-tracking branch)"; then
+    log_message "INFO" "Merge commit detected, skipping validation"
+    exit 0
+fi
+
+# Skip validation for revert commits
+if echo "$COMMIT_SUBJECT" | grep -qE "^Revert "; then
+    log_message "INFO" "Revert commit detected, skipping validation"
+    exit 0
+fi
+
+# Conventional Commits format: type(scope): description
+# Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert
+# The scope is optional: type: description OR type(scope): description
+# Breaking changes can be marked with '!': type!: description OR type(scope)!: description
+
+PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\([a-z0-9\-]+\))?!?: .{3,100}$"
+
+if echo "$COMMIT_SUBJECT" | grep -qE "$PATTERN"; then
+    log_message "INFO" "Commit message validation passed"
+    exit 0
+else
+    log_message "ERROR" "Commit message validation failed: $COMMIT_SUBJECT"
+    echo ""
+    echo "ERROR: Commit message does not follow Conventional Commits format"
+    echo ""
+    echo "Your commit message:"
+    echo "  $COMMIT_SUBJECT"
+    echo ""
+    echo "Required format: <type>(<scope>): <description>"
+    echo ""
+    echo "Where:"
+    echo "  - type: One of feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert"
+    echo "  - scope: Optional, lowercase with hyphens (e.g., logging, git-hooks)"
+    echo "  - description: At least 3 characters, no more than 100 characters"
+    echo ""
+    echo "Examples:"
+    echo "  feat(logging): add structured JSON output"
+    echo "  fix: correct database connection timeout"
+    echo "  docs(readme): update installation instructions"
+    echo "  refactor(hooks)!: breaking change to hook system"
+    echo ""
+    echo "To bypass this check (not recommended), use: git commit --no-verify"
+    echo ""
+    exit 1
+fi
