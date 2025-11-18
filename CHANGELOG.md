@@ -8,6 +8,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Complete Module Deployment Configuration** (#456) - Comprehensive module deployment system for PowerShell and Python
+  - **PowerShell Module Manifests** - Created .psd1 manifests for all modules
+    - `src/common/PostgresBackup.psd1` (v2.0.0) - PostgreSQL database backup module
+    - `src/common/PowerShellLoggingFramework.psd1` (v2.0.0) - Cross-platform structured logging framework
+    - `src/common/PurgeLogs.psd1` (v2.0.0) - Log file purging and retention management
+    - Existing manifests updated: RandomName (v2.1.0), Videoscreenshot (v3.0.2)
+  - **Deployment Scripts**
+    - `scripts/Deploy-Modules.ps1` (v1.0.0) - Automated PowerShell module deployment
+      - Validates module manifests before deployment
+      - Supports multiple deployment targets (System, User, Alt paths)
+      - Cross-platform support (Windows, Linux, macOS)
+      - Creates version-specific directories for each module
+      - Comprehensive error handling and logging
+    - `scripts/install-modules.sh` (v1.0.0) - Cross-platform installer for all modules
+      - Installs both PowerShell and Python modules
+      - Supports selective installation (--powershell-only, --python-only)
+      - Automatic detection of pwsh/powershell and pip/pip3
+      - Force overwrite option for updates
+  - **Module Configuration**
+    - Updated `config/module-deployment-config.txt` with all 5 PowerShell modules
+    - Pipe-delimited format: ModuleName|SourcePath|Targets|Author|Description
+    - Supports System, User, and custom Alt path deployments
+  - **Python Module Enhancement**
+    - Updated `setup.py` to v0.2.0 for python_logging_framework
+    - Changed package name to 'my-scripts-logging' for clarity
+    - Added pytz dependency for timezone support
+    - Enhanced metadata with classifiers and project URLs
+    - Switched from packages to py_modules for single-file module
+  - **CI/CD Integration**
+    - New workflow: `.github/workflows/validate-modules.yml`
+    - Validates all PowerShell manifests on every push
+    - Tests module deployment on Ubuntu, Windows, and macOS
+    - Verifies module installation and import functionality
+    - Validates deployment configuration syntax
+    - Runs Python module installation tests
+  - **Documentation**
+    - New guide: `docs/guides/module-deployment.md` - Comprehensive module deployment documentation
+      - Installation instructions (automated and manual)
+      - Module configuration format and examples
+      - Adding new modules step-by-step guide
+      - Versioning strategy
+      - Publishing to PowerShell Gallery / PyPI (optional)
+      - Troubleshooting common issues
+    - New file: `INSTALLATION.md` - Complete installation guide
+      - Platform-specific instructions (Windows, Linux, macOS)
+      - Prerequisites and requirements
+      - Module installation procedures
+      - Verification steps
+      - Comprehensive troubleshooting
+      - Uninstallation procedures
+    - Updated `README.md` with Module Installation section
+      - Quick start installation instructions
+      - List of available modules with versions
+      - Usage examples for PowerShell and Python modules
+  - **Module Versions Synchronized**
+    - Core modules aligned with repository version 2.0.0
+    - Independent modules maintain separate versions
+    - Python module bumped to 0.2.0
+  - Features:
+    - Automated module deployment to standard paths
+    - No manual path management required
+    - Version-specific installations support side-by-side versions
+    - Cross-platform compatibility
+    - Module validation before deployment
+    - Comprehensive error handling and rollback
+
 - **Git Hooks for Quality Enforcement** (#455) - Automated code quality checks and standards enforcement
   - New directory: `hooks/` - Tracked git hook templates for distribution
   - New directory: `scripts/` - Repository automation scripts

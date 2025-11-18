@@ -2,7 +2,7 @@
 
 [![SonarCloud](https://sonarcloud.io/api/project_badges/measure?project=manoj-bhaskaran_My-Scripts&metric=alert_status)](https://sonarcloud.io/dashboard?id=manoj-bhaskaran_My-Scripts)
 
-**Version:** 1.0.0 | **Last Updated:** 2025-11-16
+**Version:** 2.0.0 | **Last Updated:** 2025-11-18
 
 ---
 
@@ -60,6 +60,69 @@ To make use of the scripts in this repository, you'll need the following install
 * **Python 3+**
 * **Git**
 * Python package requirements are script- or project-specific; see headers within individual scripts or any `requirements.txt` files colocated under `src/python/` subfolders.
+
+---
+
+## Module Installation
+
+This repository includes reusable PowerShell and Python modules that can be installed to your system for easy access across all scripts. Module installation is **optional** but recommended for the best experience.
+
+### Quick Start
+
+**Automated installation (recommended):**
+
+```bash
+# Install all modules (PowerShell + Python)
+./scripts/install-modules.sh
+
+# Force overwrite existing modules
+./scripts/install-modules.sh --force
+```
+
+**Windows users** can run the script in Git Bash/WSL, or use PowerShell directly:
+
+```powershell
+# PowerShell modules only
+./scripts/Deploy-Modules.ps1 -Force
+
+# Python modules only
+pip install -e .
+```
+
+### Available Modules
+
+**PowerShell Modules:**
+- **PostgresBackup** (v2.0.0) - PostgreSQL database backup with retention management
+- **PowerShellLoggingFramework** (v2.0.0) - Cross-platform structured logging
+- **PurgeLogs** (v2.0.0) - Log file purging and retention management
+- **RandomName** (v2.1.0) - Windows-safe random filename generation
+- **Videoscreenshot** (v3.0.2) - Video frame capture via VLC or GDI+
+
+**Python Modules:**
+- **python_logging_framework** (v0.2.0) - Cross-platform structured logging for Python
+
+### After Installation
+
+Once installed, modules can be used from any script:
+
+```powershell
+# Import and use PowerShell modules
+Import-Module PostgresBackup
+Backup-PostgresDatabase -dbname "mydb" -backup_folder "D:\backups" ...
+```
+
+```python
+# Import and use Python modules
+import python_logging_framework as plog
+plog.initialise_logger(log_file_path="auto", level="INFO")
+```
+
+### Documentation
+
+For detailed installation instructions, configuration, and troubleshooting:
+- [Module Deployment Guide](docs/guides/module-deployment.md) - Complete guide to module installation and management
+
+---
 
 ## Logging Framework
 
@@ -253,7 +316,7 @@ This repository follows [Semantic Versioning](https://semver.org/):
 - **MINOR**: New features (new scripts, module enhancements)
 - **PATCH**: Bug fixes and minor improvements
 
-Current version: **1.0.0**
+Current version: **2.0.0**
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 

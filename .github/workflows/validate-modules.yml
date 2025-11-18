@@ -1,0 +1,235 @@
+name: Validate Modules
+
+on:
+  push:
+    branches: [ main, develop, 'claude/**' ]
+    paths:
+      - 'src/common/*.psm1'
+      - 'src/common/*.psd1'
+      - 'src/powershell/module/**/*.psm1'
+      - 'src/powershell/module/**/*.psd1'
+      - 'src/common/python_logging_framework.py'
+      - 'setup.py'
+      - 'config/module-deployment-config.txt'
+      - 'scripts/Deploy-Modules.ps1'
+      - '.github/workflows/validate-modules.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'src/common/*.psm1'
+      - 'src/common/*.psd1'
+      - 'src/powershell/module/**/*.psm1'
+      - 'src/powershell/module/**/*.psd1'
+      - 'src/common/python_logging_framework.py'
+      - 'setup.py'
+      - 'config/module-deployment-config.txt'
+      - 'scripts/Deploy-Modules.ps1'
+      - '.github/workflows/validate-modules.yml'
+
+jobs:
+  validate-powershell-manifests:
+    name: Validate PowerShell Manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate all PowerShell module manifests
+        shell: pwsh
+        run: |
+          Write-Host "Validating PowerShell module manifests..." -ForegroundColor Cyan
+          Write-Host ""
+
+          $manifests = Get-ChildItem -Path . -Recurse -Filter *.psd1 | Where-Object {
+              $_.FullName -notmatch '[\\/]\.git[\\/]' -and
+              $_.FullName -notmatch '[\\/]node_modules[\\/]'
+          }
+
+          $failedCount = 0
+          $successCount = 0
+
+          foreach ($manifest in $manifests) {
+              Write-Host "Validating: $($manifest.FullName)" -ForegroundColor Yellow
+              try {
+                  $data = Test-ModuleManifest -Path $manifest.FullName -ErrorAction Stop
+                  Write-Host "  ✓ Valid - Version: $($data.Version)" -ForegroundColor Green
+                  $successCount++
+              } catch {
+                  Write-Host "  ✗ FAILED: $_" -ForegroundColor Red
+                  $failedCount++
+              }
+              Write-Host ""
+          }
+
+          Write-Host "Summary:" -ForegroundColor Cyan
+          Write-Host "  Success: $successCount" -ForegroundColor Green
+          Write-Host "  Failed:  $failedCount" -ForegroundColor $(if ($failedCount -gt 0) { "Red" } else { "Green" })
+
+          if ($failedCount -gt 0) {
+              throw "Module manifest validation failed for $failedCount manifest(s)"
+          }
+
+  test-module-deployment:
+    name: Test Module Deployment
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy PowerShell modules
+        shell: pwsh
+        run: |
+          Write-Host "Testing module deployment on ${{ matrix.os }}..." -ForegroundColor Cyan
+
+          # Run deployment script
+          ./scripts/Deploy-Modules.ps1 -Force -Verbose
+
+          Write-Host ""
+          Write-Host "Deployment completed. Checking installed modules..." -ForegroundColor Cyan
+
+      - name: Verify module installation
+        shell: pwsh
+        run: |
+          Write-Host "Verifying installed modules..." -ForegroundColor Cyan
+          Write-Host ""
+
+          $expectedModules = @(
+              'PostgresBackup',
+              'PowerShellLoggingFramework',
+              'PurgeLogs',
+              'RandomName',
+              'Videoscreenshot'
+          )
+
+          $failedCount = 0
+
+          foreach ($moduleName in $expectedModules) {
+              Write-Host "Checking: $moduleName" -ForegroundColor Yellow
+
+              $module = Get-Module -ListAvailable -Name $moduleName | Select-Object -First 1
+
+              if ($module) {
+                  Write-Host "  ✓ Found - Version: $($module.Version)" -ForegroundColor Green
+
+                  # Try to import the module
+                  try {
+                      Import-Module $moduleName -Force -ErrorAction Stop
+                      Write-Host "  ✓ Imported successfully" -ForegroundColor Green
+                  } catch {
+                      Write-Host "  ✗ Import failed: $_" -ForegroundColor Red
+                      $failedCount++
+                  }
+              } else {
+                  Write-Host "  ✗ NOT FOUND" -ForegroundColor Red
+                  $failedCount++
+              }
+              Write-Host ""
+          }
+
+          Write-Host "Verification Summary:" -ForegroundColor Cyan
+          Write-Host "  Total modules: $($expectedModules.Count)" -ForegroundColor Cyan
+          Write-Host "  Failed:        $failedCount" -ForegroundColor $(if ($failedCount -gt 0) { "Red" } else { "Green" })
+
+          if ($failedCount -gt 0) {
+              throw "Module verification failed for $failedCount module(s)"
+          }
+
+  validate-python-module:
+    name: Validate Python Module
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python module
+        run: |
+          echo "Installing Python module..."
+          pip install -e .
+
+      - name: Verify Python module installation
+        run: |
+          echo "Verifying python_logging_framework..."
+          python3 -c "import python_logging_framework; print('✓ python_logging_framework imported successfully')"
+
+      - name: Check Python module metadata
+        run: |
+          echo "Checking installed package metadata..."
+          pip show my-scripts-logging
+
+  validate-deployment-config:
+    name: Validate Deployment Configuration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate deployment configuration syntax
+        shell: pwsh
+        run: |
+          Write-Host "Validating deployment configuration..." -ForegroundColor Cyan
+          Write-Host ""
+
+          $configPath = "config/module-deployment-config.txt"
+
+          if (-not (Test-Path $configPath)) {
+              throw "Configuration file not found: $configPath"
+          }
+
+          $lines = Get-Content $configPath -Encoding UTF8
+          $lineNum = 0
+          $errorCount = 0
+          $moduleCount = 0
+
+          foreach ($line in $lines) {
+              $lineNum++
+
+              # Skip comments and empty lines
+              if ($line -match '^\s*#' -or $line -match '^\s*$') {
+                  continue
+              }
+
+              $moduleCount++
+              $fields = $line -split '\|'
+
+              if ($fields.Count -lt 3) {
+                  Write-Host "Line $lineNum ERROR: Expected at least 3 fields, got $($fields.Count)" -ForegroundColor Red
+                  Write-Host "  Line: $line" -ForegroundColor Gray
+                  $errorCount++
+                  continue
+              }
+
+              $moduleName = $fields[0].Trim()
+              $sourcePath = $fields[1].Trim()
+              $targets = $fields[2].Trim()
+
+              # Check if source exists
+              $fullPath = $sourcePath -replace '\\', '/'
+              if (-not (Test-Path $fullPath)) {
+                  Write-Host "Line $lineNum ERROR: Source not found for module '$moduleName'" -ForegroundColor Red
+                  Write-Host "  Expected: $fullPath" -ForegroundColor Gray
+                  $errorCount++
+              } else {
+                  Write-Host "Line $lineNum ✓ $moduleName" -ForegroundColor Green
+              }
+          }
+
+          Write-Host ""
+          Write-Host "Configuration Validation Summary:" -ForegroundColor Cyan
+          Write-Host "  Total modules: $moduleCount" -ForegroundColor Cyan
+          Write-Host "  Errors:        $errorCount" -ForegroundColor $(if ($errorCount -gt 0) { "Red" } else { "Green" })
+
+          if ($errorCount -gt 0) {
+              throw "Configuration validation failed with $errorCount error(s)"
+          }

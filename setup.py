@@ -1,41 +1,54 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 setup(
     # Package name used for installation via pip
-    name='python_logging_framework',
+    name='my-scripts-logging',
 
     # Version of the package (update with each release)
-    version='0.1.0',
+    version='0.2.0',
 
     # Short description of the package
-    description='Cross-platform logging framework for Python, PowerShell, and Batch script integrations',
+    description='Cross-platform structured logging framework for Python, PowerShell, and Batch script integrations',
 
-    # Author metadata (optional but useful)
+    # Author metadata
     author='Manoj Bhaskaran',
+    author_email='',
 
-    # Find all packages inside src/common/ directory
-    # For example, src/common/python_logging_framework will be imported as 'python_logging_framework'
-    packages=find_packages(where='src/common'),
+    # License
+    license='Apache-2.0',
 
-    # Specify that packages are under src/common, not the default current directory
+    # Single module installation
+    py_modules=['python_logging_framework'],
+
+    # Specify that modules are under src/common
     package_dir={'': 'src/common'},
 
-    # Include non-code files if any are specified using MANIFEST.in (not needed if pure Python)
-    include_package_data=True,
-
-    # List runtime dependencies (e.g. if your module uses `colorlog`, `python-json-logger`, etc.)
+    # Runtime dependencies
     install_requires=[
-        # e.g. 'colorlog>=6.7.0'
+        'pytz',
     ],
 
     # Metadata for PyPI or internal documentation
     classifiers=[
-        'Programming Language :: Python :: 3',
-        'Operating System :: OS Independent',
+        'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
+        'License :: OSI Approved :: Apache Software License',
+        'Operating System :: OS Independent',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
         'Topic :: Software Development :: Libraries :: Python Modules',
+        'Topic :: System :: Logging',
     ],
 
     # Minimum required Python version
     python_requires='>=3.7',
+
+    # Project URLs
+    project_urls={
+        'Source': 'https://github.com/manoj-bhaskaran/My-Scripts',
+    },
 )

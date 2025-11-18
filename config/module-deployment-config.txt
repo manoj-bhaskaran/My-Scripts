@@ -41,4 +41,11 @@
 # -------------------------
 # ACTIVE ENTRIES
 # -------------------------
-PostgresBackup|src\common\PostgresBackup.psm1|System|Manoj Bhaskaran|PowerShell module for taking a PostgreSQL database backup
+# Core database and logging modules
+PostgresBackup|src\common\PostgresBackup.psm1|System|Manoj Bhaskaran|PostgreSQL database backup module with retention management and service control
+PowerShellLoggingFramework|src\common\PowerShellLoggingFramework.psm1|System|Manoj Bhaskaran|Cross-platform structured logging framework with multiple log levels and JSON output
+PurgeLogs|src\common\PurgeLogs.psm1|System|Manoj Bhaskaran|Log file purging and retention management with multiple strategies
+
+# Utility and media processing modules
+RandomName|src\powershell\module\RandomName|System|Manoj Bhaskaran|Generates Windows-safe random file names using a conservative allow-list
+Videoscreenshot|src\powershell\module\Videoscreenshot|System|Manoj Bhaskaran|Video frame capture via VLC or GDI+ with optional Python cropper integration
