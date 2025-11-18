@@ -6,8 +6,8 @@ Author: Manoj Bhaskaran
 
 DESCRIPTION
     Batch-crops images in a folder, trimming uniform borders (e.g., black/white)
-    and writing the results back. Designed to be invoked by a wrapper
-    (e.g., videoscreenshot.ps1) but usable standalone.
+    and writing the results back. Designed to be invoked by the Videoscreenshot
+    module (formerly videoscreenshot.ps1) but usable standalone.
 
     Safe defaults:
       - Writes to <input>/Cropped by default (non-destructive)

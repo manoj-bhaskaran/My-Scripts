@@ -1,5 +1,5 @@
 """
-Unit tests for src/python/csv-to-gpx.py
+Unit tests for src/python/csv_to_gpx.py
 
 Tests data transformation logic for converting CSV location data to GPX format.
 Uses mocking for external dependencies like elevation service and file I/O.
@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src" / "common"))
 
 
 class TestCsvToGpxModule:
-    """Tests for csv-to-gpx module."""
+    """Tests for csv_to_gpx module."""
 
     def setup_method(self):
         """Set up test fixtures."""

@@ -302,6 +302,33 @@ Coverage reports are automatically generated in CI and uploaded to [SonarCloud](
 
 ---
 
+## Naming Conventions
+
+All scripts in this repository follow standardized naming conventions based on language best practices:
+
+### PowerShell Scripts
+
+PowerShell scripts use the **Verb-Noun** pattern with PascalCase (e.g., `Get-FileHandle.ps1`, `Backup-Database.ps1`):
+- **Verb**: Must be from the [PowerShell Approved Verbs list](https://learn.microsoft.com/en-us/powershell/scripting/developer/cmdlet/approved-verbs-for-windows-powershell-commands)
+- **Noun**: Singular, descriptive noun in PascalCase
+- **Examples**: `Clear-LogFile.ps1`, `Remove-MergedGitBranch.ps1`, `Invoke-PostCommitHook.ps1`
+
+### Python Scripts
+
+Python scripts use **snake_case** per [PEP 8](https://peps.python.org/pep-0008/) (e.g., `csv_to_gpx.py`, `find_duplicate_images.py`):
+- All lowercase letters
+- Words separated by underscores (`_`)
+- Descriptive and concise
+- **Examples**: `cloudconvert_utils.py`, `extract_timeline_locations.py`, `python_logging_framework.py`
+
+### Documentation
+
+For complete naming standards, examples, and migration guidance:
+- [Naming Conventions Guide](docs/guides/naming-conventions.md) - Comprehensive naming standards with examples and FAQs
+- [Rename Mapping](docs/RENAME_MAPPING.md) - Complete list of renamed scripts with justifications
+
+---
+
 ## Contributing
 
 Please note that at present, I am not inviting contributions to this personal project. However, the [`CONTRIBUTING.md`](CONTRIBUTING.md) file documents coding standards, logging guidelines, and best practices used throughout this repository.

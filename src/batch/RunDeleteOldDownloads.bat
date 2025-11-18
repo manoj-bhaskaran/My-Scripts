@@ -2,9 +2,9 @@
 setlocal enabledelayedexpansion
 
 :: ------------------------------------------------------------
-:: DeleteOldDownloads launcher - Version 3.0.0
+:: Remove-OldDownload launcher - Version 3.0.0
 :: - Prefers PowerShell 7 (pwsh.exe), falls back to Windows PS.
-:: - Invokes DeleteOldDownloads.ps1 with -Recurse -DeleteEmptyFolders.
+:: - Invokes Remove-OldDownload.ps1 with -Recurse -DeleteEmptyFolders.
 :: - Shows a MessageBox on failure; returns the script's exit code.
 :: - Implements standardized logging framework (Issue #338)
 :: ------------------------------------------------------------
@@ -20,7 +20,7 @@ set "LOG_DATE=%dt:~0,4%-%dt:~4,2%-%dt:~6,2%"
 set "LOG_FILE=%LOG_DIR%\%SCRIPT_NAME%_batch_%LOG_DATE%.log"
 
 :: Path to the PowerShell script
-set "SCRIPT=C:\Users\manoj\Documents\Scripts\src\powershell\DeleteOldDownloads.ps1"
+set "SCRIPT=C:\Users\manoj\Documents\Scripts\src\powershell\Remove-OldDownload.ps1"
 
 call :LogInfo "Script started - Searching for PowerShell runtime"
 
@@ -46,7 +46,7 @@ if not defined RUNNER (
   call :LogInfo "Using PowerShell 7: !RUNNER!"
 )
 
-call :LogInfo "Executing DeleteOldDownloads.ps1 with -Recurse -DeleteEmptyFolders"
+call :LogInfo "Executing Remove-OldDownload.ps1 with -Recurse -DeleteEmptyFolders"
 
 :: Run the cleanup script with required switches
 "%RUNNER%" -NoLogo -NoProfile -ExecutionPolicy Bypass ^
