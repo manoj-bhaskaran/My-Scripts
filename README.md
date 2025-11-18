@@ -33,22 +33,42 @@ This collection of scripts addresses a variety of personal computing and data ma
 
 ## Repository Structure
 
-This repository is organised into logical directories to enhance discoverability and maintainability following a recent refactoring. Understanding this structure will help you locate specific types of scripts:
+This repository is organized by **programming language** and **functional domain** to enhance discoverability and maintainability. Understanding this structure will help you locate specific types of scripts:
 
-* `src/`: Contains all source code for the scripts, further categorised by programming language.
-    * * `src/powershell/`: PowerShell scripts for various tasks, including system administration and automation. This folder also contains the **Videoscreenshot** PowerShell module under `src/powershell/module/Videoscreenshot/` with its own README and changelog.
-    * `src/python/`: Python scripts for data processing, specialised image processing, and other utility functions.
-    * `src/batch/`: Batch scripts for common command-line operations. Log files are stored in `src/batch/logs/`.
-    * `src/sql/`: SQL query files, organised by the specific external database they target (e.g., `gnucash_db`).
-    * `src/common/`: Shared modules or functions used across different scripts, including:
-        * **PowerShellLoggingFramework.psm1**: Centralized logging framework used by all PowerShell scripts
-* `logs/`: Directory where PowerShell scripts write their log files (automatically created)
-* `docs/`: Comprehensive documentation, usage guides, and any architectural notes.
-* `config/`: Configuration files used by various scripts.
-* `tests/`: Unit and integration tests for validating script functionality.
-* `timeline_data/`: Database Definition Language (DDL) files, organised by database type, specifically for personal PostgreSQL databases.
-* `Windows Task Scheduler/`: XML files defining tasks for Windows Task Scheduler.
-* `.github/`: GitHub-specific files, such as workflow definitions.
+* `src/` – Source code organized by language and domain
+  * `src/powershell/` – PowerShell scripts and modules
+    * `backup/` – Database backup and synchronization scripts
+    * `file-management/` – File distribution, copying, archiving
+    * `system/` – System cleanup and maintenance
+    * `git/` – Git automation and hooks
+    * `media/` – Image and video processing
+    * `cloud/` – Cloud service integrations
+    * `automation/` – General automation utilities
+    * `modules/` – Reusable PowerShell modules
+      * `Core/Logging/` – Logging frameworks (PowerShellLoggingFramework, PurgeLogs)
+      * `Database/PostgresBackup/` – PostgreSQL backup utilities
+      * `Utilities/RandomName/` – Random name generation
+      * `Media/Videoscreenshot/` – Video screenshot capture module
+  * `src/python/` – Python scripts and modules
+    * `data/` – Data processing and transformation
+    * `cloud/` – Google Drive and cloud service integrations
+    * `media/` – Image processing and manipulation
+    * `modules/` – Shared Python modules
+      * `logging/` – Python logging framework
+      * `auth/` – Authentication modules (Google Drive, elevation)
+  * `src/sql/` – SQL DDL files organized by database
+    * `gnucash/` – GnuCash database schemas
+    * `timeline/` – Timeline data schemas
+    * `job_scheduler/` – Job scheduler schemas
+  * `src/sh/` – Bash scripts
+  * `src/batch/` – Windows batch scripts
+* `config/` – Configuration files
+  * `config/modules/` – Module deployment configurations
+  * `config/tasks/` – Windows Task Scheduler task definitions
+* `docs/` – Documentation, specifications, guides
+* `tests/` – Unit and integration tests
+* `logs/` – Log files (per logging specification)
+* `.github/` – GitHub Actions workflows and configurations
 
 ---
 
