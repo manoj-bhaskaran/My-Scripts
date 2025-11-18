@@ -618,6 +618,28 @@ refactor(common): migrate legacy scripts to use logging framework
 - Keep branches focused on a single concern
 - Merge or rebase from main regularly to avoid conflicts
 
+### Versioning and Tagging
+
+This repository follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html). For detailed versioning guidelines, see [docs/guides/versioning.md](docs/guides/versioning.md).
+
+**Version Bump Workflow:**
+
+1. Update `CHANGELOG.md` - Move [Unreleased] changes to new version section
+2. Update `VERSION` file - Ensure it matches CHANGELOG version
+3. Update module manifests if needed (`.psd1` files)
+4. Validate changes: `python src/python/validate_version.py`
+5. Commit: `git commit -m "chore: release vX.Y.Z"`
+6. Create PR and merge to main
+7. After merge, create and push tag from main:
+   ```bash
+   git checkout main
+   git pull
+   git tag -a vX.Y.Z -m "Release X.Y.Z"
+   git push origin vX.Y.Z
+   ```
+
+**Note:** Tags should only be created and pushed from the main branch after PR merge, not from feature branches.
+
 ---
 
 ## Security Best Practices
