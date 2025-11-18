@@ -81,6 +81,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Modify config for user-level deployment
+        shell: pwsh
+        run: |
+          # Modify deployment config to use User target instead of System for CI testing
+          $configPath = "config/module-deployment-config.txt"
+          $content = Get-Content $configPath -Raw
+          $content = $content -replace '\|System\|', '|User|'
+          Set-Content -Path $configPath -Value $content -NoNewline
+
+          Write-Host "Modified configuration to use User-level deployment for CI" -ForegroundColor Cyan
+
       - name: Deploy PowerShell modules
         shell: pwsh
         run: |
