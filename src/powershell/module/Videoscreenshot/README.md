@@ -131,7 +131,7 @@ The module tracks which videos have been handled so future runs can skip work.
 - Mixing TSV and legacy lines in the same file is supported; new writes use TSV.
 
 **Legacy wrapper (decommissioned)**
-The legacy `src\powershell\videoscreenshot.ps1` wrapper has been **removed**.  
+The legacy `src\powershell\videoscreenshot.ps1` wrapper (now `Show-VideoscreenshotDeprecation.ps1`) has been **removed**.
 Please import the module and call `Start-VideoBatch` directly:
 ```powershell
 Import-Module src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
@@ -139,7 +139,7 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
 ```
 
 ## Wrapper status
-The legacy `videoscreenshot.ps1` wrapper has been **removed** in v3.0.0.  
+The legacy `videoscreenshot.ps1` wrapper (renamed to `Show-VideoscreenshotDeprecation.ps1`) has been **removed** in v3.0.0.
 Invoking it now prints guidance to use `Start-VideoBatch` and exits with a non-zero code.
 
 ## Directory layout
@@ -147,7 +147,7 @@ Invoking it now prints guidance to use `Start-VideoBatch` and exits with a non-z
 ```
 src/
   powershell/
-    videoscreenshot.ps1                 (decommissioned; prints guidance and exits)
+    Show-VideoscreenshotDeprecation.ps1 (decommissioned; prints guidance and exits)
     module/
       Videoscreenshot/
         Videoscreenshot.psd1            (module manifest)

@@ -17,7 +17,7 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [3.0.0] - 2025-09-14
 ### Breaking
-- Decommission `src\powershell\videoscreenshot.ps1`. Invoking it now prints guidance to use `Start-VideoBatch` and exits with a non-zero code.
+- Decommission `src\powershell\videoscreenshot.ps1` (renamed to `Show-VideoscreenshotDeprecation.ps1`). Invoking it now prints guidance to use `Start-VideoBatch` and exits with a non-zero code.
 
 ### Docs
 - Update README to remove “legacy wrapper (still supported)” examples and clearly direct users to import the module and call `Start-VideoBatch`.

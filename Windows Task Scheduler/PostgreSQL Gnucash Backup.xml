@@ -70,7 +70,7 @@
   <Actions Context="Author">
     <Exec>
       <Command>powershell</Command>
-      <Arguments>-File "C:\Users\manoj\Documents\Scripts\src\powershell\gnucash_pg_backup.ps1"</Arguments>
+      <Arguments>-File "C:\Users\manoj\Documents\Scripts\src\powershell\Backup-GnuCashDatabase.ps1"</Arguments>
     </Exec>
   </Actions>
 </Task>
