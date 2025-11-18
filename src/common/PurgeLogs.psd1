@@ -11,7 +11,6 @@
     CmdletsToExport   = @()
     VariablesToExport = @()
     AliasesToExport   = @()
-    RequiredModules   = @('PowerShellLoggingFramework')
     PrivateData       = @{
         PSData = @{
             Tags         = @('logging','purge','retention','cleanup','maintenance')
