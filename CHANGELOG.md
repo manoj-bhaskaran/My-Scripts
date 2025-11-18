@@ -8,6 +8,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Git Hooks for Quality Enforcement** (#455) - Automated code quality checks and standards enforcement
+  - New directory: `hooks/` - Tracked git hook templates for distribution
+  - New directory: `scripts/` - Repository automation scripts
+  - New hook: `hooks/pre-commit` (v1.0.0) - Validates code quality before commits
+    - Checks for debug statements (Write-Debug, console.log, debugger)
+    - Runs PowerShell linting with PSScriptAnalyzer
+    - Runs Python linting with pylint (falls back to syntax check)
+    - Warns about large files (>10MB)
+  - New hook: `hooks/commit-msg` (v1.0.0) - Enforces Conventional Commits format
+    - Validates commit message structure: `type(scope): description`
+    - Supports types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert
+    - Allows breaking change indicator with `!`
+  - New hook: `hooks/post-commit` (v1.0.0) - Executes post-commit automation
+    - Calls `Invoke-PostCommitHook.ps1` for file mirroring and module deployment
+    - Includes comprehensive logging per logging specification
+  - New hook: `hooks/post-merge` (v1.0.0) - Executes post-merge automation
+    - Calls `Invoke-PostMergeHook.ps1` for merge-specific operations
+    - Includes comprehensive logging per logging specification
+  - New script: `scripts/install-hooks.sh` (v1.0.0) - Hook installation utility
+    - Copies hooks from `hooks/` to `.git/hooks/`
+    - Makes hooks executable automatically
+    - Detects and reports installation status with color-coded output
+  - New documentation: `docs/guides/git-hooks.md` - Comprehensive git hooks guide
+    - Detailed hook behavior and requirements
+    - Installation and troubleshooting procedures
+    - Testing guidelines and examples
+    - Bypass procedures and best practices
+    - Cross-platform compatibility notes (Linux, macOS, Windows)
+    - FAQ and common issues
+  - Features:
+    - Cross-platform compatibility (Linux, macOS, Windows)
+    - Standardized logging to `logs/git-hooks_YYYY-MM-DD.log`
+    - Graceful degradation when optional tools unavailable
+    - Bypass capability with `--no-verify` flag
+    - Auto-installs PSScriptAnalyzer if missing
+    - All hooks follow logging specification format
+
 - Comprehensive testing framework setup for Python and PowerShell code
 - Python unit tests using pytest:
   - `tests/python/unit/test_validators.py` - Tests for input validation functions
