@@ -1,4 +1,6 @@
 name: Validate Modules
+permissions:
+  contents: read
 
 on:
   push:
