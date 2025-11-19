@@ -64,14 +64,28 @@ Before installing, ensure you have the following installed:
   - macOS: `brew install python3`
 
 #### Optional (for specific scripts)
-- **PostgreSQL** - Required for database backup scripts
+- **PostgreSQL Client** - Required for database backup scripts
 - **VLC Media Player** - Required for Videoscreenshot module
+- **ADB (Android Debug Bridge)** - Required for Copy-AndroidFiles.ps1
+- **CloudConvert API Key** - Required for cloudconvert_utils.py
+- **Google Cloud Project** - Required for Google Drive scripts
 - **Image processing libraries** - Required for certain Python scripts (PIL, OpenCV)
 
 ### Permissions
 
 - **Windows**: Administrator privileges for system-wide module installation
 - **Linux/macOS**: `sudo` access for system-wide installation (or use user-level installation)
+
+### Python Dependencies
+
+This repository requires the following Python packages (installed via `requirements.txt`):
+
+```
+requests, numpy, pandas, opencv-python, cloudconvert
+google-auth, google-auth-oauthlib, google-api-python-client
+tqdm, networkx, openpyxl, psycopg2, pytz
+pytest, pytest-cov, pytest-mock (for testing)
+```
 
 ## Repository Setup
 
@@ -111,6 +125,216 @@ cat config/module-deployment-config.txt
 ```
 
 This file controls which modules are deployed and where they go.
+
+### 4. Install Python Dependencies
+
+```bash
+# Install all required Python packages
+pip install -r requirements.txt
+
+# Or with Python 3 explicitly
+pip3 install -r requirements.txt
+```
+
+## Optional Software Installation
+
+These software packages are optional and only required for specific scripts.
+
+### VLC Media Player (for Videoscreenshot module)
+
+**Windows:**
+1. Download from [https://www.videolan.org/vlc/](https://www.videolan.org/vlc/)
+2. Install using the installer
+3. Add to PATH (if not automatically added):
+   ```powershell
+   # Add to current session
+   $env:Path += ";C:\Program Files\VideoLAN\VLC"
+
+   # Add permanently (as Administrator)
+   [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Program Files\VideoLAN\VLC", "Machine")
+   ```
+
+**Linux:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install vlc
+
+# Fedora/RHEL/CentOS
+sudo yum install vlc
+
+# Verify installation
+which vlc
+```
+
+**macOS:**
+```bash
+brew install --cask vlc
+
+# Verify installation
+which vlc
+```
+
+### ADB (Android Debug Bridge)
+
+**Windows:**
+1. Download [Android SDK Platform Tools](https://developer.android.com/studio/releases/platform-tools)
+2. Extract to a directory (e.g., `C:\adb`)
+3. Add to PATH:
+   ```powershell
+   # Add to current session
+   $env:Path += ";C:\adb"
+
+   # Add permanently (as Administrator)
+   [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\adb", "Machine")
+   ```
+4. Verify: `adb --version`
+
+**Linux:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install android-tools-adb
+
+# Fedora/RHEL/CentOS
+sudo yum install android-tools
+
+# Verify
+adb --version
+```
+
+**macOS:**
+```bash
+brew install android-platform-tools
+
+# Verify
+adb --version
+```
+
+### PostgreSQL Client
+
+**Windows:**
+1. Download from [PostgreSQL Downloads](https://www.postgresql.org/download/windows/)
+2. Run installer and select "Command Line Tools" component
+3. Verify installation: `psql --version`
+
+**Linux:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install postgresql-client
+
+# Fedora/RHEL/CentOS
+sudo yum install postgresql
+
+# Verify
+psql --version
+```
+
+**macOS:**
+```bash
+brew install postgresql
+
+# Verify
+psql --version
+```
+
+### API Keys and Cloud Services
+
+**CloudConvert:**
+1. Sign up at [https://cloudconvert.com/](https://cloudconvert.com/)
+2. Generate an API key from the dashboard
+3. Set as environment variable (see Environment Configuration section)
+
+**Google Cloud:**
+1. Create a project at [Google Cloud Console](https://console.cloud.google.com/)
+2. Enable Google Drive API
+3. Create OAuth 2.0 credentials
+4. Download credentials JSON
+5. Set environment variables (see Environment Configuration section)
+
+## Environment Configuration
+
+Some scripts require environment variables to be set for API access and service configuration.
+
+### Google Drive Scripts
+
+**Windows (PowerShell):**
+```powershell
+# Set for current session
+$env:GOOGLE_CLIENT_ID = "your-client-id.apps.googleusercontent.com"
+$env:GOOGLE_CLIENT_SECRET = "your-client-secret"
+
+# Set permanently (current user)
+[Environment]::SetEnvironmentVariable("GOOGLE_CLIENT_ID", "your-client-id.apps.googleusercontent.com", "User")
+[Environment]::SetEnvironmentVariable("GOOGLE_CLIENT_SECRET", "your-client-secret", "User")
+```
+
+**Linux/macOS (Bash):**
+```bash
+# Add to ~/.bashrc or ~/.zshrc for persistence
+export GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+export GOOGLE_CLIENT_SECRET="your-client-secret"
+
+# Apply immediately
+source ~/.bashrc  # or source ~/.zshrc
+```
+
+### CloudConvert Scripts
+
+**Windows (PowerShell):**
+```powershell
+# Set for current session
+$env:CLOUDCONVERT_API_KEY = "your-api-key"
+
+# Set permanently (current user)
+[Environment]::SetEnvironmentVariable("CLOUDCONVERT_API_KEY", "your-api-key", "User")
+```
+
+**Linux/macOS (Bash):**
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+export CLOUDCONVERT_API_KEY="your-api-key"
+
+# Apply immediately
+source ~/.bashrc  # or source ~/.zshrc
+```
+
+### PostgreSQL Database Backups
+
+**Windows (PowerShell):**
+```powershell
+# Set database connection parameters
+$env:PGHOST = "localhost"
+$env:PGPORT = "5432"
+$env:PGUSER = "your-username"
+$env:PGPASSWORD = "your-password"  # Note: Consider using .pgpass file instead
+
+# Set permanently (current user)
+[Environment]::SetEnvironmentVariable("PGHOST", "localhost", "User")
+[Environment]::SetEnvironmentVariable("PGPORT", "5432", "User")
+[Environment]::SetEnvironmentVariable("PGUSER", "your-username", "User")
+```
+
+**Linux/macOS (Bash):**
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+export PGHOST="localhost"
+export PGPORT="5432"
+export PGUSER="your-username"
+export PGPASSWORD="your-password"  # Note: Consider using .pgpass file instead
+
+# Or use .pgpass file (more secure)
+# Create ~/.pgpass with format: hostname:port:database:username:password
+echo "localhost:5432:*:your-username:your-password" > ~/.pgpass
+chmod 600 ~/.pgpass
+```
+
+### Configuration Files
+
+The repository includes several configuration files:
+
+- **config/modules/deployment.txt** – Module deployment targets (do not modify unless changing deployment locations)
+- **config/module-deployment-config.txt** – Module deployment configuration
+- **config/tasks/*.xml** – Windows Task Scheduler definitions
+- **.vscode/settings.json** – Editor configuration (optional)
 
 ## Module Installation
 
@@ -268,6 +492,48 @@ python3 -c 'import python_logging_framework; print("OK")'
 ```
 
 ## Verification
+
+### Quick Verification Script
+
+For a comprehensive installation check, run the automated verification script:
+
+```powershell
+# Windows PowerShell or PowerShell Core
+.\scripts\Verify-Installation.ps1
+
+# Or with detailed output
+.\scripts\Verify-Installation.ps1 -Verbose
+```
+
+**Expected output:**
+```
+Installation Verification for My-Scripts Repository
+==================================================
+
+✅ PowerShell 7.4.0 (Minimum: 5.1.0)
+✅ Python 3.11.5 (Minimum: 3.8.0)
+✅ Git 2.42.0 (Minimum: 2.30.0)
+
+PowerShell Modules:
+✅ PostgresBackup (2.0.0)
+✅ PowerShellLoggingFramework (2.0.0)
+✅ PurgeLogs (2.0.0)
+✅ RandomName (2.1.0)
+✅ Videoscreenshot (3.0.2)
+
+Python Packages:
+✅ requests
+✅ numpy
+✅ pandas
+✅ opencv-python
+
+Git Hooks:
+✅ pre-commit hook configured
+✅ commit-msg hook configured
+✅ post-commit hook configured
+
+Installation verification complete! ✅
+```
 
 ### Verify PowerShell Modules
 
@@ -434,6 +700,162 @@ tree -L 2 -I 'node_modules|.git'
 3. Regenerate GUID if needed:
    ```powershell
    [guid]::NewGuid()
+   ```
+
+### VLC Not Found (Videoscreenshot Module)
+
+**Problem**: `VLC not found on PATH` when using Videoscreenshot module
+
+**Solutions**:
+
+1. **Windows - Add VLC to PATH:**
+   ```powershell
+   # Temporary (current session)
+   $env:Path += ";C:\Program Files\VideoLAN\VLC"
+
+   # Permanent (as Administrator)
+   [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Program Files\VideoLAN\VLC", "Machine")
+   ```
+
+2. **Or specify VLC path directly in script:**
+   ```powershell
+   Start-VideoBatch -VlcPath "C:\Program Files\VideoLAN\VLC\vlc.exe"
+   ```
+
+3. **Linux/macOS - Verify VLC is installed:**
+   ```bash
+   which vlc
+   # If not found, install VLC (see Optional Software Installation section)
+   ```
+
+### PostgreSQL Connection Fails
+
+**Problem**: `could not connect to server` when running database backup scripts
+
+**Solutions**:
+
+1. **Verify PostgreSQL is running:**
+   ```bash
+   # Linux
+   sudo systemctl status postgresql
+
+   # macOS
+   brew services list | grep postgresql
+
+   # Windows (PowerShell as Administrator)
+   Get-Service -Name postgresql*
+   ```
+
+2. **Check connection parameters:**
+   ```bash
+   # Test connection manually
+   psql -h localhost -U your-username -d postgres
+   ```
+
+3. **Verify environment variables:**
+   ```powershell
+   # Windows PowerShell
+   Write-Host "PGHOST: $env:PGHOST"
+   Write-Host "PGPORT: $env:PGPORT"
+   Write-Host "PGUSER: $env:PGUSER"
+
+   # Linux/macOS
+   echo "PGHOST: $PGHOST"
+   echo "PGPORT: $PGPORT"
+   echo "PGUSER: $PGUSER"
+   ```
+
+4. **Use .pgpass file for credentials (recommended):**
+   ```bash
+   # Create ~/.pgpass file
+   echo "localhost:5432:*:your-username:your-password" > ~/.pgpass
+   chmod 600 ~/.pgpass
+   ```
+
+### PowerShell Execution Policy Error
+
+**Problem**: `File cannot be loaded because running scripts is disabled on this system`
+
+**Solutions**:
+
+1. **Check current execution policy:**
+   ```powershell
+   Get-ExecutionPolicy -List
+   ```
+
+2. **Set execution policy for current user:**
+   ```powershell
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+   ```
+
+3. **Or bypass for a specific script (not recommended for regular use):**
+   ```powershell
+   PowerShell.exe -ExecutionPolicy Bypass -File .\scripts\Deploy-Modules.ps1
+   ```
+
+### psycopg2 Installation Fails
+
+**Problem**: `Error: pg_config executable not found` when installing psycopg2
+
+**Solutions**:
+
+1. **Ubuntu/Debian:**
+   ```bash
+   sudo apt-get install libpq-dev python3-dev
+   pip install psycopg2
+   ```
+
+2. **Fedora/RHEL/CentOS:**
+   ```bash
+   sudo yum install postgresql-devel python3-devel
+   pip install psycopg2
+   ```
+
+3. **macOS:**
+   ```bash
+   brew install postgresql
+   pip install psycopg2
+   ```
+
+4. **Alternative - Use binary package (easier but not recommended for production):**
+   ```bash
+   pip install psycopg2-binary
+   ```
+
+### opencv-python Installation Fails
+
+**Problem**: `ERROR: Could not build wheels for opencv-python`
+
+**Solutions**:
+
+1. **Install system dependencies first:**
+
+   **Ubuntu/Debian:**
+   ```bash
+   sudo apt-get update
+   sudo apt-get install python3-opencv
+   # Or install build dependencies
+   sudo apt-get install build-essential cmake python3-dev
+   ```
+
+   **Fedora/RHEL/CentOS:**
+   ```bash
+   sudo yum install python3-opencv
+   ```
+
+   **macOS:**
+   ```bash
+   brew install opencv
+   ```
+
+2. **Then install Python package:**
+   ```bash
+   pip install opencv-python
+   ```
+
+3. **Or use pre-built wheel:**
+   ```bash
+   pip install opencv-python-headless  # Headless version (no GUI support)
    ```
 
 ## Uninstallation
