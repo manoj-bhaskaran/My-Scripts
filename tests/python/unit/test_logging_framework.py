@@ -1,5 +1,5 @@
 """
-Unit tests for src/common/python_logging_framework.py
+Unit tests for src/python/modules/logging/python_logging_framework.py
 
 Tests logging framework core functions including logger initialization,
 formatters, and logging helper functions.
@@ -13,9 +13,9 @@ import tempfile
 from pathlib import Path
 
 # Add src path to allow imports
-src_common = Path(__file__).resolve().parents[3] / "src" / "common"
-if str(src_common) not in sys.path:
-    sys.path.insert(0, str(src_common))
+src_logging = Path(__file__).resolve().parents[3] / "src" / "python" / "modules" / "logging"
+if str(src_logging) not in sys.path:
+    sys.path.insert(0, str(src_logging))
 
 from python_logging_framework import (
     SpecFormatter,

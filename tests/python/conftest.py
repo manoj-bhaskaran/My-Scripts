@@ -10,11 +10,18 @@ import sys
 from pathlib import Path
 
 # Add src directories to Python path for imports
-src_python = Path(__file__).resolve().parents[2] / "src" / "python"
-src_common = Path(__file__).resolve().parents[2] / "src" / "common"
+repo_root = Path(__file__).resolve().parents[2]
+src_python_data = repo_root / "src" / "python" / "data"
+src_python_cloud = repo_root / "src" / "python" / "cloud"
+src_python_media = repo_root / "src" / "python" / "media"
+src_python_modules_logging = repo_root / "src" / "python" / "modules" / "logging"
+src_python_modules_auth = repo_root / "src" / "python" / "modules" / "auth"
 
-sys.path.insert(0, str(src_python))
-sys.path.insert(0, str(src_common))
+sys.path.insert(0, str(src_python_data))
+sys.path.insert(0, str(src_python_cloud))
+sys.path.insert(0, str(src_python_media))
+sys.path.insert(0, str(src_python_modules_logging))
+sys.path.insert(0, str(src_python_modules_auth))
 
 
 @pytest.fixture
