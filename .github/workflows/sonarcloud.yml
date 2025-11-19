@@ -42,7 +42,7 @@ jobs:
 
       - name: Run Python Tests with Coverage
         run: |
-          pytest tests/python --cov=src/python --cov=src/common --cov-report=xml --cov-report=term
+          pytest tests/python --cov=src/python --cov-report=xml --cov-report=term
         continue-on-error: false
 
       - name: Upload Python Test Coverage

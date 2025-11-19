@@ -6,25 +6,21 @@ on:
   push:
     branches: [ main, develop, 'claude/**' ]
     paths:
-      - 'src/common/*.psm1'
-      - 'src/common/*.psd1'
-      - 'src/powershell/module/**/*.psm1'
-      - 'src/powershell/module/**/*.psd1'
-      - 'src/common/python_logging_framework.py'
+      - 'src/powershell/modules/**/*.psm1'
+      - 'src/powershell/modules/**/*.psd1'
+      - 'src/python/modules/**/*.py'
       - 'setup.py'
-      - 'config/module-deployment-config.txt'
+      - 'config/modules/deployment.txt'
       - 'scripts/Deploy-Modules.ps1'
       - '.github/workflows/validate-modules.yml'
   pull_request:
     branches: [ main, develop ]
     paths:
-      - 'src/common/*.psm1'
-      - 'src/common/*.psd1'
-      - 'src/powershell/module/**/*.psm1'
-      - 'src/powershell/module/**/*.psd1'
-      - 'src/common/python_logging_framework.py'
+      - 'src/powershell/modules/**/*.psm1'
+      - 'src/powershell/modules/**/*.psd1'
+      - 'src/python/modules/**/*.py'
       - 'setup.py'
-      - 'config/module-deployment-config.txt'
+      - 'config/modules/deployment.txt'
       - 'scripts/Deploy-Modules.ps1'
       - '.github/workflows/validate-modules.yml'
 
@@ -87,7 +83,7 @@ jobs:
         shell: pwsh
         run: |
           # Modify deployment config to use User target instead of System for CI testing
-          $configPath = "config/module-deployment-config.txt"
+          $configPath = "config/modules/deployment.txt"
           $content = Get-Content $configPath -Raw
           $content = $content -replace '\|System\|', '|User|'
           Set-Content -Path $configPath -Value $content -NoNewline
@@ -194,7 +190,7 @@ jobs:
           Write-Host "Validating deployment configuration..." -ForegroundColor Cyan
           Write-Host ""
 
-          $configPath = "config/module-deployment-config.txt"
+          $configPath = "config/modules/deployment.txt"
 
           if (-not (Test-Path $configPath)) {
               throw "Configuration file not found: $configPath"
