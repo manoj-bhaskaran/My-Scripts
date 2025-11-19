@@ -25,11 +25,11 @@ def allocate_seats(excel_path):
         return
 
     adj_df, teams_df, fixed_df = load_input_data(excel_path)
-    G = build_seat_graph(adj_df)
-    assigned, used_seats = assign_fixed_seats(G, fixed_df)
-    clusters = get_seat_clusters(G)
-    assign_teams_to_clusters(G, teams_df, assigned, used_seats, clusters)
-    export_seat_allocation(excel_path, G, assigned)
+    graph = build_seat_graph(adj_df)
+    assigned, used_seats = assign_fixed_seats(graph, fixed_df)
+    clusters = get_seat_clusters(graph)
+    assign_teams_to_clusters(graph, teams_df, assigned, used_seats, clusters)
+    export_seat_allocation(excel_path, graph, assigned)
 
 def load_input_data(excel_path):
     """
@@ -90,12 +90,12 @@ def parse_seat(value):
         plog.log_warning(f"⚠️ Warning: Could not parse seat value '{value}'. Skipping.")
         return None
 
-def assign_fixed_seats(G, fixed_df):
+def assign_fixed_seats(graph, fixed_df):
     """
     Assigns fixed seats and ensures they are included in the graph.
 
     Args:
-        G (Graph): Seat graph.
+        graph (Graph): Seat graph.
         fixed_df (DataFrame): Fixed seat assignments.
 
     Returns:
@@ -110,28 +110,28 @@ def assign_fixed_seats(G, fixed_df):
         if seat:
             assigned[seat] = AssignedDetails(subteam, tech)
             used_seats.add(seat)
-            if seat not in G:
-                G.add_node(seat)
+            if seat not in graph:
+                graph.add_node(seat)
     return assigned, used_seats
 
-def get_seat_clusters(G):
+def get_seat_clusters(graph):
     """
     Finds clusters of connected seats in the graph.
 
     Args:
-        G (Graph): Seat graph.
+        graph (Graph): Seat graph.
 
     Returns:
         list: Sorted list of connected components.
     """
-    return sorted(nx.connected_components(G), key=len, reverse=True)
+    return sorted(nx.connected_components(graph), key=len, reverse=True)
 
-def assign_teams_to_clusters(G, teams_df, assigned, used_seats, clusters):
+def assign_teams_to_clusters(graph, teams_df, assigned, used_seats, clusters):
     """
     Assigns teams to clusters, trying to maximize adjacency and group integrity.
 
     Args:
-        G (Graph): Seat graph.
+        graph (Graph): Seat graph.
         teams_df (DataFrame): Team count and metadata.
         assigned (dict): Current seat assignments.
         used_seats (set): Used seat IDs.
@@ -141,7 +141,7 @@ def assign_teams_to_clusters(G, teams_df, assigned, used_seats, clusters):
     for _, row in teams_sorted.iterrows():
         subteam, tech, count = row['Subteam'], row['Technology'], int(row['Count'])
         if not try_assign_to_best_cluster(clusters, assigned, subteam, tech, count):
-            assign_disjointed(G, assigned, subteam, tech, count)
+            assign_disjointed(graph, assigned, subteam, tech, count)
 
 def try_assign_to_best_cluster(clusters, assigned, subteam, tech, count):
     """
@@ -186,22 +186,22 @@ def assign_seats(seats, assigned, subteam, tech, count):
     for seat in seats[:count]:
         assigned[seat] = AssignedDetails(subteam, tech)
 
-def assign_disjointed(G, assigned, subteam, tech, count):
+def assign_disjointed(graph, assigned, subteam, tech, count):
     """
     Fallback seat assignment for disjointed, non-adjacent seating.
     """
-    free = sorted((s for s in G.nodes if s not in assigned and s.isdigit()), key=int)
+    free = sorted((s for s in graph.nodes if s not in assigned and s.isdigit()), key=int)
     if len(free) >= count:
         assign_seats(free, assigned, subteam, tech, count)
         plog.log_warning(f"⚠️ Assigned {count} disjointed seats for {subteam} ({tech})")
     else:
         plog.log_error(f"❌ Not enough seats available for {subteam} ({tech}) — need {count}, found {len(free)}")
 
-def export_seat_allocation(excel_path, G, assigned):
+def export_seat_allocation(excel_path, graph, assigned):
     """
     Writes the final seat allocation to a new Excel file.
     """
-    output = [(int(seat), *assigned.get(seat, ("Unassigned", ""))) for seat in G.nodes if seat.isdigit()]
+    output = [(int(seat), *assigned.get(seat, ("Unassigned", ""))) for seat in graph.nodes if seat.isdigit()]
     df = pd.DataFrame(output, columns=[SEAT_NO_COL, "Subteam", "Technology"]).sort_values(by="Seat No")
     out_path = os.path.splitext(excel_path)[0] + "-allocation-output.xlsx"
     try:

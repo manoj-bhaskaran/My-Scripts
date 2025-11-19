@@ -206,6 +206,37 @@ def check_task_status(api_key: str, task_id: str) -> Dict[str, Any]:
 
     return response.json()["data"]
 
+def wait_for_task_completion(api_key: str, task_id: str, task_name: str) -> Dict[str, Any]:
+    """
+    Poll a CloudConvert task until it completes or fails.
+
+    Args:
+        api_key (str): The CloudConvert API key.
+        task_id (str): The ID of the task to monitor.
+        task_name (str): The name of the task (for logging).
+
+    Returns:
+        Dict[str, Any]: The final task status information.
+
+    Raises:
+        RuntimeError: If the task fails or times out.
+    """
+    for attempt in range(max_retries):
+        status = check_task_status(api_key, task_id)
+        plog.log_info(f"{task_name} status: {status['status']} (attempt {attempt+1}/{max_retries})")
+
+        if status["status"] == "finished":
+            return status
+
+        if status["status"] == "error":
+            error_msg = status.get('message', 'No error message provided.')
+            plog.log_error(f"{task_name} failed: {error_msg}")
+            raise RuntimeError(f"CloudConvert {task_name} failed: {error_msg}")
+
+        time.sleep(retry_delay)
+
+    raise RuntimeError(f"{task_name} timed out after {max_retries * retry_delay} seconds.")
+
 def convert_file(file_name: str, output_format: str) -> None:
     """
     Convert a file to a specified format using CloudConvert.
@@ -236,36 +267,12 @@ def convert_file(file_name: str, output_format: str) -> None:
         convert_task = next((task for task in tasks if task.get("name") == CONVERT_TASK), None)
         if not convert_task:
             raise ValueError(f"Task '{CONVERT_TASK}' not found in conversion_task['tasks']")
-        convert_task_id = convert_task["id"]
-
-        for i in range(max_retries):
-            status = check_task_status(api_key, convert_task_id)
-            plog.log_info(f"Conversion status: {status['status']} (attempt {i+1}/{max_retries})")
-            if status["status"] == "finished":
-                break
-            elif status["status"] == "error":
-                plog.log_error(f"Conversion failed: {status.get('message', 'No error message provided.')}")
-                raise RuntimeError(f"CloudConvert conversion task failed: {status.get('message', 'No error message provided.')}")
-            time.sleep(retry_delay)
-        else:
-            raise RuntimeError(f"CloudConvert conversion task timed out after {max_retries * retry_delay} seconds.")
+        wait_for_task_completion(api_key, convert_task["id"], "Conversion")
 
         export_task = next((task for task in tasks if task.get("name") == EXPORT_TASK), None)
         if not export_task:
             raise ValueError(f"Task '{EXPORT_TASK}' not found in conversion_task['tasks']")
-        export_task_id = export_task["id"]
-
-        for i in range(max_retries):
-            export_status = check_task_status(api_key, export_task_id)
-            plog.log_info(f"Export status: {export_status['status']} (attempt {i+1}/{max_retries})")
-            if export_status["status"] == "finished":
-                break
-            elif export_status["status"] == "error":
-                plog.log_error(f"Export failed: {export_status.get('message', 'No error message provided.')}")
-                raise RuntimeError(f"CloudConvert export task failed: {export_status.get('message', 'No error message provided.')}")
-            time.sleep(retry_delay)
-        else:
-            raise RuntimeError(f"Export task timed out after {max_retries * retry_delay} seconds.")
+        export_status = wait_for_task_completion(api_key, export_task["id"], "Export")
 
         files = export_status["result"].get("files", [])
         if not files:

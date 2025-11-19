@@ -25,7 +25,7 @@ setup(
 
     # Runtime dependencies
     install_requires=[
-        'pytz',
+        # zoneinfo is built-in from Python 3.9+
     ],
 
     # Metadata for PyPI or internal documentation

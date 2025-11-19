@@ -23,11 +23,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict
-import pytz
+from zoneinfo import ZoneInfo
 import json
 
 # Constants
-IST = pytz.timezone("Asia/Kolkata")
+IST = ZoneInfo("Asia/Kolkata")
 RECOMMENDED_METADATA_KEYS = {"CorrelationId", "User", "TaskId", "FileName", "Duration"}
 
 class SpecFormatter(logging.Formatter):
