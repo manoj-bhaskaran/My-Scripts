@@ -15,8 +15,13 @@ __pycache__/
 # Test coverage files
 .coverage
 coverage.xml
+coverage/
 htmlcov/
 *.pyc
 __pycache__/
 .pytest_cache/
 logs/
+*.cover
+.hypothesis/
+powershell-coverage.xml
+powershell-testresults.xml

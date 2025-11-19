@@ -39,9 +39,20 @@ pip install -r requirements.txt
 pytest tests/python
 ```
 
-#### Run with coverage report
+#### Run with coverage report (terminal)
 ```bash
 pytest tests/python --cov=src/python --cov=src/common --cov-report=term-missing
+```
+
+#### Run with HTML coverage report
+```bash
+pytest tests/python
+# Coverage report automatically generated at: coverage/python/html/index.html
+
+# Open the HTML report
+open coverage/python/html/index.html      # macOS
+xdg-open coverage/python/html/index.html  # Linux
+start coverage/python/html/index.html     # Windows (Git Bash)
 ```
 
 #### Run specific test file
@@ -66,12 +77,31 @@ Install-Module -Name Pester -Force -Scope CurrentUser
 Invoke-Pester -Path tests/powershell
 ```
 
-#### Run with coverage
+#### Run with coverage (using helper script - recommended)
+```powershell
+# Run tests with coverage reporting
+.\tests\powershell\Invoke-Tests.ps1
+
+# Run with custom coverage threshold
+.\tests\powershell\Invoke-Tests.ps1 -MinimumCoverage 50
+
+# Run without coverage
+.\tests\powershell\Invoke-Tests.ps1 -CodeCoverageEnabled $false
+```
+
+#### Run with coverage (manual configuration)
 ```powershell
 $config = New-PesterConfiguration
 $config.Run.Path = 'tests/powershell'
 $config.CodeCoverage.Enabled = $true
-$config.CodeCoverage.Path = 'src/powershell/**/*.ps1'
+$config.CodeCoverage.Path = @(
+    'src/powershell/**/*.ps1',
+    'src/powershell/**/*.psm1',
+    'src/common/*.ps1',
+    'src/common/*.psm1'
+)
+$config.CodeCoverage.OutputPath = 'coverage/powershell/coverage.xml'
+$config.CodeCoverage.OutputFormat = 'JaCoCo'
 Invoke-Pester -Configuration $config
 ```
 
@@ -126,16 +156,77 @@ Describe "My-Function" {
 }
 ```
 
-## Coverage Targets
+## Coverage Targets and Reporting
 
-We aim for the following coverage targets:
+### Coverage Targets
 
-| Category | Target Coverage |
-|----------|----------------|
-| Shared modules (src/common/) | ≥30% |
-| Core utilities (src/python/validators.py, etc.) | ≥50% |
-| PowerShell modules | ≥30% |
-| Overall project | ≥25% |
+We aim for the following minimum coverage targets:
+
+| Category | Minimum Coverage | Target Coverage |
+|----------|-----------------|----------------|
+| Python code (src/python/) | ≥30% | 60% |
+| PowerShell code (src/powershell/) | ≥30% | 50% |
+| Shared modules (src/common/) | ≥30% | 60% |
+| Overall project | ≥30% | 50% |
+
+### Coverage Enforcement
+
+Coverage thresholds are enforced in CI/CD:
+- **Python**: Tests fail if coverage drops below 30% (`--cov-fail-under=30` in pytest.ini)
+- **PowerShell**: Tests fail if coverage drops below 30% (enforced by Invoke-Tests.ps1)
+- **Codecov**: Status checks configured to alert on coverage drops >5%
+
+### Viewing Coverage Reports
+
+#### Online Dashboards
+
+- **[Codecov Dashboard](https://codecov.io/gh/manoj-bhaskaran/My-Scripts)**: Comprehensive coverage analytics
+  - Coverage trends over time
+  - File-by-file coverage breakdown
+  - PR-level coverage diffs
+  - Language-specific flags (Python, PowerShell)
+
+- **[SonarCloud Dashboard](https://sonarcloud.io/project/overview?id=manoj-bhaskaran_My-Scripts)**: Code quality and coverage
+  - Overall code quality metrics
+  - Coverage as part of quality gate
+  - Security and maintainability issues
+
+#### Local Coverage Reports
+
+**Python HTML Reports:**
+```bash
+# Run tests to generate coverage
+pytest tests/python
+
+# Coverage reports are generated at:
+# - coverage/python/coverage.xml (machine-readable)
+# - coverage/python/html/index.html (human-readable)
+
+# Open HTML report in browser
+open coverage/python/html/index.html      # macOS
+xdg-open coverage/python/html/index.html  # Linux
+start coverage/python/html/index.html     # Windows
+```
+
+**PowerShell Coverage:**
+```powershell
+# Run tests with coverage
+.\tests\powershell\Invoke-Tests.ps1
+
+# Coverage output includes:
+# - Terminal summary with coverage percentage
+# - coverage/powershell/coverage.xml (JaCoCo format)
+
+# View detailed coverage breakdown
+cat coverage/powershell/coverage.xml
+```
+
+### Coverage Configuration Files
+
+- **`pytest.ini`**: Python coverage configuration (paths, output formats, thresholds)
+- **`codecov.yml`**: Codecov service configuration (flags, targets, precision)
+- **`sonar-project.properties`**: SonarCloud coverage report paths
+- **`tests/powershell/Invoke-Tests.ps1`**: PowerShell coverage test runner
 
 ## Mocking Strategies
 

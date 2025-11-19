@@ -1,0 +1,67 @@
+# Codecov Configuration
+# https://docs.codecov.io/docs/codecovyml-reference
+
+# Coverage status checks
+coverage:
+  status:
+    # Overall project coverage
+    project:
+      default:
+        target: 30%          # Minimum target coverage
+        threshold: 5%        # Allow 5% drop before failing
+        informational: false # Fail build if threshold violated
+
+    # Coverage on changed code (patches)
+    patch:
+      default:
+        target: 50%          # New code should have higher coverage
+        threshold: 10%       # More lenient for new code
+        informational: true  # Don't fail build for patch coverage
+
+  # Precision and rounding
+  precision: 2
+  round: down
+  range: "50...80"  # Yellow between 50-80%, green above 80%
+
+# Files/directories to ignore in coverage calculation
+ignore:
+  - "tests/"
+  - "**/*.sample"
+  - "fixtures/"
+  - "**/test_*.py"
+  - "**/*.Tests.ps1"
+  - "**/__pycache__/**"
+  - "**/.pytest_cache/**"
+  - "**/logs/**"
+  - "config/"
+  - "docs/"
+  - "analysis/"
+  - "hooks/"
+  - "scripts/"
+
+# Flag-based coverage tracking
+flags:
+  python:
+    paths:
+      - src/python/
+      - src/common/*.py
+    carryforward: true  # Keep previous coverage if no new data
+
+  powershell:
+    paths:
+      - src/powershell/
+      - src/common/*.ps1
+      - src/common/*.psm1
+    carryforward: true
+
+# Comment settings for pull requests
+comment:
+  layout: "reach,diff,flags,tree"
+  behavior: default
+  require_changes: false  # Always comment, even if no coverage change
+  require_base: false     # Comment even if base branch has no coverage
+  require_head: true      # Only comment if head branch has coverage
+
+# GitHub Checks integration
+github_checks:
+  annotations: true  # Add annotations to changed files

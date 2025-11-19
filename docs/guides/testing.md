@@ -151,10 +151,27 @@ class TestValidateExtensions:
 
 | Component | Minimum Coverage | Target Coverage |
 |-----------|-----------------|----------------|
+| Python code (src/python/) | 30% | 60% |
+| PowerShell code (src/powershell/) | 30% | 50% |
 | Shared modules (src/common/) | 30% | 60% |
-| Utility modules | 30% | 50% |
-| Script-specific code | 20% | 40% |
-| Overall project | 25% | 45% |
+| Overall project | 30% | 50% |
+
+### Coverage Enforcement
+
+Coverage thresholds are automatically enforced in CI/CD:
+
+- **Python**: Tests fail if coverage drops below 30%
+  - Configured in `pytest.ini` via `--cov-fail-under=30`
+  - Can be overridden locally: `pytest --cov-fail-under=0`
+
+- **PowerShell**: Tests fail if coverage drops below 30%
+  - Configured in `tests/powershell/Invoke-Tests.ps1`
+  - Adjustable: `.\Invoke-Tests.ps1 -MinimumCoverage 50`
+
+- **Codecov Integration**:
+  - Alerts on coverage drops >5% (configured in `codecov.yml`)
+  - Tracks coverage trends over time
+  - Provides PR-level coverage diffs
 
 ### Coverage Guidelines
 
@@ -162,26 +179,149 @@ class TestValidateExtensions:
 - **Focus on critical paths**: Prioritize testing core business logic
 - **Don't test trivial code**: Simple getters/setters may not need tests
 - **Test complex logic**: Focus on algorithms, validation, and transformations
+- **Exclude appropriately**: Use coverage exclusions for debug code, platform-specific code
+- **Track trends**: Monitor coverage over time, not just absolute values
 
 ### Viewing Coverage Reports
 
-**Python**:
+**Python - Local HTML Reports**:
 ```bash
-# Terminal report
-pytest tests/python --cov=src --cov-report=term-missing
+# Run tests (automatically generates coverage)
+pytest tests/python
 
-# HTML report
-pytest tests/python --cov=src --cov-report=html
-# Open htmlcov/index.html in browser
+# Coverage reports generated at:
+# - coverage/python/coverage.xml (machine-readable, for CI)
+# - coverage/python/html/index.html (human-readable, for developers)
+
+# Open HTML report
+open coverage/python/html/index.html      # macOS
+xdg-open coverage/python/html/index.html  # Linux
+start coverage/python/html/index.html     # Windows
 ```
 
-**PowerShell**:
+**Python - Terminal Reports**:
+```bash
+# Terminal report with missing lines
+pytest tests/python --cov=src/python --cov=src/common --cov-report=term-missing
+
+# Compact terminal report
+pytest tests/python --cov-report=term
+```
+
+**PowerShell - Using Helper Script (Recommended)**:
+```powershell
+# Run with coverage reporting
+.\tests\powershell\Invoke-Tests.ps1
+
+# Coverage output includes:
+# - Terminal summary with coverage percentage
+# - coverage/powershell/coverage.xml (JaCoCo format)
+
+# Customize coverage threshold
+.\tests\powershell\Invoke-Tests.ps1 -MinimumCoverage 50
+```
+
+**PowerShell - Manual Configuration**:
 ```powershell
 $config = New-PesterConfiguration
+$config.Run.Path = 'tests/powershell'
 $config.CodeCoverage.Enabled = $true
+$config.CodeCoverage.Path = @('src/powershell/**/*.ps1', 'src/common/*.ps1')
+$config.CodeCoverage.OutputPath = 'coverage/powershell/coverage.xml'
 $config.CodeCoverage.OutputFormat = 'JaCoCo'
 Invoke-Pester -Configuration $config
 ```
+
+### Online Coverage Dashboards
+
+**Codecov** (Primary Coverage Tool):
+- URL: https://codecov.io/gh/manoj-bhaskaran/My-Scripts
+- Features:
+  - Coverage trends and graphs
+  - File-by-file coverage breakdown
+  - PR coverage diffs (shows coverage impact of changes)
+  - Language-specific flags (Python, PowerShell)
+  - Sunburst visualization of coverage
+  - Coverage annotations on GitHub PRs
+
+**SonarCloud** (Code Quality + Coverage):
+- URL: https://sonarcloud.io/dashboard?id=manoj-bhaskaran_My-Scripts
+- Features:
+  - Coverage as part of quality gate
+  - Combined with code smells and security issues
+  - Historical trends
+  - Maintainability ratings
+
+### Coverage Configuration Files
+
+- **`pytest.ini`**: Python test and coverage configuration
+  - Coverage paths: `src/python`, `src/common`
+  - Output formats: XML, HTML, terminal
+  - Minimum threshold: 30%
+
+- **`codecov.yml`**: Codecov service configuration
+  - Coverage targets (30% project, 50% patch)
+  - Threshold tolerance (5% drop allowed)
+  - Language flags (python, powershell)
+  - File exclusions (tests, samples, docs)
+
+- **`sonar-project.properties`**: SonarCloud configuration
+  - Coverage report paths
+  - Coverage exclusions
+  - Quality gate settings
+
+- **`tests/powershell/Invoke-Tests.ps1`**: PowerShell test runner
+  - Configurable coverage thresholds
+  - Automatic report generation
+  - Verbose output options
+
+### Excluding Code from Coverage
+
+**Python - Inline Exclusions**:
+```python
+def debug_only_function():  # pragma: no cover
+    """This function is excluded from coverage"""
+    print("Debug information")
+
+if __name__ == "__main__":  # pragma: no cover
+    # Script execution code
+    main()
+```
+
+**Python - Branch Exclusions**:
+```python
+def cross_platform_function():
+    if sys.platform == 'win32':
+        # Windows-specific code
+        return windows_implementation()
+    else:  # pragma: no cover
+        # Unix-specific code (excluded on Windows)
+        return unix_implementation()
+```
+
+**PowerShell - File Exclusions**:
+Configure in `tests/powershell/Invoke-Tests.ps1` or use file naming:
+- Files ending in `.Debug.ps1`
+- Test files (`*.Tests.ps1`)
+- Sample/example files
+
+**Global Exclusions** (codecov.yml):
+```yaml
+ignore:
+  - "tests/"
+  - "**/*.sample"
+  - "fixtures/"
+  - "**/test_*.py"
+```
+
+### Coverage Best Practices
+
+1. **Write tests before checking coverage**: Don't let coverage drive test design
+2. **Use coverage to find gaps**: Identify untested code paths
+3. **Don't game the metrics**: Executing a line ≠ testing it properly
+4. **Review coverage in PRs**: Check that new code has adequate tests
+5. **Maintain coverage trends**: Don't let coverage decrease over time
+6. **Focus on critical code**: 80% coverage of critical code > 95% of trivial code
 
 ## Mocking and Dependencies
 

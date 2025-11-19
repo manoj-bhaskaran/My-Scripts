@@ -8,6 +8,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- **Test Coverage Reporting Infrastructure** (#459) - Comprehensive coverage tracking and reporting system
+  - **Codecov Integration**
+    - New file: `codecov.yml` - Codecov service configuration
+      - Coverage targets: 30% project minimum, 50% for new code (patches)
+      - Threshold tolerance: 5% coverage drop allowed before failing
+      - Language-specific flags for Python and PowerShell
+      - Coverage precision: 2 decimal places, range 50-80%
+      - Exclusions: tests, samples, fixtures, docs, config files
+    - CI/CD integration with Codecov upload actions
+      - Python coverage uploaded with `python` flag
+      - PowerShell coverage uploaded with `powershell` flag
+      - Automatic PR comments with coverage diffs
+      - GitHub Checks annotations on changed files
+  - **PowerShell Test Coverage Helper**
+    - New script: `tests/powershell/Invoke-Tests.ps1` (v1.0.0)
+      - Automated Pester test execution with coverage
+      - Configurable coverage thresholds (default: 30%)
+      - JaCoCo format output for SonarCloud/Codecov compatibility
+      - Detailed terminal output with coverage summary
+      - Exit code enforcement for CI/CD integration
+      - Parameters: `-MinimumCoverage`, `-CodeCoverageEnabled`, `-Verbosity`
+  - **Python Coverage Configuration**
+    - Updated `pytest.ini` with coverage threshold enforcement
+      - Added `--cov-fail-under=30` to fail tests below 30% coverage
+      - Updated coverage report paths: `coverage/python/coverage.xml`, `coverage/python/html/`
+      - Coverage includes both `src/python/` and `src/common/`
+  - **CI/CD Workflow Updates** (`.github/workflows/sonarcloud.yml`)
+    - Updated Python test step to use new coverage paths
+    - Added Codecov upload for Python coverage
+    - Replaced inline PowerShell test config with `Invoke-Tests.ps1` call
+    - Added Codecov upload for PowerShell coverage
+    - Updated SonarCloud scanner with new coverage report paths
+    - All coverage reports uploaded as GitHub artifacts
+  - **Coverage Path Standardization**
+    - Updated `sonar-project.properties` with new coverage paths
+      - Python: `coverage/python/coverage.xml`
+      - PowerShell: `coverage/powershell/coverage.xml`
+    - Updated `.gitignore` with comprehensive coverage exclusions
+      - Added `coverage/` directory
+      - Added `*.cover`, `.hypothesis/`
+      - Added `powershell-coverage.xml`, `powershell-testresults.xml`
+  - **Coverage Badges**
+    - Added to `README.md`:
+      - Overall Codecov badge
+      - Python-specific coverage badge (flag: python)
+      - PowerShell-specific coverage badge (flag: powershell)
+    - Badges link to Codecov and SonarCloud dashboards
+  - **Documentation Updates**
+    - Updated `README.md` with comprehensive Test Coverage section
+      - Coverage targets (30% minimum, 50-60% target)
+      - Links to Codecov and SonarCloud dashboards
+      - Local coverage generation instructions
+      - Platform-specific commands for viewing HTML reports
+    - Updated `tests/README.md` with extensive coverage documentation
+      - Coverage targets table with minimum and target values
+      - Coverage enforcement details (pytest, Pester, Codecov)
+      - Viewing coverage reports (online and local)
+      - Python HTML report generation and viewing
+      - PowerShell coverage using `Invoke-Tests.ps1`
+      - Coverage configuration files reference
+    - Updated `docs/guides/testing.md` with detailed coverage guide
+      - Coverage enforcement mechanisms
+      - Coverage guidelines and best practices
+      - Comprehensive viewing instructions (local and online)
+      - Online dashboard features (Codecov, SonarCloud)
+      - Coverage configuration files documentation
+      - Code exclusion strategies (Python pragma, PowerShell file patterns)
+      - Coverage best practices (6 key principles)
+  - Features:
+    - Automated coverage reporting in CI/CD pipeline
+    - 30% minimum coverage threshold enforced
+    - Coverage trends tracked over time via Codecov
+    - Language-specific coverage tracking (Python, PowerShell)
+    - HTML coverage reports for local development
+    - PR-level coverage diffs and annotations
+    - Integration with existing SonarCloud quality gates
+    - Comprehensive documentation for developers
+
 - **Complete Module Deployment Configuration** (#456) - Comprehensive module deployment system for PowerShell and Python
   - **PowerShell Module Manifests** - Created .psd1 manifests for all modules
     - `src/common/PostgresBackup.psd1` (v2.0.0) - PostgreSQL database backup module

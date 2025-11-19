@@ -42,14 +42,24 @@ jobs:
 
       - name: Run Python Tests with Coverage
         run: |
-          pytest tests/python --cov=src/python --cov-report=xml --cov-report=term
+          pytest tests/python --cov=src/python --cov=src/common --cov-report=xml:coverage/python/coverage.xml --cov-report=term-missing --cov-fail-under=30
         continue-on-error: false
 
-      - name: Upload Python Test Coverage
+      - name: Upload Python Coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage/python/coverage.xml
+          flags: python
+          name: python-coverage
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload Python Test Coverage Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Python-Coverage-Report
-          path: coverage.xml
+          path: coverage/python/coverage.xml
 
       - name: Run Pylint (Python Linting)
         run: |
@@ -75,38 +85,33 @@ jobs:
         run: |
           Install-Module -Name Pester -Force -Scope CurrentUser -SkipPublisherCheck
 
-      - name: Run PowerShell Tests
+      - name: Run PowerShell Tests with Coverage
         shell: pwsh
         run: |
-          Import-Module Pester
-
-          # Resolve PowerShell files for code coverage
-          $psFiles = Get-ChildItem -Path 'src/powershell' -Include '*.ps1','*.psm1' -Recurse -File | Select-Object -ExpandProperty FullName
-
-          $config = New-PesterConfiguration
-          $config.Run.Path = 'tests/powershell'
-          $config.Run.Exit = $true
-          $config.CodeCoverage.Enabled = $true
-          $config.CodeCoverage.Path = $psFiles
-          $config.CodeCoverage.OutputPath = 'powershell-coverage.xml'
-          $config.CodeCoverage.OutputFormat = 'JaCoCo'
-          $config.TestResult.Enabled = $true
-          $config.TestResult.OutputPath = 'powershell-testresults.xml'
-          $config.TestResult.OutputFormat = 'NUnitXml'
-          Invoke-Pester -Configuration $config
+          .\tests\powershell\Invoke-Tests.ps1 -MinimumCoverage 30 -Verbosity Detailed
         continue-on-error: false
 
-      - name: Upload PowerShell Test Results
+      - name: Upload PowerShell Coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage/powershell/coverage.xml
+          flags: powershell
+          name: powershell-coverage
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload PowerShell Test Results Artifact
         uses: actions/upload-artifact@v4
         with:
           name: PowerShell-Test-Results
           path: powershell-testresults.xml
 
-      - name: Upload PowerShell Coverage Report
+      - name: Upload PowerShell Coverage Report Artifact
         uses: actions/upload-artifact@v4
         with:
           name: PowerShell-Coverage-Report
-          path: powershell-coverage.xml
+          path: coverage/powershell/coverage.xml
 
       - name: Install PSScriptAnalyzer (PowerShell Linter)
         shell: pwsh
@@ -166,6 +171,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          # Configuration is now in sonar-project.properties
-          sonar-scanner -Dsonar.host.url=https://sonarcloud.io || true
+          # Configuration is in sonar-project.properties
+          # Override coverage paths to use new locations
+          sonar-scanner \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.python.coverage.reportPaths=coverage/python/coverage.xml \
+            -Dsonar.coverage.jacoco.xmlReportPaths=coverage/powershell/coverage.xml || true
         continue-on-error: true

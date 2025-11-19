@@ -1,6 +1,9 @@
 # My Scripts Collection
 
 [![SonarCloud](https://sonarcloud.io/api/project_badges/measure?project=manoj-bhaskaran_My-Scripts&metric=alert_status)](https://sonarcloud.io/dashboard?id=manoj-bhaskaran_My-Scripts)
+[![codecov](https://codecov.io/gh/manoj-bhaskaran/My-Scripts/branch/main/graph/badge.svg)](https://codecov.io/gh/manoj-bhaskaran/My-Scripts)
+[![Python Coverage](https://codecov.io/gh/manoj-bhaskaran/My-Scripts/branch/main/graph/badge.svg?flag=python)](https://codecov.io/gh/manoj-bhaskaran/My-Scripts)
+[![PowerShell Coverage](https://codecov.io/gh/manoj-bhaskaran/My-Scripts/branch/main/graph/badge.svg?flag=powershell)](https://codecov.io/gh/manoj-bhaskaran/My-Scripts)
 
 **Version:** 2.0.0 | **Last Updated:** 2025-11-18
 
@@ -405,12 +408,29 @@ Invoke-Pester -Path tests/powershell
 
 ### Test Coverage
 
-Current coverage targets:
-- Shared modules: ≥30%
-- Core utilities: ≥50%
-- Overall project: ≥25%
+We maintain test coverage to ensure code quality and reliability:
 
-Coverage reports are automatically generated in CI and uploaded to [SonarCloud](https://sonarcloud.io/project/overview?id=manoj-bhaskaran_My-Scripts).
+**Coverage Targets:**
+- **Python**: ≥30% coverage (target: 60%)
+- **PowerShell**: ≥30% coverage (target: 50%)
+- **Overall Project**: ≥30% coverage (target: 50%)
+
+**View Coverage Reports:**
+- [Codecov Dashboard](https://codecov.io/gh/manoj-bhaskaran/My-Scripts) - Detailed coverage analytics and trends
+- [SonarCloud Quality Gate](https://sonarcloud.io/dashboard?id=manoj-bhaskaran_My-Scripts) - Code quality and coverage metrics
+
+**Local Coverage Reports:**
+```bash
+# Python coverage
+pytest tests/python --cov=src/python --cov=src/common --cov-report=html
+open coverage/python/html/index.html  # View HTML report
+
+# PowerShell coverage
+.\tests\powershell\Invoke-Tests.ps1
+# View coverage output in terminal
+```
+
+Coverage reports are automatically generated in CI/CD and uploaded to both Codecov and SonarCloud for trend tracking and analysis.
 
 ### Documentation
 
