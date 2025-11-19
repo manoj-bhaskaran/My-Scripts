@@ -20,12 +20,12 @@ setup(
     # Single module installation
     py_modules=['python_logging_framework'],
 
-    # Specify that modules are under src/common
-    package_dir={'': 'src/common'},
+    # Specify that modules are under src/python/modules/logging
+    package_dir={'': 'src/python/modules/logging'},
 
     # Runtime dependencies
     install_requires=[
-        'pytz',
+        # zoneinfo is built-in from Python 3.9+
     ],
 
     # Metadata for PyPI or internal documentation

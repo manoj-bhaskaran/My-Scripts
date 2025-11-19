@@ -1,5 +1,5 @@
 """
-Unit tests for src/python/validators.py
+Unit tests for src/python/data/validators.py
 
 Tests input validation functions including extension token normalization,
 policy token normalization, and related helper functions.
@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 # Add src path to allow imports
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src" / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src" / "python" / "data"))
 
 from validators import (
     _normalize_extension_token,

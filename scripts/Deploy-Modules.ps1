@@ -3,7 +3,7 @@
     Deploys PowerShell modules to configured module paths.
 
 .DESCRIPTION
-    Reads config/module-deployment-config.txt and deploys all configured modules
+    Reads config/modules/deployment.txt and deploys all configured modules
     to their specified target locations (System, User, or alternate paths).
     Validates module manifests before deployment and creates version-specific
     directories for each module.
@@ -16,7 +16,7 @@
 
 .PARAMETER ConfigPath
     Path to the module deployment configuration file.
-    Defaults to ../config/module-deployment-config.txt relative to this script.
+    Defaults to ../config/modules/deployment.txt relative to this script.
 
 .EXAMPLE
     .\Deploy-Modules.ps1
@@ -47,7 +47,7 @@ $scriptRoot = $PSScriptRoot
 $repoRoot = Split-Path -Path $scriptRoot -Parent
 
 if (-not $ConfigPath) {
-    $ConfigPath = Join-Path $repoRoot "config" "module-deployment-config.txt"
+    $ConfigPath = Join-Path $repoRoot "config" "modules" "deployment.txt"
 }
 
 # Verify config file exists
