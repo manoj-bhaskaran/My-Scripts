@@ -17,7 +17,7 @@ BeforeAll {
     New-Item -Path $script:TargetFolder -ItemType Directory -Force | Out-Null
 
     # Path to FileDistributor script
-    $script:ScriptPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'FileDistributor.ps1'
+    $script:ScriptPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'file-management' 'FileDistributor.ps1'
 }
 
 Describe "FileDistributor Script Existence" {

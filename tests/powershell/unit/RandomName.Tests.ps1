@@ -9,7 +9,7 @@ including validation, character set compliance, and reserved name handling.
 
 BeforeAll {
     # Import the RandomName module
-    $ModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'module' 'RandomName' 'RandomName.psm1'
+    $ModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'Utilities' 'RandomName' 'RandomName.psm1'
     Import-Module $ModulePath -Force
 }
 
