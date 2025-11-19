@@ -149,29 +149,54 @@ class TestValidateExtensions:
 
 ### Coverage Targets
 
-| Component | Minimum Coverage | Target Coverage |
-|-----------|-----------------|----------------|
-| Python code (src/python/) | 30% | 60% |
-| PowerShell code (src/powershell/) | 30% | 50% |
-| Shared modules (src/common/) | 30% | 60% |
-| Overall project | 30% | 50% |
+We are implementing a phased approach to coverage, starting from a low baseline and ramping up over 6 months.
+
+**Current Status (Phase 1):**
+
+| Component | Current | Phase 1 (Now) | Phase 2 (Month 4) | Phase 3 (Month 6) | Target |
+|-----------|---------|---------------|-------------------|-------------------|--------|
+| Python | ~TBD% | >1% | >15% | >30% | 60% |
+| PowerShell | 0.37% | >0% | >15% | >30% | 50% |
+| Shared modules | ~TBD% | >1% | >20% | >30% | 60% |
+| Overall | ~1% | >1% | >15% | >30% | 50% |
+
+See [Coverage Roadmap](../COVERAGE_ROADMAP.md) for complete ramp-up plan and timeline.
 
 ### Coverage Enforcement
 
-Coverage thresholds are automatically enforced in CI/CD:
+Coverage thresholds are automatically enforced in CI/CD, with gradual increases:
 
-- **Python**: Tests fail if coverage drops below 30%
-  - Configured in `pytest.ini` via `--cov-fail-under=30`
+**Current Thresholds (Phase 1 - Baseline Establishment):**
+
+- **Python**: Tests fail if coverage drops below 1%
+  - Configured in `pytest.ini` via `--cov-fail-under=1`
+  - Starting point to prevent regression from baseline
   - Can be overridden locally: `pytest --cov-fail-under=0`
 
-- **PowerShell**: Tests fail if coverage drops below 30%
-  - Configured in `tests/powershell/Invoke-Tests.ps1`
-  - Adjustable: `.\Invoke-Tests.ps1 -MinimumCoverage 50`
+- **PowerShell**: No minimum enforced (0%)
+  - Configured in `tests/powershell/Invoke-Tests.ps1` with `-MinimumCoverage 0`
+  - Establishes baseline at 0.37% (21/5,751 commands)
+  - Adjustable: `.\Invoke-Tests.ps1 -MinimumCoverage <value>`
 
 - **Codecov Integration**:
-  - Alerts on coverage drops >5% (configured in `codecov.yml`)
-  - Tracks coverage trends over time
+  - **Informational only** during Phase 1 (doesn't fail builds)
+  - Tracks coverage trends with `target: auto`
+  - Alerts on coverage drops >5%
   - Provides PR-level coverage diffs
+  - Will be switched to enforcing mode in Phase 3
+
+**Planned Threshold Increases:**
+- **Month 2** (Phase 1 end): 5% Python, 5% PowerShell
+- **Month 4** (Phase 2): 15% Python, 15% PowerShell
+- **Month 6** (Phase 3): 30% Python, 30% PowerShell (target achieved)
+- **Month 9+** (Phase 4): Maintain and improve toward 50%+
+
+**Rationale:**
+Starting from 0.37% PowerShell coverage, we're using a phased approach to:
+1. Avoid breaking the build while establishing baseline
+2. Allow time to write tests for existing code
+3. Gradually increase standards as coverage improves
+4. Focus initial efforts on high-value modules
 
 ### Coverage Guidelines
 

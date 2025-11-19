@@ -410,10 +410,14 @@ Invoke-Pester -Path tests/powershell
 
 We maintain test coverage to ensure code quality and reliability:
 
-**Coverage Targets:**
-- **Python**: ≥30% coverage (target: 60%)
-- **PowerShell**: ≥30% coverage (target: 50%)
-- **Overall Project**: ≥30% coverage (target: 50%)
+**Coverage Status:**
+- **Current**: Starting from baseline (~0-1% coverage)
+- **Phase 1 Target** (Months 1-2): Establish infrastructure, prevent regression
+- **Phase 2 Target** (Months 3-4): 15% coverage, focus on shared modules
+- **Phase 3 Target** (Months 5-6): 30% overall coverage
+- **Long-term Target**: 50%+ overall (60% Python, 50% PowerShell)
+
+See [Coverage Roadmap](docs/COVERAGE_ROADMAP.md) for detailed ramp-up plan.
 
 **View Coverage Reports:**
 - [Codecov Dashboard](https://codecov.io/gh/manoj-bhaskaran/My-Scripts) - Detailed coverage analytics and trends

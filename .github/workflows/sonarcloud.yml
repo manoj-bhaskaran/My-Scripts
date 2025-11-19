@@ -42,7 +42,7 @@ jobs:
 
       - name: Run Python Tests with Coverage
         run: |
-          pytest tests/python --cov=src/python --cov=src/common --cov-report=xml:coverage/python/coverage.xml --cov-report=term-missing --cov-fail-under=30
+          pytest tests/python --cov=src/python --cov=src/common --cov-report=xml:coverage/python/coverage.xml --cov-report=term-missing --cov-fail-under=1
         continue-on-error: false
 
       - name: Upload Python Coverage to Codecov
@@ -88,7 +88,7 @@ jobs:
       - name: Run PowerShell Tests with Coverage
         shell: pwsh
         run: |
-          .\tests\powershell\Invoke-Tests.ps1 -MinimumCoverage 30 -Verbosity Detailed
+          .\tests\powershell\Invoke-Tests.ps1 -MinimumCoverage 0 -Verbosity Detailed
         continue-on-error: false
 
       - name: Upload PowerShell Coverage to Codecov

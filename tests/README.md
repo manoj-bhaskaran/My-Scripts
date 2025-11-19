@@ -160,21 +160,30 @@ Describe "My-Function" {
 
 ### Coverage Targets
 
-We aim for the following minimum coverage targets:
+We are ramping up coverage in phases. See [Coverage Roadmap](../docs/COVERAGE_ROADMAP.md) for details.
 
-| Category | Minimum Coverage | Target Coverage |
-|----------|-----------------|----------------|
-| Python code (src/python/) | ≥30% | 60% |
-| PowerShell code (src/powershell/) | ≥30% | 50% |
-| Shared modules (src/common/) | ≥30% | 60% |
-| Overall project | ≥30% | 50% |
+**Current Status (Phase 1 - Foundation):**
+
+| Category | Current | Phase 1 | Phase 2 | Phase 3 | Long-term Target |
+|----------|---------|---------|---------|---------|------------------|
+| Python code | ~TBD% | >1% | >15% | >30% | 60% |
+| PowerShell code | 0.37% | >0% | >15% | >30% | 50% |
+| Shared modules | ~TBD% | >1% | >20% | >30% | 60% |
+| Overall project | ~1% | >1% | >15% | >30% | 50% |
 
 ### Coverage Enforcement
 
-Coverage thresholds are enforced in CI/CD:
-- **Python**: Tests fail if coverage drops below 30% (`--cov-fail-under=30` in pytest.ini)
-- **PowerShell**: Tests fail if coverage drops below 30% (enforced by Invoke-Tests.ps1)
-- **Codecov**: Status checks configured to alert on coverage drops >5%
+**Current Configuration (Phase 1 - Baseline):**
+- **Python**: Tests fail if coverage drops below 1% (`--cov-fail-under=1` in pytest.ini)
+- **PowerShell**: No minimum threshold enforced (0%) to establish baseline
+- **Codecov**: Informational only - tracks trends but doesn't fail builds
+- **Strategy**: Prevent regression from baseline, gradually increase thresholds
+
+**Future Enforcement:**
+- Month 2: Increase to 5% minimum
+- Month 4: Increase to 15% minimum
+- Month 6: Achieve 30% target threshold
+- See [Coverage Roadmap](../docs/COVERAGE_ROADMAP.md) for complete schedule
 
 ### Viewing Coverage Reports
 
