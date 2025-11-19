@@ -72,6 +72,40 @@ This repository is organized by **programming language** and **functional domain
 
 ---
 
+## Installation
+
+For comprehensive installation instructions, see **[INSTALLATION.md](INSTALLATION.md)**.
+
+**Quick Start:**
+
+```bash
+# 1. Clone repository
+git clone https://github.com/manoj-bhaskaran/My-Scripts.git
+cd My-Scripts
+
+# 2. Install Python dependencies
+pip install -r requirements.txt
+
+# 3. Deploy PowerShell modules
+./scripts/Deploy-Modules.ps1 -Force
+
+# 4. Install Git hooks
+./scripts/install-hooks.sh
+
+# 5. Verify installation
+./scripts/Verify-Installation.ps1
+```
+
+The [INSTALLATION.md](INSTALLATION.md) guide includes:
+- Step-by-step installation for Windows, Linux, and macOS
+- Prerequisites and system requirements
+- Optional software installation (VLC, ADB, PostgreSQL)
+- Environment configuration (API keys, database credentials)
+- Module installation and verification
+- Comprehensive troubleshooting guide
+
+---
+
 ## Prerequisites
 
 To make use of the scripts in this repository, you'll need the following installed on your system:
