@@ -49,3 +49,8 @@ PurgeLogs|src\powershell\modules\Core\Logging\PurgeLogs.psm1|System|Manoj Bhaska
 # Utility and media processing modules
 RandomName|src\powershell\modules\Utilities\RandomName|System|Manoj Bhaskaran|Generates Windows-safe random file names using a conservative allow-list
 Videoscreenshot|src\powershell\modules\Media\Videoscreenshot|System|Manoj Bhaskaran|Video frame capture via VLC or GDI+ with optional Python cropper integration
+
+# Shared utility modules (error handling, file operations, progress reporting)
+ErrorHandling|src\powershell\modules\Core\ErrorHandling|System|Manoj Bhaskaran|Standardized error handling and retry logic with exponential backoff
+FileOperations|src\powershell\modules\Core\FileOperations|System|Manoj Bhaskaran|File operations with built-in retry logic and resilience
+ProgressReporter|src\powershell\modules\Core\Progress|System|Manoj Bhaskaran|Standardized progress reporting with logging integration

@@ -9,6 +9,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Shared Utilities Modules** (#461) - Extracted common patterns into reusable modules
+  - **PowerShell Core Modules**
+    - New module: `ErrorHandling` (v1.0.0) - Standardized error handling and retry logic
+      - `Invoke-WithErrorHandling` - Execute script blocks with consistent error handling
+      - `Invoke-WithRetry` - Automatic retry with exponential backoff (configurable delay, max retries, backoff cap)
+      - `Test-IsElevated` - Cross-platform privilege detection (Windows admin / Linux-macOS root)
+      - `Assert-Elevated` - Require elevated privileges with custom messages
+      - `Test-CommandAvailable` - Check if command/cmdlet is available
+      - Automatic integration with PowerShellLoggingFramework
+      - Comprehensive unit tests with Pester
+    - New module: `FileOperations` (v1.0.0) - File operations with built-in retry logic
+      - `Copy-FileWithRetry` - Resilient file copy with exponential backoff
+      - `Move-FileWithRetry` - Resilient file move with retry
+      - `Remove-FileWithRetry` - Resilient file deletion with retry
+      - `Rename-FileWithRetry` - Resilient file rename with retry
+      - `Test-FolderWritable` - Test directory write permissions with optional creation
+      - `Add-ContentWithRetry` - Append content with retry (ideal for logging)
+      - `New-DirectoryIfNotExists` - Ensure directory exists
+      - `Get-FileSize` - Get file size in bytes
+      - Depends on ErrorHandling module for retry logic
+      - Comprehensive unit tests with Pester
+    - New module: `ProgressReporter` (v1.0.0) - Standardized progress reporting
+      - `Show-Progress` - Consistent progress bar formatting
+      - `Write-ProgressLog` - Combine progress display with logging
+      - `New-ProgressTracker` - Create stateful progress tracker with configurable update frequency
+      - `Update-ProgressTracker` - Update progress with automatic display throttling
+      - `Complete-ProgressTracker` - Mark progress complete and hide bar
+      - `Write-ProgressStatus` - Update progress status without changing percentage
+      - Support for nested progress bars (via Id parameter)
+      - Optional integration with PowerShellLoggingFramework
+      - Comprehensive unit tests with Pester
+  - **Python Utils Modules**
+    - New module: `error_handling` (v1.0.0) - Error handling decorators and utilities
+      - `@with_error_handling` - Decorator for standardized error handling
+      - `@with_retry` - Decorator for automatic retry with exponential backoff
+      - `retry_operation` - Execute operations with retry logic
+      - `is_elevated()` - Cross-platform privilege detection (Windows admin / Unix root)
+      - `require_elevated()` - Require elevated privileges with custom messages
+      - `safe_execute()` - Execute functions with error handling
+      - `ErrorContext` - Context manager for error handling with optional retry
+      - Integration with Python logging framework
+      - Comprehensive unit tests with pytest
+    - New module: `file_operations` (v1.0.0) - File operations with retry logic
+      - `copy_with_retry()` - Resilient file copy with exponential backoff
+      - `move_with_retry()` - Resilient file move with retry
+      - `remove_with_retry()` - Resilient file deletion with retry
+      - `is_writable()` - Test directory write permissions
+      - `ensure_directory()` - Ensure directory exists (creates if needed)
+      - `get_file_size()` - Get file size in bytes
+      - `safe_write_text()` - Write text safely with optional atomic write
+      - `safe_append_text()` - Append text with retry logic
+      - Uses exponential backoff for retry operations
+      - Integration with Python logging framework
+      - Comprehensive unit tests with pytest
+  - **Documentation**
+    - New guide: `docs/guides/using-shared-utilities.md` - Comprehensive migration guide
+      - Before/after examples for all modules
+      - Best practices for retry logic and error handling
+      - Cross-platform considerations
+      - Deployment and testing instructions
+    - Module-specific READMEs with detailed API documentation
+      - `src/powershell/modules/Core/ErrorHandling/README.md`
+      - `src/powershell/modules/Core/FileOperations/README.md`
+      - `src/powershell/modules/Core/Progress/README.md`
+      - `src/python/modules/utils/README.md`
+  - **Testing**
+    - PowerShell unit tests (Pester):
+      - `tests/powershell/unit/ErrorHandling.Tests.ps1`
+      - `tests/powershell/unit/FileOperations.Tests.ps1`
+      - `tests/powershell/unit/ProgressReporter.Tests.ps1`
+    - Python unit tests (pytest):
+      - `tests/python/unit/test_error_handling.py`
+      - `tests/python/unit/test_file_operations.py`
+    - All modules have ≥70% test coverage
+  - **Benefits**
+    - Reduced code duplication by ≥30% across scripts
+    - Consistent error handling patterns repository-wide
+    - Centralized bug fixes benefit all scripts
+    - Cross-platform support (Windows, Linux, macOS)
+    - Exponential backoff retry logic with configurable limits
+    - Integration with existing logging frameworks
+
 - **Test Coverage Reporting Infrastructure** (#459) - Comprehensive coverage tracking and reporting system
   - **Codecov Integration**
     - New file: `codecov.yml` - Codecov service configuration
