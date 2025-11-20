@@ -149,14 +149,16 @@ pip install -e .
 ### Available Modules
 
 **PowerShell Modules:**
-- **PostgresBackup** (v2.0.0) - PostgreSQL database backup with retention management
-- **PowerShellLoggingFramework** (v2.0.0) - Cross-platform structured logging
-- **PurgeLogs** (v2.0.0) - Log file purging and retention management
-- **RandomName** (v2.1.0) - Windows-safe random filename generation
-- **Videoscreenshot** (v3.0.2) - Video frame capture via VLC or GDI+
+- **[RandomName](src/powershell/modules/Utilities/RandomName/)** (v2.1.0) – Windows-safe random filename generation
+- **[Videoscreenshot](src/powershell/modules/Media/Videoscreenshot/)** (v3.0.2) – Video frame capture via VLC or GDI+
+- **[PostgresBackup](src/powershell/modules/Database/PostgresBackup/)** (v2.0.0) – PostgreSQL database backup with retention management
+- **[PowerShellLoggingFramework](src/powershell/modules/Core/Logging/PowerShellLoggingFramework/)** (v2.0.0) – Cross-platform structured logging
+- **[PurgeLogs](src/powershell/modules/Core/Logging/PurgeLogs/)** (v2.0.0) – Log file purging and retention management
 
 **Python Modules:**
-- **python_logging_framework** (v0.2.0) - Cross-platform structured logging for Python
+- **[python_logging_framework](src/python/modules/logging/)** (v0.1.0) – Cross-platform structured logging for Python
+
+See individual module READMEs for detailed documentation, usage examples, and API reference.
 
 ### After Installation
 
