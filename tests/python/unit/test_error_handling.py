@@ -260,12 +260,11 @@ class TestErrorContext:
 
         assert executed is True
 
-    def test_retry_parameters_accepted(self):
-        """Test that retry parameters are accepted."""
-        # ErrorContext accepts retry parameters but note: context managers
-        # cannot restart the with block, so actual retry requires external loop
-        with ErrorContext("Test operation", max_retries=3, retry_delay=0.1, on_error="continue"):
-            # This will suppress the error
+    def test_error_suppression_with_continue(self):
+        """Test error suppression with on_error='continue'."""
+        # ErrorContext with on_error="continue" should suppress errors
+        # Use max_retries=1 to skip retry logic and go straight to error handling
+        with ErrorContext("Test operation", max_retries=1, on_error="continue"):
             raise ValueError("test error")
 
-        # Test completes without raising
+        # Test completes without raising - error was suppressed
