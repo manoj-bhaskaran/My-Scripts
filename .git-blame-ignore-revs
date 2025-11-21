@@ -1,0 +1,9 @@
+# Git Blame Ignore Revs
+# This file contains commit hashes that should be ignored by git blame
+# Typically used for formatting commits that don't change functionality
+#
+# Configure git to use this file:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Formatting commits (added after code formatting automation implementation)
+# Add commit hashes below after running formatting:

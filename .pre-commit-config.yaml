@@ -44,6 +44,12 @@ repos:
         language: system
         files: \.ps1$
         args: ['-Severity', 'Error']
+      - id: powershell-format
+        name: Format PowerShell
+        entry: pwsh scripts/Format-PowerShellCode.ps1 -Check
+        language: system
+        files: \.(ps1|psm1)$
+        pass_filenames: false
 
   # SQL hooks
   - repo: https://github.com/sqlfluff/sqlfluff

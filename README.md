@@ -4,6 +4,8 @@
 [![codecov](https://codecov.io/gh/manoj-bhaskaran/My-Scripts/branch/main/graph/badge.svg)](https://codecov.io/gh/manoj-bhaskaran/My-Scripts)
 [![Python Coverage](https://codecov.io/gh/manoj-bhaskaran/My-Scripts/branch/main/graph/badge.svg?flag=python)](https://codecov.io/gh/manoj-bhaskaran/My-Scripts)
 [![PowerShell Coverage](https://codecov.io/gh/manoj-bhaskaran/My-Scripts/branch/main/graph/badge.svg?flag=powershell)](https://codecov.io/gh/manoj-bhaskaran/My-Scripts)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Code Formatting](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml/badge.svg)](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml)
 
 **Version:** 2.0.0 | **Last Updated:** 2025-11-18
 
@@ -539,6 +541,67 @@ See [docs/guides/git-hooks.md](docs/guides/git-hooks.md) for complete documentat
 - Testing procedures
 - When and how to bypass hooks safely
 - FAQ and common issues
+
+---
+
+## Code Style
+
+This repository uses automated formatters to maintain consistent code style across all languages. Code formatting is enforced through pre-commit hooks and CI/CD pipelines.
+
+### Formatters
+
+- **Python**: [Black](https://github.com/psf/black) (line length: 100, target: Python 3.11)
+- **PowerShell**: [PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer) / Invoke-Formatter (OTBS style, 4-space indentation)
+- **SQL**: [SQLFluff](https://www.sqlfluff.com/) (PostgreSQL dialect, uppercase keywords)
+
+### Format All Code
+
+Use the convenience script to format all code:
+
+```bash
+./scripts/format-all.sh
+```
+
+Or format by language:
+
+```bash
+# Python
+black src/python/ tests/python/
+
+# PowerShell
+pwsh ./scripts/Format-PowerShellCode.ps1
+
+# SQL
+sqlfluff fix src/sql/
+```
+
+### Editor Integration
+
+The repository includes:
+- **`.editorconfig`** - Universal editor configuration
+- **`.vscode/settings.json`** - VS Code specific settings with format-on-save enabled
+
+Recommended VS Code extensions:
+- [Black Formatter](https://marketplace.visualstudio.com/items?itemName=ms-python.black-formatter)
+- [PowerShell](https://marketplace.visualstudio.com/items?itemName=ms-vscode.PowerShell)
+- [SQLFluff](https://marketplace.visualstudio.com/items?itemName=dorzey.vscode-sqlfluff)
+- [EditorConfig](https://marketplace.visualstudio.com/items?itemName=EditorConfig.EditorConfig)
+
+### Pre-Commit Enforcement
+
+Code formatting is automatically checked on commit via pre-commit hooks:
+- Black formatting check for Python
+- PSScriptAnalyzer formatting check for PowerShell
+- SQLFluff linting and auto-fix for SQL
+
+### CI/CD Enforcement
+
+The [Code Formatting workflow](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml) runs on all pull requests and pushes, ensuring all code meets formatting standards.
+
+### Documentation
+
+For detailed code style guidelines, configuration, and troubleshooting:
+- [Code Style Guide](docs/guides/code-style.md) - Comprehensive formatting guide for all languages
 
 ---
 

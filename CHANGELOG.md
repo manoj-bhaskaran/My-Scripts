@@ -9,6 +9,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Code Formatting Automation** (#464) - Comprehensive automated code formatting for all languages
+  - **Python Formatting (Black)**
+    - Enhanced `pyproject.toml` with Black configuration (line length 100, Python 3.11, exclude patterns)
+    - Added `black>=24.1.0`, `bandit>=1.7.5`, `sqlfluff>=3.0.0` to `requirements.txt`
+    - Black already integrated in pre-commit hooks (v24.1.1)
+  - **PowerShell Formatting**
+    - New file: `scripts/Format-PowerShellCode.ps1` - PowerShell code formatter script
+      - Formats all PowerShell files using PSScriptAnalyzer's Invoke-Formatter
+      - OTBS (One True Brace Style) formatting
+      - 4-space indentation, consistent whitespace
+      - Check-only mode for CI/CD validation
+      - Detailed summary and error reporting
+    - Updated `.pre-commit-config.yaml` - Added PowerShell formatting check hook
+  - **SQL Formatting (SQLFluff)**
+    - Enhanced `.sqlfluffrc` with comprehensive SQLFluff configuration
+      - PostgreSQL dialect, 4-space indentation, 120 character line length
+      - Uppercase keywords, lowercase identifiers
+      - Detailed indentation and capitalization rules
+    - SQLFluff already integrated in pre-commit hooks (v3.0.0)
+  - **Editor Configuration**
+    - New file: `.editorconfig` - Universal editor configuration
+      - Language-specific settings (Python, PowerShell, SQL, YAML, JSON, Markdown, Bash)
+      - Consistent indentation, line endings, encoding
+      - Whitespace and newline handling
+    - Enhanced `.vscode/settings.json` - VS Code formatting configuration
+      - Format on save enabled for all languages
+      - Black formatter for Python with auto-import organization
+      - PowerShell OTBS formatting preset
+      - SQLFluff formatter for SQL
+      - Language-specific tab sizes and settings
+  - **Formatting Scripts**
+    - New file: `scripts/format-all.sh` - Universal code formatting script
+      - Formats all Python, PowerShell, and SQL code
+      - Color-coded output with success/failure indicators
+      - Detailed summary and next steps
+      - Error handling and graceful degradation
+  - **CI/CD Enforcement**
+    - New workflow: `.github/workflows/code-formatting.yml` - Code formatting CI workflow
+      - Runs on push and PR to main/develop/claude/** branches
+      - Checks Python formatting with Black (--check --diff)
+      - Checks PowerShell formatting with Format-PowerShellCode.ps1 -Check
+      - Checks SQL formatting with SQLFluff lint
+      - GitHub Actions summary with formatted results table
+      - Fails CI if any formatting violations detected
+  - **Documentation**
+    - New file: `docs/guides/code-style.md` - Comprehensive code style guide
+      - Formatter configurations for Python, PowerShell, SQL
+      - Installation instructions for all formatters
+      - Before/after formatting examples
+      - Editor integration guide (VS Code, general editors)
+      - Pre-commit hooks usage
+      - CI/CD enforcement details
+      - Manual formatting commands
+      - Best practices and troubleshooting
+      - Reference links to formatter documentation
+    - Updated `README.md` - Code style section and formatting badges
+      - Added Black code style badge
+      - Added Code Formatting workflow badge
+      - New "Code Style" section with formatter overview
+      - Format commands for all languages
+      - Editor integration details
+      - Links to comprehensive code style guide
+  - **Features**
+    - Automated formatting for Python (Black), PowerShell (PSScriptAnalyzer), SQL (SQLFluff)
+    - Pre-commit hooks enforce formatting before commit
+    - CI/CD pipeline enforces formatting on all PRs and pushes
+    - Editor integration with format-on-save support
+    - Consistent code style across entire repository
+    - Comprehensive documentation and troubleshooting guides
+
 - **Pre-Commit Framework for Multi-Language Linting** (#463) - Comprehensive pre-commit hook system
   - **Pre-Commit Framework Installation**
     - New file: `.pre-commit-config.yaml` - Main configuration with all hooks and versions
