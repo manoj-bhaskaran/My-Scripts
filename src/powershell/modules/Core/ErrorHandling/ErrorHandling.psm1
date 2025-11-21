@@ -81,12 +81,28 @@ function Invoke-WithErrorHandling {
             "Error: $($_.Exception.Message)"
         }
 
+        # Handle logging based on OnError setting
         if ($LogError) {
-            # Try to use PowerShellLoggingFramework if available
-            if (Get-Command Write-LogError -ErrorAction SilentlyContinue) {
-                Write-LogError $errMsg
-            } else {
-                Write-Error $errMsg
+            switch ($OnError) {
+                'Stop' {
+                    # Log as error
+                    if (Get-Command Write-LogError -ErrorAction SilentlyContinue) {
+                        Write-LogError $errMsg
+                    } else {
+                        Write-Error $errMsg -ErrorAction Continue
+                    }
+                }
+                'Continue' {
+                    # Log as warning for Continue
+                    if (Get-Command Write-LogWarning -ErrorAction SilentlyContinue) {
+                        Write-LogWarning $errMsg
+                    } else {
+                        Write-Warning $errMsg
+                    }
+                }
+                'SilentlyContinue' {
+                    # Don't log anything for SilentlyContinue
+                }
             }
         }
 

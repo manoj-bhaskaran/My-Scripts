@@ -119,8 +119,8 @@ Describe "Test-IsElevated" {
 Describe "Assert-Elevated" {
     Context "When not elevated" {
         BeforeAll {
-            # Mock Test-IsElevated to return false
-            Mock Test-IsElevated { return $false }
+            # Mock Test-IsElevated to return false (module-scoped)
+            Mock Test-IsElevated { return $false } -ModuleName ErrorHandling
         }
 
         It "Throws error when not elevated" {
@@ -134,8 +134,8 @@ Describe "Assert-Elevated" {
 
     Context "When elevated" {
         BeforeAll {
-            # Mock Test-IsElevated to return true
-            Mock Test-IsElevated { return $true }
+            # Mock Test-IsElevated to return true (module-scoped)
+            Mock Test-IsElevated { return $true } -ModuleName ErrorHandling
         }
 
         It "Does not throw when elevated" {
