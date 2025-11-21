@@ -308,14 +308,21 @@ def safe_execute(
 
 
 class ErrorContext:
-    """Context manager for error handling with optional retry.
+    """Context manager for error handling.
+
+    Note: Context managers cannot restart the 'with' block, so retry
+    parameters are mainly for tracking attempts in manual retry loops.
+    For automatic retry, use @with_retry decorator or retry_operation().
 
     Example:
         >>> with ErrorContext("Processing data", on_error="continue"):
         ...     process_data()
 
-        >>> with ErrorContext("Fetch API data", max_retries=3):
-        ...     data = fetch_from_api()
+        >>> # For retry, use in a loop
+        >>> for attempt in range(3):
+        ...     with ErrorContext("Fetch API data", on_error="continue"):
+        ...         data = fetch_from_api()
+        ...         break  # Exit loop on success
     """
 
     def __init__(

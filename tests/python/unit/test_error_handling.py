@@ -260,16 +260,12 @@ class TestErrorContext:
 
         assert executed is True
 
-    def test_retry_in_context(self):
-        """Test retry logic in context."""
-        call_count = 0
+    def test_retry_parameters_accepted(self):
+        """Test that retry parameters are accepted."""
+        # ErrorContext accepts retry parameters but note: context managers
+        # cannot restart the with block, so actual retry requires external loop
+        with ErrorContext("Test operation", max_retries=3, retry_delay=0.1, on_error="continue"):
+            # This will suppress the error
+            raise ValueError("test error")
 
-        def operation():
-            nonlocal call_count
-            with ErrorContext("Test operation", max_retries=3, retry_delay=0.1):
-                call_count += 1
-                if call_count < 3:
-                    raise ValueError("temporary error")
-
-        operation()
-        assert call_count == 3
+        # Test completes without raising
