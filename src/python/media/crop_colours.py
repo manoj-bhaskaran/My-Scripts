@@ -41,7 +41,7 @@ EXIT CODES
     2  Usage/validation error (empty input without --allow-empty, invalid resume file, etc.)
 
     Exit code policy: Partial success (some images processed, some failed) returns 1 to alert automation.
-     
+
 DEPENDENCIES
     - OpenCV:      pip install opencv-python
     - NumPy:       pip install numpy
@@ -100,7 +100,7 @@ FAQS
        A: Successfully processed files are recorded in <input>/.processed_images (absolute paths).
           Existing crops are also detected when determining whether work is needed.
           Delete .processed_images to reset tracking or pass --reprocess-cropped to redo work.
-          
+
     Q: How do I handle images with transparent backgrounds?
        A: Use --preserve-alpha to detect borders based on alpha transparency.
 
@@ -121,8 +121,8 @@ CHANGELOG
 
     ## 3.x
     **Breaking / Behavior**
-    - Default is now **non-destructive**: outputs are written to `<input>/Cropped` with suffix `_cropped` (no overwrite).  
-    - Exit semantics refined: when all images are already processed, return **0** (success) instead of **2**.  
+    - Default is now **non-destructive**: outputs are written to `<input>/Cropped` with suffix `_cropped` (no overwrite).
+    - Exit semantics refined: when all images are already processed, return **0** (success) instead of **2**.
     - Stricter parameter validation across thresholds, padding, min-area, etc.
 
     **Add**
@@ -219,6 +219,7 @@ _PARSE_ARGS_MAX_DEPTH = 1
 # Platform-specific file locking imports
 try:
     import fcntl
+
     _has_unix_locking = True
 except ImportError:
     _has_unix_locking = False
@@ -226,6 +227,7 @@ except ImportError:
 # Windows file locking fallback
 try:
     import msvcrt
+
     _has_windows_locking = True
 except ImportError:
     _has_windows_locking = False
@@ -241,6 +243,7 @@ except Exception as e:
 _processed_file_lock = threading.Lock()
 # --- CLI & defaults ----------------------------------------------------------
 
+
 def default_workers() -> int:
     """Heuristic for I/O-bound workloads: ~2×CPU, floor 4, cap 64."""
     try:
@@ -248,16 +251,17 @@ def default_workers() -> int:
     except Exception:
         return 8
 
+
 def _validate_parameters(args) -> None:
     """
     Validate command-line parameters with meaningful error messages.
     Extracted to reduce cognitive complexity of parse_args.
     """
     import argparse
-    
+
     # Create a dummy parser for error reporting
     p = argparse.ArgumentParser()
-    
+
     if args.low_threshold < 0 or args.low_threshold > 255:
         p.error("--low-threshold must be between 0-255")
     if args.high_threshold < 0 or args.high_threshold > 255:
@@ -276,8 +280,11 @@ def _validate_parameters(args) -> None:
         p.error("--retry-writes must be positive")
     if args.progress_interval < 0:
         p.error("--progress-interval cannot be negative")
+
+
 # Global flag to track if we've shown save failure guidance this run
 _save_failure_guidance_shown = False
+
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """
@@ -291,57 +298,119 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     global _PARSE_ARGS_DEPTH
     if _PARSE_ARGS_DEPTH >= _PARSE_ARGS_MAX_DEPTH:
         # Logger is already initialized above; emit a clear, actionable error.
-        logger.error("Recursive parse_args() invocation detected; aborting to prevent infinite recursion.")
+        logger.error(
+            "Recursive parse_args() invocation detected; aborting to prevent infinite recursion."
+        )
         raise SystemExit(2)
     _PARSE_ARGS_DEPTH += 1
     try:
         p = argparse.ArgumentParser(description="Crop uniform borders from images in a folder.")
 
         p.add_argument("--input", required=True, help="Input folder containing images.")
-        p.add_argument("--output", default=None,
-                       help="Output folder (default: <input>/Cropped). Ignored with --in-place.")
-        p.add_argument("--in-place", action="store_true",
-                       help="Overwrite originals in-place (atomic replace).")
+        p.add_argument(
+            "--output",
+            default=None,
+            help="Output folder (default: <input>/Cropped). Ignored with --in-place.",
+        )
+        p.add_argument(
+            "--in-place", action="store_true", help="Overwrite originals in-place (atomic replace)."
+        )
         # Accept both kebab and underscore to match callers
-        p.add_argument("--resume-file", dest="resume_file", default=None,
-                       help="Resume after this image (filename or absolute path).")
-        p.add_argument("--resume_file", dest="resume_file", default=None,
-                       help=argparse.SUPPRESS)
-        p.add_argument("--suffix", default="_cropped",
-                       help="Filename suffix in non in-place mode (default: _cropped).")
-        p.add_argument("--no-suffix", action="store_true",
-                       help="Do not append a suffix in non in-place mode (still non-clobbering).")
-        p.add_argument("--preserve-alpha", action="store_true",
-                       help="Detect transparent borders using alpha channel (for PNG with transparency).")
-        p.add_argument("--alpha-threshold", type=int, default=0,
-                       help="Minimum alpha value to treat as content (default: 0). Increase to ignore semi-transparent edges.")
-        p.add_argument("--max-workers", type=int, default=default_workers(),
-                       help="Thread pool size (I/O-bound default: 2×CPU, capped 64).")
-        p.add_argument("--retry-writes", type=int, default=3,
-                       help="Retries for image writes (cv2.imwrite).")
-        p.add_argument("--skip-bad-images", action="store_true",
-                       help="Skip corrupt/unsupported images instead of failing the run.")
-        p.add_argument("--allow-empty", action="store_true",
-                       help="Treat empty input folder as success (exit 0).")
-        p.add_argument("--recurse", action="store_true",
-                       help="Search subfolders recursively for images.")
-        p.add_argument("--reprocess-cropped", dest="reprocess_cropped", action="store_true",
-                       help="Reprocess even if images were cropped previously.")
-        p.add_argument("--keep-existing-crops", dest="keep_existing_crops", action="store_true",
-                       help="When used with --reprocess-cropped (non in-place), do not delete existing crops; add new outputs alongside.")
-        p.add_argument("--progress-interval", type=int, default=100,
-                       help="Log progress every N completed images (default: 100).")
+        p.add_argument(
+            "--resume-file",
+            dest="resume_file",
+            default=None,
+            help="Resume after this image (filename or absolute path).",
+        )
+        p.add_argument("--resume_file", dest="resume_file", default=None, help=argparse.SUPPRESS)
+        p.add_argument(
+            "--suffix",
+            default="_cropped",
+            help="Filename suffix in non in-place mode (default: _cropped).",
+        )
+        p.add_argument(
+            "--no-suffix",
+            action="store_true",
+            help="Do not append a suffix in non in-place mode (still non-clobbering).",
+        )
+        p.add_argument(
+            "--preserve-alpha",
+            action="store_true",
+            help="Detect transparent borders using alpha channel (for PNG with transparency).",
+        )
+        p.add_argument(
+            "--alpha-threshold",
+            type=int,
+            default=0,
+            help="Minimum alpha value to treat as content (default: 0). Increase to ignore semi-transparent edges.",
+        )
+        p.add_argument(
+            "--max-workers",
+            type=int,
+            default=default_workers(),
+            help="Thread pool size (I/O-bound default: 2×CPU, capped 64).",
+        )
+        p.add_argument(
+            "--retry-writes", type=int, default=3, help="Retries for image writes (cv2.imwrite)."
+        )
+        p.add_argument(
+            "--skip-bad-images",
+            action="store_true",
+            help="Skip corrupt/unsupported images instead of failing the run.",
+        )
+        p.add_argument(
+            "--allow-empty",
+            action="store_true",
+            help="Treat empty input folder as success (exit 0).",
+        )
+        p.add_argument(
+            "--recurse", action="store_true", help="Search subfolders recursively for images."
+        )
+        p.add_argument(
+            "--reprocess-cropped",
+            dest="reprocess_cropped",
+            action="store_true",
+            help="Reprocess even if images were cropped previously.",
+        )
+        p.add_argument(
+            "--keep-existing-crops",
+            dest="keep_existing_crops",
+            action="store_true",
+            help="When used with --reprocess-cropped (non in-place), do not delete existing crops; add new outputs alongside.",
+        )
+        p.add_argument(
+            "--progress-interval",
+            type=int,
+            default=100,
+            help="Log progress every N completed images (default: 100).",
+        )
         p.add_argument("--debug", action="store_true", help="Enable debug logging.")
 
         # Crop tuning (optional, sensible defaults)
-        p.add_argument("--low-threshold", type=int, default=5,
-                       help="Pixel values <= low-threshold treated as 'black' border.")
-        p.add_argument("--high-threshold", type=int, default=250,
-                       help="Pixel values >= high-threshold treated as 'white' border.")
-        p.add_argument("--min-area", type=int, default=256,
-                       help="Minimum content area (pixels) required to accept a crop bbox.")
-        p.add_argument("--padding", type=int, default=2,
-                       help="Extra pixels to include around detected content (clamped).")
+        p.add_argument(
+            "--low-threshold",
+            type=int,
+            default=5,
+            help="Pixel values <= low-threshold treated as 'black' border.",
+        )
+        p.add_argument(
+            "--high-threshold",
+            type=int,
+            default=250,
+            help="Pixel values >= high-threshold treated as 'white' border.",
+        )
+        p.add_argument(
+            "--min-area",
+            type=int,
+            default=256,
+            help="Minimum content area (pixels) required to accept a crop bbox.",
+        )
+        p.add_argument(
+            "--padding",
+            type=int,
+            default=2,
+            help="Extra pixels to include around detected content (clamped).",
+        )
 
         args = p.parse_args(argv)
 
@@ -361,10 +430,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         if getattr(args, "debug", False):
             try:
                 import platform
+
                 py_ver = platform.python_version()
                 cv2_ver = getattr(cv2, "__version__", "?")
-                np_ver  = getattr(np, "__version__", "?")
-                logger.debug("Runtime versions: Python=%s; OpenCV(cv2)=%s; NumPy=%s", py_ver, cv2_ver, np_ver)
+                np_ver = getattr(np, "__version__", "?")
+                logger.debug(
+                    "Runtime versions: Python=%s; OpenCV(cv2)=%s; NumPy=%s", py_ver, cv2_ver, np_ver
+                )
             except Exception as e:
                 logger.debug("Failed to emit runtime version info: %s", e)
 
@@ -372,6 +444,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     finally:
         # Always decrement the recursion counter to avoid false positives on next call.
         _PARSE_ARGS_DEPTH = max(0, _PARSE_ARGS_DEPTH - 1)
+
 
 # --- Image & crop helpers ----------------------------------------------------
 
@@ -382,56 +455,56 @@ def list_images(folder: str, recurse: bool = False) -> list[str]:
     """Return sorted absolute image paths with valid extensions. Optionally recurse."""
     root = Path(folder)
     it = root.rglob("*") if recurse else root.iterdir()
-    return sorted(
-        str(p.resolve())
-        for p in it
-        if p.is_file() and p.suffix.lower() in VALID_EXTS
-    )
+    return sorted(str(p.resolve()) for p in it if p.is_file() and p.suffix.lower() in VALID_EXTS)
+
 
 def get_processed_set(folder: str) -> set[str]:
     """
     Load set of already-processed files from .processed_images tracking file.
-    
+
     Returns absolute paths of files that were successfully processed in previous runs.
     Creates the tracking file if it doesn't exist. Handles read errors gracefully.
     """
     processed_file = os.path.join(folder, ".processed_images")
     processed = set()
-    
+
     with _processed_file_lock:
         if not os.path.exists(processed_file):
             # Create empty tracking file
             try:
-                with open(processed_file, 'w', encoding='utf-8'):
+                with open(processed_file, "w", encoding="utf-8"):
                     pass  # Create empty file for tracking processed images
             except Exception as e:
                 logger.debug("Could not create processed tracking file: %s", e)
                 return processed
-   
+
         try:
-            with open(processed_file, 'r', encoding='utf-8') as f:
+            with open(processed_file, "r", encoding="utf-8") as f:
                 for line in f:
                     path = line.strip()
                     if path and os.path.exists(path):
                         processed.add(path)
-            logger.debug("Loaded %d previously processed images from %s", len(processed), processed_file)
+            logger.debug(
+                "Loaded %d previously processed images from %s", len(processed), processed_file
+            )
         except Exception as e:
             logger.warning("Could not read processed tracking file %s: %s", processed_file, e)
     return processed
 
+
 def mark_processed(folder: str, path: str) -> None:
     """
     Append a successfully processed file path to .processed_images tracking file.
-   
+
     Thread-safe implementation using file locking to prevent corruption from
-    concurrent worker threads. Used to prevent reprocessing the same files 
+    concurrent worker threads. Used to prevent reprocessing the same files
     in subsequent runs.
     """
     processed_file = os.path.join(folder, ".processed_images")
-    
+
     with _processed_file_lock:
         try:
-            with open(processed_file, 'a', encoding='utf-8') as f:
+            with open(processed_file, "a", encoding="utf-8") as f:
                 # Platform-specific file locking for additional safety
                 if _has_unix_locking:
                     try:
@@ -443,16 +516,17 @@ def mark_processed(folder: str, path: str) -> None:
                         msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
                     except (OSError, AttributeError):
                         pass  # Fallback to thread lock only
-                
+
                 f.write(f"{path}\n")
                 f.flush()  # Ensure immediate write
         except Exception as e:
             logger.debug("Could not update processed tracking file: %s", e)
 
+
 def validate_resume_file(folder: str, resume: str) -> str:
     """
     Validate --resume-file: must exist, have valid extension, and be readable as an image.
-    
+
     Returns absolute path (resolves relative names under folder). Performs strict
     validation including attempting to load the image to ensure it's not corrupted.
     """
@@ -461,10 +535,13 @@ def validate_resume_file(folder: str, resume: str) -> str:
         path = Path(folder) / resume
     # Check existence and extension first
     if not path.exists() or path.suffix.lower() not in VALID_EXTS:
-        logger.error("Invalid --resume-file: %s (must exist and have .png/.jpg/.jpeg extension). "
-                    "Check path/extension or pass a file under --input; try --recurse if it's in a subfolder.", str(path))
+        logger.error(
+            "Invalid --resume-file: %s (must exist and have .png/.jpg/.jpeg extension). "
+            "Check path/extension or pass a file under --input; try --recurse if it's in a subfolder.",
+            str(path),
+        )
         raise SystemExit(2)
-    
+
     # Verify the file is actually a readable image
     try:
         test_img = cv2.imread(str(path), cv2.IMREAD_COLOR)
@@ -473,20 +550,21 @@ def validate_resume_file(folder: str, resume: str) -> str:
     except Exception as e:
         logger.error("Resume file is not a readable image: %s - %s", str(path), e)
         raise SystemExit(2)
-  
+
     return str(path.resolve())
+
 
 def load_image(path: str, preserve_alpha: bool = False) -> "np.ndarray":
     """
     Load an image with optional alpha channel preservation.
-    
+
     Args:
         path: Path to image file
         preserve_alpha: If True, load with alpha channel intact for transparency detection
-        
+
     Returns:
         Loaded image as numpy array
-        
+
     Raises:
         ValueError: If image is corrupt/unsupported
     """
@@ -515,10 +593,10 @@ def detect_content_bbox(
       - Mark as 'content' pixels based on the selected detection method
       - If any content exists and area >= min_area, return bbox with optional padding.
       - Otherwise, return None (no crop).
-      
+
     Args:
         alpha_threshold: Minimum alpha value to treat as content (0-255). Higher values ignore semi-transparent edges.
- 
+
 
     Returns bbox as (y0, y1, x0, x1) in image coordinates, or None.
     """
@@ -543,9 +621,9 @@ def detect_content_bbox(
         else:
             # Fallback for unexpected image formats
             gray = img.astype(np.uint8) if img.dtype != np.uint8 else img
-  
+
         content_mask = (gray > low_threshold) & (gray < high_threshold)
- 
+
     if not np.any(content_mask):
         return None
 
@@ -636,14 +714,18 @@ def crop_image(
     alpha_threshold: int = 0,
 ) -> "np.ndarray":
     """Return cropped image if a bbox is found; otherwise return original."""
-    bbox = detect_content_bbox(img, low_threshold, high_threshold, min_area, padding, preserve_alpha, alpha_threshold)
+    bbox = detect_content_bbox(
+        img, low_threshold, high_threshold, min_area, padding, preserve_alpha, alpha_threshold
+    )
     if bbox is None:
         return img
     y0, y1, x0, x1 = bbox
-    return img[y0:y1 + 1, x0:x1 + 1]
+    return img[y0 : y1 + 1, x0 : x1 + 1]
+
 
 class ProcessingConfig:
     """Configuration object to reduce parameter count in process_one function."""
+
     def __init__(self, args, root: str, folder: str):
         self.retry_writes = args.retry_writes
         self.low_threshold = args.low_threshold
@@ -658,7 +740,9 @@ class ProcessingConfig:
         self.root = root
         self.folder = folder
 
+
 # --- Worker & orchestration --------------------------------------------------
+
 
 def process_one(
     in_path: str,
@@ -673,24 +757,32 @@ def process_one(
     try:
         img = load_image(in_path, config.preserve_alpha)
         cropped = crop_image(
-            img, 
-            config.low_threshold, 
-            config.high_threshold, 
-            config.min_area, 
-            config.padding, 
-            config.preserve_alpha, 
-            config.alpha_threshold
+            img,
+            config.low_threshold,
+            config.high_threshold,
+            config.min_area,
+            config.padding,
+            config.preserve_alpha,
+            config.alpha_threshold,
         )
         out_path = ensure_output_path(
-            in_path, out_dir, config.root,
-            suffix=config.suffix, no_suffix=config.no_suffix, in_place=config.in_place
+            in_path,
+            out_dir,
+            config.root,
+            suffix=config.suffix,
+            no_suffix=config.no_suffix,
+            in_place=config.in_place,
         )
 
         if config.in_place:
             # Atomic replace via temp file to reduce partial write risk
             tmp = in_path + ".tmp_write"
             if not imwrite_retry(tmp, cropped, attempts=config.retry_writes):
-                return (in_path, False, f"Failed to save image to '{tmp}' after {config.retry_writes} attempts.")
+                return (
+                    in_path,
+                    False,
+                    f"Failed to save image to '{tmp}' after {config.retry_writes} attempts.",
+                )
             try:
                 os.replace(tmp, in_path)
             except Exception as e:
@@ -707,11 +799,15 @@ def process_one(
                 if not _save_failure_guidance_shown:
                     guidance = " Check write permissions and free disk space."
                     _save_failure_guidance_shown = True
-                return (in_path, False, f"Failed to save image to '{out_path}' after {config.retry_writes} attempts.{guidance}")
+                return (
+                    in_path,
+                    False,
+                    f"Failed to save image to '{out_path}' after {config.retry_writes} attempts.{guidance}",
+                )
 
         # Mark as successfully processed for future run tracking
         mark_processed(config.folder, in_path)
-     
+
         return (in_path, True, None)
 
     except Exception as e:
@@ -737,9 +833,11 @@ def _filter_processed_images(
     if filtered_count > 0:
         logger.info(
             "Filtered out %d already-processed images (%d remaining)",
-            filtered_count, len(filtered_images),
+            filtered_count,
+            len(filtered_images),
         )
     return filtered_images
+
 
 def _validate_paths(args) -> tuple[Optional[str], Optional[int]]:
     """Validate and normalize input/output paths & flags. Returns (folder, exit_code)."""
@@ -774,7 +872,7 @@ def _collect_and_filter_images(
 ) -> tuple[Optional[list[str]], Optional[int]]:
     """
     Collect images and filter out already-processed ones (unless reprocess_cropped=True).
-    
+
     Returns (image_list, exit_code) where exit_code is None on success.
     On empty input after filtering:
       - return ([], 0) if allow_empty
@@ -788,22 +886,27 @@ def _collect_and_filter_images(
             logger.info("--allow-empty set; exiting 0")
             return [], 0
         return None, 2
-    
+
     # Apply processed file filtering using on-disk tracking file
     processed_set = get_processed_set(folder)
     filtered_images = _filter_processed_images(images, processed_set, reprocess_cropped)
-    
+
     # Handle empty results after filtering
     if not filtered_images:
         if allow_empty:
             logger.info("No unprocessed images remaining; --allow-empty set; exiting 0")
             return [], 0
-        logger.info("No unprocessed images remaining (all previously completed); treating as success")
+        logger.info(
+            "No unprocessed images remaining (all previously completed); treating as success"
+        )
         return [], 0
 
     return filtered_images, None
 
-def _delete_existing_crops_for_image(in_path: str, output_dir: str, root: str, *, suffix: str, no_suffix: bool) -> int:
+
+def _delete_existing_crops_for_image(
+    in_path: str, output_dir: str, root: str, *, suffix: str, no_suffix: bool
+) -> int:
     """
     Delete the expected cropped output (and de-duplicated siblings) for an input image.
     Returns number of files deleted. No-op if paths can't be derived.
@@ -821,6 +924,7 @@ def _delete_existing_crops_for_image(in_path: str, output_dir: str, root: str, *
         ]
         deleted = 0
         import glob
+
         for pat in patterns:
             for fp in glob.glob(pat):
                 try:
@@ -832,7 +936,10 @@ def _delete_existing_crops_for_image(in_path: str, output_dir: str, root: str, *
     except Exception:
         return 0
 
-def _resolve_resume_index(folder: str, images: list[str], resume_file: Optional[str]) -> tuple[Optional[int], Optional[int]]:
+
+def _resolve_resume_index(
+    folder: str, images: list[str], resume_file: Optional[str]
+) -> tuple[Optional[int], Optional[int]]:
     """
     Compute starting index based on --resume-file.
     Returns (start_index, exit_code) where exit_code is None on success.
@@ -842,11 +949,12 @@ def _resolve_resume_index(folder: str, images: list[str], resume_file: Optional[
         return 0, None
 
     resume_abs = validate_resume_file(folder, resume_file)  # may SystemExit(2)
-    
+
     # Case-insensitive path comparison for Windows compatibility
     import platform
-    is_case_insensitive = platform.system().lower() == 'windows'
-    
+
+    is_case_insensitive = platform.system().lower() == "windows"
+
     if is_case_insensitive:
         # Windows: case-insensitive path matching
         resume_normalized = os.path.normcase(os.path.normpath(resume_abs))
@@ -860,34 +968,59 @@ def _resolve_resume_index(folder: str, images: list[str], resume_file: Optional[
         except ValueError:
             # Fall through to common error handling
             pass
-    
+
     # Common error handling for both platforms when file not found
-    logger.error("--resume-file not found in input set: %s. Check path/extension or pass a file under --input; try --recurse if it's in a subfolder.", resume_abs)
+    logger.error(
+        "--resume-file not found in input set: %s. Check path/extension or pass a file under --input; try --recurse if it's in a subfolder.",
+        resume_abs,
+    )
     raise SystemExit(2)
 
-def _should_log_progress(i: int, total: int, args, current_time: float, last_progress_time: float) -> bool:
+
+def _should_log_progress(
+    i: int, total: int, args, current_time: float, last_progress_time: float
+) -> bool:
     """
     Determine if progress should be logged for current iteration.
-    
+
     Extracted to reduce cognitive complexity of main processing loop.
     Logs on debug, explicit intervals, percentage milestones, or time thresholds.
     """
     return (
-        args.debug or
-        (args.progress_interval and args.progress_interval > 0 and i % args.progress_interval == 0) or
-        (i % max(1, total // 20) == 0) or  # Every 5% for large batches
-        (current_time - last_progress_time >= 5.0)  # Every 5 seconds minimum
+        args.debug
+        or (
+            args.progress_interval
+            and args.progress_interval > 0
+            and i % args.progress_interval == 0
+        )
+        or (i % max(1, total // 20) == 0)  # Every 5% for large batches
+        or (current_time - last_progress_time >= 5.0)  # Every 5 seconds minimum
     )
 
 
-def _log_progress_stats(i: int, total: int, processed: int, skipped: int, failures: int, 
-                       start_time: float, current_time: float) -> None:
+def _log_progress_stats(
+    i: int,
+    total: int,
+    processed: int,
+    skipped: int,
+    failures: int,
+    start_time: float,
+    current_time: float,
+) -> None:
     """Log formatted progress statistics with ETA calculation."""
     elapsed = current_time - start_time
     rate = i / elapsed if elapsed > 0 else 0
     eta = (total - i) / rate if rate > 0 else 0
-    logger.info("[%d/%d] Progress: processed=%d, skipped=%d, failed=%d (%.1f img/sec, ETA: %.0fs)",
-                i, total, processed, skipped, failures, rate, eta)
+    logger.info(
+        "[%d/%d] Progress: processed=%d, skipped=%d, failed=%d (%.1f img/sec, ETA: %.0fs)",
+        i,
+        total,
+        processed,
+        skipped,
+        failures,
+        rate,
+        eta,
+    )
 
 
 def _classify_result(ok: bool, err: Optional[str], skip_bad_images: bool) -> str:
@@ -902,15 +1035,19 @@ def _classify_result(ok: bool, err: Optional[str], skip_bad_images: bool) -> str
 def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, int, float]:
     """
     Execute parallel crop/save operations with enhanced progress reporting.
-    
+
     Returns (processed, skipped, failures, elapsed_seconds) for summary statistics.
     Complexity reduced by extracting progress logging and statistics helpers.
     """
     total = len(to_process)
- 
+
     logger.info(
         "Starting crop: %d images (workers=%d, out=%s, recurse=%s, in_place=%s)",
-        total, args.max_workers, (args.output or "in-place"), args.recurse, args.in_place
+        total,
+        args.max_workers,
+        (args.output or "in-place"),
+        args.recurse,
+        args.in_place,
     )
 
     start_time = time.time()
@@ -918,7 +1055,7 @@ def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, in
     processed = skipped = failures = 0
 
     config = ProcessingConfig(args, root, args.input)
-  
+
     with fut.ThreadPoolExecutor(max_workers=args.max_workers) as ex:
         # Submit all tasks
         future_map = {
@@ -955,9 +1092,11 @@ def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, in
             # Enhanced progress reporting (complexity reduced via helpers)
             current_time = time.time()
             should_log = _should_log_progress(i, total, args, current_time, last_progress_time)
-            
+
             if should_log:
-                _log_progress_stats(i, total, processed, skipped, failures, start_time, current_time)
+                _log_progress_stats(
+                    i, total, processed, skipped, failures, start_time, current_time
+                )
                 last_progress_time = current_time
 
     elapsed_total = time.time() - start_time
@@ -1022,7 +1161,14 @@ def _maybe_handle_reprocessing(to_process: list[str], args, folder: str) -> None
 
 
 def _emit_summary(
-    total: int, processed: int, skipped: int, failures: int, elapsed: float, *, output: Optional[str], in_place: bool
+    total: int,
+    processed: int,
+    skipped: int,
+    failures: int,
+    elapsed: float,
+    *,
+    output: Optional[str],
+    in_place: bool,
 ) -> None:
     """Emit a consistent end-of-run summary."""
     rate_overall = total / elapsed if elapsed > 0 else 0
@@ -1049,9 +1195,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     _maybe_handle_reprocessing(to_process, args, folder)
 
-    processed, skipped, failures, elapsed_total = _process_batch(
-        to_process, args, root=folder
-    )
+    processed, skipped, failures, elapsed_total = _process_batch(to_process, args, root=folder)
 
     _emit_summary(
         len(to_process),
@@ -1064,6 +1208,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
 
     return 1 if failures > 0 else 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -14,13 +14,11 @@ from typing import Any, Callable, Optional, TypeVar, Union
 logger = logging.getLogger(__name__)
 
 # Type variable for generic function typing
-F = TypeVar('F', bound=Callable[..., Any])
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 def with_error_handling(
-    on_error: str = "raise",
-    log_errors: bool = True,
-    error_message: Optional[str] = None
+    on_error: str = "raise", log_errors: bool = True, error_message: Optional[str] = None
 ) -> Callable[[F], F]:
     """Decorator for standardized error handling.
 
@@ -42,6 +40,7 @@ def with_error_handling(
         ... def process_data(data):
         ...     return data.process()
     """
+
     def decorator(func: F) -> F:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
@@ -49,7 +48,11 @@ def with_error_handling(
                 return func(*args, **kwargs)
             except Exception as e:
                 if log_errors:
-                    msg = f"{error_message}: {e}" if error_message else f"Error in {func.__name__}: {e}"
+                    msg = (
+                        f"{error_message}: {e}"
+                        if error_message
+                        else f"Error in {func.__name__}: {e}"
+                    )
                     logger.error(msg)
 
                 if on_error == "raise":
@@ -62,6 +65,7 @@ def with_error_handling(
                     raise ValueError(f"Invalid on_error value: {on_error}")
 
         return wrapper  # type: ignore
+
     return decorator
 
 
@@ -70,7 +74,7 @@ def with_retry(
     retry_delay: float = 2.0,
     max_backoff: float = 60.0,
     exceptions: tuple = (Exception,),
-    log_errors: bool = True
+    log_errors: bool = True,
 ) -> Callable[[F], F]:
     """Decorator for automatic retry with exponential backoff.
 
@@ -94,6 +98,7 @@ def with_retry(
         ...     with open(path, 'w') as f:
         ...         f.write(content)
     """
+
     def decorator(func: F) -> F:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
@@ -115,9 +120,7 @@ def with_retry(
 
                     if attempt >= max_retries:
                         if log_errors:
-                            logger.error(
-                                f"{func.__name__} failed after {attempt} attempt(s): {e}"
-                            )
+                            logger.error(f"{func.__name__} failed after {attempt} attempt(s): {e}")
                         raise
 
                     # Calculate exponential backoff delay
@@ -132,6 +135,7 @@ def with_retry(
                     time.sleep(delay)
 
         return wrapper  # type: ignore
+
     return decorator
 
 
@@ -141,7 +145,7 @@ def retry_operation(
     max_retries: int = 3,
     retry_delay: float = 2.0,
     max_backoff: float = 60.0,
-    log_errors: bool = True
+    log_errors: bool = True,
 ) -> Any:
     """Execute operation with automatic retry on failure.
 
@@ -178,9 +182,7 @@ def retry_operation(
             result = operation()
 
             if attempt > 0 and log_errors:
-                logger.info(
-                    f"Succeeded {description} after {attempt} retry attempt(s)"
-                )
+                logger.info(f"Succeeded {description} after {attempt} retry attempt(s)")
 
             return result
 
@@ -222,12 +224,15 @@ def is_elevated() -> bool:
     if system == "Windows":
         try:
             import ctypes
+
             return ctypes.windll.shell32.IsUserAnAdmin() != 0
         except Exception:
             # Fallback: check if we can write to system directory
             try:
-                test_file = os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "temp_admin_test")
-                with open(test_file, 'w') as f:
+                test_file = os.path.join(
+                    os.environ.get("SystemRoot", "C:\\Windows"), "temp_admin_test"
+                )
+                with open(test_file, "w") as f:
                     f.write("test")
                 os.remove(test_file)
                 return True
@@ -265,7 +270,7 @@ def safe_execute(
     func: Callable[[], Any],
     on_error: str = "raise",
     error_message: Optional[str] = None,
-    log_errors: bool = True
+    log_errors: bool = True,
 ) -> Optional[Any]:
     """Execute function with error handling.
 
@@ -331,7 +336,7 @@ class ErrorContext:
         on_error: str = "raise",
         log_errors: bool = True,
         max_retries: int = 1,
-        retry_delay: float = 2.0
+        retry_delay: float = 2.0,
     ):
         """Initialize error context.
 
@@ -358,9 +363,7 @@ class ErrorContext:
         if exc_type is None:
             # No exception, success
             if self.attempt > 0 and self.log_errors:
-                logger.info(
-                    f"Succeeded {self.description} after {self.attempt} retry attempt(s)"
-                )
+                logger.info(f"Succeeded {self.description} after {self.attempt} retry attempt(s)")
             return True
 
         self.attempt += 1

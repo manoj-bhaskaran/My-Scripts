@@ -45,6 +45,7 @@ from threading import Lock
 __version__ = "1.0.0"
 FILE_UNIT = " file(s)"
 
+
 def load_checkpoint(path):
     """
     Loads the checkpoint file if it exists and returns the stored state information.
@@ -59,10 +60,11 @@ def load_checkpoint(path):
     if not os.path.exists(path):
         return {}
     try:
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             return json.load(f)
     except Exception:
         return {}
+
 
 def save_checkpoint(path, stage_name, args):
     """
@@ -87,15 +89,16 @@ def save_checkpoint(path, stage_name, args):
         "folder": args.folder,
         "output": args.output,
         "temp": args.temp,
-        "sorted": args.sorted
+        "sorted": args.sorted,
     }
     try:
         tmp_path = path + ".tmp"
-        with open(tmp_path, 'w') as f:
+        with open(tmp_path, "w") as f:
             json.dump(data, f, indent=2)
         os.replace(tmp_path, path)
     except Exception as e:
         plog.log_warning(f"Failed to save checkpoint: {e}")
+
 
 def is_safe_path(base, target):
     """
@@ -112,6 +115,7 @@ def is_safe_path(base, target):
     base = os.path.abspath(base)
     target = os.path.abspath(target)
     return os.path.commonpath([base]) == os.path.commonpath([base, target])
+
 
 def compute_md5(file_path):
     """
@@ -133,6 +137,7 @@ def compute_md5(file_path):
         plog.log_warning(f"Error hashing {file_path}: {e}")
         return None
 
+
 def fast_walk(folder):
     """
     Recursively scans the given folder and yields file paths.
@@ -152,6 +157,7 @@ def fast_walk(folder):
                 yield entry.path
         except Exception as e:
             plog.log_warning(f"Error accessing {entry.path}: {e}")
+
 
 def stage1_list_files(folder, out_csv):
     """
@@ -185,12 +191,14 @@ def stage1_list_files(folder, out_csv):
             plog.log_warning(f"Skipping file {path}: {e}")
             return None
 
-    with open(out_csv, "w", newline='', encoding='utf-8') as f_out:
+    with open(out_csv, "w", newline="", encoding="utf-8") as f_out:
         writer = csv.writer(f_out)
 
         with ThreadPoolExecutor() as executor:
             futures = {executor.submit(get_size_safe, path): path for path in paths}
-            with tqdm(total=len(futures), desc="Processing files", unit=FILE_UNIT, dynamic_ncols=True) as pbar:
+            with tqdm(
+                total=len(futures), desc="Processing files", unit=FILE_UNIT, dynamic_ncols=True
+            ) as pbar:
                 for future in as_completed(futures):
                     result = future.result()
                     if result:
@@ -198,6 +206,7 @@ def stage1_list_files(folder, out_csv):
                     pbar.update(1)
 
     plog.log_info(f"Completed Stage 1: File list written to {out_csv}")
+
 
 def stage2_sort_csv(input_csv, sorted_csv):
     """
@@ -218,7 +227,7 @@ def stage2_sort_csv(input_csv, sorted_csv):
     plog.log_info("Starting Stage 2: Sorting by file size (Python)")
 
     try:
-        with open(input_csv, newline='', encoding='utf-8') as f_in:
+        with open(input_csv, newline="", encoding="utf-8") as f_in:
             reader = csv.reader(f_in)
             rows = []
             for row in reader:
@@ -234,7 +243,7 @@ def stage2_sort_csv(input_csv, sorted_csv):
 
         rows.sort()  # Sorts by size (first element of tuple)
 
-        with open(sorted_csv, "w", newline='', encoding='utf-8') as f_out:
+        with open(sorted_csv, "w", newline="", encoding="utf-8") as f_out:
             writer = csv.writer(f_out)
             writer.writerows(rows)
 
@@ -243,6 +252,7 @@ def stage2_sort_csv(input_csv, sorted_csv):
     except Exception as e:
         plog.log_error(f"Python sort failed: {e}")
         raise
+
 
 def _read_sorted_csv(sorted_csv):
     """
@@ -256,7 +266,7 @@ def _read_sorted_csv(sorted_csv):
     Only sizes with more than one file are included.
     """
 
-    with open(sorted_csv, newline='', encoding='utf-8') as f_in:
+    with open(sorted_csv, newline="", encoding="utf-8") as f_in:
         reader = csv.reader(f_in)
         rows = [(int(size), path) for size, path in reader if size and path.strip()]
 
@@ -266,6 +276,7 @@ def _read_sorted_csv(sorted_csv):
         if len(group_list) > 1:
             grouped_rows.append((size, group_list))
     return grouped_rows
+
 
 def _count_hashable_files(grouped_rows):
     """
@@ -283,6 +294,7 @@ def _count_hashable_files(grouped_rows):
 
     return sum(len(group_list) for _, group_list in grouped_rows)
 
+
 def _write_csv_header_if_needed(writer, mode):
     """
     Writes the CSV header row if the file is being opened in write mode.
@@ -296,6 +308,7 @@ def _write_csv_header_if_needed(writer, mode):
     """
     if mode == "w":
         writer.writerow(["group_id", "size", "md5_hash", "file_path"])
+
 
 def _compute_md5_safe(path):
     """
@@ -317,6 +330,7 @@ def _compute_md5_safe(path):
         plog.log_warning(f"Hashing failed for {path}: {e}")
         return None
 
+
 def _hash_files_in_parallel(paths):
     """
     Computes MD5 hashes for a list of file paths using parallel processing.
@@ -330,6 +344,7 @@ def _hash_files_in_parallel(paths):
     """
     with ThreadPoolExecutor() as executor:
         return list(executor.map(_compute_md5_safe, paths))
+
 
 def _group_files_by_hash(paths, md5_list):
     """
@@ -347,6 +362,7 @@ def _group_files_by_hash(paths, md5_list):
         if md5:
             hash_groups[md5].append(path)
     return hash_groups
+
 
 def _write_hash_groups_to_csv(hash_groups, size, group_id_start, writer):
     """
@@ -372,6 +388,7 @@ def _write_hash_groups_to_csv(hash_groups, size, group_id_start, writer):
                 writer.writerow([current_group_id, size, md5, path])
 
     return new_sets
+
 
 def _process_size_group(size, group_list, group_id_start, writer, pbar):
     """
@@ -401,7 +418,10 @@ def _process_size_group(size, group_list, group_id_start, writer, pbar):
     hash_groups = _group_files_by_hash(paths, md5_list)
     return _write_hash_groups_to_csv(hash_groups, size, group_id_start, writer)
 
-def _hash_and_write_duplicates(grouped_rows, output_file, total_files, skip_sizes=None, starting_group_id=1):
+
+def _hash_and_write_duplicates(
+    grouped_rows, output_file, total_files, skip_sizes=None, starting_group_id=1
+):
     """
     Hashes files in each size-based group and appends new duplicate entries to the output CSV.
 
@@ -417,14 +437,16 @@ def _hash_and_write_duplicates(grouped_rows, output_file, total_files, skip_size
 
     open_mode = "a" if os.path.exists(output_file) else "w"
 
-    with open(output_file, open_mode, newline='', encoding='utf-8') as f_out:
+    with open(output_file, open_mode, newline="", encoding="utf-8") as f_out:
         writer = csv.writer(f_out)
         _write_csv_header_if_needed(writer, open_mode)
 
         total_new_sets = 0
         group_id = starting_group_id - 1
 
-        with tqdm(total=total_files, desc="Hashing files", unit=FILE_UNIT, dynamic_ncols=True) as pbar:
+        with tqdm(
+            total=total_files, desc="Hashing files", unit=FILE_UNIT, dynamic_ncols=True
+        ) as pbar:
             for size, group_list in grouped_rows:
                 if size in skip_sizes:
                     pbar.update(len(group_list))
@@ -435,6 +457,7 @@ def _hash_and_write_duplicates(grouped_rows, output_file, total_files, skip_size
                 total_new_sets += new_sets
 
     plog.log_info(f"Completed Stage 3: {total_new_sets} new duplicate groups found")
+
 
 def stage3_find_duplicates(sorted_csv, output_file, is_restart=False):
     """
@@ -456,10 +479,13 @@ def stage3_find_duplicates(sorted_csv, output_file, is_restart=False):
         starting_group_id, skip_sizes = _load_completed_hashes(output_file)
     else:
         starting_group_id, skip_sizes = 1, set()
-        
-    _hash_and_write_duplicates(grouped_rows, output_file, total_files_to_hash, skip_sizes, starting_group_id)
+
+    _hash_and_write_duplicates(
+        grouped_rows, output_file, total_files_to_hash, skip_sizes, starting_group_id
+    )
 
     plog.log_info(f"Completed Stage 3: Duplicate list updated in {output_file}")
+
 
 def read_csv_groups(dup_csv):
     """
@@ -473,11 +499,12 @@ def read_csv_groups(dup_csv):
     """
 
     grouped = defaultdict(list)
-    with open(dup_csv, newline='', encoding='utf-8') as f_in:
+    with open(dup_csv, newline="", encoding="utf-8") as f_in:
         reader = csv.DictReader(f_in)
         for row in reader:
             grouped[row["group_id"]].append(row["file_path"])
     return grouped
+
 
 def process_duplicates(grouped, dryrun, backup_folder, total_files):
     """
@@ -495,22 +522,30 @@ def process_duplicates(grouped, dryrun, backup_folder, total_files):
 
     deleted_count = 0
 
-    with tqdm(total=total_files, desc="Deleting duplicates", unit=FILE_UNIT, dynamic_ncols=True) as pbar, \
-         ThreadPoolExecutor() as executor:
+    with (
+        tqdm(
+            total=total_files, desc="Deleting duplicates", unit=FILE_UNIT, dynamic_ncols=True
+        ) as pbar,
+        ThreadPoolExecutor() as executor,
+    ):
 
         futures = []
         for files in grouped.values():
             if len(files) <= 1:
                 continue
-            
+
             retained = random.choice(files)
-            futures += [executor.submit(delete_or_move_file, f, retained, dryrun, backup_folder) for f in files]
+            futures += [
+                executor.submit(delete_or_move_file, f, retained, dryrun, backup_folder)
+                for f in files
+            ]
 
         for future in as_completed(futures):
             deleted_count += future.result()
             pbar.update(1)
 
     return deleted_count
+
 
 def delete_or_move_file(file_path, retained, dryrun, backup_folder):
     """
@@ -545,6 +580,7 @@ def delete_or_move_file(file_path, retained, dryrun, backup_folder):
             plog.log_warning(f"Failed to delete/move {file_path}: {e}")
             return 0
 
+
 def log_final_summary(total_groups, deleted_count, dryrun):
     """
     Logs the final summary of the duplicate cleanup process.
@@ -566,6 +602,7 @@ def log_final_summary(total_groups, deleted_count, dryrun):
         plog.log_info("Duplicate cleanup completed. Retained one file per group.")
         plog.log_info(f"[{action}] {deleted_count} files from {total_groups} duplicate groups.")
         print(f"[{action}] {deleted_count} files from {total_groups} duplicate groups.")
+
 
 def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
     """
@@ -590,6 +627,7 @@ def delete_duplicates(dup_csv, dryrun=False, backup_folder=None):
 
     log_final_summary(len(grouped), deleted_count, dryrun)
 
+
 def parse_arguments():
     """
     Parses command-line arguments provided to the script.
@@ -599,18 +637,64 @@ def parse_arguments():
         logging configuration, and stage control options.
     """
 
-    parser = argparse.ArgumentParser(description="Efficient duplicate file detector (staged method).")
-    parser.add_argument("--folder", type=str, default="D:\\users\\Manoj\\Documents\\FIFA 07\\elib", help="Folder to scan")
-    parser.add_argument("--log", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-log.log", help="Log file path (appends)")
-    parser.add_argument("--output", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-output.csv", help="Output CSV (overwritten)")
-    parser.add_argument("--temp", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-temp.csv", help="Temp file for raw file list")
-    parser.add_argument("--sorted", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-sorted.csv", help="Sorted file list path")
-    parser.add_argument("--checkpoint", type=str, default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-checkpoint.json", help="Checkpoint file to track completed stages")
-    parser.add_argument("--restart", action="store_true", help="Force restart from Stage 1 and ignore checkpoint")
-    parser.add_argument("--keepfiles", action="store_true", help="Retain intermediate and checkpoint files even after successful completion")
-    parser.add_argument("--delete", action="store_true", help="Delete duplicates after Stage 3 (retains one per group)")
-    parser.add_argument("--dryrun", action="store_true", help="Preview deletions without making changes")
-    parser.add_argument("--backup-folder", type=str, help="Move duplicates here instead of deleting (optional)")
+    parser = argparse.ArgumentParser(
+        description="Efficient duplicate file detector (staged method)."
+    )
+    parser.add_argument(
+        "--folder",
+        type=str,
+        default="D:\\users\\Manoj\\Documents\\FIFA 07\\elib",
+        help="Folder to scan",
+    )
+    parser.add_argument(
+        "--log",
+        type=str,
+        default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-log.log",
+        help="Log file path (appends)",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-output.csv",
+        help="Output CSV (overwritten)",
+    )
+    parser.add_argument(
+        "--temp",
+        type=str,
+        default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-temp.csv",
+        help="Temp file for raw file list",
+    )
+    parser.add_argument(
+        "--sorted",
+        type=str,
+        default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-sorted.csv",
+        help="Sorted file list path",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default="C:\\Users\\manoj\\Documents\\Scripts\\find-duplicate-images-checkpoint.json",
+        help="Checkpoint file to track completed stages",
+    )
+    parser.add_argument(
+        "--restart", action="store_true", help="Force restart from Stage 1 and ignore checkpoint"
+    )
+    parser.add_argument(
+        "--keepfiles",
+        action="store_true",
+        help="Retain intermediate and checkpoint files even after successful completion",
+    )
+    parser.add_argument(
+        "--delete",
+        action="store_true",
+        help="Delete duplicates after Stage 3 (retains one per group)",
+    )
+    parser.add_argument(
+        "--dryrun", action="store_true", help="Preview deletions without making changes"
+    )
+    parser.add_argument(
+        "--backup-folder", type=str, help="Move duplicates here instead of deleting (optional)"
+    )
     args = parser.parse_args()
 
     args.folder = os.path.abspath(args.folder)
@@ -623,6 +707,7 @@ def parse_arguments():
 
     return args
 
+
 def prepare_environment(args):
     """
     Prepares the runtime environment by configuring the logging system and
@@ -634,7 +719,7 @@ def prepare_environment(args):
 
     # Queue-based logging setup
     log_queue = queue.Queue()
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
     file_handler = logging.FileHandler(args.log)
     file_handler.setFormatter(formatter)
 
@@ -652,6 +737,7 @@ def prepare_environment(args):
             if os.path.exists(f):
                 os.remove(f)
                 plog.log_info(f"Deleted stale file at startup (no restart): {f}")
+
 
 def handle_restart(args):
     """
@@ -688,7 +774,7 @@ def handle_restart(args):
         "stage1": "Stage 2",
         "stage2": "Stage 3",
         "stage3": "Deletion Stage" if args.delete else "Already completed — nothing to do",
-        "delete": "Already completed — nothing to do"
+        "delete": "Already completed — nothing to do",
     }
 
     resume_stage = checkpoint.get("completed_stage")
@@ -703,6 +789,7 @@ def handle_restart(args):
         return None
 
     return checkpoint
+
 
 def run_pipeline(args, checkpoint):
     """
@@ -750,6 +837,7 @@ def run_pipeline(args, checkpoint):
         plog.log_info(f"Pipeline execution failed: {e}")
         raise
 
+
 def final_cleanup(success, args):
     """
     Performs final cleanup tasks after successful execution, including deletion of
@@ -771,6 +859,7 @@ def final_cleanup(success, args):
     # Stop logging listener
     args._log_listener.stop()
 
+
 def _load_completed_hashes(output_file):
     """
     Loads already processed duplicate groups from a previous Stage 3 output CSV.
@@ -787,7 +876,7 @@ def _load_completed_hashes(output_file):
     completed_sizes = set()
     max_group_id = 0
 
-    with open(output_file, newline='', encoding='utf-8') as f:
+    with open(output_file, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             try:
@@ -797,6 +886,7 @@ def _load_completed_hashes(output_file):
                 continue  # skip malformed lines
 
     return max_group_id + 1, completed_sizes
+
 
 def main():
     plog.initialise_logger(log_file_path="auto", level="INFO")
@@ -834,6 +924,7 @@ def main():
     final_cleanup(success, args)
 
     plog.log_info("Duplicate detection script completed")
+
 
 if __name__ == "__main__":
     main()

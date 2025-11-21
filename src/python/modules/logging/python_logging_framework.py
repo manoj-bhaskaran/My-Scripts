@@ -30,6 +30,7 @@ import json
 IST = ZoneInfo("Asia/Kolkata")
 RECOMMENDED_METADATA_KEYS = {"CorrelationId", "User", "TaskId", "FileName", "Duration"}
 
+
 class SpecFormatter(logging.Formatter):
     """
     Custom formatter for plain-text log messages according to the logging specification.
@@ -41,15 +42,20 @@ class SpecFormatter(logging.Formatter):
         """
         dt = datetime.fromtimestamp(record.created, IST)
         timestamp = dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        tzname = dt.strftime('%Z')
-        script_name = getattr(record, 'script_name', getattr(record, 'name', os.path.basename(sys.argv[0])))
+        tzname = dt.strftime("%Z")
+        script_name = getattr(
+            record, "script_name", getattr(record, "name", os.path.basename(sys.argv[0]))
+        )
         hostname = socket.gethostname()
         pid = os.getpid()
         level = record.levelname
         msg = record.getMessage()
         metadata = record.__dict__.get("extra_metadata", {})
         metadata_str = " ".join(f"{k}={v}" for k, v in metadata.items()) if metadata else ""
-        return f"[{timestamp} {tzname}] [{level}] [{script_name}] [{hostname}] [{pid}] {msg}" + (f" [{metadata_str}]" if metadata_str else "")
+        return f"[{timestamp} {tzname}] [{level}] [{script_name}] [{hostname}] [{pid}] {msg}" + (
+            f" [{metadata_str}]" if metadata_str else ""
+        )
+
 
 class JSONFormatter(logging.Formatter):
     """
@@ -65,19 +71,24 @@ class JSONFormatter(logging.Formatter):
         log_record = {
             "timestamp": f"{timestamp}+05:30",
             "level": record.levelname,
-            "script": getattr(record, 'script_name', getattr(record, 'name', os.path.basename(sys.argv[0]))),
+            "script": getattr(
+                record, "script_name", getattr(record, "name", os.path.basename(sys.argv[0]))
+            ),
             "host": socket.gethostname(),
             "pid": os.getpid(),
             "message": record.getMessage(),
-            "metadata": record.__dict__.get("extra_metadata", {})
+            "metadata": record.__dict__.get("extra_metadata", {}),
         }
         return json.dumps(log_record, ensure_ascii=False)
 
-def initialise_logger(script_name: Optional[str] = None,
-                      log_dir: Optional[str] = None,
-                      log_level: int = logging.INFO,
-                      json_format: bool = False,
-                      propagate: bool = False) -> logging.Logger:
+
+def initialise_logger(
+    script_name: Optional[str] = None,
+    log_dir: Optional[str] = None,
+    log_level: int = logging.INFO,
+    json_format: bool = False,
+    propagate: bool = False,
+) -> logging.Logger:
     """
     Initialise and configure a logger instance.
 
@@ -109,7 +120,7 @@ def initialise_logger(script_name: Optional[str] = None,
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         file_path = log_dir / log_file_name
-        file_handler = logging.FileHandler(file_path, encoding='utf-8')
+        file_handler = logging.FileHandler(file_path, encoding="utf-8")
     except Exception as e:
         print(f"[WARNING] Failed to initialise file logging: {e}", file=sys.stderr)
         file_handler = None
@@ -132,6 +143,7 @@ def initialise_logger(script_name: Optional[str] = None,
 
     return logger
 
+
 def validate_metadata_keys(metadata: Dict):
     """
     Validate metadata keys against the recommended specification keys.
@@ -145,22 +157,37 @@ def validate_metadata_keys(metadata: Dict):
     if invalid_keys:
         print(f"[WARNING] Non-standard metadata keys: {invalid_keys}", file=sys.stderr)
 
+
 def log_debug(logger: logging.Logger, message: str, metadata: Optional[Dict] = None):
     """Log a DEBUG level message with optional metadata."""
-    logger.debug(message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name})
+    logger.debug(
+        message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name}
+    )
+
 
 def log_info(logger: logging.Logger, message: str, metadata: Optional[Dict] = None):
     """Log an INFO level message with optional metadata."""
-    logger.info(message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name})
+    logger.info(
+        message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name}
+    )
+
 
 def log_warning(logger: logging.Logger, message: str, metadata: Optional[Dict] = None):
     """Log a WARNING level message with optional metadata."""
-    logger.warning(message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name})
+    logger.warning(
+        message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name}
+    )
+
 
 def log_error(logger: logging.Logger, message: str, metadata: Optional[Dict] = None):
     """Log an ERROR level message with optional metadata."""
-    logger.error(message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name})
+    logger.error(
+        message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name}
+    )
+
 
 def log_critical(logger: logging.Logger, message: str, metadata: Optional[Dict] = None):
     """Log a CRITICAL level message with optional metadata."""
-    logger.critical(message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name})
+    logger.critical(
+        message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name}
+    )

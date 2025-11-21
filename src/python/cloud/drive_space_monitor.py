@@ -12,6 +12,7 @@ from googleapiclient.errors import HttpError
 from google_drive_auth import authenticate_and_get_drive_service
 import python_logging_framework as plog  # Uses standardised logging framework
 
+
 def format_size(bytes_size):
     """
     Converts a size in bytes to a human-readable format.
@@ -32,6 +33,7 @@ def format_size(bytes_size):
 
     return f"{size:.2f} {units[unit_index]}"
 
+
 def get_storage_usage(service):
     """
     Retrieves the storage usage details from Google Drive.
@@ -46,21 +48,24 @@ def get_storage_usage(service):
         about = service.about().get(fields="storageQuota").execute()
         plog.log_debug(f"Storage quota data: {about}")
 
-        usage_in_drive = int(about['storageQuota'].get('usageInDrive', 0))
-        usage_in_drive_trash = int(about['storageQuota'].get('usageInDriveTrash', 0))
+        usage_in_drive = int(about["storageQuota"].get("usageInDrive", 0))
+        usage_in_drive_trash = int(about["storageQuota"].get("usageInDriveTrash", 0))
         total_usage = usage_in_drive + usage_in_drive_trash
-        limit = int(about['storageQuota']['limit'])
+        limit = int(about["storageQuota"]["limit"])
 
         usage_percentage = (total_usage / limit) * 100
 
         readable_total_usage = format_size(total_usage)
         readable_limit = format_size(limit)
 
-        plog.log_info(f"Current storage usage: {readable_total_usage} / {readable_limit} ({usage_percentage:.2f}%)")
+        plog.log_info(
+            f"Current storage usage: {readable_total_usage} / {readable_limit} ({usage_percentage:.2f}%)"
+        )
         return usage_percentage, total_usage, limit
     except HttpError as error:
         plog.log_error(f"An error occurred: {error}")
         return None, None, None
+
 
 def clear_trash(service):
     """
@@ -74,6 +79,7 @@ def clear_trash(service):
         plog.log_info("Trash cleared successfully.")
     except HttpError as error:
         plog.log_error(f"An error occurred: {error}")
+
 
 def main(debug, threshold):
     """
@@ -112,10 +118,17 @@ def main(debug, threshold):
                 f"({readable_total_usage} of {readable_limit})."
             )
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Google Drive Storage Monitor')
-    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
-    parser.add_argument('--threshold', '-t', type=float, default=90.0, help='Threshold percentage for storage usage (default: 90%)')
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Google Drive Storage Monitor")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument(
+        "--threshold",
+        "-t",
+        type=float,
+        default=90.0,
+        help="Threshold percentage for storage usage (default: 90%)",
+    )
     args = parser.parse_args()
 
     if not (0 < args.threshold < 100):

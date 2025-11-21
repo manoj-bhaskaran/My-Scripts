@@ -19,6 +19,7 @@ class TestWithErrorHandling:
 
     def test_successful_execution(self):
         """Test decorator with successful execution."""
+
         @with_error_handling()
         def successful_func():
             return "success"
@@ -28,6 +29,7 @@ class TestWithErrorHandling:
 
     def test_raise_on_error(self):
         """Test raise on error (default behavior)."""
+
         @with_error_handling(on_error="raise")
         def failing_func():
             raise ValueError("test error")
@@ -37,6 +39,7 @@ class TestWithErrorHandling:
 
     def test_return_none_on_error(self):
         """Test return None on error."""
+
         @with_error_handling(on_error="return_none")
         def failing_func():
             raise ValueError("test error")
@@ -46,6 +49,7 @@ class TestWithErrorHandling:
 
     def test_continue_on_error(self):
         """Test continue on error."""
+
         @with_error_handling(on_error="continue")
         def failing_func():
             raise ValueError("test error")
@@ -55,6 +59,7 @@ class TestWithErrorHandling:
 
     def test_custom_error_message(self):
         """Test custom error message."""
+
         @with_error_handling(on_error="raise", error_message="Custom error")
         def failing_func():
             raise ValueError("test error")
@@ -68,6 +73,7 @@ class TestWithRetry:
 
     def test_successful_first_attempt(self):
         """Test successful execution on first attempt."""
+
         @with_retry(max_retries=3)
         def successful_func():
             return "success"
@@ -94,6 +100,7 @@ class TestWithRetry:
 
     def test_max_retries_exceeded(self):
         """Test failure after max retries."""
+
         @with_retry(max_retries=2, retry_delay=0.1)
         def always_failing():
             raise ValueError("permanent error")
@@ -103,6 +110,7 @@ class TestWithRetry:
 
     def test_specific_exceptions(self):
         """Test retry only on specific exceptions."""
+
         @with_retry(max_retries=3, exceptions=(IOError,), retry_delay=0.1)
         def func_with_wrong_exception():
             raise ValueError("wrong exception type")
@@ -116,10 +124,7 @@ class TestRetryOperation:
 
     def test_successful_operation(self):
         """Test successful operation."""
-        result = retry_operation(
-            lambda: "success",
-            "Test operation"
-        )
+        result = retry_operation(lambda: "success", "Test operation")
 
         assert result == "success"
 
@@ -134,35 +139,26 @@ class TestRetryOperation:
                 raise ValueError("temporary error")
             return "success"
 
-        result = retry_operation(
-            operation,
-            "Test operation",
-            max_retries=5,
-            retry_delay=0.1
-        )
+        result = retry_operation(operation, "Test operation", max_retries=5, retry_delay=0.1)
 
         assert result == "success"
         assert call_count == 3
 
     def test_max_retries_exceeded(self):
         """Test failure after max retries."""
+
         def always_failing():
             raise ValueError("permanent error")
 
         with pytest.raises(ValueError, match="permanent error"):
-            retry_operation(
-                always_failing,
-                "Test operation",
-                max_retries=2,
-                retry_delay=0.1
-            )
+            retry_operation(always_failing, "Test operation", max_retries=2, retry_delay=0.1)
 
 
 class TestIsElevated:
     """Tests for is_elevated function."""
 
-    @patch('platform.system')
-    @patch('os.geteuid')
+    @patch("platform.system")
+    @patch("os.geteuid")
     def test_elevated_on_unix(self, mock_geteuid, mock_system):
         """Test elevated check on Unix (root)."""
         mock_system.return_value = "Linux"
@@ -172,8 +168,8 @@ class TestIsElevated:
 
         assert result is True
 
-    @patch('platform.system')
-    @patch('os.geteuid')
+    @patch("platform.system")
+    @patch("os.geteuid")
     def test_not_elevated_on_unix(self, mock_geteuid, mock_system):
         """Test non-elevated check on Unix (non-root)."""
         mock_system.return_value = "Linux"
@@ -187,7 +183,7 @@ class TestIsElevated:
 class TestRequireElevated:
     """Tests for require_elevated function."""
 
-    @patch('src.python.modules.utils.error_handling.is_elevated')
+    @patch("src.python.modules.utils.error_handling.is_elevated")
     def test_elevated_no_error(self, mock_is_elevated):
         """Test no error when elevated."""
         mock_is_elevated.return_value = True
@@ -195,7 +191,7 @@ class TestRequireElevated:
         # Should not raise
         require_elevated()
 
-    @patch('src.python.modules.utils.error_handling.is_elevated')
+    @patch("src.python.modules.utils.error_handling.is_elevated")
     def test_not_elevated_raises_error(self, mock_is_elevated):
         """Test raises error when not elevated."""
         mock_is_elevated.return_value = False
@@ -203,7 +199,7 @@ class TestRequireElevated:
         with pytest.raises(PermissionError, match="elevated privileges"):
             require_elevated()
 
-    @patch('src.python.modules.utils.error_handling.is_elevated')
+    @patch("src.python.modules.utils.error_handling.is_elevated")
     def test_custom_message(self, mock_is_elevated):
         """Test custom error message."""
         mock_is_elevated.return_value = False
@@ -227,10 +223,7 @@ class TestSafeExecute:
 
     def test_return_none_on_error(self):
         """Test return None on error."""
-        result = safe_execute(
-            lambda: int("not_a_number"),
-            on_error="return_none"
-        )
+        result = safe_execute(lambda: int("not_a_number"), on_error="return_none")
         assert result is None
 
 

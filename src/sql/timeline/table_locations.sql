@@ -8,7 +8,7 @@ CREATE TABLE timeline.locations (
     activity_type TEXT,
     confidence INTEGER,
     -- Spatial index for efficient location-based queries
-    location GEOMETRY(Point, 4326),
+    location GEOMETRY (Point, 4326),
     -- Primary key for efficient lookups and to ensure uniqueness (though timestamp might not be strictly unique)
     location_id BIGSERIAL PRIMARY KEY
 );
@@ -17,7 +17,7 @@ CREATE TABLE timeline.locations (
 CREATE INDEX idx_locations_timestamp ON timeline.locations (timestamp);
 
 -- Create a spatial index on the location column for efficient spatial queries
-CREATE INDEX idx_locations_location ON timeline.locations USING GIST (location);
+CREATE INDEX idx_locations_location ON timeline.locations USING gist (location);
 
 -- Create a composite index on latitude and longitude for efficient geospatial queries
 CREATE INDEX idx_locations_latitude_longitude

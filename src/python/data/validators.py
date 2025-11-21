@@ -12,7 +12,8 @@ from typing import Iterable, List, Mapping, Sequence, Tuple, Optional, Dict
 from typing import TYPE_CHECKING, Callable
 
 # Constant for whitespace, underscore, and hyphen collapsing
-_WS_UNDERSCORE_HYPHEN_RE = r'[\s_-]+'
+_WS_UNDERSCORE_HYPHEN_RE = r"[\s_-]+"
+
 
 def _normalize_extension_token(token: str) -> str:
     """
@@ -97,11 +98,11 @@ def _is_valid_extension_segments(token: str) -> bool:
     """
     if not token:
         return False
-    segments = token.split('.')
+    segments = token.split(".")
     for seg in segments:
         if not (1 <= len(seg) <= 10):
             return False
-        if not re.fullmatch(r'[a-z0-9]+', seg):
+        if not re.fullmatch(r"[a-z0-9]+", seg):
             return False
     return True
 
@@ -170,7 +171,7 @@ def validate_extensions(
             invalid.append(repr(raw))
             continue
         # Keep multi-segment token as-is; server-side lookup will use last segment
-        cleaned.append(".".join([s for s in tok.split('.') if s != ""]))
+        cleaned.append(".".join([s for s in tok.split(".") if s != ""]))
 
     if invalid:
         return [], [], [f"Invalid --extensions value(s): {', '.join(invalid)}"]
@@ -181,7 +182,7 @@ def validate_extensions(
     warnings: List[str] = []
     unknown: List[str] = []
     for e in deduped:
-        last_seg = e.split('.')[-1] if e else e
+        last_seg = e.split(".")[-1] if e else e
         if last_seg not in mime_map:
             unknown.append(e)
     if unknown:
@@ -190,13 +191,14 @@ def validate_extensions(
             "client-side filename filtering will apply instead: " + ", ".join(unknown)
         )
         # (v1.5.8) Messaging unchanged; emission behavior handled by caller (stderr/log level).
-        if any('.' in e for e in unknown):
+        if any("." in e for e in unknown):
             warnings.append(
                 "Multi-segment extensions (e.g., tar.gz) are matched client-side against the full suffix; "
                 "server-side MIME narrowing uses the last segment when mapped."
             )
 
     return deduped, warnings, []
+
 
 def normalize_policy_token(
     raw: str | None,
@@ -213,11 +215,11 @@ def normalize_policy_token(
       - if not strict and unknown -> fallback to default_value and warnings contains note
       - telemetry includes an 'unknown_policy' object when unknown
     """
-    key = re.sub(_WS_UNDERSCORE_HYPHEN_RE, '', str(raw).strip().lower())
+    key = re.sub(_WS_UNDERSCORE_HYPHEN_RE, "", str(raw).strip().lower())
     if key in aliases:
         return aliases[key], [], [], {}
 
-    key = re.sub(_WS_UNDERSCORE_HYPHEN_RE, '', str(raw).strip().lower())
+    key = re.sub(_WS_UNDERSCORE_HYPHEN_RE, "", str(raw).strip().lower())
     if key in aliases:
         return aliases[key], [], [], {}
 
@@ -228,23 +230,37 @@ def normalize_policy_token(
     telemetry = {"unknown_policy": {"token": str(raw), "normalized": key, "suggestion": suggestion}}
 
     if strict:
-        return default_value, [], [
-            f"Unknown --post-restore-policy value '{raw}'. Use one of: retain | trash | delete (aliases allowed).{suggestion_text}"
-        ], telemetry
+        return (
+            default_value,
+            [],
+            [
+                f"Unknown --post-restore-policy value '{raw}'. Use one of: retain | trash | delete (aliases allowed).{suggestion_text}"
+            ],
+            telemetry,
+        )
 
     return (
         default_value,
-        [f"Unknown --post-restore-policy '{raw}'. Falling back to '{default_value}'.{suggestion_text} (Tip: use --strict-policy to make this an error.)"],
+        [
+            f"Unknown --post-restore-policy '{raw}'. Falling back to '{default_value}'.{suggestion_text} (Tip: use --strict-policy to make this an error.)"
+        ],
         [],
         telemetry,
     )
+
 
 # --- Lightweight, local mypy reveal_type checks (ignored at runtime) ---
 if TYPE_CHECKING:
     # mypy will evaluate these; they don't run at runtime.
     from typing import reveal_type as _reveal
-    _reveal(validate_extensions)  # expect: def (Sequence[str] | None, Mapping[str, str]) -> tuple[list[str], list[str], list[str]]
-    _reveal(normalize_policy_token)  # expect: def (raw: builtins.str | None, *, strict: builtins.bool, aliases: Mapping[builtins.str, builtins.str], default_value: builtins.str) -> tuple[builtins.str, list[builtins.str], list[builtins.str], Dict[builtins.str, dict]]
+
+    _reveal(
+        validate_extensions
+    )  # expect: def (Sequence[str] | None, Mapping[str, str]) -> tuple[list[str], list[str], list[str]]
+    _reveal(
+        normalize_policy_token
+    )  # expect: def (raw: builtins.str | None, *, strict: builtins.bool, aliases: Mapping[builtins.str, builtins.str], default_value: builtins.str) -> tuple[builtins.str, list[builtins.str], list[builtins.str], Dict[builtins.str, dict]]
+
 
 def _levenshtein(a: str, b: str) -> int:
     """Simple Levenshtein distance (O(len(a)*len(b))) without external deps."""
@@ -258,12 +274,13 @@ def _levenshtein(a: str, b: str) -> int:
     for i, ca in enumerate(a, 1):
         cur = [i]
         for j, cb in enumerate(b, 1):
-            ins = cur[j-1] + 1
+            ins = cur[j - 1] + 1
             dele = prev[j] + 1
-            sub = prev[j-1] + (ca != cb)
+            sub = prev[j - 1] + (ca != cb)
             cur.append(min(ins, dele, sub))
         prev = cur
     return prev[-1]
+
 
 def _suggest_token(raw: str, candidates: List[str]) -> Optional[str]:
     """
@@ -271,7 +288,7 @@ def _suggest_token(raw: str, candidates: List[str]) -> Optional[str]:
     Returns the closest match if distance <= 2, else None.
     """
     try:
-        key = re.sub(_WS_UNDERSCORE_HYPHEN_RE, '', str(raw).strip().lower())
+        key = re.sub(_WS_UNDERSCORE_HYPHEN_RE, "", str(raw).strip().lower())
     except Exception:
         key = str(raw or "").strip().lower()
     best: Tuple[int, Optional[str]] = (10**9, None)
@@ -282,6 +299,7 @@ def _suggest_token(raw: str, candidates: List[str]) -> Optional[str]:
             if d == 0:
                 break
     return best[1] if best[0] <= 2 else None
+
 
 def normalize_policy_token(
     raw: str | None,
@@ -301,7 +319,7 @@ def normalize_policy_token(
     if raw is None or raw == "":
         return default_value, [], [], {}
 
-    key = re.sub(r'[\s_-]+', '', str(raw).strip().lower())
+    key = re.sub(r"[\s_-]+", "", str(raw).strip().lower())
     if key in aliases:
         return aliases[key], [], [], {}
 
@@ -312,13 +330,20 @@ def normalize_policy_token(
     telemetry = {"unknown_policy": {"token": str(raw), "normalized": key, "suggestion": suggestion}}
 
     if strict:
-        return default_value, [], [
-            f"Unknown --post-restore-policy value '{raw}'. Use one of: retain | trash | delete (aliases allowed).{suggestion_text}"
-        ], telemetry
+        return (
+            default_value,
+            [],
+            [
+                f"Unknown --post-restore-policy value '{raw}'. Use one of: retain | trash | delete (aliases allowed).{suggestion_text}"
+            ],
+            telemetry,
+        )
 
     return (
         default_value,
-        [f"Unknown --post-restore-policy '{raw}'. Falling back to '{default_value}'.{suggestion_text} (Tip: use --strict-policy to make this an error.)"],
+        [
+            f"Unknown --post-restore-policy '{raw}'. Falling back to '{default_value}'.{suggestion_text} (Tip: use --strict-policy to make this an error.)"
+        ],
         [],
         telemetry,
     )
