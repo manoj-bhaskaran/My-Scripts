@@ -257,4 +257,4 @@ Write-Host ""
 Write-Host "All modules deployed successfully!" -ForegroundColor Green
 Write-Host ""
 Write-Host "To verify, run:" -ForegroundColor Cyan
-Write-Host "  Get-Module -ListAvailable -Name PostgresBackup,PowerShellLoggingFramework,PurgeLogs,RandomName,Videoscreenshot"
+Write-Host "  Get-Module -ListAvailable -Name PostgresBackup,PowerShellLoggingFramework,PurgeLogs,RandomName,Videoscreenshot,ErrorHandling,FileOperations,ProgressReporter"
