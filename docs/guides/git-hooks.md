@@ -1,173 +1,25 @@
-# Git Hooks Guide
+# Git Hooks Guide (Pre-Commit Framework)
 
-**Version:** 1.0.0
-**Last Updated:** 2025-11-18
+**Version:** 2.0.0
+**Last Updated:** 2025-11-21
 
 ---
 
 ## Overview
 
-This repository uses git hooks to enforce code quality and maintain consistency. Git hooks are scripts that run automatically at specific points in the Git workflow, helping catch issues before they're committed or pushed.
+This repository uses the [pre-commit framework](https://pre-commit.com) to enforce code quality and maintain consistency. Pre-commit is a multi-language package manager for pre-commit hooks that helps catch issues before they're committed or pushed.
 
-## Active Hooks
+### Why Pre-Commit Framework?
 
-### 1. **pre-commit** - Code Quality Validation
-
-Runs before a commit is created. Validates code quality and prevents commits with issues.
-
-**What it checks:**
-
-- **Debug Statements**: Detects debug code that shouldn't be committed
-  - `Write-Debug` with TODO comments (PowerShell)
-  - `print.*DEBUG` statements (Python)
-  - `console.log` statements (JavaScript)
-  - `debugger;` statements
-
-- **PowerShell Linting**: Uses PSScriptAnalyzer to check `.ps1` files
-  - Checks for syntax errors
-  - Enforces PowerShell best practices
-  - Detects potential bugs and issues
-  - Requires: PowerShell 7+ (`pwsh`)
-
-- **Python Linting**: Uses pylint to check `.py` files
-  - Checks for syntax errors
-  - Enforces PEP 8 style guidelines
-  - Detects potential bugs
-  - Falls back to basic syntax checking if pylint is unavailable
-
-- **Large Files**: Warns about files >10MB
-  - Suggests using Git LFS for large files
-  - Does not block commits (warning only)
-
-**Example output:**
-
-```
-Running pre-commit checks...
-Linting PowerShell files...
-Linting Python files...
-Pre-commit checks passed!
-```
-
-**Location:** `hooks/pre-commit`
-
----
-
-### 2. **commit-msg** - Conventional Commits Validation
-
-Runs after you write a commit message. Enforces [Conventional Commits](https://www.conventionalcommits.org/) format.
-
-**Required format:**
-
-```
-<type>(<scope>): <description>
-
-[optional body]
-
-[optional footer(s)]
-```
-
-**Allowed types:**
-
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes (formatting, missing semicolons, etc.)
-- `refactor`: Code refactoring without behavior changes
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks, dependency updates
-- `perf`: Performance improvements
-- `ci`: CI/CD pipeline changes
-- `build`: Build system or external dependency changes
-- `revert`: Reverting previous commits
-
-**Scope** (optional): Lowercase with hyphens, describes the area affected (e.g., `logging`, `git-hooks`, `database`)
-
-**Breaking changes**: Add `!` after type/scope:
-```
-feat(api)!: change authentication method
-```
-
-**Valid examples:**
-
-```
-feat(logging): add structured JSON output
-fix: correct database connection timeout
-docs(readme): update installation instructions
-refactor(hooks)!: breaking change to hook system
-test(validators): add unit tests for input validation
-chore: update dependencies
-```
-
-**Invalid examples:**
-
-```
-Updated readme                    ❌ No type
-FIX: bug in parser               ❌ Type must be lowercase
-feat add new feature             ❌ Missing colon
-feat(HOOKS): new hook            ❌ Scope must be lowercase
-feat: x                          ❌ Description too short (<3 chars)
-```
-
-**Automatic exceptions:**
-
-- Merge commits (starting with "Merge branch" or "Merge pull request")
-- Revert commits (starting with "Revert ")
-
-**Location:** `hooks/commit-msg`
-
----
-
-### 3. **post-commit** - Post-Commit Automation
-
-Runs after a commit is successfully created. Executes repository-specific automation.
-
-**What it does:**
-
-- Calls `src/powershell/Invoke-PostCommitHook.ps1`
-- Mirrors committed files to staging directory
-- Deploys PowerShell modules per configuration
-- Logs all operations
-
-**Requirements:**
-
-- PowerShell 7+ (`pwsh`) on the system
-- Configuration file: `config/module-deployment-config.txt`
-
-**Behavior:**
-
-- If PowerShell is not available, logs a warning and continues (non-blocking)
-- If the PowerShell script fails, logs the error but doesn't block
-
-**Location:** `hooks/post-commit`
-**PowerShell script:** `src/powershell/Invoke-PostCommitHook.ps1`
-
----
-
-### 4. **post-merge** - Post-Merge Automation
-
-Runs after a successful merge. Similar to post-commit but for merge operations.
-
-**What it does:**
-
-- Calls `src/powershell/Invoke-PostMergeHook.ps1`
-- Updates staging directory with merged changes
-- Deploys updated modules
-- Handles dependency updates
-- Performs log rotation if needed
-
-**Requirements:**
-
-- PowerShell 7+ (`pwsh`) on the system
-- Configuration file: `config/module-deployment-config.txt`
-
-**Behavior:**
-
-- Checks for unmerged paths and aborts if conflicts exist
-- Uses `merge-base` for accurate change detection
-- Falls back gracefully if PowerShell is unavailable
-
-**Location:** `hooks/post-merge`
-**PowerShell script:** `src/powershell/Invoke-PostMergeHook.ps1`
+**Advantages over manual git hooks:**
+- ✅ Configuration version-controlled (`.pre-commit-config.yaml`)
+- ✅ Automatic hook installation for all team members
+- ✅ Multi-language support (Python, PowerShell, SQL)
+- ✅ Extensive hook library with 100+ pre-built hooks
+- ✅ Automatic updates via CI/CD
+- ✅ Per-hook configuration and selective execution
+- ✅ Fast execution with caching
+- ✅ Easy to add/remove hooks
 
 ---
 
@@ -181,156 +33,367 @@ After cloning the repository, install the hooks:
 # Linux/macOS/Git Bash
 ./scripts/install-hooks.sh
 
-# Windows PowerShell (if Bash not available)
-pwsh -File scripts/install-hooks.ps1  # (if created)
+# Or manually
+pip install pre-commit
+pre-commit install
+pre-commit install --hook-type commit-msg
 ```
 
-### Updating Hooks
+**What this does:**
+1. Installs the pre-commit framework (Python package)
+2. Installs pre-commit and commit-msg hooks to `.git/hooks/`
+3. Runs hooks on all files for validation
 
-If hooks are updated in the repository, run the install script again:
+### Prerequisites
 
-```bash
-./scripts/install-hooks.sh
+**Required:**
+- Python 3.7+ (for pre-commit framework)
+- pip (Python package manager)
+
+**Optional (for specific hooks):**
+- PowerShell 7+ (`pwsh`) - For PowerShell linting
+- Node.js - For JavaScript/TypeScript linting (if added)
+
+---
+
+## Active Hooks
+
+### General Hooks (Pre-Built)
+
+These hooks run on all commits:
+
+#### **trailing-whitespace**
+- Removes trailing whitespace from files
+- Auto-fixes issues
+
+#### **end-of-file-fixer**
+- Ensures files end with a newline
+- Auto-fixes issues
+
+#### **check-yaml**
+- Validates YAML syntax
+- Prevents commits with broken YAML files
+
+#### **check-json**
+- Validates JSON syntax
+- Prevents commits with broken JSON files
+
+#### **check-added-large-files**
+- Warns about files >5MB
+- Configurable via `--maxkb` argument
+- Prevents accidental commits of large binaries
+
+#### **check-merge-conflict**
+- Detects merge conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
+- Prevents accidental commits of unresolved conflicts
+
+#### **detect-private-key**
+- Scans for private keys (SSH, PGP, etc.)
+- Prevents accidental credential leaks
+
+---
+
+### Python Hooks
+
+#### **Black (Code Formatter)**
+- Auto-formats Python code to consistent style
+- Line length: 100 characters (configured in `pyproject.toml`)
+- Target version: Python 3.11
+- **Auto-fixes issues**
+
+**Configuration:** `pyproject.toml`
+```toml
+[tool.black]
+line-length = 100
+target-version = ['py311']
 ```
 
-The script will detect changes and update only modified hooks.
+#### **Pylint (Linter)**
+- Checks Python code for errors and style issues
+- Configured to show errors only (`--errors-only`)
+- Configuration: `.pylintrc`
 
-### Manual Installation
+**Configuration:** `.pylintrc`
+```ini
+[MASTER]
+ignore=tests
 
-If the install script doesn't work, you can manually copy hooks:
+[MESSAGES CONTROL]
+disable=C0111,R0913
 
-```bash
-# Linux/macOS/Git Bash
-cp hooks/* .git/hooks/
-chmod +x .git/hooks/*
+[FORMAT]
+max-line-length=100
+```
 
-# Windows
-copy hooks\* .git\hooks\
+#### **Bandit (Security Scanner)**
+- Scans Python code for security issues
+- Uses configuration from `pyproject.toml`
+- Detects common vulnerabilities (SQL injection, hardcoded passwords, etc.)
+
+**Configuration:** `pyproject.toml`
+```toml
+[tool.bandit]
+exclude_dirs = ["tests", "fixtures"]
 ```
 
 ---
 
-## Bypassing Hooks
+### PowerShell Hooks
+
+#### **PSScriptAnalyzer**
+- PowerShell linting tool
+- Checks for syntax errors and best practices
+- Configured to show errors only (`-Severity Error`)
+- Requires PowerShell 7+ (`pwsh`)
+
+**Hook definition:**
+```yaml
+- repo: local
+  hooks:
+    - id: psscriptanalyzer
+      name: PSScriptAnalyzer
+      entry: pwsh -Command "Invoke-ScriptAnalyzer -Path"
+      language: system
+      files: \.ps1$
+      args: ['-Severity', 'Error']
+```
+
+**Auto-installation:**
+The pre-commit hook will attempt to install PSScriptAnalyzer if missing.
+
+---
+
+### SQL Hooks
+
+#### **SQLFluff (Linter & Formatter)**
+- SQL linting and formatting
+- Dialect: PostgreSQL
+- Max line length: 120 characters
+
+**Hooks:**
+1. `sqlfluff-lint` - Checks SQL style and syntax
+2. `sqlfluff-fix` - Auto-fixes SQL formatting issues
+
+**Configuration:** `.sqlfluffrc`
+```ini
+[sqlfluff]
+dialect = postgres
+max_line_length = 120
+exclude_rules = L003,L010
+```
+
+---
+
+### Commit Message Validation
+
+#### **Commitizen**
+- Enforces [Conventional Commits](https://www.conventionalcommits.org/) format
+- Runs on `commit-msg` hook (after you write the message)
+
+**Required format:**
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+**Allowed types:**
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `style`: Code style changes (formatting, etc.)
+- `refactor`: Code refactoring
+- `test`: Adding or updating tests
+- `chore`: Maintenance tasks
+- `perf`: Performance improvements
+- `ci`: CI/CD changes
+- `build`: Build system changes
+- `revert`: Reverting commits
+
+**Examples:**
+```bash
+✅ feat(hooks): add pre-commit framework
+✅ fix: resolve database timeout issue
+✅ docs: update git hooks guide
+✅ chore: update dependencies
+
+❌ Updated readme              # No type
+❌ FIX: bug                    # Uppercase type
+❌ feat add feature            # Missing colon
+```
+
+**Configuration:** `pyproject.toml`
+```toml
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "1.0.0"
+tag_format = "v$version"
+```
+
+---
+
+### Legacy Hooks (Post-Commit, Post-Merge)
+
+These hooks are not managed by pre-commit framework and still use the manual installation:
+
+#### **post-commit** - Post-Commit Automation
+- Calls `src/powershell/Invoke-PostCommitHook.ps1`
+- Mirrors committed files to staging directory
+- Deploys PowerShell modules per configuration
+- Requires PowerShell 7+ (`pwsh`)
+
+**Location:** `hooks/post-commit`
+
+#### **post-merge** - Post-Merge Automation
+- Calls `src/powershell/Invoke-PostMergeHook.ps1`
+- Updates staging directory with merged changes
+- Handles dependency updates
+- Requires PowerShell 7+ (`pwsh`)
+
+**Location:** `hooks/post-merge`
+
+---
+
+## Running Hooks Manually
+
+### Run on Staged Files
+
+```bash
+# Run all hooks on staged files
+pre-commit run
+
+# Run specific hook
+pre-commit run black
+pre-commit run pylint
+```
+
+### Run on All Files
+
+```bash
+# Run all hooks on all files
+pre-commit run --all-files
+
+# Run specific hook on all files
+pre-commit run black --all-files
+```
+
+### Run on Specific Files
+
+```bash
+# Run hooks on specific files
+pre-commit run --files src/python/example.py
+
+# Run specific hook on specific files
+pre-commit run black --files src/python/*.py
+```
+
+---
+
+## Skipping Hooks
 
 **⚠️ Use with caution!** Bypassing hooks should only be done in exceptional circumstances.
 
 ### When Bypassing is Acceptable
 
-- **Emergency hotfixes**: Critical production fixes that need immediate deployment
-- **Work in progress commits**: Experimental branches where you want to save work
-- **Automated systems**: CI/CD pipelines or automated tools that generate commits
-- **Temporary issues**: When linters have false positives (fix the linter afterward!)
-
-### When Bypassing is NOT Acceptable
-
-- ❌ "I don't want to fix the linting errors"
-- ❌ "The commit message format is annoying"
-- ❌ "I'm in a hurry"
-- ❌ Regular development workflow
+- **Emergency hotfixes**: Critical production fixes
+- **Work in progress commits**: Experimental branches
+- **Automated systems**: CI/CD pipelines
+- **Temporary issues**: When hooks have false positives (fix afterward!)
 
 ### How to Bypass
 
-**Bypass pre-commit and commit-msg hooks:**
-
+**Skip all hooks:**
 ```bash
 git commit --no-verify -m "fix: emergency hotfix"
 # or shorter
 git commit -n -m "fix: emergency hotfix"
 ```
 
-**Bypass specific checks:** Not possible without `--no-verify`. The hooks are designed as an all-or-nothing enforcement.
+**Skip specific hook:**
+```bash
+# Use SKIP environment variable
+SKIP=pylint git commit -m "fix: temporary bypass"
+
+# Skip multiple hooks
+SKIP=pylint,black git commit -m "fix: bypass multiple"
+```
 
 ### Best Practices
 
-1. **Document why you bypassed**: Add a comment in the commit message
+1. **Document why you bypassed:**
    ```bash
    git commit -n -m "fix: emergency database fix
 
    Bypassing hooks due to production outage.
-   TODO: Run linters and fix issues in follow-up commit."
+   TODO: Run hooks and fix issues in follow-up commit."
    ```
 
-2. **Fix issues promptly**: If you bypass for work-in-progress, fix issues before merging
-
-3. **Don't make it a habit**: If you're regularly bypassing hooks, something is wrong with the hooks or your workflow
-
----
-
-## Logging
-
-All git hooks log their execution to:
-
-```
-logs/git-hooks_YYYY-MM-DD.log
-```
-
-**Log format:**
-
-```
-[YYYY-MM-DD HH:MM:SS TIMEZONE] [LEVEL] [hook-name] [HOSTNAME] [PID] Message
-```
-
-**Example:**
-
-```
-[2025-11-18 14:30:45 UTC] [INFO] [pre-commit] [workstation] [12345] Pre-commit hook started
-[2025-11-18 14:30:46 UTC] [INFO] [pre-commit] [workstation] [12345] Found PowerShell files to lint: 3 file(s)
-[2025-11-18 14:30:48 UTC] [INFO] [pre-commit] [workstation] [12345] PowerShell linting passed
-[2025-11-18 14:30:48 UTC] [INFO] [pre-commit] [workstation] [12345] Pre-commit checks passed
-```
-
-**Log levels:**
-
-- **INFO**: Normal operations
-- **WARNING**: Non-critical issues (e.g., linter not installed)
-- **ERROR**: Critical failures (e.g., linting failed, commit blocked)
-
-**Log retention:**
-
-Logs follow the standard retention policy (30 days by default). See `docs/logging_specification.md` for details.
+2. **Fix issues promptly**: Address hook failures in follow-up commits
+3. **Don't make it a habit**: If bypassing regularly, fix the hooks or workflow
 
 ---
 
-## Prerequisites
+## Updating Hooks
 
-### Required
+### Manual Update
 
-- **Git**: Version 2.0 or later
-- **Bash/sh**: For running hooks (included with Git on Windows)
+```bash
+# Update to latest hook versions
+pre-commit autoupdate
 
-### Optional (for full functionality)
+# Review changes
+git diff .pre-commit-config.yaml
 
-- **PowerShell 7+** (`pwsh`): Required for post-commit and post-merge hooks
-  - Installation: [https://aka.ms/powershell](https://aka.ms/powershell)
-  - Not required for pre-commit or commit-msg hooks
+# Commit updates
+git add .pre-commit-config.yaml
+git commit -m "chore: update pre-commit hooks"
+```
 
-- **PSScriptAnalyzer**: PowerShell linting (auto-installed by pre-commit hook)
-  ```powershell
-  Install-Module -Name PSScriptAnalyzer -Scope CurrentUser
-  ```
+### Automatic Updates (CI/CD)
 
-- **Python 3+**: For Python linting
-  - Linux/macOS: Usually pre-installed
-  - Windows: [https://www.python.org/downloads/](https://www.python.org/downloads/)
+The repository includes a weekly auto-update workflow:
 
-- **pylint**: Python linting tool
-  ```bash
-  pip install pylint
-  ```
+**Workflow:** `.github/workflows/pre-commit-autoupdate.yml`
+- Runs every Sunday at midnight UTC
+- Automatically creates PR with hook updates
+- Can be triggered manually via GitHub Actions
 
-### Cross-Platform Compatibility
+---
 
-All hooks are designed to work on:
+## Configuration Files
 
-- ✅ Linux
-- ✅ macOS
-- ✅ Windows (Git Bash, WSL, or PowerShell)
+### `.pre-commit-config.yaml`
+Main configuration file listing all hooks and their versions.
 
-**Windows notes:**
+### `.pylintrc`
+Pylint configuration (Python linting rules).
 
-- Use Git Bash or WSL for best compatibility
-- PowerShell hooks (`post-commit`, `post-merge`) require PowerShell 7+ even on Windows
-- Pre-commit and commit-msg hooks work in Git Bash without PowerShell
+### `pyproject.toml`
+Configuration for Black, Bandit, and Commitizen.
+
+### `.sqlfluffrc`
+SQLFluff configuration (SQL linting rules).
+
+---
+
+## CI/CD Integration
+
+Pre-commit hooks run automatically in CI/CD via `.github/workflows/sonarcloud.yml`:
+
+```yaml
+- name: Run Pre-Commit Hooks
+  run: |
+    pip install pre-commit
+    pre-commit run --all-files --show-diff-on-failure
+  continue-on-error: true
+```
+
+**Features:**
+- Runs on every push and pull request
+- Shows diffs for failed hooks
+- Continues on error (informational only in Phase 1)
 
 ---
 
@@ -345,30 +408,46 @@ All hooks are designed to work on:
 1. Check if hooks are installed:
    ```bash
    ls -la .git/hooks/
-   # Should show pre-commit, commit-msg, post-commit, post-merge
+   # Should show pre-commit and commit-msg
    ```
 
-2. Check if hooks are executable:
-   ```bash
-   # Linux/macOS/Git Bash
-   chmod +x .git/hooks/*
-   ```
-
-3. Re-run the install script:
+2. Reinstall hooks:
    ```bash
    ./scripts/install-hooks.sh
+   # Or manually
+   pre-commit install
+   pre-commit install --hook-type commit-msg
    ```
+
+3. Verify pre-commit is installed:
+   ```bash
+   pre-commit --version
+   ```
+
+---
+
+### Pre-Commit Not Found
+
+**Problem:** `pre-commit: command not found`
+
+**Solution:**
+
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Verify installation
+pre-commit --version
+```
 
 ---
 
 ### PowerShell Not Found
 
-**Problem:** `WARNING: PowerShell (pwsh) not found`
+**Problem:** `pwsh: command not found` when PSScriptAnalyzer runs
 
 **Impact:**
-
-- `pre-commit`: PowerShell file linting will be skipped (warning only)
-- `post-commit`/`post-merge`: Hooks will not run (warning logged, not blocking)
+- PowerShell linting will be skipped
 
 **Solution:**
 
@@ -379,9 +458,6 @@ Install PowerShell 7+:
   ```bash
   # Ubuntu/Debian
   sudo apt-get install -y powershell
-
-  # RHEL/CentOS
-  sudo yum install -y powershell
   ```
 - **macOS:**
   ```bash
@@ -396,10 +472,8 @@ Install PowerShell 7+:
 
 **Solution:**
 
-The pre-commit hook attempts to auto-install PSScriptAnalyzer. If this fails:
-
 ```powershell
-# Install manually
+# Install PSScriptAnalyzer
 Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
 
 # Verify installation
@@ -408,145 +482,114 @@ Get-Module -ListAvailable PSScriptAnalyzer
 
 ---
 
-### Pylint Not Found
+### Hook Fails with "No files to check"
 
-**Problem:** Python linting fails or falls back to syntax check
+**Problem:** Hook reports "no files to check"
+
+**Cause:** No files matching the hook's pattern are staged
 
 **Solution:**
-
-```bash
-# Install pylint
-pip install pylint
-
-# Verify installation
-pylint --version
-```
-
-**Alternative:** If you don't want to install pylint, the hook will fall back to basic Python syntax checking using `python -m py_compile`.
+This is normal. The hook only runs on relevant files (e.g., `.py`, `.ps1`, `.sql`).
 
 ---
 
 ### Commit Message Rejected
 
-**Problem:** `ERROR: Commit message does not follow Conventional Commits format`
+**Problem:** `commitizen` rejects commit message
 
 **Solution:**
 
-1. Review your commit message format
-2. Ensure it matches: `type(scope): description`
-3. Use lowercase for type and scope
-4. Ensure description is 3-100 characters
-5. Use approved types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`, `build`, `revert`
+1. Follow Conventional Commits format: `type(scope): description`
+2. Use lowercase for type and scope
+3. Ensure description is meaningful (>3 characters)
+4. Use approved types: `feat`, `fix`, `docs`, etc.
 
 **Examples:**
-
 ```bash
-# ✅ Correct
-git commit -m "feat(hooks): add pre-commit linting"
-git commit -m "fix: resolve database timeout issue"
-git commit -m "docs: update git hooks documentation"
-
-# ❌ Incorrect
-git commit -m "Updated hooks"                    # Missing type
-git commit -m "FIX: database issue"              # Uppercase type
-git commit -m "feat(HOOKS): new feature"         # Uppercase scope
-git commit -m "feat add hooks"                   # Missing colon
+✅ git commit -m "feat(hooks): add pre-commit framework"
+✅ git commit -m "fix: resolve timeout issue"
+❌ git commit -m "Updated hooks"
 ```
 
 ---
 
-### Large File Warning
+### Black Reformats Code
 
-**Problem:** `WARNING: The following large files (>10MB) are being committed`
+**Problem:** Black auto-formats code differently than expected
 
-**This is a warning, not an error.** The commit will proceed.
+**Solution:**
 
-**Recommendations:**
+1. This is expected behavior - Black enforces consistent style
+2. Review the changes: `git diff`
+3. If needed, adjust Black configuration in `pyproject.toml`
+4. To preserve specific formatting, use `# fmt: off` and `# fmt: on`:
+   ```python
+   # fmt: off
+   matrix = [
+       [1, 2, 3],
+       [4, 5, 6],
+   ]
+   # fmt: on
+   ```
 
-1. **Use Git LFS** for large files (videos, images, datasets):
+---
+
+### Large Files Warning
+
+**Problem:** `check-added-large-files` warns about large files
+
+**Solution:**
+
+1. **Use Git LFS** for large files:
    ```bash
    git lfs install
    git lfs track "*.mp4"
-   git lfs track "*.zip"
    git add .gitattributes
    ```
 
-2. **Verify intentional**: Make sure you meant to commit the large file
-
-3. **Consider alternatives**: Could the file be:
-   - Hosted externally (cloud storage)
-   - Generated at build time
-   - Excluded via `.gitignore`
-
----
-
-### Hook Fails on Windows
-
-**Problem:** Hook script errors on Windows
-
-**Common causes:**
-
-1. **Line endings**: Hooks have Unix line endings (LF)
-   - Git usually handles this automatically
-   - If issues persist, check `.gitattributes`
-
-2. **Bash not available**:
-   - Install Git for Windows (includes Git Bash)
-   - Or use WSL (Windows Subsystem for Linux)
-
-3. **PowerShell hooks on Windows**:
-   - Ensure PowerShell 7+ is installed (not Windows PowerShell 5.1)
-   - Run `pwsh --version` to verify
+2. **Or increase the limit** in `.pre-commit-config.yaml`:
+   ```yaml
+   - id: check-added-large-files
+     args: ['--maxkb=10000']  # 10MB
+   ```
 
 ---
 
-### Hook Logs Not Created
+### Hook Takes Too Long
 
-**Problem:** No log files in `logs/git-hooks_*.log`
+**Problem:** Hooks slow down commits
 
 **Solutions:**
 
-1. Check if logs directory exists:
+1. **Run hooks on staged files only** (default behavior)
+2. **Skip slow hooks occasionally**:
    ```bash
-   ls -la logs/
+   SKIP=pylint git commit -m "wip: work in progress"
    ```
-
-2. Check permissions:
-   ```bash
-   # Ensure you have write permissions
-   touch logs/test.log
-   rm logs/test.log
-   ```
-
-3. Check hook execution:
-   ```bash
-   # Manually test a hook
-   .git/hooks/pre-commit
-   # Check if log was created
-   cat logs/git-hooks_$(date +%Y-%m-%d).log
-   ```
+3. **Optimize hook configuration**:
+   - Use `--errors-only` for linters
+   - Exclude test files from some hooks
+   - Use file filters to target specific paths
 
 ---
 
 ## Testing Hooks
 
-### Test pre-commit Hook
+### Test Pre-Commit Hooks
 
 ```bash
-# Create a test file with a debug statement
-echo "console.log('DEBUG: test');" > test.js
-git add test.js
-git commit -m "test: debug statement"
-# Should fail with error about debug statements
+# Test all hooks
+pre-commit run --all-files
 
-# Fix and retry
-echo "console.log('Production ready');" > test.js
-git add test.js
-git commit -m "test: clean code"
-# Should succeed
+# Test specific hook
+pre-commit run black --all-files
+pre-commit run pylint --all-files
+
+# Test on specific file
+pre-commit run --files src/python/example.py
 ```
 
-### Test commit-msg Hook
+### Test Commit Message Validation
 
 ```bash
 # Invalid format - should fail
@@ -556,82 +599,54 @@ git commit --allow-empty -m "Updated stuff"
 git commit --allow-empty -m "test: verify commit-msg hook"
 ```
 
-### Test post-commit Hook
+### Test Auto-Fixes
 
 ```bash
-# Make a commit and check logs
-git commit --allow-empty -m "test: verify post-commit hook"
+# Create a file with trailing whitespace
+echo "test  " > test.txt
+git add test.txt
 
-# Check if hook ran
-cat logs/git-hooks_$(date +%Y-%m-%d).log | grep post-commit
+# Commit (Black will auto-fix)
+git commit -m "test: auto-fix test"
 
-# If PowerShell is available, check if script executed
-cat logs/post-commit-my-scripts_powershell_$(date +%Y-%m-%d).log
-```
-
-### Test post-merge Hook
-
-```bash
-# Create a test branch
-git checkout -b test-merge
-echo "test content" > test-merge.txt
-git add test-merge.txt
-git commit -m "test: add merge test file"
-
-# Merge back
-git checkout main
-git merge test-merge
-
-# Check if hook ran
-cat logs/git-hooks_$(date +%Y-%m-%d).log | grep post-merge
-
-# Cleanup
-git branch -d test-merge
-git rm test-merge.txt
-git commit -m "test: cleanup merge test"
+# Check the fix
+cat test.txt  # Should have trailing whitespace removed
 ```
 
 ---
 
 ## Hook Configuration
 
-### Customizing Hooks
+### Adding New Hooks
 
-Hooks are stored in `hooks/` and can be modified:
-
-1. Edit the hook file in `hooks/` directory
-2. Run `./scripts/install-hooks.sh` to update `.git/hooks/`
-3. Test the changes
-
-**Important:** Changes to hooks in `.git/hooks/` are **not tracked by Git**. Always edit files in `hooks/` directory and use the install script.
+1. Edit `.pre-commit-config.yaml`
+2. Add new hook entry
+3. Update configuration files if needed (`.pylintrc`, `pyproject.toml`, etc.)
+4. Test the hook:
+   ```bash
+   pre-commit run <hook-id> --all-files
+   ```
+5. Commit changes:
+   ```bash
+   git add .pre-commit-config.yaml
+   git commit -m "chore: add new pre-commit hook"
+   ```
 
 ### Disabling Hooks Temporarily
 
-To temporarily disable a hook without uninstalling:
-
+**For a single commit:**
 ```bash
-# Rename the hook in .git/hooks/
-mv .git/hooks/pre-commit .git/hooks/pre-commit.disabled
+SKIP=hook-id git commit -m "message"
+```
+
+**For all commits (not recommended):**
+```bash
+# Uninstall hooks
+pre-commit uninstall
 
 # Re-enable later
-mv .git/hooks/pre-commit.disabled .git/hooks/pre-commit
+pre-commit install
 ```
-
-Or use `--no-verify` for individual commits (see "Bypassing Hooks" section).
-
-### Disabling Hooks Permanently
-
-To permanently disable hooks (not recommended):
-
-```bash
-# Remove the hooks
-rm .git/hooks/pre-commit
-rm .git/hooks/commit-msg
-rm .git/hooks/post-commit
-rm .git/hooks/post-merge
-```
-
-**Note:** Running `./scripts/install-hooks.sh` will reinstall them.
 
 ---
 
@@ -639,45 +654,50 @@ rm .git/hooks/post-merge
 
 ### Q: Do hooks run on GitHub Actions / CI/CD?
 
-**A:** No. Git hooks are local and stored in `.git/hooks/`, which is not tracked by Git. CI/CD systems don't use git hooks.
+**A:** Yes! The workflow in `.github/workflows/sonarcloud.yml` runs pre-commit hooks on every push and PR.
 
-**Solution:** Replicate checks in CI/CD:
-- Run linters in CI (already done via SonarCloud workflow)
-- Enforce conventional commits via PR title checks (can be added)
+---
 
 ### Q: Can I commit without running hooks?
 
-**A:** Yes, using `git commit --no-verify`. See "Bypassing Hooks" section for details and best practices.
+**A:** Yes, using `git commit --no-verify`. See "Skipping Hooks" section for details and best practices.
+
+---
 
 ### Q: Why isn't my hook running?
 
 **A:** Common causes:
 1. Hooks not installed (run `./scripts/install-hooks.sh`)
-2. Hooks not executable (run `chmod +x .git/hooks/*`)
-3. You used `--no-verify` flag
-4. Wrong hook for the operation (e.g., expecting pre-commit to run on `git push`)
+2. Pre-commit not installed (run `pip install pre-commit`)
+3. No files matching the hook's pattern are staged
+4. You used `--no-verify` flag
+
+---
+
+### Q: How do I update hook versions?
+
+**A:**
+- **Manually:** `pre-commit autoupdate`
+- **Automatically:** The weekly auto-update workflow creates PRs
+
+---
 
 ### Q: Can I use different hooks on different branches?
 
 **A:** No, hooks are repository-wide. However, you can:
-- Add branch detection logic within the hook script
-- Disable hooks on specific branches by checking `git branch --show-current`
+- Add branch detection logic within custom hooks
+- Skip hooks on specific branches: `SKIP=hook git commit`
+
+---
 
 ### Q: What happens if a hook fails?
 
 **A:**
-- **pre-commit**: Commit is **aborted**. Fix issues and retry.
+- **pre-commit hooks**: Commit is **aborted**. Fix issues and retry.
 - **commit-msg**: Commit is **aborted**. Fix message and retry.
-- **post-commit**: Commit **succeeds** but post-actions fail. Check logs.
-- **post-merge**: Merge **succeeds** but post-actions fail. Check logs.
+- **Auto-fix hooks** (Black, trailing-whitespace): Files are modified. Review and re-stage.
 
-### Q: Can I modify hook behavior for my local workflow?
-
-**A:** Yes, but:
-1. **Don't modify `.git/hooks/` directly** (changes are lost on reinstall)
-2. **Do modify `hooks/` directory** and reinstall
-3. Consider making changes configurable via environment variables
-4. Document any local modifications
+---
 
 ### Q: Do hooks work with GUI Git clients?
 
@@ -685,39 +705,52 @@ rm .git/hooks/post-merge
 - ✅ GitHub Desktop
 - ✅ SourceTree
 - ✅ GitKraken
-- ✅ Fork
 - ✅ VS Code Git integration
 
-Some older or minimal clients may not support hooks.
+---
+
+### Q: How do I exclude files from hooks?
+
+**A:** Use `exclude` in `.pre-commit-config.yaml`:
+
+```yaml
+- repo: https://github.com/psf/black
+  rev: 24.1.1
+  hooks:
+    - id: black
+      exclude: ^legacy/.*\.py$  # Exclude legacy directory
+```
 
 ---
 
 ## Additional Resources
 
-- **Git Hooks Documentation**: [https://git-scm.com/docs/githooks](https://git-scm.com/docs/githooks)
+- **Pre-Commit Framework**: [https://pre-commit.com](https://pre-commit.com)
 - **Conventional Commits**: [https://www.conventionalcommits.org/](https://www.conventionalcommits.org/)
-- **PSScriptAnalyzer**: [https://github.com/PowerShell/PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer)
+- **Supported Hooks**: [https://pre-commit.com/hooks.html](https://pre-commit.com/hooks.html)
+- **Black Formatter**: [https://black.readthedocs.io/](https://black.readthedocs.io/)
 - **Pylint**: [https://pylint.pycqa.org/](https://pylint.pycqa.org/)
-- **Repository Logging Specification**: `docs/logging_specification.md`
-- **Contributing Guidelines**: `CONTRIBUTING.md`
+- **Bandit**: [https://bandit.readthedocs.io/](https://bandit.readthedocs.io/)
+- **PSScriptAnalyzer**: [https://github.com/PowerShell/PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer)
+- **SQLFluff**: [https://sqlfluff.com/](https://sqlfluff.com/)
+- **Commitizen**: [https://commitizen-tools.github.io/commitizen/](https://commitizen-tools.github.io/commitizen/)
 
 ---
 
 ## Support
 
-If you encounter issues with git hooks:
+For issues or questions:
 
 1. Check this documentation
-2. Review hook logs in `logs/git-hooks_*.log`
-3. Check PowerShell hook logs in `logs/*_powershell_*.log`
-4. Open an issue in the repository with:
-   - Hook name and operation (e.g., "pre-commit on Windows")
+2. Review [pre-commit documentation](https://pre-commit.com)
+3. Search existing [GitHub issues](https://github.com/manoj-bhaskaran/My-Scripts/issues)
+4. Open a new issue with:
+   - Hook name and operation
    - Error message or unexpected behavior
-   - Log file contents (if applicable)
-   - System information (OS, Git version, PowerShell version)
+   - System information (OS, Python version, pre-commit version)
 
 ---
 
-**Document Version:** 1.0.0
-**Last Updated:** 2025-11-18
-**Related Issue:** #455
+**Document Version:** 2.0.0
+**Last Updated:** 2025-11-21
+**Related Issue:** #463

@@ -1,0 +1,11 @@
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.bandit]
+exclude_dirs = ["tests", "fixtures"]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "1.0.0"
+tag_format = "v$version"

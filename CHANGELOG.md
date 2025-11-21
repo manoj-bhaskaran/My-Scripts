@@ -9,6 +9,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pre-Commit Framework for Multi-Language Linting** (#463) - Comprehensive pre-commit hook system
+  - **Pre-Commit Framework Installation**
+    - New file: `.pre-commit-config.yaml` - Main configuration with all hooks and versions
+    - Added `pre-commit>=3.0.0` to `requirements.txt`
+    - Updated `scripts/install-hooks.sh` (v2.0.0) - Automated pre-commit framework installation
+      - Installs pre-commit framework via pip
+      - Configures pre-commit and commit-msg hooks
+      - Runs validation on all files
+      - Cross-platform support (Linux, macOS, Windows)
+  - **Configuration Files**
+    - New file: `.pylintrc` - Pylint configuration (max line length 100, ignores tests)
+    - New file: `pyproject.toml` - Black, Bandit, and Commitizen configuration
+    - New file: `.sqlfluffrc` - SQLFluff configuration (PostgreSQL dialect, max line 120)
+  - **General Hooks** (from pre-commit-hooks v4.5.0)
+    - `trailing-whitespace` - Removes trailing whitespace (auto-fix)
+    - `end-of-file-fixer` - Ensures files end with newline (auto-fix)
+    - `check-yaml` - Validates YAML syntax
+    - `check-json` - Validates JSON syntax
+    - `check-added-large-files` - Warns about files >5MB
+    - `check-merge-conflict` - Detects merge conflict markers
+    - `detect-private-key` - Prevents accidental credential leaks
+  - **Python Hooks**
+    - Black (v24.1.1) - Auto-formats Python code (line length 100, target Python 3.11)
+    - Pylint (v3.0.0) - Python linting (errors only)
+    - Bandit (v1.7.5) - Security scanning (excludes tests/fixtures)
+  - **PowerShell Hooks**
+    - PSScriptAnalyzer (local) - PowerShell linting (errors only, requires pwsh)
+  - **SQL Hooks**
+    - SQLFluff (v3.0.0) - SQL linting and auto-formatting (PostgreSQL dialect)
+  - **Commit Message Validation**
+    - Commitizen (v3.12.0) - Enforces Conventional Commits format
+  - **CI/CD Integration**
+    - Updated `.github/workflows/sonarcloud.yml` - Runs pre-commit hooks on all files
+    - New workflow: `.github/workflows/pre-commit-autoupdate.yml`
+      - Weekly automatic hook updates (Sundays at midnight UTC)
+      - Creates PR with updated hook versions
+      - Manual trigger support via workflow_dispatch
+  - **Documentation**
+    - Updated `docs/guides/git-hooks.md` (v2.0.0) - Comprehensive pre-commit framework guide
+      - Installation and setup instructions
+      - All hook descriptions and configurations
+      - Running hooks manually (staged files, all files, specific files)
+      - Skipping hooks (--no-verify, SKIP environment variable)
+      - Updating hooks (manual and automatic)
+      - Configuration files reference
+      - CI/CD integration details
+      - Comprehensive troubleshooting (14+ common issues)
+      - Testing hooks guide
+      - FAQ section (10+ questions)
+    - Updated `INSTALLATION.md` - Pre-commit framework installation instructions
+      - Multi-language hook support details
+      - Installation script explanation
+      - Link to comprehensive documentation
+  - **Features**
+    - Configuration version-controlled in `.pre-commit-config.yaml`
+    - Automatic hook installation for all team members
+    - Multi-language support (Python, PowerShell, SQL)
+    - Extensive hook library with 100+ available pre-built hooks
+    - Automatic weekly updates via CI/CD
+    - Per-hook configuration and selective execution
+    - Fast execution with caching
+    - Easy to add/remove hooks
+    - Backward compatible (post-commit and post-merge hooks retained)
+  - **Migration from Manual Hooks**
+    - Manual hooks in `hooks/` directory deprecated for pre-commit/commit-msg
+    - Post-commit and post-merge hooks remain manual (not supported by pre-commit)
+    - Pre-commit handles pre-commit and commit-msg stages
+    - Legacy hooks documented in git-hooks.md
+
 - **Architecture Documentation** (#462) - Comprehensive architecture documentation for the repository
   - **Core Architecture Document**
     - New file: `ARCHITECTURE.md` - High-level architecture overview at repository root
