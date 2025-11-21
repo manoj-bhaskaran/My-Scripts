@@ -75,6 +75,20 @@ This repository is organized by **programming language** and **functional domain
 
 ---
 
+## Architecture
+
+For architectural overview, design decisions, and technical documentation, see:
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** – High-level architecture, design principles, and key design decisions
+- **[Database Schemas](docs/architecture/database-schemas.md)** – PostgreSQL database schemas with ER diagrams (Timeline, GnuCash, Job Scheduler)
+- **[Module Dependencies](docs/architecture/module-dependencies.md)** – Module dependency graphs and relationships (PowerShell and Python)
+- **[External Integrations](docs/architecture/external-integrations.md)** – External service integrations (Google Drive, CloudConvert, PostgreSQL, VLC, Task Scheduler)
+- **[Data Flows](docs/architecture/data-flows.md)** – Data flow diagrams for key workflows (backup, timeline processing, log management)
+
+These documents provide comprehensive insights into the system design, helping you understand how components interact and make informed decisions when modifying or extending the codebase.
+
+---
+
 ## Installation
 
 For comprehensive installation instructions, see **[INSTALLATION.md](INSTALLATION.md)**.

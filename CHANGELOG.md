@@ -9,6 +9,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Architecture Documentation** (#462) - Comprehensive architecture documentation for the repository
+  - **Core Architecture Document**
+    - New file: `ARCHITECTURE.md` - High-level architecture overview at repository root
+      - Design principles (language-based organization, domain categorization, shared infrastructure, cross-platform support)
+      - System context with external integrations diagram
+      - Component architecture with module relationships
+      - 6 key design decisions with rationale (monolithic repo, unified logging, PowerShell 7+, module reusability, retry logic, test coverage)
+      - Links to all detailed architecture documents
+  - **Database Schemas Documentation**
+    - New file: `docs/architecture/database-schemas.md` - Complete database schema documentation
+      - ER diagrams for Timeline, GnuCash, and Job Scheduler databases (Mermaid diagrams)
+      - Table schemas with column descriptions and indexes
+      - Data flow diagrams for timeline processing workflow
+      - Database backup strategies and retention policies
+      - Access patterns and common queries
+      - User permissions and security model
+  - **Module Dependencies Documentation**
+    - New file: `docs/architecture/module-dependencies.md` - Module dependency analysis
+      - Complete PowerShell module dependency graph (8 modules) with Mermaid visualization
+      - Complete Python module dependency graph (5 modules) with Mermaid visualization
+      - Detailed documentation for each module (purpose, dependencies, dependents, features)
+      - External dependencies (PostgreSQL, VLC, Google APIs, CloudConvert)
+      - Cross-language dependencies and unified logging specification
+      - Module deployment process and configuration
+      - Dependency coupling analysis and refactoring opportunities
+  - **External Integrations Documentation**
+    - New file: `docs/architecture/external-integrations.md` - External service integration guide
+      - Google Drive API integration (OAuth2 flow, authentication, API scopes, rate limits)
+      - CloudConvert API integration (API key authentication, conversion workflows)
+      - PostgreSQL integration (connection methods, backup architecture, service management)
+      - VLC Media Player integration (command-line invocation, screenshot capture)
+      - Windows Task Scheduler integration (scheduled backups, system maintenance)
+      - Git hooks integration (pre-commit, commit-msg, post-commit, post-merge)
+      - Security considerations (credential management, API key rotation)
+      - Troubleshooting guide for common integration issues
+  - **Data Flows Documentation**
+    - New file: `docs/architecture/data-flows.md` - Workflow and data flow diagrams
+      - 7 comprehensive workflow diagrams (Mermaid sequence diagrams)
+        - Database backup workflow (PostgreSQL → Local → Google Drive)
+        - Timeline processing workflow (JSON/CSV → PostgreSQL → GPX with elevation)
+        - Log management workflow (discovery → age check → purge)
+        - File distribution workflow (source → random name → destinations)
+        - Video screenshot workflow (VLC capture → optional Python cropping)
+        - Git commit workflow (pre-commit → commit-msg → post-commit)
+        - Module deployment workflow (configuration → validation → deployment)
+      - Critical path analysis with timing estimates
+      - Error handling and retry logic documentation
+      - Performance considerations and optimization strategies
+  - **README Integration**
+    - Updated `README.md` with new "Architecture" section linking all architecture documents
+    - Positioned after "Repository Structure" and before "Installation"
+  - **Benefits**
+    - Improved onboarding for contributors and maintainers
+    - Clear understanding of system design and component interactions
+    - Documented design decisions with rationale for future reference
+    - Visual diagrams (15+ Mermaid diagrams) for easier comprehension
+    - Troubleshooting guide for external integrations
+    - Foundation for future architectural changes and refactoring
+
 - **Shared Utilities Modules** (#461) - Extracted common patterns into reusable modules
   - **PowerShell Core Modules**
     - New module: `ErrorHandling` (v1.0.0) - Standardized error handling and retry logic
