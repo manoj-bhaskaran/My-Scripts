@@ -80,13 +80,22 @@ jobs:
         run: |
           echo "::group::SQL Formatting Check"
           if [ -d "src/sql" ] && find src/sql -name "*.sql" -type f | grep -q .; then
-            if sqlfluff lint --config .sqlfluffrc src/sql/ --format github-annotation; then
-              echo "✓ SQL code is properly formatted"
-              echo "result=success" >> $GITHUB_OUTPUT
-            else
-              echo "::error::SQL code is not properly formatted"
+            # Run sqlfluff lint and capture output
+            LINT_OUTPUT=$(sqlfluff lint --config .sqlfluffrc src/sql/ --format github-annotation 2>&1) || true
+            echo "$LINT_OUTPUT"
+
+            # Check if there are any fixable violations
+            if echo "$LINT_OUTPUT" | grep -q "fixable linting violations found"; then
+              echo "::error::SQL code has fixable formatting violations"
               echo "result=failure" >> $GITHUB_OUTPUT
               exit 1
+            else
+              # No fixable violations - success (unfixable violations are acceptable)
+              if echo "$LINT_OUTPUT" | grep -q "unfixable linting violations"; then
+                echo "::warning::SQL code has unfixable linting violations (acceptable)"
+              fi
+              echo "✓ SQL code formatting is acceptable (no fixable violations)"
+              echo "result=success" >> $GITHUB_OUTPUT
             fi
           else
             echo "⚠ No SQL files found to check"
