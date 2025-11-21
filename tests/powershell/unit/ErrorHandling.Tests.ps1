@@ -161,7 +161,8 @@ Describe "Test-CommandAvailable" {
         # Test with a common command that should exist
         if ($IsWindows -or $null -eq $IsWindows) {
             $result = Test-CommandAvailable "cmd"
-        } else {
+        }
+        else {
             $result = Test-CommandAvailable "ls"
         }
 

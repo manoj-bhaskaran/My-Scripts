@@ -58,91 +58,96 @@ try {
     if ($bad) {
         Write-Warning ("Suspicious ACLs on .pgpass: " + (($bad | Select-Object -ExpandProperty IdentityReference | Select-Object -Unique) -join ', ') + ". Restrict access to the current user for better security.")
     }
-} catch {
+}
+catch {
     Write-Warning "Could not inspect ACLs for .pgpass at '$PgPass': $($_.Exception.Message)"
 }
 # === End Preflight ===
 
 function Invoke-BackupMain {
 
-[CmdletBinding()]
-param(
-    # Override defaults if needed when calling from Task Scheduler
-    [string]$Database       = 'job_scheduler',
-    [string]$BackupRoot     = 'D:\pgbackup\job_scheduler',          # where .backup files go
-    [string]$LogsRoot       = 'D:\pgbackup\job_scheduler\logs',      # where .log files go
-    [string]$UserName       = 'backup_user',                         # PG user
-    [int]   $RetentionDays  = 90,
-    [int]   $MinBackups     = 3,
+    [CmdletBinding()]
+    param(
+        # Override defaults if needed when calling from Task Scheduler
+        [string]$Database = 'job_scheduler',
+        [string]$BackupRoot = 'D:\pgbackup\job_scheduler',          # where .backup files go
+        [string]$LogsRoot = 'D:\pgbackup\job_scheduler\logs',      # where .log files go
+        [string]$UserName = 'backup_user',                         # PG user
+        [int]   $RetentionDays = 90,
+        [int]   $MinBackups = 3,
 
-    # If you want to force a specific PostgresBackup version, set this (e.g., '1.0.4')
-    [string]$ModuleVersion
-)
+        # If you want to force a specific PostgresBackup version, set this (e.g., '1.0.4')
+        [string]$ModuleVersion
+    )
 
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+    Set-StrictMode -Version Latest
+    $ErrorActionPreference = 'Stop'
 
-# ----- Helpers -----
-function New-DirectoryIfMissing {
-    param([Parameter(Mandatory=$true)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
-        New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    # ----- Helpers -----
+    function New-DirectoryIfMissing {
+        param([Parameter(Mandatory = $true)][string]$Path)
+        if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+            New-Item -ItemType Directory -Path $Path -Force | Out-Null
+        }
     }
-}
 
-# ----- Ensure folders -----
-try {
-    New-DirectoryIfMissing -Path $BackupRoot
-    New-DirectoryIfMissing -Path $LogsRoot
-} catch {
-    Write-LogError "ERROR: Failed to ensure backup/log directories: $_"
-    exit 1
-}
-
-# ----- Build timestamped log path (module will append UTF-8) -----
-$Timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$LogFile   = Join-Path $LogsRoot ("{0}_backup_{1}.log" -f $Database, $Timestamp)
-
-Write-LogInfo "Backup root  : $BackupRoot"
-Write-LogInfo "Logs root    : $LogsRoot"
-Write-LogInfo "Log file     : $LogFile"
-Write-LogInfo "Database     : $Database"
-Write-LogInfo "User         : $UserName"
-if ($PSBoundParameters.ContainsKey('ModuleVersion')) {
-    Write-LogInfo "Module ver   : $ModuleVersion (requested)"
-}
-
-# ----- Import the PostgresBackup module -----
-try {
-    if ($PSBoundParameters.ContainsKey('ModuleVersion') -and $ModuleVersion) {
-        Import-Module -Name PostgresBackup -RequiredVersion $ModuleVersion -ErrorAction Stop
-    } else {
-        Import-Module -Name PostgresBackup -ErrorAction Stop
+    # ----- Ensure folders -----
+    try {
+        New-DirectoryIfMissing -Path $BackupRoot
+        New-DirectoryIfMissing -Path $LogsRoot
     }
-} catch {
-    Write-LogError "ERROR: Failed to import PostgresBackup module: $_"
-    exit 1
-}
+    catch {
+        Write-LogError "ERROR: Failed to ensure backup/log directories: $_"
+        exit 1
+    }
 
-# ----- Invoke backup -----
-try {
-    Write-LogInfo "Starting backup via PostgresBackup::Backup-PostgresDatabase"
-    Backup-PostgresDatabase `
-        -dbname          $Database `
-        -backup_folder   $BackupRoot `
-        -log_file        $LogFile `
-        -user            $UserName `
-        -retention_days  $RetentionDays `
-        -min_backups     $MinBackups
+    # ----- Build timestamped log path (module will append UTF-8) -----
+    $Timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $LogFile = Join-Path $LogsRoot ("{0}_backup_{1}.log" -f $Database, $Timestamp)
 
-    # If the function throws, we won't reach here; success means exit code 0.
-    Write-LogInfo "Backup completed successfully."
-    exit 0
-} catch {
-    # The module also logs failures to $LogFile; we still surface a clear status/exit code here.
-    Write-LogError "ERROR: Backup failed: $_"
-    exit 1
-}
+    Write-LogInfo "Backup root  : $BackupRoot"
+    Write-LogInfo "Logs root    : $LogsRoot"
+    Write-LogInfo "Log file     : $LogFile"
+    Write-LogInfo "Database     : $Database"
+    Write-LogInfo "User         : $UserName"
+    if ($PSBoundParameters.ContainsKey('ModuleVersion')) {
+        Write-LogInfo "Module ver   : $ModuleVersion (requested)"
+    }
+
+    # ----- Import the PostgresBackup module -----
+    try {
+        if ($PSBoundParameters.ContainsKey('ModuleVersion') -and $ModuleVersion) {
+            Import-Module -Name PostgresBackup -RequiredVersion $ModuleVersion -ErrorAction Stop
+        }
+        else {
+            Import-Module -Name PostgresBackup -ErrorAction Stop
+        }
+    }
+    catch {
+        Write-LogError "ERROR: Failed to import PostgresBackup module: $_"
+        exit 1
+    }
+
+    # ----- Invoke backup -----
+    try {
+        Write-LogInfo "Starting backup via PostgresBackup::Backup-PostgresDatabase"
+        Backup-PostgresDatabase `
+            -dbname          $Database `
+            -backup_folder   $BackupRoot `
+            -log_file        $LogFile `
+            -user            $UserName `
+            -retention_days  $RetentionDays `
+            -min_backups     $MinBackups
+
+        # If the function throws, we won't reach here; success means exit code 0.
+        Write-LogInfo "Backup completed successfully."
+        exit 0
+    }
+    catch {
+        # The module also logs failures to $LogFile; we still surface a clear status/exit code here.
+        Write-LogError "ERROR: Backup failed: $_"
+        exit 1
+    }
 }
 
 try {

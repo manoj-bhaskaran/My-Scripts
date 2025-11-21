@@ -11,7 +11,7 @@
 #>
 
 function Save-ImageWithRetry {
-  <#
+    <#
   .SYNOPSIS
     Save a System.Drawing.Bitmap with retries (caller disposes the bitmap).
   .PARAMETER Bitmap
@@ -21,23 +21,24 @@ function Save-ImageWithRetry {
   .PARAMETER Attempts
     Number of save attempts with linear backoff (default: 3).
   #>
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][System.Drawing.Bitmap]$Bitmap,
-    [Parameter(Mandatory)][string]$Path,
-    [ValidateRange(1,10)][int]$Attempts = 3
-  )
-  for ($i = 1; $i -le $Attempts; $i++) {
-    try {
-      $Bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
-      return
-    } catch {
-      if ($i -ge $Attempts) {
-        throw ("GDI capture: failed to save '{0}' after {1} attempt(s): {2}" -f $Path, $Attempts, $_.Exception.Message)
-      }
-      Start-Sleep -Milliseconds (150 * $i)
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][System.Drawing.Bitmap]$Bitmap,
+        [Parameter(Mandatory)][string]$Path,
+        [ValidateRange(1, 10)][int]$Attempts = 3
+    )
+    for ($i = 1; $i -le $Attempts; $i++) {
+        try {
+            $Bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+            return
+        }
+        catch {
+            if ($i -ge $Attempts) {
+                throw ("GDI capture: failed to save '{0}' after {1} attempt(s): {2}" -f $Path, $Attempts, $_.Exception.Message)
+            }
+            Start-Sleep -Milliseconds (150 * $i)
+        }
     }
-  }
 }
 
 function Invoke-GdiCapture {
@@ -70,14 +71,16 @@ function Invoke-GdiCapture {
     try {
         Add-Type -AssemblyName System.Drawing | Out-Null
         Add-Type -AssemblyName System.Windows.Forms | Out-Null
-    } catch {
+    }
+    catch {
         throw "GDI capture requires Windows (System.Drawing & System.Windows.Forms). $_"
     }
 
     if (-not (Test-Path -LiteralPath $SaveFolder)) {
         try {
             New-Item -ItemType Directory -Path $SaveFolder -Force | Out-Null
-        } catch {
+        }
+        catch {
             throw "Unable to create SaveFolder '$SaveFolder': $($_.Exception.Message)"
         }
     }
@@ -94,7 +97,7 @@ function Invoke-GdiCapture {
     $deviceName = '<unknown>'
     try { $deviceName = $screen.DeviceName } catch {}
     Write-Debug ("GDI: capturing screen {0} {1}x{2} at ({3},{4})" -f $deviceName, $bounds.Width, $bounds.Height, $bounds.X, $bounds.Y)
-    $width  = [int]$bounds.Width
+    $width = [int]$bounds.Width
     $height = [int]$bounds.Height
     if ($width -le 0 -or $height -le 0) { throw "Invalid screen bounds reported: ${width}x${height}." }
 
@@ -102,18 +105,19 @@ function Invoke-GdiCapture {
     $intervalMs = [int][Math]::Round(1000 / [double]$Fps, 0)
     if ($intervalMs -lt 1) { $intervalMs = 1 }
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $deadline  = [DateTime]::UtcNow.AddSeconds($DurationSeconds)
+    $deadline = [DateTime]::UtcNow.AddSeconds($DurationSeconds)
     $framesSaved = 0
 
     # Pre-create a reusable bitmap/graphics buffer to reduce GC pressure
     $bitmap = $null
-    $g      = $null
+    $g = $null
     try {
         $bitmap = New-Object System.Drawing.Bitmap($width, $height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-        $g      = [System.Drawing.Graphics]::FromImage($bitmap)
+        $g = [System.Drawing.Graphics]::FromImage($bitmap)
         # Warm-up one copy; include X/Y so multi-monitor offsets are respected.
         $g.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $bitmap.Size, [System.Drawing.CopyPixelOperation]::SourceCopy)
-    } catch {
+    }
+    catch {
         if ($g) { try { $g.Dispose() } catch {} }
         if ($bitmap) { try { $bitmap.Dispose() } catch {} }
         throw "Failed to initialize GDI capture surface: $($_.Exception.Message)"
@@ -133,7 +137,8 @@ function Invoke-GdiCapture {
                 Save-ImageWithRetry -Bitmap $bitmap -Path $path -Attempts 3
                 $framesSaved++
                 $index++
-            } catch {
+            }
+            catch {
                 throw ("GDI capture save failed at frame {0}: {1}" -f $index, $_.Exception.Message)
             }
 
@@ -142,12 +147,14 @@ function Invoke-GdiCapture {
             $sleepMs = $intervalMs - $elapsedThisFrame
             if ($sleepMs -gt 0) {
                 Start-Sleep -Milliseconds $sleepMs
-            } else {
+            }
+            else {
                 # If we can't keep up, continue without additional delay
             }
         }
-    } finally {
-        if ($g)      { try { $g.Dispose() } catch {} }
+    }
+    finally {
+        if ($g) { try { $g.Dispose() } catch {} }
         if ($bitmap) { try { $bitmap.Dispose() } catch {} }
         $stopwatch.Stop()
     }

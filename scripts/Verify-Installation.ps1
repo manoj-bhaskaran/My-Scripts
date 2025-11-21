@@ -72,31 +72,37 @@ function Test-Prerequisite {
                     Write-Host "✅ $Name $currentVersion (Minimum: $MinVersion)" -ForegroundColor Green
                     $script:PassCount++
                     return $true
-                } else {
+                }
+                else {
                     Write-Host "⚠️  $Name $currentVersion is below minimum version $MinVersion" -ForegroundColor Yellow
                     $script:WarnCount++
                     return $false
                 }
-            } else {
+            }
+            else {
                 Write-Host "✅ $Name installed" -ForegroundColor Green
                 $script:PassCount++
                 return $true
             }
-        } else {
+        }
+        else {
             if ($Optional) {
                 Write-Host "⚠️  $Name not found (optional)" -ForegroundColor Yellow
                 $script:WarnCount++
-            } else {
+            }
+            else {
                 Write-Host "❌ $Name not found" -ForegroundColor Red
                 $script:FailCount++
             }
             return $false
         }
-    } catch {
+    }
+    catch {
         if ($Optional) {
             Write-Host "⚠️  $Name not found (optional)" -ForegroundColor Yellow
             $script:WarnCount++
-        } else {
+        }
+        else {
             Write-Host "❌ $Name not found or not accessible" -ForegroundColor Red
             $script:FailCount++
         }
@@ -120,12 +126,14 @@ function Test-PowerShellModule {
             Write-Host "⚠️  $ModuleName ($($module.Version)) - below minimum $MinVersion" -ForegroundColor Yellow
             $script:WarnCount++
             return $false
-        } else {
+        }
+        else {
             Write-Host "✅ $ModuleName ($($module.Version))" -ForegroundColor Green
             $script:PassCount++
             return $true
         }
-    } else {
+    }
+    else {
         Write-Host "❌ $ModuleName not found" -ForegroundColor Red
         $script:FailCount++
         return $false
@@ -148,12 +156,14 @@ function Test-PythonPackage {
             Write-Host "✅ $PackageName" -ForegroundColor Green
             $script:PassCount++
             return $true
-        } else {
+        }
+        else {
             Write-Host "❌ $PackageName not installed" -ForegroundColor Red
             $script:FailCount++
             return $false
         }
-    } catch {
+    }
+    catch {
         Write-Host "❌ $PackageName not installed" -ForegroundColor Red
         $script:FailCount++
         return $false
@@ -173,7 +183,8 @@ function Test-FileExists {
         Write-Host "✅ $Description" -ForegroundColor Green
         $script:PassCount++
         return $true
-    } else {
+    }
+    else {
         Write-Host "❌ $Description not found" -ForegroundColor Red
         $script:FailCount++
         return $false
@@ -194,7 +205,8 @@ $minPSVersion = [version]"5.1.0"
 if ($psVersion -ge $minPSVersion) {
     Write-Host "✅ PowerShell $psVersion (Minimum: $minPSVersion)" -ForegroundColor Green
     $script:PassCount++
-} else {
+}
+else {
     Write-Host "❌ PowerShell $psVersion is below minimum $minPSVersion" -ForegroundColor Red
     $script:FailCount++
 }
@@ -210,11 +222,11 @@ Write-Host "PowerShell Modules:" -ForegroundColor Cyan
 
 # Check PowerShell modules
 $modules = @(
-    @{Name = "PostgresBackup"; MinVersion = $null},
-    @{Name = "PowerShellLoggingFramework"; MinVersion = $null},
-    @{Name = "PurgeLogs"; MinVersion = $null},
-    @{Name = "RandomName"; MinVersion = $null},
-    @{Name = "Videoscreenshot"; MinVersion = $null}
+    @{Name = "PostgresBackup"; MinVersion = $null },
+    @{Name = "PowerShellLoggingFramework"; MinVersion = $null },
+    @{Name = "PurgeLogs"; MinVersion = $null },
+    @{Name = "RandomName"; MinVersion = $null },
+    @{Name = "Videoscreenshot"; MinVersion = $null }
 )
 
 foreach ($module in $modules) {
@@ -281,7 +293,8 @@ if ($script:FailCount -gt 0) {
     Write-Host "   See INSTALLATION.md for troubleshooting guidance." -ForegroundColor Yellow
     Write-Host ""
     exit 1
-} else {
+}
+else {
     Write-Host ""
     Write-Host "Installation verification complete! ✅" -ForegroundColor Green
 

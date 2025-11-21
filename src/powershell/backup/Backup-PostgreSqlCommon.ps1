@@ -28,7 +28,8 @@ Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 try {
     Import-Module PostgresBackup -ErrorAction Stop
     Write-LogDebug "Successfully imported PostgresBackup module"
-} catch {
+}
+catch {
     Write-LogError "Failed to import PostgresBackup module: $_"
     exit 1
 }

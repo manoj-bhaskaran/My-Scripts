@@ -154,35 +154,35 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 # Initialize logger
 Initialize-Logger -ScriptName "picconvert" -LogLevel 20
 
-[CmdletBinding(SupportsShouldProcess=$true)]
+[CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
     [string]$SourceDir = "C:\Users\manoj\OneDrive\Desktop\New folder",
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
-    [string]$DestDir   = "C:\Users\manoj\OneDrive\Desktop",
+    [string]$DestDir = "C:\Users\manoj\OneDrive\Desktop",
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateRange(0, 10000000)]
     [int]$FilesPerFolderLimit = 200,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidatePattern('^[A-Za-z0-9_-]+$')]
     [string]$BatchPrefix = 'picconvert',
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$ShowProgress,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateNotNull()]
     [string[]]$IncludeExtensions,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$LogFilePath,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateRange(1, 1048576)]
     [int]$LogWarnSizeMB = 10
 )
@@ -192,23 +192,23 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # Counters and tracking
-$script:ErrList                  = New-Object System.Collections.Generic.List[string]
-$script:ErrCount                 = 0
-$script:RenamedCount             = 0
-$script:CopiedCount              = 0
-$script:BatchDirsCreated         = 0
-$script:RootDirsCreated          = 0
-$script:CopiedByExt              = @{}   # e.g., @{ "jpg" = 123; "heic" = 45 }
-$script:SkippedPngCount          = 0
-$script:SkippedJpgNotImgCount    = 0
+$script:ErrList = New-Object System.Collections.Generic.List[string]
+$script:ErrCount = 0
+$script:RenamedCount = 0
+$script:CopiedCount = 0
+$script:BatchDirsCreated = 0
+$script:RootDirsCreated = 0
+$script:CopiedByExt = @{}   # e.g., @{ "jpg" = 123; "heic" = 45 }
+$script:SkippedPngCount = 0
+$script:SkippedJpgNotImgCount = 0
 
 # Timestamp for naming
 $script:RunStamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
 
 # Stopwatches for elapsed time
-$swTotal  = [System.Diagnostics.Stopwatch]::StartNew()
+$swTotal = [System.Diagnostics.Stopwatch]::StartNew()
 $elapsedRename = [TimeSpan]::Zero
-$elapsedCopy   = [TimeSpan]::Zero
+$elapsedCopy = [TimeSpan]::Zero
 
 # Normalise/validate IncludeExtensions early (copy phase only)
 if ($IncludeExtensions) {
@@ -245,10 +245,10 @@ function Initialize-Directories {
     .OUTPUTS
         None
     #>
-    [CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='Low')]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
     param(
-        [Parameter(Mandatory=$true)][string]$SourceDir,
-        [Parameter(Mandatory=$true)][string]$DestDir
+        [Parameter(Mandatory = $true)][string]$SourceDir,
+        [Parameter(Mandatory = $true)][string]$DestDir
     )
 
     if (-not (Test-Path -LiteralPath $SourceDir -PathType Container)) {
@@ -261,7 +261,8 @@ function Initialize-Directories {
                 New-Item -ItemType Directory -Path $DestDir -Force | Out-Null
                 $script:RootDirsCreated++
                 Write-LogInfo "Created destination directory: $DestDir"
-            } catch {
+            }
+            catch {
                 throw "Failed to create DestDir '$DestDir': $($_.Exception.Message)"
             }
         }
@@ -282,7 +283,7 @@ function Get-SourceFiles {
         [System.IO.FileInfo[]]
     #>
     param(
-        [Parameter(Mandatory=$true)][string]$SourceDir,
+        [Parameter(Mandatory = $true)][string]$SourceDir,
         [string[]]$IncludeExtensions
     )
 
@@ -294,7 +295,7 @@ function Get-SourceFiles {
         }
     }
 
-    return ,$files
+    return , $files
 }
 
 function Rename-JpegFiles {
@@ -308,9 +309,9 @@ function Rename-JpegFiles {
     .OUTPUTS
         [int] Renamed count
     #>
-    [CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='Low')]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
     param(
-        [Parameter(Mandatory=$true)][System.IO.FileInfo[]]$Files,
+        [Parameter(Mandatory = $true)][System.IO.FileInfo[]]$Files,
         [switch]$ShowProgress
     )
 
@@ -346,7 +347,8 @@ function Rename-JpegFiles {
                     Write-Verbose "Renamed: $($f.FullName) -> $target"
                 }
             }
-        } catch {
+        }
+        catch {
             Write-ErrTrack "Rename failed: '$($f.FullName)' → '.jpg' : $($_.Exception.Message)"
         }
     }
@@ -375,11 +377,11 @@ function Copy-FilesToBatches {
     .OUTPUTS
         [int] Copied count
     #>
-    [CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='Low')]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
     param(
-        [Parameter(Mandatory=$true)][System.IO.FileInfo[]]$Files,
-        [Parameter(Mandatory=$true)][string]$DestDir,
-        [Parameter(Mandatory=$true)][int]$FilesPerFolderLimit,
+        [Parameter(Mandatory = $true)][System.IO.FileInfo[]]$Files,
+        [Parameter(Mandatory = $true)][string]$DestDir,
+        [Parameter(Mandatory = $true)][int]$FilesPerFolderLimit,
         [switch]$ShowProgress
     )
 
@@ -472,7 +474,8 @@ function Copy-FilesToBatches {
                 $script:CopiedByExt[$extStem]++
                 Write-Verbose "Copied+Deleted: $($f.FullName) -> $targetPath"
             }
-        } catch {
+        }
+        catch {
             Write-ErrTrack "Copy/Delete failed: '$($f.FullName)' : $($_.Exception.Message)"
         }
     }
@@ -514,7 +517,7 @@ function Write-RunSummary {
     .OUTPUTS
         None
     #>
-    [CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='Low')]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
     param(
         [int]$TotalFiles,
         [int]$Renamed,
@@ -531,7 +534,7 @@ function Write-RunSummary {
 
     $totalDirs = $BatchDirsCreated + $RootDirsCreated
 
-@"
+    @"
 ==================== SUMMARY ====================
 Total files processed : $TotalFiles
 Renamed (.jpeg/.jpg_large → .jpg) : $Renamed
@@ -593,7 +596,8 @@ Elapsed (total)       : {2:c}
             $script:ErrList | Add-Content -Path $resolvedLogPath
 
             Write-LogWarning "Errors were logged to: $resolvedLogPath"
-        } catch {
+        }
+        catch {
             Write-LogWarning "Failed to write error log to '$resolvedLogPath': $($_.Exception.Message)"
         }
     }
@@ -615,7 +619,8 @@ try {
     if ($renameCandidates.Count -gt 0) {
         Write-LogInfo "Renaming .jpeg/.jpg_large files to .jpg (count: $($renameCandidates.Count)) ..."
         $null, $elapsedRename = Rename-JpegFiles -Files $renameCandidates -ShowProgress:$ShowProgress
-    } else {
+    }
+    else {
         Write-LogInfo "No .jpeg or .jpg_large files found to rename."
         $elapsedRename = [TimeSpan]::Zero
     }
@@ -629,7 +634,8 @@ try {
     if ($totalAfter -gt 0) {
         Write-LogInfo "Copying files into extension-based subfolders under: $DestDir (Limit: $FilesPerFolderLimit)"
         $null, $elapsedCopy = Copy-FilesToBatches -Files $postRenameFiles -DestDir $DestDir -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress
-    } else {
+    }
+    else {
         Write-LogInfo "No files found to copy."
         $elapsedCopy = [TimeSpan]::Zero
     }
@@ -637,31 +643,32 @@ try {
     # Stop timer and summarize
     $swTotal.Stop()
     Write-RunSummary -TotalFiles $totalAfter `
-                     -Renamed $script:RenamedCount `
-                     -Copied $script:CopiedCount `
-                     -BatchDirsCreated $script:BatchDirsCreated `
-                     -RootDirsCreated $script:RootDirsCreated `
-                     -ErrCount $script:ErrCount `
-                     -DestDir $DestDir `
-                     -LogFilePath $LogFilePath `
-                     -ElapsedRename $elapsedRename `
-                     -ElapsedCopy $elapsedCopy `
-                     -ElapsedTotal $swTotal.Elapsed
+        -Renamed $script:RenamedCount `
+        -Copied $script:CopiedCount `
+        -BatchDirsCreated $script:BatchDirsCreated `
+        -RootDirsCreated $script:RootDirsCreated `
+        -ErrCount $script:ErrCount `
+        -DestDir $DestDir `
+        -LogFilePath $LogFilePath `
+        -ElapsedRename $elapsedRename `
+        -ElapsedCopy $elapsedCopy `
+        -ElapsedTotal $swTotal.Elapsed
 
-} catch {
+}
+catch {
     $swTotal.Stop()
     Write-ErrTrack "Fatal: $($_.Exception.Message)"
     Write-RunSummary -TotalFiles 0 `
-                     -Renamed $script:RenamedCount `
-                     -Copied $script:CopiedCount `
-                     -BatchDirsCreated $script:BatchDirsCreated `
-                     -RootDirsCreated $script:RootDirsCreated `
-                     -ErrCount $script:ErrCount `
-                     -DestDir $DestDir `
-                     -LogFilePath $LogFilePath `
-                     -ElapsedRename $elapsedRename `
-                     -ElapsedCopy $elapsedCopy `
-                     -ElapsedTotal $swTotal.Elapsed
+        -Renamed $script:RenamedCount `
+        -Copied $script:CopiedCount `
+        -BatchDirsCreated $script:BatchDirsCreated `
+        -RootDirsCreated $script:RootDirsCreated `
+        -ErrCount $script:ErrCount `
+        -DestDir $DestDir `
+        -LogFilePath $LogFilePath `
+        -ElapsedRename $elapsedRename `
+        -ElapsedCopy $elapsedCopy `
+        -ElapsedTotal $swTotal.Elapsed
     exit 1
 }
 

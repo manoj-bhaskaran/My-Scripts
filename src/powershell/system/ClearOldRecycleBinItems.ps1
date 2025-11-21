@@ -53,7 +53,8 @@ foreach ($drive in $recycleDrives) {
                 $totalDeleted++
                 Write-LogDebug "Deleted: $($_.FullName)"
             }
-        } catch {
+        }
+        catch {
             $totalErrors++
             Write-LogWarning "Failed to delete '$($_.FullName)': $($_.Exception.Message)"
         }

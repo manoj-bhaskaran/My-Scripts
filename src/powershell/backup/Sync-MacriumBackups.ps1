@@ -63,7 +63,7 @@ param(
     [string]$LogFile = "C:\Users\manoj\Documents\Scripts\Sync-MacriumBackups.log",
     [int]$MaxChunkMB = 2048,
     [string]$PreferredSSID = "ManojNew_5G",
-    [string]$FallbackSSID  = "ManojNew",
+    [string]$FallbackSSID = "ManojNew",
     [switch]$Interactive
 )
 
@@ -102,7 +102,8 @@ function Test-Network {
 
     if ($currentSSID -eq $PreferredSSID) {
         Write-LogInfo "Connected to preferred network '$PreferredSSID'"
-    } elseif ($currentSSID -eq $FallbackSSID) {
+    }
+    elseif ($currentSSID -eq $FallbackSSID) {
         # Try to switch to preferred if available
         $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
         if ($availableNetworks -match $PreferredSSID) {
@@ -112,23 +113,28 @@ function Test-Network {
             $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
             if ($currentSSID -eq $PreferredSSID) {
                 Write-LogInfo "Switched successfully to '$PreferredSSID'"
-            } else {
+            }
+            else {
                 Write-LogWarning "Failed to switch to '$PreferredSSID'. Continuing on '$FallbackSSID'"
             }
-        } else {
+        }
+        else {
             Write-LogInfo "Preferred network '$PreferredSSID' not available. Staying on '$FallbackSSID'"
         }
-    } else {
+    }
+    else {
         Write-LogInfo "Not connected to either '$PreferredSSID' or '$FallbackSSID'. Trying to connect..."
 
         $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
         if ($availableNetworks -match $PreferredSSID) {
             Write-LogInfo "Connecting to preferred network '$PreferredSSID'"
             netsh wlan connect name=$PreferredSSID
-        } elseif ($availableNetworks -match $FallbackSSID) {
+        }
+        elseif ($availableNetworks -match $FallbackSSID) {
             Write-LogInfo "Connecting to fallback network '$FallbackSSID'"
             netsh wlan connect name=$FallbackSSID
-        } else {
+        }
+        else {
             Write-LogError "Neither '$PreferredSSID' nor '$FallbackSSID' WiFi networks are available."
             exit 1
         }
@@ -189,20 +195,23 @@ function Sync-Backups {
     if ($Interactive) {
         $rcloneArgs += "--progress"
         $rcloneArgs += "--log-level=INFO"  # keep log messages for clarity
-    } else {
+    }
+    else {
         $rcloneArgs += "--log-level=INFO"
     }
     Write-LogInfo "Starting sync with chunk size: $chunkSize"
     if ($Interactive) {
         Write-LogInfo "Running rclone in interactive mode (output goes to console)"
         & rclone @rcloneArgs
-    } else {
+    }
+    else {
         Write-LogInfo "Running rclone in non-interactive mode (output redirected to log)"
         & rclone @rcloneArgs *>> $LogFile
     }
     if ($LASTEXITCODE -eq 0) {
         Write-LogInfo "Sync completed successfully"
-    } else {
+    }
+    else {
         Write-LogError "Sync failed with exit code $LASTEXITCODE"
     }
 }

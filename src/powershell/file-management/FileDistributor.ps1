@@ -492,7 +492,7 @@ $script:SessionId = $null
 # Determine script root (works in PS 5.1+ when running as a script)
 $script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Path $MyInvocation.MyCommand.Path -Parent }
 
-Function New-Ref {
+function New-Ref {
     param($Initial = $null)
     # Create a stable [ref] container and assign its initial value safely
     $r = [ref]$null
@@ -501,7 +501,7 @@ Function New-Ref {
 }
 
 function New-Directory {
-    param([Parameter(Mandatory=$true)][string]$DirectoryPath)
+    param([Parameter(Mandatory = $true)][string]$DirectoryPath)
     if (-not (Test-Path -LiteralPath $DirectoryPath)) {
         try { New-Item -ItemType Directory -Path $DirectoryPath -Force | Out-Null } catch { }
     }
@@ -511,9 +511,9 @@ function New-Directory {
 function Resolve-PathWithFallback {
     param(
         [string]$UserPath,
-        [Parameter(Mandatory=$true)][string]$ScriptRelativePath,
-        [Parameter(Mandatory=$true)][string]$WindowsDefaultPath,
-        [Parameter(Mandatory=$true)][string]$TempFallbackPath
+        [Parameter(Mandatory = $true)][string]$ScriptRelativePath,
+        [Parameter(Mandatory = $true)][string]$WindowsDefaultPath,
+        [Parameter(Mandatory = $true)][string]$TempFallbackPath
     )
     # 1) User-provided
     if ($UserPath) {
@@ -540,8 +540,8 @@ function Resolve-PathWithFallback {
 # append the provided default filename. No-op if it's already a file path.
 function Resolve-FilePathIfDirectory {
     param(
-        [Parameter(Mandatory=$true)][ref]$Path,
-        [Parameter(Mandatory=$true)][string]$DefaultFileName
+        [Parameter(Mandatory = $true)][ref]$Path,
+        [Parameter(Mandatory = $true)][string]$DefaultFileName
     )
     $p = $Path.Value
     if ([string]::IsNullOrWhiteSpace($p)) { return }
@@ -550,7 +550,8 @@ function Resolve-FilePathIfDirectory {
             $Path.Value = (Join-Path -Path $p -ChildPath $DefaultFileName)
             return
         }
-    } catch { }
+    }
+    catch { }
     # If it doesn't exist but clearly looks like a directory (trailing slash), treat as directory
     if ($p -match '[\\/]\s*$') {
         $Path.Value = (Join-Path -Path $p -ChildPath $DefaultFileName)
@@ -561,7 +562,7 @@ function Resolve-FilePathIfDirectory {
 # Ensure the parent directory exists; optionally "touch" the file so that subsequent Add-Content works.
 function Initialize-FilePath {
     param(
-        [Parameter(Mandatory=$true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string]$FilePath,
         [switch]$CreateFile
     )
     # Use -Path with -Parent to avoid parameter-set ambiguity on older PowerShell versions
@@ -587,20 +588,23 @@ function LogMessage {
         if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
             Write-Host "ERROR: $Message" -ForegroundColor Red
         }
-    } elseif ($IsWarning) {
+    }
+    elseif ($IsWarning) {
         Write-LogWarning $Message
         $script:Warnings++
         if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
             Write-Host "WARNING: $Message" -ForegroundColor Yellow
         }
-    } elseif ($IsDebug) {
+    }
+    elseif ($IsDebug) {
         if ($script:DebugMode) {
             Write-LogDebug $Message
             if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
                 Write-Host "DEBUG: $Message" -ForegroundColor Cyan
             }
         }
-    } else {
+    }
+    else {
         Write-LogInfo $Message
         if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
             Write-Host $Message
@@ -611,8 +615,8 @@ function LogMessage {
 # General-purpose retry helper with exponential backoff
 function Invoke-WithRetry {
     param(
-        [Parameter(Mandatory=$true)][ScriptBlock]$Operation,
-        [Parameter(Mandatory=$true)][string]$Description,
+        [Parameter(Mandatory = $true)][ScriptBlock]$Operation,
+        [Parameter(Mandatory = $true)][string]$Description,
         [int]$RetryDelay = 10,
         [int]$RetryCount = 3,
         [int]$MaxBackoff = 60
@@ -625,7 +629,8 @@ function Invoke-WithRetry {
                 LogMessage -Message "Succeeded after $attempt retry attempt(s): $Description"
             }
             return
-        } catch {
+        }
+        catch {
             $attempt++
             $err = $_.Exception.Message
             if ($RetryCount -ne 0 -and $attempt -ge $RetryCount) {
@@ -642,13 +647,13 @@ function Invoke-WithRetry {
 # Evaluate EndOfScript deletion condition using aggregated counts
 function Test-EndOfScriptCondition {
     param(
-        [Parameter(Mandatory=$true)][string]$Condition, # "NoWarnings" | "WarningsOnly"
+        [Parameter(Mandatory = $true)][string]$Condition, # "NoWarnings" | "WarningsOnly"
         [int]$Warnings = 0,
         [int]$Errors = 0
     )
     switch ($Condition) {
-        "NoWarnings"  { return ($Warnings -eq 0 -and $Errors -eq 0) }
-        "WarningsOnly"{ return ($Errors -eq 0) }
+        "NoWarnings" { return ($Warnings -eq 0 -and $Errors -eq 0) }
+        "WarningsOnly" { return ($Errors -eq 0) }
         default {
             LogMessage -Message "Unknown EndOfScriptDeletionCondition '$Condition'. Failing closed." -IsWarning
             return $false
@@ -658,7 +663,7 @@ function Test-EndOfScriptCondition {
 
 # --- Helpers for robust state-file handling ---
 function ConvertTo-Hashtable {
-    param([Parameter(Mandatory=$true)]$Object)
+    param([Parameter(Mandatory = $true)]$Object)
     if ($null -eq $Object) { return $null }
     if ($Object -is [hashtable]) { return $Object }
     if ($Object -is [System.Collections.IDictionary]) { return @{} + $Object }
@@ -671,18 +676,19 @@ function ConvertTo-Hashtable {
     }
     if ($Object -is [System.Collections.IEnumerable] -and -not ($Object -is [string])) {
         $list = @()
-        foreach ($i in $Object) { $list += ,(ConvertTo-Hashtable -Object $i) }
+        foreach ($i in $Object) { $list += , (ConvertTo-Hashtable -Object $i) }
         return $list
     }
     return $Object
 }
 
 function Get-FileSha256Hex {
-    param([Parameter(Mandatory=$true)][string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path)
     try {
         $h = Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop
         return $h.Hash.ToUpperInvariant()
-    } catch {
+    }
+    catch {
         LogMessage -Message "Failed to compute SHA256 for '$Path': $($_.Exception.Message)" -IsWarning
         return $null
     }
@@ -690,8 +696,8 @@ function Get-FileSha256Hex {
 
 function Write-JsonAtomically {
     param(
-        [Parameter(Mandatory=$true)][hashtable]$StateObject,
-        [Parameter(Mandatory=$true)][string]$Path
+        [Parameter(Mandatory = $true)][hashtable]$StateObject,
+        [Parameter(Mandatory = $true)][string]$Path
     )
     # Use -Path with -Parent to avoid parameter-set ambiguity on older PowerShell versions
     $dir = Split-Path -Path $Path -Parent
@@ -713,7 +719,8 @@ function Write-JsonAtomically {
     $hash = Get-FileSha256Hex -Path $tmp
     try {
         Move-Item -LiteralPath $tmp -Destination $Path -Force
-    } catch {
+    }
+    catch {
         LogMessage -Message "Atomic move for state file failed: $($_.Exception.Message)" -IsError
         throw
     }
@@ -727,10 +734,11 @@ function Write-JsonAtomically {
             Invoke-WithRetry -Operation {
                 Set-Content -LiteralPath $sha -Value $hash -Encoding ASCII -ErrorAction Stop
             } -Description "Write state sidecar '$sha'" `
-              -RetryDelay $sidecarRetryDelay `
-              -RetryCount $sidecarRetryCount `
-              -MaxBackoff $sidecarMaxBackoff
-        } catch {
+                -RetryDelay $sidecarRetryDelay `
+                -RetryCount $sidecarRetryCount `
+                -MaxBackoff $sidecarMaxBackoff
+        }
+        catch {
             # best-effort: keep as warning
             LogMessage -Message "Failed to write state sidecar '$sha': $($_.Exception.Message)" -IsWarning
         }
@@ -738,13 +746,13 @@ function Write-JsonAtomically {
 }
 
 function Get-StateFromPath {
-    param([Parameter(Mandatory=$true)][string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
     $sha = "$Path.sha256"
     # Verify sidecar hash if present
     if (Test-Path -LiteralPath $sha) {
         $expected = (Get-Content -LiteralPath $sha -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-        $actual   = Get-FileSha256Hex -Path $Path
+        $actual = Get-FileSha256Hex -Path $Path
         if ($expected -and $actual -and ($expected -ne $actual)) {
             LogMessage -Message "Checksum mismatch for '$Path' (expected $expected, got $actual). Treating as corrupt." -IsWarning
             return $null
@@ -754,9 +762,10 @@ function Get-StateFromPath {
     try {
         $raw = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
         $obj = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
-        $ht  = ConvertTo-Hashtable -Object $obj
+        $ht = ConvertTo-Hashtable -Object $obj
         return $ht
-    } catch {
+    }
+    catch {
         LogMessage -Message "Failed to parse state file '$Path': $($_.Exception.Message)" -IsWarning
         return $null
     }
@@ -769,16 +778,16 @@ $localAppData = $env:LOCALAPPDATA
 $tempRoot = $env:TEMP
 
 # Build default targets
-$defaultLog_Windows   = Join-Path -Path (Join-Path $localAppData 'FileDistributor\logs') -ChildPath 'FileDistributor-log.txt'
-$defaultLog_Temp      = Join-Path -Path (Join-Path $tempRoot     'FileDistributor\logs') -ChildPath 'FileDistributor-log.txt'
+$defaultLog_Windows = Join-Path -Path (Join-Path $localAppData 'FileDistributor\logs') -ChildPath 'FileDistributor-log.txt'
+$defaultLog_Temp = Join-Path -Path (Join-Path $tempRoot     'FileDistributor\logs') -ChildPath 'FileDistributor-log.txt'
 $defaultLog_ScriptRel = 'logs\FileDistributor-log.txt'
 
-$defaultState_Windows   = Join-Path -Path (Join-Path $localAppData 'FileDistributor\state') -ChildPath 'FileDistributor-State.json'
-$defaultState_Temp      = Join-Path -Path (Join-Path $tempRoot     'FileDistributor\state') -ChildPath 'FileDistributor-State.json'
+$defaultState_Windows = Join-Path -Path (Join-Path $localAppData 'FileDistributor\state') -ChildPath 'FileDistributor-State.json'
+$defaultState_Temp = Join-Path -Path (Join-Path $tempRoot     'FileDistributor\state') -ChildPath 'FileDistributor-State.json'
 $defaultState_ScriptRel = 'state\FileDistributor-State.json'
 
 # If parameters are currently unset, they'll be $null; compute effective values
-$script:LogFilePath  = Resolve-PathWithFallback -UserPath $LogFilePath `
+$script:LogFilePath = Resolve-PathWithFallback -UserPath $LogFilePath `
     -ScriptRelativePath $defaultLog_ScriptRel -WindowsDefaultPath $defaultLog_Windows -TempFallbackPath $defaultLog_Temp
 $script:StateFilePath = Resolve-PathWithFallback -UserPath $StateFilePath `
     -ScriptRelativePath $defaultState_ScriptRel -WindowsDefaultPath $defaultState_Windows -TempFallbackPath $defaultState_Temp
@@ -788,7 +797,7 @@ Resolve-FilePathIfDirectory -Path ([ref]$script:LogFilePath)   -DefaultFileName 
 Resolve-FilePathIfDirectory -Path ([ref]$script:StateFilePath) -DefaultFileName 'FileDistributor-State.json'
 
 # From here on, use the resolved script-scoped variables
-$LogFilePath   = $script:LogFilePath
+$LogFilePath = $script:LogFilePath
 $StateFilePath = $script:StateFilePath
 
 # Ensure log directory exists and create the file so Add-Content always succeeds
@@ -814,7 +823,8 @@ function Import-RandomNameProvider {
             Import-Module -LiteralPath $resolved.Path -Force -ErrorAction Stop
             LogMessage -Message "Imported RandomName module from '$($resolved.Path)'."
             return
-        } catch {
+        }
+        catch {
             LogMessage -Message "Failed to import RandomName module from '$ModulePath': $($_.Exception.Message)" -IsWarning
         }
     }
@@ -830,7 +840,8 @@ function Import-RandomNameProvider {
                 Import-Module -LiteralPath $c -Force -ErrorAction Stop
                 LogMessage -Message "Imported RandomName module from script-root '$c'."
                 return
-            } catch {
+            }
+            catch {
                 LogMessage -Message "Failed to import RandomName module from '$c': $($_.Exception.Message)" -IsWarning
             }
         }
@@ -841,7 +852,8 @@ function Import-RandomNameProvider {
         Import-Module -Name RandomName -ErrorAction Stop
         LogMessage -Message "Imported RandomName module from PSModulePath."
         return
-    } catch {
+    }
+    catch {
         LogMessage -Message "Failed to import 'RandomName' from PSModulePath: $($_.Exception.Message)" -IsError
         throw "Random name provider (module) not found."
     }
@@ -850,37 +862,37 @@ function Import-RandomNameProvider {
 # I/O wrappers
 function Copy-ItemWithRetry {
     param(
-        [Parameter(Mandatory=$true)][string]$Path,
-        [Parameter(Mandatory=$true)][string]$Destination,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Destination,
         [int]$RetryDelay = 10,
         [int]$RetryCount = 3
     )
     Invoke-WithRetry -Operation { Copy-Item -Path $Path -Destination $Destination -Force -ErrorAction Stop } `
-                     -Description "Copy '$Path' -> '$Destination'" -MaxBackoff $MaxBackoff `
-                     -RetryDelay $RetryDelay -RetryCount $RetryCount
+        -Description "Copy '$Path' -> '$Destination'" -MaxBackoff $MaxBackoff `
+        -RetryDelay $RetryDelay -RetryCount $RetryCount
 }
 
 function Remove-ItemWithRetry {
     param(
-        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Path,
         [int]$RetryDelay = 10,
         [int]$RetryCount = 3
     )
     Invoke-WithRetry -Operation { Remove-Item -Path $Path -Force -ErrorAction Stop } `
-                     -Description "Delete '$Path'" -MaxBackoff $MaxBackoff `
-                     -RetryDelay $RetryDelay -RetryCount $RetryCount
+        -Description "Delete '$Path'" -MaxBackoff $MaxBackoff `
+        -RetryDelay $RetryDelay -RetryCount $RetryCount
 }
 
 function Rename-ItemWithRetry {
     param(
-        [Parameter(Mandatory=$true)][string]$Path,
-        [Parameter(Mandatory=$true)][string]$NewName,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$NewName,
         [int]$RetryDelay = 10,
         [int]$RetryCount = 3
     )
     Invoke-WithRetry -Operation { Rename-Item -LiteralPath $Path -NewName $NewName -Force -ErrorAction Stop } `
-                     -Description "Rename '$Path' -> '$NewName'" -MaxBackoff $MaxBackoff `
-                     -RetryDelay $RetryDelay -RetryCount $RetryCount
+        -Description "Rename '$Path' -> '$NewName'" -MaxBackoff $MaxBackoff `
+        -RetryDelay $RetryDelay -RetryCount $RetryCount
 }
 
 # (randomname.ps1 will be resolved and loaded inside Main via Initialize-RandomNameGenerator)
@@ -905,8 +917,8 @@ function ResolveFileNameConflict {
 
 function Resolve-SubfolderPath {
     param(
-        [Parameter(Mandatory=$true)][string]$Path,
-        [Parameter(Mandatory=$true)][string]$TargetRoot
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$TargetRoot
     )
     if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
     # Reject bare drive and drive-relative forms
@@ -916,7 +928,8 @@ function Resolve-SubfolderPath {
             # Add this before GetFullPath:
             LogMessage -Message "DEBUG: Attempting GetFullPath for '$Path'" -IsDebug
             return [IO.Path]::GetFullPath($Path)
-        } catch {
+        }
+        catch {
             # Add this in catch:
             LogMessage -Message "DEBUG: GetFullPath threw for '$Path': $($_.Exception.Message)" -IsWarning
             return $null
@@ -954,8 +967,8 @@ function CreateRandomSubfolders {
         if ($ShowProgress -and ($i % $UpdateFrequency -eq 0)) {
             $percentComplete = [math]::Floor(($i / $NumberOfFolders) * 100)
             Write-Progress -Activity "Creating Subfolders" `
-                           -Status "Created $i of $NumberOfFolders folders" `
-                           -PercentComplete $percentComplete
+                -Status "Created $i of $NumberOfFolders folders" `
+                -PercentComplete $percentComplete
         }
     }
 
@@ -984,12 +997,13 @@ function Move-ToRecycleBin {
 
         # Move the file to the Recycle Bin with retry, suppressing confirmation (0x100)
         Invoke-WithRetry -Operation { $recycleBin.MoveHere($file.FullName, 0x100) } -MaxBackoff $MaxBackoff `
-                         -Description "Recycle '$($file.FullName)'" `
-                         -RetryDelay $RetryDelay -RetryCount $RetryCount
+            -Description "Recycle '$($file.FullName)'" `
+            -RetryDelay $RetryDelay -RetryCount $RetryCount
 
         # Log success
         LogMessage -Message "Moved $FilePath to Recycle Bin."
-    } catch {
+    }
+    catch {
         # Log failure
         LogMessage -Message "Failed to move $FilePath to Recycle Bin. Error: $($_.Exception.Message)" -IsWarning
     }
@@ -1006,10 +1020,12 @@ function Remove-File {
         if (Test-Path -Path $FilePath) {
             Remove-ItemWithRetry -Path $FilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
             LogMessage -Message "Deleted file: $FilePath."
-        } else {
+        }
+        else {
             LogMessage -Message "File $FilePath not found. Skipping deletion." -IsWarning
         }
-    } catch {
+    }
+    catch {
         # Log failure
         LogMessage -Message "Failed to delete file $FilePath. Error: $($_.Exception.Message)" -IsWarning
     }
@@ -1019,7 +1035,7 @@ function DistributeFilesToSubfolders {
     param (
         [string[]]$Files,
         [object[]]$Subfolders,
-        [Parameter(Mandatory=$true)][string]$TargetRoot,
+        [Parameter(Mandatory = $true)][string]$TargetRoot,
         [int]$Limit,
         [switch]$ShowProgress,
         [int]$UpdateFrequency,
@@ -1033,29 +1049,29 @@ function DistributeFilesToSubfolders {
     $targetNormalized = [IO.Path]::GetFullPath($TargetRoot)
 
     $subfolderPaths =
-        @(
-            # 1) Whatever caller passed (normalize or discard)
-            $Subfolders | ForEach-Object {
-                if ($_ -is [IO.FileSystemInfo]) { $_.FullName } else { [string]$_ }
-            }
-            # 2) Always include a fresh scan of the actual target root
-            (Get-ChildItem -LiteralPath $TargetRoot -Directory -Force -ErrorAction SilentlyContinue |
-                ForEach-Object { $_.FullName })
+    @(
+        # 1) Whatever caller passed (normalize or discard)
+        $Subfolders | ForEach-Object {
+            if ($_ -is [IO.FileSystemInfo]) { $_.FullName } else { [string]$_ }
+        }
+        # 2) Always include a fresh scan of the actual target root
+        (Get-ChildItem -LiteralPath $TargetRoot -Directory -Force -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.FullName })
         ) |
-        Where-Object { $_ } |
-        ForEach-Object {
-            # Drop invalid/drive-relative, then canonicalize
-            $p = Resolve-SubfolderPath -Path $_ -TargetRoot $TargetRoot
-            if ([string]::IsNullOrWhiteSpace($p)) { return }
-            try { [IO.Path]::GetFullPath($p) } catch { return }
-        } |
-        Where-Object {
-            # Under target AND not the root itself
-            $_ -ne $TargetRoot -and
-            $_.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase) -and
-            (Test-Path -LiteralPath $_ -PathType Container)
-        } |
-        Select-Object -Unique
+            Where-Object { $_ } |
+            ForEach-Object {
+                # Drop invalid/drive-relative, then canonicalize
+                $p = Resolve-SubfolderPath -Path $_ -TargetRoot $TargetRoot
+                if ([string]::IsNullOrWhiteSpace($p)) { return }
+                try { [IO.Path]::GetFullPath($p) } catch { return }
+            } |
+            Where-Object {
+                # Under target AND not the root itself
+                $_ -ne $TargetRoot -and
+                $_.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase) -and
+                (Test-Path -LiteralPath $_ -PathType Container)
+            } |
+            Select-Object -Unique
 
     if (($subfolderPaths | Measure-Object).Count -eq 0) {
         # Create a guaranteed-safe place to land
@@ -1069,7 +1085,8 @@ function DistributeFilesToSubfolders {
     foreach ($p in $subfolderPaths) {
         try {
             $folderCounts[$p] = (Get-ChildItem -LiteralPath $p -File -Force | Measure-Object).Count
-        } catch {
+        }
+        catch {
             $folderCounts[$p] = 0
             LogMessage -Message "Failed to count files in subfolder '$p'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
         }
@@ -1081,7 +1098,8 @@ function DistributeFilesToSubfolders {
     $filesToProcess = $Files
     try {
         if ($Files.Count -gt 1) { $filesToProcess = $Files | Get-Random -Count $Files.Count }
-    } catch {
+    }
+    catch {
         $filesToProcess = $Files
         LogMessage -Message "Could not shuffle file list due to: $($_.Exception.Message). Proceeding without shuffle." -IsWarning
     }
@@ -1100,7 +1118,7 @@ function DistributeFilesToSubfolders {
             LogMessage -Message "All subfolders appear at/over limit ($Limit). Selecting among all subfolders (best effort)." -IsWarning
         }
 
-        $minCount   = ($eligible | ForEach-Object { $folderCounts[$_] } | Measure-Object -Minimum).Minimum
+        $minCount = ($eligible | ForEach-Object { $folderCounts[$_] } | Measure-Object -Minimum).Minimum
         $candidates = @($eligible | Where-Object { $folderCounts[$_] -eq $minCount })
         $destinationFolder = if ($candidates.Count -gt 1) { $candidates | Get-Random } else { $candidates[0] }
 
@@ -1109,7 +1127,7 @@ function DistributeFilesToSubfolders {
 
         # Last-mile guards (never root, always under TargetRoot, must exist)
         $destinationFolder = Resolve-SubfolderPath -Path $destinationFolder -TargetRoot $TargetRoot
-        $destNormalized   = if ($destinationFolder) { [IO.Path]::GetFullPath($destinationFolder) } else { $null }
+        $destNormalized = if ($destinationFolder) { [IO.Path]::GetFullPath($destinationFolder) } else { $null }
         $targetNormalized = [IO.Path]::GetFullPath($TargetRoot)
 
         $isBad = (
@@ -1129,12 +1147,14 @@ function DistributeFilesToSubfolders {
                 $fallback = $safe | Get-Random
                 if ($destNormalized -eq $targetNormalized) {
                     LogMessage -Message "Destination resolved to the target ROOT; selecting a subfolder instead: '$fallback'." -IsWarning
-                } else {
+                }
+                else {
                     $destDisplay = if ($destNormalized) { $destNormalized } else { '<null>' }
                     LogMessage -Message "Destination escaped target root ('$destDisplay'); forcing subfolder '$fallback'." -IsWarning
                 }
                 $destinationFolder = $fallback
-            } else {
+            }
+            else {
                 $destinationFolder = Join-Path -Path $TargetRoot -ChildPath (Get-RandomFileName)
                 New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
                 $folderCounts[$destinationFolder] = 0
@@ -1150,7 +1170,8 @@ function DistributeFilesToSubfolders {
             try {
                 New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
                 LogMessage -Message "Created missing destination folder: $destinationFolder"
-            } catch {
+            }
+            catch {
                 LogMessage -Message "Failed to ensure destination folder '$destinationFolder': $($_.Exception.Message)" -IsError
                 continue
             }
@@ -1174,10 +1195,12 @@ function DistributeFilesToSubfolders {
                 if ($DeleteMode -eq "RecycleBin") {
                     Move-ToRecycleBin -FilePath $filePath
                     LogMessage -Message "Copied from $file to $destinationFile and moved original to Recycle Bin."
-                } elseif ($DeleteMode -eq "Immediate") {
+                }
+                elseif ($DeleteMode -eq "Immediate") {
                     Remove-File -FilePath $filePath
                     LogMessage -Message "Copied from $file to $destinationFile and immediately deleted original."
-                } elseif ($DeleteMode -eq "EndOfScript") {
+                }
+                elseif ($DeleteMode -eq "EndOfScript") {
                     if (-not $FilesToDelete.Value) { $FilesToDelete.Value = @() }
                     $queuedSize = $null; $queuedMtimeUtc = $null
                     try { $finfo = Get-Item -LiteralPath $filePath -ErrorAction Stop; $queuedSize = $finfo.Length; $queuedMtimeUtc = $finfo.LastWriteTimeUtc } catch { }
@@ -1187,10 +1210,12 @@ function DistributeFilesToSubfolders {
                     }
                     LogMessage -Message "Copied from $file to $destinationFile. Original pending deletion at end of script."
                 }
-            } catch {
+            }
+            catch {
                 LogMessage -Message "Failed to process file $file after copying to $destinationFile. Error: $($_.Exception.Message)" -IsWarning
             }
-        } else {
+        }
+        else {
             LogMessage -Message "Failed to copy $file to $destinationFile. Original file not moved." -IsError
         }
 
@@ -1237,10 +1262,12 @@ function RedistributeFilesInTarget {
                 if ($dirInfo -is [System.IO.DirectoryInfo]) {
                     $validSubfolderObjects += $dirInfo
                 }
-            } catch {
+            }
+            catch {
                 LogMessage -Message "Failed to resolve subfolder path '$sf': $($_.Exception.Message)" -IsWarning
             }
-        } elseif ($sf -is [System.IO.FileSystemInfo]) {
+        }
+        elseif ($sf -is [System.IO.FileSystemInfo]) {
             $validSubfolderObjects += $sf
         }
     }
@@ -1268,7 +1295,8 @@ function RedistributeFilesInTarget {
         
         try {
             $folderFilesMap[$sfPath] = (Get-ChildItem -LiteralPath $sfPath -File -ErrorAction Stop).Count
-        } catch {
+        }
+        catch {
             $folderFilesMap[$sfPath] = 0
             LogMessage -Message "Failed to count files in subfolder '$sfPath'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
         }
@@ -1364,7 +1392,7 @@ function RedistributeFilesInTarget {
 
         # Reset phase counter and use per-batch denominator
         LogMessage -Message ("DEBUG (redistribute-overload from '{0}') candidates={1}" -f `
-          $sourceFolder, ($eligibleTargets -join '; ')) -IsDebug
+                $sourceFolder, ($eligibleTargets -join '; ')) -IsDebug
 
         $GlobalFileCounter.Value = 0
         DistributeFilesToSubfolders -Files $sourceFiles `
@@ -1385,13 +1413,13 @@ function RedistributeFilesInTarget {
 
 function RebalanceSubfoldersByAverage {
     param (
-        [Parameter(Mandatory=$true)][string]$TargetFolder,
-        [Parameter(Mandatory=$true)][int]$FilesPerFolderLimit,
+        [Parameter(Mandatory = $true)][string]$TargetFolder,
+        [Parameter(Mandatory = $true)][int]$FilesPerFolderLimit,
         [switch]$ShowProgress,
         [int]$UpdateFrequency = 100,
-        [Parameter(Mandatory=$true)][string]$DeleteMode,
-        [Parameter(Mandatory=$true)][ref]$FilesToDelete,
-        [Parameter(Mandatory=$true)][ref]$GlobalFileCounter
+        [Parameter(Mandatory = $true)][string]$DeleteMode,
+        [Parameter(Mandatory = $true)][ref]$FilesToDelete,
+        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter
     )
 
     LogMessage -Message "Rebalance: computing average and deviation thresholds (±10%)..."
@@ -1400,7 +1428,8 @@ function RebalanceSubfoldersByAverage {
     $subfolders = @()
     try {
         $subfolders = Get-ChildItem -LiteralPath $TargetFolder -Directory -Force -ErrorAction Stop
-    } catch {
+    }
+    catch {
         LogMessage -Message "Rebalance: failed to enumerate subfolders under '$TargetFolder': $($_.Exception.Message)" -IsError
         return
     }
@@ -1416,7 +1445,8 @@ function RebalanceSubfoldersByAverage {
         $count = 0
         try {
             $count = (Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop | Measure-Object).Count
-        } catch {
+        }
+        catch {
             LogMessage -Message "Rebalance: failed to count files in '$p': $($_.Exception.Message)" -IsWarning
         }
         $folderCounts[$p] = [int]$count
@@ -1428,25 +1458,26 @@ function RebalanceSubfoldersByAverage {
         return
     }
 
-    $avg   = [double]$totalFiles / [double]$subfolders.Count
-    $low   = [int][math]::Floor($avg * 0.9)
+    $avg = [double]$totalFiles / [double]$subfolders.Count
+    $low = [int][math]::Floor($avg * 0.9)
     $highC = [int][math]::Ceiling($avg * 1.1)
-    $high  = [Math]::Min($highC, $FilesPerFolderLimit)
+    $high = [Math]::Min($highC, $FilesPerFolderLimit)
 
     LogMessage -Message ("Rebalance: totalFiles={0}, subfolders={1}, avg={2:N2}, lowerBound={3}, upperBound={4} (limit={5})" -f $totalFiles, $subfolders.Count, $avg, $low, $high, $FilesPerFolderLimit)
 
     # Classify donors and receivers
-    $donors   = @()
-    $receivers= @()
+    $donors = @()
+    $receivers = @()
     foreach ($sf in $subfolders) {
         $p = $sf.FullName
         $c = [int]$folderCounts[$p]
         $surplus = $c - $high
         $deficit = $low - $c
         if ($surplus -gt 0) {
-            $donors   += [pscustomobject]@{ Path=$p; Surplus=$surplus }
-        } elseif ($deficit -gt 0) {
-            $receivers+= [pscustomobject]@{ Path=$p; Deficit=$deficit }
+            $donors += [pscustomobject]@{ Path = $p; Surplus = $surplus }
+        }
+        elseif ($deficit -gt 0) {
+            $receivers += [pscustomobject]@{ Path = $p; Deficit = $deficit }
         }
     }
 
@@ -1460,7 +1491,7 @@ function RebalanceSubfoldersByAverage {
     }
 
     $totalSurplus = ($donors   | Measure-Object -Property Surplus -Sum).Sum
-    $totalDeficit = ($receivers| Measure-Object -Property Deficit -Sum).Sum
+    $totalDeficit = ($receivers | Measure-Object -Property Deficit -Sum).Sum
     $plannedMoves = [int][Math]::Min([int]$totalSurplus, [int]$totalDeficit)
 
     LogMessage -Message ("Rebalance: donors={0} (surplus={1}), receivers={2} (deficit={3}), plannedMoves={4}" -f $donors.Count, $totalSurplus, $receivers.Count, $totalDeficit, $plannedMoves)
@@ -1502,7 +1533,8 @@ function RebalanceSubfoldersByAverage {
                 $moveCount = [Math]::Min($moveCount, $allFiles.Count)
                 $candidates = if ($moveCount -lt $allFiles.Count) { $allFiles | Get-Random -Count $moveCount } else { $allFiles }
             }
-        } catch {
+        }
+        catch {
             LogMessage -Message "Rebalance: failed to enumerate files in donor '$src': $($_.Exception.Message)" -IsWarning
             continue
         }
@@ -1527,15 +1559,18 @@ function RebalanceSubfoldersByAverage {
                 try {
                     if ($DeleteMode -eq "RecycleBin") {
                         Move-ToRecycleBin -FilePath $file.FullName
-                    } elseif ($DeleteMode -eq "Immediate") {
+                    }
+                    elseif ($DeleteMode -eq "Immediate") {
                         Remove-File -FilePath $file.FullName
-                    } elseif ($DeleteMode -eq "EndOfScript") {
+                    }
+                    elseif ($DeleteMode -eq "EndOfScript") {
                         if (-not $FilesToDelete.Value) { $FilesToDelete.Value = @() }
                         $qSize = $null; $qMtime = $null
-                        try { $fi = Get-Item -LiteralPath $file.FullName -ErrorAction Stop; $qSize=$fi.Length; $qMtime=$fi.LastWriteTimeUtc } catch {}
-                        $FilesToDelete.Value += [pscustomobject]@{ Path=$file.FullName; Size=$qSize; LastWriteTimeUtc=$qMtime; QueuedAtUtc=(Get-Date).ToUniversalTime(); SessionId=$script:SessionId }
+                        try { $fi = Get-Item -LiteralPath $file.FullName -ErrorAction Stop; $qSize = $fi.Length; $qMtime = $fi.LastWriteTimeUtc } catch {}
+                        $FilesToDelete.Value += [pscustomobject]@{ Path = $file.FullName; Size = $qSize; LastWriteTimeUtc = $qMtime; QueuedAtUtc = (Get-Date).ToUniversalTime(); SessionId = $script:SessionId }
                     }
-                } catch {
+                }
+                catch {
                     LogMessage -Message "Rebalance: post-copy handling failed for '$($file.FullName)': $($_.Exception.Message)" -IsWarning
                 }
                 $GlobalFileCounter.Value++
@@ -1543,7 +1578,8 @@ function RebalanceSubfoldersByAverage {
                     $pct = [math]::Floor(($GlobalFileCounter.Value / $plannedMoves) * 100)
                     Write-Progress -Activity "Rebalancing subfolders" -Status "Moved $($GlobalFileCounter.Value) of $plannedMoves" -PercentComplete $pct
                 }
-            } else {
+            }
+            else {
                 LogMessage -Message "Rebalance: failed to copy '$($file.FullName)' to '$dest'." -IsError
             }
         }
@@ -1555,13 +1591,13 @@ function RebalanceSubfoldersByAverage {
 
 function ConsolidateSubfoldersToMinimum {
     param (
-        [Parameter(Mandatory=$true)][string]$TargetFolder,
-        [Parameter(Mandatory=$true)][int]$FilesPerFolderLimit,
+        [Parameter(Mandatory = $true)][string]$TargetFolder,
+        [Parameter(Mandatory = $true)][int]$FilesPerFolderLimit,
         [switch]$ShowProgress,
         [int]$UpdateFrequency = 100,
-        [Parameter(Mandatory=$true)][string]$DeleteMode,
-        [Parameter(Mandatory=$true)][ref]$FilesToDelete,
-        [Parameter(Mandatory=$true)][ref]$GlobalFileCounter
+        [Parameter(Mandatory = $true)][string]$DeleteMode,
+        [Parameter(Mandatory = $true)][ref]$FilesToDelete,
+        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter
     )
 
     LogMessage -Message "Consolidation: computing minimal subfolder set..."
@@ -1570,7 +1606,8 @@ function ConsolidateSubfoldersToMinimum {
     $subfolders = @()
     try {
         $subfolders = Get-ChildItem -LiteralPath $TargetFolder -Directory -Force -ErrorAction Stop
-    } catch {
+    }
+    catch {
         LogMessage -Message "Consolidation: failed to enumerate subfolders under '$TargetFolder': $($_.Exception.Message)" -IsError
         return
     }
@@ -1586,7 +1623,8 @@ function ConsolidateSubfoldersToMinimum {
         $count = 0
         try {
             $count = (Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop | Measure-Object).Count
-        } catch {
+        }
+        catch {
             LogMessage -Message "Consolidation: failed to count files in '$p': $($_.Exception.Message)" -IsWarning
         }
         $folderCounts[$p] = [int]$count
@@ -1600,7 +1638,8 @@ function ConsolidateSubfoldersToMinimum {
             LogMessage -Message "Consolidation: found $rootResidual file(s) in target root. They will be moved during consolidation." -IsWarning
             $totalFiles += [int]$rootResidual
         }
-    } catch { }
+    }
+    catch { }
 
     if ($totalFiles -le 0) {
         LogMessage -Message "Consolidation: no files to consolidate."
@@ -1620,7 +1659,7 @@ function ConsolidateSubfoldersToMinimum {
 
     # Choose keepers randomly
     $keepers = @($subfolders | Get-Random -Count $needed | ForEach-Object { $_.FullName })
-    $others  = @($subfolders | Where-Object { $keepers -notcontains $_.FullName } | ForEach-Object { $_.FullName })
+    $others = @($subfolders | Where-Object { $keepers -notcontains $_.FullName } | ForEach-Object { $_.FullName })
     LogMessage -Message ("Consolidation: selected {0} keeper(s), {1} to drain." -f $keepers.Count, $others.Count)
 
     # Capacity and live counts for keepers
@@ -1628,7 +1667,7 @@ function ConsolidateSubfoldersToMinimum {
     foreach ($k in $keepers) {
         $c = if ($folderCounts.ContainsKey($k)) { [int]$folderCounts[$k] } else { 0 }
         $liveCounts[$k] = $c
-        $capacity[$k]   = [Math]::Max(0, $FilesPerFolderLimit - $c)
+        $capacity[$k] = [Math]::Max(0, $FilesPerFolderLimit - $c)
     }
 
     # Collect files to move from non-keepers (and optionally root residuals)
@@ -1642,7 +1681,8 @@ function ConsolidateSubfoldersToMinimum {
 
     if (-not $filesToMove -or $filesToMove.Count -eq 0) {
         LogMessage -Message "Consolidation: nothing to move; proceeding to delete empty subfolders (if any)."
-    } else {
+    }
+    else {
         # Shuffle to reduce bias
         try { if ($filesToMove.Count -gt 1) { $filesToMove = $filesToMove | Get-Random -Count $filesToMove.Count } } catch { }
 
@@ -1660,19 +1700,19 @@ function ConsolidateSubfoldersToMinimum {
                 try { New-Item -ItemType Directory -Path $newK -Force | Out-Null } catch { }
                 $keepers += $newK
                 $liveCounts[$newK] = 0
-                $capacity[$newK]   = $FilesPerFolderLimit
+                $capacity[$newK] = $FilesPerFolderLimit
                 $eligible = @($newK)
                 LogMessage -Message "Consolidation: keeper capacity exhausted; created additional keeper '$newK'." -IsWarning
             }
 
             # Choose destination: among eligible, pick those with minimum current count to balance
             $minCount = ($eligible | ForEach-Object { $liveCounts[$_] } | Measure-Object -Minimum).Minimum
-            $cands    = @($eligible | Where-Object { $liveCounts[$_] -eq $minCount })
+            $cands = @($eligible | Where-Object { $liveCounts[$_] -eq $minCount })
             $destFolder = if ($cands.Count -gt 1) { $cands | Get-Random } else { $cands[0] }
 
-            $originalName  = $file.Name
-            $newFileName   = ResolveFileNameConflict -TargetFolder $destFolder -OriginalFileName $originalName
-            $destination   = Join-Path -Path $destFolder -ChildPath $newFileName
+            $originalName = $file.Name
+            $newFileName = ResolveFileNameConflict -TargetFolder $destFolder -OriginalFileName $originalName
+            $destination = Join-Path -Path $destFolder -ChildPath $newFileName
 
             Copy-ItemWithRetry -Path $file.FullName -Destination $destination -RetryDelay $RetryDelay -RetryCount $RetryCount
 
@@ -1685,9 +1725,11 @@ function ConsolidateSubfoldersToMinimum {
                 try {
                     if ($DeleteMode -eq "RecycleBin") {
                         Move-ToRecycleBin -FilePath $file.FullName
-                    } elseif ($DeleteMode -eq "Immediate") {
+                    }
+                    elseif ($DeleteMode -eq "Immediate") {
                         Remove-File -FilePath $file.FullName
-                    } elseif ($DeleteMode -eq "EndOfScript") {
+                    }
+                    elseif ($DeleteMode -eq "EndOfScript") {
                         if (-not $FilesToDelete.Value) { $FilesToDelete.Value = @() }
                         $queuedSize = $null; $queuedMtimeUtc = $null
                         try { $fi = Get-Item -LiteralPath $file.FullName -ErrorAction Stop; $queuedSize = $fi.Length; $queuedMtimeUtc = $fi.LastWriteTimeUtc } catch { }
@@ -1696,10 +1738,12 @@ function ConsolidateSubfoldersToMinimum {
                             QueuedAtUtc = (Get-Date).ToUniversalTime(); SessionId = $script:SessionId
                         }
                     }
-                } catch {
+                }
+                catch {
                     LogMessage -Message "Consolidation: post-copy handling failed for '$($file.FullName)': $($_.Exception.Message)" -IsWarning
                 }
-            } else {
+            }
+            else {
                 LogMessage -Message "Consolidation: failed to copy '$($file.FullName)' to '$destination'." -IsError
             }
 
@@ -1721,11 +1765,13 @@ function ConsolidateSubfoldersToMinimum {
                 Remove-ItemWithRetry -Path $o -RetryDelay $RetryDelay -RetryCount $RetryCount
                 LogMessage -Message "Consolidation: deleted empty subfolder '$o'."
                 $deleted++
-            } else {
+            }
+            else {
                 $skipped++
                 LogMessage -Message "Consolidation: subfolder '$o' not empty after move; skipping deletion." -IsWarning
             }
-        } catch {
+        }
+        catch {
             $skipped++
             LogMessage -Message "Consolidation: failed to delete su^bfolder '$o': $($_.Exception.Message)" -IsWarning
         }
@@ -1747,7 +1793,7 @@ function SaveState {
 
     # Capture aggregated counters for restart safety
     $warningsSoFar = $script:Warnings
-    $errorsSoFar   = $script:Errors
+    $errorsSoFar = $script:Errors
 
     # Release the file lock before saving state
     ReleaseFileLock -FileStream $fileLock.Value
@@ -1760,11 +1806,11 @@ function SaveState {
 
     # Combine state information
     $state = @{
-        Checkpoint = $Checkpoint
-        SessionId  = $script:SessionId
+        Checkpoint    = $Checkpoint
+        SessionId     = $script:SessionId
         WarningsSoFar = $warningsSoFar
         ErrorsSoFar   = $errorsSoFar
-        Timestamp  = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        Timestamp     = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     }
 
     # Merge additional variables into the state
@@ -1793,7 +1839,7 @@ function LoadState {
 
     $state = $null
     $primary = $StateFilePath
-    $backup  = "$StateFilePath.bak"
+    $backup = "$StateFilePath.bak"
 
     # Try primary first
     $state = Get-StateFromPath -Path $primary
@@ -1809,16 +1855,19 @@ function LoadState {
                 $priHashPath = "$primary.sha256"
                 if (Test-Path -LiteralPath $bakHashPath) {
                     Copy-Item -LiteralPath $bakHashPath -Destination $priHashPath -Force -ErrorAction SilentlyContinue
-                } else {
+                }
+                else {
                     $rehash = Get-FileSha256Hex -Path $primary
                     if ($rehash) { Set-Content -LiteralPath $priHashPath -Value $rehash -Encoding ASCII }
                 }
                 LogMessage -Message "Recovered state from backup '$backup'."
-            } catch {
+            }
+            catch {
                 LogMessage -Message "Failed to restore state from backup '$backup': $($_.Exception.Message)" -IsWarning
             }
             $state = $stateBak
-        } elseif (Test-Path -LiteralPath $primary) {
+        }
+        elseif (Test-Path -LiteralPath $primary) {
             # Quarantine corrupt primary for diagnostics
             try {
                 $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
@@ -1830,7 +1879,8 @@ function LoadState {
                     Rename-Item -LiteralPath $priHashPath -NewName ((Split-Path -Leaf $corruptName) + ".sha256") -ErrorAction SilentlyContinue
                 }
                 LogMessage -Message "Quarantined corrupt state file to '$corruptName'." -IsWarning
-            } catch {
+            }
+            catch {
                 LogMessage -Message "Failed to quarantine corrupt state file '$primary': $($_.Exception.Message)" -IsWarning
             }
         }
@@ -1875,17 +1925,20 @@ function ConvertItemsToPaths {
                 if (-not [string]::IsNullOrWhiteSpace($fullPath)) {
                     LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index converting '$($i.Name)' to '$fullPath'" -IsDebug
                     $out += $fullPath 
-                } else {
+                }
+                else {
                     LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has whitespace-only FullName for '$($i.Name)'" -IsDebug
                 }
-            } else {
+            }
+            else {
                 LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has no FullName property for '$($i.Name)'"
             }
         }
         elseif (-not [string]::IsNullOrWhiteSpace([string]$i)) { 
             LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is string '$i'" -IsDebug
             $out += [string]$i 
-        } else {
+        }
+        else {
             LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index skipped (empty/whitespace)"
         }
     }
@@ -1922,10 +1975,12 @@ function ConvertPathsToItems {
             if ($item -and $item.FullName -and -not [string]::IsNullOrWhiteSpace($item.FullName)) {
                 LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index successfully converted to $($item.GetType().Name)"
                 $out += $item
-            } else {
+            }
+            else {
                 LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index has invalid FullName after Get-Item"
             }
-        } catch {
+        }
+        catch {
             LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index failed to convert '$path' - $($_.Exception.Message)" -IsWarning
         }
     }
@@ -1949,8 +2004,9 @@ function AcquireFileLock {
             $fileStream = [System.IO.File]::Open($FilePath, 'OpenOrCreate', 'ReadWrite', 'None')
             LogMessage -Message "Acquired lock on $FilePath"
             return $fileStream
-        } catch {
-           $attempts++
+        }
+        catch {
+            $attempts++
             $lastErr = $_.Exception.Message
             if ($RetryCount -ne 0 -and $attempts -ge $RetryCount) {
                 LogMessage -Message "Failed to acquire lock on $FilePath after $attempts attempt(s). Last error: $lastErr" -IsError
@@ -1994,7 +2050,8 @@ function ConvertToBytes {
             'M' { return $value * 1MB }
             'G' { return $value * 1GB }
         }
-    } else {
+    }
+    else {
         throw "Invalid size format: $Size. Use formats like 1K, 2M, or 3G."
     }
 }
@@ -2022,10 +2079,12 @@ function RemoveLogEntries {
 
                 if ($BeforeTimestamp -and $entryTimestamp -ge $BeforeTimestamp) {
                     $filteredEntries += $entry
-                } elseif ($OlderThanDays -and $entryTimestamp -ge (Get-Date).AddDays(-$OlderThanDays)) {
+                }
+                elseif ($OlderThanDays -and $entryTimestamp -ge (Get-Date).AddDays(-$OlderThanDays)) {
                     $filteredEntries += $entry
                 }
-            } else {
+            }
+            else {
                 # Preserve entries without a valid timestamp
                 $filteredEntries += $entry
             }
@@ -2034,7 +2093,8 @@ function RemoveLogEntries {
         # Overwrite the log file with filtered entries
         $filteredEntries | Set-Content -Path $LogFilePath
         LogMessage -Message "Log entries filtered successfully. Updated log file: $LogFilePath"
-    } catch {
+    }
+    catch {
         LogMessage -Message "Failed to filter log entries: $($_.Exception.Message)" -IsError
     }
 }
@@ -2053,7 +2113,8 @@ function Main {
         if ($RemoveEntriesBefore) {
             try {
                 $beforeTimestamp = [datetime]::Parse($RemoveEntriesBefore)
-            } catch {
+            }
+            catch {
                 LogMessage -Message "Invalid timestamp format for RemoveEntriesBefore: $RemoveEntriesBefore" -IsError
                 throw "Invalid timestamp format. Use 'YYYY-MM-DD HH:MM:SS' or ISO 8601."
             }
@@ -2078,14 +2139,17 @@ function Main {
                     Clear-Content -Path $LogFilePath -Force
                     LogMessage -Message "Log file truncated due to size exceeding ${TruncateIfLarger}: $LogFilePath"
                 }
-            } catch {
+            }
+            catch {
                 LogMessage -Message "Failed to evaluate or truncate log file based on size: $($_.Exception.Message)" -IsError
             }
-        } elseif ($TruncateLog) {
+        }
+        elseif ($TruncateLog) {
             try {
                 Clear-Content -Path $LogFilePath -Force
                 LogMessage -Message "Log file truncated: $LogFilePath"
-            } catch {
+            }
+            catch {
                 LogMessage -Message "Failed to truncate log file: $($_.Exception.Message)" -IsError
             }
         }
@@ -2167,15 +2231,17 @@ function Main {
                     # Restore session id (or create if missing for legacy states)
                     if ($state.PSObject.Properties.Name -contains 'SessionId' -and $state.SessionId) {
                         $script:SessionId = [string]$state.SessionId
-                    } else {
+                    }
+                    else {
                         $script:SessionId = [guid]::NewGuid().ToString()
                         LogMessage -Message "Legacy state without SessionId; generated new SessionId for this resume." -IsWarning
                     }
                     # Capture prior counters to aggregate with current run
                     if ($state.PSObject.Properties.Name -contains 'WarningsSoFar') { $priorWarnings = [int]$state.WarningsSoFar }
-                    if ($state.PSObject.Properties.Name -contains 'ErrorsSoFar')   { $priorErrors   = [int]$state.ErrorsSoFar } 
+                    if ($state.PSObject.Properties.Name -contains 'ErrorsSoFar') { $priorErrors = [int]$state.ErrorsSoFar } 
                     LogMessage -Message "Restarting from checkpoint $lastCheckpoint" -ConsoleOutput
-                } else {
+                }
+                else {
                     LogMessage -Message "Checkpoint not found. Executing from top..." -IsWarning
                 }
 
@@ -2189,7 +2255,8 @@ function Main {
                     }
                     $SourceFolder = $savedSourceFolder
                     LogMessage -Message "SourceFolder restored from state file: $SourceFolder"
-                } else {
+                }
+                else {
                     throw "State file does not contain SourceFolder. Unable to enforce."
                 }
 
@@ -2207,7 +2274,8 @@ function Main {
                     }
                     $DeleteMode = $savedDeleteMode
                     Write-Output "DeleteMode restored from state file: $DeleteMode"
-                } else {
+                }
+                else {
                     throw "State file does not contain DeleteMode. Unable to enforce."
                 }
 
@@ -2215,9 +2283,9 @@ function Main {
                 if ($lastCheckpoint -in 2..7 -and $null -ne $state) {
 
                     # --- Scalars (cheap; always safe to load) ---
-                    if ($state.ContainsKey('totalSourceFiles'))       { $totalSourceFiles       = [int]$state['totalSourceFiles'] }
+                    if ($state.ContainsKey('totalSourceFiles')) { $totalSourceFiles = [int]$state['totalSourceFiles'] }
                     if ($state.ContainsKey('totalTargetFilesBefore')) { $totalTargetFilesBefore = [int]$state['totalTargetFilesBefore'] }
-                    if ($state.ContainsKey('totalSourceFilesAll'))    { $totalSourceFilesAll    = [int]$state['totalSourceFilesAll'] }
+                    if ($state.ContainsKey('totalSourceFilesAll')) { $totalSourceFilesAll = [int]$state['totalSourceFilesAll'] }
 
                     if ($state.ContainsKey('MaxFilesToCopy')) {
                         $savedMax = [int]$state['MaxFilesToCopy']
@@ -2233,13 +2301,13 @@ function Main {
                         $subfolders = ConvertPathsToItems($state['subfolders'])
                     }
 
-                    if ($lastCheckpoint -in 2,3 -and $state.ContainsKey('sourceFiles')) {
+                    if ($lastCheckpoint -in 2, 3 -and $state.ContainsKey('sourceFiles')) {
                         # Only needed to run/finish the Source→Target copy before CP4 is saved
                         $sourceFiles = ConvertPathsToItems($state['sourceFiles'])
                     }
 
                     # End-of-script deletion queue becomes relevant once phases may have queued deletes
-                    if ($DeleteMode -eq 'EndOfScript' -and $lastCheckpoint -in 3,4,5,6,7 -and $state.ContainsKey('FilesToDelete')) {
+                    if ($DeleteMode -eq 'EndOfScript' -and $lastCheckpoint -in 3, 4, 5, 6, 7 -and $state.ContainsKey('FilesToDelete')) {
                         $FilesToDelete = New-Ref @($state['FilesToDelete'])
                     }
                 }
@@ -2254,7 +2322,8 @@ function Main {
                             $normalized += [pscustomobject]@{
                                 Path = $e; Size = $null; LastWriteTimeUtc = $null; QueuedAtUtc = $null; SessionId = $script:SessionId
                             }
-                        } else {
+                        }
+                        else {
                             $normalized += $e
                         }
                     }
@@ -2262,18 +2331,22 @@ function Main {
 
                     if (-not $FilesToDelete.Value -or $FilesToDelete.Value.Count -eq 0) {
                         Write-Output "No files to delete from the previous session."
-                    } else {
+                    }
+                    else {
                         Write-Output "Loaded $($FilesToDelete.Value.Count) files to delete from the previous session."
                     }
-                } elseif ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4, 5, 6, 7) {
+                }
+                elseif ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4, 5, 6, 7) {
                     # If DeleteMode is EndOfScript but no FilesToDelete key exists
                     LogMessage -Message "State file does not contain FilesToDelete key for EndOfScript mode." -IsWarning
                     $FilesToDelete.Value = @() # Re-initialize queue (do not replace the [ref] holder)
-                } else {
+                }
+                else {
                     # Default initialisation when EndOfScript mode does not apply
                     $FilesToDelete.Value = @() # Ensure FilesToDelete is always defined without replacing [ref]
                 }
-            } else {
+            }
+            else {
 
                 # Check if a restart state file exists
                 if (Test-Path -Path $StateFilePath) {
@@ -2283,15 +2356,17 @@ function Main {
                     try {
                         Remove-Item -Path $StateFilePath -Force
                         LogMessage -Message "State file $StateFilePath deleted."
-                    } catch {
+                    }
+                    catch {
                         LogMessage -Message "Failed to delete state file $StateFilePath. Error: $_" -IsError
                         throw "An error occurred while deleting the state file: $($_.Exception.Message)"
                     }  
                 }
                 # Acquire the file lock after deleting the file
-                 $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+                $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
             }
-        } catch {
+        }
+        catch {
             LogMessage -Message "An unexpected error occurred: $($_.Exception.Message)" -IsError
             throw
         }
@@ -2314,10 +2389,12 @@ function Main {
             # Apply copy cap
             if ($MaxFilesToCopy -eq 0) {
                 $sourceFiles = @()
-            } elseif ($MaxFilesToCopy -gt 0) {
+            }
+            elseif ($MaxFilesToCopy -gt 0) {
                 # Selection policy: maintain enumeration order; change to | Get-Random -Count $MaxFilesToCopy to sample
                 $sourceFiles = $sourceFilesAll | Select-Object -First $MaxFilesToCopy
-            } else {
+            }
+            else {
                 $sourceFiles = $sourceFilesAll
             }
             $totalSourceFiles = $sourceFiles.Count
@@ -2341,15 +2418,17 @@ function Main {
                 LogMessage -Message "DEBUG: Directory items found: $($subfolders.Count)" -IsDebug
                 if ($subfolders -and $subfolders.Count -gt 0) {
                     $subfolderNames = @($subfolders | ForEach-Object { 
-                        if ($_ -and $_.FullName) { 
-                            "'$($_.FullName)'" 
-                        } 
-                    })
+                            if ($_ -and $_.FullName) { 
+                                "'$($_.FullName)'" 
+                            } 
+                        })
                     LogMessage -Message ("DEBUG: Initial subfolders collected ({0} items): {1}" -f $subfolders.Count, ($subfolderNames -join ', ')) -IsDebug
-                } else {
+                }
+                else {
                     LogMessage -Message "DEBUG: Initial subfolders collected: NONE"
                 }
-            } catch {
+            }
+            catch {
                 LogMessage -Message "DEBUG: Error during Get-ChildItem: $($_.Exception.Message)" -IsError
                 $subfolders = @()
             }
@@ -2365,14 +2444,14 @@ function Main {
             }
 
             $additionalVars = @{
-                sourceFiles = ConvertItemsToPaths($sourceFiles)             # selected-only
-                totalSourceFiles = $totalSourceFiles                        # selected-only
-                totalSourceFilesAll = $totalSourceFilesAll                  # full enumeration
+                sourceFiles            = ConvertItemsToPaths($sourceFiles)             # selected-only
+                totalSourceFiles       = $totalSourceFiles                        # selected-only
+                totalSourceFilesAll    = $totalSourceFilesAll                  # full enumeration
                 totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders = ConvertItemsToPaths($subfolders)
-                deleteMode            = $DeleteMode # Persist DeleteMode
-                SourceFolder          = $SourceFolder # Persist SourceFolder
-                MaxFilesToCopy        = $MaxFilesToCopy
+                subfolders             = ConvertItemsToPaths($subfolders)
+                deleteMode             = $DeleteMode # Persist DeleteMode
+                SourceFolder           = $SourceFolder # Persist SourceFolder
+                MaxFilesToCopy         = $MaxFilesToCopy
             }
 
             SaveState -Checkpoint 2 -AdditionalVariables $additionalVars -fileLock $fileLockRef
@@ -2385,22 +2464,23 @@ function Main {
             }
             if ($subfolders -and $subfolders.Count -gt 0) {
                 $subfolderNames = @($subfolders | ForEach-Object { 
-                    if ($_ -and $_.FullName) { "'$($_.FullName)'" } 
-                })
+                        if ($_ -and $_.FullName) { "'$($_.FullName)'" } 
+                    })
                 LogMessage -Message ("DEBUG: Converted subfolders ({0} items): {1}" -f $subfolders.Count, ($subfolderNames -join ', ')) -IsDebug
-            } else {
+            }
+            else {
                 LogMessage -Message "DEBUG: Converted subfolders: NONE (count: $(if ($subfolders) { $subfolders.Count } else { 'null' }))" -IsDebug
             }
 
             # Common base for additional variables
             $additionalVars = @{
-                totalSourceFiles      = $totalSourceFiles
-                totalSourceFilesAll   = $totalSourceFilesAll
+                totalSourceFiles       = $totalSourceFiles
+                totalSourceFilesAll    = $totalSourceFilesAll
                 totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders            = ConvertItemsToPaths($subfolders)
-                deleteMode            = $DeleteMode # Persist DeleteMode
-                SourceFolder          = $SourceFolder # Persist SourceFolder
-                MaxFilesToCopy        = $MaxFilesToCopy
+                subfolders             = ConvertItemsToPaths($subfolders)
+                deleteMode             = $DeleteMode # Persist DeleteMode
+                SourceFolder           = $SourceFolder # Persist SourceFolder
+                MaxFilesToCopy         = $MaxFilesToCopy
             }
 
             # Conditionally add FilesToDelete for EndOfScript mode
@@ -2416,15 +2496,15 @@ function Main {
             LogMessage -Message ("Distributing {0} source file(s) to subfolders..." -f $totalSourceFiles)
             $GlobalFileCounter.Value = 0
             DistributeFilesToSubfolders -Files $sourceFiles `
-                                       -Subfolders $subfolders `
-                                       -TargetRoot $TargetFolder `
-                                       -Limit $FilesPerFolderLimit `
-                                       -ShowProgress:$ShowProgress `
-                                       -UpdateFrequency:$UpdateFrequency `
-                                       -DeleteMode $DeleteMode `
-                                       -FilesToDelete $FilesToDelete `
-                                       -GlobalFileCounter $GlobalFileCounter `
-                                       -TotalFiles $totalSourceFiles
+                -Subfolders $subfolders `
+                -TargetRoot $TargetFolder `
+                -Limit $FilesPerFolderLimit `
+                -ShowProgress:$ShowProgress `
+                -UpdateFrequency:$UpdateFrequency `
+                -DeleteMode $DeleteMode `
+                -FilesToDelete $FilesToDelete `
+                -GlobalFileCounter $GlobalFileCounter `
+                -TotalFiles $totalSourceFiles
 
             # Persist after Source → Target copy (Checkpoint 4)
             $additionalVars = @{
@@ -2448,20 +2528,20 @@ function Main {
             LogMessage -Message "Redistributing files in target folders..."
             LogMessage -Message ("DEBUG: About to call RedistributeFilesInTarget with {0} subfolders" -f $subfolders.Count) -IsDebug
             RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders `
-                                      -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress `
-                                      -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode `
-                                      -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter `
-                                      -TotalFiles 0 # Not used now; function computes its own totals
+                -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress `
+                -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode `
+                -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter `
+                -TotalFiles 0 # Not used now; function computes its own totals
         
             # Save post-redistribution state (Checkpoint 5)
             # Base additional variables
             $additionalVars = @{
-                totalSourceFiles      = $totalSourceFiles
-                totalSourceFilesAll   = $totalSourceFilesAll
+                totalSourceFiles       = $totalSourceFiles
+                totalSourceFilesAll    = $totalSourceFilesAll
                 totalTargetFilesBefore = $totalTargetFilesBefore
-                deleteMode            = $DeleteMode # Persist DeleteMode
-                SourceFolder          = $SourceFolder # Persist SourceFolder
-                MaxFilesToCopy        = $MaxFilesToCopy
+                deleteMode             = $DeleteMode # Persist DeleteMode
+                SourceFolder           = $SourceFolder # Persist SourceFolder
+                MaxFilesToCopy         = $MaxFilesToCopy
             }
         
             # Conditionally add FilesToDelete if DeleteMode is EndOfScript
@@ -2478,22 +2558,22 @@ function Main {
             LogMessage -Message "Consolidating files into the minimum number of subfolders... (opt-in)"
 
             ConsolidateSubfoldersToMinimum -TargetFolder $TargetFolder `
-                                           -FilesPerFolderLimit $FilesPerFolderLimit `
-                                           -ShowProgress:$ShowProgress `
-                                           -UpdateFrequency:$UpdateFrequency `
-                                           -DeleteMode $DeleteMode `
-                                           -FilesToDelete $FilesToDelete `
-                                           -GlobalFileCounter $GlobalFileCounter
+                -FilesPerFolderLimit $FilesPerFolderLimit `
+                -ShowProgress:$ShowProgress `
+                -UpdateFrequency:$UpdateFrequency `
+                -DeleteMode $DeleteMode `
+                -FilesToDelete $FilesToDelete `
+                -GlobalFileCounter $GlobalFileCounter
 
             # Save post-consolidation state (Checkpoint 6)
             $additionalVars = @{
-                totalSourceFiles        = $totalSourceFiles
-                totalSourceFilesAll     = $totalSourceFilesAll
-                totalTargetFilesBefore  = $totalTargetFilesBefore
-                subfolders              = ConvertItemsToPaths( (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force | ForEach-Object { $_ }) )
-                deleteMode              = $DeleteMode
-                SourceFolder            = $SourceFolder
-                MaxFilesToCopy          = $MaxFilesToCopy
+                totalSourceFiles       = $totalSourceFiles
+                totalSourceFilesAll    = $totalSourceFilesAll
+                totalTargetFilesBefore = $totalTargetFilesBefore
+                subfolders             = ConvertItemsToPaths( (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force | ForEach-Object { $_ }) )
+                deleteMode             = $DeleteMode
+                SourceFolder           = $SourceFolder
+                MaxFilesToCopy         = $MaxFilesToCopy
             }
             if ($DeleteMode -eq "EndOfScript") {
                 $additionalVars["FilesToDelete"] = $FilesToDelete.Value
@@ -2506,22 +2586,22 @@ function Main {
             LogMessage -Message "Rebalancing files among existing subfolders to within ±10% of average... (opt-in)"
 
             RebalanceSubfoldersByAverage -TargetFolder $TargetFolder `
-                                         -FilesPerFolderLimit $FilesPerFolderLimit `
-                                         -ShowProgress:$ShowProgress `
-                                         -UpdateFrequency:$UpdateFrequency `
-                                         -DeleteMode $DeleteMode `
-                                         -FilesToDelete $FilesToDelete `
-                                         -GlobalFileCounter $GlobalFileCounter
+                -FilesPerFolderLimit $FilesPerFolderLimit `
+                -ShowProgress:$ShowProgress `
+                -UpdateFrequency:$UpdateFrequency `
+                -DeleteMode $DeleteMode `
+                -FilesToDelete $FilesToDelete `
+                -GlobalFileCounter $GlobalFileCounter
 
             # Save post-rebalance state (Checkpoint 7)
             $additionalVars = @{
-                totalSourceFiles        = $totalSourceFiles
-                totalSourceFilesAll     = $totalSourceFilesAll
-                totalTargetFilesBefore  = $totalTargetFilesBefore
-                subfolders              = ConvertItemsToPaths( (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force | ForEach-Object { $_ }) )
-                deleteMode              = $DeleteMode
-                SourceFolder            = $SourceFolder
-                MaxFilesToCopy          = $MaxFilesToCopy
+                totalSourceFiles       = $totalSourceFiles
+                totalSourceFilesAll    = $totalSourceFilesAll
+                totalTargetFilesBefore = $totalTargetFilesBefore
+                subfolders             = ConvertItemsToPaths( (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force | ForEach-Object { $_ }) )
+                deleteMode             = $DeleteMode
+                SourceFolder           = $SourceFolder
+                MaxFilesToCopy         = $MaxFilesToCopy
             }
             if ($DeleteMode -eq "EndOfScript") {
                 $additionalVars["FilesToDelete"] = $FilesToDelete.Value
@@ -2532,7 +2612,7 @@ function Main {
         if ($DeleteMode -eq "EndOfScript") {
             # Use aggregated counters across restarts for safe evaluation
             $effectiveWarnings = [Math]::Max($Warnings, $priorWarnings)
-            $effectiveErrors   = [Math]::Max($Errors,   $priorErrors)
+            $effectiveErrors = [Math]::Max($Errors, $priorErrors)
 
             if (Test-EndOfScriptCondition -Condition $EndOfScriptDeletionCondition -Warnings $effectiveWarnings -Errors $effectiveErrors) {
                 
@@ -2543,10 +2623,11 @@ function Main {
                         # Legacy entry (should only happen if not normalized); treat conservatively
                         $entryPath = $entry
                         $entrySession = $script:SessionId
-                    } else {
-                        $entryPath   = $entry.Path
-                        $entrySession= $entry.SessionId
-                        $entrySize   = $entry.Size
+                    }
+                    else {
+                        $entryPath = $entry.Path
+                        $entrySession = $entry.SessionId
+                        $entrySize = $entry.Size
                         $entryMtimeUtc = $entry.LastWriteTimeUtc
                     }
 
@@ -2563,25 +2644,30 @@ function Main {
                                 $fi = Get-Item -LiteralPath $entryPath -ErrorAction Stop
                                 if ($null -ne $entrySize -and $fi.Length -ne $entrySize) { $okToDelete = $false }
                                 if ($null -ne $entryMtimeUtc -and $fi.LastWriteTimeUtc -ne $entryMtimeUtc) { $okToDelete = $false }
-                            } catch {
+                            }
+                            catch {
                                 LogMessage -Message "Could not stat '$entryPath' prior to deletion: $($_.Exception.Message)" -IsWarning
                             }
 
                             if ($okToDelete) {
                                 Remove-File -FilePath $entryPath
                                 LogMessage -Message "Deleted file: $entryPath during EndOfScript cleanup."
-                            } else {
+                            }
+                            else {
                                 LogMessage -Message "Skipped deletion for '$entryPath' due to metadata mismatch (size/time changed)." -IsWarning
                             }
-                        } else {
+                        }
+                        else {
                             LogMessage -Message "File $entryPath not found during EndOfScript deletion." -IsWarning
                         }
-                    } catch {
+                    }
+                    catch {
                         # Log a warning for failure to delete
                         LogMessage -Message "Failed to delete file $entryPath. Error: $($_.Exception.Message)" -IsWarning
                     }
                 }
-            } else {
+            }
+            else {
                 # Log a message if conditions are not met
                 LogMessage -Message "End-of-script deletion skipped due to warnings or errors."
             }
@@ -2599,7 +2685,8 @@ function Main {
 
         if ($totalSourceFiles + $totalTargetFilesBefore -ne $totalTargetFilesAfter) {
             LogMessage -Message "Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -IsWarning
-        } else {
+        }
+        else {
             LogMessage -Message "File distribution and cleanup completed successfully." -ConsoleOutput
         }
 
@@ -2618,10 +2705,12 @@ function Main {
                 LogMessage -Message "Invoking duplicate file cleanup script..."
                 & $dupScript -ParentDirectory $TargetFolder -LogFilePath $LogFilePath -DryRun:$false
                 LogMessage -Message "Duplicate file cleanup completed."
-            } else {
+            }
+            else {
                 LogMessage -Message "Duplicate cleanup helper not found at '$dupScript'. Skipping." -IsWarning
             }
-        } else {
+        }
+        else {
             LogMessage -Message "Skipping duplicate file cleanup."
         }
 
@@ -2632,18 +2721,22 @@ function Main {
                 LogMessage -Message "Invoking empty folder cleanup script..."
                 & $emptyScript -ParentDirectory $TargetFolder -LogFilePath $LogFilePath -DryRun:$false
                 LogMessage -Message "Empty folder cleanup completed."
-            } else {
+            }
+            else {
                 LogMessage -Message "Empty-folder cleanup helper not found at '$emptyScript'. Skipping." -IsWarning
             }
-        } else {
+        }
+        else {
             LogMessage -Message "Skipping empty folder cleanup."
         }
 
         LogMessage -Message "File distribution and optional cleanup completed."
 
-    } catch {
+    }
+    catch {
         LogMessage -Message "$($_.Exception.Message)" -IsError
-    } finally {
+    }
+    finally {
         if ($fileLockRef -and ($fileLockRef.PSObject.Properties.Name -contains 'Value') -and $fileLockRef.Value) {
             ReleaseFileLock -FileStream $fileLockRef.Value
         }

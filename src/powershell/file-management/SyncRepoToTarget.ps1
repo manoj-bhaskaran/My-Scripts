@@ -66,7 +66,8 @@ $exitCode = & robocopy @robocopyCmd
 
 if ($exitCode -le 3) {
     Write-LogInfo "Sync completed successfully. Robocopy exit code: $exitCode"
-} else {
+}
+else {
     Write-LogError "WARNING: Robocopy reported issues. Exit code: $exitCode"
     Write-LogError "Refer to: https://ss64.com/nt/robocopy-exit.html for exit code meanings."
 }

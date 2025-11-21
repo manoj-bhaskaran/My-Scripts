@@ -15,7 +15,7 @@
         1.0.0 - Initial release
 #>
 
-Param (
+param (
     [Parameter(
         Mandatory = $true,
         Position = 1,
@@ -33,8 +33,7 @@ Param (
     $FixExtensionIfJpeg
 )
 
-Begin
-{
+begin {
     # Import logging framework
     Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 
@@ -47,39 +46,33 @@ Begin
     Add-Type -AssemblyName System.Runtime.WindowsRuntime
     $runtimeMethods = [System.WindowsRuntimeSystemExtensions].GetMethods()
     $asTaskGeneric = ($runtimeMethods | ? { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
-    Function AwaitOperation ($WinRtTask, $ResultType)
-    {
+    function AwaitOperation ($WinRtTask, $ResultType) {
         $asTaskSpecific = $asTaskGeneric.MakeGenericMethod($ResultType)
         $netTask = $asTaskSpecific.Invoke($null, @($WinRtTask))
         $netTask.Wait() | Out-Null
         $netTask.Result
     }
     $asTask = ($runtimeMethods | ? { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncAction' })[0]
-    Function AwaitAction ($WinRtTask)
-    {
+    function AwaitAction ($WinRtTask) {
         $netTask = $asTask.Invoke($null, @($WinRtTask))
         $netTask.Wait() | Out-Null
     }
 
     # Reference WinRT assemblies
-    [Windows.Storage.StorageFile, Windows.Storage, ContentType=WindowsRuntime] | Out-Null
-    [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType=WindowsRuntime] | Out-Null
+    [Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType = WindowsRuntime] | Out-Null
 }
 
-Process
-{
+process {
     # Summary of imaging APIs: https://docs.microsoft.com/en-us/windows/uwp/audio-video-camera/imaging
     $processedCount = 0
     $skippedCount = 0
     $errorCount = 0
 
-    foreach ($file in $Files)
-    {
+    foreach ($file in $Files) {
         Write-LogDebug "Processing file: $file"
-        try
-        {
-            try
-            {
+        try {
+            try {
                 # Get SoftwareBitmap from input file
                 $file = Resolve-Path -LiteralPath $file
                 $inputFile = AwaitOperation ([Windows.Storage.StorageFile]::GetFileFromPathAsync($file)) ([Windows.Storage.StorageFile])
@@ -87,26 +80,22 @@ Process
                 $inputStream = AwaitOperation ($inputFile.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
                 $decoder = AwaitOperation ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($inputStream)) ([Windows.Graphics.Imaging.BitmapDecoder])
             }
-            catch
-            {
+            catch {
                 # Ignore non-image files
                 Write-LogWarning "Unsupported file format: $file"
                 $skippedCount++
                 continue
             }
-            if ($decoder.DecoderInformation.CodecId -eq [Windows.Graphics.Imaging.BitmapDecoder]::JpegDecoderId)
-            {
+            if ($decoder.DecoderInformation.CodecId -eq [Windows.Graphics.Imaging.BitmapDecoder]::JpegDecoderId) {
                 $extension = $inputFile.FileType
-                if ($FixExtensionIfJpeg -and ($extension -ne ".jpg") -and ($extension -ne ".jpeg"))
-                {
+                if ($FixExtensionIfJpeg -and ($extension -ne ".jpg") -and ($extension -ne ".jpeg")) {
                     # Rename JPEG-encoded files to have ".jpg" extension
                     $newName = $inputFile.Name -replace ($extension + "$"), ".jpg"
                     AwaitAction ($inputFile.RenameAsync($newName))
                     Write-LogInfo "Renamed JPEG file: $file => $newName"
                     $processedCount++
                 }
-                else
-                {
+                else {
                     # Skip JPEG-encoded files
                     Write-LogDebug "Already JPEG: $file"
                     $skippedCount++
@@ -128,14 +117,12 @@ Process
             Write-LogInfo "Converted to JPEG: $file -> $outputFileName"
             $processedCount++
         }
-        catch
-        {
+        catch {
             # Report full details
             Write-LogError "Failed to convert $file: $($_.Exception.ToString())"
             $errorCount++
         }
-        finally
-        {
+        finally {
             # Clean-up
             if ($inputStream -ne $null) { [System.IDisposable]$inputStream.Dispose() }
             if ($outputStream -ne $null) { [System.IDisposable]$outputStream.Dispose() }

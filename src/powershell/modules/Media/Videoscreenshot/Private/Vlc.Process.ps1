@@ -36,21 +36,21 @@ EXPECTED Context.Config SHAPE (used for configurability; all optional):
   string[] of arguments suitable for process invocation.
 #>
 function Get-VlcArgsCommon {
-  param([double]$StopAtSeconds = 0)
-  # Defaults may be overridden by Context.Config.Vlc.BaseArgs at the call site.
-  $vlcargs = @(
-    '--no-qt-privacy-ask',
-    '--no-video-title-show',
-    '--no-loop',
-    '--no-repeat',
-    '--rate','1',
-    '--play-and-exit'
-  )
-  if ($StopAtSeconds -gt 0) {
-    $rounded = [int][Math]::Round($StopAtSeconds)
-    $vlcargs += @('--stop-time',"$rounded"); Write-Debug "VLC --stop-time=$rounded"
-  }
-  $vlcargs
+    param([double]$StopAtSeconds = 0)
+    # Defaults may be overridden by Context.Config.Vlc.BaseArgs at the call site.
+    $vlcargs = @(
+        '--no-qt-privacy-ask',
+        '--no-video-title-show',
+        '--no-loop',
+        '--no-repeat',
+        '--rate', '1',
+        '--play-and-exit'
+    )
+    if ($StopAtSeconds -gt 0) {
+        $rounded = [int][Math]::Round($StopAtSeconds)
+        $vlcargs += @('--stop-time', "$rounded"); Write-Debug "VLC --stop-time=$rounded"
+    }
+    $vlcargs
 }
 <#
 .SYNOPSIS
@@ -61,21 +61,21 @@ function Get-VlcArgsCommon {
   string[] UI-related arguments (may be empty).
 #>
 function Get-VlcArgsGdi {
-  param(
-    [switch]$GdiFullscreen,
-    [string[]]$GdiArgs,
-    [psobject]$Context
-  )
-  $uiArgs = @()
-  if ($GdiFullscreen) {
-    $uiArgs += @('--fullscreen','--video-on-top','--qt-minimal-view')
-  }
-  # Allow config-driven defaults and caller-provided extras (order matters)
-  if ($Context -and $Context.Config -and $Context.Config.Vlc -and $Context.Config.Vlc.Gdi -and $Context.Config.Vlc.Gdi.Args) {
-    $uiArgs += [string[]]$Context.Config.Vlc.Gdi.Args
-  }
-  if ($GdiArgs) { $uiArgs += $GdiArgs }
-  $uiArgs
+    param(
+        [switch]$GdiFullscreen,
+        [string[]]$GdiArgs,
+        [psobject]$Context
+    )
+    $uiArgs = @()
+    if ($GdiFullscreen) {
+        $uiArgs += @('--fullscreen', '--video-on-top', '--qt-minimal-view')
+    }
+    # Allow config-driven defaults and caller-provided extras (order matters)
+    if ($Context -and $Context.Config -and $Context.Config.Vlc -and $Context.Config.Vlc.Gdi -and $Context.Config.Vlc.Gdi.Args) {
+        $uiArgs += [string[]]$Context.Config.Vlc.Gdi.Args
+    }
+    if ($GdiArgs) { $uiArgs += $GdiArgs }
+    $uiArgs
 }
 <#
 .SYNOPSIS
@@ -100,49 +100,51 @@ function Get-VlcArgsGdi {
   string[] of arguments enabling the 'scene' video filter.
 #>
 function Get-VlcArgsSnapshot {
-  param(
-    [psobject]$Context,
-    [Parameter(Mandatory)][string]$VideoPath,
-    [Parameter(Mandatory)][string]$SaveFolder,
-    [Parameter(Mandatory)][int]$RequestedFps,
-    # Robustness: constrain to known formats to avoid invalid VLC invocations
-    [ValidateSet('png','jpg','jpeg')]
-    [string]$SceneFormat = 'png',
-    [string[]]$SceneArgs
-  )
-  # Default to 30 fps if Get-VideoFps is not available; emit a warning so callers see it.
-  $base = 30.0
-  try {
-    if (Get-Command Get-VideoFps -ErrorAction SilentlyContinue) {
-      $fps = Get-VideoFps -Path $VideoPath
-      if ($fps -gt 0) { $base = [double]$fps }
-      else { Write-Warning "Get-VideoFps returned non-positive FPS for '$VideoPath'. Using default $base." }
-    } else {
-      Write-Warning "Get-VideoFps not found; using default source FPS $base for '$VideoPath'."
+    param(
+        [psobject]$Context,
+        [Parameter(Mandatory)][string]$VideoPath,
+        [Parameter(Mandatory)][string]$SaveFolder,
+        [Parameter(Mandatory)][int]$RequestedFps,
+        # Robustness: constrain to known formats to avoid invalid VLC invocations
+        [ValidateSet('png', 'jpg', 'jpeg')]
+        [string]$SceneFormat = 'png',
+        [string[]]$SceneArgs
+    )
+    # Default to 30 fps if Get-VideoFps is not available; emit a warning so callers see it.
+    $base = 30.0
+    try {
+        if (Get-Command Get-VideoFps -ErrorAction SilentlyContinue) {
+            $fps = Get-VideoFps -Path $VideoPath
+            if ($fps -gt 0) { $base = [double]$fps }
+            else { Write-Warning "Get-VideoFps returned non-positive FPS for '$VideoPath'. Using default $base." }
+        }
+        else {
+            Write-Warning "Get-VideoFps not found; using default source FPS $base for '$VideoPath'."
+        }
     }
-  } catch {
-    Write-Warning ("Get-VideoFps failed for '{0}': {1}. Using default {2}." -f $VideoPath, $_.Exception.Message, $base)
-  }
-  $ratio = [int][Math]::Max(1,[Math]::Round($base / [double]$RequestedFps))
-  Write-Debug "Snapshots: video_fps=$base; requested=$RequestedFps; --scene-ratio=$ratio; format=$SceneFormat"
-  # Prefer Context-provided base scene args/format when available
-  $baseSceneArgs = @('--intf','dummy','--video-filter=scene')
-  if ($Context -and $Context.Config -and $Context.Config.Vlc -and $Context.Config.Vlc.Scene) {
-    if ($null -ne $Context.Config.Vlc.Scene.Format -and -not $PSBoundParameters.ContainsKey('SceneFormat')) {
-      $SceneFormat = [string]$Context.Config.Vlc.Scene.Format
+    catch {
+        Write-Warning ("Get-VideoFps failed for '{0}': {1}. Using default {2}." -f $VideoPath, $_.Exception.Message, $base)
     }
-    if ($Context.Config.Vlc.Scene.BaseArgs) {
-      $baseSceneArgs = [string[]]$Context.Config.Vlc.Scene.BaseArgs
+    $ratio = [int][Math]::Max(1, [Math]::Round($base / [double]$RequestedFps))
+    Write-Debug "Snapshots: video_fps=$base; requested=$RequestedFps; --scene-ratio=$ratio; format=$SceneFormat"
+    # Prefer Context-provided base scene args/format when available
+    $baseSceneArgs = @('--intf', 'dummy', '--video-filter=scene')
+    if ($Context -and $Context.Config -and $Context.Config.Vlc -and $Context.Config.Vlc.Scene) {
+        if ($null -ne $Context.Config.Vlc.Scene.Format -and -not $PSBoundParameters.ContainsKey('SceneFormat')) {
+            $SceneFormat = [string]$Context.Config.Vlc.Scene.Format
+        }
+        if ($Context.Config.Vlc.Scene.BaseArgs) {
+            $baseSceneArgs = [string[]]$Context.Config.Vlc.Scene.BaseArgs
+        }
     }
-  }
-  $sceneArgsList = @()
-  $sceneArgsList += $baseSceneArgs
-  $sceneArgsList += @('--scene-path', $SaveFolder
-             '--scene-prefix', ("{0}_" -f [IO.Path]::GetFileNameWithoutExtension($VideoPath)),
-             '--scene-format', $SceneFormat,
-             '--scene-ratio',"$ratio")
-  if ($SceneArgs) { $sceneArgsList += $SceneArgs }
-  $sceneArgsList
+    $sceneArgsList = @()
+    $sceneArgsList += $baseSceneArgs
+    $sceneArgsList += @('--scene-path', $SaveFolder
+        '--scene-prefix', ("{0}_" -f [IO.Path]::GetFileNameWithoutExtension($VideoPath)),
+        '--scene-format', $SceneFormat,
+        '--scene-ratio', "$ratio")
+    if ($SceneArgs) { $sceneArgsList += $SceneArgs }
+    $sceneArgsList
 }
 
 <#
@@ -155,17 +157,17 @@ function Get-VlcArgsSnapshot {
   Run context object expected to include a Config property.
 #>
 function Test-VideoConfig {
-  [CmdletBinding()]
-  param([Parameter(Mandatory)][psobject]$Context)
-  if ($null -eq $Context -or $null -eq $Context.Config) {
-    throw "Context.Config is missing."
-  }
-  $cfg = $Context.Config
-  foreach ($k in @('PollIntervalMs','StopVlcWaitMs','WaitProcessTimeoutSeconds')) {
-    if ($null -eq $cfg.$k -or ($cfg.$k -as [int]) -lt 0) {
-      throw "Context.Config.$k is missing or invalid (expected non-negative integer)."
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][psobject]$Context)
+    if ($null -eq $Context -or $null -eq $Context.Config) {
+        throw "Context.Config is missing."
     }
-  }
+    $cfg = $Context.Config
+    foreach ($k in @('PollIntervalMs', 'StopVlcWaitMs', 'WaitProcessTimeoutSeconds')) {
+        if ($null -eq $cfg.$k -or ($cfg.$k -as [int]) -lt 0) {
+            throw "Context.Config.$k is missing or invalid (expected non-negative integer)."
+        }
+    }
 }
 
 <#
@@ -184,51 +186,51 @@ function Test-VideoConfig {
   [Diagnostics.Process] of the started VLC instance.
 #>
 function Start-VlcProcess {
-  param(
-    [Parameter(Mandatory)][psobject]$Context,
-    [Parameter(Mandatory)][string[]]$Arguments,
-    [Parameter(Mandatory)][int]$StartupTimeoutSeconds
-  )
-  $psi = [Diagnostics.ProcessStartInfo]::new()
-  $psi.FileName = 'vlc.exe'   # more explicit on Windows; still resolves via PATH
-  # Prefer .Arguments string for WinPS 5.1 compatibility (ArgumentList may be unavailable)
-  $quotedArgs = $Arguments | ForEach-Object { '"{0}"' -f ($_.Replace('"','""')) }
-  $psi.Arguments = [string]::Join(' ', $quotedArgs)
-  $psi.UseShellExecute = $false
-  $psi.RedirectStandardOutput = $true
-  $psi.RedirectStandardError  = $true
-  $psi.CreateNoWindow = $true
+    param(
+        [Parameter(Mandatory)][psobject]$Context,
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [Parameter(Mandatory)][int]$StartupTimeoutSeconds
+    )
+    $psi = [Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = 'vlc.exe'   # more explicit on Windows; still resolves via PATH
+    # Prefer .Arguments string for WinPS 5.1 compatibility (ArgumentList may be unavailable)
+    $quotedArgs = $Arguments | ForEach-Object { '"{0}"' -f ($_.Replace('"', '""')) }
+    $psi.Arguments = [string]::Join(' ', $quotedArgs)
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
 
-  $p = [Diagnostics.Process]::new()
-  $p.StartInfo = $psi
-  # IMPORTANT (Robustness): Do not attach ScriptBlock event handlers for stdout/stderr.
-  # They execute on ThreadPool threads without a PowerShell runspace and will crash with:
-  # "There is no Runspace available to run scripts in this thread."
-  # We still redirect streams, but avoid async handlers; on startup failure we read stderr synchronously.
-  $null = ($p.EnableRaisingEvents = $true)
-  Write-Debug ("TRACE Start-VlcProcess: EnableRaisingEvents={0}" -f $p.EnableRaisingEvents)
+    $p = [Diagnostics.Process]::new()
+    $p.StartInfo = $psi
+    # IMPORTANT (Robustness): Do not attach ScriptBlock event handlers for stdout/stderr.
+    # They execute on ThreadPool threads without a PowerShell runspace and will crash with:
+    # "There is no Runspace available to run scripts in this thread."
+    # We still redirect streams, but avoid async handlers; on startup failure we read stderr synchronously.
+    $null = ($p.EnableRaisingEvents = $true)
+    Write-Debug ("TRACE Start-VlcProcess: EnableRaisingEvents={0}" -f $p.EnableRaisingEvents)
 
-  $start = Get-Date
-  # Documentation: we quote/escape here to avoid argument splitting by the host shell.
-  Write-Debug ("Starting VLC with args: {0}" -f $psi.Arguments)
-  Write-Debug 'TRACE Start-VlcProcess: about to call p.Start()'
-  $startResult = $p.Start()
-  Write-Debug ("TRACE Start-VlcProcess: p.Start() returned: {0}" -f $startResult)
-  $null = $startResult
-  $deadline = $start.AddSeconds([int]$StartupTimeoutSeconds)
-  # Simplicity-over-complexity: polling watchdog keeps import-time logic straightforward.
-  while ((Get-Date) -lt $deadline) {
-    if ($p.HasExited) { break }
-    Start-Sleep -Milliseconds $Context.Config.PollIntervalMs
-  }
-  if ($p.HasExited -and $p.ExitCode -ne 0) {
-    # Safe: streams are closed after process exit; read synchronously for diagnostics.
-    $stderrText = ''
-    try { $stderrText = $p.StandardError.ReadToEnd() } catch { }
-    throw ("VLC startup failed (ExitCode={0}). stderr: {1}" -f $p.ExitCode, ($stderrText ?? ''))
-  }
-  Write-Debug ("TRACE Start-VlcProcess: leaving; returning Process Id={0}" -f $p.Id)
-  return $p
+    $start = Get-Date
+    # Documentation: we quote/escape here to avoid argument splitting by the host shell.
+    Write-Debug ("Starting VLC with args: {0}" -f $psi.Arguments)
+    Write-Debug 'TRACE Start-VlcProcess: about to call p.Start()'
+    $startResult = $p.Start()
+    Write-Debug ("TRACE Start-VlcProcess: p.Start() returned: {0}" -f $startResult)
+    $null = $startResult
+    $deadline = $start.AddSeconds([int]$StartupTimeoutSeconds)
+    # Simplicity-over-complexity: polling watchdog keeps import-time logic straightforward.
+    while ((Get-Date) -lt $deadline) {
+        if ($p.HasExited) { break }
+        Start-Sleep -Milliseconds $Context.Config.PollIntervalMs
+    }
+    if ($p.HasExited -and $p.ExitCode -ne 0) {
+        # Safe: streams are closed after process exit; read synchronously for diagnostics.
+        $stderrText = ''
+        try { $stderrText = $p.StandardError.ReadToEnd() } catch { }
+        throw ("VLC startup failed (ExitCode={0}). stderr: {1}" -f $p.ExitCode, ($stderrText ?? ''))
+    }
+    Write-Debug ("TRACE Start-VlcProcess: leaving; returning Process Id={0}" -f $p.Id)
+    return $p
 }
 <#
 .SYNOPSIS
@@ -262,63 +264,65 @@ function Start-VlcProcess {
   [Diagnostics.Process] for the started VLC.
 #>
 function Start-Vlc {
-  param(
-    [Parameter(Mandatory)][psobject]$Context,
-    [Parameter(Mandatory)][ValidateScript({ Test-Path $_ -PathType Leaf })][string]$VideoPath,
-    [Parameter(Mandatory)][ValidateScript({ Test-Path $_ -PathType Container })][string]$SaveFolder,
-    [switch]$UseVlcSnapshots,
-    [Parameter(Mandatory)][int]$RequestedFps,
-    [double]$StopAtSeconds,
-    [switch]$GdiFullscreen,
-    [int]$StartupTimeoutSeconds = 10,
-    [string]$SceneFormat,
-    [string[]]$SceneArgs,
-    [string[]]$GdiArgs,
-    [string[]]$ExtraArgs
-  )
-  # Maintainability: early validation of context config to catch missing keys/typos.
-  Test-VideoConfig -Context $Context
-  # Resolve defaults/overrides from Context.Config.Vlc
-  $cfgVlc = $Context.Config.Vlc
-  $baseArgs = if ($cfgVlc -and $cfgVlc.BaseArgs) { [string[]]$cfgVlc.BaseArgs } else { Get-VlcArgsCommon -StopAtSeconds $StopAtSeconds }
-  $fmt = if ($SceneFormat) { $SceneFormat } elseif ($cfgVlc -and $cfgVlc.Scene -and $cfgVlc.Scene.Format) { [string]$cfgVlc.Scene.Format } else { 'png' }
+    param(
+        [Parameter(Mandatory)][psobject]$Context,
+        [Parameter(Mandatory)][ValidateScript({ Test-Path $_ -PathType Leaf })][string]$VideoPath,
+        [Parameter(Mandatory)][ValidateScript({ Test-Path $_ -PathType Container })][string]$SaveFolder,
+        [switch]$UseVlcSnapshots,
+        [Parameter(Mandatory)][int]$RequestedFps,
+        [double]$StopAtSeconds,
+        [switch]$GdiFullscreen,
+        [int]$StartupTimeoutSeconds = 10,
+        [string]$SceneFormat,
+        [string[]]$SceneArgs,
+        [string[]]$GdiArgs,
+        [string[]]$ExtraArgs
+    )
+    # Maintainability: early validation of context config to catch missing keys/typos.
+    Test-VideoConfig -Context $Context
+    # Resolve defaults/overrides from Context.Config.Vlc
+    $cfgVlc = $Context.Config.Vlc
+    $baseArgs = if ($cfgVlc -and $cfgVlc.BaseArgs) { [string[]]$cfgVlc.BaseArgs } else { Get-VlcArgsCommon -StopAtSeconds $StopAtSeconds }
+    $fmt = if ($SceneFormat) { $SceneFormat } elseif ($cfgVlc -and $cfgVlc.Scene -and $cfgVlc.Scene.Format) { [string]$cfgVlc.Scene.Format } else { 'png' }
 
-  $vlcargs = @()
-  # Argument assembly order (documented for maintainability):
-  # 1) Target media path
-  # 2) Mode-specific args (snapshot/GDI)
-  # 3) Common/base args (defaults or Context.Config.Vlc.BaseArgs)
-  # 4) Caller-provided extras (last-wins)
-  $vlcargs += @($VideoPath)
-  if ($UseVlcSnapshots) {
-    $vlcargs += Get-VlcArgsSnapshot -Context $Context -VideoPath $VideoPath -SaveFolder $SaveFolder -RequestedFps $RequestedFps -SceneFormat $fmt -SceneArgs $SceneArgs
-  } else {
-    $vlcargs += Get-VlcArgsGdi -GdiFullscreen:$GdiFullscreen -GdiArgs $GdiArgs -Context $Context
-  }
-  # Append common/base args (may contain stop-time if caller used Get-VlcArgsCommon)
-  $vlcargs += $baseArgs
-  # Append any caller-provided extras last (Robustness: ignore null/empty elements).
-  if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
-    $extraClean = @()
-    foreach ($ea in $ExtraArgs) {
-      if ($ea -is [string] -and -not [string]::IsNullOrWhiteSpace($ea)) {
-        $extraClean += $ea
-      } else {
-        Write-Warning "Ignoring invalid ExtraArgs element (null/empty or non-string)."
-      }
+    $vlcargs = @()
+    # Argument assembly order (documented for maintainability):
+    # 1) Target media path
+    # 2) Mode-specific args (snapshot/GDI)
+    # 3) Common/base args (defaults or Context.Config.Vlc.BaseArgs)
+    # 4) Caller-provided extras (last-wins)
+    $vlcargs += @($VideoPath)
+    if ($UseVlcSnapshots) {
+        $vlcargs += Get-VlcArgsSnapshot -Context $Context -VideoPath $VideoPath -SaveFolder $SaveFolder -RequestedFps $RequestedFps -SceneFormat $fmt -SceneArgs $SceneArgs
     }
-    if ($extraClean.Count -gt 0) { $vlcargs += $extraClean }
-  }
+    else {
+        $vlcargs += Get-VlcArgsGdi -GdiFullscreen:$GdiFullscreen -GdiArgs $GdiArgs -Context $Context
+    }
+    # Append common/base args (may contain stop-time if caller used Get-VlcArgsCommon)
+    $vlcargs += $baseArgs
+    # Append any caller-provided extras last (Robustness: ignore null/empty elements).
+    if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
+        $extraClean = @()
+        foreach ($ea in $ExtraArgs) {
+            if ($ea -is [string] -and -not [string]::IsNullOrWhiteSpace($ea)) {
+                $extraClean += $ea
+            }
+            else {
+                Write-Warning "Ignoring invalid ExtraArgs element (null/empty or non-string)."
+            }
+        }
+        if ($extraClean.Count -gt 0) { $vlcargs += $extraClean }
+    }
 
-  $p = Start-VlcProcess -Context $Context -Arguments $vlcargs -StartupTimeoutSeconds $StartupTimeoutSeconds
-  Write-Debug 'TRACE Start-Vlc: calling Register-RunPid'
-  $regResult = Register-RunPid -Context $Context -ProcessId $p.Id
-  $regType = if ($null -ne $regResult) { $regResult.GetType().FullName } else { '<null>' }
-  $regVal  = if ($null -ne $regResult) { $regResult } else { '<null>' }
-  Write-Debug ("TRACE Start-Vlc: Register-RunPid returned: type={0} value={1}" -f $regType, $regVal)
-  $null = $regResult
-  Write-Debug ("TRACE Start-Vlc: leaving; returning Process Id={0}" -f $p.Id)
-  return $p
+    $p = Start-VlcProcess -Context $Context -Arguments $vlcargs -StartupTimeoutSeconds $StartupTimeoutSeconds
+    Write-Debug 'TRACE Start-Vlc: calling Register-RunPid'
+    $regResult = Register-RunPid -Context $Context -ProcessId $p.Id
+    $regType = if ($null -ne $regResult) { $regResult.GetType().FullName } else { '<null>' }
+    $regVal = if ($null -ne $regResult) { $regResult } else { '<null>' }
+    Write-Debug ("TRACE Start-Vlc: Register-RunPid returned: type={0} value={1}" -f $regType, $regVal)
+    $null = $regResult
+    Write-Debug ("TRACE Start-Vlc: leaving; returning Process Id={0}" -f $p.Id)
+    return $p
 }
 <#
 .SYNOPSIS
@@ -329,30 +333,30 @@ function Start-Vlc {
   The VLC process object to stop.
 #>
 function Stop-Vlc {
-  param(
-    [Parameter(Mandatory)][psobject]$Context,
-    [Parameter(Mandatory)][Diagnostics.Process]$Process
-  )
-  # Refresh process state to get latest HasExited value
-  try { $null = $Process.Refresh() } catch {}
+    param(
+        [Parameter(Mandatory)][psobject]$Context,
+        [Parameter(Mandatory)][Diagnostics.Process]$Process
+    )
+    # Refresh process state to get latest HasExited value
+    try { $null = $Process.Refresh() } catch {}
 
-  # If already exited, no need to wait (common case with --play-and-exit)
-  if ($Process.HasExited) {
-    Write-Debug "VLC already exited (PID $($Process.Id))"
-    return
-  }
+    # If already exited, no need to wait (common case with --play-and-exit)
+    if ($Process.HasExited) {
+        Write-Debug "VLC already exited (PID $($Process.Id))"
+        return
+    }
 
-  # Try graceful shutdown
-  try { $null = $Process.CloseMainWindow() } catch {}
+    # Try graceful shutdown
+    try { $null = $Process.CloseMainWindow() } catch {}
 
-  # Only wait if still running
-  if (-not $Process.HasExited) {
-    try { $null = $Process.WaitForExit($Context.Config.StopVlcWaitMs) } catch {}
-  }
+    # Only wait if still running
+    if (-not $Process.HasExited) {
+        try { $null = $Process.WaitForExit($Context.Config.StopVlcWaitMs) } catch {}
+    }
 
-  # Force kill if still running
-  if (-not $Process.HasExited) {
-    Write-Debug "VLC still running; forcing PID $($Process.Id)"
-    try { Stop-Process -Id $Process.Id -Force; $null = Wait-Process -Id $Process.Id -Timeout $Context.Config.WaitProcessTimeoutSeconds -ErrorAction SilentlyContinue; $null = $Process.Refresh() } catch {}
-  }
+    # Force kill if still running
+    if (-not $Process.HasExited) {
+        Write-Debug "VLC still running; forcing PID $($Process.Id)"
+        try { Stop-Process -Id $Process.Id -Force; $null = Wait-Process -Id $Process.Id -Timeout $Context.Config.WaitProcessTimeoutSeconds -ErrorAction SilentlyContinue; $null = $Process.Refresh() } catch {}
+    }
 }

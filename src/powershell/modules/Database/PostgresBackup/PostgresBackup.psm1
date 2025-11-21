@@ -48,19 +48,19 @@ $max_wait_time = 15                                              # Maximum secon
 #>
 function Backup-PostgresDatabase {
     param (
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [string]$dbname,
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [string]$backup_folder,
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [string]$log_file,
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [string]$user,
-        [Parameter(Mandatory=$false)]
+        [Parameter(Mandatory = $false)]
         [SecureString]$password,
-        [Parameter(Mandatory=$false)]
+        [Parameter(Mandatory = $false)]
         [int]$retention_days = 90,
-        [Parameter(Mandatory=$false)]
+        [Parameter(Mandatory = $false)]
         [int]$min_backups = 3
     )
 
@@ -123,7 +123,8 @@ function Backup-PostgresDatabase {
         if ($LASTEXITCODE -eq 0) {
             $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
             Add-Content -Path $log_file -Value "[$timestamp] ${dbname}: Backup completed successfully: $backup_file" -Encoding utf8
-        } else {
+        }
+        else {
             $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
             throw "[$timestamp] ${dbname}: pg_dump failed with exit code $LASTEXITCODE."
         }
@@ -135,7 +136,8 @@ function Backup-PostgresDatabase {
             Stop-Service -Name $service_name
             Wait-ServiceStatus -ServiceName $service_name -DesiredStatus 'Stopped' -MaxWaitTime $max_wait_time
         }
-    } catch {
+    }
+    catch {
         $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
         Add-Content -Path $log_file -Value "[$timestamp] ${dbname}: Backup failed: $_" -Encoding utf8
         exit 1
@@ -182,7 +184,8 @@ function Backup-PostgresDatabase {
             $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
             Add-Content -Path $log_file -Value "[$timestamp] ${dbname}: Backup file cleanup completed successfully" -Encoding utf8
         }
-    } catch {
+    }
+    catch {
         $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
         Add-Content -Path $log_file -Value "[$timestamp] ${dbname}: Backup file cleanup failed: $_" -Encoding utf8
         exit 1

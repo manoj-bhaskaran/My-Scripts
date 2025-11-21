@@ -134,7 +134,8 @@ try {
 
     if ($sfcExitCode -eq 0) {
         Write-Log "System File Checker completed successfully" "SUCCESS"
-    } else {
+    }
+    else {
         Write-Log "System File Checker completed with exit code: $sfcExitCode" "WARNING"
     }
     Write-Log "" "INFO"
@@ -166,7 +167,8 @@ try {
 
     if ($dismExitCode -eq 0) {
         Write-Log "DISM Restore Health completed successfully" "SUCCESS"
-    } else {
+    }
+    else {
         Write-Log "DISM Restore Health completed with exit code: $dismExitCode" "WARNING"
     }
     Write-Log "" "INFO"
@@ -198,11 +200,13 @@ try {
     # Exit with appropriate code
     if ($sfcExitCode -eq 0 -and $dismExitCode -eq 0) {
         exit 0
-    } else {
+    }
+    else {
         exit 1
     }
 
-} catch {
+}
+catch {
     Write-Log "CRITICAL ERROR: $($_.Exception.Message)" "ERROR"
     Write-Log "Stack Trace: $($_.ScriptStackTrace)" "ERROR"
     exit 2

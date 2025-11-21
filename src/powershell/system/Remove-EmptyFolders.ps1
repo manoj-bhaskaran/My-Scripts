@@ -148,10 +148,10 @@ function Resolve-PathWithFallback {
 if (-not $ParentDirectory) { $ParentDirectory = (Get-Location).Path }
 
 $localAppData = $env:LOCALAPPDATA
-$tempRoot     = $env:TEMP
+$tempRoot = $env:TEMP
 $defaultLog_ScriptRel = 'logs\Remove-EmptyFolders.log'
-$defaultLog_Windows   = Join-Path -Path (Join-Path $localAppData 'DuplicateCleaner\logs') -ChildPath 'Remove-EmptyFolders.log'
-$defaultLog_Temp      = Join-Path -Path (Join-Path $tempRoot     'DuplicateCleaner\logs') -ChildPath 'Remove-EmptyFolders.log'
+$defaultLog_Windows = Join-Path -Path (Join-Path $localAppData 'DuplicateCleaner\logs') -ChildPath 'Remove-EmptyFolders.log'
+$defaultLog_Temp = Join-Path -Path (Join-Path $tempRoot     'DuplicateCleaner\logs') -ChildPath 'Remove-EmptyFolders.log'
 
 $LogFilePath = Resolve-PathWithFallback -UserPath $LogFilePath `
     -ScriptRelativePath $defaultLog_ScriptRel -WindowsDefaultPath $defaultLog_Windows -TempFallbackPath $defaultLog_Temp
@@ -167,13 +167,13 @@ if (-not (Test-Path -LiteralPath $ParentDirectory -PathType Container)) {
 Write-LogInfo "Starting empty folder cleanup. Dry-run: $DryRun"
 
 # Initialize counters
-[int]$DeletedFolderCount  = 0
-[int]$WouldDeleteCount    = 0
+[int]$DeletedFolderCount = 0
+[int]$WouldDeleteCount = 0
 
 # Enumerate subdirectories without traversing reparse points (symlinks/junctions)
 function Get-SubdirsNoReparse {
     param([Parameter(Mandatory = $true)][string]$Root)
-    $list  = New-Object System.Collections.Generic.List[System.IO.DirectoryInfo]
+    $list = New-Object System.Collections.Generic.List[System.IO.DirectoryInfo]
     $stack = New-Object System.Collections.Generic.Stack[System.IO.DirectoryInfo]
     # seed with immediate children of root (skip reparse points)
     Get-ChildItem -LiteralPath $Root -Directory -Force -ErrorAction SilentlyContinue | Where-Object {
@@ -193,7 +193,7 @@ function Get-SubdirsNoReparse {
 # -------- Performance: bottom-up traversal, immediate-contents check only --------
 # Collect subdirectories without reparse points, then sort deepest-first
 $allDirs = Get-SubdirsNoReparse -Root $ParentDirectory `
-          | Sort-Object { ($_.FullName -split '[\\/]').Count } -Descending
+| Sort-Object { ($_.FullName -split '[\\/]').Count } -Descending
 
 foreach ($dir in $allDirs) {
     # Single-call emptiness probe: any immediate child (file/dir/link) means NOT empty
@@ -202,12 +202,14 @@ foreach ($dir in $allDirs) {
         if ($DryRun) {
             Write-LogInfo "[Dry-Run] Empty folder found: $($dir.FullName)"
             $WouldDeleteCount++
-        } else {
+        }
+        else {
             try {
                 Remove-Item -LiteralPath $dir.FullName -Force
                 Write-LogInfo "Deleted empty folder: $($dir.FullName)"
                 $DeletedFolderCount++
-            } catch {
+            }
+            catch {
                 Write-LogError "Failed to delete folder $($dir.FullName): $($_.Exception.Message)"
             }
         }
@@ -217,7 +219,8 @@ foreach ($dir in $allDirs) {
 # End logging
 if ($DryRun) {
     $completionMessage = "Empty folder cleanup completed (dry-run). $WouldDeleteCount folder(s) would be deleted."
-} else {
+}
+else {
     $completionMessage = "Empty folder cleanup completed. $DeletedFolderCount folder(s) were deleted."
 }
 

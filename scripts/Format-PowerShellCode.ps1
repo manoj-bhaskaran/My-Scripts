@@ -54,25 +54,25 @@ $settings = @{
         'PSUseCorrectCasing'
     )
     Rules        = @{
-        PSPlaceOpenBrace              = @{
-            Enable     = $true
-            OnSameLine = $true
-            NewLineAfter = $false
+        PSPlaceOpenBrace           = @{
+            Enable             = $true
+            OnSameLine         = $true
+            NewLineAfter       = $false
             IgnoreOneLineBlock = $true
         }
-        PSPlaceCloseBrace             = @{
-            Enable       = $true
-            NewLineAfter = $true
+        PSPlaceCloseBrace          = @{
+            Enable             = $true
+            NewLineAfter       = $true
             IgnoreOneLineBlock = $true
-            NoEmptyLineBefore = $false
+            NoEmptyLineBefore  = $false
         }
-        PSUseConsistentIndentation    = @{
+        PSUseConsistentIndentation = @{
             Enable              = $true
             IndentationSize     = 4
             PipelineIndentation = 'IncreaseIndentationForFirstPipeline'
             Kind                = 'space'
         }
-        PSUseConsistentWhitespace     = @{
+        PSUseConsistentWhitespace  = @{
             Enable                          = $true
             CheckInnerBrace                 = $true
             CheckOpenBrace                  = $true
@@ -83,11 +83,11 @@ $settings = @{
             CheckSeparator                  = $true
             CheckParameter                  = $false
         }
-        PSAlignAssignmentStatement    = @{
+        PSAlignAssignmentStatement = @{
             Enable         = $true
             CheckHashtable = $true
         }
-        PSUseCorrectCasing            = @{
+        PSUseCorrectCasing         = @{
             Enable = $true
         }
     }
@@ -96,7 +96,8 @@ $settings = @{
 # Determine which files to process
 $searchPaths = if ($Path) {
     @($Path)
-} else {
+}
+else {
     @(
         'src/powershell',
         'tests/powershell',
@@ -140,16 +141,19 @@ foreach ($file in $files) {
 
             if ($Check) {
                 Write-Host "  [NEEDS FORMATTING] $($file.FullName)" -ForegroundColor Yellow
-            } else {
+            }
+            else {
                 # Write formatted content back to file
                 Set-Content -Path $file.FullName -Value $formatted -NoNewline -ErrorAction Stop
                 Write-Host "  [FORMATTED] $($file.FullName)" -ForegroundColor Green
                 $formattedCount++
             }
-        } else {
+        }
+        else {
             Write-Verbose "File already formatted: $($file.FullName)"
         }
-    } catch {
+    }
+    catch {
         Write-Error "Error processing file $($file.FullName): $_"
         $errorCount++
     }
@@ -165,11 +169,13 @@ if ($Check) {
     if ($needsFormatting.Count -gt 0) {
         Write-Host "`nRun without -Check to format these files" -ForegroundColor Yellow
         exit 1
-    } else {
+    }
+    else {
         Write-Host "All files are properly formatted!" -ForegroundColor Green
         exit 0
     }
-} else {
+}
+else {
     Write-Host "Files formatted: $formattedCount" -ForegroundColor Green
     Write-Host "Errors: $errorCount" -ForegroundColor $(if ($errorCount -gt 0) { 'Red' } else { 'Green' })
 

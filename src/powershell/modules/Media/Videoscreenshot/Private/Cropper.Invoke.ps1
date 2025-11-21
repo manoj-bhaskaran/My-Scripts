@@ -64,13 +64,14 @@ function Invoke-Cropper {
 
     # ---- Validate inputs ----------------------------------------------------
     $useModuleInvoke = $false
-    $resolvedScript  = $null
+    $resolvedScript = $null
     if (-not [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
         if (-not (Test-Path -LiteralPath $PythonScriptPath -PathType Leaf)) {
             throw "Cropper script not found: $PythonScriptPath"
         }
         $resolvedScript = $PythonScriptPath
-    } else {
+    }
+    else {
         $useModuleInvoke = $true
         Write-Debug "Invoke-Cropper: PythonScriptPath not supplied; using module invocation (-m crop_colours)."
     }
@@ -84,7 +85,8 @@ function Invoke-Cropper {
     if (-not [string]::IsNullOrWhiteSpace($PythonExe)) {
         try { $null = Get-Command -Name $PythonExe -ErrorAction Stop; $pythonCmd = $PythonExe }
         catch { throw "Specified PythonExe '$PythonExe' not found on PATH." }
-    } else {
+    }
+    else {
         if (Get-Command -Name py -ErrorAction SilentlyContinue) { $pythonCmd = 'py' }
         elseif (Get-Command -Name python -ErrorAction SilentlyContinue) { $pythonCmd = 'python' }
         else { throw "Python not found. Provide -PythonExe or ensure 'py'/'python' is on PATH." }
@@ -93,7 +95,7 @@ function Invoke-Cropper {
 
     # ---- Determine required packages ---------------------------------------
     # Source of truth is the module config if available; otherwise fallback.
-    $requiredPackages = @('opencv-python','numpy')
+    $requiredPackages = @('opencv-python', 'numpy')
     try {
         if (Get-Command -Name Get-DefaultConfig -ErrorAction SilentlyContinue) {
             $cfg = Get-DefaultConfig
@@ -101,7 +103,8 @@ function Invoke-Cropper {
                 $requiredPackages = [string[]]$cfg.Python.RequiredPackages
             }
         }
-    } catch {
+    }
+    catch {
         Write-Debug ("Invoke-Cropper: falling back to default package list; config error: {0}" -f $_.Exception.Message)
     }
 
@@ -110,7 +113,7 @@ function Invoke-Cropper {
         param([Parameter(Mandatory)][string]$Package)
         switch ($Package) {
             'opencv-python' { 'cv2' }
-            default         { $Package }
+            default { $Package }
         }
     }
 
@@ -124,7 +127,7 @@ function Invoke-Cropper {
         $null = $psiChk.ArgumentList.Add("import $mod")
         $psiChk.UseShellExecute = $false
         $psiChk.RedirectStandardOutput = $true
-        $psiChk.RedirectStandardError  = $true
+        $psiChk.RedirectStandardError = $true
         $psiChk.CreateNoWindow = $true
 
         $pChk = [System.Diagnostics.Process]::new()
@@ -153,7 +156,7 @@ function Invoke-Cropper {
         foreach ($pkg in $missing) { $null = $psiPip.ArgumentList.Add($pkg) }
         $psiPip.UseShellExecute = $false
         $psiPip.RedirectStandardOutput = $true
-        $psiPip.RedirectStandardError  = $true
+        $psiPip.RedirectStandardError = $true
         $psiPip.CreateNoWindow = $true
 
         $pPip = [System.Diagnostics.Process]::new()
@@ -169,7 +172,8 @@ function Invoke-Cropper {
         if ($PSBoundParameters.ContainsKey('Debug') -or $DebugPreference -eq 'Continue') {
             $snippet = if ($pipOut -and $pipOut.Length -gt 400) {
                 $pipOut.Substring(0, 400) + '…'
-            } else { $pipOut }
+            }
+            else { $pipOut }
             if ($snippet) { Write-Debug ("Invoke-Cropper: pip install output (truncated): {0}" -f $snippet) }
         }
         Write-Debug "Invoke-Cropper: package install completed."
@@ -179,16 +183,17 @@ function Invoke-Cropper {
     # Per design, these flags are not made configurable here.
     $pyArgs = @()
     if ($useModuleInvoke) {
-        $pyArgs += @('-m','crop_colours')
-    } else {
+        $pyArgs += @('-m', 'crop_colours')
+    }
+    else {
         $pyArgs += @("$resolvedScript")
     }
     $pyArgs += @(
-      '--input', $InputFolder,
-      '--skip-bad-images',
-      '--allow-empty',
-      '--recurse',
-      '--preserve-alpha'
+        '--input', $InputFolder,
+        '--skip-bad-images',
+        '--allow-empty',
+        '--recurse',
+        '--preserve-alpha'
     )
     if ($ReprocessCropped) {
         $pyArgs += '--reprocess-cropped'
@@ -205,7 +210,7 @@ function Invoke-Cropper {
     $psi.UseShellExecute = $false
     # Always inherit parent's stdio so progress logs stream live to console and Ctrl+C propagates.
     $psi.RedirectStandardOutput = $false
-    $psi.RedirectStandardError  = $false
+    $psi.RedirectStandardError = $false
     $psi.CreateNoWindow = $false
 
     $p = [System.Diagnostics.Process]::new()
@@ -218,7 +223,7 @@ function Invoke-Cropper {
     $handler = $null
     $cancelKeyPressSupported = $false
     try {
-        $handler = [ConsoleCancelEventHandler]{ param($evtSender, $evtArgs)
+        $handler = [ConsoleCancelEventHandler] { param($evtSender, $evtArgs)
             try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch {}
             $evtArgs.Cancel = $true   # prevent PowerShell from terminating; we handle cleanup
             $script:__cropperCancelled = $true
@@ -226,7 +231,8 @@ function Invoke-Cropper {
         [System.Console]::CancelKeyPress += $handler
         $cancelKeyPressSupported = $true
         Write-Debug "Invoke-Cropper: Ctrl+C handling enabled."
-    } catch {
+    }
+    catch {
         Write-Debug ("Invoke-Cropper: Ctrl+C handling not available in this host: {0}" -f $_.Exception.Message)
         $handler = $null
     }
@@ -234,11 +240,13 @@ function Invoke-Cropper {
     try {
         $null = $p.Start()
         $p.WaitForExit()
-    } finally {
+    }
+    finally {
         if ($cancelKeyPressSupported -and $null -ne $handler) {
             try {
                 [System.Console]::CancelKeyPress -= $handler
-            } catch {
+            }
+            catch {
                 Write-Debug ("Invoke-Cropper: Error removing Ctrl+C handler: {0}" -f $_.Exception.Message)
             }
         }
@@ -248,7 +256,7 @@ function Invoke-Cropper {
     # Special-case: Ctrl+C / SIGINT exit codes for clearer messaging
     $exit = [int]$p.ExitCode
     if ($exit -ne 0) {
-        if ($exit -eq -1073741510 -or $exit -eq 130) {  # Windows 0xC000013A or POSIX 130
+        if ($exit -eq -1073741510 -or $exit -eq 130) { # Windows 0xC000013A or POSIX 130
             throw "Cropper cancelled by user (Ctrl+C). Exit $exit. See console output above for details."
         }
         throw "Cropper failed (exit $exit). See console output above for details."

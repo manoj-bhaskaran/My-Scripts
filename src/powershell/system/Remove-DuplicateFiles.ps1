@@ -116,7 +116,7 @@ param (
     [switch]$ShowProgress,
     [int]$ProgressInterval = 500,
     [switch]$PrioritizeSmallFirst,
-    [ValidateSet('Auto','Index','Stream')]
+    [ValidateSet('Auto', 'Index', 'Stream')]
     [string]$CollisionIndexMode = 'Auto',
     [int]$CollisionIndexMaxItems = 100000
 )
@@ -127,19 +127,19 @@ param (
 $script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Path $MyInvocation.MyCommand.Path -Parent }
 
 function New-Directory {
-    param([Parameter(Mandatory=$true)][string]$DirectoryPath)
+    param([Parameter(Mandatory = $true)][string]$DirectoryPath)
     if (-not (Test-Path -LiteralPath $DirectoryPath)) {
         try { New-Item -ItemType Directory -Path $DirectoryPath -Force | Out-Null } catch { }
- }
+    }
     return (Test-Path -LiteralPath $DirectoryPath)
 }
 
 function Resolve-PathWithFallback {
     param(
         [string]$UserPath,
-        [Parameter(Mandatory=$true)][string]$ScriptRelativePath,
-        [Parameter(Mandatory=$true)][string]$WindowsDefaultPath,
-        [Parameter(Mandatory=$true)][string]$TempFallbackPath
+        [Parameter(Mandatory = $true)][string]$ScriptRelativePath,
+        [Parameter(Mandatory = $true)][string]$WindowsDefaultPath,
+        [Parameter(Mandatory = $true)][string]$TempFallbackPath
     )
     # 1) User-provided
     if ($UserPath) {
@@ -165,10 +165,10 @@ function Resolve-PathWithFallback {
 if (-not $ParentDirectory) { $ParentDirectory = (Get-Location).Path }
 
 $localAppData = $env:LOCALAPPDATA
-$tempRoot     = $env:TEMP
+$tempRoot = $env:TEMP
 $defaultLog_ScriptRel = 'logs\Remove-DuplicateFiles.log'
-$defaultLog_Windows   = Join-Path -Path (Join-Path $localAppData 'DuplicateCleaner\logs') -ChildPath 'Remove-DuplicateFiles.log'
-$defaultLog_Temp      = Join-Path -Path (Join-Path $tempRoot     'DuplicateCleaner\logs') -ChildPath 'Remove-DuplicateFiles.log'
+$defaultLog_Windows = Join-Path -Path (Join-Path $localAppData 'DuplicateCleaner\logs') -ChildPath 'Remove-DuplicateFiles.log'
+$defaultLog_Temp = Join-Path -Path (Join-Path $tempRoot     'DuplicateCleaner\logs') -ChildPath 'Remove-DuplicateFiles.log'
 
 $LogFilePath = Resolve-PathWithFallback -UserPath $LogFilePath `
     -ScriptRelativePath $defaultLog_ScriptRel -WindowsDefaultPath $defaultLog_Windows -TempFallbackPath $defaultLog_Temp
@@ -176,7 +176,7 @@ $LogFilePath = Resolve-PathWithFallback -UserPath $LogFilePath `
 
 # Ensure the log directory exists and log file is created
 function Initialize-LogDestination {
-    param([Parameter(Mandatory=$true)][string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path)
     try {
         $dir = Split-Path -Parent -Path $Path
         if ([string]::IsNullOrWhiteSpace($dir)) { return }
@@ -186,7 +186,8 @@ function Initialize-LogDestination {
         if (-not (Test-Path -LiteralPath $Path)) {
             New-Item -ItemType File -Path $Path -Force | Out-Null
         }
-    } catch {
+    }
+    catch {
         Write-Warning "Failed to validate/create log destination '$Path'. Error: $($_.Exception.Message)"
     }
 }
@@ -196,16 +197,17 @@ Initialize-LogDestination -Path $LogFilePath
 # Script-scoped counters used across functions for end-of-run summary and
 # fail-fast decisions when logging is not writable.
 $script:CriticalErrors = 0
-$script:Warnings       = 0
-$script:HashFailures   = 0
+$script:Warnings = 0
+$script:HashFailures = 0
 
 function Test-LogWritable {
-    param([Parameter(Mandatory=$true)][string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path)
     try {
         $probe = "[{0}] __log_writable_probe__" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
         $probe | Out-File -FilePath $Path -Append -ErrorAction Stop
         return $true
-    } catch {
+    }
+    catch {
         Write-Error "Cannot write to log file '$Path'. Error: $($_.Exception.Message)"
         return $false
     }
@@ -227,7 +229,7 @@ function Log {
 $script:DirDeleteProbeCache = @{}
 
 function Test-CanAccessFile {
-    param([Parameter(Mandatory=$true)][string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path)
     try {
         $fs = [System.IO.File]::Open($Path,
             [System.IO.FileMode]::Open,
@@ -235,7 +237,8 @@ function Test-CanAccessFile {
             [System.IO.FileShare]::None)
         $fs.Close()
         return $true
-    } catch {
+    }
+    catch {
         # Count once and log a file-specific warning (the DirectoryPath variable
         # is not in scope here).
         $script:Warnings++
@@ -245,7 +248,7 @@ function Test-CanAccessFile {
 }
 
 function Test-CanDeleteInDirectory {
-    param([Parameter(Mandatory=$true)][string]$DirectoryPath)
+    param([Parameter(Mandatory = $true)][string]$DirectoryPath)
     if ($script:DirDeleteProbeCache.ContainsKey($DirectoryPath)) {
         return $script:DirDeleteProbeCache[$DirectoryPath]
     }
@@ -255,7 +258,8 @@ function Test-CanDeleteInDirectory {
         New-Item -ItemType File -Path $tmp -Force | Out-Null
         Remove-Item -LiteralPath $tmp -Force
         $probeOk = $true
-    } catch {
+    }
+    catch {
         Write-LogWarning "No write/delete permission in directory '$DirectoryPath'. Error: $($_.Exception.Message)"
         $probeOk = $false
     }
@@ -271,7 +275,8 @@ function Get-ContentHash {
     )
     try {
         return (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash
-    } catch {
+    }
+    catch {
         $script:HashFailures++
         Write-LogError "Failed to compute hash for: $Path. Error: $_"
         return $null
@@ -304,8 +309,8 @@ Get-ChildItem -Path $ParentDirectory -Recurse -File | ForEach-Object {
 if ($ShowProgress) { Write-Progress -Activity "Pass 1/2: Scanning files" -Status "Complete" -Completed -Id 1 }
 
 # Pass 2: hash only files in size-collision buckets; retain in-memory only duplicate sets
-$seenByHash     = @{} # hash -> first FileInfo seen
-$dupeBuckets    = @{} # hash -> [FileInfo[]] (includes first once a dup is found)
+$seenByHash = @{} # hash -> first FileInfo seen
+$dupeBuckets = @{} # hash -> [FileInfo[]] (includes first once a dup is found)
 
 # Compute total files to hash for progress (sum of collision bucket sizes)
 $collisionTotal = 0
@@ -325,7 +330,8 @@ function Invoke-HashStreaming {
                     }
                     # add the new duplicate occurrence
                     $dupeBuckets[$h] += $_
-                } else {
+                }
+                else {
                     $seenByHash[$h] = $_
                 }
             }
@@ -344,7 +350,7 @@ if ($PrioritizeSmallFirst) {
     switch ($CollisionIndexMode) {
         'Index' { $useIndexing = $true }
         'Stream' { $useIndexing = $false }
-        'Auto'   { $useIndexing = $true }
+        'Auto' { $useIndexing = $true }
     }
 }
 
@@ -375,7 +381,8 @@ if ($useIndexing) {
         $collisionIndex = $null
         Write-LogInfo "Collision index exceeded $CollisionIndexMaxItems items; falling back to streaming to preserve memory."
         Invoke-HashStreaming
-    } else {
+    }
+    else {
         # Process from smallest collision size upward for better perceived responsiveness
         $collisionSizes = $collisionIndex.Keys | Sort-Object
         foreach ($len in $collisionSizes) {
@@ -390,7 +397,8 @@ if ($useIndexing) {
                         $fileObj = $null
                         try { $fileObj = Get-Item -LiteralPath $filePath -ErrorAction Stop } catch { $fileObj = $null }
                         if ($fileObj) { $dupeBuckets[$h] += $fileObj }
-                    } else {
+                    }
+                    else {
                         try { $seenByHash[$h] = Get-Item -LiteralPath $filePath -ErrorAction Stop } catch { }
                     }
                 }
@@ -402,7 +410,8 @@ if ($useIndexing) {
             }
         }
     }
-} else {
+}
+else {
     # Default: single streaming enumeration, only hash files in collision buckets
     Invoke-HashStreaming
 }
@@ -429,7 +438,8 @@ foreach ($filesInGroup in $dupeBuckets.Values) {
     foreach ($File in $FilesToDelete) {
         if ($DryRun) {
             Write-LogInfo "Dry-Run: Would delete file: $($File.FullName)"
-        } else {
+        }
+        else {
             # Permission / access checks
             $parentDir = Split-Path -Parent -Path $File.FullName
             $canDeleteHere = Test-CanDeleteInDirectory -DirectoryPath $parentDir
@@ -448,7 +458,8 @@ foreach ($filesInGroup in $dupeBuckets.Values) {
                 Remove-Item -Path $File.FullName -Force
                 Write-LogInfo "Deleted file: $($File.FullName)"
                 $TotalDeleted++
-            } catch {
+            }
+            catch {
                 Write-LogError "Failed to delete file: $($File.FullName). Error: $_"
             }
         }
@@ -461,7 +472,7 @@ foreach ($filesInGroup in $dupeBuckets.Values) {
 }
 
 # Log and display summary statistics (no bareword tokens)
-$Summary  = "Summary:`n"
+$Summary = "Summary:`n"
 $Summary += "Duplicate files found : $TotalDuplicatesFound`n"
 $Summary += "Duplicate files deleted : $TotalDeleted`n"
 $Summary += "Duplicate files retained : $TotalRetained`n"

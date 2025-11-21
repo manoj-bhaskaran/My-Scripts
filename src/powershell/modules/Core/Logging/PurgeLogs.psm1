@@ -1,5 +1,5 @@
 function ConvertTo-Bytes {
-<#
+    <#
 .SYNOPSIS
     Converts a human-readable size string into a long byte value.
 
@@ -19,13 +19,14 @@ function ConvertTo-Bytes {
             'GB' { return [long]($value * 1GB) }
             default { return [long]$value }
         }
-    } else {
+    }
+    else {
         throw "Invalid size format: $Size (e.g., 50MB, 100KB)"
     }
 }
 
 function Clear-LogFile {
-<#
+    <#
 .SYNOPSIS
     Applies retention or size-based log purging logic to a log file.
 
@@ -101,7 +102,7 @@ function Clear-LogFile {
     if ($PSBoundParameters.ContainsKey("RetentionDays")) {
         Write-LogMessage -Level "INFO" -Message "Applying RetentionDays strategy" -Metadata @{
             RetentionDays = $RetentionDays
-            FileName = $LogFilePath
+            FileName      = $LogFilePath
         }
 
         $cutoff = (Get-Date).AddDays(-$RetentionDays)
@@ -121,11 +122,13 @@ function Clear-LogFile {
                             $purgedCount++
                             return
                         }
-                    } catch {}
+                    }
+                    catch {}
                 }
                 $retainedLines.Add($_)
             }
-        } catch {
+        }
+        catch {
             Write-LogMessage -Level "ERROR" -Message "Failed to read log file: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
             return
         }
@@ -133,19 +136,20 @@ function Clear-LogFile {
         if (-not $DryRun -and $PSCmdlet.ShouldProcess($LogFilePath, "Write filtered log lines")) {
             try {
                 $retainedLines | Set-Content -Path $LogFilePath -Encoding UTF8
-            } catch {
+            }
+            catch {
                 Write-LogMessage -Level "ERROR" -Message "Failed to write updated log: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
                 return
             }
         }
 
         Write-LogMessage -Level "INFO" -Message "Retention purge completed" -Metadata @{
-            FileName     = $LogFilePath
-            TotalLines   = $lineCount
-            PurgedLines  = $purgedCount
-            Retained     = $retainedLines.Count
-            FinalSizeMB  = [math]::Round([System.Text.Encoding]::UTF8.GetByteCount($retainedLines -join "`n") / 1MB, 2)
-            DryRun       = $DryRun.IsPresent
+            FileName    = $LogFilePath
+            TotalLines  = $lineCount
+            PurgedLines = $purgedCount
+            Retained    = $retainedLines.Count
+            FinalSizeMB = [math]::Round([System.Text.Encoding]::UTF8.GetByteCount($retainedLines -join "`n") / 1MB, 2)
+            DryRun      = $DryRun.IsPresent
         }
         return
     }
@@ -160,7 +164,8 @@ function Clear-LogFile {
         $maxBytes = [long]($MaxSizeMB * 1MB)
         try {
             $lines = Get-Content $LogFilePath
-        } catch {
+        }
+        catch {
             Write-LogMessage -Level "ERROR" -Message "Failed to read file: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
             return
         }
@@ -180,7 +185,8 @@ function Clear-LogFile {
         if (-not $DryRun -and $PSCmdlet.ShouldProcess($LogFilePath, "Write trimmed log lines")) {
             try {
                 $trimmed | Set-Content $LogFilePath -Encoding UTF8
-            } catch {
+            }
+            catch {
                 Write-LogMessage -Level "ERROR" -Message "Failed to write trimmed file: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
                 return
             }
@@ -202,7 +208,8 @@ function Clear-LogFile {
             if (-not $DryRun -and $PSCmdlet.ShouldProcess($LogFilePath, "Clear log file due to size")) {
                 try {
                     Clear-Content -Path $LogFilePath -Force
-                } catch {
+                }
+                catch {
                     Write-LogMessage -Level "ERROR" -Message "Truncate failed: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
                     return
                 }
@@ -213,7 +220,8 @@ function Clear-LogFile {
                 ThresholdMB   = [math]::Round($thresholdBytes / 1MB, 2)
                 DryRun        = $DryRun.IsPresent
             }
-        } else {
+        }
+        else {
             Write-LogMessage -Level "INFO" -Message "No truncation needed; file under threshold" -Metadata @{
                 FileName      = $LogFilePath
                 CurrentSizeMB = [math]::Round($currentSize / 1MB, 2)
@@ -228,7 +236,8 @@ function Clear-LogFile {
         if (-not $DryRun -and $PSCmdlet.ShouldProcess($LogFilePath, "Clear entire log file")) {
             try {
                 Clear-Content -Path $LogFilePath -Force
-            } catch {
+            }
+            catch {
                 Write-LogMessage -Level "ERROR" -Message "Failed to truncate log file: $($_.Exception.Message)" -Metadata @{ FileName = $LogFilePath }
                 return
             }

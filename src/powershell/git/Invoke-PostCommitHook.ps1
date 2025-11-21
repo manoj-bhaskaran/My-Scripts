@@ -51,13 +51,13 @@ if ($PSBoundParameters.ContainsKey('Verbose') -or $VerbosePreference -eq 'Contin
 # ==============================================================================================
 
 # Path to your repository root
-$script:RepoPath          = "D:\My Scripts"
+$script:RepoPath = "D:\My Scripts"
 
 # STAGING MIRROR: exact repo structure (no versioned folders, no manifests here)
 $script:DestinationFolder = "C:\Users\manoj\Documents\Scripts"
 
 # Hook log file
-$script:LogFile           = "C:\Users\manoj\Documents\Scripts\git-post-action.log"
+$script:LogFile = "C:\Users\manoj\Documents\Scripts\git-post-action.log"
 
 # Deployment configuration lives under repo\config\
 # Format (pipe-separated, one per line; comments start with #):
@@ -65,7 +65,7 @@ $script:LogFile           = "C:\Users\manoj\Documents\Scripts\git-post-action.lo
 # Targets = comma-separated subset of: System, User, Alt:<ABS_PATH>
 # Example:
 #   PostgresBackup|PostgresBackup.psm1|System,User
-$configPath               = Join-Path $script:RepoPath "config\module-deployment-config.txt"
+$configPath = Join-Path $script:RepoPath "config\module-deployment-config.txt"
 
 # ==============================================================================================
 # Logging and Helpers
@@ -86,16 +86,16 @@ function Write-Message {
 }
 
 function New-DirectoryIfMissing {
-    param([Parameter(Mandatory=$true)][string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) {
         New-Item -Path $Path -ItemType Directory -Force | Out-Null
     }
 }
 
 function Get-HeaderVersion {
-    param([Parameter(Mandatory=$true)][string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path)
     $top = (Get-Content -Path $Path -TotalCount 120 -ErrorAction Stop) -join "`n"
-    $m = [regex]::Match($top,'(?im)^\s*Version\s*:\s*(\d+(?:\.\d+){1,3})\s*$')
+    $m = [regex]::Match($top, '(?im)^\s*Version\s*:\s*(\d+(?:\.\d+){1,3})\s*$')
     if (-not $m.Success) { throw ("No 'Version: x.y.z' header found in {0}" -f $Path) }
     $raw = $m.Groups[1].Value
     $parts = $raw.Split('.')
@@ -104,7 +104,7 @@ function Get-HeaderVersion {
 }
 
 function Test-ModuleSanity {
-    param([Parameter(Mandatory=$true)][string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path)
 
     $tokens = $null; $errors = $null
     $ast = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
@@ -115,12 +115,12 @@ function Test-ModuleSanity {
     }
 
     $hasFn = $ast.
-        FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true).
-        Count -gt 0
+    FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true).
+    Count -gt 0
 
     $hasExport = $ast.
-        FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Export-ModuleMember' }, $true).
-        Count -gt 0
+    FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Export-ModuleMember' }, $true).
+    Count -gt 0
 
     if (-not ($hasFn -or $hasExport)) {
         Write-Message ("Module sanity check failed for {0}: no functions and no Export-ModuleMember found" -f $Path)
@@ -130,7 +130,7 @@ function Test-ModuleSanity {
 }
 
 function Get-SafeAbsolutePath {
-    param([Parameter(Mandatory=$true)][string]$PathText)
+    param([Parameter(Mandatory = $true)][string]$PathText)
 
     if ([string]::IsNullOrWhiteSpace($PathText)) { throw "Alt path is empty" }
     if ($PathText -match '[\*\?]') { throw "Alt path contains wildcards: $PathText" }
@@ -140,7 +140,8 @@ function Get-SafeAbsolutePath {
 
     try {
         return (Resolve-Path -LiteralPath $p -ErrorAction Stop).ProviderPath
-    } catch {
+    }
+    catch {
         return $p  # Path may not exist yet; return normalized text
     }
 }
@@ -152,11 +153,11 @@ function New-OrUpdateManifest {
         (respects the module's Export-ModuleMember).
     #>
     param(
-        [Parameter(Mandatory=$true)][string]  $ManifestPath,
-        [Parameter(Mandatory=$true)][version] $Version,
-        [Parameter(Mandatory=$true)][string]  $ModuleName,
+        [Parameter(Mandatory = $true)][string]  $ManifestPath,
+        [Parameter(Mandatory = $true)][version] $Version,
+        [Parameter(Mandatory = $true)][string]  $ModuleName,
         [string] $Description = "PowerShell module",
-        [string] $Author      = $env:USERNAME
+        [string] $Author = $env:USERNAME
     )
 
     $manifestParams = @{
@@ -165,7 +166,7 @@ function New-OrUpdateManifest {
         RootModule           = "$ModuleName.psm1"
         Author               = $Author
         Description          = $Description
-        CompatiblePSEditions = @("Desktop","Core")
+        CompatiblePSEditions = @("Desktop", "Core")
         ErrorAction          = 'Stop'
     }
 
@@ -173,7 +174,7 @@ function New-OrUpdateManifest {
 }
 
 function Test-Ignored {
-    param([Parameter(Mandatory=$true)][string]$RelativePath)
+    param([Parameter(Mandatory = $true)][string]$RelativePath)
     $res = git -C $script:RepoPath check-ignore "$RelativePath" 2>$null
     return -not [string]::IsNullOrWhiteSpace($res)
 }
@@ -200,8 +201,8 @@ function Deploy-ModuleFromConfig {
           Description -> "PowerShell module"
     #>
     param(
-        [Parameter(Mandatory=$true)][string]$RepoPath,
-        [Parameter(Mandatory=$true)][string]$ConfigPath,
+        [Parameter(Mandatory = $true)][string]$RepoPath,
+        [Parameter(Mandatory = $true)][string]$ConfigPath,
         [string[]]$TouchedRelPaths
     )
 
@@ -210,38 +211,38 @@ function Deploy-ModuleFromConfig {
         return
     }
 
-    $allowedFixedTargets = @('System','User')
+    $allowedFixedTargets = @('System', 'User')
     $lines = Get-Content -Path $ConfigPath -ErrorAction Stop
 
-    for ($i=0; $i -lt $lines.Count; $i++) {
-        $raw  = $lines[$i]
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $raw = $lines[$i]
         $line = $raw.Trim()
         if (-not $line -or $line.StartsWith('#')) { continue }
 
         # At least 3 fields required: Module|RelPath|Targets
         if ($line -notmatch '^[^|]+\|[^|]+\|.+$') {
-            Write-Message ("Config parse error at line {0}: expected 'Module|RelPath|Targets[|Author][|Description]' -> {1}" -f ($i+1), $raw)
+            Write-Message ("Config parse error at line {0}: expected 'Module|RelPath|Targets[|Author][|Description]' -> {1}" -f ($i + 1), $raw)
             continue
         }
 
         $parts = $line.Split('|')
         if ($parts.Count -lt 3) {
-            Write-Message ("Config parse error at line {0}: need at least 3 fields -> {1}" -f ($i+1), $raw)
+            Write-Message ("Config parse error at line {0}: need at least 3 fields -> {1}" -f ($i + 1), $raw)
             continue
         }
 
-        $moduleName  = $parts[0].Trim()
-        $relPath     = $parts[1].Trim()
-        $targetsCsv  = $parts[2].Trim()
-        $author      = if ($parts.Count -ge 4 -and $parts[3].Trim()) { $parts[3].Trim() } else { $env:USERNAME }
+        $moduleName = $parts[0].Trim()
+        $relPath = $parts[1].Trim()
+        $targetsCsv = $parts[2].Trim()
+        $author = if ($parts.Count -ge 4 -and $parts[3].Trim()) { $parts[3].Trim() } else { $env:USERNAME }
         $description = if ($parts.Count -ge 5 -and $parts[4].Trim()) { $parts[4].Trim() } else { "PowerShell module" }
 
-        if (-not $moduleName)  { Write-Message ("Config error line {0}: empty ModuleName"   -f ($i+1)); continue }
-        if (-not $relPath)     { Write-Message ("Config error line {0}: empty RelativePath" -f ($i+1)); continue }
-        if (-not $targetsCsv)  { Write-Message ("Config error line {0}: empty Targets"      -f ($i+1)); continue }
+        if (-not $moduleName) { Write-Message ("Config error line {0}: empty ModuleName" -f ($i + 1)); continue }
+        if (-not $relPath) { Write-Message ("Config error line {0}: empty RelativePath" -f ($i + 1)); continue }
+        if (-not $targetsCsv) { Write-Message ("Config error line {0}: empty Targets" -f ($i + 1)); continue }
 
         $targets = $targetsCsv.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-        if (-not $targets) { Write-Message ("Config error line {0}: no targets specified" -f ($i+1)); continue }
+        if (-not $targets) { Write-Message ("Config error line {0}: no targets specified" -f ($i + 1)); continue }
 
         $invalidTargets = @()
         foreach ($t in $targets) {
@@ -249,7 +250,7 @@ function Deploy-ModuleFromConfig {
             elseif ($allowedFixedTargets -notcontains $t) { $invalidTargets += $t }
         }
         if ($invalidTargets.Count) {
-            Write-Message ("Config error line {0}: invalid target(s): {1}" -f ($i+1), ($invalidTargets -join ', '))
+            Write-Message ("Config error line {0}: invalid target(s): {1}" -f ($i + 1), ($invalidTargets -join ', '))
             continue
         }
 
@@ -258,7 +259,7 @@ function Deploy-ModuleFromConfig {
 
         $absPath = Join-Path $RepoPath $relPath
         if (-not (Test-Path -LiteralPath $absPath)) {
-            Write-Message ("Module path not found (line {0}): {1}" -f ($i+1), $absPath)
+            Write-Message ("Module path not found (line {0}): {1}" -f ($i + 1), $absPath)
             continue
         }
 
@@ -271,24 +272,26 @@ function Deploy-ModuleFromConfig {
         # Parse module version from header
         try {
             $ver = Get-HeaderVersion -Path $absPath
-        } catch {
+        }
+        catch {
             Write-Message ("Cannot parse version for {0}: {1}" -f $moduleName, $_)
             continue
         }
 
         # --- Targets: System/User/Alt ---
         foreach ($t in $targets) {
-            if     ($t -ieq 'System') { $baseRoot = "C:\Program Files\WindowsPowerShell\Modules\User" }
-            elseif ($t -ieq 'User')   { $baseRoot = Join-Path $env:USERPROFILE "Documents\WindowsPowerShell\Modules" }
+            if ($t -ieq 'System') { $baseRoot = "C:\Program Files\WindowsPowerShell\Modules\User" }
+            elseif ($t -ieq 'User') { $baseRoot = Join-Path $env:USERPROFILE "Documents\WindowsPowerShell\Modules" }
             elseif ($t -like 'Alt:*') {
-                try   { $baseRoot = Get-SafeAbsolutePath ($t.Substring(4)) }
-                catch { Write-Message ("Alt path error (line {0}): {1}" -f ($i+1), $_); continue }
-            } else {
-                Write-Message ("Unknown target '{0}' (line {1})" -f $t, ($i+1))
+                try { $baseRoot = Get-SafeAbsolutePath ($t.Substring(4)) }
+                catch { Write-Message ("Alt path error (line {0}): {1}" -f ($i + 1), $_); continue }
+            }
+            else {
+                Write-Message ("Unknown target '{0}' (line {1})" -f $t, ($i + 1))
                 continue
             }
 
-            $moduleRoot     = Join-Path $baseRoot $moduleName
+            $moduleRoot = Join-Path $baseRoot $moduleName
             $destVersionDir = Join-Path $moduleRoot $ver.ToString()
             New-DirectoryIfMissing $destVersionDir
 
@@ -304,7 +307,8 @@ function Deploy-ModuleFromConfig {
                     -Author       $author `
                     -Description  $description
                 Write-Message ("Deployed {0} {1} -> {2} (manifest: {3})" -f $moduleName, $ver, $destVersionDir, $destPsd1)
-            } catch {
+            }
+            catch {
                 Write-Message ("Deployment error for {0} -> {1}: {2}" -f $moduleName, $destVersionDir, $_)
             }
         }
@@ -330,10 +334,11 @@ try { git -C $script:RepoPath rev-parse HEAD~1 2>$null | Out-Null } catch { $has
 
 if ($hasParent) {
     $modifiedFiles = git -C $script:RepoPath diff --name-only --diff-filter=ACMRT HEAD~1 HEAD
-    $deletedFiles  = git -C $script:RepoPath diff --name-only --diff-filter=D     HEAD~1 HEAD
-} else {
+    $deletedFiles = git -C $script:RepoPath diff --name-only --diff-filter=D     HEAD~1 HEAD
+}
+else {
     $modifiedFiles = git -C $script:RepoPath ls-tree -r --name-only HEAD
-    $deletedFiles  = @()
+    $deletedFiles = @()
 }
 
 if ($script:IsVerbose) {
@@ -352,10 +357,12 @@ foreach ($rel in $modifiedFiles) {
         try {
             Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
             Write-Message ("Copied file {0} to {1}" -f $src, $dst)
-        } catch {
+        }
+        catch {
             Write-Message ("Failed to copy {0}: {1}" -f $src, $_.Exception.Message)
         }
-    } else {
+    }
+    else {
         Write-Message ("File skipped (ignored or missing): {0}" -f $src)
     }
 }
@@ -370,10 +377,12 @@ foreach ($rel in $deletedFiles) {
         try {
             Remove-Item -LiteralPath $dst -Recurse -Confirm:$false -Force -ErrorAction Stop
             Write-Message ("Deleted file {0}" -f $dst)
-        } catch {
+        }
+        catch {
             Write-Message ("Failed to delete {0}: {1}" -f $dst, $_.Exception.Message)
         }
-    } else {
+    }
+    else {
         Write-Message ("File not present in mirror (nothing to delete): {0}" -f $dst)
     }
 }

@@ -38,9 +38,9 @@ Set-StrictMode -Version Latest
 # Define strings to scrub from filenames and their replacements
 $scrubStrings = @{
     "manojbhaskaran76_" = $null
-    "_Instagram" = $null
-    "_WhatsApp" = $null
-    "Screenshot_" = $null
+    "_Instagram"        = $null
+    "_WhatsApp"         = $null
+    "Screenshot_"       = $null
 }
 
 # End of input parameters
@@ -76,13 +76,14 @@ foreach ($string in $scrubStrings.Keys) {
     # Get files containing the current scrub string
     $files = Get-ChildItem -Path $sourcePath -Filter "*$string*"
 
-    If ($files -ne $null) {
+    if ($files -ne $null) {
 
         # Display the number of files to be processed
         Write-Host "$($files.Count) files to be processed"
         Write-LogInfo "Found $($files.Count) files containing '$string'"
 
-    } else {
+    }
+    else {
 
         Write-Host "0 files to be processed"
         Write-LogInfo "No files found containing '$string'"
@@ -105,15 +106,15 @@ foreach ($string in $scrubStrings.Keys) {
             $suffix = 1
 
             # Append suffix to filename if it already exists
-	        while (Test-Path (Join-Path -Path $sourcePath -ChildPath $newName)) {
-	            $baseName = [System.IO.Path]::GetFileNameWithoutExtension($newName)
-	            $extension = [System.IO.Path]::GetExtension($newName)
+            while (Test-Path (Join-Path -Path $sourcePath -ChildPath $newName)) {
+                $baseName = [System.IO.Path]::GetFileNameWithoutExtension($newName)
+                $extension = [System.IO.Path]::GetExtension($newName)
                 $newName = "${baseName}_${suffix}${extension}"
                 $suffix++
             }
 
-	        # Rename the file
-	        Rename-Item -Path $file.FullName -NewName $newName
+            # Rename the file
+            Rename-Item -Path $file.FullName -NewName $newName
 
             # Log the renaming action
             Write-LogInfo "Renamed file: $oldName to $newName"

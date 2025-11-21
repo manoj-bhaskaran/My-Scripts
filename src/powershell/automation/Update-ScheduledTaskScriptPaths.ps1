@@ -48,7 +48,7 @@ Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 
 $targetRoot1 = "C:\Users\manoj\Documents\Scripts"
 $targetRoot2 = "D:\My Scripts"
-$outputDir   = "D:\My Scripts\Windows Task Scheduler"
+$outputDir = "D:\My Scripts\Windows Task Scheduler"
 
 $extensionMap = @{
     ".ps1" = "src\powershell"
@@ -60,7 +60,8 @@ $extensionMap = @{
 if (-not (Test-Path -Path $outputDir)) {
     Write-LogInfo "Creating output directory: $outputDir"
     New-Item -ItemType Directory -Path $outputDir | Out-Null
-} else {
+}
+else {
     Write-LogInfo "Output directory already exists: $outputDir"
 }
 
@@ -88,10 +89,12 @@ Get-ScheduledTask | Where-Object {
                 $xmlDeclaration.Encoding = "utf-8"
                 $modified = $true # Mark as modified because we changed the declaration
                 Write-LogInfo "Updated XML declaration encoding attribute to 'utf-8' for $fullTaskName"
-            } else {
-                 Write-LogDebug "XML declaration encoding already 'utf-8' or not specified for $fullTaskName"
             }
-        } else {
+            else {
+                Write-LogDebug "XML declaration encoding already 'utf-8' or not specified for $fullTaskName"
+            }
+        }
+        else {
             Write-LogWarning "XML declaration not found as first child for task: $fullTaskName. Cannot update encoding attribute."
             # If a task XML does not have an XML declaration, it's technically malformed,
             # but Export-ScheduledTask usually ensures one is present.
@@ -192,7 +195,8 @@ Get-ScheduledTask | Where-Object {
             catch {
                 Write-LogWarning "Failed to write task XML for ${fullTaskName}: $($_.Exception.Message)"
             }
-        } else {
+        }
+        else {
             Write-LogDebug "No functional changes needed for: $taskName (XML declaration might have been updated, but paths were not changed)"
         }
     }

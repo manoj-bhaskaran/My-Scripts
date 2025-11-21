@@ -77,7 +77,8 @@ function Invoke-WithErrorHandling {
     catch {
         $errMsg = if ($ErrorMessage) {
             "$ErrorMessage : $($_.Exception.Message)"
-        } else {
+        }
+        else {
             "Error: $($_.Exception.Message)"
         }
 
@@ -88,7 +89,8 @@ function Invoke-WithErrorHandling {
                     # Log as error
                     if (Get-Command Write-LogError -ErrorAction SilentlyContinue) {
                         Write-LogError $errMsg
-                    } else {
+                    }
+                    else {
                         Write-Error $errMsg -ErrorAction Continue
                     }
                 }
@@ -96,7 +98,8 @@ function Invoke-WithErrorHandling {
                     # Log as warning for Continue
                     if (Get-Command Write-LogWarning -ErrorAction SilentlyContinue) {
                         Write-LogWarning $errMsg
-                    } else {
+                    }
+                    else {
                         Write-Warning $errMsg
                     }
                 }
@@ -189,7 +192,8 @@ function Invoke-WithRetry {
                 $msg = "Succeeded after $attempt retry attempt(s): $Description"
                 if ($hasInfoLogger) {
                     Write-LogInfo $msg
-                } else {
+                }
+                else {
                     Write-Verbose $msg
                 }
             }
@@ -205,7 +209,8 @@ function Invoke-WithRetry {
                 if ($LogErrors) {
                     if ($hasLogger) {
                         Write-LogError $msg
-                    } else {
+                    }
+                    else {
                         Write-Error $msg
                     }
                 }
@@ -218,7 +223,8 @@ function Invoke-WithRetry {
                 $msg = "Attempt $attempt failed for $Description. Error: $err. Retrying in $delay second(s)..."
                 if ($hasLogger) {
                     Write-LogWarning $msg
-                } else {
+                }
+                else {
                     Write-Warning $msg
                 }
             }
