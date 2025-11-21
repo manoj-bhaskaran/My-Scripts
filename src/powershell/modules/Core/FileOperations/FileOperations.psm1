@@ -87,6 +87,12 @@ function Copy-FileWithRetry {
         throw "Source file not found: $Source"
     }
 
+    # Ensure destination directory exists
+    $destDir = Split-Path -Path $Destination -Parent
+    if ($destDir -and -not (Test-Path $destDir)) {
+        New-Item -Path $destDir -ItemType Directory -Force | Out-Null
+    }
+
     $operation = {
         Copy-Item -Path $Source -Destination $Destination -Force:$Force -ErrorAction Stop
     }
@@ -161,6 +167,12 @@ function Move-FileWithRetry {
 
     if (-not (Test-Path $Source)) {
         throw "Source file not found: $Source"
+    }
+
+    # Ensure destination directory exists
+    $destDir = Split-Path -Path $Destination -Parent
+    if ($destDir -and -not (Test-Path $destDir)) {
+        New-Item -Path $destDir -ItemType Directory -Force | Out-Null
     }
 
     $operation = {
