@@ -98,23 +98,29 @@ cd My-Scripts
 
 ### 2. Install Git Hooks (Optional but Recommended)
 
-Git hooks enforce code quality and consistent commit messages:
+Git hooks enforce code quality and consistent commit messages using the **pre-commit framework**:
 
 ```bash
 # Linux/macOS/Git Bash
 ./scripts/install-hooks.sh
-
-# Windows PowerShell
-pwsh -File scripts/install-hooks.ps1
 ```
 
 This installs:
-- `pre-commit`: Code quality checks (linting, debug statements)
-- `commit-msg`: Conventional commits format enforcement
-- `post-commit`: Automatic module deployment to staging
-- `post-merge`: Post-merge automation
+- **Pre-commit framework**: Multi-language hook manager
+- **Python hooks**: Black (formatter), Pylint (linter), Bandit (security)
+- **PowerShell hooks**: PSScriptAnalyzer (linter)
+- **SQL hooks**: SQLFluff (linter/formatter)
+- **General hooks**: Trailing whitespace, YAML/JSON validation, large files check
+- **Commit message validation**: Conventional Commits format enforcement
+- **Post-commit**: Automatic module deployment to staging
+- **Post-merge**: Post-merge automation
 
-See [docs/guides/git-hooks.md](docs/guides/git-hooks.md) for details.
+**What the script does:**
+1. Installs pre-commit framework via pip
+2. Configures hooks from `.pre-commit-config.yaml`
+3. Runs validation on all files
+
+See [docs/guides/git-hooks.md](docs/guides/git-hooks.md) for comprehensive documentation.
 
 ### 3. Review Configuration
 

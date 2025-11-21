@@ -40,6 +40,12 @@ jobs:
           pip install pylint bandit
           pip install -r requirements.txt
 
+      - name: Run Pre-Commit Hooks
+        run: |
+          pip install pre-commit
+          pre-commit run --all-files --show-diff-on-failure
+        continue-on-error: true
+
       - name: Run Python Tests with Coverage
         run: |
           pytest tests/python --cov=src/python --cov=src/common --cov-report=xml:coverage/python/coverage.xml --cov-report=term-missing --cov-fail-under=1

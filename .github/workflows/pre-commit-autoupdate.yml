@@ -1,0 +1,52 @@
+name: Pre-Commit Auto-Update
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday at midnight UTC
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  auto-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pre-commit
+        run: |
+          pip install pre-commit
+
+      - name: Update pre-commit hooks
+        run: |
+          pre-commit autoupdate
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          title: 'chore: update pre-commit hooks'
+          commit-message: 'chore: update pre-commit hooks'
+          branch: pre-commit-autoupdate
+          delete-branch: true
+          body: |
+            ## Pre-Commit Hook Updates
+
+            This PR automatically updates pre-commit hook versions to their latest releases.
+
+            **Changes:**
+            - Updated hook versions in `.pre-commit-config.yaml`
+
+            **Testing:**
+            - Pre-commit hooks will run automatically in CI
+            - Review the changes and verify all hooks pass
+
+            **Merging:**
+            - This PR can be safely merged if all CI checks pass
+            - The pre-commit hooks are non-breaking and follow semantic versioning
+
+            ---
+            *This PR was created automatically by the pre-commit-autoupdate workflow*
