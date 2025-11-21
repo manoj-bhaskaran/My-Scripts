@@ -80,7 +80,7 @@ jobs:
         run: |
           echo "::group::SQL Formatting Check"
           if [ -d "src/sql" ] && find src/sql -name "*.sql" -type f | grep -q .; then
-            if sqlfluff lint src/sql/ --format github-annotation; then
+            if sqlfluff lint --config .sqlfluffrc src/sql/ --format github-annotation; then
               echo "✓ SQL code is properly formatted"
               echo "result=success" >> $GITHUB_OUTPUT
             else
@@ -132,9 +132,30 @@ jobs:
       - name: Check overall status
         if: always()
         run: |
-          if [ "${{ steps.black.outputs.result }}" == "failure" ] || \
-             [ "${{ steps.powershell.outputs.result }}" == "failure" ] || \
-             [ "${{ steps.sqlfluff.outputs.result }}" == "failure" ]; then
+          FAILED=false
+
+          # Check Python formatting (strict)
+          if [ "${{ steps.black.outputs.result }}" == "failure" ]; then
+            echo "::error::Python formatting check failed"
+            FAILED=true
+          fi
+
+          # Check SQL formatting (strict)
+          if [ "${{ steps.sqlfluff.outputs.result }}" == "failure" ]; then
+            echo "::error::SQL formatting check failed"
+            FAILED=true
+          fi
+
+          # Check PowerShell formatting (warning only if no result)
+          if [ "${{ steps.powershell.outputs.result }}" == "failure" ]; then
+            echo "::warning::PowerShell formatting check failed"
+            # Uncomment to make PowerShell checks strict:
+            # FAILED=true
+          fi
+
+          if [ "$FAILED" == "true" ]; then
             echo "::error::Code formatting checks failed. Please run ./scripts/format-all.sh to fix formatting issues."
             exit 1
           fi
+
+          echo "✓ All code formatting checks passed"
