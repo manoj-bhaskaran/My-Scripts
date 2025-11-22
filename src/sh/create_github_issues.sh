@@ -2,7 +2,8 @@
 
 ###############################################################################
 # Script: create_github_issues.sh
-# Description: Create GitHub issues from markdown files in a specified directory
+# Description: Create GitHub issues from markdown template files in a directory.
+#              Processes all files except README.md.
 # Usage:
 #   ./create_github_issues.sh
 #   ./create_github_issues.sh --repo OWNER/REPO
@@ -168,15 +169,29 @@ get_issue_files() {
     info "Using issues directory: $ISSUES_DIR"
 
     shopt -s nullglob
-    local files=( "$ISSUES_DIR"/issue* )
+    local all_files=( "$ISSUES_DIR"/* )
     shopt -u nullglob
 
+    # Filter: only regular files, exclude README.md
+    local files=()
+    local fname
+    for f in "${all_files[@]}"; do
+        # Skip if not a regular file
+        [[ ! -f "$f" ]] && continue
+
+        # Skip README.md (case-sensitive)
+        fname=$(basename "$f")
+        [[ "$fname" == "README.md" ]] && continue
+
+        files+=( "$f" )
+    done
+
     if [[ ${#files[@]} -eq 0 ]]; then
-        err "No issue* files found in $ISSUES_DIR"
+        err "No template files found in $ISSUES_DIR (excluding README.md)"
         exit 1
     fi
 
-    ok "Found ${#files[@]} issue file(s) in $ISSUES_DIR"
+    ok "Found ${#files[@]} template file(s) in $ISSUES_DIR (excluding README.md)"
     ISSUE_FILES=( "${files[@]}" )
 }
 
