@@ -15,8 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Supports directory matches (preserves all files within excluded directories)
     - Supports wildcard patterns (e.g., `*.log`, `backups/*`)
     - Cross-platform path normalization
-  - **Enhanced Preview Mode**: Shows excluded files in yellow with `[KEEP]` indicator
-  - **Improved Output**: Summary now displays count of excluded files
+  - **Enhanced Preview Mode**: Shows excluded files count summary (not individual files - prevents output flooding)
+  - **Improved Output**: Summary displays count of excluded files
+  - **Directory Cleanup**: Automatically removes empty directories after file deletion (respects exclusion patterns)
+  - **Single Confirmation**: One Y/N prompt for all deletions instead of per-file prompts
   - **Use Case**: Sync Git repository (`D:\My Scripts`) to working directory (`C:\Users\manoj\Documents\Scripts`)
     while preserving logs, virtual environments, configs, and other non-repository files
   - **Documentation**: Comprehensive help with examples and parameter descriptions
