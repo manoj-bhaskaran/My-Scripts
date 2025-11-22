@@ -268,6 +268,40 @@ if ($toDelete.Count -gt 0) {
             Remove-Item -Path $dstFile.FullName -Force
         }
         Write-Host "Deleted $($toDelete.Count) file(s)." -ForegroundColor Green
+
+        ###########################################################################
+        # 4. Clean up empty directories from Destination
+        ###########################################################################
+        Write-Host ""
+        Write-Host "Cleaning up empty directories..."
+
+        # Get all directories in destination, sorted by depth (deepest first)
+        $allDirs = Get-ChildItem -Path $Destination -Recurse -Directory |
+            Sort-Object { $_.FullName.Split([System.IO.Path]::DirectorySeparatorChar).Count } -Descending
+
+        $emptyDirsRemoved = 0
+        foreach ($dir in $allDirs) {
+            # Skip if directory matches exclusion pattern
+            $relDirPath = $dir.FullName.Substring($Destination.Length).TrimStart('\')
+            if (Test-ExcludedPath -RelativePath $relDirPath -Patterns $ExcludeFromDeletion) {
+                continue
+            }
+
+            # Check if directory is empty (no files, no subdirectories)
+            $contents = Get-ChildItem -Path $dir.FullName -Force
+            if ($contents.Count -eq 0) {
+                Write-Host "[REMOVE DIR] $relDirPath" -ForegroundColor DarkGray
+                Remove-Item -Path $dir.FullName -Force
+                $emptyDirsRemoved++
+            }
+        }
+
+        if ($emptyDirsRemoved -gt 0) {
+            Write-Host "Removed $emptyDirsRemoved empty director(y/ies)." -ForegroundColor Green
+        }
+        else {
+            Write-Host "No empty directories to remove." -ForegroundColor Gray
+        }
     }
     else {
         Write-Host "Deletion cancelled. No files were deleted." -ForegroundColor Yellow
