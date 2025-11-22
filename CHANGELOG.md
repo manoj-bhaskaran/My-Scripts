@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Flexible Template Processing for GitHub Issue Creator** (#504) - Enhanced `create_github_issues.sh` to process all template files
+  - **Template File Selection**: Script now processes all files in the issues directory except `README.md`
+    - Previously: Only processed files starting with `issue*` prefix
+    - Now: Processes all regular files (excluding `README.md`)
+    - Maintains full backward compatibility - existing `issue*` templates continue to work
+  - **Exclusion Logic**:
+    - Explicitly excludes `README.md` (case-sensitive)
+    - Skips directories and non-regular files
+    - Clear messaging in logs about excluded files
+  - **Benefits**:
+    - More flexible template naming (e.g., `feature_login.md`, `bugfix-crash.md`)
+    - No need to rename existing templates to follow `issue*` pattern
+    - Easier to organize templates by type or category
+  - **Examples**:
+    ```bash
+    # All these templates will now be processed:
+    # - issue-001-setup.md          (traditional naming)
+    # - feature_login.md             (feature template)
+    # - bugfix-crash-on-startup.md  (bug template)
+    #
+    # README.md will be skipped
+    ```
+  - **Version Impact**: PATCH bump (2.1.0 → 2.1.1) - backward-compatible enhancement
+
 ### Added
 
 - **Parameterized Issues Directory for GitHub Issue Creator** (#500) - Enhanced `create_github_issues.sh` with configurable input folder
