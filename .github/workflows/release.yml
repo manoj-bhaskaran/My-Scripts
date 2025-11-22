@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags (v1.0.0, v2.1.3, etc.)
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for changelog
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION=$(cat VERSION | tr -d '[:space:]')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag_name=v$VERSION" >> $GITHUB_OUTPUT
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Validate version
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: Invalid version format: $VERSION"
+            echo "Expected format: MAJOR.MINOR.PATCH (e.g., 2.0.0)"
+            exit 1
+          fi
+
+          # Check if version exists in CHANGELOG
+          if ! grep -q "## \[$VERSION\]" CHANGELOG.md; then
+            echo "ERROR: Version $VERSION not found in CHANGELOG.md"
+            echo "Please update CHANGELOG.md before creating a release"
+            exit 1
+          fi
+
+      - name: Extract changelog for version
+        id: changelog
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+
+          # Extract section from CHANGELOG.md for this version
+          # This awk command finds the section between ## [VERSION] and the next ## [ heading
+          CHANGELOG=$(awk "/## \[$VERSION\]/,/^## \[/" CHANGELOG.md | sed '1d;$d' | sed '/^$/N;/^\n$/D')
+
+          # If changelog is empty, provide a default message
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="Release version $VERSION
+
+See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details."
+          fi
+
+          # Save to output using heredoc
+          {
+            echo 'changelog<<EOF'
+            echo "$CHANGELOG"
+            echo EOF
+          } >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.tag_name }}
+          name: Release v${{ steps.get_version.outputs.version }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
+      - name: Summary
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Version:** ${{ steps.get_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Tag:** ${{ steps.get_version.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Release URL:** https://github.com/${{ github.repository }}/releases/tag/${{ steps.get_version.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Changelog" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.changelog.outputs.changelog }}" >> $GITHUB_STEP_SUMMARY
+
+  # Optional: Publish PowerShell modules to PowerShell Gallery
+  # Uncomment and configure when ready to publish
+  # publish-powershell-modules:
+  #   needs: release
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Install PowerShell
+  #       uses: azure/powershell@v1
+  #       with:
+  #         azPSVersion: 'latest'
+  #
+  #     - name: Publish PowerShell Modules
+  #       env:
+  #         PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+  #       shell: pwsh
+  #       run: |
+  #         if (Test-Path -Path "scripts/Publish-Modules.ps1") {
+  #           .\scripts\Publish-Modules.ps1 -ApiKey $env:PSGALLERY_API_KEY
+  #         } else {
+  #           Write-Host "Publish-Modules.ps1 not found, skipping module publishing"
+  #         }
+
+  # Optional: Publish Python modules to PyPI
+  # Uncomment and configure when ready to publish
+  # publish-python-modules:
+  #   needs: release
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v4
+  #       with:
+  #         python-version: '3.11'
+  #
+  #     - name: Publish Python Modules
+  #       env:
+  #         TWINE_USERNAME: __token__
+  #         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+  #       run: |
+  #         if [ -f "scripts/publish-python-modules.sh" ]; then
+  #           chmod +x scripts/publish-python-modules.sh
+  #           ./scripts/publish-python-modules.sh
+  #         else
+  #           echo "publish-python-modules.sh not found, skipping module publishing"
+  #         fi
