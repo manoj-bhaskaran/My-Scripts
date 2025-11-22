@@ -24,21 +24,22 @@
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 3.0.0
-    Last Updated: 2025-11-16
+    Version: 3.0.1
+    Last Updated: 2025-11-21
     CHANGELOG:
+        3.0.1 - Fixed placement of import statements to be after the CmdletBinding statement
         3.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
         2.5   - Previous version with custom Write-Message function
 #>
+
+[CmdletBinding()]
+param ()
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 
 # Initialize logger
 Initialize-Logger -ScriptName "post-commit-my-scripts" -LogLevel 20
-
-[CmdletBinding()]
-param ()
 
 # Initialize early so functions can read it safely
 $script:IsVerbose = $false
