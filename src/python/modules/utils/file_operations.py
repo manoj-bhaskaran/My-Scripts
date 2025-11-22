@@ -312,7 +312,7 @@ def get_file_size(path: Union[str, Path]) -> int:
 
 
 def safe_write_text(
-    path: Union[str, Path],
+    path: str | Path,
     content: str,
     encoding: str = "utf-8",
     atomic: bool = True
