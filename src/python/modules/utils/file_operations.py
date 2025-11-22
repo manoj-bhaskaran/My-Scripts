@@ -302,10 +302,7 @@ def get_file_size(path: Union[str, Path]) -> int:
 
 
 def safe_write_text(
-    path: str | Path,
-    content: str,
-    encoding: str = "utf-8",
-    atomic: bool = True
+    path: str | Path, content: str, encoding: str = "utf-8", atomic: bool = True
 ) -> bool:
     """Write text to file safely with optional atomic write.
 

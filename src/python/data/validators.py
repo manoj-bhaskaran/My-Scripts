@@ -199,6 +199,7 @@ def validate_extensions(
 
     return deduped, warnings, []
 
+
 # --- Lightweight, local mypy reveal_type checks (ignored at runtime) ---
 if TYPE_CHECKING:
     # mypy will evaluate these; they don't run at runtime.
