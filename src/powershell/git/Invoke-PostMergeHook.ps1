@@ -48,10 +48,49 @@ if ($PSBoundParameters.ContainsKey('Verbose') -or $VerbosePreference -eq 'Contin
 # Configuration
 # ==============================================================================================
 
-$script:RepoPath = "D:\My Scripts"
-$script:DestinationFolder = "C:\Users\manoj\Documents\Scripts"   # STAGING (exact mirror)
-$script:LogFile = "C:\Users\manoj\Documents\Scripts\git-post-action.log"
-$configPath = Join-Path $script:RepoPath "config\module-deployment-config.txt"
+# Auto-detect repository root
+$script:RepoPath = git rev-parse --show-toplevel 2>$null
+if (-not $script:RepoPath) {
+    Write-Error "Failed to detect Git repository root. Ensure this script runs inside a Git repo."
+    exit 1
+}
+# Convert to Windows path if needed
+$script:RepoPath = $script:RepoPath -replace '/', '\'
+
+# Load local deployment configuration
+$localConfigPath = Join-Path $script:RepoPath "config\local-deployment-config.json"
+if (-not (Test-Path -LiteralPath $localConfigPath)) {
+    Write-Warning "Local deployment config not found: $localConfigPath"
+    Write-Warning "Copy config\local-deployment-config.json.example to config\local-deployment-config.json and configure your paths."
+    exit 0
+}
+
+try {
+    $localConfig = Get-Content -Path $localConfigPath -Raw | ConvertFrom-Json -ErrorAction Stop
+}
+catch {
+    Write-Error "Failed to parse local deployment config: $localConfigPath - $_"
+    exit 1
+}
+
+# Check if deployment is enabled
+if ($localConfig.enabled -eq $false) {
+    Write-Warning "Deployment disabled in local config. Exiting."
+    exit 0
+}
+
+# STAGING MIRROR: exact repo structure (no versioned folders, no manifests here)
+$script:DestinationFolder = $localConfig.stagingMirror
+if (-not $script:DestinationFolder) {
+    Write-Error "stagingMirror not configured in $localConfigPath"
+    exit 1
+}
+
+# Hook log file
+$script:LogFile = Join-Path $script:DestinationFolder "git-post-action.log"
+
+# Deployment configuration lives under repo\config\modules\
+$configPath = Join-Path $script:RepoPath "config\modules\deployment.txt"
 
 # ==============================================================================================
 # Logging & helpers
