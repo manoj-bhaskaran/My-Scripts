@@ -9,6 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Automated Release Workflow** (#465) - Complete automated release system for version management
+  - **Release Workflow**
+    - New file: `.github/workflows/release.yml` - Automated GitHub Actions release workflow
+      - Triggers on version tags (v*.*.*)
+      - Validates version format and CHANGELOG entry
+      - Automatically extracts changelog for specific version
+      - Creates GitHub Release with release notes
+      - Supports manual workflow dispatch
+      - Generates release summary in GitHub Actions
+      - Optional module publishing (PowerShell Gallery, PyPI) - commented out for future use
+  - **Version Bumping Script**
+    - New file: `scripts/bump-version.sh` (v1.0.0) - Semantic version bumping automation
+      - Supports major, minor, and patch version bumps
+      - Validates VERSION file format (MAJOR.MINOR.PATCH)
+      - Automatically updates VERSION file
+      - Updates CHANGELOG.md with new version section and date
+      - Cross-platform support (Linux and macOS)
+      - Color-coded output and validation
+      - Prevents duplicate version entries
+      - Clear next-steps guidance after bumping
+  - **Release Documentation**
+    - New file: `.github/RELEASE_CHECKLIST.md` - Comprehensive release checklist
+      - Pre-release quality checks (tests, code quality, documentation)
+      - Step-by-step release process guide
+      - Post-release verification tasks
+      - Version numbering guidelines (SemVer)
+      - Rollback procedures for failed releases
+      - Troubleshooting common release issues
+      - Manual release instructions (workflow dispatch)
+    - New file: `docs/guides/versioning.md` - Complete versioning and release guide
+      - Semantic Versioning explanation and examples
+      - Automated and manual release processes
+      - Version bumping decision tree
+      - Changelog management best practices
+      - Module versioning guidelines (PowerShell and Python)
+      - Pre-release version format (alpha, beta, rc)
+      - Best practices and troubleshooting
+      - Real-world release examples (patch, minor, major)
+  - **README Updates**
+    - Updated `README.md` with new "Versioning and Releases" section
+      - Current version display
+      - Quick release process overview
+      - Links to versioning guide and release checklist
+      - Reference to GitHub Releases page
+  - **Git Blame Integration**
+    - Existing file: `.git-blame-ignore-revs` - Already configured for bulk formatting commits
+  - **Features**
+    - Fully automated release creation on tag push
+    - Semantic version validation (MAJOR.MINOR.PATCH)
+    - Automatic changelog extraction from CHANGELOG.md
+    - GitHub Release with formatted release notes
+    - Version bump automation script
+    - Comprehensive documentation and checklists
+    - Support for pre-release versions (alpha, beta, rc)
+    - Cross-platform compatibility (Linux, macOS, Windows)
+    - Clear rollback procedures
+    - Optional module publishing to registries (future enhancement)
+
 - **Code Formatting Automation** (#464) - Comprehensive automated code formatting for all languages
   - **Python Formatting (Black)**
     - Enhanced `pyproject.toml` with Black configuration (line length 100, Python 3.11, exclude patterns)

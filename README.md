@@ -605,6 +605,47 @@ For detailed code style guidelines, configuration, and troubleshooting:
 
 ---
 
+## Versioning and Releases
+
+This repository follows [Semantic Versioning](https://semver.org/):
+- **MAJOR.MINOR.PATCH** (e.g., 2.0.0)
+- Current Version: **2.0.0** (see [VERSION](VERSION) file)
+
+### Release Process
+
+Releases are automated using GitHub Actions:
+
+1. **Bump version** using the version bump script:
+   ```bash
+   ./scripts/bump-version.sh [major|minor|patch]
+   ```
+
+2. **Update CHANGELOG.md** with release notes
+
+3. **Create and push tag** to trigger release:
+   ```bash
+   git commit -am "chore: release vX.Y.Z"
+   git tag -a vX.Y.Z -m "Release vX.Y.Z"
+   git push origin main --tags
+   ```
+
+The workflow automatically:
+- Extracts changelog for the version
+- Creates GitHub Release
+- Publishes release notes
+
+### Documentation
+
+- **[Versioning Guide](docs/guides/versioning.md)** - Complete versioning and release documentation
+- **[Release Checklist](.github/RELEASE_CHECKLIST.md)** - Pre-release and post-release tasks
+- **[CHANGELOG.md](CHANGELOG.md)** - Detailed change history
+
+### Version History
+
+All releases are available on the [Releases](https://github.com/manoj-bhaskaran/My-Scripts/releases) page.
+
+---
+
 ## Contributing
 
 Please note that at present, I am not inviting contributions to this personal project. However, the [`CONTRIBUTING.md`](CONTRIBUTING.md) file documents coding standards, logging guidelines, and best practices used throughout this repository.
