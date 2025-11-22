@@ -7,7 +7,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Code Formatting](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml/badge.svg)](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml)
 
-**Version:** 2.0.0 | **Last Updated:** 2025-11-18
+**Version:** 2.1.0 | **Last Updated:** 2025-11-22
 
 ---
 
