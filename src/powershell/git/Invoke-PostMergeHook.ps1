@@ -22,9 +22,10 @@
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 3.0.0
-    Last Updated: 2025-11-16
+    Version: 3.1.0
+    Last Updated: 2025-11-22
     CHANGELOG:
+        3.1.0 - Fixed logging initialization order and config loading sequence
         3.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
         2.6   - Previous version with custom Write-Message function
 #>
@@ -32,11 +33,7 @@
 [CmdletBinding()]
 param()
 
-# Import logging framework
-Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
-
-# Initialize logger
-Initialize-Logger -ScriptName "post-merge-my-scripts" -LogLevel 20
+Set-StrictMode -Version Latest
 
 # Initialize early so functions can read it safely
 $script:IsVerbose = $false
@@ -73,7 +70,7 @@ catch {
     exit 1
 }
 
-# Check if deployment is enabled
+# Check if deployment is enabled (before initializing logging)
 if ($localConfig.enabled -eq $false) {
     Write-Warning "Deployment disabled in local config. Exiting."
     exit 0
@@ -86,12 +83,17 @@ if (-not $script:DestinationFolder) {
     exit 1
 }
 
-# Hook log file (in logs subdirectory)
+# Create logs subdirectory
 $logsDir = Join-Path $script:DestinationFolder "logs"
 if (-not (Test-Path -LiteralPath $logsDir)) {
     New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
 }
-$script:LogFile = Join-Path $logsDir "git-post-action.log"
+
+# Import logging framework AFTER determining log directory
+Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger with the correct log directory
+Initialize-Logger -resolvedLogDir $logsDir -ScriptName "post-merge-my-scripts" -LogLevel 20
 
 # Deployment configuration lives under repo\config\modules\
 $configPath = Join-Path $script:RepoPath "config\modules\deployment.txt"
@@ -99,8 +101,6 @@ $configPath = Join-Path $script:RepoPath "config\modules\deployment.txt"
 # ==============================================================================================
 # Logging & helpers
 # ==============================================================================================
-
-Set-StrictMode -Version Latest
 
 function Write-Message {
     param(
