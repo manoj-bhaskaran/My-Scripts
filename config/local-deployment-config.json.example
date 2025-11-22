@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Local deployment configuration for git hooks - copy to local-deployment-config.json and customize",
+  "stagingMirror": "C:\\Users\\YourUsername\\Documents\\Scripts",
+  "enabled": true,
+  "notes": [
+    "stagingMirror: Directory where repository files will be mirrored on post-commit/post-merge",
+    "enabled: Set to false to disable automatic deployment while keeping the config",
+    "This file should NOT be committed - it's for local machine configuration only"
+  ]
+}

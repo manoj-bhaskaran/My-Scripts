@@ -50,22 +50,58 @@ if ($PSBoundParameters.ContainsKey('Verbose') -or $VerbosePreference -eq 'Contin
 # Configuration
 # ==============================================================================================
 
-# Path to your repository root
-$script:RepoPath = "D:\My Scripts"
+# Auto-detect repository root
+$script:RepoPath = git rev-parse --show-toplevel 2>$null
+if (-not $script:RepoPath) {
+    Write-Error "Failed to detect Git repository root. Ensure this script runs inside a Git repo."
+    exit 1
+}
+# Convert to Windows path if needed
+$script:RepoPath = $script:RepoPath -replace '/', '\'
+
+# Load local deployment configuration
+$localConfigPath = Join-Path $script:RepoPath "config\local-deployment-config.json"
+if (-not (Test-Path -LiteralPath $localConfigPath)) {
+    Write-Warning "Local deployment config not found: $localConfigPath"
+    Write-Warning "Copy config\local-deployment-config.json.example to config\local-deployment-config.json and configure your paths."
+    exit 0
+}
+
+try {
+    $localConfig = Get-Content -Path $localConfigPath -Raw | ConvertFrom-Json -ErrorAction Stop
+}
+catch {
+    Write-Error "Failed to parse local deployment config: $localConfigPath - $_"
+    exit 1
+}
+
+# Check if deployment is enabled
+if ($localConfig.enabled -eq $false) {
+    Write-Message "Deployment disabled in local config. Exiting."
+    exit 0
+}
 
 # STAGING MIRROR: exact repo structure (no versioned folders, no manifests here)
-$script:DestinationFolder = "C:\Users\manoj\Documents\Scripts"
+$script:DestinationFolder = $localConfig.stagingMirror
+if (-not $script:DestinationFolder) {
+    Write-Error "stagingMirror not configured in $localConfigPath"
+    exit 1
+}
 
-# Hook log file
-$script:LogFile = "C:\Users\manoj\Documents\Scripts\git-post-action.log"
+# Hook log file (in logs subdirectory)
+$logsDir = Join-Path $script:DestinationFolder "logs"
+if (-not (Test-Path -LiteralPath $logsDir)) {
+    New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
+}
+$script:LogFile = Join-Path $logsDir "git-post-action.log"
 
-# Deployment configuration lives under repo\config\
+# Deployment configuration lives under repo\config\modules\
 # Format (pipe-separated, one per line; comments start with #):
 #   ModuleName | RelativePathFromRepoRoot | Targets
 # Targets = comma-separated subset of: System, User, Alt:<ABS_PATH>
 # Example:
 #   PostgresBackup|PostgresBackup.psm1|System,User
-$configPath = Join-Path $script:RepoPath "config\module-deployment-config.txt"
+$configPath = Join-Path $script:RepoPath "config\modules\deployment.txt"
 
 # ==============================================================================================
 # Logging and Helpers

@@ -25,3 +25,6 @@ logs/
 .hypothesis/
 powershell-coverage.xml
 powershell-testresults.xml
+
+# Local deployment configuration (user-specific, not committed)
+config/local-deployment-config.json
