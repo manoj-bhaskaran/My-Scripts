@@ -118,7 +118,7 @@ if (-not (Test-Path -Path $FilePath -PathType Container)) {
 
 # EXTENSION LIST (image-only): lower-case compare.
 # To include more types (e.g., .gif, .webp), append to this list.
-$allowedExt = '.jpg','.jpeg','.png'
+$allowedExt = '.jpg', '.jpeg', '.png'
 
 Write-LogDebug "Allowed extensions: $($allowedExt -join ', ')"
 
@@ -176,6 +176,7 @@ if ($files.Count -gt 0) {
         Write-LogError "Failed to open '$($randomFile.FullName)': $($_.Exception.Message)"
         Write-Warning ("Failed to open '{0}': {1}" -f $randomFile.FullName, $_.Exception.Message)
     }
-} else {
+}
+else {
     Write-LogWarning "No image files found in the randomly selected folder: $($randomFolder.FullName)"
 }

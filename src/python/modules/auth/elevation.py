@@ -19,6 +19,7 @@ plog.initialise_logger(log_file_path="auto", level="INFO")
 # Initialize elevation data provider once
 _elevation_data = srtm.get_data()
 
+
 def get_elevation(lat, lon):
     """
     Get elevation for the given latitude and longitude.
@@ -32,6 +33,8 @@ def get_elevation(lat, lon):
     """
     elevation = _elevation_data.get_elevation(lat, lon)
     if elevation is None or elevation <= -1000:
-        plog.log_debug(f"Elevation unavailable or invalid at lat={lat}, lon={lon}, value={elevation}")
+        plog.log_debug(
+            f"Elevation unavailable or invalid at lat={lat}, lon={lon}, value={elevation}"
+        )
         return None
     return elevation

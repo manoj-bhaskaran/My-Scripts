@@ -9,7 +9,7 @@ import python_logging_framework as plog
 
 # Constants for retry logic
 max_retries = 60  # Total 5 minutes if delay is 5 seconds
-retry_delay = 5   # Seconds
+retry_delay = 5  # Seconds
 
 # Constants for task names
 IMPORT_TASK = "import-my-file"
@@ -18,6 +18,7 @@ EXPORT_TASK = "export-my-file"
 
 # Base URL for CloudConvert API
 CLOUDCONVERT_API_BASE = "https://api.cloudconvert.com/v2"
+
 
 def authenticate() -> str:
     """
@@ -37,6 +38,7 @@ def authenticate() -> str:
     plog.log_debug("API key successfully retrieved.")
     return api_key
 
+
 def create_upload_task(api_key: str) -> Dict[str, Any]:
     """
     Create an upload task on CloudConvert.
@@ -51,17 +53,8 @@ def create_upload_task(api_key: str) -> Dict[str, Any]:
         requests.exceptions.RequestException: If the API request fails.
     """
     url = f"{CLOUDCONVERT_API_BASE}/jobs"
-    payload = {
-        "tasks": {
-            "upload_task": {
-                "operation": "import/upload"
-            }
-        }
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+    payload = {"tasks": {"upload_task": {"operation": "import/upload"}}}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     plog.log_debug("Making API request to create an upload task.")
     response = requests.post(url, json=payload, headers=headers)
@@ -72,7 +65,10 @@ def create_upload_task(api_key: str) -> Dict[str, Any]:
 
     return response.json()["data"]["tasks"][0]
 
-def handle_file_upload(file_name: str, upload_url: str, parameters: Dict[str, str]) -> requests.Response:
+
+def handle_file_upload(
+    file_name: str, upload_url: str, parameters: Dict[str, str]
+) -> requests.Response:
     """
     Upload a file to CloudConvert using the provided upload URL and parameters.
 
@@ -103,8 +99,11 @@ def handle_file_upload(file_name: str, upload_url: str, parameters: Dict[str, st
             plog.log_error(f"Error during file upload request: {e}")
             raise RuntimeError(f"Failed to upload file '{file_name}' to CloudConvert.") from e
 
-    plog.log_info(f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}")
+    plog.log_info(
+        f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
+    )
     return upload_response
+
 
 def upload_file(file_name: str) -> None:
     """
@@ -125,13 +124,16 @@ def upload_file(file_name: str) -> None:
         parameters = upload_task["result"]["form"]["parameters"]
         upload_response = handle_file_upload(file_name, upload_url, parameters)
 
-        result_message = f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
+        result_message = (
+            f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
+        )
         plog.log_info(result_message)
         print(result_message)  # For PowerShell capture
 
     except (requests.exceptions.RequestException, KeyError, IndexError, ValueError) as e:
         plog.log_error(f"Error during file upload: {e}")
         raise RuntimeError(f"Error during file upload: {e}") from e
+
 
 def create_conversion_task(api_key: str, output_format: str) -> Dict[str, Any]:
     """
@@ -150,24 +152,16 @@ def create_conversion_task(api_key: str, output_format: str) -> Dict[str, Any]:
     url = f"{CLOUDCONVERT_API_BASE}/jobs"
     payload = {
         "tasks": {
-            IMPORT_TASK: {
-                "operation": "import/upload"
-            },
+            IMPORT_TASK: {"operation": "import/upload"},
             CONVERT_TASK: {
                 "operation": "convert",
                 "input": IMPORT_TASK,
-                "output_format": output_format
+                "output_format": output_format,
             },
-            EXPORT_TASK: {
-                "operation": "export/url",
-                "input": CONVERT_TASK
-            }
+            EXPORT_TASK: {"operation": "export/url", "input": CONVERT_TASK},
         }
     }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     plog.log_debug("Making API request to create a conversion task.")
     response = requests.post(url, json=payload, headers=headers)
@@ -177,6 +171,7 @@ def create_conversion_task(api_key: str, output_format: str) -> Dict[str, Any]:
         response.raise_for_status()
 
     return response.json()["data"]
+
 
 def check_task_status(api_key: str, task_id: str) -> Dict[str, Any]:
     """
@@ -193,9 +188,7 @@ def check_task_status(api_key: str, task_id: str) -> Dict[str, Any]:
         requests.exceptions.RequestException: If the API request fails.
     """
     url = f"{CLOUDCONVERT_API_BASE}/tasks/{task_id}"
-    headers = {
-        "Authorization": f"Bearer {api_key}"
-    }
+    headers = {"Authorization": f"Bearer {api_key}"}
 
     plog.log_debug(f"Checking status of task: {task_id}")
     response = requests.get(url, headers=headers)
@@ -205,6 +198,7 @@ def check_task_status(api_key: str, task_id: str) -> Dict[str, Any]:
         response.raise_for_status()
 
     return response.json()["data"]
+
 
 def wait_for_task_completion(api_key: str, task_id: str, task_name: str) -> Dict[str, Any]:
     """
@@ -229,13 +223,14 @@ def wait_for_task_completion(api_key: str, task_id: str, task_name: str) -> Dict
             return status
 
         if status["status"] == "error":
-            error_msg = status.get('message', 'No error message provided.')
+            error_msg = status.get("message", "No error message provided.")
             plog.log_error(f"{task_name} failed: {error_msg}")
             raise RuntimeError(f"CloudConvert {task_name} failed: {error_msg}")
 
         time.sleep(retry_delay)
 
     raise RuntimeError(f"{task_name} timed out after {max_retries * retry_delay} seconds.")
+
 
 def convert_file(file_name: str, output_format: str) -> None:
     """
@@ -262,7 +257,11 @@ def convert_file(file_name: str, output_format: str) -> None:
         upload_task = next((task for task in tasks if task.get("name") == IMPORT_TASK), None)
         if not upload_task:
             raise ValueError(f"Task '{IMPORT_TASK}' not found in conversion_task['tasks']")
-        handle_file_upload(file_name, upload_task["result"]["form"]["url"], upload_task["result"]["form"]["parameters"])
+        handle_file_upload(
+            file_name,
+            upload_task["result"]["form"]["url"],
+            upload_task["result"]["form"]["parameters"],
+        )
 
         convert_task = next((task for task in tasks if task.get("name") == CONVERT_TASK), None)
         if not convert_task:
@@ -290,6 +289,7 @@ def convert_file(file_name: str, output_format: str) -> None:
         plog.log_error(f"Error during file conversion: {e}")
         raise RuntimeError(f"Error during file conversion: {e}") from e
 
+
 def parse_arguments() -> Tuple[bool, str, str]:
     """
     Parse command-line arguments for the script.
@@ -298,14 +298,21 @@ def parse_arguments() -> Tuple[bool, str, str]:
         Tuple[bool, str, str]: A tuple containing the debug flag, file name, and output format.
     """
     plog.log_debug(f"Raw sys.argv: {sys.argv}")
-    parser = argparse.ArgumentParser(description='Upload and convert a file using CloudConvert.')
-    parser.add_argument('--debug', action='store_true', help='Enable debug logging.')
-    parser.add_argument('file_name', type=str, help='The name of the file to be uploaded and converted.')
-    parser.add_argument('output_format', type=str, help='The desired output format (e.g., jpg, pdf).')
+    parser = argparse.ArgumentParser(description="Upload and convert a file using CloudConvert.")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging.")
+    parser.add_argument(
+        "file_name", type=str, help="The name of the file to be uploaded and converted."
+    )
+    parser.add_argument(
+        "output_format", type=str, help="The desired output format (e.g., jpg, pdf)."
+    )
     args = parser.parse_args()
 
-    print(f"Parsed Arguments -> Debug: {args.debug}, File: {args.file_name}, Format: {args.output_format}")
+    print(
+        f"Parsed Arguments -> Debug: {args.debug}, File: {args.file_name}, Format: {args.output_format}"
+    )
     return args.debug, args.file_name, args.output_format
+
 
 def main() -> None:
     """
@@ -326,6 +333,7 @@ def main() -> None:
     except Exception as e:
         plog.log_error(f"Unexpected error: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     """

@@ -15,7 +15,9 @@ from xml.etree.ElementTree import fromstring
 
 # Add src paths to allow imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src" / "python" / "data"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src" / "python" / "modules" / "logging"))
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[3] / "src" / "python" / "modules" / "logging")
+)
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src" / "python" / "modules" / "auth"))
 
 
@@ -39,18 +41,18 @@ class TestCsvToGpxModule:
         """Test that we can create a proper CSV structure for testing."""
         with tempfile.TemporaryDirectory() as tmpdir:
             csv_file = Path(tmpdir) / "test.csv"
-            with open(csv_file, 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=['lat', 'lng', 'time'])
+            with open(csv_file, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=["lat", "lng", "time"])
                 writer.writeheader()
                 writer.writerows(self.sample_csv_data)
 
             # Verify CSV file was created and has correct structure
             assert csv_file.exists()
 
-            with open(csv_file, 'r') as f:
+            with open(csv_file, "r") as f:
                 reader = csv.DictReader(f)
                 rows = list(reader)
                 assert len(rows) == 3
-                assert 'lat' in rows[0]
-                assert 'lng' in rows[0]
-                assert 'time' in rows[0]
+                assert "lat" in rows[0]
+                assert "lng" in rows[0]
+                assert "time" in rows[0]

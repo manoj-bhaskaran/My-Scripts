@@ -111,7 +111,8 @@ try {
         Write-Host "Creating log folder: $LogFolder" -ForegroundColor Yellow
         New-Item -Path $LogFolder -ItemType Directory -Force | Out-Null
         Write-Host "Log folder created successfully." -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host "Log folder already exists: $LogFolder" -ForegroundColor Green
     }
     Write-Host ""
@@ -197,7 +198,8 @@ try {
 
     exit 0
 
-} catch {
+}
+catch {
     Write-Host ""
     Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host "Stack Trace: $($_.ScriptStackTrace)" -ForegroundColor Red

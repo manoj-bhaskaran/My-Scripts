@@ -6,17 +6,18 @@ import os
 from collections import namedtuple
 
 # Constants
-SEAT_NO_COL = 'Seat No'
-ADJACENCY_SHEET = 'Adjacency'
-TEAMS_SHEET = 'Teams'
-FIXED_SHEET = 'Fixed'
-AssignedDetails = namedtuple('AssignedDetails', ['subteam', 'technology'])
+SEAT_NO_COL = "Seat No"
+ADJACENCY_SHEET = "Adjacency"
+TEAMS_SHEET = "Teams"
+FIXED_SHEET = "Fixed"
+AssignedDetails = namedtuple("AssignedDetails", ["subteam", "technology"])
+
 
 def allocate_seats(excel_path):
     """
     Main function to allocate seats based on adjacency, team requirements, and fixed assignments.
     Generates a new Excel file with the final allocation.
-    
+
     Args:
         excel_path (str): Path to the input Excel file containing the required sheets.
     """
@@ -31,6 +32,7 @@ def allocate_seats(excel_path):
     assign_teams_to_clusters(graph, teams_df, assigned, used_seats, clusters)
     export_seat_allocation(excel_path, graph, assigned)
 
+
 def load_input_data(excel_path):
     """
     Loads the input sheets from the Excel file.
@@ -39,18 +41,19 @@ def load_input_data(excel_path):
         tuple: DataFrames for adjacency, teams, and fixed seat assignments.
     """
     required_columns = {
-        'Adjacency': [SEAT_NO_COL],
-        'Teams': ['Subteam', 'Technology', 'Count'],
-        'Fixed': [SEAT_NO_COL, 'Subteam', 'Technology']
+        "Adjacency": [SEAT_NO_COL],
+        "Teams": ["Subteam", "Technology", "Count"],
+        "Fixed": [SEAT_NO_COL, "Subteam", "Technology"],
     }
     adj_df = pd.read_excel(excel_path, sheet_name=ADJACENCY_SHEET)
     teams_df = pd.read_excel(excel_path, sheet_name=TEAMS_SHEET)
     fixed_df = pd.read_excel(excel_path, sheet_name=FIXED_SHEET, dtype=str)
-    for name, df in zip(['Adjacency', 'Teams', 'Fixed'], [adj_df, teams_df, fixed_df]):
+    for name, df in zip(["Adjacency", "Teams", "Fixed"], [adj_df, teams_df, fixed_df]):
         missing = [col for col in required_columns[name] if col not in df.columns]
         if missing:
             raise ValueError(f"❌ Missing required columns in {name} sheet: {', '.join(missing)}")
     return adj_df, teams_df, fixed_df
+
 
 def build_seat_graph(adj_df):
     """
@@ -72,10 +75,11 @@ def build_seat_graph(adj_df):
                     G.add_edge(seat, adj_seat)
     return G
 
+
 def parse_seat(value):
     """
     Safely parses a seat number to a string, ensuring it's a valid integer representation.
-    
+
     Args:
         value: Input seat value.
 
@@ -89,6 +93,7 @@ def parse_seat(value):
     except (ValueError, TypeError):
         plog.log_warning(f"⚠️ Warning: Could not parse seat value '{value}'. Skipping.")
         return None
+
 
 def assign_fixed_seats(graph, fixed_df):
     """
@@ -105,14 +110,15 @@ def assign_fixed_seats(graph, fixed_df):
     used_seats = set()
     for _, row in fixed_df.iterrows():
         seat = parse_seat(row[SEAT_NO_COL])
-        subteam = row['Subteam']
-        tech = row['Technology']
+        subteam = row["Subteam"]
+        tech = row["Technology"]
         if seat:
             assigned[seat] = AssignedDetails(subteam, tech)
             used_seats.add(seat)
             if seat not in graph:
                 graph.add_node(seat)
     return assigned, used_seats
+
 
 def get_seat_clusters(graph):
     """
@@ -125,6 +131,7 @@ def get_seat_clusters(graph):
         list: Sorted list of connected components.
     """
     return sorted(nx.connected_components(graph), key=len, reverse=True)
+
 
 def assign_teams_to_clusters(graph, teams_df, assigned, used_seats, clusters):
     """
@@ -139,9 +146,10 @@ def assign_teams_to_clusters(graph, teams_df, assigned, used_seats, clusters):
     """
     teams_sorted = teams_df.sort_values(by="Count", ascending=False)
     for _, row in teams_sorted.iterrows():
-        subteam, tech, count = row['Subteam'], row['Technology'], int(row['Count'])
+        subteam, tech, count = row["Subteam"], row["Technology"], int(row["Count"])
         if not try_assign_to_best_cluster(clusters, assigned, subteam, tech, count):
             assign_disjointed(graph, assigned, subteam, tech, count)
+
 
 def try_assign_to_best_cluster(clusters, assigned, subteam, tech, count):
     """
@@ -150,20 +158,27 @@ def try_assign_to_best_cluster(clusters, assigned, subteam, tech, count):
     Returns:
         bool: True if assignment successful, else False.
     """
-    best_cluster, best_score, best_min_seat = None, -1, float('inf')
+    best_cluster, best_score, best_min_seat = None, -1, float("inf")
     for cluster in clusters:
         free = [s for s in cluster if s not in assigned]
         if len(free) < count:
             continue
         score = compute_score(cluster, assigned, subteam, tech)
         # Tie-breaker: prefer the cluster with the lowest seat number for deterministic output
-        min_seat = min(map(int, free)) if free else float('inf')
+        min_seat = min(map(int, free)) if free else float("inf")
         if score > best_score or (score == best_score and min_seat < best_min_seat):
             best_score, best_min_seat, best_cluster = score, min_seat, cluster
     if best_cluster:
-        assign_seats(sorted((s for s in best_cluster if s not in assigned), key=int), assigned, subteam, tech, count)
+        assign_seats(
+            sorted((s for s in best_cluster if s not in assigned), key=int),
+            assigned,
+            subteam,
+            tech,
+            count,
+        )
         return True
     return False
+
 
 def compute_score(cluster, assigned, subteam, tech):
     """
@@ -176,6 +191,7 @@ def compute_score(cluster, assigned, subteam, tech):
     tech_matches = sum(1 for s in cluster if s in assigned and assigned[s][1] == tech)
     return subteam_matches * 10 + tech_matches
 
+
 def assign_seats(seats, assigned, subteam, tech, count):
     """
     Assigns a fixed number of seats.
@@ -186,6 +202,7 @@ def assign_seats(seats, assigned, subteam, tech, count):
     for seat in seats[:count]:
         assigned[seat] = AssignedDetails(subteam, tech)
 
+
 def assign_disjointed(graph, assigned, subteam, tech, count):
     """
     Fallback seat assignment for disjointed, non-adjacent seating.
@@ -195,14 +212,23 @@ def assign_disjointed(graph, assigned, subteam, tech, count):
         assign_seats(free, assigned, subteam, tech, count)
         plog.log_warning(f"⚠️ Assigned {count} disjointed seats for {subteam} ({tech})")
     else:
-        plog.log_error(f"❌ Not enough seats available for {subteam} ({tech}) — need {count}, found {len(free)}")
+        plog.log_error(
+            f"❌ Not enough seats available for {subteam} ({tech}) — need {count}, found {len(free)}"
+        )
+
 
 def export_seat_allocation(excel_path, graph, assigned):
     """
     Writes the final seat allocation to a new Excel file.
     """
-    output = [(int(seat), *assigned.get(seat, ("Unassigned", ""))) for seat in graph.nodes if seat.isdigit()]
-    df = pd.DataFrame(output, columns=[SEAT_NO_COL, "Subteam", "Technology"]).sort_values(by="Seat No")
+    output = [
+        (int(seat), *assigned.get(seat, ("Unassigned", "")))
+        for seat in graph.nodes
+        if seat.isdigit()
+    ]
+    df = pd.DataFrame(output, columns=[SEAT_NO_COL, "Subteam", "Technology"]).sort_values(
+        by="Seat No"
+    )
     out_path = os.path.splitext(excel_path)[0] + "-allocation-output.xlsx"
     try:
         if os.path.exists(out_path):
@@ -211,6 +237,7 @@ def export_seat_allocation(excel_path, graph, assigned):
         plog.log_info(f"✅ Seat allocation written to sheet 'Allocation' in {out_path}")
     except Exception as e:
         plog.log_error(f"❌ Error writing Excel file: {out_path} ({e})")
+
 
 # Entry point
 if __name__ == "__main__":

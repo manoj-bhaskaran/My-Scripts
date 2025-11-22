@@ -43,6 +43,7 @@ SIGNATURES = {
 # Pattern for WEBP files, which require more than 8 bytes to identify.
 WEBP_PATTERN = re.compile(r"^52494646.{8}57454250")
 
+
 def get_file_extension(filepath):
     """
     Determines the file extension based on the file's signature (magic number).
@@ -76,6 +77,7 @@ def get_file_extension(filepath):
         plog.log_info(f"Error reading file {filepath}: {e}")
         return None, None
 
+
 def process_file(file_path):
     """
     Processes a single file: determines if it needs an extension, renames or moves it if necessary,
@@ -89,39 +91,39 @@ def process_file(file_path):
               and dictionaries of identified extensions, existing extensions, and unknown hex signatures.
     """
     local_stats = {
-        'skipped': 0,
-        'renamed': 0,
-        'unknown': 0,
-        'identified': defaultdict(int),
-        'extensions': defaultdict(int),
-        'hex': defaultdict(int),
+        "skipped": 0,
+        "renamed": 0,
+        "unknown": 0,
+        "identified": defaultdict(int),
+        "extensions": defaultdict(int),
+        "hex": defaultdict(int),
     }
     plog.log_debug(f"Processing file: {file_path}")
 
     # Skip files that already have an extension.
     if file_path.suffix:
         plog.log_info(f"Skipping {file_path.name}, already has extension.")
-        local_stats['skipped'] += 1
-        local_stats['extensions'][file_path.suffix.lower()] += 1
+        local_stats["skipped"] += 1
+        local_stats["extensions"][file_path.suffix.lower()] += 1
         return local_stats
 
     ext, hex_sig = get_file_extension(file_path)
 
     if ext:
         # Extension identified, attempt to rename.
-        local_stats['identified'][ext] += 1
+        local_stats["identified"][ext] += 1
         if not args.dryrun:
             new_path = file_path.with_name(file_path.stem + ext)
             try:
                 file_path.rename(new_path)
                 plog.log_info(f"Renamed {file_path.name} to {new_path.name}")
-                local_stats['renamed'] += 1
+                local_stats["renamed"] += 1
             except Exception as e:
                 plog.log_info(f"Failed to rename {file_path}: {e}")
     else:
         # Unknown extension, optionally move to unknowns folder.
-        local_stats['unknown'] += 1
-        local_stats['hex'][hex_sig] += 1
+        local_stats["unknown"] += 1
+        local_stats["hex"][hex_sig] += 1
         plog.log_info(f"Unknown extension for {file_path.name}. Hex: {hex_sig}")
 
         if args.move_unknowns and not args.dryrun:
@@ -135,24 +137,35 @@ def process_file(file_path):
 
     return local_stats
 
+
 if __name__ == "__main__":
     """
     Main entry point for the script. Parses arguments, initializes logging, scans the target folder,
     processes files in parallel, and prints/logs a summary of the results.
     """
     parser = argparse.ArgumentParser(description="Recover file extensions based on file signature")
-    parser.add_argument("--folder", default="C:/Users/manoj/OneDrive/Desktop/New folder",
-                        help="Folder containing files to process (default: ./input)")
-    parser.add_argument("--log", default="C:/Users/manoj/Documents/Scripts/recover-extensions-log.txt",
-                        help="Path to the log file (default: ./recover-extensions.log)")
-    parser.add_argument("--unknowns", default="C:/Users/manoj/OneDrive/Desktop/UnidentifiedFiles",
-                        help="Folder to move unrecognized files (default: ./unknowns)")
-    parser.add_argument("--dryrun", action="store_true",
-                        help="If specified, does not rename or move files")
-    parser.add_argument("--move-unknowns", action="store_true",
-                        help="If specified, moves unrecognized files")
-    parser.add_argument("--debug", action="store_true",
-                        help="Enables debug logging")
+    parser.add_argument(
+        "--folder",
+        default="C:/Users/manoj/OneDrive/Desktop/New folder",
+        help="Folder containing files to process (default: ./input)",
+    )
+    parser.add_argument(
+        "--log",
+        default="C:/Users/manoj/Documents/Scripts/recover-extensions-log.txt",
+        help="Path to the log file (default: ./recover-extensions.log)",
+    )
+    parser.add_argument(
+        "--unknowns",
+        default="C:/Users/manoj/OneDrive/Desktop/UnidentifiedFiles",
+        help="Folder to move unrecognized files (default: ./unknowns)",
+    )
+    parser.add_argument(
+        "--dryrun", action="store_true", help="If specified, does not rename or move files"
+    )
+    parser.add_argument(
+        "--move-unknowns", action="store_true", help="If specified, moves unrecognized files"
+    )
+    parser.add_argument("--debug", action="store_true", help="Enables debug logging")
     args = parser.parse_args()
 
     plog.initialise_logger(log_file_path=args.log, level="DEBUG" if args.debug else "INFO")
@@ -163,28 +176,30 @@ if __name__ == "__main__":
 
     plog.log_debug(f"Starting scan of {len(files)} file(s) in {args.folder}")
     combined_stats = {
-        'skipped': 0,
-        'renamed': 0,
-        'unknown': 0,
-        'identified': defaultdict(int),
-        'extensions': defaultdict(int),
-        'hex': defaultdict(int),
+        "skipped": 0,
+        "renamed": 0,
+        "unknown": 0,
+        "identified": defaultdict(int),
+        "extensions": defaultdict(int),
+        "hex": defaultdict(int),
     }
 
     # Process files in parallel using ThreadPoolExecutor.
     with ThreadPoolExecutor() as executor:
         futures = {executor.submit(process_file, f): f for f in files}
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Processing files", unit="file"):
+        for future in tqdm(
+            as_completed(futures), total=len(futures), desc="Processing files", unit="file"
+        ):
             result = future.result()
             if result:
-                for k in ['skipped', 'renamed', 'unknown']:
+                for k in ["skipped", "renamed", "unknown"]:
                     combined_stats[k] += result[k]
-                for k in ['identified', 'extensions', 'hex']:
+                for k in ["identified", "extensions", "hex"]:
                     for key, val in result[k].items():
                         combined_stats[k][key] += val
 
     # Print and log a summary of the results.
-    total = combined_stats['skipped'] + combined_stats['renamed'] + combined_stats['unknown']
+    total = combined_stats["skipped"] + combined_stats["renamed"] + combined_stats["unknown"]
     summary = f"Processed {total} file(s). Skipped: {combined_stats['skipped']}, Renamed: {combined_stats['renamed']}, Unknown: {combined_stats['unknown']}"
     print(summary)
     plog.log_info(summary)

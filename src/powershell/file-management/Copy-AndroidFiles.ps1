@@ -230,18 +230,18 @@
 
 [CmdletBinding()]
 param(
-  [Parameter()] [string]$PhonePath = "/sdcard/Pictures/A_DownloaderForInstagram",
-  [Parameter()] [string]$Dest      = "C:\Users\manoj\OneDrive\Desktop\New folder",
-  [Parameter()] [ValidateSet('pull','tar')] [string]$Mode = 'tar',
-  [Parameter()] [switch]$ShowProgress,
-  [Parameter()] [switch]$PrecheckSpace,
-  [Parameter()] [int]$SpaceMarginPercent = 10,
-  [Parameter()] [switch]$Resume,
-  [Parameter()] [int]$MaxRetries = 2,
-  [Parameter()] [switch]$StreamTar,
-  [Parameter()] [switch]$Verify,
-  [Parameter()] [int]$ProgressIntervalSeconds = 5,
-  [Parameter()] [switch]$DebugMode
+    [Parameter()] [string]$PhonePath = "/sdcard/Pictures/A_DownloaderForInstagram",
+    [Parameter()] [string]$Dest = "C:\Users\manoj\OneDrive\Desktop\New folder",
+    [Parameter()] [ValidateSet('pull', 'tar')] [string]$Mode = 'tar',
+    [Parameter()] [switch]$ShowProgress,
+    [Parameter()] [switch]$PrecheckSpace,
+    [Parameter()] [int]$SpaceMarginPercent = 10,
+    [Parameter()] [switch]$Resume,
+    [Parameter()] [int]$MaxRetries = 2,
+    [Parameter()] [switch]$StreamTar,
+    [Parameter()] [switch]$Verify,
+    [Parameter()] [int]$ProgressIntervalSeconds = 5,
+    [Parameter()] [switch]$DebugMode
 )
 
 # Import logging framework
@@ -254,12 +254,12 @@ $ErrorActionPreference = 'Stop'
 
 $DebugLog = $null
 if ($DebugMode) {
-  $DebugLog = Join-Path ($Dest) ("adb_debug_{0}.log" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
-  Write-Host "Debug mode: logging to $DebugLog"
+    $DebugLog = Join-Path ($Dest) ("adb_debug_{0}.log" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
+    Write-Host "Debug mode: logging to $DebugLog"
 }
 
 function Test-Adb {
-<#
+    <#
 .SYNOPSIS
     Verifies adb.exe is available in PATH.
 .DESCRIPTION
@@ -269,12 +269,12 @@ function Test-Adb {
 .NOTES
     Install Android SDK Platform-Tools and add its folder to PATH.
 #>
-  $adb = Get-Command adb -ErrorAction SilentlyContinue
-  if (-not $adb) { throw "adb.exe not found. Install Platform-Tools and add to PATH." }
+    $adb = Get-Command adb -ErrorAction SilentlyContinue
+    if (-not $adb) { throw "adb.exe not found. Install Platform-Tools and add to PATH." }
 }
 
 function Confirm-Device {
-<#
+    <#
 .SYNOPSIS
     Confirms an authorized Android device is connected.
 .DESCRIPTION
@@ -284,14 +284,14 @@ function Confirm-Device {
 .NOTES
     Ensure the phone is unlocked and USB debugging is enabled/authorized.
 #>
-  $out = adb devices | Select-String "device`$"
-  if (-not $out) {
-    throw "No authorized device. Check cable, unlock phone, enable USB debugging, and allow this PC."
-  }
+    $out = adb devices | Select-String "device`$"
+    if (-not $out) {
+        throw "No authorized device. Check cable, unlock phone, enable USB debugging, and allow this PC."
+    }
 }
 
 function Test-HostTar {
-<#
+    <#
 .SYNOPSIS
     Verifies tar.exe is available on Windows when Mode = tar.
 .DESCRIPTION
@@ -299,16 +299,16 @@ function Test-HostTar {
 .OUTPUTS
     None. Throws on failure if Mode = tar.
 #>
-  if ($Mode -eq 'tar') {
-    $tar = Get-Command tar -ErrorAction SilentlyContinue
-    if (-not $tar) {
-      throw "Windows tar.exe not found. Use -Mode pull or install tar and add to PATH."
+    if ($Mode -eq 'tar') {
+        $tar = Get-Command tar -ErrorAction SilentlyContinue
+        if (-not $tar) {
+            throw "Windows tar.exe not found. Use -Mode pull or install tar and add to PATH."
+        }
     }
-  }
 }
 
 function Invoke-AdbSh {
-<#
+    <#
 .SYNOPSIS
     Runs a shell script on the device safely from PowerShell.
 .DESCRIPTION
@@ -324,60 +324,62 @@ function Invoke-AdbSh {
 .OUTPUTS
     [string] Raw stdout from the device (may be empty if the command produces no output).
 #>
-  param([Parameter(Mandatory=$true)][string]$Script)
+    param([Parameter(Mandatory = $true)][string]$Script)
 
-  try {
-    # Normalize EOLs and split
-    $norm  = ($Script -replace "`r`n","`n" -replace "`r","`n").Trim()
-    $lines = $norm -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+    try {
+        # Normalize EOLs and split
+        $norm = ($Script -replace "`r`n", "`n" -replace "`r", "`n").Trim()
+        $lines = $norm -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
 
-    # Build with awareness of POSIX sh control keywords
-    $out = New-Object System.Text.StringBuilder
-    $prev = $null
-    foreach ($l in $lines) {
-      $currStartsCtl = $l -match '^(elif|fi|done|esac|then|do|else)\b'
-      $prevEndsCtl   = $false
-      if ($null -ne $prev) {
-        $prevEndsCtl = $prev -match '\b(then|do|else)$'
+        # Build with awareness of POSIX sh control keywords
+        $out = New-Object System.Text.StringBuilder
+        $prev = $null
+        foreach ($l in $lines) {
+            $currStartsCtl = $l -match '^(elif|fi|done|esac|then|do|else)\b'
+            $prevEndsCtl = $false
+            if ($null -ne $prev) {
+                $prevEndsCtl = $prev -match '\b(then|do|else)$'
+            }
+
+            if ($null -ne $prev) {
+                # If current starts with a control token OR previous ended with one, keep newline
+                if ($currStartsCtl -or $prevEndsCtl) {
+                    [void]$out.Append("`n")
+                }
+                else {
+                    [void]$out.Append("; ")
+                }
+            }
+            [void]$out.Append($l)
+            $prev = $l
         }
 
-      if ($null -ne $prev) {
-        # If current starts with a control token OR previous ended with one, keep newline
-        if ($currStartsCtl -or $prevEndsCtl) {
-          [void]$out.Append("`n")
-        } else {
-          [void]$out.Append("; ")
+        $one = $out.ToString()
+
+        if ($DebugMode -and $DebugLog) {
+            Add-Content -Path $DebugLog -Value ("[{0}] adb shell << {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $one)
         }
-      }
-      [void]$out.Append($l)
-      $prev = $l
+
+        $result = adb shell $one
+
+        if ($DebugMode -and $DebugLog) {
+            $len = if ($result) { $result.Length } else { 0 }
+            $prefix = if ($result -and $result.Length -gt 1000) { $result.Substring(0, 1000) + '…' } else { $result }
+            Add-Content -Path $DebugLog -Value ("[{0}] stdout({1} chars): {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $len, $prefix)
+        }
+
+        return $result
     }
-
-    $one = $out.ToString()
-
-    if ($DebugMode -and $DebugLog) {
-      Add-Content -Path $DebugLog -Value ("[{0}] adb shell << {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $one)
+    catch {
+        if ($DebugMode -and $DebugLog) {
+            Add-Content -Path $DebugLog -Value ("[{0}] ERROR: {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $_)
+        }
+        return ""
     }
-
-    $result = adb shell $one
-
-    if ($DebugMode -and $DebugLog) {
-      $len = if ($result) { $result.Length } else { 0 }
-      $prefix = if ($result -and $result.Length -gt 1000) { $result.Substring(0,1000) + '…' } else { $result }
-      Add-Content -Path $DebugLog -Value ("[{0}] stdout({1} chars): {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $len, $prefix)
-    }
-
-    return $result
-  } catch {
-    if ($DebugMode -and $DebugLog) {
-      Add-Content -Path $DebugLog -Value ("[{0}] ERROR: {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $_)
-    }
-    return ""
-  }
 }
 
 function Test-PhoneTar {
-<#
+    <#
 .SYNOPSIS
     Verifies phone-side tar availability for TAR mode.
 .DESCRIPTION
@@ -387,9 +389,9 @@ function Test-PhoneTar {
 .OUTPUTS
     None. Throws on failure if Mode = tar.
 #>
-  if ($Mode -ne 'tar') { return }
+    if ($Mode -ne 'tar') { return }
 
-  $script = @'
+    $script = @'
 if command -v tar >/dev/null 2>&1; then
   tar --help >/dev/null 2>&1 || true
   echo 0
@@ -402,17 +404,17 @@ else
 fi
 '@
 
-  $rc = (Invoke-AdbSh $script).Trim()
-  if ([string]::IsNullOrEmpty($rc)) {
-    throw "Phone-side tar check failed (no response). Reconnect the device and try again."
-  }
-  if ($rc -ne '0') {
-    throw "Phone-side tar not found. Switch to -Mode pull."
-  }
+    $rc = (Invoke-AdbSh $script).Trim()
+    if ([string]::IsNullOrEmpty($rc)) {
+        throw "Phone-side tar check failed (no response). Reconnect the device and try again."
+    }
+    if ($rc -ne '0') {
+        throw "Phone-side tar not found. Switch to -Mode pull."
+    }
 }
 
 function Get-RemoteSize {
-<#
+    <#
 .SYNOPSIS
     Returns total bytes for a remote (phone) path (best-effort, awk-free).
 .DESCRIPTION
@@ -428,11 +430,11 @@ function Get-RemoteSize {
 .NOTES
     This may take time on very large trees when falling back to find+stat.
 #>
-  param([string]$RemoteParent, [string]$RemoteLeaf)
+    param([string]$RemoteParent, [string]$RemoteLeaf)
 
-  $remotePath = "$RemoteParent/$RemoteLeaf"
-  # Single-quoted here-string preserved; we inject the path by placeholder replacement to avoid escaping hell.
-  $script = @'
+    $remotePath = "$RemoteParent/$RemoteLeaf"
+    # Single-quoted here-string preserved; we inject the path by placeholder replacement to avoid escaping hell.
+    $script = @'
 path="__REMOTE_PATH__"
 
 # Prefer du; parse first field with "set --" to avoid awk dependency
@@ -474,21 +476,22 @@ fi
 
 echo 0
 '@
-  $cmd = $script.Replace('__REMOTE_PATH__', $remotePath)
+    $cmd = $script.Replace('__REMOTE_PATH__', $remotePath)
 
-  try {
-    $bytesText = Invoke-AdbSh $cmd
-    if ([string]::IsNullOrWhiteSpace($bytesText)) { return 0 }
-    $bytes = 0L
-    [void][int64]::TryParse($bytesText.Trim(), [ref]$bytes)
-    return $bytes
-  } catch {
-    return 0
-  }
+    try {
+        $bytesText = Invoke-AdbSh $cmd
+        if ([string]::IsNullOrWhiteSpace($bytesText)) { return 0 }
+        $bytes = 0L
+        [void][int64]::TryParse($bytesText.Trim(), [ref]$bytes)
+        return $bytes
+    }
+    catch {
+        return 0
+    }
 }
 
 function Get-LocalDirSize {
-<#
+    <#
 .SYNOPSIS
     Returns total bytes for a local directory (best-effort).
 .DESCRIPTION
@@ -498,16 +501,17 @@ function Get-LocalDirSize {
 .OUTPUTS
     [Int64] total size in bytes (0 if error/none).
 #>
-  param([string]$Path)
-  try {
-    $sum = (Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
-            Measure-Object -Property Length -Sum).Sum
-    [int64]($sum ? $sum : 0)
-  } catch { 0 }
+    param([string]$Path)
+    try {
+        $sum = (Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
+                Measure-Object -Property Length -Sum).Sum
+        [int64]($sum ? $sum : 0)
+    }
+    catch { 0 }
 }
 
 function Get-DriveFreeBytes {
-<#
+    <#
 .SYNOPSIS
     Returns free bytes on the drive containing the given local path.
 .DESCRIPTION
@@ -517,14 +521,14 @@ function Get-DriveFreeBytes {
 .OUTPUTS
     [Int64] free bytes.
 #>
-  param([string]$Path)
-  $resolved = (Resolve-Path -LiteralPath $Path).Path
-  $drive = (Get-Item $resolved).PSDrive
-  [int64]$drive.Free
+    param([string]$Path)
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $drive = (Get-Item $resolved).PSDrive
+    [int64]$drive.Free
 }
 
 function Split-RemotePath {
-<#
+    <#
 .SYNOPSIS
     Splits a POSIX path into parent and leaf (for tar -C usage).
 .DESCRIPTION
@@ -534,15 +538,15 @@ function Split-RemotePath {
 .OUTPUTS
     [object[]] array: @($Parent, $Leaf)
 #>
-  param([string]$PosixPath)
-  $parent = ([System.IO.Path]::GetDirectoryName($PosixPath.Replace('/','\'))).Replace('\','/')
-  if ([string]::IsNullOrEmpty($parent)) { $parent = "/" }
-  $leaf = ([System.IO.Path]::GetFileName($PosixPath))
-  @($parent, $leaf)
+    param([string]$PosixPath)
+    $parent = ([System.IO.Path]::GetDirectoryName($PosixPath.Replace('/', '\'))).Replace('\', '/')
+    if ([string]::IsNullOrEmpty($parent)) { $parent = "/" }
+    $leaf = ([System.IO.Path]::GetFileName($PosixPath))
+    @($parent, $leaf)
 }
 
 function Get-LocalFileCount {
-<#
+    <#
 .SYNOPSIS
     Returns the number of files under a local path (recursive).
 .DESCRIPTION
@@ -552,15 +556,16 @@ function Get-LocalFileCount {
 .OUTPUTS
     [Int64] count (0 if none/error).
 #>
-  param([string]$Path)
-  try {
-    [int64]((Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
-              Measure-Object).Count)
-  } catch { 0 }
+    param([string]$Path)
+    try {
+        [int64]((Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
+                    Measure-Object).Count)
+    }
+    catch { 0 }
 }
 
 function Get-RemoteFileCount {
-<#
+    <#
 .SYNOPSIS
     Best-effort count of remote (phone) files for a given path.
 .DESCRIPTION
@@ -573,10 +578,10 @@ function Get-RemoteFileCount {
 .OUTPUTS
     [Int64] count (0 if unknown).
 #>
-  param([string]$RemoteParent, [string]$RemoteLeaf)
+    param([string]$RemoteParent, [string]$RemoteLeaf)
 
-  $remotePath = "$RemoteParent/$RemoteLeaf"
-  $script = @'
+    $remotePath = "$RemoteParent/$RemoteLeaf"
+    $script = @'
 path="__REMOTE_PATH__"
 if command -v find >/dev/null 2>&1; then
   find "$path" -type f 2>/dev/null | wc -l
@@ -588,17 +593,18 @@ else
   echo 0
 fi
 '@
-  $cmd = $script.Replace('__REMOTE_PATH__', $remotePath)
+    $cmd = $script.Replace('__REMOTE_PATH__', $remotePath)
 
-  try {
-    $out = Invoke-AdbSh $cmd
-    if ([string]::IsNullOrWhiteSpace($out)) { return 0 }
-    $n = 0L
-    [void][int64]::TryParse($out.Trim(), [ref]$n)
-    return $n
-  } catch {
-    return 0
-  }
+    try {
+        $out = Invoke-AdbSh $cmd
+        if ([string]::IsNullOrWhiteSpace($out)) { return 0 }
+        $n = 0L
+        [void][int64]::TryParse($out.Trim(), [ref]$n)
+        return $n
+    }
+    catch {
+        return 0
+    }
 }
 
 Write-LogDebug "Destination: $Dest"
@@ -618,304 +624,308 @@ $totalBytes = Get-RemoteSize -RemoteParent $parent -RemoteLeaf $leaf
 # For non-resume pull, adb creates a subfolder ($leaf) under $Dest → baseline that path.
 # For resume pull and tar modes, we write directly under $Dest → baseline $Dest.
 $localRootBaseline = if ($Mode -eq 'pull' -and -not $Resume) { Join-Path $Dest $leaf } else { $Dest }
-$LocalFilesBefore  = Get-LocalFileCount -Path $localRootBaseline
-$LocalBytesBefore  = Get-LocalDirSize  -Path $localRootBaseline
+$LocalFilesBefore = Get-LocalFileCount -Path $localRootBaseline
+$LocalBytesBefore = Get-LocalDirSize  -Path $localRootBaseline
 
 # Optional disk space precheck
 if ($PrecheckSpace.IsPresent -and $totalBytes -gt 0) {
-  $freeBytes = Get-DriveFreeBytes -Path $Dest
-  $needed = if ($Mode -eq 'tar' -and -not $StreamTar) { $totalBytes * 2 } else { $totalBytes }
-  $needed = [int64]([math]::Ceiling($needed * (1 + ($SpaceMarginPercent / 100.0))))
-  if ($freeBytes -lt $needed) {
-    throw ("Insufficient disk space. Need ~{0} MB (incl. margin), have ~{1} MB. " +
-           "Tip: enable -StreamTar to avoid temp .tar, or free up space.")
-           -f ([math]::Round($needed/1MB)), ([math]::Round($freeBytes/1MB))
-  }
+    $freeBytes = Get-DriveFreeBytes -Path $Dest
+    $needed = if ($Mode -eq 'tar' -and -not $StreamTar) { $totalBytes * 2 } else { $totalBytes }
+    $needed = [int64]([math]::Ceiling($needed * (1 + ($SpaceMarginPercent / 100.0))))
+    if ($freeBytes -lt $needed) {
+        throw ("Insufficient disk space. Need ~{0} MB (incl. margin), have ~{1} MB. " +
+            "Tip: enable -StreamTar to avoid temp .tar, or free up space.")
+        -f ([math]::Round($needed / 1MB)), ([math]::Round($freeBytes / 1MB))
+    }
 }
 
 if ($Mode -eq 'pull') {
 
-  if ($Resume) {
-    Write-LogInfo "Resumable pull (skip existing): `"$PhonePath`" → `"$Dest`""
-    # Build remote file list (size \t path)
-    $listCmd = "find ""$PhonePath"" -type f -print0 2>/dev/null | xargs -0 stat -c ""%s`t%n"" 2>/dev/null"
-    $raw = adb shell $listCmd
-    $lines = @()
-    if ($raw) { $lines = $raw -split "\r?\n" }
+    if ($Resume) {
+        Write-LogInfo "Resumable pull (skip existing): `"$PhonePath`" → `"$Dest`""
+        # Build remote file list (size \t path)
+        $listCmd = "find ""$PhonePath"" -type f -print0 2>/dev/null | xargs -0 stat -c ""%s`t%n"" 2>/dev/null"
+        $raw = adb shell $listCmd
+        $lines = @()
+        if ($raw) { $lines = $raw -split "\r?\n" }
 
-    $count = 0; $copied = 0
-    foreach ($line in $lines) {
-      if (-not $line) { continue }
-      $parts = $line -split "`t", 2
-      if ($parts.Count -lt 2) { continue }
-      $sz  = [int64]$parts[0]
-      $src = $parts[1]
+        $count = 0; $copied = 0
+        foreach ($line in $lines) {
+            if (-not $line) { continue }
+            $parts = $line -split "`t", 2
+            if ($parts.Count -lt 2) { continue }
+            $sz = [int64]$parts[0]
+            $src = $parts[1]
 
-      $rel = $src.Substring($PhonePath.Length).TrimStart('/')
-      $dst = Join-Path $Dest ($rel -replace '/', '\')
-      $dstDir = Split-Path $dst -Parent
-      New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
+            $rel = $src.Substring($PhonePath.Length).TrimStart('/')
+            $dst = Join-Path $Dest ($rel -replace '/', '\')
+            $dstDir = Split-Path $dst -Parent
+            New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
 
-      $count++
-      $skip = (Test-Path -LiteralPath $dst) -and ((Get-Item -LiteralPath $dst).Length -eq $sz)
-      if ($skip) { continue }
+            $count++
+            $skip = (Test-Path -LiteralPath $dst) -and ((Get-Item -LiteralPath $dst).Length -eq $sz)
+            if ($skip) { continue }
 
-      if ($ShowProgress -and $totalBytes -gt 0) {
-        $doneBytes = Get-LocalDirSize -Path $Dest
-        $pct = [int](($doneBytes * 100.0) / $totalBytes)
-        Write-Progress -Activity "Resumable adb pull" -Status "File $count (≈$pct%)" -PercentComplete $pct
-      }
-
-      adb pull "$src" "$dstDir" | Out-Null
-      $copied++
-    }
-    Write-Progress -Activity "Resumable adb pull" -Completed
-    Write-LogInfo "Resume pull complete. Files processed: $count, newly copied: $copied."
-
-    if ($Verify) {
-        $localRootAfter = $Dest
-        $localCount     = Get-LocalFileCount -Path $localRootAfter
-        $localBytes     = Get-LocalDirSize  -Path $localRootAfter
-        $remoteCount    = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
-        $remoteSizeMB   = if ($totalBytes -gt 0) { [math]::Round($totalBytes/1MB) } else { $null }
-
-        $beforeFiles = $LocalFilesBefore
-        $afterFiles  = $localCount
-        $deltaFiles  = $afterFiles - $beforeFiles
-
-        $beforeMB = [math]::Round($LocalBytesBefore/1MB)
-        $afterMB  = [math]::Round($localBytes/1MB)
-        $deltaMB  = $afterMB - $beforeMB
-
-        $rows = @(
-            [pscustomobject]@{
-            Scope  = 'Local'
-            Files  = ("{0} → {1} (+{2})" -f $beforeFiles, $afterFiles, $deltaFiles)
-            SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
+            if ($ShowProgress -and $totalBytes -gt 0) {
+                $doneBytes = Get-LocalDirSize -Path $Dest
+                $pct = [int](($doneBytes * 100.0) / $totalBytes)
+                Write-Progress -Activity "Resumable adb pull" -Status "File $count (≈$pct%)" -PercentComplete $pct
             }
-            [pscustomobject]@{
-            Scope  = 'Remote'
-            Files  = $remoteCount
-            SizeMB = $remoteSizeMB
-            }
-        )
-        $rows | Format-Table -AutoSize | Out-String | Write-Host
 
-        if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
-            Write-LogWarning "Local file count < remote file count. Some files may be missing."
+            adb pull "$src" "$dstDir" | Out-Null
+            $copied++
         }
-    }
-  }
-  else {
-    Write-LogInfo "ADB pull `"$PhonePath`" → `"$Dest`""
-    if ($ShowProgress) {
-      $destBefore = Get-LocalDirSize -Path $Dest
-      $sp = @{
-        FilePath     = 'adb'
-        ArgumentList = @('pull',"$PhonePath","$Dest")
-        NoNewWindow  = $true
-        PassThru     = $true
-        }
-        if ($DebugMode -and $DebugLog) {
-        $sp.RedirectStandardError = $DebugLog
-        $sp.RedirectStandardOutput = $DebugLog
-        }
-      $proc = Start-Process @sp
-
-      while (-not $proc.HasExited) {
-        Start-Sleep -Seconds $ProgressIntervalSeconds
-        $cur = Get-LocalDirSize -Path $Dest
-        $written = [math]::Max(0, $cur - $destBefore)
-        if ($totalBytes -gt 0) {
-          $pct = [int](($written * 100.0) / $totalBytes)
-          Write-Progress -Activity "adb pull" -Status "$pct% ($([math]::Round($written/1MB)) / $([math]::Round($totalBytes/1MB)) MB)" -PercentComplete $pct
-        } else {
-          Write-Progress -Activity "adb pull" -Status "$([math]::Round($written/1MB)) MB copied (approx)" -PercentComplete 0
-        }
-      }
-      Write-Progress -Activity "adb pull" -Completed
-      if ($proc.ExitCode -ne 0) { throw "adb pull failed with exit code $($proc.ExitCode)." }
-    } else {
-      adb pull "$PhonePath" "$Dest"
-    }
-    Write-LogInfo "Pull complete."
-
-    if ($Verify) {
-        # adb pull usually creates a subfolder under Dest named $leaf
-        $verifyRoot     = Join-Path $Dest $leaf
-        $localRootAfter = (Test-Path $verifyRoot) ? $verifyRoot : $Dest
-
-        $localCount   = Get-LocalFileCount -Path $localRootAfter
-        $localBytes   = Get-LocalDirSize  -Path $localRootAfter
-        $remoteCount  = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
-        $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes/1MB) } else { $null }
-
-        $beforeFiles = $LocalFilesBefore
-        $afterFiles  = $localCount
-        $deltaFiles  = $afterFiles - $beforeFiles
-
-        $beforeMB = [math]::Round($LocalBytesBefore/1MB)
-        $afterMB  = [math]::Round($localBytes/1MB)
-        $deltaMB  = $afterMB - $beforeMB
-
-        $rows = @(
-            [pscustomobject]@{
-            Scope  = 'Local'
-            Files  = ("{0} → {1} (+{2})" -f $beforeFiles, $afterFiles, $deltaFiles)
-            SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
-            }
-            [pscustomobject]@{
-            Scope  = 'Remote'
-            Files  = $remoteCount
-            SizeMB = $remoteSizeMB
-            }
-        )
-        $rows | Format-Table -AutoSize | Out-String | Write-Host
-
-        if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
-            Write-LogWarning "Local file count < remote file count. Some files may be missing."
-        }
-    }
-  }
-}
-else {
-  # TAR mode
-  if ($StreamTar) {
-    Write-LogInfo "Streaming TAR directly to extractor (no temp .tar): `"$PhonePath`" → `"$Dest`""
-    if ($ShowProgress -and $totalBytes -gt 0) {
-      Write-LogInfo ("Estimated size: {0} MB" -f [math]::Round($totalBytes/1MB))
-    }
-    # Use cmd.exe pipeline for robust stdin handling to tar.exe across shells
-    $cmd = "adb exec-out tar -C '$parent' -cf - '$leaf' | tar -xf - -C '$Dest'"
-    cmd /c $cmd | Out-Host
-    Write-LogInfo "Streaming tar extraction finished. Verify contents."
-
-    if ($Verify) {
-        $localRootAfter = $Dest
-        $localCount     = Get-LocalFileCount -Path $localRootAfter
-        $localBytes     = Get-LocalDirSize  -Path $localRootAfter
-        $remoteCount    = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
-        $remoteSizeMB   = if ($totalBytes -gt 0) { [math]::Round($totalBytes/1MB) } else { $null }
-
-        $beforeFiles = $LocalFilesBefore
-        $afterFiles  = $localCount
-        $deltaFiles  = $afterFiles - $beforeFiles
-
-        $beforeMB = [math]::Round($LocalBytesBefore/1MB)
-        $afterMB  = [math]::Round($localBytes/1MB)
-        $deltaMB  = $afterMB - $beforeMB
-
-        $rows = @(
-            [pscustomobject]@{
-            Scope  = 'Local'
-            Files  = ("{0} → {1} (+{2})" -f $beforeFiles, $afterFiles, $deltaFiles)
-            SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
-            }
-            [pscustomobject]@{
-            Scope  = 'Remote'
-            Files  = $remoteCount
-            SizeMB = $remoteSizeMB
-            }
-        )
-        $rows | Format-Table -AutoSize | Out-String | Write-Host
-
-        if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
-            Write-LogWarning "Extracted count < remote count. Some files may be missing."
-        }
-    }
-  }
-  else {
-    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-    $tarFile   = Join-Path $Dest ("android_{0}.tar" -f $timestamp)
-
-    $attempt = 0
-    while ($true) {
-      try {
-        $attempt++
-        Write-LogInfo "Attempt $attempt of $MaxRetries — streaming TAR from `"$PhonePath`" → `"$tarFile`""
-        $sp = @{
-            FilePath               = 'adb'
-            ArgumentList           = @('exec-out','tar','-C',"$parent",'-cf','-',$leaf)
-            RedirectStandardOutput = $tarFile
-            NoNewWindow            = $true
-            PassThru               = $true
-            }
-            if ($DebugMode -and $DebugLog) {
-            $sp.RedirectStandardError = $DebugLog
-            }
-        $proc = Start-Process @sp
-
-        if ($ShowProgress) {
-          while (-not $proc.HasExited) {
-            Start-Sleep -Seconds 1
-            $cur = (Test-Path $tarFile) ? ((Get-Item $tarFile).Length) : 0
-            if ($totalBytes -gt 0) {
-              $pct = [int](($cur * 100.0) / $totalBytes)
-              Write-Progress -Activity "Streaming TAR" -Status "$pct% ($([math]::Round($cur/1MB)) / $([math]::Round($totalBytes/1MB)) MB)" -PercentComplete $pct
-            } else {
-              Write-Progress -Activity "Streaming TAR" -Status "$([math]::Round($cur/1MB)) MB written" -PercentComplete 0
-            }
-          }
-          Write-Progress -Activity "Streaming TAR" -Completed
-        } else {
-          $proc.WaitForExit()
-        }
-
-        if ($proc.ExitCode -ne 0) { throw "adb tar stream failed with exit code $($proc.ExitCode)." }
-
-        $finalSize = (Get-Item $tarFile).Length
-        Write-LogInfo ("TAR complete. Size: {0:N0} bytes ({1} MB)" -f $finalSize, [math]::Round($finalSize/1MB))
-
-        Write-LogInfo "Extracting `"$tarFile`" → `"$Dest`""
-        tar -xf $tarFile -C $Dest
+        Write-Progress -Activity "Resumable adb pull" -Completed
+        Write-LogInfo "Resume pull complete. Files processed: $count, newly copied: $copied."
 
         if ($Verify) {
             $localRootAfter = $Dest
-            $localCount     = Get-LocalFileCount -Path $localRootAfter
-            $localBytes     = Get-LocalDirSize  -Path $localRootAfter
-            $remoteCount    = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
-            $remoteSizeMB   = if ($totalBytes -gt 0) { [math]::Round($totalBytes/1MB) } else { $null }
+            $localCount = Get-LocalFileCount -Path $localRootAfter
+            $localBytes = Get-LocalDirSize  -Path $localRootAfter
+            $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
+            $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes / 1MB) } else { $null }
 
             $beforeFiles = $LocalFilesBefore
-            $afterFiles  = $localCount
-            $deltaFiles  = $afterFiles - $beforeFiles
+            $afterFiles = $localCount
+            $deltaFiles = $afterFiles - $beforeFiles
 
-            $beforeMB = [math]::Round($LocalBytesBefore/1MB)
-            $afterMB  = [math]::Round($localBytes/1MB)
-            $deltaMB  = $afterMB - $beforeMB
+            $beforeMB = [math]::Round($LocalBytesBefore / 1MB)
+            $afterMB = [math]::Round($localBytes / 1MB)
+            $deltaMB = $afterMB - $beforeMB
 
             $rows = @(
                 [pscustomobject]@{
-                Scope  = 'Local'
-                Files  = ("{0} → {1} (+{2})" -f $beforeFiles, $afterFiles, $deltaFiles)
-                SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
+                    Scope  = 'Local'
+                    Files  = ("{0} → {1} (+{2})" -f $beforeFiles, $afterFiles, $deltaFiles)
+                    SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
                 }
                 [pscustomobject]@{
-                Scope  = 'Remote'
-                Files  = $remoteCount
-                SizeMB = $remoteSizeMB
+                    Scope  = 'Remote'
+                    Files  = $remoteCount
+                    SizeMB = $remoteSizeMB
                 }
             )
             $rows | Format-Table -AutoSize | Out-String | Write-Host
 
             if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
-                Write-Warning "Extracted count < remote count. Some files may be missing."
+                Write-LogWarning "Local file count < remote file count. Some files may be missing."
             }
         }
-
-        # Cleanup
-        Remove-Item $tarFile -Force
-        Write-LogInfo "Done."
-        break
-      }
-      catch {
-        $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-        Write-LogWarning ("{0}: {1}" -f $ts, $_)
-        if (Test-Path $tarFile) { Remove-Item $tarFile -Force -ErrorAction SilentlyContinue }
-        if ($attempt -ge $MaxRetries) { throw "Tar mode failed after $MaxRetries attempts." }
-        Start-Sleep 2
-        Write-LogInfo ("{0}: Retrying..." -f $ts)
-      }
     }
-  }
+    else {
+        Write-LogInfo "ADB pull `"$PhonePath`" → `"$Dest`""
+        if ($ShowProgress) {
+            $destBefore = Get-LocalDirSize -Path $Dest
+            $sp = @{
+                FilePath     = 'adb'
+                ArgumentList = @('pull', "$PhonePath", "$Dest")
+                NoNewWindow  = $true
+                PassThru     = $true
+            }
+            if ($DebugMode -and $DebugLog) {
+                $sp.RedirectStandardError = $DebugLog
+                $sp.RedirectStandardOutput = $DebugLog
+            }
+            $proc = Start-Process @sp
+
+            while (-not $proc.HasExited) {
+                Start-Sleep -Seconds $ProgressIntervalSeconds
+                $cur = Get-LocalDirSize -Path $Dest
+                $written = [math]::Max(0, $cur - $destBefore)
+                if ($totalBytes -gt 0) {
+                    $pct = [int](($written * 100.0) / $totalBytes)
+                    Write-Progress -Activity "adb pull" -Status "$pct% ($([math]::Round($written/1MB)) / $([math]::Round($totalBytes/1MB)) MB)" -PercentComplete $pct
+                }
+                else {
+                    Write-Progress -Activity "adb pull" -Status "$([math]::Round($written/1MB)) MB copied (approx)" -PercentComplete 0
+                }
+            }
+            Write-Progress -Activity "adb pull" -Completed
+            if ($proc.ExitCode -ne 0) { throw "adb pull failed with exit code $($proc.ExitCode)." }
+        }
+        else {
+            adb pull "$PhonePath" "$Dest"
+        }
+        Write-LogInfo "Pull complete."
+
+        if ($Verify) {
+            # adb pull usually creates a subfolder under Dest named $leaf
+            $verifyRoot = Join-Path $Dest $leaf
+            $localRootAfter = (Test-Path $verifyRoot) ? $verifyRoot : $Dest
+
+            $localCount = Get-LocalFileCount -Path $localRootAfter
+            $localBytes = Get-LocalDirSize  -Path $localRootAfter
+            $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
+            $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes / 1MB) } else { $null }
+
+            $beforeFiles = $LocalFilesBefore
+            $afterFiles = $localCount
+            $deltaFiles = $afterFiles - $beforeFiles
+
+            $beforeMB = [math]::Round($LocalBytesBefore / 1MB)
+            $afterMB = [math]::Round($localBytes / 1MB)
+            $deltaMB = $afterMB - $beforeMB
+
+            $rows = @(
+                [pscustomobject]@{
+                    Scope  = 'Local'
+                    Files  = ("{0} → {1} (+{2})" -f $beforeFiles, $afterFiles, $deltaFiles)
+                    SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
+                }
+                [pscustomobject]@{
+                    Scope  = 'Remote'
+                    Files  = $remoteCount
+                    SizeMB = $remoteSizeMB
+                }
+            )
+            $rows | Format-Table -AutoSize | Out-String | Write-Host
+
+            if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
+                Write-LogWarning "Local file count < remote file count. Some files may be missing."
+            }
+        }
+    }
+}
+else {
+    # TAR mode
+    if ($StreamTar) {
+        Write-LogInfo "Streaming TAR directly to extractor (no temp .tar): `"$PhonePath`" → `"$Dest`""
+        if ($ShowProgress -and $totalBytes -gt 0) {
+            Write-LogInfo ("Estimated size: {0} MB" -f [math]::Round($totalBytes / 1MB))
+        }
+        # Use cmd.exe pipeline for robust stdin handling to tar.exe across shells
+        $cmd = "adb exec-out tar -C '$parent' -cf - '$leaf' | tar -xf - -C '$Dest'"
+        cmd /c $cmd | Out-Host
+        Write-LogInfo "Streaming tar extraction finished. Verify contents."
+
+        if ($Verify) {
+            $localRootAfter = $Dest
+            $localCount = Get-LocalFileCount -Path $localRootAfter
+            $localBytes = Get-LocalDirSize  -Path $localRootAfter
+            $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
+            $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes / 1MB) } else { $null }
+
+            $beforeFiles = $LocalFilesBefore
+            $afterFiles = $localCount
+            $deltaFiles = $afterFiles - $beforeFiles
+
+            $beforeMB = [math]::Round($LocalBytesBefore / 1MB)
+            $afterMB = [math]::Round($localBytes / 1MB)
+            $deltaMB = $afterMB - $beforeMB
+
+            $rows = @(
+                [pscustomobject]@{
+                    Scope  = 'Local'
+                    Files  = ("{0} → {1} (+{2})" -f $beforeFiles, $afterFiles, $deltaFiles)
+                    SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
+                }
+                [pscustomobject]@{
+                    Scope  = 'Remote'
+                    Files  = $remoteCount
+                    SizeMB = $remoteSizeMB
+                }
+            )
+            $rows | Format-Table -AutoSize | Out-String | Write-Host
+
+            if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
+                Write-LogWarning "Extracted count < remote count. Some files may be missing."
+            }
+        }
+    }
+    else {
+        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+        $tarFile = Join-Path $Dest ("android_{0}.tar" -f $timestamp)
+
+        $attempt = 0
+        while ($true) {
+            try {
+                $attempt++
+                Write-LogInfo "Attempt $attempt of $MaxRetries — streaming TAR from `"$PhonePath`" → `"$tarFile`""
+                $sp = @{
+                    FilePath               = 'adb'
+                    ArgumentList           = @('exec-out', 'tar', '-C', "$parent", '-cf', '-', $leaf)
+                    RedirectStandardOutput = $tarFile
+                    NoNewWindow            = $true
+                    PassThru               = $true
+                }
+                if ($DebugMode -and $DebugLog) {
+                    $sp.RedirectStandardError = $DebugLog
+                }
+                $proc = Start-Process @sp
+
+                if ($ShowProgress) {
+                    while (-not $proc.HasExited) {
+                        Start-Sleep -Seconds 1
+                        $cur = (Test-Path $tarFile) ? ((Get-Item $tarFile).Length) : 0
+                        if ($totalBytes -gt 0) {
+                            $pct = [int](($cur * 100.0) / $totalBytes)
+                            Write-Progress -Activity "Streaming TAR" -Status "$pct% ($([math]::Round($cur/1MB)) / $([math]::Round($totalBytes/1MB)) MB)" -PercentComplete $pct
+                        }
+                        else {
+                            Write-Progress -Activity "Streaming TAR" -Status "$([math]::Round($cur/1MB)) MB written" -PercentComplete 0
+                        }
+                    }
+                    Write-Progress -Activity "Streaming TAR" -Completed
+                }
+                else {
+                    $proc.WaitForExit()
+                }
+
+                if ($proc.ExitCode -ne 0) { throw "adb tar stream failed with exit code $($proc.ExitCode)." }
+
+                $finalSize = (Get-Item $tarFile).Length
+                Write-LogInfo ("TAR complete. Size: {0:N0} bytes ({1} MB)" -f $finalSize, [math]::Round($finalSize / 1MB))
+
+                Write-LogInfo "Extracting `"$tarFile`" → `"$Dest`""
+                tar -xf $tarFile -C $Dest
+
+                if ($Verify) {
+                    $localRootAfter = $Dest
+                    $localCount = Get-LocalFileCount -Path $localRootAfter
+                    $localBytes = Get-LocalDirSize  -Path $localRootAfter
+                    $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
+                    $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes / 1MB) } else { $null }
+
+                    $beforeFiles = $LocalFilesBefore
+                    $afterFiles = $localCount
+                    $deltaFiles = $afterFiles - $beforeFiles
+
+                    $beforeMB = [math]::Round($LocalBytesBefore / 1MB)
+                    $afterMB = [math]::Round($localBytes / 1MB)
+                    $deltaMB = $afterMB - $beforeMB
+
+                    $rows = @(
+                        [pscustomobject]@{
+                            Scope  = 'Local'
+                            Files  = ("{0} → {1} (+{2})" -f $beforeFiles, $afterFiles, $deltaFiles)
+                            SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
+                        }
+                        [pscustomobject]@{
+                            Scope  = 'Remote'
+                            Files  = $remoteCount
+                            SizeMB = $remoteSizeMB
+                        }
+                    )
+                    $rows | Format-Table -AutoSize | Out-String | Write-Host
+
+                    if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
+                        Write-Warning "Extracted count < remote count. Some files may be missing."
+                    }
+                }
+
+                # Cleanup
+                Remove-Item $tarFile -Force
+                Write-LogInfo "Done."
+                break
+            }
+            catch {
+                $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+                Write-LogWarning ("{0}: {1}" -f $ts, $_)
+                if (Test-Path $tarFile) { Remove-Item $tarFile -Force -ErrorAction SilentlyContinue }
+                if ($attempt -ge $MaxRetries) { throw "Tar mode failed after $MaxRetries attempts." }
+                Start-Sleep 2
+                Write-LogInfo ("{0}: Retrying..." -f $ts)
+            }
+        }
+    }
 }

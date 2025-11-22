@@ -179,15 +179,15 @@ if ($ExcludeExtensions) { $ExcludeExtensions = $ExcludeExtensions | ForEach-Obje
 
 #region --- Run Header ---
 
-$engine     = if ($script:IsLegacyPS) { 'Windows PowerShell' } else { 'PowerShell' }
-$engineVer  = $PSVersionTable.PSVersion.ToString()
+$engine = if ($script:IsLegacyPS) { 'Windows PowerShell' } else { 'PowerShell' }
+$engineVer = $PSVersionTable.PSVersion.ToString()
 $scriptName = $MyInvocation.MyCommand.Name
 Write-LogInfo "===== $scriptName started | v$Script:Version | $engine $engineVer | Folder='$FolderPath' | Days=$Days | Recurse=$Recurse | DeleteEmptyFolders=$DeleteEmptyFolders ====="
 
 #endregion --- Run Header ---
 
 try {
-    $now    = Get-Date
+    $now = Get-Date
     $cutoff = $now.AddDays(-$Days)
 
     # Build Get-ChildItem parameters
@@ -212,12 +212,12 @@ try {
         $candidates = $candidates | Where-Object { $ExcludeExtensions -notcontains $_.Extension.ToLowerInvariant() }
     }
 
-    $total   = ($candidates | Measure-Object).Count
+    $total = ($candidates | Measure-Object).Count
     $deleted = 0
-    $failed  = 0
+    $failed = 0
 
     $removedDirs = 0
-    $failedDirs  = 0
+    $failedDirs = 0
 
     $inWhatIf = $WhatIfPreference -eq $true
 
@@ -225,7 +225,8 @@ try {
 
     if ($total -eq 0) {
         Write-LogInfo "No files to delete."
-    } else {
+    }
+    else {
         foreach ($file in $candidates) {
             $display = $file.FullName
             $msg = "Deleting: {0} | Last Modified: {1}" -f $display, $file.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
@@ -245,7 +246,8 @@ try {
                     if ($file.Attributes -band [IO.FileAttributes]::ReadOnly) {
                         try {
                             Set-ItemProperty -LiteralPath $literalForOps -Name Attributes -Value ([IO.FileAttributes]::Normal) -ErrorAction SilentlyContinue
-                        } catch { }
+                        }
+                        catch { }
                     }
 
                     # Perform deletion with hard error on failure
@@ -255,7 +257,8 @@ try {
                     if (Test-Path -LiteralPath $literalForOps) {
                         Write-LogError ("FAILED (still exists after delete): {0}" -f $display)
                         $failed++
-                    } else {
+                    }
+                    else {
                         Write-LogInfo ("Deleted OK: {0}" -f $display)
                         $deleted++
                     }
@@ -272,11 +275,11 @@ try {
     if ($Recurse -and $DeleteEmptyFolders) {
         Write-LogInfo "Scanning for empty folders to remove..."
         $dirs = Get-ChildItem -LiteralPath $FolderPath -Directory -Recurse -Force -ErrorAction SilentlyContinue |
-                Sort-Object FullName -Descending
+            Sort-Object FullName -Descending
 
         foreach ($dir in $dirs) {
             $dirDisplay = $dir.FullName
-            $dirPath    = Get-ExtendedLiteralPath -Path $dir.FullName
+            $dirPath = Get-ExtendedLiteralPath -Path $dir.FullName
 
             if ($inWhatIf) {
                 Write-LogDebug ("WhatIf: Would remove empty folder: {0}" -f $dirDisplay)
@@ -311,20 +314,20 @@ try {
 
     # Final summary + unified PassThru object and exit code
     Write-LogInfo ("Summary: Candidates={0}, Deleted={1}, Failed={2}, EmptyFoldersRemoved={3}, EmptyFolderFailures={4}" -f `
-        $total, $deleted, $failed, $removedDirs, $failedDirs)
+            $total, $deleted, $failed, $removedDirs, $failedDirs)
     Write-LogInfo "===== $scriptName ended ====="
 
     $exitCode = if ( ($failed -gt 0) -or ($failedDirs -gt 0) ) { 2 } else { 0 }
 
     if ($PassThru) {
         [pscustomobject]@{
-            Version              = $Script:Version
-            Candidates           = $total
-            Deleted              = $deleted
-            Failed               = $failed
-            EmptyFoldersRemoved  = $removedDirs
-            EmptyFolderFailures  = $failedDirs
-            ExitCode             = $exitCode
+            Version             = $Script:Version
+            Candidates          = $total
+            Deleted             = $deleted
+            Failed              = $failed
+            EmptyFoldersRemoved = $removedDirs
+            EmptyFolderFailures = $failedDirs
+            ExitCode            = $exitCode
         }
     }
 

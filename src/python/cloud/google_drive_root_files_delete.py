@@ -38,6 +38,7 @@ MAX_THREADS = 4  # Maximum number of threads for parallel deletion
 
 log_lock = threading.Lock()
 
+
 def get_root_files(service):
     """
     Generator that yields all non-folder files in the root directory of Google Drive.
@@ -52,20 +53,26 @@ def get_root_files(service):
     page_token = None
 
     while True:
-        response = service.files().list(
-            q=query,
-            spaces='drive',
-            fields="nextPageToken, files(id, name)",
-            pageToken=page_token,
-            pageSize=1000
-        ).execute()
+        response = (
+            service.files()
+            .list(
+                q=query,
+                spaces="drive",
+                fields="nextPageToken, files(id, name)",
+                pageToken=page_token,
+                pageSize=1000,
+            )
+            .execute()
+        )
 
-        yield from response.get('files', [])
-        page_token = response.get('nextPageToken', None)
+        yield from response.get("files", [])
+        page_token = response.get("nextPageToken", None)
         if not page_token:
             break
 
+
 from googleapiclient.discovery import build
+
 
 def delete_file(creds, file, retries=3):
     """
@@ -80,17 +87,18 @@ def delete_file(creds, file, retries=3):
         bool: True if deletion was successful, False otherwise.
     """
     # Build a new Drive service for this thread
-    service = build('drive', 'v3', credentials=creds)
+    service = build("drive", "v3", credentials=creds)
     for attempt in range(retries):
         try:
-            service.files().delete(fileId=file['id']).execute()
+            service.files().delete(fileId=file["id"]).execute()
             return True
         except HttpError as error:
             if attempt < retries - 1:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
             else:
                 plog.log_info(f"Failed to delete {file['name']}: {error}")
                 return False
+
 
 def main():
     """
@@ -111,9 +119,7 @@ def main():
     deleted_count = 0
     with tqdm(total=total_files, desc="Deleting files", unit="file") as pbar:
         with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-            futures = {
-                executor.submit(delete_file, creds, file): file for file in files_to_delete
-            }
+            futures = {executor.submit(delete_file, creds, file): file for file in files_to_delete}
             for future in as_completed(futures):
                 if future.result():
                     deleted_count += 1
@@ -121,7 +127,8 @@ def main():
 
     plog.log_info(f"Finished. Deleted {deleted_count} files from root.")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
 
 # This script deletes all non-folder files in the root of a Google Drive account.

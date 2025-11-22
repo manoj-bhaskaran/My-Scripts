@@ -186,7 +186,7 @@ class TestGetFileSize:
 
         size = get_file_size(file_path)
 
-        assert size == len(content.encode('utf-8'))
+        assert size == len(content.encode("utf-8"))
 
     def test_get_size_of_nonexistent_file(self, tmp_path):
         """Test nonexistent file returns 0."""

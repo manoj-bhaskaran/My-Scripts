@@ -91,8 +91,8 @@ $srcPaths = @(
 foreach ($srcPath in $srcPaths) {
     if (Test-Path $srcPath) {
         $psFiles = Get-ChildItem -Path $srcPath -Include '*.ps1', '*.psm1' -Recurse -File |
-                   Where-Object { $_.Name -notlike '*.Tests.ps1' } |
-                   Select-Object -ExpandProperty FullName
+            Where-Object { $_.Name -notlike '*.Tests.ps1' } |
+            Select-Object -ExpandProperty FullName
         $coveragePaths += $psFiles
     }
 }
@@ -157,7 +157,8 @@ if ($CodeCoverageEnabled -and $result.CodeCoverage) {
     $totalCommands = $coverage.CommandsAnalyzedCount
     $coveragePercent = if ($totalCommands -gt 0) {
         [math]::Round(($coveredCommands / $totalCommands) * 100, 2)
-    } else {
+    }
+    else {
         0
     }
 

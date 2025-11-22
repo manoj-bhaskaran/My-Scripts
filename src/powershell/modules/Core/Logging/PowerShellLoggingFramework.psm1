@@ -4,16 +4,16 @@
 ############################################################
 
 $Global:LogConfig = @{
-    ScriptName   = $MyInvocation.MyCommand.Name
-    LogLevel     = 20  # INFO by default
-    LogFilePath  = $null
-    JsonFormat   = $false  # Set to $true to enable JSON structured logging
+    ScriptName  = $MyInvocation.MyCommand.Name
+    LogLevel    = 20  # INFO by default
+    LogFilePath = $null
+    JsonFormat  = $false  # Set to $true to enable JSON structured logging
 }
 
 $Global:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration")
 
 function Initialize-Logger {
-<#
+    <#
 .SYNOPSIS
     Initializes the logging framework for the current PowerShell script.
 
@@ -86,7 +86,7 @@ function Initialize-Logger {
     $Global:LogConfig.LogFilePath = $logFile
 }
 function Get-TimezoneAbbreviation {
-<#
+    <#
 .SYNOPSIS
     Returns the current system timezone abbreviation (e.g., IST, UTC).
 
@@ -113,15 +113,15 @@ function Get-TimezoneAbbreviation {
     $tz = [System.TimeZoneInfo]::Local
     switch ($tz.Id) {
         "India Standard Time" { return "IST" }
-        "UTC"                 { return "UTC" }
-        default               { return $tz.StandardName }
+        "UTC" { return "UTC" }
+        default { return $tz.StandardName }
     }
 }
 
 $Global:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration")
 
 function Test-MetadataKeys {
-<#
+    <#
 .SYNOPSIS
     Tests metadata keys against the recommended standard list and warns on non-standard keys.
 .DESCRIPTION
@@ -139,7 +139,7 @@ function Test-MetadataKeys {
     }
 }
 function Write-Log {
-<#
+    <#
 .SYNOPSIS
     Writes a formatted log entry to the log file or console.
 
@@ -185,7 +185,8 @@ function Write-Log {
     $metaStr = if ($Metadata.Count -gt 0) {
         Test-MetadataKeys -Metadata $Metadata
         $Metadata.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } -join ' '
-    } else {
+    }
+    else {
         ""
     }
 
@@ -200,21 +201,23 @@ function Write-Log {
             metadata  = $Metadata
         }
         $logLine = $logObject | ConvertTo-Json -Depth 5 -Compress
-    } else {
+    }
+    else {
         $logLine = "[${timestamp}] [$Level] [$scriptName] [$hostName] [$PID] $Message"
         if ($metaStr) { $logLine += " [$metaStr]" }
     }
 
     try {
         Add-Content -Path $Global:LogConfig.LogFilePath -Value $logLine -Encoding UTF8
-    } catch {
+    }
+    catch {
         Write-Warning "Failed to write to log file '$($Global:LogConfig.LogFilePath)': $_"
         Write-Output $logLine
     }
 }
 
 function Write-LogDebug {
-<#
+    <#
 .SYNOPSIS
     Logs a message at DEBUG level.
 .DESCRIPTION
@@ -230,7 +233,7 @@ function Write-LogDebug {
 }
 
 function Write-LogInfo {
-<#
+    <#
 .SYNOPSIS
     Logs a message at INFO level.
 .DESCRIPTION
@@ -245,7 +248,7 @@ function Write-LogInfo {
 }
 
 function Write-LogWarning {
-<#
+    <#
 .SYNOPSIS
     Logs a message at WARNING level.
 .DESCRIPTION
@@ -260,7 +263,7 @@ function Write-LogWarning {
 }
 
 function Write-LogError {
-<#
+    <#
 .SYNOPSIS
     Logs a message at ERROR level.
 .DESCRIPTION
@@ -275,7 +278,7 @@ function Write-LogError {
 }
 
 function Write-LogCritical {
-<#
+    <#
 .SYNOPSIS
     Logs a message at CRITICAL level.
 .DESCRIPTION

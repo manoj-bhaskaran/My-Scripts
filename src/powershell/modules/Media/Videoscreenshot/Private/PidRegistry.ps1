@@ -24,44 +24,44 @@ Short GUID string used in the registry filename to keep runs isolated.
 [string] Full path to the PID registry file.
 #>
 function Initialize-PidRegistry {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][psobject]$Context,
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$SaveFolder,
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$RunGuid
-  )
-  # Build the registry file path next to the output frames for easy inspection.
-  $path = Join-Path $SaveFolder ".vlc_pids_$RunGuid.txt"
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][psobject]$Context,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$SaveFolder,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$RunGuid
+    )
+    # Build the registry file path next to the output frames for easy inspection.
+    $path = Join-Path $SaveFolder ".vlc_pids_$RunGuid.txt"
 
-  # Ensure destination folder exists (bubble exceptions so caller can surface one message).
-  if (-not (Test-Path -LiteralPath $SaveFolder)) {
-    New-Item -ItemType Directory -Path $SaveFolder -Force | Out-Null
-  }
+    # Ensure destination folder exists (bubble exceptions so caller can surface one message).
+    if (-not (Test-Path -LiteralPath $SaveFolder)) {
+        New-Item -ItemType Directory -Path $SaveFolder -Force | Out-Null
+    }
 
-  # (Re)create the registry file for this run and write a tiny header.
-  if (Test-Path -LiteralPath $path) {
-    Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
-  }
-  New-Item -ItemType File -Path $path -Force | Out-Null
-  $header = "# videoscreenshot PID registry`n# RunGuid=$RunGuid`n# Created=$(Get-Date -Format o)`n"
-  Add-ContentWithRetry -Path $path -Value $header
+    # (Re)create the registry file for this run and write a tiny header.
+    if (Test-Path -LiteralPath $path) {
+        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+    }
+    New-Item -ItemType File -Path $path -Force | Out-Null
+    $header = "# videoscreenshot PID registry`n# RunGuid=$RunGuid`n# Created=$(Get-Date -Format o)`n"
+    Add-ContentWithRetry -Path $path -Value $header
 
-  # Attach to the context so other helpers can append without recomputing the path.
-  $Context.PidRegistryPath = $path
-  return $path
+    # Attach to the context so other helpers can append without recomputing the path.
+    $Context.PidRegistryPath = $path
+    return $path
 }
 function Register-RunPid {
-  [CmdletBinding()]
-  [OutputType([void])]
-  param(
-    [Parameter(Mandatory)][psobject]$Context,
-    [Parameter(Mandatory)][int]$ProcessId
-  )
-  if (-not $Context.PidRegistryPath) { throw "PID registry not initialized." }
-  # Append an auditable START entry instead of mutating/removing prior lines.
-  $line = ("{0}`tSTART`t{1}" -f (Get-Date -Format o), $ProcessId)
-  # Be intentionally silent on success; still throw on errors.
-  [void](Add-ContentWithRetry -Path $Context.PidRegistryPath -Value $line -ErrorAction Stop)
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][psobject]$Context,
+        [Parameter(Mandatory)][int]$ProcessId
+    )
+    if (-not $Context.PidRegistryPath) { throw "PID registry not initialized." }
+    # Append an auditable START entry instead of mutating/removing prior lines.
+    $line = ("{0}`tSTART`t{1}" -f (Get-Date -Format o), $ProcessId)
+    # Be intentionally silent on success; still throw on errors.
+    [void](Add-ContentWithRetry -Path $Context.PidRegistryPath -Value $line -ErrorAction Stop)
 }
 
 <#
@@ -76,14 +76,14 @@ Per-run context containing .PidRegistryPath.
 PID that has exited (or been terminated).
 #>
 function Unregister-RunPid {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][psobject]$Context,
-    [Parameter(Mandatory)][int]$ProcessId
-  )
-  if (-not $Context.PidRegistryPath) { return }
-  if (-not (Test-Path -LiteralPath $Context.PidRegistryPath)) { return }
-  # Append a STOP entry; callers can correlate START/STOP pairs during diagnostics.
-  $line = ("{0}`tSTOP`t{1}" -f (Get-Date -Format o), $ProcessId)
-  Add-ContentWithRetry -Path $Context.PidRegistryPath -Value $line
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][psobject]$Context,
+        [Parameter(Mandatory)][int]$ProcessId
+    )
+    if (-not $Context.PidRegistryPath) { return }
+    if (-not (Test-Path -LiteralPath $Context.PidRegistryPath)) { return }
+    # Append a STOP entry; callers can correlate START/STOP pairs during diagnostics.
+    $line = ("{0}`tSTOP`t{1}" -f (Get-Date -Format o), $ProcessId)
+    Add-ContentWithRetry -Path $Context.PidRegistryPath -Value $line
 }

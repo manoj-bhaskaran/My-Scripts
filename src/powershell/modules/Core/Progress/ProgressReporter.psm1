@@ -147,7 +147,8 @@ function Write-ProgressLog {
     # Calculate percentage
     $percent = if ($Total -gt 0) {
         [int](($Current / $Total) * 100)
-    } else {
+    }
+    else {
         0
     }
 
@@ -158,7 +159,8 @@ function Write-ProgressLog {
     # Log message if logging framework is available
     if (Get-Command Write-LogInfo -ErrorAction SilentlyContinue) {
         Write-LogInfo $logMessage
-    } else {
+    }
+    else {
         Write-Verbose $logMessage
     }
 
@@ -264,13 +266,15 @@ function Update-ProgressTracker {
     if ($shouldUpdate) {
         $percent = if ($Tracker.Total -gt 0) {
             [int](($Tracker.Current / $Tracker.Total) * 100)
-        } else {
+        }
+        else {
             0
         }
 
         $statusText = if ($Status) {
             $Status
-        } else {
+        }
+        else {
             "$($Tracker.Current) of $($Tracker.Total)"
         }
 
@@ -311,7 +315,8 @@ function Complete-ProgressTracker {
     # Show 100% completion
     $status = if ($FinalMessage) {
         $FinalMessage
-    } else {
+    }
+    else {
         "Completed ($($Tracker.Current) of $($Tracker.Total))"
     }
 

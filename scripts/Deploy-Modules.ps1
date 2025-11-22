@@ -81,11 +81,13 @@ $systemPath = if ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5) {
     if ($PSVersionTable.PSVersion.Major -le 5) {
         # Windows PowerShell
         Join-Path $env:ProgramFiles "WindowsPowerShell\Modules"
-    } else {
+    }
+    else {
         # PowerShell Core on Windows
         Join-Path $env:ProgramFiles "PowerShell\Modules"
     }
-} else {
+}
+else {
     # PowerShell Core on Linux/Mac
     "/usr/local/share/powershell/Modules"
 }
@@ -94,11 +96,13 @@ $userPath = if ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5) {
     if ($PSVersionTable.PSVersion.Major -le 5) {
         # Windows PowerShell
         Join-Path ([Environment]::GetFolderPath('MyDocuments')) "WindowsPowerShell\Modules"
-    } else {
+    }
+    else {
         # PowerShell Core on Windows
         Join-Path ([Environment]::GetFolderPath('MyDocuments')) "PowerShell\Modules"
     }
-} else {
+}
+else {
     # PowerShell Core on Linux/Mac
     Join-Path $HOME ".local/share/powershell/Modules"
 }
@@ -142,7 +146,8 @@ foreach ($line in $configLines) {
     # Find and validate manifest
     if ($isDirectory) {
         $manifestPath = Join-Path $fullSourcePath "$moduleName.psd1"
-    } else {
+    }
+    else {
         # Source is a .psm1 file, look for .psd1 in same directory
         $sourceDir = Split-Path -Path $fullSourcePath -Parent
         $manifestPath = Join-Path $sourceDir "$moduleName.psd1"
@@ -161,7 +166,8 @@ foreach ($line in $configLines) {
         $manifestData = Test-ModuleManifest -Path $manifestPath -ErrorAction Stop
         $version = $manifestData.Version.ToString()
         Write-Host "  Version: $version" -ForegroundColor Green
-    } catch {
+    }
+    catch {
         Write-Error "  Manifest validation failed: $_"
         $failedCount++
         continue
@@ -189,7 +195,8 @@ foreach ($line in $configLines) {
         if ((Test-Path $targetVersionPath) -and -not $Force) {
             if ($PSCmdlet.ShouldProcess($targetVersionPath, "Overwrite existing module")) {
                 # User will be prompted by ShouldProcess
-            } else {
+            }
+            else {
                 Write-Host "  Skipped (already exists, use -Force to overwrite)" -ForegroundColor Gray
                 $skippedCount++
                 continue
@@ -201,7 +208,8 @@ foreach ($line in $configLines) {
             try {
                 New-Item -Path $targetVersionPath -ItemType Directory -Force | Out-Null
                 Write-Host "  Created directory: $targetVersionPath" -ForegroundColor Gray
-            } catch {
+            }
+            catch {
                 Write-Error "  Failed to create target directory: $_"
                 $failedCount++
                 continue
@@ -214,7 +222,8 @@ foreach ($line in $configLines) {
                 if ($isDirectory) {
                     # Copy entire directory contents
                     Copy-Item -Path "$fullSourcePath\*" -Destination $targetVersionPath -Recurse -Force
-                } else {
+                }
+                else {
                     # Copy .psm1 and .psd1 files
                     $sourceDir = Split-Path -Path $fullSourcePath -Parent
                     Copy-Item -Path $fullSourcePath -Destination $targetVersionPath -Force
@@ -232,7 +241,8 @@ foreach ($line in $configLines) {
                 Write-Host "  Deployed successfully" -ForegroundColor Green
                 $deployedCount++
             }
-        } catch {
+        }
+        catch {
             Write-Error "  Deployment failed: $_"
             $failedCount++
         }

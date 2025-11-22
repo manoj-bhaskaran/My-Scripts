@@ -22,7 +22,7 @@
 # Robust module loader: guard for missing dirs and deterministic load order
 $here = Split-Path -Parent $PSCommandPath
 $privateDir = Join-Path $here 'Private'
-$publicDir  = Join-Path $here 'Public'
+$publicDir = Join-Path $here 'Public'
 
 foreach ($dir in @($privateDir, $publicDir)) {
     if (Test-Path -LiteralPath $dir) {
@@ -41,15 +41,17 @@ foreach ($dir in @($privateDir, $publicDir)) {
                 $file = $_
                 try {
                     . $file.FullName
-                } catch {
-                    $pos   = $PSItem.InvocationInfo
+                }
+                catch {
+                    $pos = $PSItem.InvocationInfo
                     $posMsg = if ($null -ne $pos) { $pos.PositionMessage } else { "" }
                     $stack = $PSItem.ScriptStackTrace
-                    $err   = $PSItem.Exception.Message
+                    $err = $PSItem.Exception.Message
                     throw ("Failed to load script: {0}`n{1}`nException: {2}`nStack: {3}" -f $file.FullName, $posMsg, $err, $stack)
                 }
             }
-    } else {
+    }
+    else {
         # Directory is optional at runtime (e.g., partial checkout or phased refactor)
         Write-Debug "Module load: optional directory not found: $dir"
     }

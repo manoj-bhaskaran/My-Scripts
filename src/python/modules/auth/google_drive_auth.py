@@ -14,11 +14,12 @@ from googleapiclient.discovery import build
 import python_logging_framework as plog
 
 # Define constants for token and credentials file
-TOKEN_FILE = 'C:/users/manoj/Documents/Scripts/drive_token.json'
-CREDENTIALS_FILE = 'C:/Users/manoj/Documents/Scripts/Google Drive JSON/client_secret_616159019059-09mhd30aim0ug4fvim49kjfvjtk3i0dd.json'
+TOKEN_FILE = "C:/users/manoj/Documents/Scripts/drive_token.json"
+CREDENTIALS_FILE = "C:/Users/manoj/Documents/Scripts/Google Drive JSON/client_secret_616159019059-09mhd30aim0ug4fvim49kjfvjtk3i0dd.json"
 
 # Define the scope for Drive API access
-SCOPES = ['https://www.googleapis.com/auth/drive']
+SCOPES = ["https://www.googleapis.com/auth/drive"]
+
 
 def authenticate_and_get_drive_service():
     """
@@ -49,7 +50,7 @@ def authenticate_and_get_drive_service():
                 plog.log_info("🌐 Initiating OAuth flow.")
                 flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
                 creds = flow.run_local_server(port=0)
-                with open(TOKEN_FILE, 'w') as token:
+                with open(TOKEN_FILE, "w") as token:
                     token.write(creds.to_json())
                 plog.log_info("✅ New token saved after OAuth flow.")
             except Exception as e:
@@ -57,4 +58,4 @@ def authenticate_and_get_drive_service():
                 raise
 
     plog.log_info("🚀 Google Drive service authenticated successfully.")
-    return build('drive', 'v3', credentials=creds)
+    return build("drive", "v3", credentials=creds)

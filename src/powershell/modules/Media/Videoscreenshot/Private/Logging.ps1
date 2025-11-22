@@ -30,41 +30,42 @@
   Write-Message -Level Warn -Message "No videos found" -Quiet
 #>
 function Write-Message {
-  [CmdletBinding()]
-  param(
-    [ValidateSet('Info','Warn','Error')][string]$Level = 'Info',
-    [Parameter(Mandatory)][string]$Message,
-    [switch]$Quiet,
-    [string]$LogFile
-  )
+    [CmdletBinding()]
+    param(
+        [ValidateSet('Info', 'Warn', 'Error')][string]$Level = 'Info',
+        [Parameter(Mandatory)][string]$Message,
+        [switch]$Quiet,
+        [string]$LogFile
+    )
 
-  # Prepare formatted line with timestamp + fixed-width level for neat alignment
-  $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-  $formatted = "[$ts] [$($Level.ToUpper().PadRight(5))] $Message"
+    # Prepare formatted line with timestamp + fixed-width level for neat alignment
+    $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    $formatted = "[$ts] [$($Level.ToUpper().PadRight(5))] $Message"
 
-  # Best-effort file logging (does not throw the whole function if it fails)
-  if (-not [string]::IsNullOrWhiteSpace($LogFile)) {
-    try {
-      # Uses helper with retry semantics; caller is responsible for directory existence.
-      Add-ContentWithRetry -Path $LogFile -Value $formatted | Out-Null
-    } catch {
-      # Keep the run going; surface a warning so the user knows file logging failed.
-      Write-Warning ("Write-Message: failed to write to logfile '{0}' — {1}" -f $LogFile, $_.Exception.Message)
+    # Best-effort file logging (does not throw the whole function if it fails)
+    if (-not [string]::IsNullOrWhiteSpace($LogFile)) {
+        try {
+            # Uses helper with retry semantics; caller is responsible for directory existence.
+            Add-ContentWithRetry -Path $LogFile -Value $formatted | Out-Null
+        }
+        catch {
+            # Keep the run going; surface a warning so the user knows file logging failed.
+            Write-Warning ("Write-Message: failed to write to logfile '{0}' — {1}" -f $LogFile, $_.Exception.Message)
+        }
     }
-  }
 
-  # Quiet mode: suppress Info/Warn on console, but never suppress Error.
-  if ($Quiet -and $Level -ne 'Error') { return }
+    # Quiet mode: suppress Info/Warn on console, but never suppress Error.
+    if ($Quiet -and $Level -ne 'Error') { return }
 
-  # Stream selection & fallbacks:
-  # - Info: prefer Information stream (pipeline-friendly). Fallback to Host on failure.
-  # - Warn/Error: standard streams, and mirrored to Debug for traceability.
-  switch ($Level) {
-    'Info'  {
-      try { Write-Information -MessageData $formatted -InformationAction Continue }
-      catch { Write-Host $formatted -ForegroundColor Cyan }
+    # Stream selection & fallbacks:
+    # - Info: prefer Information stream (pipeline-friendly). Fallback to Host on failure.
+    # - Warn/Error: standard streams, and mirrored to Debug for traceability.
+    switch ($Level) {
+        'Info' {
+            try { Write-Information -MessageData $formatted -InformationAction Continue }
+            catch { Write-Host $formatted -ForegroundColor Cyan }
+        }
+        'Warn' { Write-Warning $formatted; Write-Debug $formatted }
+        'Error' { Write-Error   $formatted; Write-Debug $formatted }
     }
-    'Warn'  { Write-Warning $formatted; Write-Debug $formatted }
-    'Error' { Write-Error   $formatted; Write-Debug $formatted }
-  }
 }

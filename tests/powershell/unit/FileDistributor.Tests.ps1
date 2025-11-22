@@ -84,7 +84,8 @@ Describe "FileDistributor Business Logic Calculations" {
                 # Windows paths
                 $path = 'C:\Users\Test\Documents'
                 [System.IO.Path]::IsPathRooted($path) | Should -Be $true
-            } else {
+            }
+            else {
                 # Unix paths
                 $path = '/home/user/documents'
                 [System.IO.Path]::IsPathRooted($path) | Should -Be $true
@@ -95,7 +96,8 @@ Describe "FileDistributor Business Logic Calculations" {
             $path = '/home/user/documents'
             if (-not ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5)) {
                 [System.IO.Path]::IsPathRooted($path) | Should -Be $true
-            } else {
+            }
+            else {
                 # On Windows, Unix paths may not be recognized as rooted
                 $path | Should -Match '^/'
             }

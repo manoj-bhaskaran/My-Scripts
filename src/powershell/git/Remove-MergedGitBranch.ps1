@@ -61,7 +61,7 @@
         2.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
         1.0.0 - Initial release with custom Log function
 #>
-Param (
+param (
     [string]$RemoteName = "origin",
     [switch]$DryRun,
     [string[]]$ExcludeBranches = @("main", "master"),
@@ -108,10 +108,12 @@ try {
     if ($Silent) {
         try {
             git fetch $RemoteName --prune --quiet 2>&1 | Out-Null
-        } catch {
+        }
+        catch {
             Write-LogError "Fetch failed silently: $($_.Exception.Message)"
         }
-    } else {
+    }
+    else {
         git fetch $RemoteName --prune
     }
 
@@ -154,7 +156,8 @@ try {
     $remoteUrl = git config --get remote.$RemoteName.url
     if ($remoteUrl) {
         Write-LogInfo "Remote '$RemoteName' URL: $remoteUrl"
-    } else {
+    }
+    else {
         Write-LogWarning "Could not retrieve URL for remote '$RemoteName'"
     }
 
@@ -168,7 +171,8 @@ try {
             Write-LogInfo "Cleanup aborted."
             return
         }
-    } elseif (-not $DryRun -and $Silent) {
+    }
+    elseif (-not $DryRun -and $Silent) {
         # Proceed without prompt
         Write-LogInfo "Silent mode active — proceeding without confirmation."
     }
@@ -179,11 +183,13 @@ try {
 
         if ($DryRun) {
             Write-LogInfo "Would delete local branch '$branch'"
-        } else {
+        }
+        else {
             try {
                 Write-LogInfo "Deleting local branch '$branch'..."
                 git branch -d $branch
-            } catch {
+            }
+            catch {
                 Write-LogWarning "Could not delete local branch '$branch': $_"
                 continue
             }
@@ -194,11 +200,13 @@ try {
         if ($LASTEXITCODE -eq 0) {
             if ($DryRun) {
                 Write-LogInfo "Would delete remote branch '$RemoteName/$branch'"
-            } else {
+            }
+            else {
                 Write-LogInfo "Deleting remote branch '$RemoteName/$branch'..."
                 git push $RemoteName --delete $branch
             }
-        } else {
+        }
+        else {
             Write-LogWarning "Remote branch '$RemoteName/$branch' does not exist."
         }
     }

@@ -20,10 +20,10 @@ Describe "Show-Progress" {
     It "Accepts all parameters" {
         {
             Show-Progress -Activity "Test" `
-                         -PercentComplete 75 `
-                         -Status "Almost done" `
-                         -Id 1 `
-                         -CurrentOperation "Processing file"
+                -PercentComplete 75 `
+                -Status "Almost done" `
+                -Id 1 `
+                -CurrentOperation "Processing file"
         } | Should -Not -Throw
     }
 
@@ -44,9 +44,9 @@ Describe "Write-ProgressLog" {
     It "Accepts activity parameter" {
         {
             Write-ProgressLog -Message "Processing files" `
-                             -Current 25 `
-                             -Total 100 `
-                             -Activity "File Processing"
+                -Current 25 `
+                -Total 100 `
+                -Activity "File Processing"
         } | Should -Not -Throw
     }
 }

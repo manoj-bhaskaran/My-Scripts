@@ -20,7 +20,7 @@
 #>
 
 param (
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [string]$FileToCheck
 )
 
@@ -56,10 +56,12 @@ try {
     # Check if handle.exe returned any output
     if ($handleOutput -match "No matching handles found") {
         Write-LogInfo "No processes are holding the file $FileToCheck."
-    } else {
+    }
+    else {
         Write-LogInfo "Processes holding the file ${FileToCheck}:"
         Write-LogInfo $handleOutput
     }
-} catch {
+}
+catch {
     Write-LogError "An error occurred while running Handle.exe: $_"
 }

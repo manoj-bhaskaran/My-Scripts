@@ -99,11 +99,12 @@ function Copy-FileWithRetry {
 
     if (Get-Command Invoke-WithRetry -ErrorAction SilentlyContinue) {
         Invoke-WithRetry -Operation $operation `
-                        -Description "Copy '$Source' to '$Destination'" `
-                        -RetryDelay $RetryDelay `
-                        -RetryCount $MaxRetries `
-                        -MaxBackoff $MaxBackoff
-    } else {
+            -Description "Copy '$Source' to '$Destination'" `
+            -RetryDelay $RetryDelay `
+            -RetryCount $MaxRetries `
+            -MaxBackoff $MaxBackoff
+    }
+    else {
         # Fallback if ErrorHandling module not available
         & $operation
     }
@@ -181,11 +182,12 @@ function Move-FileWithRetry {
 
     if (Get-Command Invoke-WithRetry -ErrorAction SilentlyContinue) {
         Invoke-WithRetry -Operation $operation `
-                        -Description "Move '$Source' to '$Destination'" `
-                        -RetryDelay $RetryDelay `
-                        -RetryCount $MaxRetries `
-                        -MaxBackoff $MaxBackoff
-    } else {
+            -Description "Move '$Source' to '$Destination'" `
+            -RetryDelay $RetryDelay `
+            -RetryCount $MaxRetries `
+            -MaxBackoff $MaxBackoff
+    }
+    else {
         & $operation
     }
 
@@ -245,11 +247,12 @@ function Remove-FileWithRetry {
 
     if (Get-Command Invoke-WithRetry -ErrorAction SilentlyContinue) {
         Invoke-WithRetry -Operation $operation `
-                        -Description "Remove '$Path'" `
-                        -RetryDelay $RetryDelay `
-                        -RetryCount $MaxRetries `
-                        -MaxBackoff $MaxBackoff
-    } else {
+            -Description "Remove '$Path'" `
+            -RetryDelay $RetryDelay `
+            -RetryCount $MaxRetries `
+            -MaxBackoff $MaxBackoff
+    }
+    else {
         & $operation
     }
 
@@ -314,11 +317,12 @@ function Rename-FileWithRetry {
 
     if (Get-Command Invoke-WithRetry -ErrorAction SilentlyContinue) {
         Invoke-WithRetry -Operation $operation `
-                        -Description "Rename '$Path' to '$NewName'" `
-                        -RetryDelay $RetryDelay `
-                        -RetryCount $MaxRetries `
-                        -MaxBackoff $MaxBackoff
-    } else {
+            -Description "Rename '$Path' to '$NewName'" `
+            -RetryDelay $RetryDelay `
+            -RetryCount $MaxRetries `
+            -MaxBackoff $MaxBackoff
+    }
+    else {
         & $operation
     }
 
@@ -458,12 +462,13 @@ function Add-ContentWithRetry {
 
     if (Get-Command Invoke-WithRetry -ErrorAction SilentlyContinue) {
         Invoke-WithRetry -Operation $operation `
-                        -Description "Append content to '$Path'" `
-                        -RetryDelay $RetryDelay `
-                        -RetryCount $MaxRetries `
-                        -MaxBackoff $MaxBackoff `
-                        -LogErrors $false
-    } else {
+            -Description "Append content to '$Path'" `
+            -RetryDelay $RetryDelay `
+            -RetryCount $MaxRetries `
+            -MaxBackoff $MaxBackoff `
+            -LogErrors $false
+    }
+    else {
         & $operation
     }
 

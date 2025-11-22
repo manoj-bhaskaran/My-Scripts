@@ -80,11 +80,11 @@ CHANGELOG
 function Get-RandomFileName {
     [CmdletBinding()]
     param(
-        [ValidateRange(1,255)]
+        [ValidateRange(1, 255)]
         [int]$MinimumLength = 4,
-        [ValidateRange(1,255)]
+        [ValidateRange(1, 255)]
         [int]$MaximumLength = 32,
-        [ValidateRange(1,100000)]
+        [ValidateRange(1, 100000)]
         [int]$MaxAttempts = 100
     )
 
@@ -95,7 +95,7 @@ function Get-RandomFileName {
 
     # Allow-lists
     $firstCharSet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-    $restCharSet  = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-~'
+    $restCharSet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-~'
 
     # Windows reserved device names (base name only, case-insensitive)
     $reservedRegex = '^(?i:(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]))$'
@@ -128,7 +128,8 @@ function Get-RandomFileName {
                 break
             }
             continue
-        } else {
+        }
+        else {
             break
         }
     } while ($true)

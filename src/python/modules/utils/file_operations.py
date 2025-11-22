@@ -18,7 +18,7 @@ def copy_with_retry(
     destination: Union[str, Path],
     max_retries: int = 3,
     retry_delay: float = 2.0,
-    max_backoff: float = 60.0
+    max_backoff: float = 60.0,
 ) -> bool:
     """Copy file with automatic retry on failure using exponential backoff.
 
@@ -71,12 +71,10 @@ def copy_with_retry(
                     f"Failed to copy '{source}' to '{destination}' "
                     f"after {attempt + 1} attempt(s): {e}"
                 )
-                raise IOError(
-                    f"Failed to copy file after {max_retries} attempts: {e}"
-                ) from e
+                raise IOError(f"Failed to copy file after {max_retries} attempts: {e}") from e
 
             # Calculate exponential backoff delay
-            delay = min(retry_delay * (2 ** attempt), max_backoff)
+            delay = min(retry_delay * (2**attempt), max_backoff)
 
             logger.warning(
                 f"Attempt {attempt + 1} failed to copy '{source}': {e}. "
@@ -93,7 +91,7 @@ def move_with_retry(
     destination: Union[str, Path],
     max_retries: int = 3,
     retry_delay: float = 2.0,
-    max_backoff: float = 60.0
+    max_backoff: float = 60.0,
 ) -> bool:
     """Move file with automatic retry on failure using exponential backoff.
 
@@ -143,11 +141,9 @@ def move_with_retry(
                     f"Failed to move '{source}' to '{destination}' "
                     f"after {attempt + 1} attempt(s): {e}"
                 )
-                raise IOError(
-                    f"Failed to move file after {max_retries} attempts: {e}"
-                ) from e
+                raise IOError(f"Failed to move file after {max_retries} attempts: {e}") from e
 
-            delay = min(retry_delay * (2 ** attempt), max_backoff)
+            delay = min(retry_delay * (2**attempt), max_backoff)
 
             logger.warning(
                 f"Attempt {attempt + 1} failed to move '{source}': {e}. "
@@ -163,7 +159,7 @@ def remove_with_retry(
     path: Union[str, Path],
     max_retries: int = 3,
     retry_delay: float = 2.0,
-    max_backoff: float = 60.0
+    max_backoff: float = 60.0,
 ) -> bool:
     """Remove file with automatic retry on failure.
 
@@ -194,22 +190,16 @@ def remove_with_retry(
             file_path.unlink()
 
             if attempt > 0:
-                logger.info(
-                    f"Succeeded removing '{path}' after {attempt} retry attempt(s)"
-                )
+                logger.info(f"Succeeded removing '{path}' after {attempt} retry attempt(s)")
 
             return True
 
         except Exception as e:
             if attempt >= max_retries - 1:
-                logger.error(
-                    f"Failed to remove '{path}' after {attempt + 1} attempt(s): {e}"
-                )
-                raise IOError(
-                    f"Failed to remove file after {max_retries} attempts: {e}"
-                ) from e
+                logger.error(f"Failed to remove '{path}' after {attempt + 1} attempt(s): {e}")
+                raise IOError(f"Failed to remove file after {max_retries} attempts: {e}") from e
 
-            delay = min(retry_delay * (2 ** attempt), max_backoff)
+            delay = min(retry_delay * (2**attempt), max_backoff)
 
             logger.warning(
                 f"Attempt {attempt + 1} failed to remove '{path}': {e}. "
@@ -312,10 +302,7 @@ def get_file_size(path: Union[str, Path]) -> int:
 
 
 def safe_write_text(
-    path: str | Path,
-    content: str,
-    encoding: str = "utf-8",
-    atomic: bool = True
+    path: str | Path, content: str, encoding: str = "utf-8", atomic: bool = True
 ) -> bool:
     """Write text to file safely with optional atomic write.
 
@@ -364,7 +351,7 @@ def safe_append_text(
     content: str,
     encoding: str = "utf-8",
     max_retries: int = 3,
-    retry_delay: float = 1.0
+    retry_delay: float = 1.0,
 ) -> bool:
     """Append text to file with retry logic.
 
@@ -396,19 +383,15 @@ def safe_append_text(
                 f.write(content)
 
             if attempt > 0:
-                logger.debug(
-                    f"Succeeded appending to '{path}' after {attempt} retry attempt(s)"
-                )
+                logger.debug(f"Succeeded appending to '{path}' after {attempt} retry attempt(s)")
 
             return True
 
         except Exception as e:
             if attempt >= max_retries - 1:
-                raise IOError(
-                    f"Failed to append to file after {max_retries} attempts: {e}"
-                ) from e
+                raise IOError(f"Failed to append to file after {max_retries} attempts: {e}") from e
 
-            delay = retry_delay * (2 ** attempt)
+            delay = retry_delay * (2**attempt)
 
             logger.debug(
                 f"Attempt {attempt + 1} failed to append to '{path}': {e}. "
