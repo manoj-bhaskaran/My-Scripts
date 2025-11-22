@@ -198,47 +198,6 @@ def validate_extensions(
 
     return deduped, warnings, []
 
-def normalize_policy_token(
-    raw: str | None,
-    *,
-    strict: bool,
-    aliases: Mapping[str, str],
-    default_value: str,
-) -> Tuple[str, List[str], List[str], Dict[str, dict]]:
-    """
-    Normalize a post-restore policy token using provided aliases.
-
-    Returns: (normalized_value, warnings, errors, telemetry)
-      - if strict and unknown -> errors contains message
-      - if not strict and unknown -> fallback to default_value and warnings contains note
-      - telemetry includes an 'unknown_policy' object when unknown
-    """
-    key = re.sub(_WS_UNDERSCORE_HYPHEN_RE, '', str(raw).strip().lower())
-    if key in aliases:
-        return aliases[key], [], [], {}
-
-    key = re.sub(_WS_UNDERSCORE_HYPHEN_RE, '', str(raw).strip().lower())
-    if key in aliases:
-        return aliases[key], [], [], {}
-
-    # Unknown token handling
-    suggestion = _suggest_token(key, list(aliases.keys()))
-    suggestion_text = f" Did you mean '{suggestion}'?" if suggestion else ""
-
-    telemetry = {"unknown_policy": {"token": str(raw), "normalized": key, "suggestion": suggestion}}
-
-    if strict:
-        return default_value, [], [
-            f"Unknown --post-restore-policy value '{raw}'. Use one of: retain | trash | delete (aliases allowed).{suggestion_text}"
-        ], telemetry
-
-    return (
-        default_value,
-        [f"Unknown --post-restore-policy '{raw}'. Falling back to '{default_value}'.{suggestion_text} (Tip: use --strict-policy to make this an error.)"],
-        [],
-        telemetry,
-    )
-
 # --- Lightweight, local mypy reveal_type checks (ignored at runtime) ---
 if TYPE_CHECKING:
     # mypy will evaluate these; they don't run at runtime.
