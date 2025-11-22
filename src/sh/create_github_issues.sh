@@ -2,10 +2,11 @@
 
 ###############################################################################
 # Script: create_github_issues.sh
-# Description: Create GitHub issues from markdown files in github_issues/
+# Description: Create GitHub issues from markdown files in a specified directory
 # Usage:
 #   ./create_github_issues.sh
 #   ./create_github_issues.sh --repo OWNER/REPO
+#   ./create_github_issues.sh --repo OWNER/REPO --issues-dir ./custom/path
 #   ./create_github_issues.sh --dry-run
 ###############################################################################
 
@@ -23,7 +24,8 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ISSUES_DIR="${SCRIPT_DIR}/github_issues"
+DEFAULT_ISSUES_DIR="${SCRIPT_DIR}/github_issues"
+ISSUES_DIR=""
 
 DRY_RUN=false
 REPO=""
@@ -50,9 +52,18 @@ usage() {
 Usage: $0 [OPTIONS]
 
 Options:
-  --repo OWNER/REPO   Use this GitHub repository explicitly
-  --dry-run           Do not call GitHub; just show what would be done
-  -h, --help          Show this help
+  --repo OWNER/REPO       Use this GitHub repository explicitly
+  --issues-dir PATH       Path to directory containing issue markdown templates
+                          (default: ${DEFAULT_ISSUES_DIR})
+  --dry-run               Do not call GitHub; just show what would be done
+  -h, --help              Show this help
+
+Examples:
+  # Use default issues directory
+  $0 --repo OWNER/REPO
+
+  # Use custom issues directory
+  $0 --repo OWNER/REPO --issues-dir ./github_issues/new_batch
 EOF
 }
 
@@ -61,6 +72,10 @@ parse_args() {
         case "$1" in
             --repo)
                 REPO="$2"
+                shift 2
+                ;;
+            --issues-dir)
+                ISSUES_DIR="$2"
                 shift 2
                 ;;
             --dry-run)
@@ -78,6 +93,11 @@ parse_args() {
                 ;;
         esac
     done
+
+    # Use default issues directory if not specified
+    if [[ -z "$ISSUES_DIR" ]]; then
+        ISSUES_DIR="$DEFAULT_ISSUES_DIR"
+    fi
 }
 
 check_gh_cli() {
@@ -132,10 +152,20 @@ detect_repo() {
 
 get_issue_files() {
     step "Checking issue templates directory"
-    if [[ ! -d "$ISSUES_DIR" ]]; then
-        err "Directory not found: $ISSUES_DIR"
+
+    # Validate that the directory exists
+    if [[ ! -e "$ISSUES_DIR" ]]; then
+        err "Issues directory does not exist: $ISSUES_DIR"
         exit 1
     fi
+
+    # Validate that it's actually a directory
+    if [[ ! -d "$ISSUES_DIR" ]]; then
+        err "Path is not a directory: $ISSUES_DIR"
+        exit 1
+    fi
+
+    info "Using issues directory: $ISSUES_DIR"
 
     shopt -s nullglob
     local files=( "$ISSUES_DIR"/issue* )

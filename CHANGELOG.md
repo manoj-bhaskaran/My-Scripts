@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parameterized Issues Directory for GitHub Issue Creator** (#500) - Enhanced `create_github_issues.sh` with configurable input folder
+  - **New Parameter**: `--issues-dir PATH` - Optional parameter to specify custom directory for issue markdown templates
+    - Falls back to default `github_issues/` folder when not specified
+    - Maintains full backward compatibility - existing workflows unchanged
+  - **Input Validation**: Comprehensive validation of issues directory
+    - Verifies directory exists before processing
+    - Validates path is actually a directory (not a file)
+    - Clear, user-friendly error messages on validation failure
+    - Non-zero exit status for invalid paths
+  - **Enhanced Logging**: Displays which directory is being used for reading issue templates
+  - **Updated Documentation**: Help text includes new parameter with usage examples
+  - **Use Cases**:
+    - Running script from different repositories or locations
+    - Testing with different sets of issue templates
+    - Using in CI/CD pipelines with configurable paths
+  - **Examples**:
+    ```bash
+    # Use default issues directory
+    ./create_github_issues.sh --repo OWNER/REPO
+
+    # Use custom issues directory
+    ./create_github_issues.sh --repo OWNER/REPO --issues-dir ./github_issues/new_batch
+    ```
+  - **Version Impact**: MINOR bump (2.0.0 → 2.1.0) - new optional feature, backward compatible
+
 - **Directory Sync with Exclusion Support** - Enhanced `Sync-Directory.ps1` (v1.1.0) for repository-to-working-copy synchronization
   - **New Feature**: `ExcludeFromDeletion` parameter - Array of glob patterns to preserve non-repository files
     - Supports exact matches (e.g., `.venv`, `logs`, `temp`)
