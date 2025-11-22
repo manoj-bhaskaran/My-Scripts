@@ -243,15 +243,35 @@ foreach ($item in $toCopyUpdates) {
 }
 
 ###############################################################################
-# 3. Delete extra files from Destination (with confirmation per file)
+# 3. Delete extra files from Destination
 ###############################################################################
-foreach ($item in $toDelete) {
-    $rel = $item.RelativePath
-    $dstFile = $item.Destination
+if ($toDelete.Count -gt 0) {
+    Write-Host ""
+    Write-Host "=== Deletion Confirmation ===" -ForegroundColor Yellow
+    Write-Host "The following $($toDelete.Count) file(s) will be deleted:" -ForegroundColor Yellow
+    $toDelete | Select-Object -First 10 | ForEach-Object {
+        Write-Host "  - $($_.RelativePath)" -ForegroundColor Yellow
+    }
+    if ($toDelete.Count -gt 10) {
+        Write-Host "  ... and $($toDelete.Count - 10) more files" -ForegroundColor Yellow
+    }
+    Write-Host ""
 
-    Write-Host "[DELETE CANDIDATE] $rel"
-    # -Confirm with no value forces a prompt before deletion
-    Remove-Item -Path $dstFile.FullName -Force -Confirm
+    $confirmation = Read-Host "Delete these files? [Y]es / [N]o (default: No)"
+
+    if ($confirmation -eq 'Y' -or $confirmation -eq 'y') {
+        foreach ($item in $toDelete) {
+            $rel = $item.RelativePath
+            $dstFile = $item.Destination
+
+            Write-Host "[DELETE] $rel"
+            Remove-Item -Path $dstFile.FullName -Force
+        }
+        Write-Host "Deleted $($toDelete.Count) file(s)." -ForegroundColor Green
+    }
+    else {
+        Write-Host "Deletion cancelled. No files were deleted." -ForegroundColor Yellow
+    }
 }
 
 Write-Host ""
