@@ -19,13 +19,30 @@ The repository includes post-commit and post-merge hooks that automatically sync
 
 ## Setup Instructions
 
-### 1. Copy the Configuration Template
+### 1. Install the Git Hooks
 
-```bash
-cp config/local-deployment-config.json.example config/local-deployment-config.json
+**IMPORTANT**: Git hooks are not part of the repository. You must install them locally on your machine.
+
+Run the installation script from the repository root:
+
+```powershell
+.\scripts\Install-GitHooks.ps1
 ```
 
-### 2. Edit Your Local Configuration
+This script will:
+- Create `post-commit` and `post-merge` hooks in `.git/hooks/`
+- Validate your configuration
+- Provide guidance on next steps
+
+### 2. Copy the Configuration Template
+
+If not already created, copy the example config:
+
+```powershell
+Copy-Item config\local-deployment-config.json.example config\local-deployment-config.json
+```
+
+### 3. Edit Your Local Configuration
 
 Edit `config/local-deployment-config.json` with your deployment path:
 
@@ -36,22 +53,14 @@ Edit `config/local-deployment-config.json` with your deployment path:
 }
 ```
 
+**IMPORTANT**: The config file should ONLY contain these two fields. Do not include `$schema`, `description`, or `notes` fields from the example - remove them if present.
+
 **Configuration Options:**
 
 - `stagingMirror`: Absolute path to the directory where files will be synced
   - Use double backslashes on Windows: `C:\\Users\\...`
   - Use forward slashes on Unix: `/home/user/...`
 - `enabled`: Set to `false` to temporarily disable deployment without removing the config
-
-### 3. Verify Hook Installation
-
-The hooks are already installed in `.git/hooks/`. You can verify they exist:
-
-```bash
-ls -l .git/hooks/post-commit .git/hooks/post-merge
-```
-
-If they're missing, they will need to be recreated (contact the repository maintainer).
 
 ### 4. Test the Setup
 
