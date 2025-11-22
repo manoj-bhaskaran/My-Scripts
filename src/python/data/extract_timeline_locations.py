@@ -616,10 +616,12 @@ def extract_place_visits(data, last_processed, stats):
 
     records = []
     for segment in data.get("semanticSegments", []):
-        for key in ("startTime", "endTime"):
-            record = parse_visit_segment(segment, key)
-            if record:
-                records.append(record)
+        start_record = parse_visit_segment(segment, "startTime")
+        if start_record:
+            records.append(start_record)
+        end_record = parse_visit_segment(segment, "endTime")
+        if end_record:
+            records.append(end_record)
 
     return records
 
