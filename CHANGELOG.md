@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Directory Sync with Exclusion Support** - Enhanced `Sync-Directory.ps1` (v1.1.0) for repository-to-working-copy synchronization
+  - **New Feature**: `ExcludeFromDeletion` parameter - Array of glob patterns to preserve non-repository files
+    - Supports exact matches (e.g., `.venv`, `logs`, `temp`)
+    - Supports directory matches (preserves all files within excluded directories)
+    - Supports wildcard patterns (e.g., `*.log`, `backups/*`)
+    - Cross-platform path normalization
+  - **Enhanced Preview Mode**: Shows excluded files in yellow with `[KEEP]` indicator
+  - **Improved Output**: Summary now displays count of excluded files
+  - **Use Case**: Sync Git repository (`D:\My Scripts`) to working directory (`C:\Users\manoj\Documents\Scripts`)
+    while preserving logs, virtual environments, configs, and other non-repository files
+  - **Documentation**: Comprehensive help with examples and parameter descriptions
+  - **Examples**:
+    ```powershell
+    # Preview sync with exclusions
+    .\Sync-Directory.ps1 -Source "D:\My Scripts" -Destination "C:\Users\manoj\Documents\Scripts" `
+        -ExcludeFromDeletion @(".venv", "venv", "logs", "temp", "*.log", "backups") -PreviewOnly
+
+    # Perform actual sync
+    .\Sync-Directory.ps1 -Source "D:\My Scripts" -Destination "C:\Users\manoj\Documents\Scripts" `
+        -ExcludeFromDeletion @(".venv", "venv", "logs", "temp", "*.log", "backups")
+    ```
+  - **Script Naming Verification**: Confirmed `Sync-Directory.ps1` follows PowerShell naming conventions
+    - `Sync` is an approved PowerShell verb
+    - `Directory` is a singular noun in PascalCase
+    - Format conforms to `Verb-Noun` pattern
+  - **Version**: 1.1.0 (MINOR bump - new feature, backward compatible)
+
 - **Automated Release Workflow** (#465) - Complete automated release system for version management
   - **Release Workflow**
     - New file: `.github/workflows/release.yml` - Automated GitHub Actions release workflow

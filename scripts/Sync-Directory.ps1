@@ -1,9 +1,53 @@
+<#
+.SYNOPSIS
+    Synchronizes files from a source directory to a destination directory with exclusion support.
+
+.DESCRIPTION
+    This script performs a one-way sync from source to destination, with support for
+    excluding specific patterns from deletion. It's designed for syncing a Git repository
+    to a working directory while preserving non-repository files (logs, configs, venvs, etc.).
+
+.PARAMETER Source
+    The source directory path (e.g., Git repository directory).
+
+.PARAMETER Destination
+    The destination directory path (e.g., working copy directory).
+
+.PARAMETER ExcludeFromDeletion
+    Array of glob patterns for files/directories to exclude from deletion.
+    These patterns are matched against the relative path from the destination root.
+    Examples: ".venv", "*.log", "logs/*", "temp", "venv", "backups/*"
+
+.PARAMETER PreviewOnly
+    If set, shows what would happen without making any changes.
+
+.EXAMPLE
+    .\Sync-Directory.ps1 -Source "D:\My Scripts" -Destination "C:\Users\manoj\Documents\Scripts" -PreviewOnly
+    Preview changes without making modifications.
+
+.EXAMPLE
+    .\Sync-Directory.ps1 -Source "D:\My Scripts" -Destination "C:\Users\manoj\Documents\Scripts" -ExcludeFromDeletion @(".venv", "venv", "logs", "temp", "*.log", "backups")
+    Sync directories while preserving specified patterns from deletion.
+
+.NOTES
+    Version:        1.1.0
+    Author:         Manoj Bhaskaran
+    Creation Date:  2025-11-22
+    Purpose:        One-way directory synchronization with exclusion support
+
+.LINK
+    https://github.com/manoj-bhaskaran/My-Scripts
+#>
+
 param(
     [Parameter(Mandatory = $true)]
     [string]$Source,
 
     [Parameter(Mandatory = $true)]
     [string]$Destination,
+
+    [Parameter(Mandatory = $false)]
+    [string[]]$ExcludeFromDeletion = @(),
 
     # If set, only show what *would* happen, don't change anything
     [switch]$PreviewOnly
@@ -15,7 +59,47 @@ $Destination = (Resolve-Path -Path $Destination).ProviderPath.TrimEnd('\')
 
 Write-Host "Source     : $Source"
 Write-Host "Destination: $Destination"
+if ($ExcludeFromDeletion.Count -gt 0) {
+    Write-Host "Exclusions : $($ExcludeFromDeletion -join ', ')"
+}
 Write-Host ""
+
+# Helper function to check if a path matches any exclusion pattern
+function Test-ExcludedPath {
+    param(
+        [string]$RelativePath,
+        [string[]]$Patterns
+    )
+
+    if ($Patterns.Count -eq 0) {
+        return $false
+    }
+
+    foreach ($pattern in $Patterns) {
+        # Normalize pattern separators to match current OS
+        $normalizedPattern = $pattern -replace '[/\\]', [System.IO.Path]::DirectorySeparatorChar
+
+        # Check for exact match
+        if ($RelativePath -eq $normalizedPattern) {
+            return $true
+        }
+
+        # Check if path starts with pattern (for directory matches)
+        $patternWithSep = $normalizedPattern.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+        if ($RelativePath.StartsWith($patternWithSep, [StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+
+        # Check for wildcard match
+        if ($normalizedPattern -like '*[*?]*') {
+            if ($RelativePath -like $normalizedPattern) {
+                return $true
+            }
+        }
+    }
+
+    return $false
+}
 
 # Get all files from both trees
 $srcFiles = Get-ChildItem -Path $Source      -Recurse -File
@@ -64,19 +148,32 @@ foreach ($relPath in $srcIndex.Keys) {
 }
 
 # Determine files present only in Destination → candidates for deletion
+$excludedFiles = New-Object System.Collections.Generic.List[object]
 foreach ($relPath in $dstIndex.Keys) {
     if (-not $srcIndex.ContainsKey($relPath)) {
-        $toDelete.Add([PSCustomObject]@{
-                RelativePath = $relPath
-                Destination  = $dstIndex[$relPath]
-            })
+        # Check if this path matches any exclusion pattern
+        if (Test-ExcludedPath -RelativePath $relPath -Patterns $ExcludeFromDeletion) {
+            $excludedFiles.Add([PSCustomObject]@{
+                    RelativePath = $relPath
+                    Destination  = $dstIndex[$relPath]
+                })
+        }
+        else {
+            $toDelete.Add([PSCustomObject]@{
+                    RelativePath = $relPath
+                    Destination  = $dstIndex[$relPath]
+                })
+        }
     }
 }
 
 Write-Host "Planned actions:"
-Write-Host "  New files     to copy : $($toCopyNew.Count)"
-Write-Host "  Updated files to copy : $($toCopyUpdates.Count)"
-Write-Host "  Extra files   to delete: $($toDelete.Count)"
+Write-Host "  New files     to copy   : $($toCopyNew.Count)"
+Write-Host "  Updated files to copy   : $($toCopyUpdates.Count)"
+Write-Host "  Extra files   to delete : $($toDelete.Count)"
+if ($excludedFiles.Count -gt 0) {
+    Write-Host "  Files excluded from del.: $($excludedFiles.Count)" -ForegroundColor Yellow
+}
 Write-Host ""
 
 if ($PreviewOnly) {
@@ -103,6 +200,14 @@ if ($PreviewOnly) {
         Write-Host "=== Files that would be deleted from Destination ==="
         $toDelete | ForEach-Object {
             Write-Host "[DELETE]  $($_.RelativePath)"
+        }
+        Write-Host ""
+    }
+
+    if ($excludedFiles.Count -gt 0) {
+        Write-Host "=== Files excluded from deletion (preserved in Destination) ===" -ForegroundColor Yellow
+        $excludedFiles | ForEach-Object {
+            Write-Host "[KEEP]    $($_.RelativePath)" -ForegroundColor Yellow
         }
         Write-Host ""
     }
