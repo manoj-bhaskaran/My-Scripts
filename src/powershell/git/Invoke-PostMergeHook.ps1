@@ -86,8 +86,12 @@ if (-not $script:DestinationFolder) {
     exit 1
 }
 
-# Hook log file
-$script:LogFile = Join-Path $script:DestinationFolder "git-post-action.log"
+# Hook log file (in logs subdirectory)
+$logsDir = Join-Path $script:DestinationFolder "logs"
+if (-not (Test-Path -LiteralPath $logsDir)) {
+    New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
+}
+$script:LogFile = Join-Path $logsDir "git-post-action.log"
 
 # Deployment configuration lives under repo\config\modules\
 $configPath = Join-Path $script:RepoPath "config\modules\deployment.txt"

@@ -123,7 +123,7 @@ Separately from the file mirroring, the hooks also deploy PowerShell modules to 
 1. Check if files are in `.gitignore` (they won't sync)
 2. Verify the `stagingMirror` path is correct
 3. Check file permissions on the destination directory
-4. Look for errors in the hook log: `<stagingMirror>/git-post-action.log`
+4. Look for errors in the hook log: `<stagingMirror>/logs/git-post-action.log`
 
 ### Disable Deployment Temporarily
 
