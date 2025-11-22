@@ -206,9 +206,7 @@ if ($PreviewOnly) {
 
     if ($excludedFiles.Count -gt 0) {
         Write-Host "=== Files excluded from deletion (preserved in Destination) ===" -ForegroundColor Yellow
-        $excludedFiles | ForEach-Object {
-            Write-Host "[KEEP]    $($_.RelativePath)" -ForegroundColor Yellow
-        }
+        Write-Host "Total: $($excludedFiles.Count) files will be preserved (matching exclusion patterns)" -ForegroundColor Yellow
         Write-Host ""
     }
 
