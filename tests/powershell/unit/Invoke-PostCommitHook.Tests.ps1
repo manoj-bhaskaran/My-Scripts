@@ -79,6 +79,9 @@ Export-ModuleMember -Function *
     Mock Write-Error { }
     Mock Write-Warning { }
     Mock Write-Host { }
+    Mock Write-LogInfo { }
+    Mock Write-LogWarning { }
+    Mock Write-LogError { }
 
     # Load functions from the script without executing the main logic
     $scriptPath = Join-Path $PSScriptRoot "..\..\..\src\powershell\git\Invoke-PostCommitHook.ps1"
@@ -176,7 +179,8 @@ Describe "Get-HeaderVersion" {
 #>
 "@ | Out-File -FilePath $testFile -Force
 
-            { Get-HeaderVersion -Path $testFile } | Should -Throw "*Invalid version*"
+            # Version: invalid doesn't match the numeric regex, so it throws "No version header found"
+            { Get-HeaderVersion -Path $testFile } | Should -Throw "*No 'Version: x.y.z' header found*"
         }
     }
 }
@@ -405,6 +409,13 @@ function Get-TestData {
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Resolve-Path {
+                param($LiteralPath)
+                return [PSCustomObject]@{
+                    ProviderPath = $LiteralPath
+                }
+            }
+            Mock Test-Path { return $true }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -424,6 +435,13 @@ function Get-TestData {
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Resolve-Path {
+                param($LiteralPath)
+                return [PSCustomObject]@{
+                    ProviderPath = $LiteralPath
+                }
+            }
+            Mock Test-Path { return $true }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -443,6 +461,13 @@ function Get-TestData {
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Resolve-Path {
+                param($LiteralPath)
+                return [PSCustomObject]@{
+                    ProviderPath = $LiteralPath
+                }
+            }
+            Mock Test-Path { return $true }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -462,6 +487,13 @@ OtherModule|OtherModule.psm1|User
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Resolve-Path {
+                param($LiteralPath)
+                return [PSCustomObject]@{
+                    ProviderPath = $LiteralPath
+                }
+            }
+            Mock Test-Path { return $true }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
