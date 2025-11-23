@@ -90,6 +90,14 @@ BeforeAll {
     $script:RepoPath = $script:testRepoPath
     $script:DestinationFolder = $script:testStagingMirror
     $script:IsVerbose = $false
+
+    # Ensure environment variables are set for cross-platform compatibility
+    if (-not $env:USERPROFILE) {
+        $env:USERPROFILE = $HOME
+    }
+    if (-not $env:USERNAME) {
+        $env:USERNAME = "testuser"
+    }
 }
 
 AfterAll {
