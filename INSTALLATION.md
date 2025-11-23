@@ -260,28 +260,73 @@ psql --version
 
 Some scripts require environment variables to be set for API access and service configuration.
 
-### Google Drive Scripts
+### Google Drive Integration
+
+Google Drive scripts require OAuth 2.0 credentials for API access. Follow these steps to set up:
+
+#### 1. Get Google Drive API Credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Enable the **Google Drive API**:
+   - Navigate to "APIs & Services" > "Library"
+   - Search for "Google Drive API" and enable it
+4. Create **OAuth 2.0 credentials**:
+   - Navigate to "APIs & Services" > "Credentials"
+   - Click "Create Credentials" > "OAuth 2.0 Client ID"
+   - Select "Desktop app" as application type
+   - Download the credentials JSON file
+
+#### 2. Configure Credential File Paths
+
+The Google Drive authentication module supports two configuration methods:
+
+**Option 1: Environment Variables (Recommended)**
 
 **Windows (PowerShell):**
 ```powershell
 # Set for current session
-$env:GOOGLE_CLIENT_ID = "your-client-id.apps.googleusercontent.com"
-$env:GOOGLE_CLIENT_SECRET = "your-client-secret"
+$env:GDRIVE_CREDENTIALS_PATH = "$HOME\Documents\Scripts\credentials.json"
+$env:GDRIVE_TOKEN_PATH = "$HOME\Documents\Scripts\drive_token.json"
 
 # Set permanently (current user)
-[Environment]::SetEnvironmentVariable("GOOGLE_CLIENT_ID", "your-client-id.apps.googleusercontent.com", "User")
-[Environment]::SetEnvironmentVariable("GOOGLE_CLIENT_SECRET", "your-client-secret", "User")
+[Environment]::SetEnvironmentVariable("GDRIVE_CREDENTIALS_PATH", "$HOME\Documents\Scripts\credentials.json", "User")
+[Environment]::SetEnvironmentVariable("GDRIVE_TOKEN_PATH", "$HOME\Documents\Scripts\drive_token.json", "User")
 ```
 
 **Linux/macOS (Bash):**
 ```bash
 # Add to ~/.bashrc or ~/.zshrc for persistence
-export GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
-export GOOGLE_CLIENT_SECRET="your-client-secret"
+export GDRIVE_CREDENTIALS_PATH="$HOME/Documents/Scripts/credentials.json"
+export GDRIVE_TOKEN_PATH="$HOME/Documents/Scripts/drive_token.json"
 
 # Apply immediately
 source ~/.bashrc  # or source ~/.zshrc
 ```
+
+**Option 2: Default Location**
+
+If environment variables are not set, the module uses default paths:
+- Token file: `~/Documents/Scripts/drive_token.json`
+- Credentials file: `~/Documents/Scripts/credentials.json`
+
+To use defaults, simply place your downloaded credentials file at `~/Documents/Scripts/credentials.json`.
+
+#### 3. Verify Setup
+
+```python
+# Test the authentication module
+from src.python.modules.auth import google_drive_auth
+
+# Validate credentials file exists
+google_drive_auth.validate_credentials()
+
+# Authenticate (will open browser for OAuth flow on first run)
+service = google_drive_auth.authenticate_and_get_drive_service()
+print("✅ Google Drive authentication successful!")
+```
+
+**Note**: The token file (`drive_token.json`) is created automatically during the first OAuth authentication flow. You don't need to create it manually.
 
 ### CloudConvert Scripts
 

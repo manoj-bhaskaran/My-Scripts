@@ -7,18 +7,71 @@ to trace authentication progress.
 """
 
 import os
+from pathlib import Path
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 import python_logging_framework as plog
 
-# Define constants for token and credentials file
-TOKEN_FILE = "C:/users/manoj/Documents/Scripts/drive_token.json"
-CREDENTIALS_FILE = "C:/Users/manoj/Documents/Scripts/Google Drive JSON/client_secret_616159019059-09mhd30aim0ug4fvim49kjfvjtk3i0dd.json"
-
 # Define the scope for Drive API access
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+
+def _get_token_file():
+    """
+    Get token file path from environment or default location.
+
+    Returns:
+        str: Path to the token file.
+    """
+    if "GDRIVE_TOKEN_PATH" in os.environ:
+        return os.environ["GDRIVE_TOKEN_PATH"]
+
+    # Default to user's Documents/Scripts directory
+    default_path = Path.home() / "Documents" / "Scripts" / "drive_token.json"
+    return str(default_path)
+
+
+def _get_credentials_file():
+    """
+    Get credentials file path from environment or default location.
+
+    Returns:
+        str: Path to the credentials file.
+    """
+    if "GDRIVE_CREDENTIALS_PATH" in os.environ:
+        return os.environ["GDRIVE_CREDENTIALS_PATH"]
+
+    # Default to user's Documents/Scripts directory
+    default_path = Path.home() / "Documents" / "Scripts" / "credentials.json"
+    return str(default_path)
+
+
+# Define constants for token and credentials file
+TOKEN_FILE = _get_token_file()
+CREDENTIALS_FILE = _get_credentials_file()
+
+
+def validate_credentials():
+    """
+    Validate that credential files exist and are accessible.
+
+    Raises:
+        FileNotFoundError: If the credentials file does not exist.
+
+    Returns:
+        bool: True if validation passes.
+    """
+    if not Path(CREDENTIALS_FILE).exists():
+        raise FileNotFoundError(
+            f"Google Drive credentials file not found: {CREDENTIALS_FILE}\n"
+            f"Please set GDRIVE_CREDENTIALS_PATH environment variable or "
+            f"place credentials.json in {Path.home() / 'Documents' / 'Scripts'}"
+        )
+
+    # TOKEN_FILE is created during OAuth flow, so it's OK if it doesn't exist initially
+    return True
 
 
 def authenticate_and_get_drive_service():
