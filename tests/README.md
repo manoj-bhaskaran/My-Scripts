@@ -19,9 +19,14 @@ tests/
 │   │   └── test_csv_to_gpx.py
 │   └── conftest.py        # Pytest configuration and fixtures
 ├── powershell/
-│   └── unit/              # PowerShell unit tests
-│       ├── RandomName.Tests.ps1
-│       └── FileDistributor.Tests.ps1
+│   ├── unit/              # PowerShell unit tests
+│   │   ├── ErrorHandling.Tests.ps1
+│   │   ├── FileDistributor.Tests.ps1
+│   │   ├── FileOperations.Tests.ps1
+│   │   ├── PostgresBackup.Tests.ps1
+│   │   ├── ProgressReporter.Tests.ps1
+│   │   └── RandomName.Tests.ps1
+│   └── Invoke-Tests.ps1   # PowerShell test runner with coverage
 └── README.md              # This file
 ```
 
