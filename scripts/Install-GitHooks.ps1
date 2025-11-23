@@ -127,7 +127,8 @@ if (-not (Test-Path $localConfigPath)) {
     Write-Host ""
     Write-Host "  3. Set your staging mirror path (e.g., C:\Users\Manoj\Documents\Scripts)" -ForegroundColor White
     Write-Host ""
-} else {
+}
+else {
     Write-Host "✓ Local deployment config found: $localConfigPath" -ForegroundColor Green
 
     # Validate the config
@@ -136,17 +137,20 @@ if (-not (Test-Path $localConfigPath)) {
 
         if (-not $config.stagingMirror) {
             Write-Host "  ⚠ Warning: stagingMirror not set in config" -ForegroundColor Yellow
-        } elseif (-not (Test-Path $config.stagingMirror)) {
+        }
+        elseif (-not (Test-Path $config.stagingMirror)) {
             Write-Host "  ⚠ Warning: Staging mirror directory does not exist: $($config.stagingMirror)" -ForegroundColor Yellow
             Write-Host "    The directory will be created on first deployment." -ForegroundColor Gray
-        } else {
+        }
+        else {
             Write-Host "  ✓ Staging mirror: $($config.stagingMirror)" -ForegroundColor Green
         }
 
         if ($config.enabled -eq $false) {
             Write-Host "  ⚠ Deployment is currently DISABLED in config" -ForegroundColor Yellow
             Write-Host "    Set 'enabled: true' to activate automatic deployment." -ForegroundColor Gray
-        } else {
+        }
+        else {
             Write-Host "  ✓ Deployment enabled" -ForegroundColor Green
         }
     }

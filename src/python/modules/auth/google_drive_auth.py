@@ -25,11 +25,11 @@ def _get_token_file():
     Returns:
         str: Path to the token file.
     """
-    if 'GDRIVE_TOKEN_PATH' in os.environ:
-        return os.environ['GDRIVE_TOKEN_PATH']
+    if "GDRIVE_TOKEN_PATH" in os.environ:
+        return os.environ["GDRIVE_TOKEN_PATH"]
 
     # Default to user's Documents/Scripts directory
-    default_path = Path.home() / 'Documents' / 'Scripts' / 'drive_token.json'
+    default_path = Path.home() / "Documents" / "Scripts" / "drive_token.json"
     return str(default_path)
 
 
@@ -40,11 +40,11 @@ def _get_credentials_file():
     Returns:
         str: Path to the credentials file.
     """
-    if 'GDRIVE_CREDENTIALS_PATH' in os.environ:
-        return os.environ['GDRIVE_CREDENTIALS_PATH']
+    if "GDRIVE_CREDENTIALS_PATH" in os.environ:
+        return os.environ["GDRIVE_CREDENTIALS_PATH"]
 
     # Default to user's Documents/Scripts directory
-    default_path = Path.home() / 'Documents' / 'Scripts' / 'credentials.json'
+    default_path = Path.home() / "Documents" / "Scripts" / "credentials.json"
     return str(default_path)
 
 
