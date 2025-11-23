@@ -68,6 +68,21 @@ BeforeAll {
     Mock Write-Warning { }
     Mock Write-Host { }
 
+    # Mock file system operations globally for all tests
+    Mock Resolve-Path {
+        param([Parameter(Mandatory=$false)]$LiteralPath)
+        return [PSCustomObject]@{
+            ProviderPath = $LiteralPath
+        }
+    }
+    Mock Test-Path {
+        param(
+            [Parameter(Mandatory=$false)]$LiteralPath,
+            [Parameter(Mandatory=$false)]$PathType
+        )
+        return $true
+    }
+
     # Load functions from the script without executing the main logic
     $scriptPath = Join-Path $PSScriptRoot "..\..\..\src\powershell\git\Invoke-PostCommitHook.ps1"
     $scriptContent = Get-Content -Path $scriptPath -Raw
@@ -402,21 +417,6 @@ function Get-TestData {
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
-            Mock Resolve-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath
-                )
-                return [PSCustomObject]@{
-                    ProviderPath = $LiteralPath
-                }
-            }
-            Mock Test-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$PathType
-                )
-                return $true
-            }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -436,21 +436,6 @@ function Get-TestData {
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
-            Mock Resolve-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath
-                )
-                return [PSCustomObject]@{
-                    ProviderPath = $LiteralPath
-                }
-            }
-            Mock Test-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$PathType
-                )
-                return $true
-            }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -470,21 +455,6 @@ function Get-TestData {
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
-            Mock Resolve-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath
-                )
-                return [PSCustomObject]@{
-                    ProviderPath = $LiteralPath
-                }
-            }
-            Mock Test-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$PathType
-                )
-                return $true
-            }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -504,21 +474,6 @@ OtherModule|OtherModule.psm1|User
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
-            Mock Resolve-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath
-                )
-                return [PSCustomObject]@{
-                    ProviderPath = $LiteralPath
-                }
-            }
-            Mock Test-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$PathType
-                )
-                return $true
-            }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `

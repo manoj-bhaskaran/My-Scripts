@@ -67,6 +67,21 @@ BeforeAll {
     Mock Write-Warning { }
     Mock Write-Host { }
 
+    # Mock file system operations globally for all tests
+    Mock Resolve-Path {
+        param([Parameter(Mandatory=$false)]$LiteralPath)
+        return [PSCustomObject]@{
+            ProviderPath = $LiteralPath
+        }
+    }
+    Mock Test-Path {
+        param(
+            [Parameter(Mandatory=$false)]$LiteralPath,
+            [Parameter(Mandatory=$false)]$PathType
+        )
+        return $true
+    }
+
     # Load functions from the post-merge script without executing the main logic
     $scriptPath = Join-Path $PSScriptRoot "..\..\..\src\powershell\git\Invoke-PostMergeHook.ps1"
     $scriptContent = Get-Content -Path $scriptPath -Raw
@@ -382,21 +397,6 @@ function Get-MergeInfo {
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
-            Mock Resolve-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath
-                )
-                return [PSCustomObject]@{
-                    ProviderPath = $LiteralPath
-                }
-            }
-            Mock Test-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$PathType
-                )
-                return $true
-            }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -426,21 +426,6 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
-            Mock Resolve-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath
-                )
-                return [PSCustomObject]@{
-                    ProviderPath = $LiteralPath
-                }
-            }
-            Mock Test-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$PathType
-                )
-                return $true
-            }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -501,21 +486,6 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
-            Mock Resolve-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath
-                )
-                return [PSCustomObject]@{
-                    ProviderPath = $LiteralPath
-                }
-            }
-            Mock Test-Path {
-                param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$PathType
-                )
-                return $true
-            }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
