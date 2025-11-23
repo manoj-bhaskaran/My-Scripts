@@ -384,8 +384,7 @@ function Get-MergeInfo {
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
                 param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$ErrorAction
+                    [Parameter(Mandatory=$false)]$LiteralPath
                 )
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
@@ -430,8 +429,7 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
                 param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$ErrorAction
+                    [Parameter(Mandatory=$false)]$LiteralPath
                 )
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
@@ -507,8 +505,7 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
                 param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$ErrorAction
+                    [Parameter(Mandatory=$false)]$LiteralPath
                 )
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath

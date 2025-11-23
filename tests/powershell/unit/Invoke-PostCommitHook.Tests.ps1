@@ -404,8 +404,7 @@ function Get-TestData {
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
                 param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$ErrorAction
+                    [Parameter(Mandatory=$false)]$LiteralPath
                 )
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
@@ -440,8 +439,7 @@ function Get-TestData {
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
                 param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$ErrorAction
+                    [Parameter(Mandatory=$false)]$LiteralPath
                 )
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
@@ -476,8 +474,7 @@ function Get-TestData {
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
                 param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$ErrorAction
+                    [Parameter(Mandatory=$false)]$LiteralPath
                 )
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
@@ -512,8 +509,7 @@ OtherModule|OtherModule.psm1|User
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
                 param(
-                    [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$ErrorAction
+                    [Parameter(Mandatory=$false)]$LiteralPath
                 )
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
