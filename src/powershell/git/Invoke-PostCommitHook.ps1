@@ -328,18 +328,15 @@ function Deploy-ModuleFromConfig {
         $author = if ($authorRaw) { $authorRaw.Trim() } else { $env:USERNAME }
         $description = if ($descriptionRaw) { $descriptionRaw.Trim() } else { "PowerShell module" }
         
-        # Validate author and description fields - skip deployment if both are invalid
-        $authorValid = Test-TextSafe $author
-        $descriptionValid = Test-TextSafe $description
-        
-        if (-not $authorValid -and -not $descriptionValid) {
-            Write-Message ("Config error line {0}: both author and description fields are invalid, skipping deployment for {1}" -f ($i + 1), $moduleName)
-            continue
+        # Sanitize author and description fields - use safe fallbacks for invalid values
+        if (-not (Test-TextSafe $author)) { 
+            Write-Message ("Config line {0}: invalid author field, using fallback for {1}" -f ($i + 1), $moduleName)
+            $author = $env:USERNAME 
         }
-        
-        # Sanitize invalid fields with fallback values
-        if (-not $authorValid) { $author = $env:USERNAME }
-        if (-not $descriptionValid) { $description = "PowerShell module" }
+        if (-not (Test-TextSafe $description)) { 
+            Write-Message ("Config line {0}: invalid description field, using fallback for {1}" -f ($i + 1), $moduleName)
+            $description = "PowerShell module" 
+        }
 
         # Sanity check the module (syntax + presence of functions or Export-ModuleMember)
         if (-not (Test-ModuleSanity -Path $resolved)) {
