@@ -76,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Tests for PostgresBackup Module** (#507) - Added complete test coverage for PostgreSQL backup module
   - **Test File**: `tests/powershell/unit/PostgresBackup.Tests.ps1`
   - **Coverage**: Comprehensive unit tests for the `Backup-PostgresDatabase` function using Pester
+  - **Platform**: Windows-specific tests (automatically skipped on Linux/macOS as PostgresBackup uses Windows services)
   - **Test Categories**:
     - **Backup Creation Tests**: Validates backup file naming conventions, directory creation, and logging
     - **Service Management Tests**: Tests PostgreSQL service start/stop behavior and state management
@@ -94,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - ✅ Ensures service management doesn't leave PostgreSQL in incorrect state
     - ✅ Verifies error handling and logging behavior
     - ✅ Tests run automatically in CI pipeline without requiring actual PostgreSQL installation
+    - ✅ Cross-platform CI support (skips gracefully on non-Windows platforms)
   - **CI Integration**: Tests automatically discovered and executed by existing `Invoke-Tests.ps1` runner
   - **Version Impact**: PATCH bump - adds tests only, no functional changes
 

@@ -5,9 +5,21 @@
 .DESCRIPTION
     Pester tests for the PostgresBackup PowerShell module
     Tests backup creation, service management, retention policies, and error handling
+
+.NOTES
+    These tests are Windows-specific as the PostgresBackup module uses Windows services.
+    Tests will be skipped on non-Windows platforms.
 #>
 
 BeforeAll {
+    # Check if running on Windows
+    $script:isWindows = $PSVersionTable.PSVersion.Major -le 5 -or $IsWindows
+
+    if (-not $script:isWindows) {
+        Write-Warning "PostgresBackup tests require Windows platform. Skipping tests on $($PSVersionTable.Platform)."
+        return
+    }
+
     # Import the module
     $modulePath = Join-Path $PSScriptRoot "..\..\..\src\powershell\modules\Database\PostgresBackup\PostgresBackup.psm1"
     Import-Module $modulePath -Force
@@ -32,7 +44,7 @@ BeforeAll {
     Mock Start-Sleep { }
 }
 
-Describe "Backup-PostgresDatabase" {
+Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
     Context "Successful Backup Creation" {
         BeforeEach {
@@ -738,11 +750,13 @@ Describe "Backup-PostgresDatabase" {
 }
 
 AfterAll {
-    # Clean up test directory
-    if (Test-Path $script:testDir) {
+    # Clean up test directory (only if tests ran on Windows)
+    if ($script:isWindows -and $script:testDir -and (Test-Path $script:testDir)) {
         Remove-Item -Path $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     # Remove imported module
-    Remove-Module PostgresBackup -ErrorAction SilentlyContinue
+    if ($script:isWindows) {
+        Remove-Module PostgresBackup -ErrorAction SilentlyContinue
+    }
 }
