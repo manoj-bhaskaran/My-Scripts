@@ -471,6 +471,13 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Resolve-Path {
+                param($LiteralPath)
+                return [PSCustomObject]@{
+                    ProviderPath = $LiteralPath
+                }
+            }
+            Mock Test-Path { return $true }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
