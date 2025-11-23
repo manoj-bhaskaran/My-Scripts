@@ -413,7 +413,6 @@ function Get-TestData {
             Mock Test-Path {
                 param(
                     [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$Path,
                     [Parameter(Mandatory=$false)]$PathType
                 )
                 return $true
@@ -448,7 +447,6 @@ function Get-TestData {
             Mock Test-Path {
                 param(
                     [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$Path,
                     [Parameter(Mandatory=$false)]$PathType
                 )
                 return $true
@@ -483,7 +481,6 @@ function Get-TestData {
             Mock Test-Path {
                 param(
                     [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$Path,
                     [Parameter(Mandatory=$false)]$PathType
                 )
                 return $true
@@ -518,7 +515,6 @@ OtherModule|OtherModule.psm1|User
             Mock Test-Path {
                 param(
                     [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$Path,
                     [Parameter(Mandatory=$false)]$PathType
                 )
                 return $true

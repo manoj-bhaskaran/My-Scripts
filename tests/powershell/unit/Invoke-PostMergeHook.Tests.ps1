@@ -393,7 +393,6 @@ function Get-MergeInfo {
             Mock Test-Path {
                 param(
                     [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$Path,
                     [Parameter(Mandatory=$false)]$PathType
                 )
                 return $true
@@ -438,7 +437,6 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock Test-Path {
                 param(
                     [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$Path,
                     [Parameter(Mandatory=$false)]$PathType
                 )
                 return $true
@@ -514,7 +512,6 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock Test-Path {
                 param(
                     [Parameter(Mandatory=$false)]$LiteralPath,
-                    [Parameter(Mandatory=$false)]$Path,
                     [Parameter(Mandatory=$false)]$PathType
                 )
                 return $true
