@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Fixed Hardcoded Credentials Paths in Google Drive Auth** (#506) - Removed security vulnerability and improved portability
+  - **Security Fix**: Removed hardcoded credential file paths that exposed username and partial credential filenames
+    - Previously: Hardcoded paths like `C:/users/manoj/Documents/Scripts/...`
+    - Now: Environment variable-based configuration with secure defaults
+  - **Environment Variables**: Added support for `GDRIVE_CREDENTIALS_PATH` and `GDRIVE_TOKEN_PATH`
+    - Allows users to specify custom paths for credentials and token files
+    - Falls back to secure defaults in user's home directory if not set
+    - Default paths: `~/Documents/Scripts/credentials.json` and `~/Documents/Scripts/drive_token.json`
+  - **Path Resolution Functions**: New helper functions for credential path management
+    - `_get_credentials_file()`: Returns credentials path from environment or default
+    - `_get_token_file()`: Returns token path from environment or default
+    - Both functions return string paths compatible with existing code
+  - **Validation Function**: Added `validate_credentials()` to check file existence
+    - Provides clear error messages with troubleshooting guidance
+    - Mentions both environment variable and default location options
+    - Returns `True` on success, raises `FileNotFoundError` on missing credentials
+  - **Testing**: Comprehensive unit tests for path resolution logic
+    - Tests environment variable configuration
+    - Tests default path fallback
+    - Tests validation with missing and existing files
+    - Tests error message content and helpfulness
+    - File: `tests/python/unit/test_google_drive_auth_paths.py`
+  - **Documentation**: Updated `INSTALLATION.md` with detailed Google Drive setup instructions
+    - Step-by-step Google Cloud Console configuration
+    - Environment variable setup for Windows/Linux/macOS
+    - Default location usage instructions
+    - Verification examples
+  - **Configuration Template**: Created `.env.example` with Google Drive integration variables
+  - **Impact**:
+    - ✅ No hardcoded credentials in version control
+    - ✅ Works on any system without code changes
+    - ✅ Portable across Windows, Linux, and macOS
+    - ✅ Secure defaults using user's home directory
+    - ✅ Clear error messages for troubleshooting
+  - **Version Impact**: PATCH bump (2.1.1 → 2.1.2) - security fix and backward-compatible improvement
+
 ### Changed
 
 - **Flexible Template Processing for GitHub Issue Creator** (#504) - Enhanced `create_github_issues.sh` to process all template files
