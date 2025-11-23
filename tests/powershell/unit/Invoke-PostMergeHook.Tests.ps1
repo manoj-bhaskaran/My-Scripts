@@ -383,13 +383,20 @@ function Get-MergeInfo {
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
-                param($LiteralPath, $ErrorAction)
+                param(
+                    [Parameter(Mandatory=$false)]$LiteralPath,
+                    [Parameter(Mandatory=$false)]$ErrorAction
+                )
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
                 }
             }
             Mock Test-Path {
-                param($LiteralPath, $PathType)
+                param(
+                    [Parameter(Mandatory=$false)]$LiteralPath,
+                    [Parameter(Mandatory=$false)]$Path,
+                    [Parameter(Mandatory=$false)]$PathType
+                )
                 return $true
             }
 
@@ -422,13 +429,20 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
-                param($LiteralPath, $ErrorAction)
+                param(
+                    [Parameter(Mandatory=$false)]$LiteralPath,
+                    [Parameter(Mandatory=$false)]$ErrorAction
+                )
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
                 }
             }
             Mock Test-Path {
-                param($LiteralPath, $PathType)
+                param(
+                    [Parameter(Mandatory=$false)]$LiteralPath,
+                    [Parameter(Mandatory=$false)]$Path,
+                    [Parameter(Mandatory=$false)]$PathType
+                )
                 return $true
             }
 
@@ -492,13 +506,20 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
-                param($LiteralPath, $ErrorAction)
+                param(
+                    [Parameter(Mandatory=$false)]$LiteralPath,
+                    [Parameter(Mandatory=$false)]$ErrorAction
+                )
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
                 }
             }
             Mock Test-Path {
-                param($LiteralPath, $PathType)
+                param(
+                    [Parameter(Mandatory=$false)]$LiteralPath,
+                    [Parameter(Mandatory=$false)]$Path,
+                    [Parameter(Mandatory=$false)]$PathType
+                )
                 return $true
             }
 
