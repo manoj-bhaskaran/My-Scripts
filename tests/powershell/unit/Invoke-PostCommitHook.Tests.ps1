@@ -403,12 +403,15 @@ function Get-TestData {
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
-                param($LiteralPath)
+                param($LiteralPath, $ErrorAction)
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
                 }
             }
-            Mock Test-Path { return $true }
+            Mock Test-Path {
+                param($LiteralPath, $PathType)
+                return $true
+            }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -429,12 +432,15 @@ function Get-TestData {
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
-                param($LiteralPath)
+                param($LiteralPath, $ErrorAction)
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
                 }
             }
-            Mock Test-Path { return $true }
+            Mock Test-Path {
+                param($LiteralPath, $PathType)
+                return $true
+            }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -455,12 +461,15 @@ function Get-TestData {
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
-                param($LiteralPath)
+                param($LiteralPath, $ErrorAction)
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
                 }
             }
-            Mock Test-Path { return $true }
+            Mock Test-Path {
+                param($LiteralPath, $PathType)
+                return $true
+            }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -481,12 +490,15 @@ OtherModule|OtherModule.psm1|User
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
             Mock Resolve-Path {
-                param($LiteralPath)
+                param($LiteralPath, $ErrorAction)
                 return [PSCustomObject]@{
                     ProviderPath = $LiteralPath
                 }
             }
-            Mock Test-Path { return $true }
+            Mock Test-Path {
+                param($LiteralPath, $PathType)
+                return $true
+            }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
