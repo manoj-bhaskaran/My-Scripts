@@ -67,21 +67,6 @@ BeforeAll {
     Mock Write-Warning { }
     Mock Write-Host { }
 
-    # Mock file system operations globally for all tests
-    Mock Resolve-Path {
-        param([Parameter(Mandatory=$false)]$LiteralPath)
-        return [PSCustomObject]@{
-            ProviderPath = $LiteralPath
-        }
-    }
-    Mock Test-Path {
-        param(
-            [Parameter(Mandatory=$false)]$LiteralPath,
-            [Parameter(Mandatory=$false)]$PathType
-        )
-        return $true
-    }
-
     # Load functions from the post-merge script without executing the main logic
     $scriptPath = Join-Path $PSScriptRoot "..\..\..\src\powershell\git\Invoke-PostMergeHook.ps1"
     $scriptContent = Get-Content -Path $scriptPath -Raw
@@ -111,6 +96,19 @@ BeforeAll {
     }
     if (-not $env:USERNAME) {
         $env:USERNAME = "testuser"
+    }
+
+    # Override file system cmdlets with mock implementations AFTER loading functions
+    # This ensures they're in the right scope for the loaded functions to use
+    function global:Resolve-Path {
+        param([Parameter(Mandatory=$false)]$LiteralPath, $ErrorAction)
+        return [PSCustomObject]@{
+            ProviderPath = $LiteralPath
+        }
+    }
+    function global:Test-Path {
+        param([Parameter(Mandatory=$false)]$LiteralPath, $PathType, $Path)
+        return $true
     }
 }
 
