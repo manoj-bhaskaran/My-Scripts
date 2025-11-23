@@ -73,6 +73,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Comprehensive Tests for PostgresBackup Module** (#507) - Added complete test coverage for PostgreSQL backup module
+  - **Test File**: `tests/powershell/unit/PostgresBackup.Tests.ps1`
+  - **Coverage**: Comprehensive unit tests for the `Backup-PostgresDatabase` function using Pester
+  - **Platform**: Windows-specific tests (automatically skipped on Linux/macOS as PostgresBackup uses Windows services)
+  - **Test Categories**:
+    - **Backup Creation Tests**: Validates backup file naming conventions, directory creation, and logging
+    - **Service Management Tests**: Tests PostgreSQL service start/stop behavior and state management
+    - **Retention Policy Tests**: Validates old backup cleanup based on retention period and minimum backup count
+    - **Zero-Byte Backup Cleanup**: Tests removal of corrupted/empty backup files
+    - **Error Handling Tests**: Validates error scenarios including pg_dump failures, service timeouts, and cleanup errors
+    - **Password Handling Tests**: Tests both .pgpass authentication and explicit password usage
+    - **Custom Format Tests**: Validates pg_dump custom format backup creation
+  - **Test Coverage Metrics**:
+    - 60+ individual test cases covering all major code paths
+    - Tests for successful operations, edge cases, and error conditions
+    - Comprehensive mocking of external dependencies (pg_dump, Windows services, file system)
+  - **Benefits**:
+    - ✅ Prevents regressions in critical backup functionality
+    - ✅ Validates backup file retention policies work correctly
+    - ✅ Ensures service management doesn't leave PostgreSQL in incorrect state
+    - ✅ Verifies error handling and logging behavior
+    - ✅ Tests run automatically in CI pipeline without requiring actual PostgreSQL installation
+    - ✅ Cross-platform CI support (skips gracefully on non-Windows platforms)
+  - **CI Integration**: Tests automatically discovered and executed by existing `Invoke-Tests.ps1` runner
+  - **Version Impact**: PATCH bump - adds tests only, no functional changes
+
 - **Parameterized Issues Directory for GitHub Issue Creator** (#500) - Enhanced `create_github_issues.sh` with configurable input folder
   - **New Parameter**: `--issues-dir PATH` - Optional parameter to specify custom directory for issue markdown templates
     - Falls back to default `github_issues/` folder when not specified
