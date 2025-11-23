@@ -209,6 +209,14 @@ function New-OrUpdateManifest {
     New-ModuleManifest @manifestParams | Out-Null
 }
 
+function Test-TextSafe {
+    param([string]$Text, [int]$Max = 200)
+    if ($null -eq $Text) { return $false }
+    if ($Text.Length -gt $Max) { return $false }
+    if ($Text -match '[\u0000-\u001F\|]') { return $false } # control chars or pipe forbidden
+    return $true
+}
+
 function Test-Ignored {
     param([Parameter(Mandatory = $true)][string]$RelativePath)
     $res = git -C $script:RepoPath check-ignore "$RelativePath" 2>$null
@@ -247,8 +255,9 @@ function Deploy-ModuleFromConfig {
         return
     }
 
+    $repoRootResolved = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $RepoPath -ErrorAction Stop).ProviderPath)
     $allowedFixedTargets = @('System', 'User')
-    $lines = Get-Content -Path $ConfigPath -ErrorAction Stop
+    $lines = @(Get-Content -Path $ConfigPath -ErrorAction Stop)
 
     for ($i = 0; $i -lt $lines.Count; $i++) {
         $raw = $lines[$i]
@@ -270,8 +279,8 @@ function Deploy-ModuleFromConfig {
         $moduleName = $parts[0].Trim()
         $relPath = $parts[1].Trim()
         $targetsCsv = $parts[2].Trim()
-        $author = if ($parts.Count -ge 4 -and $parts[3].Trim()) { $parts[3].Trim() } else { $env:USERNAME }
-        $description = if ($parts.Count -ge 5 -and $parts[4].Trim()) { $parts[4].Trim() } else { "PowerShell module" }
+        $authorRaw = if ($parts.Count -ge 4) { $parts[3] } else { $null }
+        $descriptionRaw = if ($parts.Count -ge 5) { $parts[4] } else { $null }
 
         if (-not $moduleName) { Write-Message ("Config error line {0}: empty ModuleName" -f ($i + 1)); continue }
         if (-not $relPath) { Write-Message ("Config error line {0}: empty RelativePath" -f ($i + 1)); continue }
@@ -294,25 +303,50 @@ function Deploy-ModuleFromConfig {
         if ($TouchedRelPaths -and ($TouchedRelPaths -notcontains $relPath)) { continue }
 
         $absPath = Join-Path $RepoPath $relPath
-        if (-not (Test-Path -LiteralPath $absPath)) {
+        try { $resolved = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $absPath -ErrorAction Stop).ProviderPath) }
+        catch { $resolved = [System.IO.Path]::GetFullPath($absPath) }
+
+        if (-not $resolved.StartsWith($repoRootResolved, [StringComparison]::OrdinalIgnoreCase)) {
+            Write-Message ("Config error line {0}: RelativePath escapes repo root -> {1}" -f ($i + 1), $relPath)
+            continue
+        }
+
+        if (-not (Test-Path -LiteralPath $resolved)) {
             Write-Message ("Module path not found (line {0}): {1}" -f ($i + 1), $absPath)
             continue
         }
 
+        if ([IO.Path]::GetExtension($resolved) -ne '.psm1') {
+            Write-Message ("Config error line {0}: RelativePath must point to a .psm1 file -> {1}" -f ($i + 1), $relPath)
+            continue
+        }
+        if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+            Write-Message ("Config error line {0}: RelativePath is not a file -> {1}" -f ($i + 1), $relPath)
+            continue
+        }
+
+        $author = if ($authorRaw) { $authorRaw.Trim() } else { $env:USERNAME }
+        $description = if ($descriptionRaw) { $descriptionRaw.Trim() } else { "PowerShell module" }
+        
+        # Sanitize author and description fields - use safe fallbacks for invalid values
+        if (-not (Test-TextSafe $author)) { 
+            Write-Message ("Config line {0}: invalid author field, using fallback for {1}" -f ($i + 1), $moduleName)
+            $author = $env:USERNAME 
+        }
+        if (-not (Test-TextSafe $description)) { 
+            Write-Message ("Config line {0}: invalid description field, using fallback for {1}" -f ($i + 1), $moduleName)
+            $description = "PowerShell module" 
+        }
+
         # Sanity check the module (syntax + presence of functions or Export-ModuleMember)
-        if (-not (Test-ModuleSanity -Path $absPath)) {
+        if (-not (Test-ModuleSanity -Path $resolved)) {
             Write-Message ("Skipping deploy for {0} due to failed sanity check." -f $moduleName)
             continue
         }
 
         # Parse module version from header
-        try {
-            $ver = Get-HeaderVersion -Path $absPath
-        }
-        catch {
-            Write-Message ("Cannot parse version for {0}: {1}" -f $moduleName, $_)
-            continue
-        }
+        try { $ver = Get-HeaderVersion -Path $resolved }
+        catch { Write-Message ("Cannot parse version for {0}: {1}" -f $moduleName, $_); continue }
 
         # --- Targets: System/User/Alt ---
         foreach ($t in $targets) {
@@ -335,7 +369,7 @@ function Deploy-ModuleFromConfig {
             $destPsd1 = Join-Path $destVersionDir "$moduleName.psd1"
 
             try {
-                Copy-Item -LiteralPath $absPath -Destination $destPsm1 -Force -ErrorAction Stop
+                Copy-Item -LiteralPath $resolved -Destination $destPsm1 -Force -ErrorAction Stop
                 New-OrUpdateManifest `
                     -ManifestPath $destPsd1 `
                     -Version      $ver `

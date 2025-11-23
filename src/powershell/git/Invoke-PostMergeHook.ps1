@@ -228,9 +228,9 @@ function Deploy-ModuleFromConfig {
         return
     }
 
-    $repoRootResolved = (Resolve-Path -LiteralPath $RepoPath).ProviderPath
+    $repoRootResolved = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $RepoPath -ErrorAction Stop).ProviderPath)
     $allowedFixedTargets = @('System', 'User')
-    $lines = Get-Content -Path $ConfigPath -ErrorAction Stop
+    $lines = @(Get-Content -Path $ConfigPath -ErrorAction Stop)
 
     for ($i = 0; $i -lt $lines.Count; $i++) {
         $raw = $lines[$i]
@@ -276,17 +276,17 @@ function Deploy-ModuleFromConfig {
 
         # Build and validate module path
         $absPath = Join-Path $RepoPath $relPath
-        try {
-            $resolved = (Resolve-Path -LiteralPath $absPath -ErrorAction Stop).ProviderPath
-        }
-        catch {
-            Write-Message ("Module path not found (line {0}): {1}" -f ($i + 1), $absPath)
-            continue
-        }
+        try { $resolved = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $absPath -ErrorAction Stop).ProviderPath) }
+        catch { $resolved = [System.IO.Path]::GetFullPath($absPath) }
 
         # Ensure the resolved path sits inside the repo root (no traversal outside)
         if (-not $resolved.StartsWith($repoRootResolved, [StringComparison]::OrdinalIgnoreCase)) {
             Write-Message ("Config error line {0}: RelativePath escapes repo root -> {1}" -f ($i + 1), $relPath)
+            continue
+        }
+
+        if (-not (Test-Path -LiteralPath $resolved)) {
+            Write-Message ("Module path not found (line {0}): {1}" -f ($i + 1), $absPath)
             continue
         }
 

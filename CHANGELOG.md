@@ -73,6 +73,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Comprehensive Tests for Git Hooks** (#508) - Added complete test coverage for Git hook automation scripts
+  - **Test Files**:
+    - `tests/powershell/unit/Invoke-PostCommitHook.Tests.ps1`
+    - `tests/powershell/unit/Invoke-PostMergeHook.Tests.ps1`
+  - **Coverage**: Comprehensive unit tests for Git hook orchestration, module deployment, and file synchronization
+  - **Test Categories**:
+    - **Configuration Reading Tests**: Validates parsing of deployment config, JSON config handling, and error cases
+    - **Module Version Parsing Tests**: Tests header version extraction, format conversion (x.y → x.y.0), and validation
+    - **Module Sanity Check Tests**: Validates PowerShell module syntax checking and function detection
+    - **Path Validation Tests**: Tests absolute path validation, wildcard rejection, and security checks
+    - **Module Deployment Tests**: Validates deployment to System/User/Alt targets, multi-target deployment, and selective deployment
+    - **File Synchronization Tests**: Tests staging mirror updates, gitignore handling, and deleted file removal
+    - **Manifest Creation Tests**: Validates PowerShell manifest (.psd1) generation with correct metadata
+    - **Error Handling Tests**: Validates graceful handling of missing configs, invalid paths, access denied errors, and malformed data
+    - **Merge Detection Tests** (Post-Merge): Tests merge-base detection, unmerged path handling, and fallback strategies
+    - **Text Sanitization Tests** (Post-Merge): Validates author/description field sanitization and security
+  - **Test Coverage Metrics**:
+    - 80+ individual test cases covering all major code paths
+    - Tests for successful operations, edge cases, and error conditions
+    - Comprehensive mocking of external dependencies (git, file system, logging framework)
+    - Platform-agnostic tests that run on Windows and Linux
+  - **Functions Tested**:
+    - `Get-HeaderVersion` - Module version parsing
+    - `Test-ModuleSanity` - PowerShell module validation
+    - `Get-SafeAbsolutePath` - Path security validation
+    - `New-DirectoryIfMissing` - Directory creation helper
+    - `Test-Ignored` - Gitignore integration
+    - `New-OrUpdateManifest` - Manifest generation
+    - `Deploy-ModuleFromConfig` - Module deployment orchestration
+    - `Write-Message` - Logging wrapper
+    - `Test-TextSafe` - Input sanitization
+  - **Benefits**:
+    - ✅ Prevents regressions in critical development automation
+    - ✅ Validates module deployment doesn't corrupt PowerShell module paths
+    - ✅ Ensures file synchronization respects gitignore rules
+    - ✅ Verifies configuration parsing handles malformed data gracefully
+    - ✅ Tests security validations (path traversal, wildcards, input sanitization)
+    - ✅ Cross-platform CI support (tests run on both Windows and Linux)
+    - ✅ No actual git operations or file system changes during testing
+  - **CI Integration**: Tests automatically discovered and executed by existing `Invoke-Tests.ps1` runner
+  - **Version Impact**: PATCH bump - adds tests only, no functional changes
+
 - **Comprehensive Tests for PostgresBackup Module** (#507) - Added complete test coverage for PostgreSQL backup module
   - **Test File**: `tests/powershell/unit/PostgresBackup.Tests.ps1`
   - **Coverage**: Comprehensive unit tests for the `Backup-PostgresDatabase` function using Pester
