@@ -248,7 +248,7 @@ function Deploy-ModuleFromConfig {
     }
 
     $allowedFixedTargets = @('System', 'User')
-    $lines = Get-Content -Path $ConfigPath -ErrorAction Stop
+    $lines = @(Get-Content -Path $ConfigPath -ErrorAction Stop)
 
     for ($i = 0; $i -lt $lines.Count; $i++) {
         $raw = $lines[$i]

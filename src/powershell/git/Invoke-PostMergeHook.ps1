@@ -230,7 +230,7 @@ function Deploy-ModuleFromConfig {
 
     $repoRootResolved = (Resolve-Path -LiteralPath $RepoPath).ProviderPath
     $allowedFixedTargets = @('System', 'User')
-    $lines = Get-Content -Path $ConfigPath -ErrorAction Stop
+    $lines = @(Get-Content -Path $ConfigPath -ErrorAction Stop)
 
     for ($i = 0; $i -lt $lines.Count; $i++) {
         $raw = $lines[$i]
