@@ -79,17 +79,23 @@ Export-ModuleMember -Function *
     Mock Write-Warning { }
     Mock Write-Host { }
 
-    # Load functions from the post-merge script
+    # Load functions from the post-merge script without executing the main logic
     $scriptPath = Join-Path $PSScriptRoot "..\..\..\src\powershell\git\Invoke-PostMergeHook.ps1"
     $scriptContent = Get-Content -Path $scriptPath -Raw
 
-    # Extract only the function definitions
-    $functionPattern = '(?s)function\s+[\w-]+\s*\{.*?^\}'
-    $functions = [regex]::Matches($scriptContent, $functionPattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    # Find where execution starts (after all function definitions)
+    # The execution section starts with "Write-Message" at the script level
+    $executionMarker = 'Write-Message "post-merge script execution started."'
+    $executionStart = $scriptContent.IndexOf($executionMarker)
 
-    # Load each function
-    foreach ($match in $functions) {
-        Invoke-Expression $match.Value
+    if ($executionStart -gt 0) {
+        # Only load the script up to the execution section
+        $functionsOnly = $scriptContent.Substring(0, $executionStart)
+        # Execute the function definitions
+        . ([scriptblock]::Create($functionsOnly))
+    } else {
+        # Fallback: load entire script (shouldn't happen)
+        . $scriptPath
     }
 
     # Set up script variables that the functions expect
@@ -259,7 +265,8 @@ Describe "Test-TextSafe" {
         }
 
         It "Returns false for text with control characters" {
-            $result = Test-TextSafe -Text "Text with`u0000control char"
+            $textWithControlChar = "Text with" + [char]0x0000 + "control char"
+            $result = Test-TextSafe -Text $textWithControlChar
             $result | Should -Be $false
         }
 

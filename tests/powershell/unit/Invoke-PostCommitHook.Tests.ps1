@@ -80,20 +80,23 @@ Export-ModuleMember -Function *
     Mock Write-Warning { }
     Mock Write-Host { }
 
-    # Source the script (this will execute the configuration section)
-    # But we'll test individual functions separately
-    # For now, let's just load the functions without executing the main script
+    # Load functions from the script without executing the main logic
     $scriptPath = Join-Path $PSScriptRoot "..\..\..\src\powershell\git\Invoke-PostCommitHook.ps1"
     $scriptContent = Get-Content -Path $scriptPath -Raw
 
-    # Extract only the function definitions (not the execution part)
-    # We'll use regex to extract functions
-    $functionPattern = '(?s)function\s+[\w-]+\s*\{.*?^\}'
-    $functions = [regex]::Matches($scriptContent, $functionPattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    # Find where execution starts (after all function definitions)
+    # The execution section starts with "Write-Message" at the script level
+    $executionMarker = 'Write-Message "post-commit script execution started."'
+    $executionStart = $scriptContent.IndexOf($executionMarker)
 
-    # Load each function
-    foreach ($match in $functions) {
-        Invoke-Expression $match.Value
+    if ($executionStart -gt 0) {
+        # Only load the script up to the execution section
+        $functionsOnly = $scriptContent.Substring(0, $executionStart)
+        # Execute the function definitions
+        . ([scriptblock]::Create($functionsOnly))
+    } else {
+        # Fallback: load entire script (shouldn't happen)
+        . $scriptPath
     }
 
     # Set up script variables that the functions expect
