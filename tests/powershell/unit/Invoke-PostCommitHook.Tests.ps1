@@ -35,16 +35,11 @@ BeforeAll {
     } | ConvertTo-Json
     $localConfig | Out-File -FilePath $script:testLocalConfigPath -Force
 
-    # Mock the logging framework module
-    $mockLoggingModule = @"
-function Initialize-Logger { param(`$resolvedLogDir, `$ScriptName, `$LogLevel) }
-function Write-LogInfo { param(`$Message) }
-function Write-LogWarning { param(`$Message) }
-function Write-LogError { param(`$Message) }
-Export-ModuleMember -Function *
-"@
-    $mockModulePath = Join-Path $script:testDir "PowerShellLoggingFramework.psm1"
-    $mockLoggingModule | Out-File -FilePath $mockModulePath -Force
+    # Define mock logging functions globally before loading script
+    function global:Write-LogInfo { param($Message) }
+    function global:Write-LogWarning { param($Message) }
+    function global:Write-LogError { param($Message) }
+    function global:Initialize-Logger { param($resolvedLogDir, $ScriptName, $LogLevel) }
 
     # Import the script by dot-sourcing it with mocked dependencies
     # We need to mock git and Import-Module before sourcing
@@ -68,20 +63,10 @@ Export-ModuleMember -Function *
         return ""
     }
 
-    Mock Import-Module {
-        param($Name, [switch]$Force)
-        if ($Name -like "*PowerShellLoggingFramework*") {
-            # Load our mock module
-            . $mockModulePath
-        }
-    }
-
+    Mock Import-Module { }
     Mock Write-Error { }
     Mock Write-Warning { }
     Mock Write-Host { }
-    Mock Write-LogInfo { }
-    Mock Write-LogWarning { }
-    Mock Write-LogError { }
 
     # Load functions from the script without executing the main logic
     $scriptPath = Join-Path $PSScriptRoot "..\..\..\src\powershell\git\Invoke-PostCommitHook.ps1"
