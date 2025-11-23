@@ -579,6 +579,27 @@ TestModule|TestModule.psm1|User
                 $Author -eq "Custom Author"
             }
         }
+
+        It "Sanitizes author and description fields" {
+            # Test with potentially unsafe author/description
+            $unsafeAuthor = "Author|With|Pipes"
+            $configContent = "TestModule|TestModule.psm1|User|$unsafeAuthor"
+            $configContent | Out-File -FilePath $script:testConfigPath -Force
+
+            Mock Write-Message { }
+            Mock New-DirectoryIfMissing { }
+            Mock Copy-Item { }
+            Mock New-OrUpdateManifest { }
+
+            Deploy-ModuleFromConfig `
+                -RepoPath $script:testRepoPath `
+                -ConfigPath $script:testConfigPath
+
+            # Should use default author due to sanitization
+            Assert-MockCalled New-OrUpdateManifest -ParameterFilter {
+                $Author -eq $env:USERNAME
+            }
+        }
     }
 
     Context "Error Handling" {
