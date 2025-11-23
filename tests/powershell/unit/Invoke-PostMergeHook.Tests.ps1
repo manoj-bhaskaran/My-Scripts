@@ -101,7 +101,8 @@ BeforeAll {
     # Override file system cmdlets with mock implementations AFTER loading functions
     # This ensures they're in the right scope for the loaded functions to use
     function global:Resolve-Path {
-        param([Parameter(Mandatory=$false)]$LiteralPath, $ErrorAction)
+        [CmdletBinding()]
+        param([Parameter(Mandatory=$false)]$LiteralPath)
         # Return the path as-is without actual resolution
         return [PSCustomObject]@{
             ProviderPath = $LiteralPath
