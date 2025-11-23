@@ -103,12 +103,31 @@ BeforeAll {
     # This ensures they're in the right scope for the loaded functions to use
     function global:Resolve-Path {
         param([Parameter(Mandatory=$false)]$LiteralPath, $ErrorAction)
+        # Return the path as-is without actual resolution
         return [PSCustomObject]@{
             ProviderPath = $LiteralPath
         }
     }
     function global:Test-Path {
         param([Parameter(Mandatory=$false)]$LiteralPath, $PathType, $Path)
+        # Use the actual Test-Path for file system checks in TestDrive
+        # For non-TestDrive paths, check if they're obviously fake
+        $pathToTest = if ($LiteralPath) { $LiteralPath } else { $Path }
+
+        if (-not $pathToTest) { return $false }
+
+        # If path contains "NonExistent" or starts with C:\ on non-Windows, return false
+        if ($pathToTest -match "NonExistent" -or
+            (($pathToTest -match "^[A-Z]:\\") -and (-not ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5)))) {
+            return $false
+        }
+
+        # For TestDrive paths or actual test files, use real Test-Path
+        if ($pathToTest -match "TestDrive" -or $pathToTest -match "PostCommitHookTests") {
+            return (Microsoft.PowerShell.Management\Test-Path -LiteralPath $pathToTest -ErrorAction SilentlyContinue)
+        }
+
+        # Default to true for module deployment tests
         return $true
     }
 }
