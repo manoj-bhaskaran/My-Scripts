@@ -593,8 +593,8 @@ TestModule|TestModule.psm1|User
             $configContent | Out-File -FilePath $script:testConfigPath -Force
 
             Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
+            Mock New-DirectoryIfMissing { return $true }
+            Mock Copy-Item { return $true }
             Mock New-OrUpdateManifest { }
             Mock Test-ModuleSanity { return $true }
             Mock Get-HeaderVersion { return [version]"1.0.0" }
