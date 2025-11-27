@@ -173,6 +173,7 @@ if __name__ == "__main__":
 
     # Logger already initialized at module level, just update level if needed
     import logging
+
     if args.debug:
         logger.setLevel(logging.DEBUG)
 

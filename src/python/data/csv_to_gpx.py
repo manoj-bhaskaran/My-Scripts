@@ -65,7 +65,8 @@ def csv_to_gpx(input_csv, output_gpx):
 
     plog.log_info(
         logger,
-        f"GPX file with elevation written: {output_gpx}", metadata={"output_file": output_gpx}
+        f"GPX file with elevation written: {output_gpx}",
+        metadata={"output_file": output_gpx},
     )
 
 

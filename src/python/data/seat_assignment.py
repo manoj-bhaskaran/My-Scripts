@@ -217,7 +217,7 @@ def assign_disjointed(graph, assigned, subteam, tech, count):
     else:
         plog.log_error(
             logger,
-            f"❌ Not enough seats available for {subteam} ({tech}) — need {count}, found {len(free)}"
+            f"❌ Not enough seats available for {subteam} ({tech}) — need {count}, found {len(free)}",
         )
 
 

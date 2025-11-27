@@ -34,8 +34,7 @@ def get_elevation(lat, lon):
     elevation = _elevation_data.get_elevation(lat, lon)
     if elevation is None or elevation <= -1000:
         plog.log_debug(
-            logger,
-            f"Elevation unavailable or invalid at lat={lat}, lon={lon}, value={elevation}"
+            logger, f"Elevation unavailable or invalid at lat={lat}, lon={lon}, value={elevation}"
         )
         return None
     return elevation

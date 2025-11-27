@@ -739,7 +739,9 @@ def handle_elevation_enrichment(reprocess_elevation):
     latest_ts = update_elevations(records, elevation_stats)
     if latest_ts:
         update_last_elevation_timestamp(latest_ts)
-        plog.log_info(logger, f"🕒 Elevation last processed timestamp updated to {latest_ts.isoformat()}")
+        plog.log_info(
+            logger, f"🕒 Elevation last processed timestamp updated to {latest_ts.isoformat()}"
+        )
 
     print("\n📊 Elevation Processing Summary:")
     for k, v in elevation_stats.items():

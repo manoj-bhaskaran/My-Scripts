@@ -603,7 +603,9 @@ def log_final_summary(total_groups, deleted_count, dryrun):
         print("✅ No duplicates found. All files are unique.")
     else:
         plog.log_info(logger, "Duplicate cleanup completed. Retained one file per group.")
-        plog.log_info(logger, f"[{action}] {deleted_count} files from {total_groups} duplicate groups.")
+        plog.log_info(
+            logger, f"[{action}] {deleted_count} files from {total_groups} duplicate groups."
+        )
         print(f"[{action}] {deleted_count} files from {total_groups} duplicate groups.")
 
 
@@ -826,7 +828,9 @@ def run_pipeline(args, checkpoint):
             save_checkpoint(args.checkpoint, "stage3", args)
 
         if args.delete and not os.path.exists(args.output):
-            plog.log_info(logger, f"❌ Cannot perform deletion — stage3 output not found: {args.output}")
+            plog.log_info(
+                logger, f"❌ Cannot perform deletion — stage3 output not found: {args.output}"
+            )
             print(f"❌ Cannot perform deletion — stage3 output not found: {args.output}")
             return False
 

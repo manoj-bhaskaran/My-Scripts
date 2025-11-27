@@ -64,7 +64,7 @@ def get_storage_usage(service):
 
         plog.log_info(
             logger,
-            f"Current storage usage: {readable_total_usage} / {readable_limit} ({usage_percentage:.2f}%)"
+            f"Current storage usage: {readable_total_usage} / {readable_limit} ({usage_percentage:.2f}%)",
         )
         return usage_percentage, total_usage, limit
     except HttpError as error:
@@ -110,7 +110,7 @@ def main(debug, threshold):
             plog.log_info(
                 logger,
                 f"Storage usage exceeds {threshold}%: {usage_percentage:.2f}% "
-                f"({readable_total_usage} of {readable_limit}). Clearing trash."
+                f"({readable_total_usage} of {readable_limit}). Clearing trash.",
             )
             clear_trash(service)
 
@@ -119,13 +119,13 @@ def main(debug, threshold):
             plog.log_info(
                 logger,
                 f"Storage usage after trash clearance: {new_usage_percentage:.2f}% "
-                f"({readable_new_usage} of {readable_limit})."
+                f"({readable_new_usage} of {readable_limit}).",
             )
         else:
             plog.log_info(
                 logger,
                 f"Storage usage is within limits: {usage_percentage:.2f}% "
-                f"({readable_total_usage} of {readable_limit})."
+                f"({readable_total_usage} of {readable_limit}).",
             )
 
 

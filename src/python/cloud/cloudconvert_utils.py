@@ -34,7 +34,9 @@ def authenticate() -> str:
     Raises:
         ValueError: If the API key is not found in environment variables.
     """
-    plog.log_debug(logger, "Attempting to retrieve CloudConvert API key from environment variables.")
+    plog.log_debug(
+        logger, "Attempting to retrieve CloudConvert API key from environment variables."
+    )
     api_key = os.getenv("CLOUDCONVERT_PROD")
     if not api_key:
         plog.log_error(logger, "CloudConvert API key not found in environment variables.")
@@ -64,7 +66,9 @@ def create_upload_task(api_key: str) -> Dict[str, Any]:
     response = requests.post(url, json=payload, headers=headers)
 
     if response.status_code != 201:
-        plog.log_error(logger, f"Error creating upload task: {response.status_code} - {response.text}")
+        plog.log_error(
+            logger, f"Error creating upload task: {response.status_code} - {response.text}"
+        )
         response.raise_for_status()
 
     return response.json()["data"]["tasks"][0]
@@ -105,7 +109,7 @@ def handle_file_upload(
 
     plog.log_info(
         logger,
-        f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
+        f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}",
     )
     return upload_response
 
@@ -172,7 +176,9 @@ def create_conversion_task(api_key: str, output_format: str) -> Dict[str, Any]:
     response = requests.post(url, json=payload, headers=headers)
 
     if response.status_code != 201:
-        plog.log_error(logger, f"Error creating conversion task: {response.status_code} - {response.text}")
+        plog.log_error(
+            logger, f"Error creating conversion task: {response.status_code} - {response.text}"
+        )
         response.raise_for_status()
 
     return response.json()["data"]
@@ -199,7 +205,9 @@ def check_task_status(api_key: str, task_id: str) -> Dict[str, Any]:
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
-        plog.log_error(logger, f"Error checking task status: {response.status_code} - {response.text}")
+        plog.log_error(
+            logger, f"Error checking task status: {response.status_code} - {response.text}"
+        )
         response.raise_for_status()
 
     return response.json()["data"]
@@ -222,7 +230,9 @@ def wait_for_task_completion(api_key: str, task_id: str, task_name: str) -> Dict
     """
     for attempt in range(max_retries):
         status = check_task_status(api_key, task_id)
-        plog.log_info(logger, f"{task_name} status: {status['status']} (attempt {attempt+1}/{max_retries})")
+        plog.log_info(
+            logger, f"{task_name} status: {status['status']} (attempt {attempt+1}/{max_retries})"
+        )
 
         if status["status"] == "finished":
             return status
@@ -248,7 +258,9 @@ def convert_file(file_name: str, output_format: str) -> None:
     Raises:
         RuntimeError: If any error occurs during the conversion process.
     """
-    plog.log_debug(logger, f"Starting conversion process for file: {file_name} to format: {output_format}")
+    plog.log_debug(
+        logger, f"Starting conversion process for file: {file_name} to format: {output_format}"
+    )
     try:
         api_key = authenticate()
         conversion_task = create_conversion_task(api_key, output_format)

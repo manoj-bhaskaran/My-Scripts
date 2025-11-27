@@ -36,37 +36,37 @@ $allValid = $true
 
 $requiredVars = @{
     'MY_SCRIPTS_ROOT' = @{
-        Description = 'Script root directory'
-        Validator = { param($v) Test-Path $v }
+        Description  = 'Script root directory'
+        Validator    = { param($v) Test-Path $v }
         ErrorMessage = 'Path does not exist'
     }
 }
 
 $optionalVars = @{
-    'LOG_LEVEL' = @{
-        Description = 'Logging level'
-        Default = 'INFO'
-        Validator = { param($v) $v -in @('DEBUG','INFO','WARNING','ERROR','CRITICAL') }
+    'LOG_LEVEL'             = @{
+        Description  = 'Logging level'
+        Default      = 'INFO'
+        Validator    = { param($v) $v -in @('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL') }
         ErrorMessage = 'Must be one of: DEBUG, INFO, WARNING, ERROR, CRITICAL'
     }
-    'LOG_DIR' = @{
+    'LOG_DIR'               = @{
         Description = 'Log directory'
-        Default = './logs'
+        Default     = './logs'
     }
     'BACKUP_RETENTION_DAYS' = @{
-        Description = 'Backup retention days'
-        Default = '30'
-        Validator = { param($v) [int]$v -gt 0 }
+        Description  = 'Backup retention days'
+        Default      = '30'
+        Validator    = { param($v) [int]$v -gt 0 }
         ErrorMessage = 'Must be positive integer'
     }
-    'PGHOST' = @{
+    'PGHOST'                = @{
         Description = 'PostgreSQL host'
-        Default = 'localhost'
+        Default     = 'localhost'
     }
-    'PGPORT' = @{
-        Description = 'PostgreSQL port'
-        Default = '5432'
-        Validator = { param($v) [int]$v -ge 1 -and [int]$v -le 65535 }
+    'PGPORT'                = @{
+        Description  = 'PostgreSQL port'
+        Default      = '5432'
+        Validator    = { param($v) [int]$v -ge 1 -and [int]$v -le 65535 }
         ErrorMessage = 'Must be valid port number (1-65535)'
     }
 }
