@@ -419,6 +419,7 @@ function Get-TestData {
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
             Mock Test-ModuleSanity { return $true }
+            Mock Get-HeaderVersion { return [version]"1.0.0" }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -554,6 +555,7 @@ TestModule|TestModule.psm1|User
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
             Mock Test-ModuleSanity { return $true }
+            Mock Get-HeaderVersion { return [version]"1.0.0" }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -573,6 +575,7 @@ TestModule|TestModule.psm1|User
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
             Mock Test-ModuleSanity { return $true }
+            Mock Get-HeaderVersion { return [version]"1.0.0" }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -594,6 +597,7 @@ TestModule|TestModule.psm1|User
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
             Mock Test-ModuleSanity { return $true }
+            Mock Get-HeaderVersion { return [version]"1.0.0" }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
