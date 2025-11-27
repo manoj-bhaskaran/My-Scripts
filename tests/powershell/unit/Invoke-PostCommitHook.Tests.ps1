@@ -572,8 +572,6 @@ TestModule|TestModule.psm1|User
 
     Context "Error Handling" {
         It "Handles missing config file gracefully" {
-            Mock Write-Message { }
-
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
                 -ConfigPath "C:\NonExistent\config.txt"
@@ -613,8 +611,7 @@ TestModule|TestModule.psm1|User
             $configContent = "BadModule|BadModule.psm1|User"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
 
-            Mock Write-Message { }
-            Mock Copy-Item { }
+            Mock Test-ModuleSanity { return $false }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -629,9 +626,6 @@ TestModule|TestModule.psm1|User
         It "Handles invalid target gracefully" {
             $configContent = "TestModule|TestModule.psm1|InvalidTarget"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
-
-            Mock Write-Message { }
-            Mock Copy-Item { }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
