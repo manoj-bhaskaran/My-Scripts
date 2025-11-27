@@ -401,6 +401,14 @@ function Get-TestData {
     return "test"
 }
 "@ | Out-File -FilePath $testModulePath -Force
+
+        # Set up common mocks for Deploy-ModuleFromConfig tests
+        Mock Write-Message { }
+        Mock New-DirectoryIfMissing { return $true }
+        Mock Copy-Item { return $true }
+        Mock New-OrUpdateManifest { }
+        Mock Test-ModuleSanity { return $true }
+        Mock Get-HeaderVersion { return [version]"1.0.0" }
     }
 
     Context "Valid Configuration" {
@@ -414,13 +422,6 @@ function Get-TestData {
             $configContent = "TestModule|TestModule.psm1|System|Test Author|Test module description"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
 
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
-            Mock Test-ModuleSanity { return $true }
-            Mock Get-HeaderVersion { return [version]"1.0.0" }
-
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
                 -ConfigPath $script:testConfigPath
@@ -432,11 +433,6 @@ function Get-TestData {
         It "Deploys module with User target" {
             $configContent = "TestModule|TestModule.psm1|User"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
-
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -452,11 +448,6 @@ function Get-TestData {
             $configContent = "TestModule|TestModule.psm1|Alt:$altPath"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
 
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
-
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
                 -ConfigPath $script:testConfigPath
@@ -465,16 +456,11 @@ function Get-TestData {
         }
 
         It "Deploys to multiple targets" {
-            $altPath = Join-Path $script:testDir "alt_modules2"
+            $altPath = Join-Path $script:testDir "alt_modules"
             New-Item -Path $altPath -ItemType Directory -Force | Out-Null
 
             $configContent = "TestModule|TestModule.psm1|User,Alt:$altPath"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
-
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -489,11 +475,6 @@ TestModule|TestModule.psm1|User
 OtherModule|OtherModule.psm1|User
 "@
             $configContent | Out-File -FilePath $script:testConfigPath -Force
-
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -550,13 +531,6 @@ TestModule|TestModule.psm1|User
             $configContent = "TestModule|TestModule.psm1|User"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
 
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
-            Mock Test-ModuleSanity { return $true }
-            Mock Get-HeaderVersion { return [version]"1.0.0" }
-
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
                 -ConfigPath $script:testConfigPath
@@ -569,13 +543,6 @@ TestModule|TestModule.psm1|User
         It "Uses custom author when specified" {
             $configContent = "TestModule|TestModule.psm1|User|Custom Author"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
-
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
-            Mock Test-ModuleSanity { return $true }
-            Mock Get-HeaderVersion { return [version]"1.0.0" }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -591,13 +558,6 @@ TestModule|TestModule.psm1|User
             $unsafeAuthor = "Author$([char]1)WithControlChar"  # Contains control character
             $configContent = "TestModule|TestModule.psm1|User|$unsafeAuthor"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
-
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { return $true }
-            Mock Copy-Item { return $true }
-            Mock New-OrUpdateManifest { }
-            Mock Test-ModuleSanity { return $true }
-            Mock Get-HeaderVersion { return [version]"1.0.0" }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
