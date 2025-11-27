@@ -1,0 +1,69 @@
+name: Validate Environment Configuration
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [ main, develop, "claude/**" ]
+    paths:
+      - '.env.example'
+      - 'scripts/verify-environment.sh'
+      - 'scripts/Verify-Environment.ps1'
+      - 'scripts/load-environment.sh'
+      - 'scripts/Load-Environment.ps1'
+      - 'docs/guides/environment-variables.md'
+      - 'INSTALLATION.md'
+      - '.github/workflows/environment-validation.yml'
+      - 'src/python/cloud/gdrive_recover.py'
+      - 'src/python/cloud/README.md'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '.env.example'
+      - 'scripts/verify-environment.sh'
+      - 'scripts/Verify-Environment.ps1'
+      - 'scripts/load-environment.sh'
+      - 'scripts/Load-Environment.ps1'
+      - 'docs/guides/environment-variables.md'
+      - 'INSTALLATION.md'
+      - '.github/workflows/environment-validation.yml'
+      - 'src/python/cloud/gdrive_recover.py'
+      - 'src/python/cloud/README.md'
+
+jobs:
+  validate-environment:
+    name: Run environment validators
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare test environment file
+        run: |
+          mkdir -p /tmp/my-scripts
+          mkdir -p /tmp/logs
+          touch /tmp/credentials.json /tmp/drive_token.json /tmp/token.json
+          cat <<'ENV' > .env
+          MY_SCRIPTS_ROOT=/tmp/my-scripts
+          MY_SCRIPTS_REPO=/workspace/My-Scripts
+          CLOUDCONVERT_PROD=dummy-api-key
+          GDRIVE_TOKEN_PATH=/tmp/drive_token.json
+          GDRIVE_CREDENTIALS_PATH=/tmp/credentials.json
+          GDRT_CREDENTIALS_FILE=/tmp/credentials.json
+          GDRT_TOKEN_FILE=/tmp/token.json
+          GDRT_STRICT_POLICY=0
+          LOG_LEVEL=INFO
+          LOG_DIR=/tmp/logs
+          BACKUP_RETENTION_DAYS=30
+          PGHOST=localhost
+          PGPORT=5432
+          PGUSER=postgres
+          PGDATABASE=postgres
+          ENV
+
+      - name: Run Bash validation
+        run: ./scripts/verify-environment.sh
+
+      - name: Run PowerShell validation
+        shell: pwsh
+        run: ./scripts/Verify-Environment.ps1

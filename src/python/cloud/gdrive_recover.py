@@ -179,11 +179,14 @@ DOWNLOAD_CHUNK_BYTES = 1024 * 1024  # 1 MiB
 DEFAULT_HTTP_TRANSPORT = "auto"  # auto|httplib2|requests
 DEFAULT_HTTP_POOL_MAXSIZE = 32
 # Credential locations (env-overridable)
-#  - GDRT_CREDENTIALS_FILE: full path to Google client secret JSON
-#  - GDRT_TOKEN_FILE: full path for OAuth token cache
-DEFAULT_CREDENTIALS_FILE = "credentials.json"
+#  - GDRIVE_CREDENTIALS_PATH: shared Google client secret JSON for auth modules
+#  - GDRIVE_TOKEN_PATH: shared OAuth token cache path
+#  - GDRT_CREDENTIALS_FILE: override for the recovery tool only
+#  - GDRT_TOKEN_FILE: override token cache for the recovery tool only
+DEFAULT_CREDENTIALS_FILE = os.getenv("GDRIVE_CREDENTIALS_PATH", "credentials.json")
+DEFAULT_TOKEN_FILE = os.getenv("GDRIVE_TOKEN_PATH", "token.json")
 CREDENTIALS_FILE = os.getenv("GDRT_CREDENTIALS_FILE", DEFAULT_CREDENTIALS_FILE)
-TOKEN_FILE = os.getenv("GDRT_TOKEN_FILE", "token.json")
+TOKEN_FILE = os.getenv("GDRT_TOKEN_FILE", DEFAULT_TOKEN_FILE)
 
 # one-time console note guard for requests→httplib2 fallback
 _PRINTED_REQUESTS_FALLBACK = False
@@ -621,11 +624,11 @@ class DriveTrashRecoveryTool:
             creds.refresh(Request())
         else:
             # Allow an env var override for the client secrets file.
-            cred_path = os.getenv("GDRT_CREDENTIALS_FILE", "credentials.json")
+            cred_path = os.getenv("GDRT_CREDENTIALS_FILE", CREDENTIALS_FILE)
             if not os.path.exists(cred_path):
                 self.logger.error(
                     f"Credentials file not found: {cred_path}. "
-                    "Set GDRT_CREDENTIALS_FILE or place credentials.json next to the script."
+                    "Set GDRT_CREDENTIALS_FILE or GDRIVE_CREDENTIALS_PATH, or place credentials.json next to the script."
                 )
                 return None
             flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)

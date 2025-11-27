@@ -415,6 +415,8 @@ function Get-MergeInfo {
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Test-ModuleSanity { return $true }
+            Mock Get-HeaderVersion { return [version]"1.0.0" }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -444,6 +446,8 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Test-ModuleSanity { return $true }
+            Mock Get-HeaderVersion { return [version]"1.0.0" }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -495,8 +499,8 @@ UntouchedModule|UntouchedModule.psm1|User
         }
 
         It "Sanitizes author and description fields" {
-            # Test with potentially unsafe author/description
-            $unsafeAuthor = "Author|With|Pipes"
+            # Test with potentially unsafe author/description using control character
+            $unsafeAuthor = "Author$([char]1)WithControlChar"  # Contains control character
             $configContent = "MergeTestModule|MergeTestModule.psm1|User|$unsafeAuthor"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
 
@@ -504,6 +508,8 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Test-ModuleSanity { return $true }
+            Mock Get-HeaderVersion { return [version]"1.0.0" }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `

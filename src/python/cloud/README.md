@@ -32,13 +32,18 @@ Scripts using Google Drive require OAuth2 credentials:
 2. Enable Google Drive API
 3. Create OAuth2 credentials
 4. Download credentials file
-5. Configure path to credentials in scripts or environment variables
+5. Configure the credential and token file paths via environment variables:
+   - `GDRIVE_CREDENTIALS_PATH` (defaults to `~/Documents/Scripts/credentials.json`)
+   - `GDRIVE_TOKEN_PATH` (defaults to `~/Documents/Scripts/drive_token.json`)
+6. Optionally override recovery tool paths with `GDRT_CREDENTIALS_FILE` and `GDRT_TOKEN_FILE`
+7. Load `.env` with `source scripts/load-environment.sh` (Bash) or `. ./scripts/Load-Environment.ps1` (PowerShell)
 
 ### CloudConvert API
 
 CloudConvert scripts require an API key:
-- Set environment variable `CLOUDCONVERT_API_KEY`
+- Set environment variable `CLOUDCONVERT_PROD`
 - Or configure in script parameters
+- Use `.env.example` and the validation scripts to confirm your configuration
 
 ## Scheduling
 

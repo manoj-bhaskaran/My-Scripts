@@ -30,7 +30,7 @@ BeforeAll {
 
     # Create a minimal local config file
     $localConfig = @{
-        enabled = $true
+        enabled       = $true
         stagingMirror = $script:testStagingMirror
     } | ConvertTo-Json
     $localConfig | Out-File -FilePath $script:testLocalConfigPath -Force
@@ -103,14 +103,14 @@ BeforeAll {
     # This ensures they're in the right scope for the loaded functions to use
     function global:Resolve-Path {
         [CmdletBinding()]
-        param([Parameter(Mandatory=$false)]$LiteralPath)
+        param([Parameter(Mandatory = $false)]$LiteralPath)
         # Return the path as-is without actual resolution
         return [PSCustomObject]@{
             ProviderPath = $LiteralPath
         }
     }
     function global:Test-Path {
-        param([Parameter(Mandatory=$false)]$LiteralPath, $PathType, $Path)
+        param([Parameter(Mandatory = $false)]$LiteralPath, $PathType, $Path)
         # Use the actual Test-Path for file system checks in TestDrive
         # For non-TestDrive paths, check if they're obviously fake
         $pathToTest = if ($LiteralPath) { $LiteralPath } else { $Path }
@@ -401,6 +401,14 @@ function Get-TestData {
     return "test"
 }
 "@ | Out-File -FilePath $testModulePath -Force
+
+        # Set up common mocks for Deploy-ModuleFromConfig tests
+        Mock Write-Message { }
+        Mock New-DirectoryIfMissing { return $true }
+        Mock Copy-Item { return $true }
+        Mock New-OrUpdateManifest { }
+        Mock Test-ModuleSanity { return $true }
+        Mock Get-HeaderVersion { return [version]"1.0.0" }
     }
 
     Context "Valid Configuration" {
@@ -414,11 +422,6 @@ function Get-TestData {
             $configContent = "TestModule|TestModule.psm1|System|Test Author|Test module description"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
 
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
-
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
                 -ConfigPath $script:testConfigPath
@@ -430,11 +433,6 @@ function Get-TestData {
         It "Deploys module with User target" {
             $configContent = "TestModule|TestModule.psm1|User"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
-
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -450,11 +448,6 @@ function Get-TestData {
             $configContent = "TestModule|TestModule.psm1|Alt:$altPath"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
 
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
-
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
                 -ConfigPath $script:testConfigPath
@@ -463,16 +456,11 @@ function Get-TestData {
         }
 
         It "Deploys to multiple targets" {
-            $altPath = Join-Path $script:testDir "alt_modules2"
+            $altPath = Join-Path $script:testDir "alt_modules"
             New-Item -Path $altPath -ItemType Directory -Force | Out-Null
 
             $configContent = "TestModule|TestModule.psm1|User,Alt:$altPath"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
-
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -487,11 +475,6 @@ TestModule|TestModule.psm1|User
 OtherModule|OtherModule.psm1|User
 "@
             $configContent | Out-File -FilePath $script:testConfigPath -Force
-
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -548,11 +531,6 @@ TestModule|TestModule.psm1|User
             $configContent = "TestModule|TestModule.psm1|User"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
 
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
-
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
                 -ConfigPath $script:testConfigPath
@@ -565,11 +543,6 @@ TestModule|TestModule.psm1|User
         It "Uses custom author when specified" {
             $configContent = "TestModule|TestModule.psm1|User|Custom Author"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
-
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -586,11 +559,6 @@ TestModule|TestModule.psm1|User
             $configContent = "TestModule|TestModule.psm1|User|$unsafeAuthor"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
 
-            Mock Write-Message { }
-            Mock New-DirectoryIfMissing { }
-            Mock Copy-Item { }
-            Mock New-OrUpdateManifest { }
-
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
                 -ConfigPath $script:testConfigPath
@@ -604,8 +572,6 @@ TestModule|TestModule.psm1|User
 
     Context "Error Handling" {
         It "Handles missing config file gracefully" {
-            Mock Write-Message { }
-
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
                 -ConfigPath "C:\NonExistent\config.txt"
@@ -645,8 +611,7 @@ TestModule|TestModule.psm1|User
             $configContent = "BadModule|BadModule.psm1|User"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
 
-            Mock Write-Message { }
-            Mock Copy-Item { }
+            Mock Test-ModuleSanity { return $false }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -661,9 +626,6 @@ TestModule|TestModule.psm1|User
         It "Handles invalid target gracefully" {
             $configContent = "TestModule|TestModule.psm1|InvalidTarget"
             $configContent | Out-File -FilePath $script:testConfigPath -Force
-
-            Mock Write-Message { }
-            Mock Copy-Item { }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -702,8 +664,8 @@ TestModule|TestModule.psm1|User
             Mock New-OrUpdateManifest { }
 
             { Deploy-ModuleFromConfig `
-                -RepoPath $script:testRepoPath `
-                -ConfigPath $script:testConfigPath } | Should -Not -Throw
+                    -RepoPath $script:testRepoPath `
+                    -ConfigPath $script:testConfigPath } | Should -Not -Throw
 
             Assert-MockCalled Write-Message -ParameterFilter {
                 $Message -match "Deployment error"
