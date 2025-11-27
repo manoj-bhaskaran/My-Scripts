@@ -30,7 +30,7 @@ BeforeAll {
 
     # Create a minimal local config file
     $localConfig = @{
-        enabled = $true
+        enabled       = $true
         stagingMirror = $script:testStagingMirror
     } | ConvertTo-Json
     $localConfig | Out-File -FilePath $script:testLocalConfigPath -Force
@@ -103,14 +103,14 @@ BeforeAll {
     # This ensures they're in the right scope for the loaded functions to use
     function global:Resolve-Path {
         [CmdletBinding()]
-        param([Parameter(Mandatory=$false)]$LiteralPath)
+        param([Parameter(Mandatory = $false)]$LiteralPath)
         # Return the path as-is without actual resolution
         return [PSCustomObject]@{
             ProviderPath = $LiteralPath
         }
     }
     function global:Test-Path {
-        param([Parameter(Mandatory=$false)]$LiteralPath, $PathType, $Path)
+        param([Parameter(Mandatory = $false)]$LiteralPath, $PathType, $Path)
         # Use the actual Test-Path for file system checks in TestDrive
         # For non-TestDrive paths, check if they're obviously fake
         $pathToTest = if ($LiteralPath) { $LiteralPath } else { $Path }
@@ -418,6 +418,7 @@ function Get-TestData {
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Test-ModuleSanity { return $true }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -552,6 +553,7 @@ TestModule|TestModule.psm1|User
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Test-ModuleSanity { return $true }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -570,6 +572,7 @@ TestModule|TestModule.psm1|User
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Test-ModuleSanity { return $true }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -590,6 +593,7 @@ TestModule|TestModule.psm1|User
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Test-ModuleSanity { return $true }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -702,8 +706,8 @@ TestModule|TestModule.psm1|User
             Mock New-OrUpdateManifest { }
 
             { Deploy-ModuleFromConfig `
-                -RepoPath $script:testRepoPath `
-                -ConfigPath $script:testConfigPath } | Should -Not -Throw
+                    -RepoPath $script:testRepoPath `
+                    -ConfigPath $script:testConfigPath } | Should -Not -Throw
 
             Assert-MockCalled Write-Message -ParameterFilter {
                 $Message -match "Deployment error"
