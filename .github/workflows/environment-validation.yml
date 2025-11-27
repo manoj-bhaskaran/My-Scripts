@@ -1,4 +1,6 @@
 name: Validate Environment Configuration
+permissions:
+  contents: read
 
 on:
   push:
