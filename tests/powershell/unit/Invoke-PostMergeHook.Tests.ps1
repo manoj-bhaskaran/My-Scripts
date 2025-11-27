@@ -415,6 +415,9 @@ function Get-MergeInfo {
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Test-ModuleSanity { return $true }
+
+            Mock Get-HeaderVersion { return [version]"1.0.0" }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -444,6 +447,9 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Test-ModuleSanity { return $true }
+
+            Mock Get-HeaderVersion { return [version]"1.0.0" }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
@@ -504,6 +510,9 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock New-DirectoryIfMissing { }
             Mock Copy-Item { }
             Mock New-OrUpdateManifest { }
+            Mock Test-ModuleSanity { return $true }
+
+            Mock Get-HeaderVersion { return [version]"1.0.0" }
 
             Deploy-ModuleFromConfig `
                 -RepoPath $script:testRepoPath `
