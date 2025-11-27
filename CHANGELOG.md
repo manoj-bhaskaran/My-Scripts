@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Verification examples
   - **Configuration Template**: Created `.env.example` with Google Drive integration variables
   - **Impact**:
+    - **Comprehensive environment validation** with cross-platform scripts and CI coverage (#510)
+
+### Added
+
+- **Centralized environment configuration** (#510)
+  - New `.env.example` documents every environment variable with defaults and usage notes
+  - Added loaders (`scripts/load-environment.sh`, `scripts/Load-Environment.ps1`) for consistent local setup
+  - Validation scripts for Bash and PowerShell plus CI workflow to guard required configuration
+  - New guide at `docs/guides/environment-variables.md` and updated installation docs
+  - Google Drive recovery now honors `GDRIVE_CREDENTIALS_PATH`/`GDRIVE_TOKEN_PATH` in addition to its tool-specific overrides
     - ✅ No hardcoded credentials in version control
     - ✅ Works on any system without code changes
     - ✅ Portable across Windows, Linux, and macOS
