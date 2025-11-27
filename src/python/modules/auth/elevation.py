@@ -13,8 +13,8 @@ Functions:
 import srtm
 import python_logging_framework as plog
 
-# Initialise logger once (assumes caller sets log_file_path)
-plog.initialise_logger(log_file_path="auto", level="INFO")
+# Initialize logger for this module
+logger = plog.initialise_logger(__name__)
 
 # Initialize elevation data provider once
 _elevation_data = srtm.get_data()
@@ -34,6 +34,7 @@ def get_elevation(lat, lon):
     elevation = _elevation_data.get_elevation(lat, lon)
     if elevation is None or elevation <= -1000:
         plog.log_debug(
+            logger,
             f"Elevation unavailable or invalid at lat={lat}, lon={lon}, value={elevation}"
         )
         return None

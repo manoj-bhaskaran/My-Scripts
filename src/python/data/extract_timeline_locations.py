@@ -8,6 +8,9 @@ from elevation import get_elevation
 from contextlib import contextmanager
 import python_logging_framework as plog
 
+# Initialize logger for this module
+logger = plog.initialise_logger(__name__)
+
 # Database connection configuration
 DB_PARAMS = {
     "host": "localhost",
@@ -197,7 +200,7 @@ def insert_records_into_postgres(records, stats):
 
     latest = max(r["datetime"] for r in records)
     update_last_processed_timestamp(latest)
-    plog.log_info(f"🕒 Last processed timestamp updated to: {latest.isoformat()}")
+    plog.log_info(logger, f"🕒 Last processed timestamp updated to: {latest.isoformat()}")
 
 
 def check_near_duplicate(rec, cur, interval_str, stats):
@@ -479,11 +482,11 @@ def print_start_message(last_processed, reprocess):
         reprocess (bool): Whether all records will be reprocessed.
     """
     if reprocess:
-        plog.log_info("🔁 Reprocessing all records (ignoring last processed timestamp)")
+        plog.log_info(logger, "🔁 Reprocessing all records (ignoring last processed timestamp)")
     elif last_processed:
-        plog.log_info(f"▶️ Starting processing from {last_processed.isoformat()}")
+        plog.log_info(logger, f"▶️ Starting processing from {last_processed.isoformat()}")
     else:
-        plog.log_info("▶️ Starting full processing (no prior timestamp found)")
+        plog.log_info(logger, "▶️ Starting full processing (no prior timestamp found)")
 
 
 def load_json(input_file):
@@ -500,14 +503,14 @@ def load_json(input_file):
         with open(input_file, "r", encoding="utf-8") as f:
             data = json.load(f)
         if "semanticSegments" not in data:
-            plog.log_warning("⚠️ Warning: 'semanticSegments' key missing.")
+            plog.log_warning(logger, "⚠️ Warning: 'semanticSegments' key missing.")
         if "rawSignals" not in data:
-            plog.log_warning("⚠️ Warning: 'rawSignals' key missing.")
+            plog.log_warning(logger, "⚠️ Warning: 'rawSignals' key missing.")
         return data
     except FileNotFoundError:
-        plog.log_error(f"❌ File not found: {input_file}")
+        plog.log_error(logger, f"❌ File not found: {input_file}")
     except json.JSONDecodeError as e:
-        plog.log_error(f"❌ JSON parsing error: {e}")
+        plog.log_error(logger, f"❌ JSON parsing error: {e}")
     return None
 
 
@@ -736,7 +739,7 @@ def handle_elevation_enrichment(reprocess_elevation):
     latest_ts = update_elevations(records, elevation_stats)
     if latest_ts:
         update_last_elevation_timestamp(latest_ts)
-        plog.log_info(f"🕒 Elevation last processed timestamp updated to {latest_ts.isoformat()}")
+        plog.log_info(logger, f"🕒 Elevation last processed timestamp updated to {latest_ts.isoformat()}")
 
     print("\n📊 Elevation Processing Summary:")
     for k, v in elevation_stats.items():
@@ -773,7 +776,7 @@ def run_vacuum_analyze_if_supported():
             major_version = int(version_str.split(".")[0])
 
             if major_version >= 15:
-                plog.log_info("⚙️  Running VACUUM ANALYZE on timeline.locations...")
+                plog.log_info(logger, "⚙️  Running VACUUM ANALYZE on timeline.locations...")
                 cur.execute("VACUUM ANALYZE timeline.locations;")
             else:
                 plog.log_warning(
@@ -781,7 +784,7 @@ def run_vacuum_analyze_if_supported():
                 )
         conn.close()
     except Exception as e:
-        plog.log_error(f"❌ Could not run VACUUM ANALYZE: {e}")
+        plog.log_error(logger, f"❌ Could not run VACUUM ANALYZE: {e}")
 
 
 def main(input_file, reprocess, reprocess_elevation):
@@ -802,7 +805,7 @@ def main(input_file, reprocess, reprocess_elevation):
         reprocess (bool): If True, bypasses last processed timestamp filtering.
         reprocess_elevation (bool): If True, reprocesses elevation data regardless of control timestamp.
     """
-    plog.initialise_logger(log_file_path="auto", level="INFO")
+    # Logger already initialized at module level
     stats = initialize_stats()
     last_processed = None if reprocess else get_last_processed_timestamp()
     print_start_message(last_processed, reprocess)

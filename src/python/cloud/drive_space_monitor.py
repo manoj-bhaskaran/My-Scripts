@@ -8,9 +8,13 @@ performed to a log file using the standard cross-platform logging framework.
 
 import os
 import argparse
+import logging
 from googleapiclient.errors import HttpError
 from google_drive_auth import authenticate_and_get_drive_service
 import python_logging_framework as plog  # Uses standardised logging framework
+
+# Initialize logger for this module
+logger = plog.initialise_logger(__name__)
 
 
 def format_size(bytes_size):
@@ -46,7 +50,7 @@ def get_storage_usage(service):
     """
     try:
         about = service.about().get(fields="storageQuota").execute()
-        plog.log_debug(f"Storage quota data: {about}")
+        plog.log_debug(logger, f"Storage quota data: {about}")
 
         usage_in_drive = int(about["storageQuota"].get("usageInDrive", 0))
         usage_in_drive_trash = int(about["storageQuota"].get("usageInDriveTrash", 0))
@@ -59,11 +63,12 @@ def get_storage_usage(service):
         readable_limit = format_size(limit)
 
         plog.log_info(
+            logger,
             f"Current storage usage: {readable_total_usage} / {readable_limit} ({usage_percentage:.2f}%)"
         )
         return usage_percentage, total_usage, limit
     except HttpError as error:
-        plog.log_error(f"An error occurred: {error}")
+        plog.log_error(logger, f"An error occurred: {error}")
         return None, None, None
 
 
@@ -76,9 +81,9 @@ def clear_trash(service):
     """
     try:
         service.files().emptyTrash().execute()
-        plog.log_info("Trash cleared successfully.")
+        plog.log_info(logger, "Trash cleared successfully.")
     except HttpError as error:
-        plog.log_error(f"An error occurred: {error}")
+        plog.log_error(logger, f"An error occurred: {error}")
 
 
 def main(debug, threshold):
@@ -89,8 +94,10 @@ def main(debug, threshold):
         debug (bool): If True, enables debug-level logging.
         threshold (float): Threshold percentage for storage usage.
     """
-    plog.initialise_logger(log_file_path="auto", level="DEBUG" if debug else "INFO")
-    plog.log_info(f"Using threshold: {threshold}%")
+    # Logger already initialized at module level, just update level if needed
+    if debug:
+        logger.setLevel(logging.DEBUG)
+    plog.log_info(logger, f"Using threshold: {threshold}%")
 
     service = authenticate_and_get_drive_service()
     usage_percentage, usage, limit = get_storage_usage(service)
@@ -101,6 +108,7 @@ def main(debug, threshold):
 
         if usage_percentage > threshold:
             plog.log_info(
+                logger,
                 f"Storage usage exceeds {threshold}%: {usage_percentage:.2f}% "
                 f"({readable_total_usage} of {readable_limit}). Clearing trash."
             )
@@ -109,11 +117,13 @@ def main(debug, threshold):
             new_usage_percentage, new_usage, _ = get_storage_usage(service)
             readable_new_usage = format_size(new_usage)
             plog.log_info(
+                logger,
                 f"Storage usage after trash clearance: {new_usage_percentage:.2f}% "
                 f"({readable_new_usage} of {readable_limit})."
             )
         else:
             plog.log_info(
+                logger,
                 f"Storage usage is within limits: {usage_percentage:.2f}% "
                 f"({readable_total_usage} of {readable_limit})."
             )

@@ -14,6 +14,9 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 import python_logging_framework as plog
 
+# Initialize logger for this module
+logger = plog.initialise_logger(__name__)
+
 # Define the scope for Drive API access
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 
@@ -86,29 +89,29 @@ def authenticate_and_get_drive_service():
     if os.path.exists(TOKEN_FILE):
         try:
             creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-            plog.log_info("✅ Loaded existing token file for authentication.")
+            plog.log_info(logger, "✅ Loaded existing token file for authentication.")
         except Exception as e:
-            plog.log_warning(f"⚠️ Failed to load token file: {e}")
+            plog.log_warning(logger, f"⚠️ Failed to load token file: {e}")
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
-                plog.log_info("🔄 Refreshed expired credentials.")
+                plog.log_info(logger, "🔄 Refreshed expired credentials.")
             except Exception as e:
-                plog.log_error(f"❌ Failed to refresh credentials: {e}")
+                plog.log_error(logger, f"❌ Failed to refresh credentials: {e}")
                 raise
         else:
             try:
-                plog.log_info("🌐 Initiating OAuth flow.")
+                plog.log_info(logger, "🌐 Initiating OAuth flow.")
                 flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
                 creds = flow.run_local_server(port=0)
                 with open(TOKEN_FILE, "w") as token:
                     token.write(creds.to_json())
-                plog.log_info("✅ New token saved after OAuth flow.")
+                plog.log_info(logger, "✅ New token saved after OAuth flow.")
             except Exception as e:
-                plog.log_error(f"❌ OAuth flow failed: {e}")
+                plog.log_error(logger, f"❌ OAuth flow failed: {e}")
                 raise
 
-    plog.log_info("🚀 Google Drive service authenticated successfully.")
+    plog.log_info(logger, "🚀 Google Drive service authenticated successfully.")
     return build("drive", "v3", credentials=creds)

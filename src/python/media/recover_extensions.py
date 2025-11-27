@@ -28,6 +28,9 @@ from collections import defaultdict
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Initialize logger for this module
+logger = plog.initialise_logger(__name__)
+
 # Dictionary mapping compiled regex patterns of file signatures (magic numbers) to file extensions.
 SIGNATURES = {
     re.compile(r"^89504E47"): ".png",
@@ -74,7 +77,7 @@ def get_file_extension(filepath):
 
         return None, header
     except Exception as e:
-        plog.log_info(f"Error reading file {filepath}: {e}")
+        plog.log_info(logger, f"Error reading file {filepath}: {e}")
         return None, None
 
 
@@ -98,11 +101,11 @@ def process_file(file_path):
         "extensions": defaultdict(int),
         "hex": defaultdict(int),
     }
-    plog.log_debug(f"Processing file: {file_path}")
+    plog.log_debug(logger, f"Processing file: {file_path}")
 
     # Skip files that already have an extension.
     if file_path.suffix:
-        plog.log_info(f"Skipping {file_path.name}, already has extension.")
+        plog.log_info(logger, f"Skipping {file_path.name}, already has extension.")
         local_stats["skipped"] += 1
         local_stats["extensions"][file_path.suffix.lower()] += 1
         return local_stats
@@ -116,24 +119,24 @@ def process_file(file_path):
             new_path = file_path.with_name(file_path.stem + ext)
             try:
                 file_path.rename(new_path)
-                plog.log_info(f"Renamed {file_path.name} to {new_path.name}")
+                plog.log_info(logger, f"Renamed {file_path.name} to {new_path.name}")
                 local_stats["renamed"] += 1
             except Exception as e:
-                plog.log_info(f"Failed to rename {file_path}: {e}")
+                plog.log_info(logger, f"Failed to rename {file_path}: {e}")
     else:
         # Unknown extension, optionally move to unknowns folder.
         local_stats["unknown"] += 1
         local_stats["hex"][hex_sig] += 1
-        plog.log_info(f"Unknown extension for {file_path.name}. Hex: {hex_sig}")
+        plog.log_info(logger, f"Unknown extension for {file_path.name}. Hex: {hex_sig}")
 
         if args.move_unknowns and not args.dryrun:
             dest = Path(args.unknowns) / file_path.name
             try:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 file_path.rename(dest)
-                plog.log_info(f"Moved {file_path.name} to {dest}")
+                plog.log_info(logger, f"Moved {file_path.name} to {dest}")
             except Exception as e:
-                plog.log_info(f"Failed to move {file_path.name}: {e}")
+                plog.log_info(logger, f"Failed to move {file_path.name}: {e}")
 
     return local_stats
 
@@ -168,13 +171,16 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true", help="Enables debug logging")
     args = parser.parse_args()
 
-    plog.initialise_logger(log_file_path=args.log, level="DEBUG" if args.debug else "INFO")
+    # Logger already initialized at module level, just update level if needed
+    import logging
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
 
     # Recursively collect all files in the specified folder.
     all_files = list(Path(args.folder).rglob("*"))
     files = [f for f in all_files if f.is_file()]
 
-    plog.log_debug(f"Starting scan of {len(files)} file(s) in {args.folder}")
+    plog.log_debug(logger, f"Starting scan of {len(files)} file(s) in {args.folder}")
     combined_stats = {
         "skipped": 0,
         "renamed": 0,
@@ -206,6 +212,6 @@ if __name__ == "__main__":
 
     # If debug is enabled, log detailed statistics.
     if args.debug:
-        plog.log_info(f"Identified extensions: {dict(combined_stats['identified'])}")
-        plog.log_info(f"Unknown hex signatures: {dict(combined_stats['hex'])}")
-        plog.log_info(f"Existing extensions: {dict(combined_stats['extensions'])}")
+        plog.log_info(logger, f"Identified extensions: {dict(combined_stats['identified'])}")
+        plog.log_info(logger, f"Unknown hex signatures: {dict(combined_stats['hex'])}")
+        plog.log_info(logger, f"Existing extensions: {dict(combined_stats['extensions'])}")
