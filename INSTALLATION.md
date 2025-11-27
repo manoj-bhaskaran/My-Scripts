@@ -258,13 +258,28 @@ psql --version
 
 ## Environment Configuration
 
-Some scripts require environment variables to be set for API access and service configuration.
+# Create and load a `.env` file to manage all configuration in one place.
+
+### Quick Setup
+
+1. **Copy the template:**
+   ```bash
+   cp .env.example .env
+   ```
+2. **Edit your values:**
+   - Required: `MY_SCRIPTS_ROOT` (script execution directory)
+   - Feature flags: set the variables for the services you plan to use (Google Drive, CloudConvert, database backups, etc.)
+3. **Load the environment:**
+   - PowerShell: `. ./scripts/Load-Environment.ps1`
+   - Bash: `source scripts/load-environment.sh`
+4. **Validate configuration:**
+   - PowerShell: `./scripts/Verify-Environment.ps1`
+   - Bash: `./scripts/verify-environment.sh`
+5. **Review the full reference:** see `docs/guides/environment-variables.md` for every variable, default, and description.
 
 ### Google Drive Integration
 
 Google Drive scripts require OAuth 2.0 credentials for API access. Follow these steps to set up:
-
-#### 1. Get Google Drive API Credentials
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project or select an existing one
@@ -276,79 +291,24 @@ Google Drive scripts require OAuth 2.0 credentials for API access. Follow these 
    - Click "Create Credentials" > "OAuth 2.0 Client ID"
    - Select "Desktop app" as application type
    - Download the credentials JSON file
+5. Configure credential file paths:
+   - `GDRIVE_CREDENTIALS_PATH` (defaults to `~/Documents/Scripts/credentials.json`)
+   - `GDRIVE_TOKEN_PATH` (defaults to `~/Documents/Scripts/drive_token.json`)
+   - Recovery tool overrides: `GDRT_CREDENTIALS_FILE` and `GDRT_TOKEN_FILE`
+6. Load `.env` and run the validation script to confirm configuration.
 
-#### 2. Configure Credential File Paths
-
-The Google Drive authentication module supports two configuration methods:
-
-**Option 1: Environment Variables (Recommended)**
-
-**Windows (PowerShell):**
-```powershell
-# Set for current session
-$env:GDRIVE_CREDENTIALS_PATH = "$HOME\Documents\Scripts\credentials.json"
-$env:GDRIVE_TOKEN_PATH = "$HOME\Documents\Scripts\drive_token.json"
-
-# Set permanently (current user)
-[Environment]::SetEnvironmentVariable("GDRIVE_CREDENTIALS_PATH", "$HOME\Documents\Scripts\credentials.json", "User")
-[Environment]::SetEnvironmentVariable("GDRIVE_TOKEN_PATH", "$HOME\Documents\Scripts\drive_token.json", "User")
-```
-
-**Linux/macOS (Bash):**
-```bash
-# Add to ~/.bashrc or ~/.zshrc for persistence
-export GDRIVE_CREDENTIALS_PATH="$HOME/Documents/Scripts/credentials.json"
-export GDRIVE_TOKEN_PATH="$HOME/Documents/Scripts/drive_token.json"
-
-# Apply immediately
-source ~/.bashrc  # or source ~/.zshrc
-```
-
-**Option 2: Default Location**
-
-If environment variables are not set, the module uses default paths:
-- Token file: `~/Documents/Scripts/drive_token.json`
-- Credentials file: `~/Documents/Scripts/credentials.json`
-
-To use defaults, simply place your downloaded credentials file at `~/Documents/Scripts/credentials.json`.
-
-#### 3. Verify Setup
-
-```python
-# Test the authentication module
-from src.python.modules.auth import google_drive_auth
-
-# Validate credentials file exists
-google_drive_auth.validate_credentials()
-
-# Authenticate (will open browser for OAuth flow on first run)
-service = google_drive_auth.authenticate_and_get_drive_service()
-print("✅ Google Drive authentication successful!")
-```
-
-**Note**: The token file (`drive_token.json`) is created automatically during the first OAuth authentication flow. You don't need to create it manually.
+The token file (`drive_token.json`) is created automatically during the first OAuth authentication flow.
 
 ### CloudConvert Scripts
 
-**Windows (PowerShell):**
-```powershell
-# Set for current session
-$env:CLOUDCONVERT_API_KEY = "your-api-key"
+CloudConvert requires an API key:
 
-# Set permanently (current user)
-[Environment]::SetEnvironmentVariable("CLOUDCONVERT_API_KEY", "your-api-key", "User")
-```
-
-**Linux/macOS (Bash):**
-```bash
-# Add to ~/.bashrc or ~/.zshrc
-export CLOUDCONVERT_API_KEY="your-api-key"
-
-# Apply immediately
-source ~/.bashrc  # or source ~/.zshrc
-```
+- Set `CLOUDCONVERT_PROD` in `.env`
+- Load the environment and run the validation script
 
 ### PostgreSQL Database Backups
+
+Configure database connection parameters as needed (defaults are provided in `.env.example`):
 
 **Windows (PowerShell):**
 ```powershell
