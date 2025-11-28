@@ -29,3 +29,7 @@ powershell-testresults.xml
 # Local deployment configuration (user-specific, not committed)
 config/local-deployment-config.json
 .env
+
+# Generated Task Scheduler XML files (created from templates)
+config/tasks/*.xml
+!config/tasks/*.xml.template

@@ -9,6 +9,7 @@ This guide provides comprehensive instructions for setting up and installing the
 - [Repository Setup](#repository-setup)
 - [Module Installation](#module-installation)
 - [Platform-Specific Instructions](#platform-specific-instructions)
+- [Scheduled Tasks Setup (Windows Only)](#scheduled-tasks-setup-windows-only)
 - [Verification](#verification)
 - [Troubleshooting](#troubleshooting)
 - [Uninstallation](#uninstallation)
@@ -501,6 +502,139 @@ sudo ./scripts/install-modules.sh --force
 pwsh -c 'Get-Module -ListAvailable PostgresBackup,PowerShellLoggingFramework'
 python3 -c 'import python_logging_framework; print("OK")'
 ```
+
+## Scheduled Tasks Setup (Windows Only)
+
+My-Scripts includes automated scheduled tasks for maintenance, backups, and monitoring on Windows systems.
+
+### Installation
+
+**Prerequisites:**
+- Windows operating system with Task Scheduler
+- Administrator privileges (recommended)
+- Scripts properly installed in a permanent location
+
+**Install all scheduled tasks:**
+
+```powershell
+# Install tasks using current directory as script root
+.\scripts\Install-ScheduledTasks.ps1
+
+# Or specify custom script root
+.\scripts\Install-ScheduledTasks.ps1 -ScriptRoot "C:\Users\YourName\Documents\Scripts"
+
+# Preview installation (dry-run)
+.\scripts\Install-ScheduledTasks.ps1 -WhatIf
+
+# Force overwrite existing tasks
+.\scripts\Install-ScheduledTasks.ps1 -Force
+```
+
+### Installed Tasks
+
+The installation creates the following scheduled tasks:
+
+| Task Name | Schedule | Description |
+|-----------|----------|-------------|
+| MyScripts-Monthly System Health Check | Monthly (1st day, 2:00 AM) | Runs SFC and DISM system integrity checks |
+| MyScripts-Postgres Log Cleanup | Weekly (Saturday, 3:00 PM) | Removes old PostgreSQL log files |
+| MyScripts-Delete Old Downloads | Monthly (15th day, 11:00 AM) | Cleans old files from Downloads folder |
+| MyScripts-Drive Space Monitor | Daily (weekdays 8:00 AM, weekends every 2 hours) | Monitors Google Drive space usage |
+| MyScripts-Clear Old Recycle Bin Items | Weekly (Sunday, 7:54 AM) | Empties old items from Recycle Bin |
+| MyScripts-PostgreSQL Gnucash Backup | Daily (10:10 AM, 9:00 PM) | Backs up GnuCash database |
+| MyScripts-PostgreSQL timeline_data Backup | Weekly (Sunday, 6:00 PM) | Backs up timeline database |
+| MyScripts-PostgreSQL job_scheduler Backup | Daily (7:00 AM) | Backs up job scheduler database |
+| MyScripts-Sync Macrium Backups | Weekly (Tuesday, 7:30 AM) | Syncs Macrium backups to Google Drive |
+
+**Note:** All tasks include randomized delays to prevent simultaneous execution.
+
+### Customization
+
+To customize task schedules or settings:
+
+1. **Edit template files** in `config/tasks/*.xml.template`:
+   - Modify triggers (schedule)
+   - Adjust execution time limits
+   - Change task parameters
+   - Update descriptions
+
+2. **Reinstall tasks** after editing:
+   ```powershell
+   .\scripts\Install-ScheduledTasks.ps1 -Force
+   ```
+
+3. **Or use Task Scheduler GUI:**
+   - Open Task Scheduler (taskschd.msc)
+   - Navigate to your tasks (search for "MyScripts-")
+   - Edit properties as needed
+
+### Managing Tasks
+
+**View installed tasks:**
+```powershell
+Get-ScheduledTask -TaskName "MyScripts-*"
+```
+
+**Run a task manually:**
+```powershell
+Start-ScheduledTask -TaskName "MyScripts-Monthly System Health Check"
+```
+
+**Check task status:**
+```powershell
+Get-ScheduledTask -TaskName "MyScripts-*" | Format-Table TaskName, State, LastRunTime, NextRunTime
+```
+
+**View task history:**
+1. Open Task Scheduler (taskschd.msc)
+2. Select the task
+3. Click the "History" tab
+
+### Uninstallation
+
+To remove all scheduled tasks:
+
+```powershell
+# Remove all My-Scripts scheduled tasks
+.\scripts\Uninstall-ScheduledTasks.ps1
+
+# Skip confirmation prompt
+.\scripts\Uninstall-ScheduledTasks.ps1 -Force
+
+# Preview removal
+.\scripts\Uninstall-ScheduledTasks.ps1 -WhatIf
+```
+
+### Troubleshooting
+
+**Tasks not running:**
+1. Check Task Scheduler Event Log for errors
+2. Verify script paths are correct in the XML files
+3. Test script manually:
+   ```powershell
+   pwsh -ExecutionPolicy Bypass -File "C:\path\to\script.ps1"
+   ```
+4. Ensure required dependencies are installed (PowerShell modules, Python packages, etc.)
+
+**Permission errors:**
+1. Run installation script as Administrator
+2. Check script execution policy:
+   ```powershell
+   Get-ExecutionPolicy -List
+   Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+   ```
+
+**Tasks exist but won't update:**
+- Use `-Force` parameter to overwrite existing tasks:
+  ```powershell
+  .\scripts\Install-ScheduledTasks.ps1 -Force
+  ```
+
+**Task runs but script fails:**
+1. Check log files (if script supports logging)
+2. Verify environment variables are set correctly
+3. Run script interactively to see error messages
+4. Check that database connections work (for backup tasks)
 
 ## Verification
 
