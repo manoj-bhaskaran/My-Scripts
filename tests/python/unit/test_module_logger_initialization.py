@@ -38,7 +38,7 @@ def _safe_import(module_path):
         The imported module or None if import fails
     """
     try:
-        parts = module_path.split('.')
+        parts = module_path.split(".")
         module = __import__(module_path)
         for part in parts[1:]:
             module = getattr(module, part)
@@ -53,7 +53,7 @@ class TestModuleLoggerInitialization:
 
     def test_google_drive_auth_has_logger(self):
         """Verify google_drive_auth module initializes logger."""
-        google_drive_auth = _safe_import('modules.auth.google_drive_auth')
+        google_drive_auth = _safe_import("modules.auth.google_drive_auth")
         if google_drive_auth is None:
             return
 
@@ -70,7 +70,7 @@ class TestModuleLoggerInitialization:
 
     def test_elevation_has_logger(self):
         """Verify elevation module initializes logger."""
-        elevation = _safe_import('modules.auth.elevation')
+        elevation = _safe_import("modules.auth.elevation")
         if elevation is None:
             return
 
@@ -81,7 +81,7 @@ class TestModuleLoggerInitialization:
     def test_cloudconvert_utils_has_logger(self):
         """Verify cloudconvert_utils module initializes logger."""
         sys.path.insert(0, str(src_python / "cloud"))
-        cloudconvert_utils = _safe_import('cloud.cloudconvert_utils')
+        cloudconvert_utils = _safe_import("cloud.cloudconvert_utils")
         if cloudconvert_utils is None:
             return
 
@@ -99,7 +99,7 @@ class TestModuleLoggerInitialization:
     def test_drive_space_monitor_has_logger(self):
         """Verify drive_space_monitor module initializes logger."""
         sys.path.insert(0, str(src_python / "cloud"))
-        drive_space_monitor = _safe_import('cloud.drive_space_monitor')
+        drive_space_monitor = _safe_import("cloud.drive_space_monitor")
         if drive_space_monitor is None:
             return
 
@@ -117,7 +117,7 @@ class TestModuleLoggerInitialization:
     def test_google_drive_root_files_delete_has_logger(self):
         """Verify google_drive_root_files_delete module initializes logger."""
         sys.path.insert(0, str(src_python / "cloud"))
-        google_drive_root_files_delete = _safe_import('cloud.google_drive_root_files_delete')
+        google_drive_root_files_delete = _safe_import("cloud.google_drive_root_files_delete")
         if google_drive_root_files_delete is None:
             return
 
@@ -135,7 +135,7 @@ class TestModuleLoggerInitialization:
     def test_csv_to_gpx_has_logger(self):
         """Verify csv_to_gpx module initializes logger."""
         sys.path.insert(0, str(src_python / "data"))
-        csv_to_gpx = _safe_import('data.csv_to_gpx')
+        csv_to_gpx = _safe_import("data.csv_to_gpx")
         if csv_to_gpx is None:
             return
 
@@ -146,7 +146,7 @@ class TestModuleLoggerInitialization:
     def test_extract_timeline_locations_has_logger(self):
         """Verify extract_timeline_locations module initializes logger."""
         sys.path.insert(0, str(src_python / "data"))
-        extract_timeline_locations = _safe_import('data.extract_timeline_locations')
+        extract_timeline_locations = _safe_import("data.extract_timeline_locations")
         if extract_timeline_locations is None:
             return
 
@@ -164,7 +164,7 @@ class TestModuleLoggerInitialization:
     def test_seat_assignment_has_logger(self):
         """Verify seat_assignment module initializes logger."""
         sys.path.insert(0, str(src_python / "data"))
-        seat_assignment = _safe_import('data.seat_assignment')
+        seat_assignment = _safe_import("data.seat_assignment")
         if seat_assignment is None:
             return
 
@@ -178,7 +178,7 @@ class TestModuleLoggerInitialization:
     def test_find_duplicate_images_has_logger(self):
         """Verify find_duplicate_images module initializes logger."""
         sys.path.insert(0, str(src_python / "media"))
-        find_duplicate_images = _safe_import('media.find_duplicate_images')
+        find_duplicate_images = _safe_import("media.find_duplicate_images")
         if find_duplicate_images is None:
             return
 
@@ -196,7 +196,7 @@ class TestModuleLoggerInitialization:
     def test_recover_extensions_has_logger(self):
         """Verify recover_extensions module initializes logger."""
         sys.path.insert(0, str(src_python / "media"))
-        recover_extensions = _safe_import('media.recover_extensions')
+        recover_extensions = _safe_import("media.recover_extensions")
         if recover_extensions is None:
             return
 
@@ -217,7 +217,7 @@ class TestLoggerFunctionality:
 
     def test_module_can_log_without_external_init(self):
         """Verify modules can log without external initialization."""
-        google_drive_auth = _safe_import('modules.auth.google_drive_auth')
+        google_drive_auth = _safe_import("modules.auth.google_drive_auth")
         if google_drive_auth is None:
             return
 
@@ -234,7 +234,7 @@ class TestLoggerFunctionality:
 
     def test_logger_has_handlers(self):
         """Verify that initialized loggers have handlers attached."""
-        google_drive_auth = _safe_import('modules.auth.google_drive_auth')
+        google_drive_auth = _safe_import("modules.auth.google_drive_auth")
         if google_drive_auth is None:
             return
 
