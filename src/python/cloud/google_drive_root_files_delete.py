@@ -34,6 +34,9 @@ import threading
 import time
 import python_logging_framework as plog
 
+# Initialize logger for this module
+logger = plog.initialise_logger(__name__)
+
 MAX_THREADS = 4  # Maximum number of threads for parallel deletion
 
 log_lock = threading.Lock()
@@ -96,7 +99,7 @@ def delete_file(creds, file, retries=3):
             if attempt < retries - 1:
                 time.sleep(2**attempt)
             else:
-                plog.log_info(f"Failed to delete {file['name']}: {error}")
+                plog.log_info(logger, f"Failed to delete {file['name']}: {error}")
                 return False
 
 
@@ -105,16 +108,16 @@ def main():
     Main function to authenticate, fetch, and delete all non-folder files in the root of Google Drive.
     Logs progress and summary information.
     """
-    plog.initialise_logger(log_file_path="auto", level="INFO")
-    plog.log_info("Authenticating and starting process...")
+    # Logger already initialized at module level
+    plog.log_info(logger, "Authenticating and starting process...")
     service = authenticate_and_get_drive_service()
 
     creds = service._http.credentials  # Extract the creds from the service
 
-    plog.log_info("Fetching file list...")
+    plog.log_info(logger, "Fetching file list...")
     files_to_delete = list(get_root_files(service))
     total_files = len(files_to_delete)
-    plog.log_info(f"Found {total_files} non-folder files in root.")
+    plog.log_info(logger, f"Found {total_files} non-folder files in root.")
 
     deleted_count = 0
     with tqdm(total=total_files, desc="Deleting files", unit="file") as pbar:
@@ -125,7 +128,7 @@ def main():
                     deleted_count += 1
                 pbar.update(1)
 
-    plog.log_info(f"Finished. Deleted {deleted_count} files from root.")
+    plog.log_info(logger, f"Finished. Deleted {deleted_count} files from root.")
 
 
 if __name__ == "__main__":

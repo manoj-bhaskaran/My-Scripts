@@ -82,7 +82,8 @@ BeforeAll {
         $functionsOnly = $scriptContent.Substring($firstFunctionMatch.Index, $executionStart - $firstFunctionMatch.Index)
         # Execute the function definitions
         . ([scriptblock]::Create($functionsOnly))
-    } else {
+    }
+    else {
         Write-Error "Could not parse script to extract functions"
     }
 
@@ -272,7 +273,8 @@ Describe "Get-SafeAbsolutePath" {
             if ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5) {
                 $result = Get-SafeAbsolutePath -PathText "C:\Program Files"
                 $result | Should -Match "^[A-Z]:\\"
-            } else {
+            }
+            else {
                 $result = Get-SafeAbsolutePath -PathText "/usr/local"
                 $result | Should -Match "^/"
             }
@@ -282,7 +284,8 @@ Describe "Get-SafeAbsolutePath" {
             if ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5) {
                 $result = Get-SafeAbsolutePath -PathText '"C:\Program Files"'
                 $result | Should -Not -Match '"'
-            } else {
+            }
+            else {
                 $result = Get-SafeAbsolutePath -PathText '"/usr/local"'
                 $result | Should -Not -Match '"'
             }

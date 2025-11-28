@@ -18,6 +18,9 @@ import xml.dom.minidom
 from elevation import get_elevation
 import python_logging_framework as plog
 
+# Initialize logger for this module
+logger = plog.initialise_logger(__name__)
+
 
 def csv_to_gpx(input_csv, output_gpx):
     """Convert CSV to GPX file with elevation and pretty print."""
@@ -61,7 +64,9 @@ def csv_to_gpx(input_csv, output_gpx):
         f.write(pretty_xml)
 
     plog.log_info(
-        f"GPX file with elevation written: {output_gpx}", metadata={"output_file": output_gpx}
+        logger,
+        f"GPX file with elevation written: {output_gpx}",
+        metadata={"output_file": output_gpx},
     )
 
 
@@ -78,6 +83,6 @@ if __name__ == "__main__":
     input_csv = os.path.join(args.input_folder, args.input_file)
     output_gpx = os.path.join(args.output_folder, args.output_file)
 
-    plog.initialise_logger(log_file_path="auto", level="INFO")
+    # Logger already initialized at module level
     csv_to_gpx(input_csv, output_gpx)
-    plog.log_info("CSV to GPX conversion completed successfully.")
+    plog.log_info(logger, "CSV to GPX conversion completed successfully.")

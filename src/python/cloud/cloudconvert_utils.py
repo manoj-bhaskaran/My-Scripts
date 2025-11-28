@@ -4,8 +4,12 @@ import requests
 import urllib.parse
 import argparse
 import time
+import logging
 from typing import Dict, Any, Tuple
 import python_logging_framework as plog
+
+# Initialize logger for this module
+logger = plog.initialise_logger(__name__)
 
 # Constants for retry logic
 max_retries = 60  # Total 5 minutes if delay is 5 seconds
@@ -30,12 +34,14 @@ def authenticate() -> str:
     Raises:
         ValueError: If the API key is not found in environment variables.
     """
-    plog.log_debug("Attempting to retrieve CloudConvert API key from environment variables.")
+    plog.log_debug(
+        logger, "Attempting to retrieve CloudConvert API key from environment variables."
+    )
     api_key = os.getenv("CLOUDCONVERT_PROD")
     if not api_key:
-        plog.log_error("CloudConvert API key not found in environment variables.")
+        plog.log_error(logger, "CloudConvert API key not found in environment variables.")
         raise ValueError("CloudConvert API key not found in environment variables.")
-    plog.log_debug("API key successfully retrieved.")
+    plog.log_debug(logger, "API key successfully retrieved.")
     return api_key
 
 
@@ -56,11 +62,13 @@ def create_upload_task(api_key: str) -> Dict[str, Any]:
     payload = {"tasks": {"upload_task": {"operation": "import/upload"}}}
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    plog.log_debug("Making API request to create an upload task.")
+    plog.log_debug(logger, "Making API request to create an upload task.")
     response = requests.post(url, json=payload, headers=headers)
 
     if response.status_code != 201:
-        plog.log_error(f"Error creating upload task: {response.status_code} - {response.text}")
+        plog.log_error(
+            logger, f"Error creating upload task: {response.status_code} - {response.text}"
+        )
         response.raise_for_status()
 
     return response.json()["data"]["tasks"][0]
@@ -87,20 +95,21 @@ def handle_file_upload(
     local_parameters = parameters.copy()
     local_parameters["key"] = local_parameters["key"].replace("${filename}", encoded_file_name)
 
-    plog.log_debug(f"Upload URL: {upload_url}")
-    plog.log_debug(f"Upload parameters: {parameters}")
-    plog.log_debug(f"Attempting to upload file: {file_name}")
+    plog.log_debug(logger, f"Upload URL: {upload_url}")
+    plog.log_debug(logger, f"Upload parameters: {parameters}")
+    plog.log_debug(logger, f"Attempting to upload file: {file_name}")
     with open(file_name, "rb") as file:
         files = {"file": file}
         try:
             upload_response = requests.post(upload_url, data=local_parameters, files=files)
             upload_response.raise_for_status()
         except requests.exceptions.RequestException as e:
-            plog.log_error(f"Error during file upload request: {e}")
+            plog.log_error(logger, f"Error during file upload request: {e}")
             raise RuntimeError(f"Failed to upload file '{file_name}' to CloudConvert.") from e
 
     plog.log_info(
-        f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
+        logger,
+        f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}",
     )
     return upload_response
 
@@ -115,7 +124,7 @@ def upload_file(file_name: str) -> None:
     Raises:
         RuntimeError: If any error occurs during the upload process.
     """
-    plog.log_debug(f"Starting file upload process for file: {file_name}")
+    plog.log_debug(logger, f"Starting file upload process for file: {file_name}")
     try:
         api_key = authenticate()
         upload_task = create_upload_task(api_key)
@@ -127,11 +136,11 @@ def upload_file(file_name: str) -> None:
         result_message = (
             f"File '{file_name}' uploaded successfully. HTTP Status: {upload_response.status_code}"
         )
-        plog.log_info(result_message)
+        plog.log_info(logger, result_message)
         print(result_message)  # For PowerShell capture
 
     except (requests.exceptions.RequestException, KeyError, IndexError, ValueError) as e:
-        plog.log_error(f"Error during file upload: {e}")
+        plog.log_error(logger, f"Error during file upload: {e}")
         raise RuntimeError(f"Error during file upload: {e}") from e
 
 
@@ -163,11 +172,13 @@ def create_conversion_task(api_key: str, output_format: str) -> Dict[str, Any]:
     }
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    plog.log_debug("Making API request to create a conversion task.")
+    plog.log_debug(logger, "Making API request to create a conversion task.")
     response = requests.post(url, json=payload, headers=headers)
 
     if response.status_code != 201:
-        plog.log_error(f"Error creating conversion task: {response.status_code} - {response.text}")
+        plog.log_error(
+            logger, f"Error creating conversion task: {response.status_code} - {response.text}"
+        )
         response.raise_for_status()
 
     return response.json()["data"]
@@ -190,11 +201,13 @@ def check_task_status(api_key: str, task_id: str) -> Dict[str, Any]:
     url = f"{CLOUDCONVERT_API_BASE}/tasks/{task_id}"
     headers = {"Authorization": f"Bearer {api_key}"}
 
-    plog.log_debug(f"Checking status of task: {task_id}")
+    plog.log_debug(logger, f"Checking status of task: {task_id}")
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
-        plog.log_error(f"Error checking task status: {response.status_code} - {response.text}")
+        plog.log_error(
+            logger, f"Error checking task status: {response.status_code} - {response.text}"
+        )
         response.raise_for_status()
 
     return response.json()["data"]
@@ -217,14 +230,16 @@ def wait_for_task_completion(api_key: str, task_id: str, task_name: str) -> Dict
     """
     for attempt in range(max_retries):
         status = check_task_status(api_key, task_id)
-        plog.log_info(f"{task_name} status: {status['status']} (attempt {attempt+1}/{max_retries})")
+        plog.log_info(
+            logger, f"{task_name} status: {status['status']} (attempt {attempt+1}/{max_retries})"
+        )
 
         if status["status"] == "finished":
             return status
 
         if status["status"] == "error":
             error_msg = status.get("message", "No error message provided.")
-            plog.log_error(f"{task_name} failed: {error_msg}")
+            plog.log_error(logger, f"{task_name} failed: {error_msg}")
             raise RuntimeError(f"CloudConvert {task_name} failed: {error_msg}")
 
         time.sleep(retry_delay)
@@ -243,15 +258,17 @@ def convert_file(file_name: str, output_format: str) -> None:
     Raises:
         RuntimeError: If any error occurs during the conversion process.
     """
-    plog.log_debug(f"Starting conversion process for file: {file_name} to format: {output_format}")
+    plog.log_debug(
+        logger, f"Starting conversion process for file: {file_name} to format: {output_format}"
+    )
     try:
         api_key = authenticate()
         conversion_task = create_conversion_task(api_key, output_format)
-        plog.log_debug(f"Conversion task response: {conversion_task}")
+        plog.log_debug(logger, f"Conversion task response: {conversion_task}")
 
         tasks = conversion_task["tasks"]
         if not isinstance(tasks, list):
-            plog.log_error("Unexpected type for conversion_task['tasks']")
+            plog.log_error(logger, "Unexpected type for conversion_task['tasks']")
             raise ValueError("Expected list but found different type in conversion_task['tasks']")
 
         upload_task = next((task for task in tasks if task.get("name") == IMPORT_TASK), None)
@@ -278,15 +295,15 @@ def convert_file(file_name: str, output_format: str) -> None:
             raise RuntimeError("No files found in export task result.")
 
         download_url = files[0]["url"]
-        plog.log_info(f"File converted successfully. Download URL: {download_url}")
+        plog.log_info(logger, f"File converted successfully. Download URL: {download_url}")
         print(f"File converted successfully. Download URL: {download_url}")
 
     except RuntimeError as e:
-        plog.log_error(f"Error during file conversion: {e}")
+        plog.log_error(logger, f"Error during file conversion: {e}")
         raise
 
     except (requests.exceptions.RequestException, KeyError, IndexError, ValueError) as e:
-        plog.log_error(f"Error during file conversion: {e}")
+        plog.log_error(logger, f"Error during file conversion: {e}")
         raise RuntimeError(f"Error during file conversion: {e}") from e
 
 
@@ -297,7 +314,7 @@ def parse_arguments() -> Tuple[bool, str, str]:
     Returns:
         Tuple[bool, str, str]: A tuple containing the debug flag, file name, and output format.
     """
-    plog.log_debug(f"Raw sys.argv: {sys.argv}")
+    plog.log_debug(logger, f"Raw sys.argv: {sys.argv}")
     parser = argparse.ArgumentParser(description="Upload and convert a file using CloudConvert.")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging.")
     parser.add_argument(
@@ -323,15 +340,17 @@ def main() -> None:
         1: On error.
     """
     debug, file_name, output_format = parse_arguments()
-    plog.initialise_logger(log_file_path="auto", level="DEBUG" if debug else "INFO")
+    # Logger already initialized at module level, just update level if needed
+    if debug:
+        logger.setLevel(logging.DEBUG)
     try:
         convert_file(file_name, output_format)
         sys.exit(0)
     except RuntimeError as e:
-        plog.log_error(f"Runtime error: {e}")
+        plog.log_error(logger, f"Runtime error: {e}")
         sys.exit(1)
     except Exception as e:
-        plog.log_error(f"Unexpected error: {e}")
+        plog.log_error(logger, f"Unexpected error: {e}")
         sys.exit(1)
 
 

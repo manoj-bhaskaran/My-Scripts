@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Fixed Logger Initialization in Python Modules** (#511) - Resolved runtime AttributeError in logging framework usage
+  - **Issue**: Python modules used `plog.log_info()`, `plog.log_warning()`, etc. without initializing logger first
+    - Caused `AttributeError` when modules were used standalone or when calling code didn't initialize logging
+    - Inconsistent behavior: modules only worked when caller initialized logging
+    - Made modules not self-contained and dependent on external initialization
+  - **Solution**: Each module now initializes its own logger at module level
+    - Added `logger = plog.initialise_logger(__name__)` to all affected modules
+    - Updated all `plog.log_*()` calls to pass logger as first parameter
+    - Removed duplicate logger initialization in main/entry point functions
+  - **Affected Modules** (10 files):
+    - `src/python/modules/auth/google_drive_auth.py`
+    - `src/python/modules/auth/elevation.py`
+    - `src/python/cloud/cloudconvert_utils.py`
+    - `src/python/cloud/drive_space_monitor.py`
+    - `src/python/cloud/google_drive_root_files_delete.py`
+    - `src/python/data/csv_to_gpx.py`
+    - `src/python/data/extract_timeline_locations.py`
+    - `src/python/data/seat_assignment.py`
+    - `src/python/media/find_duplicate_images.py`
+    - `src/python/media/recover_extensions.py`
+  - **Testing**: Added comprehensive unit tests for logger initialization
+    - File: `tests/python/unit/test_module_logger_initialization.py`
+    - Tests verify each module has logger attribute
+    - Tests verify logger is properly initialized as logging.Logger instance
+    - Tests verify modules work standalone without external initialization
+  - **Benefits**:
+    - ✅ No more runtime errors when using modules standalone
+    - ✅ Consistent behavior across all modules
+    - ✅ Self-contained modules with proper encapsulation
+    - ✅ Clear, helpful logging with module-specific identification
+    - ✅ No breaking changes to module APIs
+  - **Version Impact**: PATCH bump (2.1.2 → 2.1.3) - bug fix, no breaking changes
+
 ### Security
 
 - **Fixed Hardcoded Credentials Paths in Google Drive Auth** (#506) - Removed security vulnerability and improved portability

@@ -30,7 +30,7 @@ BeforeAll {
 
     # Create a minimal local config file
     $localConfig = @{
-        enabled = $true
+        enabled       = $true
         stagingMirror = $script:testStagingMirror
     } | ConvertTo-Json
     $localConfig | Out-File -FilePath $script:testLocalConfigPath -Force
@@ -81,7 +81,8 @@ BeforeAll {
         $functionsOnly = $scriptContent.Substring($firstFunctionMatch.Index, $executionStart - $firstFunctionMatch.Index)
         # Execute the function definitions
         . ([scriptblock]::Create($functionsOnly))
-    } else {
+    }
+    else {
         Write-Error "Could not parse script to extract functions"
     }
 
@@ -102,14 +103,14 @@ BeforeAll {
     # This ensures they're in the right scope for the loaded functions to use
     function global:Resolve-Path {
         [CmdletBinding()]
-        param([Parameter(Mandatory=$false)]$LiteralPath)
+        param([Parameter(Mandatory = $false)]$LiteralPath)
         # Return the path as-is without actual resolution
         return [PSCustomObject]@{
             ProviderPath = $LiteralPath
         }
     }
     function global:Test-Path {
-        param([Parameter(Mandatory=$false)]$LiteralPath, $PathType, $Path)
+        param([Parameter(Mandatory = $false)]$LiteralPath, $PathType, $Path)
         # Use the actual Test-Path for file system checks in TestDrive
         # For non-TestDrive paths, check if they're obviously fake
         $pathToTest = if ($LiteralPath) { $LiteralPath } else { $Path }
@@ -235,7 +236,8 @@ Describe "Get-SafeAbsolutePath" {
             if ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5) {
                 $result = Get-SafeAbsolutePath -PathText "C:\Windows"
                 $result | Should -Match "^[A-Z]:\\"
-            } else {
+            }
+            else {
                 $result = Get-SafeAbsolutePath -PathText "/tmp"
                 $result | Should -Match "^/"
             }
@@ -245,7 +247,8 @@ Describe "Get-SafeAbsolutePath" {
             if ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5) {
                 $result = Get-SafeAbsolutePath -PathText "C:\NonExistentPath\Test"
                 $result | Should -Be "C:\NonExistentPath\Test"
-            } else {
+            }
+            else {
                 $result = Get-SafeAbsolutePath -PathText "/non/existent/path"
                 $result | Should -Be "/non/existent/path"
             }
@@ -579,8 +582,8 @@ UntouchedModule|UntouchedModule.psm1|User
             Mock New-OrUpdateManifest { throw "Manifest creation failed" }
 
             { Deploy-ModuleFromConfig `
-                -RepoPath $script:testRepoPath `
-                -ConfigPath $script:testConfigPath } | Should -Not -Throw
+                    -RepoPath $script:testRepoPath `
+                    -ConfigPath $script:testConfigPath } | Should -Not -Throw
 
             Assert-MockCalled Write-Message -ParameterFilter {
                 $Message -match "Deployment error"

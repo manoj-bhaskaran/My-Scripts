@@ -34,7 +34,7 @@ BeforeAll {
     # Mock external dependencies
     Mock Get-Service {
         return [PSCustomObject]@{
-            Name = "postgresql-x64-17"
+            Name   = "postgresql-x64-17"
             Status = "Running"
         }
     }
@@ -218,7 +218,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         It "Starts PostgreSQL service if not running" {
             Mock Get-Service {
                 return [PSCustomObject]@{
-                    Name = "postgresql-x64-17"
+                    Name   = "postgresql-x64-17"
                     Status = "Stopped"
                 }
             } -ParameterFilter { $Name -eq "postgresql-x64-17" }
@@ -231,12 +231,13 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                 $script:serviceCallCount++
                 if ($script:serviceCallCount -le 1) {
                     return [PSCustomObject]@{
-                        Name = "postgresql-x64-17"
+                        Name   = "postgresql-x64-17"
                         Status = "Stopped"
                     }
-                } else {
+                }
+                else {
                     return [PSCustomObject]@{
-                        Name = "postgresql-x64-17"
+                        Name   = "postgresql-x64-17"
                         Status = "Running"
                     }
                 }
@@ -269,17 +270,19 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                 # First call returns Stopped, subsequent calls return Running, then Stopped after stop
                 if ($script:getServiceCallCount -eq 1) {
                     return [PSCustomObject]@{
-                        Name = "postgresql-x64-17"
+                        Name   = "postgresql-x64-17"
                         Status = "Stopped"
                     }
-                } elseif ($script:getServiceCallCount -le 3) {
+                }
+                elseif ($script:getServiceCallCount -le 3) {
                     return [PSCustomObject]@{
-                        Name = "postgresql-x64-17"
+                        Name   = "postgresql-x64-17"
                         Status = "Running"
                     }
-                } else {
+                }
+                else {
                     return [PSCustomObject]@{
-                        Name = "postgresql-x64-17"
+                        Name   = "postgresql-x64-17"
                         Status = "Stopped"
                     }
                 }
@@ -311,7 +314,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         It "Leaves PostgreSQL service running if it was running initially" {
             Mock Get-Service {
                 return [PSCustomObject]@{
-                    Name = "postgresql-x64-17"
+                    Name   = "postgresql-x64-17"
                     Status = "Running"
                 }
             }
@@ -474,7 +477,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
             # Count zero-byte files before
             $zeroByteFilesBefore = (Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-                Where-Object { $_.Length -eq 0 }).Count
+                    Where-Object { $_.Length -eq 0 }).Count
 
             $zeroByteFilesBefore | Should -Be 2
 
@@ -563,7 +566,8 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                     -backup_folder $script:testBackupFolder `
                     -log_file $script:testLogFile `
                     -user "test_user"
-            } catch {
+            }
+            catch {
                 # Expected to throw
             }
 
@@ -575,7 +579,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         It "Handles service start timeout" {
             Mock Get-Service {
                 return [PSCustomObject]@{
-                    Name = "postgresql-x64-17"
+                    Name   = "postgresql-x64-17"
                     Status = "Stopped"
                 }
             }
