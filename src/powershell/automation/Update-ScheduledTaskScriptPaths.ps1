@@ -7,23 +7,31 @@
     It exports updated task definitions that reflect corrected script paths under a refactored folder structure.
     You can manually re-import the modified XML files using Register-ScheduledTask or schtasks /Create.
 
-    This script scans non-system scheduled tasks and updates references to scripts located in:
-        - C:\Users\manoj\Documents\Scripts
-        - D:\My Scripts
-
-    If the Command or Arguments reference a .ps1, .bat, or .py file in one of those folders,
-    the path is rewritten to point to:
+    This script scans non-system scheduled tasks and updates references to scripts located in old paths
+    and rewrites them to point to the new repository structure:
         - src\powershell
         - src\batch
         - src\python
 
-    Modified task definitions are exported as UTF-8 encoded .xml files to:
-        D:\My Scripts\Windows Task Scheduler
+.PARAMETER OldScriptRoot1
+    First old script root path to search for. Default: Uses SCRIPTS_OLD_ROOT1 environment variable or current user's Documents\Scripts
+
+.PARAMETER OldScriptRoot2
+    Second old script root path to search for. Default: Uses SCRIPTS_OLD_ROOT2 environment variable
+
+.PARAMETER OutputDirectory
+    Directory where modified task XML files will be saved. Default: Uses TASK_SCHEDULER_OUTPUT environment variable or repository's config/tasks directory
 
 .NOTES
-    Version: 2.0.0
+    Version: 3.0.0
 
     CHANGELOG
+    ## 3.0.0 - 2025-11-28
+    ### Changed
+    - Removed hardcoded paths, added configurable parameters (Issue #513)
+    - Added environment variable support for all paths
+    - Default output directory now uses repository structure
+
     ## 2.0.0 - 2025-11-16
     ### Changed
     - Migrated to PowerShellLoggingFramework.psm1 for standardized logging
@@ -40,15 +48,63 @@
     - Validates presence of nodes before accessing them
 #>
 
+[CmdletBinding()]
+param(
+    [string]$OldScriptRoot1,
+    [string]$OldScriptRoot2,
+    [string]$OutputDirectory
+)
+
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 
 # Initialize logger
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 
-$targetRoot1 = "C:\Users\manoj\Documents\Scripts"
-$targetRoot2 = "D:\My Scripts"
-$outputDir = "D:\My Scripts\Windows Task Scheduler"
+# Determine old script root paths
+if (-not $OldScriptRoot1) {
+    if ($env:SCRIPTS_OLD_ROOT1) {
+        $targetRoot1 = $env:SCRIPTS_OLD_ROOT1
+    }
+    else {
+        $targetRoot1 = "$env:USERPROFILE\Documents\Scripts"
+    }
+}
+else {
+    $targetRoot1 = $OldScriptRoot1
+}
+
+if (-not $OldScriptRoot2) {
+    if ($env:SCRIPTS_OLD_ROOT2) {
+        $targetRoot2 = $env:SCRIPTS_OLD_ROOT2
+    }
+    else {
+        $targetRoot2 = ""  # Optional second root
+    }
+}
+else {
+    $targetRoot2 = $OldScriptRoot2
+}
+
+# Determine output directory
+if (-not $OutputDirectory) {
+    if ($env:TASK_SCHEDULER_OUTPUT) {
+        $outputDir = $env:TASK_SCHEDULER_OUTPUT
+    }
+    else {
+        $scriptRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
+        $outputDir = Join-Path $scriptRoot "config" "tasks"
+    }
+}
+else {
+    $outputDir = $OutputDirectory
+}
+
+Write-LogInfo "Old script root 1: $targetRoot1"
+if ($targetRoot2) {
+    Write-LogInfo "Old script root 2: $targetRoot2"
+}
+Write-LogInfo "Output directory: $outputDir"
 
 $extensionMap = @{
     ".ps1" = "src\powershell"

@@ -2,11 +2,12 @@
 setlocal enabledelayedexpansion
 
 :: ------------------------------------------------------------
-:: Remove-OldDownload launcher - Version 3.0.0
+:: Remove-OldDownload launcher - Version 4.0.0
 :: - Prefers PowerShell 7 (pwsh.exe), falls back to Windows PS.
 :: - Invokes Remove-OldDownload.ps1 with -Recurse -DeleteEmptyFolders.
 :: - Shows a MessageBox on failure; returns the script's exit code.
 :: - Implements standardized logging framework (Issue #338)
+:: - Removed hardcoded paths for portability (Issue #513)
 :: ------------------------------------------------------------
 
 :: Initialize logging
@@ -19,9 +20,22 @@ for /f "tokens=2 delims==" %%i in ('wmic os get localdatetime /value') do set "d
 set "LOG_DATE=%dt:~0,4%-%dt:~4,2%-%dt:~6,2%"
 set "LOG_FILE=%LOG_DIR%\%SCRIPT_NAME%_batch_%LOG_DATE%.log"
 
-:: Path to the PowerShell script
-set "SCRIPT=C:\Users\manoj\Documents\Scripts\src\powershell\Remove-OldDownload.ps1"
+:: Get script directory and navigate to repository root
+set "SCRIPT_DIR=%~dp0"
+set "REPO_ROOT=%SCRIPT_DIR%.."
 
+:: Build path to PowerShell script using relative path
+set "SCRIPT=%REPO_ROOT%\src\powershell\system\Remove-OldDownload.ps1"
+
+:: Validate script exists
+if not exist "%SCRIPT%" (
+    call :LogError "PowerShell script not found: %SCRIPT%"
+    echo Error: Script not found: %SCRIPT%
+    echo Please check the repository structure.
+    endlocal & exit /b 1
+)
+
+call :LogInfo "Using PowerShell script: %SCRIPT%"
 call :LogInfo "Script started - Searching for PowerShell runtime"
 
 :: Try to locate PowerShell 7 from PATH (first match)

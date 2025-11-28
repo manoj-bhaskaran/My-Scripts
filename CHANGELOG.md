@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Fixed Hardcoded Paths in PowerShell Scripts and Batch Files** (#513) - Removed hardcoded paths for portability and security
+  - **Priority**: HIGH - Security risk with exposed credentials and broken portability
+  - **Impact**: Enhanced security, improved portability, better maintainability
+  - **Files Fixed**:
+    - **Security Critical**:
+      - `src/powershell/backup/Backup-GnuCashDatabase.ps1` - Removed hardcoded password file path (v2.0.0)
+      - `src/powershell/backup/Backup-TimelineDatabase.ps1` - Removed hardcoded password file path (v2.0.0)
+    - **Portability Critical**:
+      - `src/powershell/cloud/Invoke-CloudConvert.ps1` - Dynamic Python script path resolution (v3.0.0)
+      - `src/batch/RunDeleteOldDownloads.bat` - Relative path to PowerShell script (v4.0.0)
+      - `src/powershell/file-management/Restore-FileExtension.ps1` - Dynamic BaseDir resolution (v3.0.0)
+      - `src/powershell/file-management/Get-FileHandle.ps1` - Configurable Handle.exe path (v3.0.0)
+      - `src/powershell/automation/Update-ScheduledTaskScriptPaths.ps1` - Parameterized script roots (v3.0.0)
+  - **Security Improvements**:
+    - Created `config/secrets/` directory for sensitive files
+    - Added `.gitignore` entries to prevent credential leakage
+    - Password files now use environment variables (`PGBACKUP_PASSWORD_FILE`)
+    - Comprehensive documentation in `config/secrets/README.md`
+  - **Portability Features**:
+    - All scripts use `$PSScriptRoot` for relative path resolution
+    - Environment variable support for custom paths
+    - Path validation with clear error messages
+    - Cross-system compatibility (Windows/Linux paths)
+  - **New Environment Variables**:
+    - `PGBACKUP_PASSWORD_FILE` - PostgreSQL backup password location
+    - `HANDLE_EXE_PATH` - Handle.exe utility location
+    - `SCRIPTS_OLD_ROOT1`, `SCRIPTS_OLD_ROOT2` - Task scheduler path migration
+    - `TASK_SCHEDULER_OUTPUT` - Task scheduler XML output directory
+  - **Documentation**:
+    - Created `config/secrets/README.md` with setup instructions
+    - Password file creation and rotation procedures
+    - Troubleshooting guide for common errors
+    - Security best practices and file permissions
+  - **Benefits**:
+    - ✅ No exposed credentials in version control
+    - ✅ Scripts work on any system without modification
+    - ✅ Clear error messages when files are missing
+    - ✅ Secure defaults using repository structure
+    - ✅ Support for custom paths via environment variables
+  - **Version Impact**: MAJOR version bumps for affected scripts - breaking change to path handling
+
 - **Fixed Logger Initialization in Python Modules** (#511) - Resolved runtime AttributeError in logging framework usage
   - **Issue**: Python modules used `plog.log_info()`, `plog.log_warning()`, etc. without initializing logger first
     - Caused `AttributeError` when modules were used standalone or when calling code didn't initialize logging
