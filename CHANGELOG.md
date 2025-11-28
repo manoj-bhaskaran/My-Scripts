@@ -90,6 +90,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - ✅ Clear error messages for troubleshooting
   - **Version Impact**: PATCH bump (2.1.1 → 2.1.2) - security fix and backward-compatible improvement
 
+- **Task Scheduler Templates with Placeholders** (#512) - Made scheduled task definitions portable across systems
+  - **Problem**: All 8 XML files in `config/tasks/` contained hardcoded paths (e.g., `C:\Users\manoj\Documents\Scripts\`)
+    - Made task definitions unusable on other systems
+    - Required manual XML editing which was error-prone
+    - Prevented automated deployment and testing
+  - **Solution**: Created template-based task scheduler installation system
+    - **Template Files**: Converted all 9 XML files to `.xml.template` versions with `{{SCRIPT_ROOT}}` placeholder
+      - `Monthly System Health Check.xml.template`
+      - `Postgres Log Cleanup.xml.template`
+      - `Delete Old Downloads.xml.template`
+      - `Drive Space Monitor.xml.template`
+      - `Clear Old Recycle Bin Items.xml.template`
+      - `PostgreSQL Gnucash Backup.xml.template`
+      - `PostgreSQL timeline_data Backup.xml.template`
+      - `PostgreSQL job_scheduler Backup.xml.template`
+      - `Sync Macrium Backups.xml.template`
+    - **Installation Script**: `scripts/Install-ScheduledTasks.ps1`
+      - Generates actual XMLs from templates with user's script root
+      - Validates XML structure before registration
+      - Registers tasks in Windows Task Scheduler
+      - Supports `-WhatIf` for preview and `-Force` for overwrite
+      - Includes comprehensive error handling and logging
+    - **Uninstallation Script**: `scripts/Uninstall-ScheduledTasks.ps1`
+      - Removes all My-Scripts scheduled tasks by prefix
+      - Supports `-Force` and `-WhatIf` parameters
+      - Provides summary of removed tasks
+    - **Git Configuration**: Updated `.gitignore` to exclude generated XMLs but keep templates
+  - **Documentation**: Added comprehensive "Scheduled Tasks Setup" section to `INSTALLATION.md`
+    - Installation instructions with multiple examples
+    - Table of all 9 scheduled tasks with schedules and descriptions
+    - Customization guide for editing templates
+    - Task management commands (view, run, check status)
+    - Troubleshooting section for common issues
+  - **Benefits**:
+    - ✅ Portable task definitions work on any Windows system
+    - ✅ Automated installation script eliminates manual editing
+    - ✅ No XML syntax errors from manual changes
+    - ✅ Easy customization through template files
+    - ✅ Scriptable deployment for CI/CD
+    - ✅ Generated XMLs properly excluded from version control
+  - **Version Impact**: MINOR bump - new feature with backward compatibility
+
 ### Changed
 
 - **Flexible Template Processing for GitHub Issue Creator** (#504) - Enhanced `create_github_issues.sh` to process all template files
