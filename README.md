@@ -466,6 +466,56 @@ Coverage reports are automatically generated in CI/CD and uploaded to both Codec
 
 ---
 
+## Security
+
+### Dependency Security Scanning
+
+This repository includes automated security scanning to detect vulnerabilities in Python dependencies.
+
+**Security Tools:**
+- **[Safety](https://pyup.io/safety/)** - Checks dependencies against known vulnerability databases
+- **[pip-audit](https://pypi.org/project/pip-audit/)** - PyPI package auditor (OSV and PyPI Advisory databases)
+- **[GitHub Dependency Review](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review)** - Native GitHub security scanning
+
+**Automated Scans:**
+- ✅ **On every push and PR** - Runs safety and pip-audit checks
+- ✅ **Weekly schedule** - Automated scans every Sunday at 2:00 AM UTC
+- ✅ **Pre-commit hook** - Validates dependencies before allowing commits
+- ✅ **Pull request reviews** - GitHub Dependency Review action comments on PRs
+
+**Running Security Scans Locally:**
+
+```bash
+# Install security scanning tools
+pip install safety pip-audit
+
+# Run safety check
+safety check -r requirements.txt
+
+# Run pip-audit
+pip-audit -r requirements.txt --desc
+
+# Run both via pre-commit
+pre-commit run python-safety-dependencies-check --all-files
+```
+
+**Workflow Configuration:**
+- Security scans are configured in `.github/workflows/security-scan.yml`
+- Pre-commit hook configured in `.pre-commit-config.yaml`
+- Reports are uploaded as GitHub Actions artifacts (30-day retention)
+- Builds fail on detected vulnerabilities to ensure prompt remediation
+
+**Enabling Dependabot (Recommended):**
+
+To enable Dependabot security alerts on GitHub:
+1. Go to **Settings** → **Security & analysis**
+2. Enable **Dependabot alerts**
+3. Enable **Dependabot security updates** (optional - auto-creates PRs for vulnerable dependencies)
+
+See the [Security Scan workflow](.github/workflows/security-scan.yml) for implementation details.
+
+---
+
 ## Naming Conventions
 
 All scripts in this repository follow standardized naming conventions based on language best practices:

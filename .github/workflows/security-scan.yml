@@ -1,0 +1,134 @@
+name: Security Scan
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'claude/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+  schedule:
+    # Run weekly on Sundays at 2:00 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  python-security:
+    name: Python Dependency Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install security scanning tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install safety pip-audit
+
+      - name: Run Safety check
+        id: safety
+        continue-on-error: true
+        run: |
+          echo "## Safety Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if safety check --json -r requirements.txt > safety-report.json 2>&1; then
+            echo "✅ **Safety Check**: No known security vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
+            safety_exit=0
+          else
+            echo "⚠️ **Safety Check**: Vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            safety check -r requirements.txt >> $GITHUB_STEP_SUMMARY 2>&1 || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            safety_exit=1
+          fi
+          echo "safety_exit=$safety_exit" >> $GITHUB_OUTPUT
+
+      - name: Run pip-audit check
+        id: pip-audit
+        continue-on-error: true
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## pip-audit Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if pip-audit -r requirements.txt --desc > pip-audit-report.txt 2>&1; then
+            echo "✅ **pip-audit Check**: No known security vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
+            audit_exit=0
+          else
+            echo "⚠️ **pip-audit Check**: Vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat pip-audit-report.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            audit_exit=1
+          fi
+          echo "audit_exit=$audit_exit" >> $GITHUB_OUTPUT
+
+      - name: Upload Safety report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-report
+          path: safety-report.json
+          retention-days: 30
+
+      - name: Upload pip-audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.txt
+          retention-days: 30
+
+      - name: Security Scan Summary
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "## Overall Security Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.safety.outputs.safety_exit }}" == "0" ] && [ "${{ steps.pip-audit.outputs.audit_exit }}" == "0" ]; then
+            echo "✅ **All security checks passed**" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          else
+            echo "⚠️ **Security vulnerabilities detected - please review and remediate**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+            echo "1. Review the vulnerability reports above" >> $GITHUB_STEP_SUMMARY
+            echo "2. Update affected packages to secure versions" >> $GITHUB_STEP_SUMMARY
+            echo "3. Test the application with updated dependencies" >> $GITHUB_STEP_SUMMARY
+            echo "4. Commit the updated requirements.txt" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    # Only run on pull requests to prevent issues with scheduled runs
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: true

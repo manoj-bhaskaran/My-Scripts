@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Automated Dependency Security Scanning** (#520) - Comprehensive vulnerability scanning for Python dependencies
+  - **Priority**: MEDIUM - Proactive security vulnerability detection and remediation
+  - **Impact**: Enhanced security posture, automated vulnerability detection, reduced risk of supply chain attacks
+  - **Problem Solved**:
+    - No automated vulnerability scanning for dependencies
+    - Security issues could go undetected until exploited
+    - Manual dependency auditing was time-consuming and error-prone
+    - No integration with GitHub security features
+  - **Solution Implemented**:
+    - **GitHub Actions Workflow**: `.github/workflows/security-scan.yml`
+      - Runs on push, pull requests, and weekly schedule (Sundays 2:00 AM UTC)
+      - Manual trigger support via workflow_dispatch
+      - Multiple security scanning tools for comprehensive coverage
+    - **Security Scanning Tools**:
+      - **Safety** - Checks dependencies against known vulnerability database
+      - **pip-audit** - Python package auditing against OSV and PyPI Advisory databases
+      - **Dependency Review Action** - GitHub native dependency vulnerability scanning (PR only)
+    - **Pre-commit Hook**: Added python-safety-dependencies-check to `.pre-commit-config.yaml`
+      - Scans requirements.txt files before commit
+      - Prevents committing known vulnerable dependencies
+      - Uses Lucas-C/pre-commit-hooks-safety v1.3.3
+    - **CI/CD Integration**:
+      - Automated vulnerability reports in GitHub Actions summary
+      - Artifact uploads for detailed analysis (30-day retention)
+      - Fails build on security vulnerabilities (configurable)
+      - Dependency review comments on pull requests
+  - **Dependencies Added** (requirements.txt):
+    - safety==3.2.11 - Python dependency security scanner
+    - pip-audit==2.7.3 - PyPI package auditor
+  - **Workflow Features**:
+    - **Scheduled Scans**: Weekly security audits (cron: '0 2 * * 0')
+    - **Trigger Events**: push, pull_request, schedule, manual workflow_dispatch
+    - **Multi-tool Scanning**: Safety, pip-audit, and GitHub Dependency Review
+    - **Detailed Reporting**: Step-by-step results in GitHub Actions summary
+    - **Artifact Preservation**: JSON/text reports uploaded for 30 days
+    - **Severity Configuration**: Dependency Review fails on moderate+ severity
+    - **PR Integration**: Automatic dependency review comments on pull requests
+    - **Continue-on-error**: Non-blocking scans with summary at the end
+  - **Security Scan Process**:
+    1. **On Every Push/PR**: Runs safety and pip-audit checks
+    2. **Weekly Schedule**: Automated scans every Sunday at 2:00 AM UTC
+    3. **Pre-commit Hook**: Validates dependencies before allowing commits
+    4. **Dependency Review**: GitHub native scanning on pull requests
+    5. **Reports**: Detailed vulnerability reports in Actions summary and artifacts
+  - **Documentation**:
+    - Security scanning process documented in README.md
+    - GitHub workflow includes inline comments and examples
+    - Pre-commit hook configuration with file pattern matching
+  - **Benefits**:
+    - ✅ Automated detection of known security vulnerabilities
+    - ✅ Multi-tool coverage (Safety, pip-audit, GitHub Dependency Review)
+    - ✅ Weekly scheduled scans for continuous monitoring
+    - ✅ Pre-commit hooks prevent vulnerable dependencies from being committed
+    - ✅ Detailed reports with remediation guidance
+    - ✅ Integration with GitHub Security features (Dependabot alerts)
+    - ✅ Fail-fast CI/CD on security issues
+    - ✅ Artifact retention for historical analysis
+    - ✅ Manual trigger support for ad-hoc scans
+  - **Files Added**:
+    - `.github/workflows/security-scan.yml` - Security scanning workflow
+  - **Files Modified**:
+    - `.pre-commit-config.yaml` - Added python-safety-dependencies-check hook
+    - `requirements.txt` - Added safety==3.2.11, pip-audit==2.7.3
+    - `README.md` - Documented security scanning process
+    - `CHANGELOG.md` - This entry
+  - **Version Impact**: MINOR bump - new security infrastructure feature
+
 ### Changed
 
 - **Pinned All Dependency Versions** (#519) - Ensured reproducible builds with exact version specifications
