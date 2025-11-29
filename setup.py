@@ -1,11 +1,18 @@
 from setuptools import setup
+from pathlib import Path
+
+
+def get_version():
+    """Read version from VERSION file."""
+    return Path('VERSION').read_text().strip()
+
 
 setup(
     # Package name used for installation via pip
     name='my-scripts-logging',
 
-    # Version of the package (update with each release)
-    version='0.2.0',
+    # Version of the package (read from VERSION file)
+    version=get_version(),
 
     # Short description of the package
     description='Cross-platform structured logging framework for Python, PowerShell, and Batch script integrations',

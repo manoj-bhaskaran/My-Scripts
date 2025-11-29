@@ -1,3 +1,10 @@
+[project]
+name = "my-scripts-logging"
+dynamic = ["version"]
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
+
 [tool.black]
 line-length = 100
 target-version = ['py311']
@@ -20,5 +27,5 @@ exclude_dirs = ["tests", "fixtures"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "1.0.0"
+version = "2.2.0"
 tag_format = "v$version"
