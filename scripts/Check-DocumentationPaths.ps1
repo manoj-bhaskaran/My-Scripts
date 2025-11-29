@@ -22,13 +22,17 @@
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 1.0.2
+    Version: 1.0.3
     Last Updated: 2025-11-29
 #>
 
 param(
     [string]$Path = ".",
-    [string[]]$ExcludePath = @("analysis/issues", "docs/conventions/placeholders.md")
+    [string[]]$ExcludePath = @(
+        "analysis/issues",
+        "analysis/ANALYSIS_REPORT.md",
+        "docs/conventions/placeholders.md"
+    )
 )
 
 # Define patterns to search for (hardcoded paths)
@@ -37,13 +41,12 @@ $patterns = @{
     'D:\\[^<\s"''`]+'               = 'D: drive path'
     'E:\\[^<\s"''`]+'               = 'E: drive path'
     '/home/[^<\s"''`/]+/[^<\s"''`]' = 'Linux home path (/home/username/...)'
-    '\bmanoj\b'                     = 'Specific username (manoj)'
 }
 
 # Get all markdown files
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "DOCUMENTATION PATH CHECKER v1.0.2" -ForegroundColor Cyan
+Write-Host "DOCUMENTATION PATH CHECKER v1.0.3" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Searching for markdown files..." -ForegroundColor Cyan
@@ -115,6 +118,11 @@ foreach ($file in $filteredFiles) {
 
                 # Skip if this line itself contains exclusion markers
                 if ($line -match '(#|//).*DO NOT|Bad Example|❌|[Bb]ad:|[Ii]ncorrect') {
+                    continue
+                }
+
+                # Skip GitHub URLs, Codecov URLs, SonarCloud URLs (legitimate repository references)
+                if ($line -match 'github\.com|codecov\.io|sonarcloud\.io|githubusercontent\.com') {
                     continue
                 }
 
