@@ -102,26 +102,31 @@ For comprehensive installation instructions, see **[INSTALLATION.md](INSTALLATIO
 git clone https://github.com/manoj-bhaskaran/My-Scripts.git
 cd My-Scripts
 
-# 2. Install Python dependencies
+# 2. Configure repository (interactive wizard)
+./scripts/Initialize-Configuration.ps1
+
+# 3. Install Python dependencies
 pip install -r requirements.txt
 
-# 3. Deploy PowerShell modules
+# 4. Deploy PowerShell modules
 ./scripts/Deploy-Modules.ps1 -Force
 
-# 4. Install Git hooks
+# 5. Install Git hooks
 ./scripts/install-hooks.sh
 
-# 5. Verify installation
-./scripts/Verify-Installation.ps1
+# 6. Verify installation and configuration
+./scripts/Verify-Configuration.ps1
 ```
 
 The [INSTALLATION.md](INSTALLATION.md) guide includes:
 - Step-by-step installation for Windows, Linux, and macOS
 - Prerequisites and system requirements
+- Configuration setup (local deployment, environment variables, secrets)
 - Optional software installation (VLC, ADB, PostgreSQL)
-- Environment configuration (API keys, database credentials)
 - Module installation and verification
 - Comprehensive troubleshooting guide
+
+**Configuration Guide**: See [config/CONFIG_GUIDE.md](config/CONFIG_GUIDE.md) for detailed configuration instructions.
 
 ---
 
@@ -602,6 +607,29 @@ The [Code Formatting workflow](https://github.com/manoj-bhaskaran/My-Scripts/act
 
 For detailed code style guidelines, configuration, and troubleshooting:
 - [Code Style Guide](docs/guides/code-style.md) - Comprehensive formatting guide for all languages
+
+---
+
+## Configuration
+
+**Quick Configuration:**
+
+```powershell
+# Interactive configuration wizard
+.\scripts\Initialize-Configuration.ps1
+
+# Validate configuration
+.\scripts\Verify-Configuration.ps1
+```
+
+**Configuration Resources:**
+- **[Configuration Guide](config/CONFIG_GUIDE.md)** - Comprehensive configuration documentation
+  - Local deployment settings (git hooks)
+  - Module deployment configuration
+  - Environment variables
+  - Secrets management (database passwords)
+  - Platform-specific setup
+  - Troubleshooting guide
 
 ---
 

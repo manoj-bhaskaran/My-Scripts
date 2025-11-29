@@ -9,6 +9,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Comprehensive Configuration Documentation** (#517) - Created complete configuration guide and validation tools
+  - **Priority**: HIGH - Critical for user onboarding and reducing support burden
+  - **Impact**: Solves fresh clone setup failures, improves user experience, reduces configuration questions
+  - **Files Added**:
+    - `config/CONFIG_GUIDE.md` - Comprehensive configuration guide with examples and troubleshooting
+    - `scripts/Verify-Configuration.ps1` - Configuration validation script
+    - `scripts/Initialize-Configuration.ps1` - Interactive configuration wizard
+  - **Documentation Features**:
+    - **Quick Start Guide**: Get started in 3 simple steps
+    - **Configuration Files Reference**:
+      - Local deployment configuration (local-deployment-config.json)
+      - Module deployment configuration (deployment.txt)
+      - Secrets configuration (encrypted password files)
+      - Task Scheduler configuration (Windows)
+      - Environment variables reference
+    - **Platform-Specific Setup**: Detailed instructions for Windows, Linux, and macOS
+    - **Common Scenarios**: 6 practical configuration examples
+      - Fresh system setup
+      - Disable deployment temporarily
+      - Deploy only specific modules
+      - Multiple deployment targets
+      - Custom deployment locations
+      - Configure database backups
+    - **Troubleshooting Guide**: Solutions for 10+ common configuration issues
+    - **Advanced Configuration**: Module filtering, exclude patterns, environment-specific configs
+  - **Validation Script Features**:
+    - Validates local deployment configuration (JSON syntax, required fields)
+    - Checks staging mirror path exists and is writable
+    - Verifies git hooks installation
+    - Checks PowerShell module availability
+    - Validates environment variables
+    - Checks secrets directory and password files
+    - Tests required commands (git, pwsh, python3, pip3)
+    - Color-coded output with success/error/warning indicators
+    - Comprehensive summary with pass/fail counts
+    - Exit codes for CI/CD integration
+  - **Interactive Wizard Features**:
+    - OS detection (Windows, Linux, macOS)
+    - Configuration choice menu (deployment, environment, secrets, or full setup)
+    - Local deployment configuration:
+      - Enable/disable deployment
+      - Staging mirror path with platform-appropriate defaults
+      - Optional module filter
+      - Optional exclude patterns
+    - Environment variables setup:
+      - MY_SCRIPTS_ROOT configuration
+      - PostgreSQL connection settings (PGHOST, PGPORT, PGUSER)
+      - Permanent storage (User-level environment variables)
+    - PostgreSQL secrets configuration:
+      - Interactive encrypted password file creation
+      - Windows DPAPI encryption
+      - Secure password input
+    - Automatic validation after setup
+    - Platform-specific next steps guidance
+  - **Benefits**:
+    - ✅ Fresh clone setup succeeds without manual intervention
+    - ✅ Git hooks deploy correctly on first commit
+    - ✅ Users know exactly what to configure and how
+    - ✅ Troubleshooting guide prevents support requests
+    - ✅ Validation ensures configuration correctness
+    - ✅ Interactive wizard simplifies complex setup
+    - ✅ Platform-specific instructions reduce OS-related issues
+    - ✅ Common scenarios provide practical examples
+  - **Files Updated**:
+    - `INSTALLATION.md` - Added configuration section with links to CONFIG_GUIDE.md
+    - `README.md` - Added configuration quick start and links
+  - **Version Impact**: MINOR bump - new configuration features and tools
+
 - **Added Comprehensive Tests for ErrorHandling Module** (#516) - Implemented extensive test coverage for error handling and retry utilities
   - **Priority**: HIGH - Critical error handling functionality requires robust testing
   - **Impact**: Enhanced code reliability, verified error handling behavior, comprehensive edge case coverage
