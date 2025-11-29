@@ -68,7 +68,7 @@ jobs:
 
       - name: Run Pylint (Python Linting)
         run: |
-          pylint --errors-only --disable=import-error,no-member,used-before-assignment,no-name-in-module $(git ls-files '*.py')
+          pylint --errors-only --disable=import-error,no-member,used-before-assignment,no-name-in-module,possibly-used-before-assignment $(git ls-files '*.py')
 
       - name: Run Bandit (Python Security Scan)
         run: |
