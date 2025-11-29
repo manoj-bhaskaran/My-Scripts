@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Wrapper to run recover_extensions.py from C:\Users\manoj\Documents\Scripts\src\python
+Wrapper to run recover_extensions.py from the repository's Python directory
 
 .DESCRIPTION
 This PowerShell script ensures the Python environment is set up and runs recover_extensions.py
@@ -11,9 +11,14 @@ and required packages are installed from requirements.txt.
 Same as the Python script: FolderPath, LogFilePath, UnknownsFolder, DryRun, MoveUnknowns, Debug, LogWriteIntervalSeconds
 
 .NOTES
-Version: 2.0.0
+Version: 3.0.0
 
 CHANGELOG
+## 3.0.0 - 2025-11-28
+### Changed
+- Removed hardcoded paths, added portable path resolution (Issue #513)
+- Default paths now use environment variables where applicable
+
 ## 2.0.0 - 2025-11-16
 ### Changed
 - Migrated to PowerShellLoggingFramework.psm1 for standardized logging
@@ -21,9 +26,9 @@ CHANGELOG
 #>
 
 param(
-    [string]$FolderPath = "C:\Users\manoj\OneDrive\Desktop\New folder",
-    [string]$LogFilePath = "C:\Users\manoj\Documents\Scripts\recover-extensions-log.txt",
-    [string]$UnknownsFolder = "C:\Users\manoj\OneDrive\Desktop\UnidentifiedFiles",
+    [string]$FolderPath = "$env:USERPROFILE\Desktop\New folder",
+    [string]$LogFilePath,
+    [string]$UnknownsFolder = "$env:USERPROFILE\Desktop\UnidentifiedFiles",
     [switch]$DryRun,
     [switch]$MoveUnknowns,
     [switch]$Debug,
@@ -36,8 +41,14 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 # Initialize logger
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 
-# Fixed script paths
-$BaseDir = "C:\Users\manoj\Documents\Scripts\src\python"
+# Determine base directory using relative path from repository root
+$scriptRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
+$BaseDir = Join-Path $scriptRoot "src" "python"
+
+# Set default log file path if not provided
+if (-not $LogFilePath) {
+    $LogFilePath = Join-Path $scriptRoot "logs" "recover-extensions-log.txt"
+}
 $PythonScript = Join-Path $BaseDir "recover_extensions.py"
 $RequirementsFile = Join-Path $BaseDir "requirements.txt"
 $VenvDir = Join-Path $BaseDir ".venv"

@@ -33,3 +33,8 @@ config/local-deployment-config.json
 # Generated Task Scheduler XML files (created from templates)
 config/tasks/*.xml
 !config/tasks/*.xml.template
+
+# Secure configuration files (passwords, secrets, etc.)
+# Ignore all files in config/secrets/ except README.md
+config/secrets/*
+!config/secrets/README.md
