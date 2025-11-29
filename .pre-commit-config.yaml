@@ -42,21 +42,22 @@ repos:
       - id: python-safety-dependencies-check
         files: requirements.*\.txt$
 
-  # PowerShell hooks
-  - repo: local
-    hooks:
-      - id: psscriptanalyzer
-        name: PSScriptAnalyzer
-        entry: pwsh -Command "Invoke-ScriptAnalyzer -Path"
-        language: system
-        files: \.ps1$
-        args: ['-Severity', 'Error']
-      - id: powershell-format
-        name: Format PowerShell
-        entry: pwsh scripts/Format-PowerShellCode.ps1 -Check
-        language: system
-        files: \.(ps1|psm1)$
-        pass_filenames: false
+  # PowerShell hooks - Disabled for pre-commit (environment-specific)
+  # PowerShell linting still runs in CI via sonarcloud.yml workflow
+  # - repo: local
+  #   hooks:
+  #     - id: psscriptanalyzer
+  #       name: PSScriptAnalyzer
+  #       entry: pwsh -Command "Invoke-ScriptAnalyzer -Path"
+  #       language: system
+  #       files: \.ps1$
+  #       args: ['-Severity', 'Error']
+  #     - id: powershell-format
+  #       name: Format PowerShell
+  #       entry: pwsh scripts/Format-PowerShellCode.ps1 -Check
+  #       language: system
+  #       files: \.(ps1|psm1)$
+  #       pass_filenames: false
 
   # SQL hooks - Disabled for pre-commit (non-critical style checks)
   # SQL linting still runs in CI via sonarcloud.yml workflow
