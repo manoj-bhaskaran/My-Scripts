@@ -172,7 +172,7 @@ $defaultLog_Temp = Join-Path -Path (Join-Path $tempRoot     'DuplicateCleaner\lo
 
 $LogFilePath = Resolve-PathWithFallback -UserPath $LogFilePath `
     -ScriptRelativePath $defaultLog_ScriptRel -WindowsDefaultPath $defaultLog_Windows -TempFallbackPath $defaultLog_Temp
- 
+
 
 # Ensure the log directory exists and log file is created
 function Initialize-LogDestination {

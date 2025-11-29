@@ -43,7 +43,7 @@ r"""
 ## [1.7.0–1.7.5] — 2025-09-22
 
 ### Highlights
-- **Configurable credentials path** via `GDRT_CREDENTIALS_FILE`. Falls back to `credentials.json` if unset; paths with spaces are supported. Clearer startup error when missing/unreadable.  
+- **Configurable credentials path** via `GDRT_CREDENTIALS_FILE`. Falls back to `credentials.json` if unset; paths with spaces are supported. Clearer startup error when missing/unreadable.
 - **Windows/OneDrive lock resilience:** Added `_atomic_replace_with_retry()` to handle transient `WinError 32` during final `*.partial → final` rename, including cleanup of zero-byte stubs.
 
 ### Fixes & Robustness
@@ -86,7 +86,7 @@ r"""
   `--max-rps`, `--burst`, concurrency heuristics, and client lifecycle tips.
 - **Policy UX (1.5.8/1.5.2):** clear unknown-policy warnings (stderr + WARNING), repeat once in
   EXECUTION COMMAND preview; strict mode via `--strict-policy` or `GDRT_STRICT_POLICY=1`. Unknown
-  tokens fall back to `trash` unless strict. 
+  tokens fall back to `trash` unless strict.
 - **Extensions & Validators (1.5.7):** multi-segment extensions allowed; server-side MIME narrowing
   uses the last segment; pure validator functions moved to `validators.py` with type hints.
 - **Streaming & Memory (1.5.6):** rolling batches via `--process-batch-size` bound memory; stable
@@ -2623,7 +2623,7 @@ Compatibility matrix (v1.6.3):
   │ requests (optional)           │ 2.28+                         │
   │ google-auth[requests] (opt.)  │ 2.20+                         │
   └───────────────────────────────┴──────────────────────────────┘
-  
+
 Concurrent-run guardrail (v1.6.0):
   Runs write owner PID and a run-id into the lockfile/state. If another run
   targets the same state file, it exits early with a friendly message.

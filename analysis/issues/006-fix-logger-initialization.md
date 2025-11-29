@@ -60,7 +60,7 @@ import python_logging_framework as plog
 logger = plog.initialise_logger(__name__)
 
 # Configuration (from ISSUE-001)
-TOKEN_FILE = os.getenv('GDRIVE_TOKEN_PATH', 
+TOKEN_FILE = os.getenv('GDRIVE_TOKEN_PATH',
     str(Path.home() / 'Documents' / 'Scripts' / 'drive_token.json'))
 CREDENTIALS_FILE = os.getenv('GDRIVE_CREDENTIALS_PATH',
     str(Path.home() / 'Documents' / 'Scripts' / 'credentials.json'))
@@ -70,11 +70,11 @@ SCOPES = ['https://www.googleapis.com/auth/drive']
 def get_credentials():
     """Get Google Drive API credentials."""
     creds = None
-    
+
     if os.path.exists(TOKEN_FILE):
         plog.log_info(logger, f"Loading token from {TOKEN_FILE}")
         creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-    
+
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             plog.log_info(logger, "Refreshing expired token")
@@ -84,12 +84,12 @@ def get_credentials():
             flow = InstalledAppFlow.from_client_secrets_file(
                 CREDENTIALS_FILE, SCOPES)
             creds = flow.run_local_server(port=0)
-        
+
         # Save credentials
         plog.log_info(logger, f"Saving token to {TOKEN_FILE}")
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
-    
+
     plog.log_info(logger, "Credentials obtained successfully")
     return creds
 ```
@@ -137,7 +137,7 @@ import logging
 def test_google_drive_auth_has_logger():
     """Verify google_drive_auth initializes logger."""
     from src.python.modules.auth import google_drive_auth
-    
+
     # Module should have a logger attribute
     assert hasattr(google_drive_auth, 'logger')
     assert isinstance(google_drive_auth.logger, logging.Logger)
@@ -146,7 +146,7 @@ def test_google_drive_auth_has_logger():
 def test_module_can_log_without_external_init():
     """Verify module can log without external initialization."""
     from src.python.modules.auth import google_drive_auth
-    
+
     # This should not raise AttributeError
     try:
         # Module's logger should work
@@ -160,7 +160,7 @@ def test_all_python_modules_have_logger():
         'src.python.modules.auth.google_drive_auth',
         # Add other modules here
     ]
-    
+
     for module_name in modules_to_check:
         module = importlib.import_module(module_name)
         assert hasattr(module, 'logger'), f"{module_name} missing logger"
@@ -180,7 +180,7 @@ Handles OAuth2 authentication flow for Google Drive API.
 Logging:
     This module initializes its own logger using the python_logging_framework.
     All operations are logged with appropriate severity levels.
-    
+
     Example:
         >>> from src.python.modules.auth import google_drive_auth
         >>> creds = google_drive_auth.get_credentials()

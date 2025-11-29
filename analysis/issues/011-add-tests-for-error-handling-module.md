@@ -41,11 +41,11 @@ ErrorHandling module provides critical error management functionality but needs 
 Describe "Write-ErrorLog" {
     It "Logs error with full details" {
         Mock Write-LogError { }
-        
+
         try { throw "Test error" } catch {
             Write-ErrorLog -ErrorRecord $_ -Context "Testing"
         }
-        
+
         Assert-MockCalled Write-LogError -ParameterFilter {
             $Message -match "Test error" -and
             $Message -match "Testing"

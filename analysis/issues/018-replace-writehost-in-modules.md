@@ -34,7 +34,7 @@ function Process-Files {
 function Process-Files {
     [CmdletBinding()]
     param([string[]]$Files)
-    
+
     foreach ($file in $Files) {
         Write-Verbose "Processing: $file"
         # Process and output object

@@ -99,6 +99,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Removed continue-on-error from Critical CI Checks** (#521) - Made quality gates properly blocking
+  - **Priority**: MEDIUM - Enforces code quality and security standards
+  - **Impact**: Critical checks now properly fail CI builds, preventing merge of problematic code
+  - **Problem Solved**:
+    - Previously: Critical checks had `continue-on-error: true` or `|| true`, allowing failures to be ignored
+    - Pre-commit hooks, linting, security scanning, and SonarCloud quality gates were not blocking merges
+    - Failed quality checks could be bypassed, reducing code quality and security
+  - **Solution Implemented**:
+    - **sonarcloud.yml**:
+      - Removed `continue-on-error: true` from Pre-Commit Hooks step
+      - Removed `|| true` from Pylint command to make Python linting blocking
+      - Removed `|| true` from Bandit command to make security scanning blocking
+      - Updated PSScriptAnalyzer to fail on linting errors instead of just reporting
+      - Removed `continue-on-error: true` and `|| true` from SonarCloud Scan to make quality gate blocking
+    - **security-scan.yml**:
+      - Removed `continue-on-error: true` from Safety check step
+      - Removed `continue-on-error: true` from pip-audit check step
+      - Both security scans now properly fail the build when vulnerabilities are detected
+  - **Checks Now Blocking**:
+    - ✅ Pre-commit hooks - Will block on formatting/linting violations
+    - ✅ Python linting (Pylint) - Will block on code quality issues
+    - ✅ PowerShell linting (PSScriptAnalyzer) - Will block on script quality issues
+    - ✅ Python security scanning (Bandit) - Will block on security vulnerabilities
+    - ✅ Dependency security (Safety, pip-audit) - Will block on vulnerable dependencies
+    - ✅ SonarCloud quality gate - Will block on quality/coverage thresholds
+  - **Files Modified**:
+    - `.github/workflows/sonarcloud.yml` - Removed continue-on-error from 5 critical steps
+    - `.github/workflows/security-scan.yml` - Removed continue-on-error from 2 security steps
+    - `CHANGELOG.md` - This entry
+  - **Benefits**:
+    - 🛡️ Enforced code quality standards prevent low-quality code from being merged
+    - 🔒 Security vulnerabilities are caught and block merges until resolved
+    - 📊 SonarCloud quality gates ensure code meets coverage and quality metrics
+    - ✨ Pre-commit hooks ensure consistent formatting and style
+    - 🚫 Eliminates ability to merge code with known issues
+  - **Version Impact**: PATCH bump - CI/CD improvement, no code changes
+
 - **Pinned All Dependency Versions** (#519) - Ensured reproducible builds with exact version specifications
   - **Priority**: MEDIUM - Prevents non-deterministic builds and version conflicts
   - **Impact**: Improved build reproducibility, eliminated version drift, simplified dependency management

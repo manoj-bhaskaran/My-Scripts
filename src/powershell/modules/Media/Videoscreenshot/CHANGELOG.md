@@ -61,7 +61,7 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [1.x] – 2024–2025 (condensed)
 
-> Consolidated highlights for all **1.*** releases.  
+> Consolidated highlights for all **1.*** releases.
 > **For omissions or more granular details, please refer to the corresponding git commit messages (tags `v1.x.y`) in the repository history.**
 
 ### Added

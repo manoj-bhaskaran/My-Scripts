@@ -89,7 +89,7 @@ foreach ($varName in $requiredVars.Keys) {
     }
 }
 
-Write-Host "" 
+Write-Host ""
 Write-Host "Optional Variables:" -ForegroundColor Yellow
 foreach ($varName in $optionalVars.Keys) {
     $config = $optionalVars[$varName]
@@ -117,7 +117,7 @@ foreach ($varName in $optionalVars.Keys) {
     }
 }
 
-Write-Host "" 
+Write-Host ""
 Write-Host "Feature-Specific Configuration:" -ForegroundColor Yellow
 
 $gdriveCredentials = [Environment]::GetEnvironmentVariable('GDRIVE_CREDENTIALS_PATH')

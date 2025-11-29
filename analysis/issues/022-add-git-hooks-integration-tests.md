@@ -31,7 +31,7 @@ Describe "Git Hook Integration" {
         # Create test repo
         # Setup hooks and config
     }
-    
+
     It "Deploys modules after commit" {
         # Make commit
         # Verify modules in PSModulePath

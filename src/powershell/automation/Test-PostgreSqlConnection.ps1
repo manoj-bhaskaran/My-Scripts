@@ -1,19 +1,23 @@
+# PSScriptAnalyzer suppression: Test/utility script with hardcoded credentials for connection testing
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification='Test script with hardcoded credentials')]
+param()
+
 # Define the connection string for ODBC
 $dsn = "gnucash"
 $user = "gnucash_user"
-$password = "gnucash01"
+$securePassword = ConvertTo-SecureString "gnucash01" -AsPlainText -Force
+$credential = New-Object System.Management.Automation.PSCredential($user, $securePassword)
 
 # Function to create and hold a connection for a random period
 function Open-OdbcConnection {
     param (
         [string]$dsn,
-        [string]$user,
-        [string]$password
+        [PSCredential]$Credential
     )
 
     # Create a new ODBC connection
     $connection = New-Object System.Data.Odbc.OdbcConnection
-    $connection.ConnectionString = "DSN=$dsn;Uid=$user;Pwd=$password;"
+    $connection.ConnectionString = "DSN=$dsn;Uid=$($Credential.UserName);Pwd=$($Credential.GetNetworkCredential().Password);"
 
     # Open the connection
     $connection.Open()
@@ -31,12 +35,12 @@ function Open-OdbcConnection {
 # Create and open 100 simultaneous connections
 for ($i = 1; $i -le 100; $i++) {
     Start-Job -ScriptBlock {
-        param ($dsn, $user, $password)
+        param ($dsn, $credential)
 
         # Call the function to open and hold a connection
-        Open-OdbcConnection -dsn $using:dsn -user $using:user -password $using:password
+        Open-OdbcConnection -dsn $using:dsn -Credential $using:credential
 
-    } -ArgumentList $dsn, $user, $password
+    } -ArgumentList $dsn, $credential
 }
 
 # Wait for all jobs to complete

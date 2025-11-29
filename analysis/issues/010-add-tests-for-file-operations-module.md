@@ -43,15 +43,15 @@ Describe "Copy-FileWithRetry" {
     It "Retries on failure" {
         $attempts = 0
         Mock Copy-Item { $script:attempts++; if ($attempts -lt 3) { throw "Locked" } }
-        
+
         Copy-FileWithRetry -Source "test.txt" -Destination "dest.txt" -MaxRetries 5
-        
+
         $attempts | Should -Be 3
     }
-    
+
     It "Throws after max retries" {
         Mock Copy-Item { throw "Locked" }
-        
+
         { Copy-FileWithRetry -Source "test.txt" -Destination "dest.txt" -MaxRetries 2 } |
             Should -Throw
     }
@@ -65,9 +65,9 @@ Describe "Remove-FileWithBackup" {
         Mock Test-Path { $true }
         Mock Copy-Item { }
         Mock Remove-Item { }
-        
+
         Remove-FileWithBackup -Path "test.txt" -BackupDir "backup"
-        
+
         Assert-MockCalled Copy-Item -ParameterFilter { $Destination -match "backup" }
         Assert-MockCalled Remove-Item
     }

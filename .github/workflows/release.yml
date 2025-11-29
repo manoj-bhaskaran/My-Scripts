@@ -61,7 +61,7 @@ jobs:
           if [ -z "$CHANGELOG" ]; then
             CHANGELOG="Release version $VERSION
 
-See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details."
+          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details."
           fi
 
           # Save to output using heredoc

@@ -1,7 +1,7 @@
 # ISSUE-020: Replace Write-Host in System Maintenance Scripts
 
 **Priority:** 🟡 MEDIUM
-**Category:** Code Quality / Best Practices  
+**Category:** Code Quality / Best Practices
 **Estimated Effort:** 5 hours
 **Skills Required:** PowerShell, Best Practices
 

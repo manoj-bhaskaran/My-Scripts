@@ -11,7 +11,7 @@
 
 Version information is inconsistent across files:
 - `VERSION`: 2.0.0
-- `pyproject.toml`: 1.0.0  
+- `pyproject.toml`: 1.0.0
 - `setup.py`: 0.2.0
 
 This causes confusion and potential build issues.

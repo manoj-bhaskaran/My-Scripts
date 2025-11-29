@@ -11,6 +11,10 @@
     Tests will be skipped on non-Windows platforms.
 #>
 
+# Suppress PSScriptAnalyzer warning for test credential creation
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification='Test file requires plaintext conversion for credential mocking')]
+param()
+
 BeforeAll {
     # Check if running on Windows
     $script:isWindows = $PSVersionTable.PSVersion.Major -le 5 -or $IsWindows

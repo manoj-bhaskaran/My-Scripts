@@ -1,7 +1,7 @@
 # Video Screenshot (PowerShell)
- 
+
 This project captures frames from videos via VLC and (optionally) runs a Python cropper to trim borders by dominant color.
- 
+
 ## Usage
 
 **Recommended (module)**
@@ -108,14 +108,14 @@ The module tracks which videos have been handled so future runs can skip work.
 
 **Supported formats (both accepted):**
 
-* **TSV (current, default for new writes)**  
+* **TSV (current, default for new writes)**
   Each line is `<FullPath>\t<Status>[\t<Reason>]`:
   ```
   C:\path\to\video1.mp4\tProcessed
   C:\path\to\video2.mp4\tSkipped\tnot playable
   ```
 
-* **Legacy (single-column)**  
+* **Legacy (single-column)**
   Each line is just the full path:
   ```
   C:\path\to\video1.mp4
@@ -231,9 +231,9 @@ If any package is missing, the module automatically installs them via python -m 
 
 > Tip: You can change the required package list by editing Config.ps1 (Python.RequiredPackages). This keeps the PowerShell code free of hard-coded package names.
 
-> Note: The cropper’s stdout/stderr always stream live to the console; Ctrl+C cancels cleanly.  
-> For advanced control over cropping arguments, adjust the Python script directly.  
-> The module uses safe defaults: `--skip-bad-images --allow-empty --recurse --preserve-alpha`,  
+> Note: The cropper’s stdout/stderr always stream live to the console; Ctrl+C cancels cleanly.
+> For advanced control over cropping arguments, adjust the Python script directly.
+> The module uses safe defaults: `--skip-bad-images --allow-empty --recurse --preserve-alpha`,
 > and adds `--reprocess-cropped` (plus `--keep-existing-crops`) when you pass the corresponding PowerShell flags.
 > Note: The cropper’s stdout/stderr stream live to the console (always-on). For advanced control over cropping arguments, adjust the Python script directly. The module uses safe defaults: `--skip-bad-images --allow-empty --recurse --preserve-alpha`, and adds `--reprocess-cropped` (plus `--keep-existing-crops`) when you pass the corresponding PowerShell flags.
 - GDI capture currently targets Windows (uses GDI+/System.Drawing); VLC snapshot mode is cross-platform where VLC is available.
@@ -254,8 +254,8 @@ On Windows (example):
   TSV (`<FullPath>\t<Status>[\t<Reason>]`) **and** legacy single-column (`<FullPath>`) lines. Paths are
   normalized to absolute; on Windows matching is case-insensitive. You can also point to an existing file
   via `-ProcessedLogPath`. `Start-VideoBatch` honors `-ResumeFile` by skipping items up to that file.
-- **Crash: “There is no Runspace available to run scripts in this thread.”**  
-  This was caused by emitting PowerShell debug output from background stream handlers.  
+- **Crash: “There is no Runspace available to run scripts in this thread.”**
+  This was caused by emitting PowerShell debug output from background stream handlers.
   Fixed in the next patch release; update to the latest version. As a temporary workaround,
   run without `-Debug`. Note that, by design, VLC’s stdout/stderr are still captured for errors,
   but per-line live output from VLC is no longer shown when `-Debug` is used.

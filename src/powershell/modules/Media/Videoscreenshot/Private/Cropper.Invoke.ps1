@@ -14,7 +14,7 @@
   - It validates/installs required Python packages (by default).
   - On any failure, it throws with actionable detail; no user-facing writes except Debug.
   - **Output is streamed live to the console and Ctrl+C interrupts the Python process** (always-on).
-    
+
   Auto-install behavior:
     - By default, required Python packages are auto-installed via `python -m pip install`.
     - Pass -NoAutoInstall to disable auto-install. In that case, the function throws when
@@ -236,7 +236,7 @@ function Invoke-Cropper {
         Write-Debug ("Invoke-Cropper: Ctrl+C handling not available in this host: {0}" -f $_.Exception.Message)
         $handler = $null
     }
-    
+
     try {
         $null = $p.Start()
         $p.WaitForExit()

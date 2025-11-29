@@ -46,7 +46,7 @@ Local deployment configuration requires undocumented manual setup. Users don't k
    ```bash
    cp config/local-deployment-config.json.example config/local-deployment-config.json
    ```
-   
+
 2. **Edit configuration:**
    ```json
    {
