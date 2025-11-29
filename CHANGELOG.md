@@ -23,9 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Pinned Dependencies** (23 total):
     - **Core Dependencies** (16):
       - requests==2.31.0
-      - numpy==1.24.3
-      - pandas==2.0.3
-      - opencv-python==4.8.1.78
+      - numpy==1.26.4 (Python 3.12 compatible)
+      - pandas==2.2.1 (Python 3.12 compatible)
+      - opencv-python==4.9.0.80 (Python 3.12 compatible)
       - cloudconvert==2.0.0
       - google-auth==2.23.4
       - google-auth-oauthlib==1.1.0
