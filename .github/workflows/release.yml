@@ -59,12 +59,9 @@ jobs:
 
           # If changelog is empty, provide a default message
           if [ -z "$CHANGELOG" ]; then
-            CHANGELOG=$(cat <<EOF
-Release version $VERSION
+            CHANGELOG="Release version $VERSION
 
-See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
-EOF
-)
+          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details."
           fi
 
           # Save to output using heredoc
