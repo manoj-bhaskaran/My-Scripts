@@ -598,7 +598,7 @@ Describe "New-DirectoryIfNotExists" {
         }
 
         It "Creates nested directories" {
-            $dir = Join-Path $script:testDir "a\b\c"
+            $dir = Join-Path $script:testDir "nested1\nested2\nested3"
 
             $result = New-DirectoryIfNotExists -Path $dir
 
