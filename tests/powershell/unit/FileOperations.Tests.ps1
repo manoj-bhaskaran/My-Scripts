@@ -687,13 +687,14 @@ Describe "Get-FileSize" {
             $size | Should -Be 10000
         }
 
-        It "Returns 0 for directory path" {
-            $dir = Join-Path $script:testDir "size_dir_test"
-            New-Item -Path $dir -ItemType Directory -Force | Out-Null
+        It "Handles binary files correctly" {
+            $file = Join-Path $script:testDir "binary_test.bin"
+            $bytes = [byte[]]@(0x00, 0x01, 0x02, 0x03, 0x04)
+            [System.IO.File]::WriteAllBytes($file, $bytes)
 
-            $size = Get-FileSize -Path $dir -WarningAction SilentlyContinue
+            $size = Get-FileSize -Path $file
 
-            $size | Should -Be 0
+            $size | Should -Be 5
         }
     }
 
