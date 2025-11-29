@@ -88,6 +88,13 @@ jobs:
       - name: Install Pester (PowerShell Testing Framework)
         shell: pwsh
         run: |
+          # Register PSGallery if not already registered
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Default
+          }
+          # Set PSGallery as trusted to avoid prompts
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          # Install Pester
           Install-Module -Name Pester -Force -Scope CurrentUser -SkipPublisherCheck
 
       - name: Run PowerShell Tests with Coverage
