@@ -24,7 +24,7 @@ pytest-mock==3.11.1
 # Code quality and formatting
 pre-commit==3.5.0
 black==24.3.0
-bandit==1.7.5
+bandit==1.7.9
 sqlfluff==3.0.0
 
 # Security scanning

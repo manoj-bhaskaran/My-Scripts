@@ -80,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Fixed Dependency Vulnerabilities** (#520) - Updated vulnerable packages to secure versions
   - **Priority**: HIGH - Security vulnerability remediation
-  - **Impact**: Eliminates 4 known security vulnerabilities (3 moderate, 1 low severity)
+  - **Impact**: Eliminates 5 known security vulnerabilities across 4 packages
   - **Vulnerabilities Fixed**:
     - **requests 2.31.0 → 2.32.4** (2 CVEs fixed)
       - GHSA-9wx4-h78v-vm56: Session certificate verification bypass issue
@@ -89,9 +89,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - GHSA-g7vv-2v7x-gj9p: Arbitrary code execution via CLI arguments through eval()
     - **black 24.1.1 → 24.3.0** (1 CVE fixed)
       - PYSEC-2024-48: Regular Expression Denial of Service (ReDoS) vulnerability
+    - **bandit 1.7.5 → 1.7.9** (1 vulnerability fixed)
+      - Safety ID 64484: Missing detection of str.replace SQL injection pattern
   - **Files Modified**:
-    - `requirements.txt` - Updated requests, tqdm, and black to secure versions
-    - `.pre-commit-config.yaml` - Updated black hook to v24.3.0
+    - `requirements.txt` - Updated requests, tqdm, black, and bandit to secure versions
+    - `.pre-commit-config.yaml` - Updated black and bandit hooks to secure versions
   - **Validation**: Security scan workflow automatically validates fixes
   - **Version Impact**: PATCH bump - security fixes only, backward compatible
 
