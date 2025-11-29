@@ -96,6 +96,8 @@ function Test-Rclone {
 }
 
 function Test-Network {
+    # Use Google's public DNS for internet connectivity test
+    $connectivityTestTarget = "8.8.8.8"
 
     # Step 1: Get current SSID
     $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
@@ -150,7 +152,7 @@ function Test-Network {
     }
 
     # Step 2: Internet test
-    if (-not (Test-Connection -ComputerName "8.8.8.8" -Count 2 -Quiet)) {
+    if (-not (Test-Connection -ComputerName $connectivityTestTarget -Count 2 -Quiet)) {
         Write-LogError "No internet connection. Sync aborted."
         exit 1
     }

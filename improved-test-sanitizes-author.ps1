@@ -1,7 +1,8 @@
 # Improved version of the "Sanitizes author and description fields" test
 # This addresses potential race conditions and provides better debugging
 
-It "Sanitizes author and description fields" {
+Describe "Module Deployment Sanitization Tests" {
+    It "Sanitizes author and description fields" {
     # Test with potentially unsafe author/description using control character
     $unsafeAuthor = "Author$([char]1)WithControlChar"  # Contains control character
     $configContent = "TestModule|TestModule.psm1|User|$unsafeAuthor"
@@ -57,4 +58,5 @@ It "Sanitizes author and description fields" {
     # Additional verification that other functions were called
     Assert-MockCalled Copy-Item -Times 1
     Assert-MockCalled New-DirectoryIfMissing -Times 1
+    }
 }

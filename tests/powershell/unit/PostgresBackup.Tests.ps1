@@ -668,6 +668,9 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Uses provided password when specified" {
+            # PSScriptAnalyzer suppression: Using plaintext for test purposes only
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification='Test credential creation')]
+            param()
             $securePassword = ConvertTo-SecureString "test_password" -AsPlainText -Force
             $script:capturedCommand = ""
 
