@@ -8,7 +8,7 @@ CREATE TABLE timeline.locations (
     activity_type TEXT,
     confidence INTEGER,
     -- Spatial index for efficient location-based queries
-    location GEOMETRY (Point, 4326),
+    location GEOMETRY (POINT, 4326),
     -- Primary key for efficient lookups and to ensure uniqueness (though timestamp might not be strictly unique)
     location_id BIGSERIAL PRIMARY KEY
 );

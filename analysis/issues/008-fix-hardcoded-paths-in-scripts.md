@@ -127,10 +127,10 @@ echo "config/secrets/*.pwd" >> .gitignore
 param(
     [Parameter(Mandatory)]
     [string]$InputFile,
-    
+
     [Parameter(Mandatory)]
     [string]$OutputFormat,
-    
+
     [string]$PythonScript
 )
 
@@ -274,19 +274,19 @@ Fix pattern:
 # Test script
 function Test-ScriptPaths {
     param([string]$ScriptPath)
-    
+
     Write-Host "Testing: $ScriptPath"
-    
+
     # Parse script for hardcoded paths
     $content = Get-Content $ScriptPath -Raw
-    
+
     $patterns = @(
         'C:\\Users\\',
         'C:/Users/',
         'D:\\',
         'E:\\'
     )
-    
+
     $found = $false
     foreach ($pattern in $patterns) {
         if ($content -match $pattern) {
@@ -294,7 +294,7 @@ function Test-ScriptPaths {
             $found = $true
         }
     }
-    
+
     if (-not $found) {
         Write-Host "✓ No hardcoded paths found" -ForegroundColor Green
     }

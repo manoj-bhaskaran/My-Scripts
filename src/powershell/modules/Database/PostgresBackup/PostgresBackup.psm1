@@ -7,7 +7,7 @@
     Version: 1.0.4
     Date: 2025-08-16
     License: Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
-    Requires: 
+    Requires:
         - PostgreSQL 17 or compatible, with pg_dump installed at D:\Program Files\PostgreSQL\17\bin\pg_dump.exe.
         - A .pgpass file at %APPDATA%\postgresql\pgpass.conf (e.g., C:\Users\<User>\AppData\Roaming\postgresql\pgpass.conf) with format: localhost:5432:<database>:<user>:<password>.
         - Write access to the backup and log folders for the executing user.

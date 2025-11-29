@@ -3,7 +3,7 @@
 The script recursively enumerates files from the source directory and ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
 .DESCRIPTION
-The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed. 
+The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
  4.0.0
@@ -47,7 +47,7 @@ If you pass a **directory** path (e.g. `C:\State`), the script will create/use
 Optional. If specified, the script will restart from the last checkpoint, resuming its previous state.
 
 .PARAMETER MaxBackoff
-Optional. Maximum backoff (in seconds) used by the exponential retry helper when `-RetryCount` is non-zero. 
+Optional. Maximum backoff (in seconds) used by the exponential retry helper when `-RetryCount` is non-zero.
 Defaults to 60 seconds. Applies to state-file locking and all file operations that use the retry helper
 (`Copy-ItemWithRetry`, `Remove-ItemWithRetry`, `Rename-ItemWithRetry`, Recycle Bin moves).
 
@@ -479,7 +479,7 @@ if ($Help) {
     Write-Host "  2) Script-root 'powershell\\module\\RandomName\\RandomName.psd1' (or .psm1)" -ForegroundColor DarkCyan
     Write-Host "  3) Import-Module RandomName (from PSModulePath)" -ForegroundColor DarkCyan
     Write-Host "The script errors out if the RandomName module cannot be located." -ForegroundColor White
- 
+
     exit
 }
 
@@ -1165,7 +1165,7 @@ function DistributeFilesToSubfolders {
         # Recompute normalized destination AFTER any fallback/emergency selection.
         # (Fixes null dereference when logging/inspecting $destNormalized.)
         $destNormalized = if ($destinationFolder) { [IO.Path]::GetFullPath($destinationFolder) } else { $null }
- 
+
         if (-not (Test-Path -LiteralPath $destinationFolder -PathType Container)) {
             try {
                 New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
@@ -1248,12 +1248,12 @@ function RedistributeFilesInTarget {
     # Build initial folder file count map from normalized full paths
     $folderFilesMap = @{}
     $normalizedSubfolders = @()
-    
+
     # FIXED: First, ensure we have actual DirectoryInfo objects
     $validSubfolderObjects = @()
     foreach ($sf in $Subfolders) {
         if ($null -eq $sf) { continue }
-        
+
         # Convert to DirectoryInfo if it's a string
         if ($sf -is [string]) {
             if ([string]::IsNullOrWhiteSpace($sf)) { continue }
@@ -1271,28 +1271,28 @@ function RedistributeFilesInTarget {
             $validSubfolderObjects += $sf
         }
     }
-    
+
     LogMessage -Message "DEBUG: Valid subfolder objects collected: $($validSubfolderObjects.Count)" -IsDebug
-    
+
     # Now process the validated objects
     foreach ($dirInfo in $validSubfolderObjects) {
         $sfPath = $dirInfo.FullName
-        
+
         if ([string]::IsNullOrWhiteSpace($sfPath)) { continue }
-        
+
         # Resolve to absolute path and verify it's under target root (but not the root itself)
         $sfPath = Resolve-SubfolderPath -Path $sfPath -TargetRoot $TargetFolder
         if (-not $sfPath -or $sfPath -eq $TargetFolder) { continue }
-        
+
         # Verify it still exists
         if (-not (Test-Path -LiteralPath $sfPath -PathType Container)) {
             LogMessage -Message "Subfolder no longer exists: '$sfPath'" -IsWarning
             continue
         }
-        
+
         # Add to collections
         $normalizedSubfolders += $sfPath
-        
+
         try {
             $folderFilesMap[$sfPath] = (Get-ChildItem -LiteralPath $sfPath -File -ErrorAction Stop).Count
         }
@@ -1301,10 +1301,10 @@ function RedistributeFilesInTarget {
             LogMessage -Message "Failed to count files in subfolder '$sfPath'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
         }
     }
-    
+
     # Make unique
     $normalizedSubfolders = $normalizedSubfolders | Select-Object -Unique
-    
+
     LogMessage -Message ("DEBUG: Normalized subfolders for redistribution ({0} items): {1}" -f $normalizedSubfolders.Count, ($normalizedSubfolders -join ', ')) -IsDebug
 
     if ($normalizedSubfolders.Count -eq 0) {
@@ -1822,7 +1822,7 @@ function SaveState {
     Write-JsonAtomically -StateObject $state -Path $StateFilePath
 
     # Log the save operation
-    LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')" 
+    LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')"
 
     # Reacquire the file lock after saving state
     $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
@@ -1898,33 +1898,33 @@ function LoadState {
 # Function to extract paths from items
 function ConvertItemsToPaths {
     param ([array]$Items)
-    
+
     LogMessage -Message "DEBUG: ConvertItemsToPaths - Input count: $(if ($Items) { $Items.Count } else { '0 (null)' })" -IsDebug
-    
-    if (-not $Items) { 
+
+    if (-not $Items) {
         LogMessage -Message "DEBUG: ConvertItemsToPaths - Returning empty array (null input)" -IsDebug
-        return @() 
+        return @()
     }
-    
+
     $out = @()
     $index = 0
     foreach ($i in $Items) {
         $index++
-        
-        if ($null -eq $i) { 
+
+        if ($null -eq $i) {
             LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is null, skipping" -IsDebug
-            continue 
+            continue
         }
-        
+
         $itemType = $i.GetType().Name
         LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index type is $itemType" -IsDebug
-        
+
         if ($i -is [System.IO.FileSystemInfo]) {
             if ($i.FullName) {
                 $fullPath = $i.FullName
                 if (-not [string]::IsNullOrWhiteSpace($fullPath)) {
                     LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index converting '$($i.Name)' to '$fullPath'" -IsDebug
-                    $out += $fullPath 
+                    $out += $fullPath
                 }
                 else {
                     LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has whitespace-only FullName for '$($i.Name)'" -IsDebug
@@ -1934,15 +1934,15 @@ function ConvertItemsToPaths {
                 LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has no FullName property for '$($i.Name)'"
             }
         }
-        elseif (-not [string]::IsNullOrWhiteSpace([string]$i)) { 
+        elseif (-not [string]::IsNullOrWhiteSpace([string]$i)) {
             LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is string '$i'" -IsDebug
-            $out += [string]$i 
+            $out += [string]$i
         }
         else {
             LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index skipped (empty/whitespace)"
         }
     }
-    
+
     LogMessage -Message "DEBUG: ConvertItemsToPaths - Output count: $($out.Count)" -IsDebug
     return $out
 }
@@ -1950,26 +1950,26 @@ function ConvertItemsToPaths {
 # Function to convert paths to items
 function ConvertPathsToItems {
     param ([array]$Paths)
-    
+
     LogMessage -Message "DEBUG: ConvertPathsToItems - Input count: $(if ($Paths) { $Paths.Count } else { '0 (null)' })" -IsDebug
-    
-    if (-not $Paths) { 
+
+    if (-not $Paths) {
         LogMessage -Message "DEBUG: ConvertPathsToItems - Returning empty array (null input)" -IsDebug
-        return @() 
+        return @()
     }
-    
+
     $out = @()
     $index = 0
     foreach ($path in $Paths) {
         $index++
-        
-        if ([string]::IsNullOrWhiteSpace($path)) { 
+
+        if ([string]::IsNullOrWhiteSpace($path)) {
             LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index is null/whitespace, skipping" -IsDebug
-            continue 
+            continue
         }
-        
+
         LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index processing path '$path'" -IsDebug
-        
+
         try {
             $item = Get-Item -LiteralPath $path -ErrorAction Stop
             if ($item -and $item.FullName -and -not [string]::IsNullOrWhiteSpace($item.FullName)) {
@@ -1984,7 +1984,7 @@ function ConvertPathsToItems {
             LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index failed to convert '$path' - $($_.Exception.Message)" -IsWarning
         }
     }
-    
+
     LogMessage -Message "DEBUG: ConvertPathsToItems - Output count: $($out.Count)"
     return $out
 }
@@ -2238,7 +2238,7 @@ function Main {
                     }
                     # Capture prior counters to aggregate with current run
                     if ($state.PSObject.Properties.Name -contains 'WarningsSoFar') { $priorWarnings = [int]$state.WarningsSoFar }
-                    if ($state.PSObject.Properties.Name -contains 'ErrorsSoFar') { $priorErrors = [int]$state.ErrorsSoFar } 
+                    if ($state.PSObject.Properties.Name -contains 'ErrorsSoFar') { $priorErrors = [int]$state.ErrorsSoFar }
                     LogMessage -Message "Restarting from checkpoint $lastCheckpoint" -ConsoleOutput
                 }
                 else {
@@ -2268,7 +2268,7 @@ function Main {
                     if (-not ("RecycleBin", "Immediate", "EndOfScript" -contains $savedDeleteMode)) {
                         throw "Invalid value for DeleteMode in state file: '$savedDeleteMode'. Valid options are 'RecycleBin', 'Immediate', 'EndOfScript'."
                     }
-                    
+
                     if ($DeleteMode -ne $savedDeleteMode) {
                         throw "DeleteMode mismatch: Restarted script must use the saved DeleteMode ('$savedDeleteMode'). Aborting."
                     }
@@ -2350,7 +2350,7 @@ function Main {
 
                 # Check if a restart state file exists
                 if (Test-Path -Path $StateFilePath) {
-                  
+
                     LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
 
                     try {
@@ -2360,7 +2360,7 @@ function Main {
                     catch {
                         LogMessage -Message "Failed to delete state file $StateFilePath. Error: $_" -IsError
                         throw "An error occurred while deleting the state file: $($_.Exception.Message)"
-                    }  
+                    }
                 }
                 # Acquire the file lock after deleting the file
                 $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
@@ -2408,19 +2408,19 @@ function Main {
             LogMessage -Message "DEBUG: About to enumerate subfolders in: '$TargetFolder'" -IsDebug
             LogMessage -Message "DEBUG: Target folder exists: $(Test-Path -LiteralPath $TargetFolder)" -IsDebug
             LogMessage -Message "DEBUG: Target folder is directory: $(Test-Path -LiteralPath $TargetFolder -PathType Container)" -IsDebug
-            
+
             try {
                 $allItems = Get-ChildItem -LiteralPath $TargetFolder -Force -ErrorAction Stop
                 LogMessage -Message "DEBUG: Total items found: $($allItems.Count)" -IsDebug
-                
+
                 $subfolders = $allItems | Where-Object { $_.PSIsContainer }
 
                 LogMessage -Message "DEBUG: Directory items found: $($subfolders.Count)" -IsDebug
                 if ($subfolders -and $subfolders.Count -gt 0) {
-                    $subfolderNames = @($subfolders | ForEach-Object { 
-                            if ($_ -and $_.FullName) { 
-                                "'$($_.FullName)'" 
-                            } 
+                    $subfolderNames = @($subfolders | ForEach-Object {
+                            if ($_ -and $_.FullName) {
+                                "'$($_.FullName)'"
+                            }
                         })
                     LogMessage -Message ("DEBUG: Initial subfolders collected ({0} items): {1}" -f $subfolders.Count, ($subfolderNames -join ', ')) -IsDebug
                 }
@@ -2463,8 +2463,8 @@ function Main {
                 LogMessage -Message ("DEBUG: State subfolders raw count: {0}" -f $state.subfolders.Count) -IsDebug
             }
             if ($subfolders -and $subfolders.Count -gt 0) {
-                $subfolderNames = @($subfolders | ForEach-Object { 
-                        if ($_ -and $_.FullName) { "'$($_.FullName)'" } 
+                $subfolderNames = @($subfolders | ForEach-Object {
+                        if ($_ -and $_.FullName) { "'$($_.FullName)'" }
                     })
                 LogMessage -Message ("DEBUG: Converted subfolders ({0} items): {1}" -f $subfolders.Count, ($subfolderNames -join ', ')) -IsDebug
             }
@@ -2532,7 +2532,7 @@ function Main {
                 -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode `
                 -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter `
                 -TotalFiles 0 # Not used now; function computes its own totals
-        
+
             # Save post-redistribution state (Checkpoint 5)
             # Base additional variables
             $additionalVars = @{
@@ -2543,15 +2543,15 @@ function Main {
                 SourceFolder           = $SourceFolder # Persist SourceFolder
                 MaxFilesToCopy         = $MaxFilesToCopy
             }
-        
+
             # Conditionally add FilesToDelete if DeleteMode is EndOfScript
             if ($DeleteMode -eq "EndOfScript") {
                 $additionalVars["FilesToDelete"] = $FilesToDelete.Value
             }
-        
+
             # Save state with checkpoint 4 and additional variables
             SaveState -Checkpoint 5 -AdditionalVariables $additionalVars -fileLock $fileLockRef
-        }        
+        }
 
         # --- Optional: Consolidate into minimum # of subfolders (Checkpoint 6) ---
         if ($ConsolidateToMinimum -and $lastCheckpoint -lt 6) {
@@ -2615,7 +2615,7 @@ function Main {
             $effectiveErrors = [Math]::Max($Errors, $priorErrors)
 
             if (Test-EndOfScriptCondition -Condition $EndOfScriptDeletionCondition -Warnings $effectiveWarnings -Errors $effectiveErrors) {
-                
+
                 # Attempt to delete each queued entry (same-session only)
                 foreach ($entry in $FilesToDelete.Value) {
                     $entryPath = $null; $entrySession = $null; $entrySize = $null; $entryMtimeUtc = $null
@@ -2671,7 +2671,7 @@ function Main {
                 # Log a message if conditions are not met
                 LogMessage -Message "End-of-script deletion skipped due to warnings or errors."
             }
-        }        
+        }
 
         # Count files in the target folder after distribution
         $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count

@@ -20,7 +20,7 @@ EXPECTED Context.Config SHAPE (used for configurability; all optional):
     }
   }
 #>
-<# 
+<#
   NOTE (Configurability): Defaults in this file can be overridden via the run context:
   $Context.Config.Vlc.* (e.g., BaseArgs, Scene.Format). Defaults < Context.Config overrides < function parameters.
 #>

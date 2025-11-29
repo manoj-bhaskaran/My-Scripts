@@ -34,7 +34,7 @@ Describe "Backup and Restore Integration" {
         # Restore to new database
         # Compare data
     }
-    
+
     It "Restores database to exact state" {
         # Verify all data matches
     }

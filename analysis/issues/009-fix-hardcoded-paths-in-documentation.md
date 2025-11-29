@@ -278,10 +278,10 @@ $found = $false
 foreach ($file in $docFiles) {
     $content = Get-Content $file.FullName -Raw
     $lineNum = 0
-    
+
     foreach ($line in (Get-Content $file.FullName)) {
         $lineNum++
-        
+
         foreach ($pattern in $patterns.Keys) {
             if ($line -match $pattern) {
                 Write-Warning "$($file.Name):$lineNum - Found $($patterns[$pattern]): $line"

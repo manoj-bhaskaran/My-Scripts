@@ -21,8 +21,8 @@ function Initialize-Logger {
     Sets up global logging configuration including the log directory, log level, and script name.
     Ensures the log directory exists and determines the correct log file name based on the script
     and the current date, following the standardised logging specification.
-    The default log directory is automatically resolved relative to the invoking script’s path 
-    (not the module’s path), ensuring logs go to <script_root_dir>/logs in compliance with the 
+    The default log directory is automatically resolved relative to the invoking script’s path
+    (not the module’s path), ensuring logs go to <script_root_dir>/logs in compliance with the
     specification.
 
 .PARAMETER LogDirectory
@@ -148,7 +148,7 @@ function Write-Log {
     message, and optional metadata. Writes to the configured log file or
     falls back to standard output if file writing fails.
     If JSON format is enabled, logs are written as compressed single-line JSON for structured ingestion.
-    If writing to the log file fails (e.g., due to permissions or disk space), a warning is issued via 
+    If writing to the log file fails (e.g., due to permissions or disk space), a warning is issued via
     Write-Warning, and the log is written to the console as a fallback.
 
 .PARAMETER Level
@@ -165,7 +165,7 @@ function Write-Log {
 
 .NOTES
     Should not be called directly; use Write-LogInfo, Write-LogError, etc.
-    Optional metadata is validated against a recommended list. A warning is shown if an unrecognized 
+    Optional metadata is validated against a recommended list. A warning is shown if an unrecognized
     key is used.
 #>
     param (

@@ -116,7 +116,7 @@ function Start-VideoBatch {
         if (-not $PSBoundParameters.ContainsKey('SaveFolder')) {
             throw "CropOnly requires -SaveFolder pointing to the folder containing images to crop."
         }
-    
+
         # Validate inputs for cropper
         if (-not [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
             if (-not (Test-Path -LiteralPath $PythonScriptPath)) {

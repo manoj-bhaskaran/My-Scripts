@@ -6,13 +6,11 @@
         "connectionId": "manoj-bhaskaran",
         "projectKey": "manoj-bhaskaran_My-Scripts"
     },
-    // Code formatting settings
     "editor.formatOnSave": true,
     "editor.formatOnPaste": false,
     "editor.formatOnType": false,
     "files.insertFinalNewline": true,
     "files.trimTrailingWhitespace": true,
-    // Python formatting
     "python.formatting.provider": "black",
     "python.formatting.blackArgs": [
         "--line-length=100"
@@ -27,7 +25,6 @@
             "source.organizeImports": "explicit"
         }
     },
-    // PowerShell formatting
     "[powershell]": {
         "editor.formatOnSave": true,
         "editor.tabSize": 4,
@@ -44,12 +41,10 @@
     "powershell.codeFormatting.ignoreOneLineBlock": true,
     "powershell.codeFormatting.alignPropertyValuePairs": true,
     "powershell.codeFormatting.useCorrectCasing": true,
-    // SQL formatting
     "[sql]": {
         "editor.defaultFormatter": "dorzey.vscode-sqlfluff",
         "editor.formatOnSave": true
     },
-    // JSON formatting
     "[json]": {
         "editor.defaultFormatter": "vscode.json-language-features",
         "editor.tabSize": 2
@@ -58,12 +53,10 @@
         "editor.defaultFormatter": "vscode.json-language-features",
         "editor.tabSize": 2
     },
-    // YAML formatting
     "[yaml]": {
         "editor.tabSize": 2,
         "editor.insertSpaces": true
     },
-    // Markdown formatting
     "[markdown]": {
         "editor.tabSize": 2,
         "files.trimTrailingWhitespace": false
