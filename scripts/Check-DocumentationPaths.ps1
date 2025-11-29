@@ -22,7 +22,7 @@
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 1.0.1
+    Version: 1.0.2
     Last Updated: 2025-11-29
 #>
 
@@ -41,10 +41,16 @@ $patterns = @{
 }
 
 # Get all markdown files
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "DOCUMENTATION PATH CHECKER v1.0.2" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
 Write-Host "Searching for markdown files..." -ForegroundColor Cyan
 $docFiles = Get-ChildItem -Path $Path -Include *.md -Recurse -File
 
 # Filter out excluded paths
+$excludedCount = 0
 $filteredFiles = $docFiles | Where-Object {
     $file = $_
     $shouldInclude = $true
@@ -53,6 +59,7 @@ $filteredFiles = $docFiles | Where-Object {
         $excludePattern = $excludePattern.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
         if ($file.FullName -like "*$excludePattern*") {
             $shouldInclude = $false
+            $excludedCount++
             Write-Verbose "Excluding: $($file.FullName)"
             break
         }
@@ -61,7 +68,14 @@ $filteredFiles = $docFiles | Where-Object {
     $shouldInclude
 }
 
+Write-Host "Found $($docFiles.Count) total markdown files" -ForegroundColor White
+Write-Host "Excluded $excludedCount file(s) from checking" -ForegroundColor Gray
 Write-Host "Checking $($filteredFiles.Count) markdown files for hardcoded paths..." -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Patterns being checked:" -ForegroundColor Cyan
+Write-Host "  - Windows paths: C:\Users\, D:\, E:\" -ForegroundColor Gray
+Write-Host "  - Linux paths: /home/username/" -ForegroundColor Gray
+Write-Host "  - Specific usernames" -ForegroundColor Gray
 Write-Host ""
 
 $found = $false
@@ -81,8 +95,9 @@ foreach ($file in $filteredFiles) {
         if ($line -match 'Bad Example|❌|DO NOT|Incorrect|[Bb]ad:') {
             $inBadExampleBlock = $true
         }
-        # Reset after leaving code block (empty line or new section)
-        if ($line -match '^#{1,6}\s|^$' -and -not ($line -match 'Bad Example|❌')) {
+        # Reset only when we hit a new major section (not just empty lines)
+        # This keeps bad example blocks active across code fences and empty lines
+        if ($line -match '^#{1,4}\s' -and -not ($line -match 'Bad Example|❌|DO NOT')) {
             $inBadExampleBlock = $false
         }
 
@@ -104,14 +119,17 @@ foreach ($file in $filteredFiles) {
                 }
 
                 if (-not $fileHasIssues) {
-                    Write-Host "$relativePath" -ForegroundColor Yellow
+                    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Yellow
+                    Write-Host "FILE: $relativePath" -ForegroundColor Yellow
+                    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Yellow
                     $fileHasIssues = $true
                     $found = $true
                 }
 
                 $description = $patterns[$pattern]
-                Write-Host "  Line $lineNum - $description" -ForegroundColor Red
-                Write-Host "    $line" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "  ⚠ Line $($lineNum): $description" -ForegroundColor Red
+                Write-Host "     $($line.Trim())" -ForegroundColor Gray
                 $totalIssues++
             }
         }
@@ -123,21 +141,39 @@ foreach ($file in $filteredFiles) {
 }
 
 # Summary
+Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "DOCUMENTATION PATH CHECK SUMMARY" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+
 if (-not $found) {
-    Write-Host "✓ No hardcoded paths found in documentation" -ForegroundColor Green
+    Write-Host "✓ RESULT: PASSED" -ForegroundColor Green
     Write-Host ""
-    Write-Host "All documentation files are using placeholders correctly." -ForegroundColor Green
+    Write-Host "All $($filteredFiles.Count) documentation files are using placeholders correctly." -ForegroundColor Green
+    Write-Host "No hardcoded paths detected." -ForegroundColor Green
+    Write-Host ""
     exit 0
 }
 else {
-    Write-Host "✗ Found $totalIssues hardcoded path(s) in documentation" -ForegroundColor Red
+    Write-Host "✗ RESULT: FAILED" -ForegroundColor Red
     Write-Host ""
-    Write-Host "Please replace hardcoded paths with placeholders:" -ForegroundColor Yellow
-    Write-Host "  - Use <REPO_PATH> for repository location" -ForegroundColor Yellow
-    Write-Host "  - Use <SCRIPT_ROOT> for working/deployment directory" -ForegroundColor Yellow
-    Write-Host "  - Use <USERNAME> for usernames" -ForegroundColor Yellow
-    Write-Host "  - See docs/conventions/placeholders.md for complete guide" -ForegroundColor Yellow
+    Write-Host "Found $totalIssues hardcoded path(s) in documentation" -ForegroundColor Red
     Write-Host ""
+    Write-Host "REMEDIATION:" -ForegroundColor Yellow
+    Write-Host "  Please replace hardcoded paths with placeholders:" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Placeholder       | Use For" -ForegroundColor Cyan
+    Write-Host "  ------------------|----------------------------------" -ForegroundColor Cyan
+    Write-Host "  <REPO_PATH>       | Repository location" -ForegroundColor White
+    Write-Host "  <SCRIPT_ROOT>     | Working/deployment directory" -ForegroundColor White
+    Write-Host "  <CONFIG_DIR>      | Configuration directory" -ForegroundColor White
+    Write-Host "  <LOG_DIR>         | Log file directory" -ForegroundColor White
+    Write-Host "  <BACKUP_DIR>      | Backup storage directory" -ForegroundColor White
+    Write-Host "  <USERNAME>        | Current user" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  See docs/conventions/placeholders.md for complete guide" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
     exit 1
 }
