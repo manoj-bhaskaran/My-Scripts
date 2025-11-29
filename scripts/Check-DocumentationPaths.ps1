@@ -22,7 +22,7 @@
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 1.0.0
+    Version: 1.0.1
     Last Updated: 2025-11-29
 #>
 
@@ -71,9 +71,20 @@ foreach ($file in $filteredFiles) {
     $relativePath = Resolve-Path -Path $file.FullName -Relative
     $fileHasIssues = $false
     $lineNum = 0
+    $lines = Get-Content $file.FullName
+    $inBadExampleBlock = $false
 
-    foreach ($line in (Get-Content $file.FullName)) {
+    foreach ($line in $lines) {
         $lineNum++
+
+        # Check if we're entering or in a bad example block
+        if ($line -match 'Bad Example|❌|DO NOT|Incorrect|[Bb]ad:') {
+            $inBadExampleBlock = $true
+        }
+        # Reset after leaving code block (empty line or new section)
+        if ($line -match '^#{1,6}\s|^$' -and -not ($line -match 'Bad Example|❌')) {
+            $inBadExampleBlock = $false
+        }
 
         foreach ($pattern in $patterns.Keys) {
             if ($line -match $pattern) {
@@ -82,7 +93,12 @@ foreach ($file in $filteredFiles) {
                     continue
                 }
 
-                # Skip if this is in a code block showing bad examples
+                # Skip if we're in a bad example block
+                if ($inBadExampleBlock) {
+                    continue
+                }
+
+                # Skip if this line itself contains exclusion markers
                 if ($line -match '(#|//).*DO NOT|Bad Example|❌|[Bb]ad:|[Ii]ncorrect') {
                     continue
                 }
