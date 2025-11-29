@@ -1,23 +1,28 @@
-requests
-numpy
-pandas
-opencv-python
-cloudconvert
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
-google-api-python-client
-oauth2client
-tqdm
-srtm; python_version < "3.11"
-networkx
-openpyxl
-psycopg2
-pytz
-pytest>=7.4.0
-pytest-cov>=4.1.0
-pytest-mock>=3.11.1
-pre-commit>=3.0.0
-black>=24.1.0
-bandit>=1.7.5
-sqlfluff>=3.0.0
+# Core dependencies
+requests==2.31.0
+numpy==1.26.4
+pandas==2.2.1
+opencv-python==4.9.0.80
+cloudconvert==2.0.0
+google-auth==2.23.4
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+google-api-python-client==2.108.0
+oauth2client==4.1.3
+tqdm==4.66.1
+srtm==1.0.0; python_version < "3.11"
+networkx==3.2.1
+openpyxl==3.1.2
+psycopg2==2.9.9
+pytz==2023.3
+
+# Development and testing dependencies
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-mock==3.11.1
+
+# Code quality and formatting
+pre-commit==3.5.0
+black==24.1.1
+bandit==1.7.5
+sqlfluff==3.0.0
