@@ -166,6 +166,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `tests/powershell/unit/FileOperations.Tests.ps1` - Enhanced from 8 basic tests to 55 comprehensive tests
   - **Version Impact**: PATCH bump - test coverage improvement, no API changes
 
+### Changed
+
+- **Standardized Version Handling Across Configuration Files** (#518) - Unified version management with VERSION file as single source of truth
+  - **Priority**: MEDIUM - Prevents confusion and potential build issues from version inconsistencies
+  - **Impact**: Simplified version management, eliminated version conflicts, improved build reliability
+  - **Problem Solved**:
+    - VERSION file: 2.2.0
+    - pyproject.toml: 1.0.0 (was inconsistent)
+    - setup.py: 0.2.0 (was hardcoded)
+  - **Solution Implemented**:
+    - VERSION file is now the single source of truth (2.2.0)
+    - setup.py reads version dynamically from VERSION file using `Path('VERSION').read_text().strip()`
+    - All version references now synchronized
+  - **Files Modified**:
+    - `setup.py` - Added `get_version()` function to read from VERSION file
+    - `pyproject.toml` - Updated `[tool.commitizen]` version to match VERSION file (2.2.0)
+  - **Benefits**:
+    - ✅ Single source of truth for version information
+    - ✅ No manual version synchronization needed across files
+    - ✅ Build process verified and working correctly
+    - ✅ Package metadata correctly reflects VERSION file
+    - ✅ Follows modern Python packaging standards
+  - **Build Verification**:
+    - Tested `python setup.py --version` - correctly returns 2.2.0
+    - Tested source distribution build - creates `my-scripts-logging-2.2.0.tar.gz`
+    - Verified PKG-INFO metadata contains correct version
+  - **Version Impact**: PATCH bump - internal build configuration improvement, no API changes
+
 ### Fixed
 
 - **Fixed Hardcoded Paths in Documentation** (#514) - Replaced hardcoded paths with placeholders for portability and clarity
