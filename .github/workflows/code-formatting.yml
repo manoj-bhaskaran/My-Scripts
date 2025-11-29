@@ -109,15 +109,18 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "::group::Documentation Path Check"
+          Write-Host ""
 
-          $result = & ./scripts/Check-DocumentationPaths.ps1
+          # Run the checker script - output flows directly to console
+          & ./scripts/Check-DocumentationPaths.ps1
           $exitCode = $LASTEXITCODE
 
+          Write-Host ""
           if ($exitCode -eq 0) {
-            Write-Host "✓ Documentation uses placeholders correctly"
+            Write-Host "✓ Documentation path check passed" -ForegroundColor Green
             "result=success" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           } else {
-            Write-Host "::error::Documentation contains hardcoded paths"
+            Write-Host "::error::Documentation contains hardcoded paths (see details above)"
             "result=failure" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           }
 
