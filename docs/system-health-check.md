@@ -1,5 +1,9 @@
 # Monthly System Health Check
 
+> **Note:** Examples in this guide use placeholder paths like `<SCRIPT_ROOT>`.
+> Replace `<SCRIPT_ROOT>` with your actual script directory (e.g., `C:\Users\YourName\Documents\Scripts` on Windows).
+> See [Documentation Placeholders](conventions/placeholders.md) for more information.
+
 ## Overview
 
 The Monthly System Health Check is an automated solution for maintaining Windows system integrity through regular scheduled maintenance. This feature runs critical Windows system repair tools on a monthly basis and captures detailed logs for review.
@@ -87,7 +91,7 @@ This file can be imported directly into Task Scheduler if you prefer manual impo
 3. Run the installation script:
 
 ```powershell
-cd "C:\Users\manoj\Documents\Scripts"
+cd "<SCRIPT_ROOT>"
 .\src\powershell\Install-SystemHealthCheckTask.ps1
 ```
 
