@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Fixed Hardcoded Paths in Documentation** (#514) - Replaced hardcoded paths with placeholders for portability and clarity
+  - **Priority**: HIGH - Documentation quality and usability issue
+  - **Impact**: Improved user experience, consistent documentation, professional appearance
+  - **Files Fixed**:
+    - `CHANGELOG.md` - Replaced hardcoded repository and script paths with `<REPO_PATH>` and `<SCRIPT_ROOT>` placeholders
+    - `docs/system-health-check.md` - Added placeholder note and replaced hardcoded paths
+    - `docs/conventions/placeholders.md` - Created comprehensive placeholder standards guide (NEW)
+  - **Placeholder Standards**:
+    - Created `docs/conventions/placeholders.md` with complete placeholder guide
+    - Standard placeholders: `<REPO_PATH>`, `<SCRIPT_ROOT>`, `<CONFIG_DIR>`, `<LOG_DIR>`, `<BACKUP_DIR>`, `<USERNAME>`
+    - Platform-specific examples for Windows and Linux
+    - Environment variable usage examples
+  - **Documentation Guidelines**:
+    - Updated `CONTRIBUTING.md` with path placeholder section
+    - Good/bad examples with clear visual indicators (✅/❌)
+    - Platform-specific example guidelines
+  - **Automated Checking**:
+    - Created `scripts/Check-DocumentationPaths.ps1` to detect hardcoded paths
+    - Scans all markdown files for patterns like `C:\Users\`, `D:\`, `/home/username/`
+    - Excludes legitimate uses (bad examples in docs, analysis issues)
+    - Clear error messages with remediation guidance
+  - **CI/CD Integration**:
+    - Added documentation path check to `.github/workflows/code-formatting.yml`
+    - Fails build if hardcoded paths detected
+    - Included in workflow status summary
+  - **Benefits**:
+    - ✅ Examples now work for all users without modification
+    - ✅ Consistent placeholder usage across all documentation
+    - ✅ Professional, portable documentation
+    - ✅ Automated enforcement prevents regression
+    - ✅ Clear guidelines for contributors
+  - **Version Impact**: MINOR bump - documentation improvement with new tooling
+
 - **Fixed Hardcoded Paths in PowerShell Scripts and Batch Files** (#513) - Removed hardcoded paths for portability and security
   - **Priority**: HIGH - Security risk with exposed credentials and broken portability
   - **Impact**: Enhanced security, improved portability, better maintainability
@@ -132,7 +165,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Version Impact**: PATCH bump (2.1.1 → 2.1.2) - security fix and backward-compatible improvement
 
 - **Task Scheduler Templates with Placeholders** (#512) - Made scheduled task definitions portable across systems
-  - **Problem**: All 8 XML files in `config/tasks/` contained hardcoded paths (e.g., `C:\Users\manoj\Documents\Scripts\`)
+  - **Problem**: All 8 XML files in `config/tasks/` contained hardcoded paths
     - Made task definitions unusable on other systems
     - Required manual XML editing which was error-prone
     - Prevented automated deployment and testing
@@ -304,17 +337,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Improved Output**: Summary displays count of excluded files
   - **Directory Cleanup**: Automatically removes empty directories after file deletion (respects exclusion patterns)
   - **Single Confirmation**: One Y/N prompt for all deletions instead of per-file prompts
-  - **Use Case**: Sync Git repository (`D:\My Scripts`) to working directory (`C:\Users\manoj\Documents\Scripts`)
-    while preserving logs, virtual environments, configs, and other non-repository files
+  - **Use Case**: Sync Git repository to working directory while preserving logs, virtual environments, configs, and other non-repository files
   - **Documentation**: Comprehensive help with examples and parameter descriptions
   - **Examples**:
     ```powershell
     # Preview sync with exclusions
-    .\Sync-Directory.ps1 -Source "D:\My Scripts" -Destination "C:\Users\manoj\Documents\Scripts" `
+    .\Sync-Directory.ps1 -Source "<REPO_PATH>" -Destination "<SCRIPT_ROOT>" `
         -ExcludeFromDeletion @(".venv", "venv", "logs", "temp", "*.log", "backups") -PreviewOnly
 
     # Perform actual sync
-    .\Sync-Directory.ps1 -Source "D:\My Scripts" -Destination "C:\Users\manoj\Documents\Scripts" `
+    .\Sync-Directory.ps1 -Source "<REPO_PATH>" -Destination "<SCRIPT_ROOT>" `
         -ExcludeFromDeletion @(".venv", "venv", "logs", "temp", "*.log", "backups")
     ```
   - **Script Naming Verification**: Confirmed `Sync-Directory.ps1` follows PowerShell naming conventions

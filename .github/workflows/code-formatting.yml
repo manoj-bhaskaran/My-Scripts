@@ -104,6 +104,27 @@ jobs:
           echo "::endgroup::"
         continue-on-error: true
 
+      - name: Check Documentation Paths
+        id: docpaths
+        shell: pwsh
+        run: |
+          Write-Host "::group::Documentation Path Check"
+
+          $result = & ./scripts/Check-DocumentationPaths.ps1
+          $exitCode = $LASTEXITCODE
+
+          if ($exitCode -eq 0) {
+            Write-Host "✓ Documentation uses placeholders correctly"
+            "result=success" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Host "::error::Documentation contains hardcoded paths"
+            "result=failure" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+          Write-Host "::endgroup::"
+          exit $exitCode
+        continue-on-error: true
+
       - name: Report results
         if: always()
         run: |
@@ -130,6 +151,12 @@ jobs:
             echo "| SQL (SQLFluff) | ⚠️ Skipped |" >> $GITHUB_STEP_SUMMARY
           else
             echo "| SQL (SQLFluff) | ❌ Fail |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ steps.docpaths.outputs.result }}" == "success" ]; then
+            echo "| Documentation Paths | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Documentation Paths | ❌ Fail |" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -160,6 +187,12 @@ jobs:
             echo "::warning::PowerShell formatting check failed"
             # Uncomment to make PowerShell checks strict:
             # FAILED=true
+          fi
+
+          # Check Documentation Paths (strict)
+          if [ "${{ steps.docpaths.outputs.result }}" == "failure" ]; then
+            echo "::error::Documentation path check failed"
+            FAILED=true
           fi
 
           if [ "$FAILED" == "true" ]; then

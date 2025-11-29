@@ -538,6 +538,59 @@ When adding or modifying scripts:
 
 ## Documentation Standards
 
+### Path Placeholders
+
+Always use placeholders instead of actual paths in examples to ensure documentation works for all users.
+
+#### Standard Placeholders
+
+| Placeholder | Description | Windows Example | Linux Example |
+|------------|-------------|-----------------|---------------|
+| `<REPO_PATH>` | Git repository location | `C:\Projects\My-Scripts` | `~/dev/My-Scripts` |
+| `<SCRIPT_ROOT>` | Working/deployment directory | `C:\Users\YourName\Documents\Scripts` | `~/scripts` |
+| `<CONFIG_DIR>` | Configuration directory | `C:\Users\YourName\AppData\Local\MyScripts` | `~/.config/myscripts` |
+| `<LOG_DIR>` | Log file directory | `C:\Logs\MyScripts` | `/var/log/myscripts` |
+| `<BACKUP_DIR>` | Backup storage directory | `D:\Backups` | `~/backups` |
+| `<USERNAME>` | Current user | `YourName` | `yourname` |
+
+See [Documentation Placeholders](docs/conventions/placeholders.md) for complete guide.
+
+#### Good Example ✅
+
+```powershell
+# Using placeholders
+cd "<SCRIPT_ROOT>"
+.\src\powershell\Invoke-SystemHealthCheck.ps1
+
+# Using environment variables (preferred)
+cd "$env:MY_SCRIPTS_ROOT"
+.\src\powershell\Invoke-SystemHealthCheck.ps1
+```
+
+#### Bad Example ❌
+
+```powershell
+# DO NOT use actual paths
+cd "C:\Users\manoj\Documents\Scripts"
+.\src\powershell\Invoke-SystemHealthCheck.ps1
+```
+
+#### Platform-Specific Examples
+
+Provide both Windows and Linux examples when applicable:
+
+**Windows:**
+```powershell
+cd "<SCRIPT_ROOT>"
+.\script.ps1
+```
+
+**Linux:**
+```bash
+cd "<SCRIPT_ROOT>"
+./script.sh
+```
+
 ### Script Headers
 
 All scripts should include a descriptive header:
