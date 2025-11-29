@@ -11,6 +11,10 @@
     Tests will be skipped on non-Windows platforms.
 #>
 
+# Suppress PSScriptAnalyzer warning for test credential creation
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification='Test file requires plaintext conversion for credential mocking')]
+param()
+
 BeforeAll {
     # Check if running on Windows
     $script:isWindows = $PSVersionTable.PSVersion.Major -le 5 -or $IsWindows
@@ -668,9 +672,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Uses provided password when specified" {
-            # PSScriptAnalyzer suppression: Using plaintext for test purposes only
-            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification='Test credential creation')]
-            param()
             $securePassword = ConvertTo-SecureString "test_password" -AsPlainText -Force
             $script:capturedCommand = ""
 

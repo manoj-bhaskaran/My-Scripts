@@ -1,6 +1,9 @@
 # Define the connection string for ODBC
 $dsn = "gnucash"
 $user = "gnucash_user"
+# PSScriptAnalyzer suppression: Test/utility script with hardcoded credentials for connection testing
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '')]
+param()
 $securePassword = ConvertTo-SecureString "gnucash01" -AsPlainText -Force
 $credential = New-Object System.Management.Automation.PSCredential($user, $securePassword)
 
