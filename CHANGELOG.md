@@ -76,6 +76,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `CHANGELOG.md` - This entry
   - **Version Impact**: MINOR bump - new security infrastructure feature
 
+### Security
+
+- **Fixed Dependency Vulnerabilities** (#520) - Updated vulnerable packages to secure versions
+  - **Priority**: HIGH - Security vulnerability remediation
+  - **Impact**: Eliminates 4 known security vulnerabilities (3 moderate, 1 low severity)
+  - **Vulnerabilities Fixed**:
+    - **requests 2.31.0 → 2.32.4** (2 CVEs fixed)
+      - GHSA-9wx4-h78v-vm56: Session certificate verification bypass issue
+      - GHSA-9hjg-9r4m-mvj7: Potential .netrc credential leakage to third parties
+    - **tqdm 4.66.1 → 4.66.3** (1 CVE fixed)
+      - GHSA-g7vv-2v7x-gj9p: Arbitrary code execution via CLI arguments through eval()
+    - **black 24.1.1 → 24.3.0** (1 CVE fixed)
+      - PYSEC-2024-48: Regular Expression Denial of Service (ReDoS) vulnerability
+  - **Files Modified**:
+    - `requirements.txt` - Updated requests, tqdm, and black to secure versions
+    - `.pre-commit-config.yaml` - Updated black hook to v24.3.0
+  - **Validation**: Security scan workflow automatically validates fixes
+  - **Version Impact**: PATCH bump - security fixes only, backward compatible
+
 ### Changed
 
 - **Pinned All Dependency Versions** (#519) - Ensured reproducible builds with exact version specifications
