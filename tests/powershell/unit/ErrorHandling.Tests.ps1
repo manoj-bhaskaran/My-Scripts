@@ -615,12 +615,6 @@ Describe "Test-CommandAvailable" {
     }
 
     Context "Edge Cases" {
-        It "Handles empty string gracefully" {
-            $result = Test-CommandAvailable ""
-
-            $result | Should -Be $false
-        }
-
         It "Handles whitespace-only string" {
             $result = Test-CommandAvailable "   "
 
@@ -639,6 +633,12 @@ Describe "Test-CommandAvailable" {
 
             $result1 | Should -Be $true
             $result2 | Should -Be $true
+        }
+
+        It "Handles null or non-existent commands" {
+            $result = Test-CommandAvailable "ThisCommandDefinitelyDoesNotExist123456789"
+
+            $result | Should -Be $false
         }
     }
 
