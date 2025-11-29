@@ -53,9 +53,9 @@
 param(
     [Parameter()]
     [ValidateScript({
-        if (Test-Path $_) { $true }
-        else { throw "Path '$_' does not exist" }
-    })]
+            if (Test-Path $_) { $true }
+            else { throw "Path '$_' does not exist" }
+        })]
     [string]$ScriptRoot,
 
     [Parameter()]
@@ -80,7 +80,8 @@ if (Test-Path $loggingModulePath) {
     $logger = Initialize-Logger -ScriptName "Install-ScheduledTasks"
     Write-LogInfo $logger "Starting scheduled task installation"
     Write-LogInfo $logger "Script root: $ScriptRoot"
-} else {
+}
+else {
     Write-Warning "Logging module not found at $loggingModulePath. Proceeding without logging."
     $logger = $null
 }
@@ -241,6 +242,7 @@ if ($installed -gt 0) {
 # Exit with appropriate code
 if ($failed -gt 0) {
     exit 1
-} else {
+}
+else {
     exit 0
 }

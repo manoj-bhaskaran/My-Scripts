@@ -63,7 +63,8 @@ if (Test-Path $loggingModulePath) {
     Import-Module $loggingModulePath -Force
     $logger = Initialize-Logger -ScriptName "Uninstall-ScheduledTasks"
     Write-LogInfo $logger "Starting scheduled task uninstallation"
-} else {
+}
+else {
     Write-Verbose "Logging module not found. Proceeding without logging."
     $logger = $null
 }
@@ -191,6 +192,7 @@ if ($remainingTasks) {
 # Exit with appropriate code
 if ($failed -gt 0) {
     exit 1
-} else {
+}
+else {
     exit 0
 }

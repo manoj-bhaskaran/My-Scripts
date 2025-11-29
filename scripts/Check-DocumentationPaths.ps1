@@ -33,7 +33,7 @@ param(
 
 # Define patterns to search for (hardcoded paths)
 $patterns = @{
-    'C:\\Users\\[^<\s"''`]+'       = 'Windows user path (C:\Users\username)'
+    'C:\\Users\\[^<\s"''`]+'        = 'Windows user path (C:\Users\username)'
     'D:\\[^<\s"''`]+'               = 'D: drive path'
     'E:\\[^<\s"''`]+'               = 'E: drive path'
     '/home/[^<\s"''`/]+/[^<\s"''`]' = 'Linux home path (/home/username/...)'

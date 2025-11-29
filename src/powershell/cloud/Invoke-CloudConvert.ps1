@@ -43,7 +43,7 @@ function Convert-FileWithCloudConvert {
     # Validate Python script exists
     if (-not (Test-Path $PythonScript)) {
         $errorMsg = "Python script not found: $PythonScript`n" +
-                    "Please ensure the cloudconvert_utils.py script exists in the repository."
+        "Please ensure the cloudconvert_utils.py script exists in the repository."
         Write-LogError $errorMsg
         throw $errorMsg
     }
