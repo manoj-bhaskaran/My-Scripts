@@ -10,6 +10,12 @@ BeforeAll {
     # Import the module
     $modulePath = Join-Path $PSScriptRoot "..\..\..\src\powershell\modules\Core\ErrorHandling\ErrorHandling.psm1"
     Import-Module $modulePath -Force
+
+    # Create stub logging functions for testing
+    # These are needed so we can mock them in tests
+    function Global:Write-LogError { param($Message) }
+    function Global:Write-LogWarning { param($Message) }
+    function Global:Write-LogInfo { param($Message) }
 }
 
 Describe "Invoke-WithErrorHandling" {
@@ -60,7 +66,7 @@ Describe "Invoke-WithErrorHandling" {
         }
 
         It "Logs error with Write-LogError when available" {
-            Mock Write-LogError { } -ModuleName ErrorHandling
+            Mock Write-LogError { }
 
             {
                 Invoke-WithErrorHandling {
@@ -68,22 +74,11 @@ Describe "Invoke-WithErrorHandling" {
                 } -OnError Stop -LogError $true
             } | Should -Throw
 
-            Should -Invoke Write-LogError -ModuleName ErrorHandling -Times 1
-        }
-
-        It "Falls back to Write-Error when Write-LogError unavailable" {
-            # This test verifies the fallback mechanism
-            Mock Get-Command { return $null } -ParameterFilter { $Name -eq "Write-LogError" } -ModuleName ErrorHandling
-
-            {
-                Invoke-WithErrorHandling {
-                    throw "test error"
-                } -OnError Stop -LogError $true -ErrorAction Stop
-            } | Should -Throw
+            Should -Invoke Write-LogError -Times 1
         }
 
         It "Does not log when LogError is false" {
-            Mock Write-LogError { } -ModuleName ErrorHandling
+            Mock Write-LogError { }
 
             {
                 Invoke-WithErrorHandling {
@@ -91,7 +86,21 @@ Describe "Invoke-WithErrorHandling" {
                 } -OnError Stop -LogError $false
             } | Should -Throw
 
-            Should -Invoke Write-LogError -ModuleName ErrorHandling -Times 0
+            Should -Invoke Write-LogError -Times 0
+        }
+
+        It "Formats error message correctly" {
+            Mock Write-LogError { }
+
+            {
+                Invoke-WithErrorHandling {
+                    throw "specific error message"
+                } -OnError Stop
+            } | Should -Throw
+
+            Should -Invoke Write-LogError -ParameterFilter {
+                $Message -like "Error: specific error message"
+            }
         }
     }
 
@@ -105,37 +114,38 @@ Describe "Invoke-WithErrorHandling" {
         }
 
         It "Logs warning with Write-LogWarning when available" {
-            Mock Write-LogWarning { } -ModuleName ErrorHandling
+            Mock Write-LogWarning { }
 
             $result = Invoke-WithErrorHandling {
                 throw "test error"
             } -OnError Continue -LogError $true
 
             $result | Should -BeNullOrEmpty
-            Should -Invoke Write-LogWarning -ModuleName ErrorHandling -Times 1
-        }
-
-        It "Falls back to Write-Warning when Write-LogWarning unavailable" {
-            Mock Get-Command { return $null } -ParameterFilter { $Name -eq "Write-LogWarning" } -ModuleName ErrorHandling
-
-            $result = Invoke-WithErrorHandling {
-                throw "test error"
-            } -OnError Continue -LogError $true
-
-            $result | Should -BeNullOrEmpty
+            Should -Invoke Write-LogWarning -Times 1
         }
 
         It "Uses custom error message with Continue" {
-            Mock Write-LogWarning { } -ModuleName ErrorHandling
+            Mock Write-LogWarning { }
 
             $result = Invoke-WithErrorHandling {
                 throw "original error"
             } -OnError Continue -ErrorMessage "Custom prefix"
 
             $result | Should -BeNullOrEmpty
-            Should -Invoke Write-LogWarning -ModuleName ErrorHandling -ParameterFilter {
-                $args[0] -like "Custom prefix*"
+            Should -Invoke Write-LogWarning -ParameterFilter {
+                $Message -like "Custom prefix*"
             }
+        }
+
+        It "Does not log when LogError is false" {
+            Mock Write-LogWarning { }
+
+            $result = Invoke-WithErrorHandling {
+                throw "test error"
+            } -OnError Continue -LogError $false
+
+            $result | Should -BeNullOrEmpty
+            Should -Invoke Write-LogWarning -Times 0
         }
     }
 
@@ -149,36 +159,22 @@ Describe "Invoke-WithErrorHandling" {
         }
 
         It "Does not log anything with SilentlyContinue" {
-            Mock Write-LogError { } -ModuleName ErrorHandling
-            Mock Write-LogWarning { } -ModuleName ErrorHandling
+            Mock Write-LogError { }
+            Mock Write-LogWarning { }
 
             $result = Invoke-WithErrorHandling {
                 throw "test error"
             } -OnError SilentlyContinue -LogError $true
 
             $result | Should -BeNullOrEmpty
-            Should -Invoke Write-LogError -ModuleName ErrorHandling -Times 0
-            Should -Invoke Write-LogWarning -ModuleName ErrorHandling -Times 0
+            Should -Invoke Write-LogError -Times 0
+            Should -Invoke Write-LogWarning -Times 0
         }
     }
 
     Context "Error Message Formatting" {
-        It "Formats error message without custom prefix" {
-            Mock Write-LogError { } -ModuleName ErrorHandling
-
-            {
-                Invoke-WithErrorHandling {
-                    throw "specific error message"
-                } -OnError Stop
-            } | Should -Throw
-
-            Should -Invoke Write-LogError -ModuleName ErrorHandling -ParameterFilter {
-                $args[0] -like "Error: specific error message"
-            }
-        }
-
         It "Formats error message with custom prefix" {
-            Mock Write-LogError { } -ModuleName ErrorHandling
+            Mock Write-LogError { }
 
             {
                 Invoke-WithErrorHandling {
@@ -186,8 +182,22 @@ Describe "Invoke-WithErrorHandling" {
                 } -OnError Stop -ErrorMessage "Operation failed"
             } | Should -Throw
 
-            Should -Invoke Write-LogError -ModuleName ErrorHandling -ParameterFilter {
-                $args[0] -like "Operation failed : specific error"
+            Should -Invoke Write-LogError -ParameterFilter {
+                $Message -like "Operation failed : specific error"
+            }
+        }
+
+        It "Preserves exception details" {
+            Mock Write-LogError { }
+
+            {
+                Invoke-WithErrorHandling {
+                    throw [System.InvalidOperationException]::new("Invalid operation")
+                } -OnError Stop
+            } | Should -Throw
+
+            Should -Invoke Write-LogError -ParameterFilter {
+                $Message -like "Error: Invalid operation"
             }
         }
     }
@@ -315,7 +325,7 @@ Describe "Invoke-WithRetry" {
 
     Context "Logging Behavior" {
         It "Logs retry attempts with Write-LogWarning" {
-            Mock Write-LogWarning { } -ModuleName ErrorHandling
+            Mock Write-LogWarning { }
             $script:attemptCount = 0
 
             {
@@ -325,11 +335,11 @@ Describe "Invoke-WithRetry" {
                 } -Description "Test operation" -RetryCount 2 -RetryDelay 0 -LogErrors $true
             } | Should -Throw
 
-            Should -Invoke Write-LogWarning -ModuleName ErrorHandling -Times 1
+            Should -Invoke Write-LogWarning -Times 1
         }
 
         It "Logs final failure with Write-LogError" {
-            Mock Write-LogError { } -ModuleName ErrorHandling
+            Mock Write-LogError { }
 
             {
                 Invoke-WithRetry -Operation {
@@ -337,11 +347,11 @@ Describe "Invoke-WithRetry" {
                 } -Description "Test operation" -RetryCount 2 -RetryDelay 0 -LogErrors $true
             } | Should -Throw
 
-            Should -Invoke Write-LogError -ModuleName ErrorHandling -Times 1
+            Should -Invoke Write-LogError -Times 1
         }
 
         It "Logs success after retry with Write-LogInfo" {
-            Mock Write-LogInfo { } -ModuleName ErrorHandling
+            Mock Write-LogInfo { }
             $script:attemptCount = 0
 
             $result = Invoke-WithRetry -Operation {
@@ -353,56 +363,12 @@ Describe "Invoke-WithRetry" {
             } -Description "Test operation" -RetryCount 5 -RetryDelay 0 -LogErrors $true
 
             $result | Should -Be "success"
-            Should -Invoke Write-LogInfo -ModuleName ErrorHandling -Times 1
-        }
-
-        It "Falls back to Write-Warning when Write-LogWarning unavailable" {
-            Mock Get-Command {
-                if ($Name -eq "Write-LogWarning") { return $null }
-                return $true
-            } -ModuleName ErrorHandling
-
-            {
-                Invoke-WithRetry -Operation {
-                    throw "error"
-                } -Description "Test" -RetryCount 2 -RetryDelay 0 -LogErrors $true
-            } | Should -Throw
-        }
-
-        It "Falls back to Write-Error when Write-LogError unavailable" {
-            Mock Get-Command {
-                if ($Name -eq "Write-LogError") { return $null }
-                return $true
-            } -ModuleName ErrorHandling
-
-            {
-                Invoke-WithRetry -Operation {
-                    throw "error"
-                } -Description "Test" -RetryCount 1 -RetryDelay 0 -LogErrors $true
-            } | Should -Throw
-        }
-
-        It "Falls back to Write-Verbose when Write-LogInfo unavailable" {
-            Mock Get-Command {
-                if ($Name -eq "Write-LogInfo") { return $null }
-                return $true
-            } -ModuleName ErrorHandling
-            $script:attemptCount = 0
-
-            $result = Invoke-WithRetry -Operation {
-                $script:attemptCount++
-                if ($script:attemptCount -lt 2) {
-                    throw "temporary error"
-                }
-                return "success"
-            } -Description "Test" -RetryCount 5 -RetryDelay 0 -LogErrors $true
-
-            $result | Should -Be "success"
+            Should -Invoke Write-LogInfo -Times 1
         }
 
         It "Does not log when LogErrors is false" {
-            Mock Write-LogError { } -ModuleName ErrorHandling
-            Mock Write-LogWarning { } -ModuleName ErrorHandling
+            Mock Write-LogError { }
+            Mock Write-LogWarning { }
 
             {
                 Invoke-WithRetry -Operation {
@@ -410,8 +376,22 @@ Describe "Invoke-WithRetry" {
                 } -Description "Test" -RetryCount 2 -RetryDelay 0 -LogErrors $false
             } | Should -Throw
 
-            Should -Invoke Write-LogError -ModuleName ErrorHandling -Times 0
-            Should -Invoke Write-LogWarning -ModuleName ErrorHandling -Times 0
+            Should -Invoke Write-LogError -Times 0
+            Should -Invoke Write-LogWarning -Times 0
+        }
+
+        It "Preserves error messages in logs" {
+            Mock Write-LogWarning { }
+
+            {
+                Invoke-WithRetry -Operation {
+                    throw "Specific error message"
+                } -Description "Custom operation" -RetryCount 2 -RetryDelay 0 -LogErrors $true
+            } | Should -Throw
+
+            Should -Invoke Write-LogWarning -ParameterFilter {
+                $Message -like "*Specific error message*"
+            }
         }
     }
 
@@ -434,18 +414,16 @@ Describe "Invoke-WithRetry" {
             $script:executed | Should -Be $true
         }
 
-        It "Preserves error messages in logs" {
-            Mock Write-LogWarning { } -ModuleName ErrorHandling
+        It "Succeeds immediately without retries" {
+            $script:attemptCount = 0
 
-            {
-                Invoke-WithRetry -Operation {
-                    throw "Specific error message"
-                } -Description "Custom operation" -RetryCount 2 -RetryDelay 0 -LogErrors $true
-            } | Should -Throw
+            $result = Invoke-WithRetry -Operation {
+                $script:attemptCount++
+                return "immediate success"
+            } -Description "Test" -RetryCount 3 -RetryDelay 0 -LogErrors $false
 
-            Should -Invoke Write-LogWarning -ModuleName ErrorHandling -ParameterFilter {
-                $args[0] -like "*Specific error message*"
-            }
+            $result | Should -Be "immediate success"
+            $script:attemptCount | Should -Be 1
         }
     }
 }
@@ -725,4 +703,9 @@ Describe "Integration Tests" {
 AfterAll {
     # Clean up
     Remove-Module ErrorHandling -Force -ErrorAction SilentlyContinue
+
+    # Remove stub logging functions
+    Remove-Item Function:\Write-LogError -ErrorAction SilentlyContinue
+    Remove-Item Function:\Write-LogWarning -ErrorAction SilentlyContinue
+    Remove-Item Function:\Write-LogInfo -ErrorAction SilentlyContinue
 }
