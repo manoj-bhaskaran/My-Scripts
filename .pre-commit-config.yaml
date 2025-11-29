@@ -58,14 +58,15 @@ repos:
         files: \.(ps1|psm1)$
         pass_filenames: false
 
-  # SQL hooks
-  - repo: https://github.com/sqlfluff/sqlfluff
-    rev: 3.0.0
-    hooks:
-      - id: sqlfluff-lint
-        args: ['--dialect', 'postgres']
-      - id: sqlfluff-fix
-        args: ['--dialect', 'postgres']
+  # SQL hooks - Disabled for pre-commit (non-critical style checks)
+  # SQL linting still runs in CI via sonarcloud.yml workflow
+  # - repo: https://github.com/sqlfluff/sqlfluff
+  #   rev: 3.0.0
+  #   hooks:
+  #     - id: sqlfluff-lint
+  #       args: ['--dialect', 'postgres']
+  #     - id: sqlfluff-fix
+  #       args: ['--dialect', 'postgres']
 
   # Commit message validation
   - repo: https://github.com/commitizen-tools/commitizen
