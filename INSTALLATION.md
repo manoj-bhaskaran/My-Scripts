@@ -257,6 +257,40 @@ psql --version
 4. Download credentials JSON
 5. Set environment variables (see Environment Configuration section)
 
+## Configuration
+
+For detailed configuration instructions, see **[config/CONFIG_GUIDE.md](config/CONFIG_GUIDE.md)**.
+
+### Quick Configuration Setup
+
+1. **Run the interactive configuration wizard:**
+   ```powershell
+   .\scripts\Initialize-Configuration.ps1
+   ```
+
+2. **Or manually configure:**
+   ```bash
+   # Copy local deployment config template
+   cp config/local-deployment-config.json.example config/local-deployment-config.json
+
+   # Edit configuration
+   nano config/local-deployment-config.json  # Linux/macOS
+   notepad config\local-deployment-config.json  # Windows
+   ```
+
+3. **Validate your configuration:**
+   ```powershell
+   .\scripts\Verify-Configuration.ps1
+   ```
+
+The [Configuration Guide](config/CONFIG_GUIDE.md) includes:
+- Local deployment configuration (git hooks)
+- Module deployment settings
+- Environment variables setup
+- Secrets configuration (database passwords)
+- Platform-specific instructions
+- Troubleshooting guide
+
 ## Environment Configuration
 
 # Create and load a `.env` file to manage all configuration in one place.
@@ -343,10 +377,14 @@ chmod 600 ~/.pgpass
 
 The repository includes several configuration files:
 
-- **config/modules/deployment.txt** – Module deployment targets (do not modify unless changing deployment locations)
-- **config/module-deployment-config.txt** – Module deployment configuration
+- **[config/CONFIG_GUIDE.md](config/CONFIG_GUIDE.md)** – Comprehensive configuration guide
+- **config/local-deployment-config.json** – Local deployment settings (git hooks)
+- **config/modules/deployment.txt** – Module deployment targets
 - **config/tasks/*.xml** – Windows Task Scheduler definitions
+- **config/secrets/** – Encrypted password files (git-ignored)
 - **.vscode/settings.json** – Editor configuration (optional)
+
+See [config/CONFIG_GUIDE.md](config/CONFIG_GUIDE.md) for detailed configuration instructions.
 
 ## Module Installation
 
@@ -1063,6 +1101,7 @@ After installation:
 ## Additional Resources
 
 - [README.md](README.md) - Repository overview and features
+- [Configuration Guide](config/CONFIG_GUIDE.md) - Comprehensive configuration guide
 - [Module Deployment Guide](docs/guides/module-deployment.md) - Comprehensive module documentation
 - [Git Hooks Guide](docs/guides/git-hooks.md) - Git hooks documentation
 - [Logging Specification](docs/logging_specification.md) - Logging framework details
