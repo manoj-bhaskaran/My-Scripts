@@ -72,7 +72,7 @@ jobs:
 
       - name: Run Bandit (Python Security Scan)
         run: |
-          bandit -r . -f json -o bandit-report.json
+          bandit -r . -f json -o bandit-report.json -c pyproject.toml
 
       - name: Upload Bandit Security Report
         uses: actions/upload-artifact@v4
