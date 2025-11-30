@@ -80,6 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Replaced `Write-Host` usage in backup utilities with logging and structured pipeline output to enable automation-friendly captures (Backup-GnuCashDatabase, Backup-TimelineDatabase, Sync-Directory). (#519)
+
+### Changed
+
 - Standardized PowerShell modules to use Public/Private folder structure with loader pattern and refreshed manifests.
 
 - **Fixed Dependency Vulnerabilities** (#520) - Updated vulnerable packages to secure versions
