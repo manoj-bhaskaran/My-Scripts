@@ -1,4 +1,5 @@
 function Backup-PostgresDatabase {
+    [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
         [string]$dbname,
