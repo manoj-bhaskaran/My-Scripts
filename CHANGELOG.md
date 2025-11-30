@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Replaced `Write-Host` usage in system maintenance scripts with the centralized logging framework and structured run outputs for automation (`Invoke-SystemHealthCheck.ps1`, `Install-SystemHealthCheckTask.ps1`, `Remove-DuplicateFiles.ps1`).
+- Corrected git hook launchers to call the PowerShell hook implementations from their canonical path under `src/powershell/git`.
 
 ### Added
 
@@ -38,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - Automated vulnerability reports in GitHub Actions summary
       - Artifact uploads for detailed analysis (30-day retention)
       - Fails build on security vulnerabilities (configurable)
+- Git hook integration test suite (`tests/integration/GitHooks.Integration.Tests.ps1`) that provisions a temporary repository, installs hooks, and validates staging mirror updates, deployment targets, and configuration handling for post-commit and post-merge workflows.
   - **Integration Test Coverage**:
     - Added `tests/integration/Test-BackupRestore.Tests.ps1` to validate PostgreSQL backup/restore flows end-to-end
     - Exercises backup creation, restore validation, data integrity checks, and retention cleanup with temporary PostgreSQL instances
