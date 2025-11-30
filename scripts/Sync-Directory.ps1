@@ -30,7 +30,7 @@
     Sync directories while preserving specified patterns from deletion.
 
 .NOTES
-    Version:        1.1.0
+    Version:        1.2.0
     Author:         Manoj Bhaskaran
     Creation Date:  2025-11-22
     Purpose:        One-way directory synchronization with exclusion support
@@ -53,16 +53,20 @@ param(
     [switch]$PreviewOnly
 )
 
-# Resolve and normalise paths
-$Source = (Resolve-Path -Path $Source).ProviderPath.TrimEnd('\')
-$Destination = (Resolve-Path -Path $Destination).ProviderPath.TrimEnd('\')
+# Import logging framework for consistent, capturable output
+Import-Module "$PSScriptRoot/../src/powershell/modules/Core/Logging/PowerShellLoggingFramework.psm1" -Force
 
-Write-Host "Source     : $Source"
-Write-Host "Destination: $Destination"
+# Initialize logger at INFO by default
+Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
+
+# Resolve and normalise paths
+$Source = (Resolve-Path -Path $Source).ProviderPath.TrimEnd('\\')
+$Destination = (Resolve-Path -Path $Destination).ProviderPath.TrimEnd('\\')
+
+Write-LogInfo "Sync starting" -Metadata @{ Source = $Source; Destination = $Destination }
 if ($ExcludeFromDeletion.Count -gt 0) {
-    Write-Host "Exclusions : $($ExcludeFromDeletion -join ', ')"
+    Write-LogInfo "Exclusions configured" -Metadata @{ Patterns = ($ExcludeFromDeletion -join ', ') }
 }
-Write-Host ""
 
 # Helper function to check if a path matches any exclusion pattern
 function Test-ExcludedPath {
@@ -108,13 +112,13 @@ $dstFiles = Get-ChildItem -Path $Destination -Recurse -File
 # Index by relative path (same key for source & destination)
 $srcIndex = @{}
 foreach ($f in $srcFiles) {
-    $rel = $f.FullName.Substring($Source.Length).TrimStart('\')
+    $rel = $f.FullName.Substring($Source.Length).TrimStart('\\')
     $srcIndex[$rel] = $f
 }
 
 $dstIndex = @{}
 foreach ($f in $dstFiles) {
-    $rel = $f.FullName.Substring($Destination.Length).TrimStart('\')
+    $rel = $f.FullName.Substring($Destination.Length).TrimStart('\\')
     $dstIndex[$rel] = $f
 }
 
@@ -167,51 +171,31 @@ foreach ($relPath in $dstIndex.Keys) {
     }
 }
 
-Write-Host "Planned actions:"
-Write-Host "  New files     to copy   : $($toCopyNew.Count)"
-Write-Host "  Updated files to copy   : $($toCopyUpdates.Count)"
-Write-Host "  Extra files   to delete : $($toDelete.Count)"
-if ($excludedFiles.Count -gt 0) {
-    Write-Host "  Files excluded from del.: $($excludedFiles.Count)" -ForegroundColor Yellow
+$plan = [PSCustomObject]@{
+    Source               = $Source
+    Destination          = $Destination
+    PreviewOnly          = [bool]$PreviewOnly
+    Exclusions           = $ExcludeFromDeletion
+    NewFiles             = $toCopyNew.RelativePath
+    UpdatedFiles         = $toCopyUpdates.RelativePath
+    ToDelete             = $toDelete.RelativePath
+    ExcludedFromDeletion = $excludedFiles.RelativePath
 }
-Write-Host ""
+
+Write-LogInfo "Planned sync actions" -Metadata @{
+    NewFiles   = $toCopyNew.Count
+    Updates    = $toCopyUpdates.Count
+    Deletions  = $toDelete.Count
+    Exclusions = $excludedFiles.Count
+}
 
 if ($PreviewOnly) {
-    Write-Host "Preview only mode - no changes will be made."
-    Write-Host ""
-
-    if ($toCopyNew.Count -gt 0) {
-        Write-Host "=== New files to be copied ==="
-        $toCopyNew | ForEach-Object {
-            Write-Host "[NEW]     $($_.RelativePath)"
-        }
-        Write-Host ""
-    }
-
-    if ($toCopyUpdates.Count -gt 0) {
-        Write-Host "=== Files to be updated ==="
-        $toCopyUpdates | ForEach-Object {
-            Write-Host "[UPDATE]  $($_.RelativePath)"
-        }
-        Write-Host ""
-    }
-
-    if ($toDelete.Count -gt 0) {
-        Write-Host "=== Files that would be deleted from Destination ==="
-        $toDelete | ForEach-Object {
-            Write-Host "[DELETE]  $($_.RelativePath)"
-        }
-        Write-Host ""
-    }
-
-    if ($excludedFiles.Count -gt 0) {
-        Write-Host "=== Files excluded from deletion (preserved in Destination) ===" -ForegroundColor Yellow
-        Write-Host "Total: $($excludedFiles.Count) files will be preserved (matching exclusion patterns)" -ForegroundColor Yellow
-        Write-Host ""
-    }
-
+    Write-LogInfo "Preview only mode - no changes will be made."
+    Write-Output $plan
     return
 }
+
+$actionLog = New-Object System.Collections.Generic.List[object]
 
 ###############################################################################
 # 1. Copy new files
@@ -226,8 +210,14 @@ foreach ($item in $toCopyNew) {
         New-Item -Path $dstDir -ItemType Directory -Force | Out-Null
     }
 
-    Write-Host "[COPY NEW] $rel"
+    Write-LogInfo "Copying new file" -Metadata @{ RelativePath = $rel; Destination = $dstPath }
     Copy-Item -Path $srcFile.FullName -Destination $dstPath -Force
+    $actionLog.Add([PSCustomObject]@{
+            Action       = 'CopyNew'
+            RelativePath = $rel
+            Destination  = $dstPath
+            Status       = 'Success'
+        })
 }
 
 ###############################################################################
@@ -238,42 +228,41 @@ foreach ($item in $toCopyUpdates) {
     $srcFile = $item.Source
     $dstPath = $item.Destination.FullName
 
-    Write-Host "[COPY UPDATE] $rel"
+    Write-LogInfo "Copying updated file" -Metadata @{ RelativePath = $rel; Destination = $dstPath }
     Copy-Item -Path $srcFile.FullName -Destination $dstPath -Force
+    $actionLog.Add([PSCustomObject]@{
+            Action       = 'CopyUpdate'
+            RelativePath = $rel
+            Destination  = $dstPath
+            Status       = 'Success'
+        })
 }
 
 ###############################################################################
 # 3. Delete extra files from Destination
 ###############################################################################
 if ($toDelete.Count -gt 0) {
-    Write-Host ""
-    Write-Host "=== Deletion Confirmation ===" -ForegroundColor Yellow
-    Write-Host "The following $($toDelete.Count) file(s) will be deleted:" -ForegroundColor Yellow
-    $toDelete | Select-Object -First 10 | ForEach-Object {
-        Write-Host "  - $($_.RelativePath)" -ForegroundColor Yellow
-    }
-    if ($toDelete.Count -gt 10) {
-        Write-Host "  ... and $($toDelete.Count - 10) more files" -ForegroundColor Yellow
-    }
-    Write-Host ""
-
-    $confirmation = Read-Host "Delete these files? [Y]es / [N]o (default: No)"
+    $confirmation = Read-Host "Delete $($toDelete.Count) file(s) that are not in the source? [Y]es / [N]o (default: No)"
 
     if ($confirmation -eq 'Y' -or $confirmation -eq 'y') {
         foreach ($item in $toDelete) {
             $rel = $item.RelativePath
             $dstFile = $item.Destination
 
-            Write-Host "[DELETE] $rel"
+            Write-LogInfo "Deleting extra file" -Metadata @{ RelativePath = $rel; Destination = $dstFile.FullName }
             Remove-Item -Path $dstFile.FullName -Force
+            $actionLog.Add([PSCustomObject]@{
+                    Action       = 'Delete'
+                    RelativePath = $rel
+                    Destination  = $dstFile.FullName
+                    Status       = 'Success'
+                })
         }
-        Write-Host "Deleted $($toDelete.Count) file(s)." -ForegroundColor Green
 
         ###########################################################################
         # 4. Clean up empty directories from Destination
         ###########################################################################
-        Write-Host ""
-        Write-Host "Cleaning up empty directories..."
+        Write-LogInfo "Cleaning up empty directories"
 
         # Get all directories in destination, sorted by depth (deepest first)
         $allDirs = Get-ChildItem -Path $Destination -Recurse -Directory |
@@ -282,7 +271,7 @@ if ($toDelete.Count -gt 0) {
         $emptyDirsRemoved = 0
         foreach ($dir in $allDirs) {
             # Skip if directory matches exclusion pattern
-            $relDirPath = $dir.FullName.Substring($Destination.Length).TrimStart('\')
+            $relDirPath = $dir.FullName.Substring($Destination.Length).TrimStart('\\')
             if (Test-ExcludedPath -RelativePath $relDirPath -Patterns $ExcludeFromDeletion) {
                 continue
             }
@@ -290,23 +279,39 @@ if ($toDelete.Count -gt 0) {
             # Check if directory is empty (no files, no subdirectories)
             $contents = Get-ChildItem -Path $dir.FullName -Force
             if ($contents.Count -eq 0) {
-                Write-Host "[REMOVE DIR] $relDirPath" -ForegroundColor DarkGray
+                Write-LogInfo "Removing empty directory" -Metadata @{ RelativePath = $relDirPath }
                 Remove-Item -Path $dir.FullName -Force
                 $emptyDirsRemoved++
+                $actionLog.Add([PSCustomObject]@{
+                        Action       = 'RemoveDirectory'
+                        RelativePath = $relDirPath
+                        Status       = 'Success'
+                    })
             }
         }
 
         if ($emptyDirsRemoved -gt 0) {
-            Write-Host "Removed $emptyDirsRemoved empty director(y/ies)." -ForegroundColor Green
+            Write-LogInfo "Removed empty directories" -Metadata @{ Count = $emptyDirsRemoved }
         }
         else {
-            Write-Host "No empty directories to remove." -ForegroundColor Gray
+            Write-LogInfo "No empty directories to remove"
         }
     }
     else {
-        Write-Host "Deletion cancelled. No files were deleted." -ForegroundColor Yellow
+        Write-LogWarning "Deletion cancelled by user"
     }
 }
 
-Write-Host ""
-Write-Host "Sync complete."
+$summary = [PSCustomObject]@{
+    Source                  = $Source
+    Destination             = $Destination
+    PreviewOnly             = $false
+    Plan                    = $plan
+    Actions                 = $actionLog.ToArray()
+    DeletedCount            = ($actionLog | Where-Object { $_.Action -eq 'Delete' }).Count
+    EmptyDirectoriesRemoved = ($actionLog | Where-Object { $_.Action -eq 'RemoveDirectory' }).Count
+    Status                  = 'Complete'
+}
+
+Write-LogInfo "Sync complete" -Metadata @{ Actions = $summary.Actions.Count }
+Write-Output $summary

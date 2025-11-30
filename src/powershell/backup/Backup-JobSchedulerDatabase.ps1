@@ -141,11 +141,32 @@ function Invoke-BackupMain {
 
         # If the function throws, we won't reach here; success means exit code 0.
         Write-LogInfo "Backup completed successfully."
+        Write-Output ([PSCustomObject]@{
+                Database      = $Database
+                BackupRoot    = $BackupRoot
+                LogsRoot      = $LogsRoot
+                LogFile       = $LogFile
+                User          = $UserName
+                RetentionDays = $RetentionDays
+                MinBackups    = $MinBackups
+                Status        = 'Success'
+            })
         exit 0
     }
     catch {
         # The module also logs failures to $LogFile; we still surface a clear status/exit code here.
         Write-LogError "ERROR: Backup failed: $_"
+        Write-Output ([PSCustomObject]@{
+                Database      = $Database
+                BackupRoot    = $BackupRoot
+                LogsRoot      = $LogsRoot
+                LogFile       = $LogFile
+                User          = $UserName
+                RetentionDays = $RetentionDays
+                MinBackups    = $MinBackups
+                Status        = 'Failed'
+                Error         = $_.ToString()
+            })
         exit 1
     }
 }
