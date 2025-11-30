@@ -1,7 +1,7 @@
 @{
     # Module manifest for RandomName
     RootModule        = 'RandomName.psm1'
-    ModuleVersion     = '2.1.0'
+    ModuleVersion     = '2.1.1'
     GUID              = '6b2a2d3e-0e1f-4a4b-9f5b-9c7a2f9d2c4a'
     Author            = 'Manoj Bhaskaran'
     CompanyName       = ''
@@ -15,7 +15,7 @@
         PSData = @{
             Tags         = @('random','filename','windows-safe')
             ProjectUri   = ''
-            ReleaseNotes = '2.1.0: Converted to module; added -MaxAttempts; documentation fixes.'
+            ReleaseNotes = '2.1.1: Standardized module loader with Public/Private directories.'
         }
     }
 }

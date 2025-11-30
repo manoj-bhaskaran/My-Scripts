@@ -1,4 +1,4 @@
-# Module loader for ProgressReporter
+# Module loader for PurgeLogs
 
 $privateDir = Join-Path $PSScriptRoot 'Private'
 if (Test-Path -LiteralPath $privateDir) {
