@@ -39,7 +39,7 @@
 .NOTES
     Author: Manoj Bhaskaran
     Created: 2025-11-16
-    Version: 1.0.0
+    Version: 1.1.0
 #>
 
 [CmdletBinding()]
@@ -62,6 +62,10 @@ param(
     [string]$RunTime = "02:00"
 )
 
+# Structured logging
+Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
+Initialize-Logger -resolvedLogDir $LogFolder -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
+
 # Function to check if running as Administrator
 function Test-Administrator {
     $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -71,17 +75,29 @@ function Test-Administrator {
 
 # Main script execution
 try {
-    Write-Host ""
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "Monthly System Health Check - Setup" -ForegroundColor Cyan
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host ""
+    $runStartTime = Get-Date
+
+    Write-LogInfo "========================================"
+    Write-LogInfo "Monthly System Health Check - Setup"
+    Write-LogInfo "========================================"
+    Write-LogInfo "Using log file: $($Global:LogConfig.LogFilePath)"
 
     # Check for Administrator privileges
     if (-not (Test-Administrator)) {
-        Write-Host "ERROR: This script must be run as Administrator!" -ForegroundColor Red
-        Write-Host "Please right-click PowerShell and select 'Run as Administrator', then run this script again." -ForegroundColor Yellow
-        Write-Host ""
+        Write-LogError "This script must be run as Administrator!"
+        Write-LogWarning "Please right-click PowerShell and select 'Run as Administrator', then run this script again."
+        $adminResult = [PSCustomObject]@{
+            Status      = 'RequiresAdministrator'
+            TaskName    = $TaskName
+            ScriptPath  = $ScriptPath
+            LogFolder   = $LogFolder
+            RunDay      = $RunDay
+            RunTime     = $RunTime
+            LogFile     = $Global:LogConfig.LogFilePath
+            StartedAt   = $runStartTime
+            CompletedAt = Get-Date
+        }
+        Write-Output $adminResult
         exit 1
     }
 
@@ -89,48 +105,67 @@ try {
     if (-not $ScriptPath) {
         $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
         $ScriptPath = Join-Path -Path $scriptDir -ChildPath "Invoke-SystemHealthCheck.ps1"
-        Write-Host "Auto-detected script path: $ScriptPath" -ForegroundColor Yellow
+        Write-LogInfo "Auto-detected script path: $ScriptPath"
     }
 
     # Verify the script exists
     if (-not (Test-Path -Path $ScriptPath)) {
-        Write-Host "ERROR: Script not found at: $ScriptPath" -ForegroundColor Red
-        Write-Host "Please provide the correct path using -ScriptPath parameter." -ForegroundColor Yellow
-        Write-Host ""
+        Write-LogError "Script not found at: $ScriptPath"
+        Write-LogWarning "Please provide the correct path using -ScriptPath parameter."
+        $missingResult = [PSCustomObject]@{
+            Status      = 'ScriptNotFound'
+            TaskName    = $TaskName
+            ScriptPath  = $ScriptPath
+            LogFolder   = $LogFolder
+            RunDay      = $RunDay
+            RunTime     = $RunTime
+            LogFile     = $Global:LogConfig.LogFilePath
+            StartedAt   = $runStartTime
+            CompletedAt = Get-Date
+        }
+        Write-Output $missingResult
         exit 1
     }
 
-    Write-Host "Script Location: $ScriptPath" -ForegroundColor Green
-    Write-Host "Log Folder: $LogFolder" -ForegroundColor Green
-    Write-Host "Task Name: $TaskName" -ForegroundColor Green
-    Write-Host "Schedule: Day $RunDay of each month at $RunTime" -ForegroundColor Green
-    Write-Host ""
+    Write-LogInfo "Script Location: $ScriptPath"
+    Write-LogInfo "Log Folder: $LogFolder"
+    Write-LogInfo "Task Name: $TaskName"
+    Write-LogInfo "Schedule: Day $RunDay of each month at $RunTime"
 
     # Create log folder if it doesn't exist
     if (-not (Test-Path -Path $LogFolder)) {
-        Write-Host "Creating log folder: $LogFolder" -ForegroundColor Yellow
+        Write-LogInfo "Creating log folder: $LogFolder"
         New-Item -Path $LogFolder -ItemType Directory -Force | Out-Null
-        Write-Host "Log folder created successfully." -ForegroundColor Green
+        Write-LogInfo "Log folder created successfully."
     }
     else {
-        Write-Host "Log folder already exists: $LogFolder" -ForegroundColor Green
+        Write-LogInfo "Log folder already exists: $LogFolder"
     }
-    Write-Host ""
 
     # Check if task already exists
     $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     if ($existingTask) {
-        Write-Host "WARNING: A task named '$TaskName' already exists." -ForegroundColor Yellow
+        Write-LogWarning "A task named '$TaskName' already exists."
         $response = Read-Host "Do you want to replace it? (Y/N)"
         if ($response -ne 'Y' -and $response -ne 'y') {
-            Write-Host "Installation cancelled." -ForegroundColor Yellow
-            Write-Host ""
+            Write-LogInfo "Installation cancelled by user."
+            $cancelResult = [PSCustomObject]@{
+                Status      = 'Cancelled'
+                TaskName    = $TaskName
+                ScriptPath  = $ScriptPath
+                LogFolder   = $LogFolder
+                RunDay      = $RunDay
+                RunTime     = $RunTime
+                LogFile     = $Global:LogConfig.LogFilePath
+                StartedAt   = $runStartTime
+                CompletedAt = Get-Date
+            }
+            Write-Output $cancelResult
             exit 0
         }
-        Write-Host "Removing existing task..." -ForegroundColor Yellow
+        Write-LogWarning "Removing existing task..."
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-        Write-Host "Existing task removed." -ForegroundColor Green
-        Write-Host ""
+        Write-LogInfo "Existing task removed."
     }
 
     # Create the scheduled task action
@@ -155,7 +190,7 @@ try {
         -Priority 4
 
     # Register the scheduled task
-    Write-Host "Creating scheduled task: $TaskName" -ForegroundColor Yellow
+    Write-LogInfo "Creating scheduled task: $TaskName"
 
     $task = Register-ScheduledTask -TaskName $TaskName `
         -Action $action `
@@ -164,45 +199,63 @@ try {
         -Settings $settings `
         -Description "Runs monthly Windows system health checks (SFC and DISM) to verify and repair system integrity. Logs are saved to $LogFolder for review."
 
-    Write-Host ""
-    Write-Host "========================================" -ForegroundColor Green
-    Write-Host "Installation Completed Successfully!" -ForegroundColor Green
-    Write-Host "========================================" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "Task Details:" -ForegroundColor Cyan
-    Write-Host "  Name: $TaskName" -ForegroundColor White
-    Write-Host "  Schedule: Day $RunDay of each month at $RunTime" -ForegroundColor White
-    Write-Host "  Next Run: $($task.Triggers[0].StartBoundary)" -ForegroundColor White
-    Write-Host "  Script: $ScriptPath" -ForegroundColor White
-    Write-Host "  Logs: $LogFolder" -ForegroundColor White
-    Write-Host ""
-    Write-Host "What happens each month:" -ForegroundColor Cyan
-    Write-Host "  1. System File Checker (sfc /scannow) runs" -ForegroundColor White
-    Write-Host "  2. DISM Restore Health runs" -ForegroundColor White
-    Write-Host "  3. Results are logged to timestamped files" -ForegroundColor White
-    Write-Host ""
-    Write-Host "To view the task:" -ForegroundColor Cyan
-    Write-Host "  Open Task Scheduler (taskschd.msc)" -ForegroundColor White
-    Write-Host "  Navigate to: Task Scheduler Library" -ForegroundColor White
-    Write-Host "  Find: '$TaskName'" -ForegroundColor White
-    Write-Host ""
-    Write-Host "To run the task manually (for testing):" -ForegroundColor Cyan
-    Write-Host "  Start-ScheduledTask -TaskName '$TaskName'" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "To remove the task:" -ForegroundColor Cyan
-    Write-Host "  Unregister-ScheduledTask -TaskName '$TaskName' -Confirm:`$false" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "NOTE: You may be prompted for your password when the task runs" -ForegroundColor Yellow
-    Write-Host "      to confirm Administrator privileges." -ForegroundColor Yellow
-    Write-Host ""
+    $result = [PSCustomObject]@{
+        Status      = 'Installed'
+        TaskName    = $TaskName
+        ScriptPath  = $ScriptPath
+        LogFolder   = $LogFolder
+        RunDay      = $RunDay
+        RunTime     = $RunTime
+        NextRun     = $task.Triggers[0].StartBoundary
+        LogFile     = $Global:LogConfig.LogFilePath
+        StartedAt   = $runStartTime
+        CompletedAt = Get-Date
+    }
+
+    Write-LogInfo "========================================"
+    Write-LogInfo "Installation Completed Successfully!"
+    Write-LogInfo "========================================"
+    Write-LogInfo "Task Details:"
+    Write-LogInfo "  Name: $TaskName"
+    Write-LogInfo "  Schedule: Day $RunDay of each month at $RunTime"
+    Write-LogInfo "  Next Run: $($task.Triggers[0].StartBoundary)"
+    Write-LogInfo "  Script: $ScriptPath"
+    Write-LogInfo "  Logs: $LogFolder"
+    Write-LogInfo "What happens each month:"
+    Write-LogInfo "  1. System File Checker (sfc /scannow) runs"
+    Write-LogInfo "  2. DISM Restore Health runs"
+    Write-LogInfo "  3. Results are logged to timestamped files"
+    Write-LogInfo "To view the task:"
+    Write-LogInfo "  Open Task Scheduler (taskschd.msc)"
+    Write-LogInfo "  Navigate to: Task Scheduler Library"
+    Write-LogInfo "  Find: '$TaskName'"
+    Write-LogInfo "To run the task manually (for testing):"
+    Write-LogInfo "  Start-ScheduledTask -TaskName '$TaskName'"
+    Write-LogInfo "To remove the task:"
+    Write-LogInfo "  Unregister-ScheduledTask -TaskName '$TaskName' -Confirm:`$false"
+    Write-LogInfo "NOTE: You may be prompted for your password when the task runs to confirm Administrator privileges."
+
+    Write-Output $result
 
     exit 0
 
 }
 catch {
-    Write-Host ""
-    Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "Stack Trace: $($_.ScriptStackTrace)" -ForegroundColor Red
-    Write-Host ""
+    Write-LogCritical "ERROR: $($_.Exception.Message)"
+    Write-LogCritical "Stack Trace: $($_.ScriptStackTrace)"
+
+    $errorResult = [PSCustomObject]@{
+        Status       = 'Failed'
+        TaskName     = $TaskName
+        ScriptPath   = $ScriptPath
+        LogFolder    = $LogFolder
+        RunDay       = $RunDay
+        RunTime      = $RunTime
+        LogFile      = $Global:LogConfig.LogFilePath
+        ErrorMessage = $_.Exception.Message
+        StartedAt    = $runStartTime
+        CompletedAt  = Get-Date
+    }
+    Write-Output $errorResult
     exit 2
 }

@@ -484,10 +484,22 @@ $Summary += "Warnings : $script:Warnings`n"
 $Summary += "Critical logging errors : $script:CriticalErrors`n"
 
 Write-LogInfo $Summary
-Write-Host $Summary
-
 Write-LogInfo "Duplicate file scan completed."
-Write-Host "Duplicate file scan completed."
+
+$result = [PSCustomObject]@{
+    ParentDirectory       = $ParentDirectory
+    LogFile               = $Global:LogConfig.LogFilePath
+    DuplicateFilesFound   = $TotalDuplicatesFound
+    DuplicateFilesDeleted = $TotalDeleted
+    DuplicateFilesRetained= $TotalRetained
+    DryRun                = [bool]$DryRun
+    WouldDeleteCount      = if ($DryRun) { $WouldDeleteCount } else { 0 }
+    HashFailures          = $script:HashFailures
+    Warnings              = $script:Warnings
+    CriticalErrors        = $script:CriticalErrors
+}
+
+Write-Output $result
 
 # Exit non-zero if critical logging errors occurred
 if ($script:CriticalErrors -gt 0) { exit 2 }
