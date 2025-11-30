@@ -13,7 +13,7 @@
 
   Notes:
     - Info uses the Information stream (`Write-Information -InformationAction Continue`)
-      for better pipeline behavior. If that fails (rare), we fall back to Write-Host.
+      for better pipeline behavior. If that fails (rare), we fall back to Write-Output.
     - Debug echoes for Warn/Error help when collecting verbose traces.
 .PARAMETER Level
   Log level classification: Info, Warn, or Error.
@@ -63,7 +63,7 @@ function Write-Message {
     switch ($Level) {
         'Info' {
             try { Write-Information -MessageData $formatted -InformationAction Continue }
-            catch { Write-Host $formatted -ForegroundColor Cyan }
+            catch { Write-Output $formatted }
         }
         'Warn' { Write-Warning $formatted; Write-Debug $formatted }
         'Error' { Write-Error   $formatted; Write-Debug $formatted }

@@ -1,4 +1,5 @@
 function ConvertTo-Bytes {
+    [CmdletBinding()]
     <#
     .SYNOPSIS
     Converts a human-readable size string into a long byte value.

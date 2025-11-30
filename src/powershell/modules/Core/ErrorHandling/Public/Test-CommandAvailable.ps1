@@ -12,7 +12,7 @@ function Test-CommandAvailable {
 
     .EXAMPLE
         if (Test-CommandAvailable "git") {
-            Write-Host "Git is available"
+            Write-Output "Git is available"
         }
 
     .OUTPUTS

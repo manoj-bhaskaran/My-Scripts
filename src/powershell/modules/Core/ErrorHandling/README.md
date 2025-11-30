@@ -66,7 +66,7 @@ Checks if the script is running with elevated privileges (Administrator on Windo
 **Example:**
 ```powershell
 if (Test-IsElevated) {
-    Write-Host "Running with admin privileges"
+    Write-Output "Running with admin privileges"
 } else {
     Write-Warning "Not running with admin privileges"
 }
@@ -97,7 +97,7 @@ Checks if a command, cmdlet, or executable is available in the current session.
 **Example:**
 ```powershell
 if (Test-CommandAvailable "git") {
-    Write-Host "Git is available"
+    Write-Output "Git is available"
 } else {
     Write-Warning "Git is not installed"
 }
@@ -115,7 +115,7 @@ try {
     Copy-Item $source $destination -Force
 }
 catch {
-    Write-Host "Error: $_" -ForegroundColor Red
+    Write-Error "Error: $_"
     throw
 }
 ```

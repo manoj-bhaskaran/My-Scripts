@@ -92,11 +92,11 @@ Tests if a folder exists and is writable.
 **Example:**
 ```powershell
 if (Test-FolderWritable "C:\temp") {
-    Write-Host "Folder is writable"
+    Write-Output "Folder is writable"
 }
 
 if (Test-FolderWritable "C:\logs" -SkipCreate) {
-    Write-Host "Folder exists and is writable"
+    Write-Output "Folder exists and is writable"
 }
 ```
 
@@ -130,9 +130,9 @@ Creates a directory if it doesn't exist.
 New-DirectoryIfNotExists "C:\temp\logs"
 
 if (New-DirectoryIfNotExists $path) {
-    Write-Host "Directory was created"
+    Write-Output "Directory was created"
 } else {
-    Write-Host "Directory already existed"
+    Write-Output "Directory already existed"
 }
 ```
 
@@ -146,7 +146,7 @@ Gets the size of a file in bytes.
 **Example:**
 ```powershell
 $size = Get-FileSize "C:\temp\file.txt"
-Write-Host "File size: $size bytes"
+Write-Output "File size: $size bytes"
 ```
 
 ## Migration Guide
