@@ -44,3 +44,8 @@ Scripts typically use built-in defaults but can be configured via parameters. Ch
 ## Logging
 
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
+
+## Automation outputs
+
+- **Invoke-SystemHealthCheck.ps1** and **Install-SystemHealthCheckTask.ps1** emit structured objects summarizing run status, log locations, and scheduling details for downstream automation.
+- **Remove-DuplicateFiles.ps1** returns a run summary object with counts for automation-friendly reporting.

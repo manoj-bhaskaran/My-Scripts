@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced `Write-Host` usage in system maintenance scripts with the centralized logging framework and structured run outputs for automation (`Invoke-SystemHealthCheck.ps1`, `Install-SystemHealthCheckTask.ps1`, `Remove-DuplicateFiles.ps1`).
+
 ### Added
 
 - **Automated Dependency Security Scanning** (#520) - Comprehensive vulnerability scanning for Python dependencies
