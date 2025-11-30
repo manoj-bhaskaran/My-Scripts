@@ -78,6 +78,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+### Changed
+
+- Standardized PowerShell modules to use Public/Private folder structure with loader pattern and refreshed manifests.
+
 - **Fixed Dependency Vulnerabilities** (#520) - Updated vulnerable packages to secure versions
   - **Priority**: HIGH - Security vulnerability remediation
   - **Impact**: Eliminates 5 known security vulnerabilities across 4 packages
