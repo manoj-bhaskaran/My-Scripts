@@ -4,11 +4,12 @@ Scripts for automated database backups and synchronization.
 
 ## Scripts
 
-- **Backup-GnuCashDatabase.ps1** - PostgreSQL backup for GnuCash database
+- **Backup-GnuCashDatabase.ps1** - PostgreSQL backup for GnuCash database (structured logging + object output)
 - **Backup-JobSchedulerDatabase.ps1** - Job scheduler database backup automation
-- **Backup-TimelineDatabase.ps1** - Timeline data database backup
+- **Backup-TimelineDatabase.ps1** - Timeline data database backup (structured logging + object output)
 - **Backup-PostgreSqlCommon.ps1** - Common PostgreSQL backup functions
 - **Sync-MacriumBackups.ps1** - Macrium backup synchronization between local and remote storage
+- **scripts/Sync-Directory.ps1** - File synchronization utility that emits capturable summaries for automation
 
 ## Dependencies
 
@@ -32,6 +33,8 @@ These scripts are configured to run automatically via Windows Task Scheduler. Ta
 
 Database connection parameters are typically configured within each script or read from environment variables. Check individual scripts for specific configuration requirements.
 
-## Logging
+## Logging and automation
 
-All scripts use the PowerShell Logging Framework and write logs to the standard logs directory as defined in the logging specification.
+- All backup utilities use the PowerShell Logging Framework and write logs to the standard logs directory as defined in the logging specification.
+- Backup launcher scripts emit structured `PSCustomObject` summaries via `Write-Output` so task schedulers and automation can capture results programmatically.
+- `scripts/Sync-Directory.ps1` returns a plan (counts + relative paths) when run with `-PreviewOnly` and a detailed action log after execution.
