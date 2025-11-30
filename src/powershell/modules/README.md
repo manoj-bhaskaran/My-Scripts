@@ -92,6 +92,9 @@ ModuleName/
 └── CHANGELOG.md         # Version history
 ```
 
+All module loaders dot-source the `Private/` folder first and `Public/` second, exporting only the public surface discovered in
+`Public/*.ps1`.
+
 ### Best Practices
 
 1. **Versioning**: Use semantic versioning (SemVer)

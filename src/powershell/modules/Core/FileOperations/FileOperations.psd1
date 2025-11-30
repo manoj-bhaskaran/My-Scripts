@@ -3,7 +3,7 @@
     RootModule = 'FileOperations.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.0'
+    ModuleVersion = '1.0.1'
 
     # ID used to uniquely identify this module
     GUID = '8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d'
@@ -53,7 +53,7 @@
             Tags = @('FileOperations', 'Retry', 'IO', 'Utilities')
             LicenseUri = 'http://www.apache.org/licenses/LICENSE-2.0'
             ProjectUri = 'https://github.com/manoj-bhaskaran/My-Scripts'
-            ReleaseNotes = 'Initial release of FileOperations module with retry logic for file operations.'
+            ReleaseNotes = '1.0.1: Adopted Public/Private layout with module loader and dependency import cleanup.'
         }
     }
 }
