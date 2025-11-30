@@ -1,4 +1,5 @@
 function Write-LogMessage {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$Level,

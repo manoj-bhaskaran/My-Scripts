@@ -15,12 +15,12 @@ function Test-FolderWritable {
 
     .EXAMPLE
         if (Test-FolderWritable "C:\\temp") {
-            Write-Host "Folder is writable"
+            Write-Output "Folder is writable"
         }
 
     .EXAMPLE
         if (Test-FolderWritable "C:\\logs" -SkipCreate) {
-            Write-Host "Folder exists and is writable"
+            Write-Output "Folder exists and is writable"
         }
 
     .OUTPUTS

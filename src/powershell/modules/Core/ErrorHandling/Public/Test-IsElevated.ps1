@@ -9,7 +9,7 @@ function Test-IsElevated {
 
     .EXAMPLE
         if (Test-IsElevated) {
-            Write-Host "Running with admin privileges"
+            Write-Output "Running with admin privileges"
         }
 
     .OUTPUTS
