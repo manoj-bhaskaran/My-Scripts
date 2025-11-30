@@ -578,6 +578,7 @@ This repository uses git hooks for quality enforcement to catch issues before th
   - Updates staging directory with merged changes
   - Deploys updated modules
   - Handles dependency updates and log rotation
+- **Integration coverage**: `tests/integration/GitHooks.Integration.Tests.ps1` exercises staging mirror updates, deployment targets, and configuration handling to validate the end-to-end hook workflow.
 
 ### Installation
 

@@ -32,7 +32,7 @@ if ! command -v pwsh >/dev/null 2>&1; then
 fi
 
 # Execute the PowerShell script
-SCRIPT_PATH="$REPO_ROOT/src/powershell/Invoke-PostCommitHook.ps1"
+SCRIPT_PATH="$REPO_ROOT/src/powershell/git/Invoke-PostCommitHook.ps1"
 
 if [ -f "$SCRIPT_PATH" ]; then
     log_message "INFO" "Executing PowerShell script: $SCRIPT_PATH"
