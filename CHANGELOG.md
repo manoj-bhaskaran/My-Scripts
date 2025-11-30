@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - Automated vulnerability reports in GitHub Actions summary
       - Artifact uploads for detailed analysis (30-day retention)
       - Fails build on security vulnerabilities (configurable)
+  - **Integration Test Coverage**:
+    - Added `tests/integration/Test-BackupRestore.Tests.ps1` to validate PostgreSQL backup/restore flows end-to-end
+    - Exercises backup creation, restore validation, data integrity checks, and retention cleanup with temporary PostgreSQL instances
       - Dependency review comments on pull requests
   - **Dependencies Added** (requirements.txt):
     - safety==3.2.11 - Python dependency security scanner
