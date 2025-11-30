@@ -12,6 +12,7 @@ We use a comprehensive testing framework to ensure code quality and reliability:
 
 ```
 tests/
+├── integration/         # Cross-platform integration tests
 ├── python/
 │   ├── unit/              # Python unit tests
 │   │   ├── test_validators.py
@@ -80,6 +81,19 @@ Install-Module -Name Pester -Force -Scope CurrentUser
 #### Run all PowerShell tests
 ```powershell
 Invoke-Pester -Path tests/powershell
+```
+
+### Integration Tests (PowerShell + PostgreSQL)
+
+These tests spin up a temporary PostgreSQL instance and validate the end-to-end backup/restore process using the `PostgresBackup` module.
+
+#### Prerequisites
+- PostgreSQL client and server utilities available on PATH (`initdb`, `pg_ctl`, `psql`, `pg_dump`, `pg_restore`).
+- Pester installed (see above).
+
+#### Run integration suite
+```powershell
+Invoke-Pester -Path tests/integration
 ```
 
 #### Run with coverage (using helper script - recommended)

@@ -429,6 +429,15 @@ Install-Module -Name Pester -Force -Scope CurrentUser
 Invoke-Pester -Path tests/powershell
 ```
 
+**Integration Tests (PostgreSQL + PowerShell)**:
+```powershell
+# Requires PostgreSQL utilities on PATH: initdb, pg_ctl, psql, pg_dump, pg_restore
+# Install Pester as shown above
+
+# Run integration suite
+Invoke-Pester -Path tests/integration
+```
+
 ### Test Coverage
 
 We maintain test coverage to ensure code quality and reliability:
