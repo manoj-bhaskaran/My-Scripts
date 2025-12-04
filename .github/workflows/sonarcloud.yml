@@ -33,10 +33,19 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Python & Dependencies
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        id: setup-python
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Report Python cache status
+        run: echo "Python cache hit: ${{ steps.setup-python.outputs.cache-hit }}"
+
+      - name: Install Python dependencies
         run: |
-          sudo apt update && sudo apt install -y python3 python3-pip
-          python3 -m pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install pylint bandit
           pip install -r requirements.txt
 
@@ -125,6 +134,39 @@ jobs:
           name: PowerShell-Coverage-Report
           path: coverage/powershell/coverage.xml
 
+      - name: Determine PowerShell module cache path
+        id: ps-cache-path
+        shell: pwsh
+        run: |
+          $modulePath = ($env:PSModulePath -split [System.IO.Path]::PathSeparator)[0]
+          "PS_MODULE_CACHE=$modulePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "cache-path=$modulePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Cache PowerShell modules
+        id: cache-pwsh
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PS_MODULE_CACHE }}
+          key: ${{ runner.os }}-psmodules-v1
+
+      - name: Report PowerShell module cache status
+        run: echo "PowerShell module cache hit: ${{ steps.cache-pwsh.outputs.cache-hit }}"
+
+      - name: Cache npm packages for SQLLint
+        id: cache-npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-sql-lint-v1
+
+      - name: Install SQLLint and SQLFluff
+        run: |
+          npm install -g sql-lint
+          pip install sqlfluff
+
+      - name: Report npm cache status
+        run: echo "npm cache hit: ${{ steps.cache-npm.outputs.cache-hit }}"
+
       - name: Run PSScriptAnalyzer (PowerShell Linter)
         shell: pwsh
         run: |
@@ -141,11 +183,6 @@ jobs:
         with:
           name: PSScriptAnalyzerReport
           path: PSScriptAnalyzerReport.txt
-
-      - name: Install SQLLint and SQLFluff
-        run: |
-          npm install -g sql-lint
-          pip install sqlfluff
 
       - name: Run SQLLint (Syntax Check)
         run: |
@@ -192,5 +229,6 @@ jobs:
           # Override coverage paths to use new locations
           sonar-scanner \
             -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.token=$SONAR_TOKEN \
             -Dsonar.python.coverage.reportPaths=coverage/python/coverage.xml \
             -Dsonar.coverage.jacoco.xmlReportPaths=coverage/powershell/coverage.xml

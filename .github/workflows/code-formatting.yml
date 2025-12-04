@@ -21,8 +21,13 @@ jobs:
 
       - name: Set up Python
         uses: actions/setup-python@v5
+        id: setup-python
         with:
           python-version: '3.11'
+          cache: 'pip'
+
+      - name: Report Python cache status
+        run: echo "Python cache hit: ${{ steps.setup-python.outputs.cache-hit }}"
 
       - name: Install Python formatting tools
         run: |
@@ -33,6 +38,24 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y powershell
+
+      - name: Determine PowerShell module cache path
+        id: ps-cache-path
+        shell: pwsh
+        run: |
+          $modulePath = ($env:PSModulePath -split [System.IO.Path]::PathSeparator)[0]
+          "PS_MODULE_CACHE=$modulePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "cache-path=$modulePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Cache PowerShell modules
+        id: cache-pwsh
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PS_MODULE_CACHE }}
+          key: ${{ runner.os }}-psmodules-v1
+
+      - name: Report PowerShell module cache status
+        run: echo "PowerShell module cache hit: ${{ steps.cache-pwsh.outputs.cache-hit }}"
 
       - name: Install PSScriptAnalyzer
         shell: pwsh
