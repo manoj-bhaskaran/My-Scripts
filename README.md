@@ -663,6 +663,16 @@ Code formatting is automatically checked on commit via pre-commit hooks:
 
 The [Code Formatting workflow](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml) runs on all pull requests and pushes, ensuring all code meets formatting standards.
 
+### CI/CD Caching
+
+Caching keeps pipeline runs fast and repeatable:
+
+- **Python (pip)**: `actions/setup-python@v5` enables the built-in pip cache for formatting checks, security scans, SonarCloud analysis, and module validation. Each step reports cache status via `Python cache hit: ...` so misses are visible in the logs.
+- **npm (sql-lint)**: SQL linting in the SonarCloud workflow restores the `~/.npm` cache with the key `${{ runner.os }}-npm-sql-lint-v1` before installing `sql-lint`, with an explicit cache hit/miss message.
+- **PowerShell modules**: PowerShell linting and module deployment cache the user module path derived from the first entry in `$PSModulePath`, using the shared key `${{ runner.os }}-psmodules-v1` and logging hit/miss status for traceability.
+
+These caches are safe to invalidate by bumping the cache key suffix (e.g., `-v2`) whenever dependency versions change.
+
 ### Documentation
 
 For detailed code style guidelines, configuration, and troubleshooting:
@@ -697,7 +707,7 @@ For detailed code style guidelines, configuration, and troubleshooting:
 
 This repository follows [Semantic Versioning](https://semver.org/):
 - **MAJOR.MINOR.PATCH** (e.g., 2.0.0)
-- Current Version: **2.0.0** (see [VERSION](VERSION) file)
+- Current Version: **2.3.1** (see [VERSION](VERSION) file)
 
 ### Release Process
 

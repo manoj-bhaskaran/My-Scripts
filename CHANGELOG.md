@@ -78,6 +78,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - ✅ Manual trigger support for ad-hoc scans
   - **Files Added**:
     - `.github/workflows/security-scan.yml` - Security scanning workflow
+
+## [2.3.1] - 2024-06-07
+
+### Added
+
+- Enabled pip caching across formatting, security scanning, module validation, and SonarCloud workflows with explicit cache hit/miss reporting.
+- Added npm cache restoration for `sql-lint` in the SonarCloud workflow, including cache status visibility.
+- Cached user-scoped PowerShell modules for linting and deployment jobs with cache status output for each run.
+
+### Changed
+
+- Documented CI/CD caching strategy and cache key management in the README.
   - **Files Modified**:
     - `.pre-commit-config.yaml` - Added python-safety-dependencies-check hook
     - `requirements.txt` - Added safety==3.2.11, pip-audit==2.7.3
