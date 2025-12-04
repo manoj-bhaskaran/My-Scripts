@@ -4,6 +4,79 @@
 
 The FileOperations module provides file operation utilities with built-in retry logic for PowerShell scripts. All file operations (copy, move, remove, rename) automatically handle transient failures like file locks or network issues using exponential backoff retry logic.
 
+## Quick Start
+```powershell
+Import-Module FileOperations
+Copy-FileWithRetry -Source "C:\source\file.txt" -Destination "D:\dest\file.txt"
+```
+
+## Common Use Cases
+1. **Resilient file copies between drives** – handle transient network or lock issues automatically.
+   ```powershell
+   Copy-FileWithRetry -Source \\share\data\report.csv -Destination "D:\Reports\report.csv" -MaxRetries 5
+   ```
+2. **Transactional moves when archiving** – ensure items land in archive folders even if storage is briefly unavailable.
+   ```powershell
+   Move-FileWithRetry -Source "C:\temp\logs.zip" -Destination "\\archive\logs\logs.zip" -RetryDelay 1 -MaxBackoff 30
+   ```
+3. **Safe cleanup jobs** – remove temp files while tolerating antivirus or indexing locks.
+   ```powershell
+   Remove-FileWithRetry -Path "$env:TEMP\*.tmp" -MaxRetries 6
+   ```
+4. **Pre-flight folder checks in deployment scripts** – ensure output folders exist and are writable.
+   ```powershell
+   if (-not (Test-FolderWritable "C:\deploy\output")) { throw "Output folder not writable" }
+   ```
+5. **Append-only logging with retry** – write telemetry without losing entries during brief I/O interruptions.
+   ```powershell
+   Add-ContentWithRetry -Path "C:\logs\sync.log" -Value "$(Get-Date -Format o) :: sync started" -Encoding UTF8
+   ```
+
+## Parameters
+- **Copy-FileWithRetry / Move-FileWithRetry**
+  - `Source` (string, required): Path to the existing file.
+  - `Destination` (string, required): Target path for the copy/move operation.
+  - `Force` (bool, default `$true`): Overwrite destination if it exists.
+  - `MaxRetries` (int, default `3`): Number of retry attempts before failing.
+  - `RetryDelay` (int, default `2`): Base delay in seconds between retries.
+  - `MaxBackoff` (int, default `60`): Maximum backoff delay in seconds.
+- **Remove-FileWithRetry**
+  - `Path` (string, required): File path or pattern to remove.
+  - `MaxRetries`, `RetryDelay`, `MaxBackoff`: Same retry settings as copy/move.
+- **Rename-FileWithRetry**
+  - `Path` (string, required): Existing file path.
+  - `NewName` (string, required): New file name (not full path).
+  - `MaxRetries`, `RetryDelay`, `MaxBackoff`: Retry settings.
+- **Test-FolderWritable**
+  - `Path` (string, required): Folder to validate or create.
+  - `SkipCreate` (bool, default `$false`): Do not create the folder if missing.
+- **Add-ContentWithRetry**
+  - `Path` (string, required): File to append to.
+  - `Value` (string, required): Content to add.
+  - `Encoding` (string, default `"UTF8"`): File encoding for new entries.
+  - `MaxRetries`, `RetryDelay`, `MaxBackoff`: Retry settings.
+- **New-DirectoryIfNotExists**
+  - `Path` (string, required): Directory to create when missing.
+- **Get-FileSize**
+  - `Path` (string, required): File to measure.
+
+## Error Handling
+```powershell
+try {
+    Copy-FileWithRetry -Source "C:\data\input.csv" -Destination "D:\staging\input.csv" -MaxRetries 5 -RetryDelay 1
+}
+catch {
+    Write-Error "Failed after retries: $_"
+    # Optionally log to a central handler here
+}
+```
+
+## Performance Considerations
+- Built-in exponential backoff prevents thrashing when files are locked; tune `RetryDelay`/`MaxBackoff` for congested shares.
+- Use `Force:$false` on copy/move when overwriting large files is costly and avoidable.
+- Prefer `Add-ContentWithRetry` for append-heavy logging instead of reopening files manually.
+- `Test-FolderWritable` can create missing folders; disable with `-SkipCreate` to avoid extra I/O during read-only health checks.
+
 ## Installation
 
 The module is automatically deployed when using the `Deploy-Modules.ps1` script.
