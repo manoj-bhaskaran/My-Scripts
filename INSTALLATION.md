@@ -41,12 +41,22 @@ python3 -c 'import python_logging_framework; print("OK")'
 Before installing, ensure you have the following installed:
 
 #### Essential
+
 - **Git** - Version control system
+
   - Windows: [Git for Windows](https://git-scm.com/download/win)
   - Linux: `sudo apt install git` (Debian/Ubuntu) or `sudo yum install git` (RHEL/CentOS)
   - macOS: `brew install git`
 
+- **Git LFS** - Large File Storage for handling binary files
+
+  - Usually included with Git for Windows
+  - Linux: `sudo apt install git-lfs` (Debian/Ubuntu) or `sudo yum install git-lfs` (RHEL/CentOS)
+  - macOS: `brew install git-lfs`
+  - After installation: `git lfs install` (one-time setup)
+
 - **PowerShell** - Shell and scripting language
+
   - Windows: PowerShell 5.1+ (built-in) or PowerShell 7+ (recommended)
   - Linux/macOS: [PowerShell 7+](https://github.com/PowerShell/PowerShell#get-powershell)
 
@@ -65,6 +75,7 @@ Before installing, ensure you have the following installed:
   - macOS: `brew install python3`
 
 #### Optional (for specific scripts)
+
 - **PostgreSQL Client** - Required for database backup scripts
 - **VLC Media Player** - Required for Videoscreenshot module
 - **ADB (Android Debug Bridge)** - Required for Copy-AndroidFiles.ps1
@@ -107,6 +118,7 @@ Git hooks enforce code quality and consistent commit messages using the **pre-co
 ```
 
 This installs:
+
 - **Pre-commit framework**: Multi-language hook manager
 - **Python hooks**: Black (formatter), Pylint (linter), Bandit (security)
 - **PowerShell hooks**: PSScriptAnalyzer (linter)
@@ -115,8 +127,10 @@ This installs:
 - **Commit message validation**: Conventional Commits format enforcement
 - **Post-commit**: Automatic module deployment to staging
 - **Post-merge**: Post-merge automation
+- **Git LFS hooks**: Large file handling for _.sql, _.dump, _.mp4, _.zip files
 
 **What the script does:**
+
 1. Installs pre-commit framework via pip
 2. Configures hooks from `.pre-commit-config.yaml`
 3. Runs validation on all files
@@ -150,9 +164,11 @@ These software packages are optional and only required for specific scripts.
 ### VLC Media Player (for Videoscreenshot module)
 
 **Windows:**
+
 1. Download from [https://www.videolan.org/vlc/](https://www.videolan.org/vlc/)
 2. Install using the installer
 3. Add to PATH (if not automatically added):
+
    ```powershell
    # Add to current session
    $env:Path += ";C:\Program Files\VideoLAN\VLC"
@@ -162,6 +178,7 @@ These software packages are optional and only required for specific scripts.
    ```
 
 **Linux:**
+
 ```bash
 # Ubuntu/Debian
 sudo apt-get install vlc
@@ -174,6 +191,7 @@ which vlc
 ```
 
 **macOS:**
+
 ```bash
 brew install --cask vlc
 
@@ -184,9 +202,11 @@ which vlc
 ### ADB (Android Debug Bridge)
 
 **Windows:**
+
 1. Download [Android SDK Platform Tools](https://developer.android.com/studio/releases/platform-tools)
 2. Extract to a directory (e.g., `C:\adb`)
 3. Add to PATH:
+
    ```powershell
    # Add to current session
    $env:Path += ";C:\adb"
@@ -194,9 +214,11 @@ which vlc
    # Add permanently (as Administrator)
    [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\adb", "Machine")
    ```
+
 4. Verify: `adb --version`
 
 **Linux:**
+
 ```bash
 # Ubuntu/Debian
 sudo apt-get install android-tools-adb
@@ -209,6 +231,7 @@ adb --version
 ```
 
 **macOS:**
+
 ```bash
 brew install android-platform-tools
 
@@ -219,11 +242,13 @@ adb --version
 ### PostgreSQL Client
 
 **Windows:**
+
 1. Download from [PostgreSQL Downloads](https://www.postgresql.org/download/windows/)
 2. Run installer and select "Command Line Tools" component
 3. Verify installation: `psql --version`
 
 **Linux:**
+
 ```bash
 # Ubuntu/Debian
 sudo apt-get install postgresql-client
@@ -236,6 +261,7 @@ psql --version
 ```
 
 **macOS:**
+
 ```bash
 brew install postgresql
 
@@ -246,11 +272,13 @@ psql --version
 ### API Keys and Cloud Services
 
 **CloudConvert:**
+
 1. Sign up at [https://cloudconvert.com/](https://cloudconvert.com/)
 2. Generate an API key from the dashboard
 3. Set as environment variable (see Environment Configuration section)
 
 **Google Cloud:**
+
 1. Create a project at [Google Cloud Console](https://console.cloud.google.com/)
 2. Enable Google Drive API
 3. Create OAuth 2.0 credentials
@@ -264,11 +292,13 @@ For detailed configuration instructions, see **[config/CONFIG_GUIDE.md](config/C
 ### Quick Configuration Setup
 
 1. **Run the interactive configuration wizard:**
+
    ```powershell
    .\scripts\Initialize-Configuration.ps1
    ```
 
 2. **Or manually configure:**
+
    ```bash
    # Copy local deployment config template
    cp config/local-deployment-config.json.example config/local-deployment-config.json
@@ -284,6 +314,7 @@ For detailed configuration instructions, see **[config/CONFIG_GUIDE.md](config/C
    ```
 
 The [Configuration Guide](config/CONFIG_GUIDE.md) includes:
+
 - Local deployment configuration (git hooks)
 - Module deployment settings
 - Environment variables setup
@@ -346,6 +377,7 @@ CloudConvert requires an API key:
 Configure database connection parameters as needed (defaults are provided in `.env.example`):
 
 **Windows (PowerShell):**
+
 ```powershell
 # Set database connection parameters
 $env:PGHOST = "localhost"
@@ -360,6 +392,7 @@ $env:PGPASSWORD = "your-password"  # Note: Consider using .pgpass file instead
 ```
 
 **Linux/macOS (Bash):**
+
 ```bash
 # Add to ~/.bashrc or ~/.zshrc
 export PGHOST="localhost"
@@ -380,7 +413,7 @@ The repository includes several configuration files:
 - **[config/CONFIG_GUIDE.md](config/CONFIG_GUIDE.md)** – Comprehensive configuration guide
 - **config/local-deployment-config.json** – Local deployment settings (git hooks)
 - **config/modules/deployment.txt** – Module deployment targets
-- **config/tasks/*.xml** – Windows Task Scheduler definitions
+- **config/tasks/\*.xml** – Windows Task Scheduler definitions
 - **config/secrets/** – Encrypted password files (git-ignored)
 - **.vscode/settings.json** – Editor configuration (optional)
 
@@ -399,6 +432,7 @@ The easiest way to install all modules:
 ```
 
 **Options:**
+
 ```bash
 # Force overwrite existing modules
 ./scripts/install-modules.sh --force
@@ -449,6 +483,7 @@ pip3 install -e .
 ```
 
 **What gets installed:**
+
 - Package name: `my-scripts-logging`
 - Module name: `python_logging_framework`
 
@@ -548,6 +583,7 @@ My-Scripts includes automated scheduled tasks for maintenance, backups, and moni
 ### Installation
 
 **Prerequisites:**
+
 - Windows operating system with Task Scheduler
 - Administrator privileges (recommended)
 - Scripts properly installed in a permanent location
@@ -572,17 +608,17 @@ My-Scripts includes automated scheduled tasks for maintenance, backups, and moni
 
 The installation creates the following scheduled tasks:
 
-| Task Name | Schedule | Description |
-|-----------|----------|-------------|
-| MyScripts-Monthly System Health Check | Monthly (1st day, 2:00 AM) | Runs SFC and DISM system integrity checks |
-| MyScripts-Postgres Log Cleanup | Weekly (Saturday, 3:00 PM) | Removes old PostgreSQL log files |
-| MyScripts-Delete Old Downloads | Monthly (15th day, 11:00 AM) | Cleans old files from Downloads folder |
-| MyScripts-Drive Space Monitor | Daily (weekdays 8:00 AM, weekends every 2 hours) | Monitors Google Drive space usage |
-| MyScripts-Clear Old Recycle Bin Items | Weekly (Sunday, 7:54 AM) | Empties old items from Recycle Bin |
-| MyScripts-PostgreSQL Gnucash Backup | Daily (10:10 AM, 9:00 PM) | Backs up GnuCash database |
-| MyScripts-PostgreSQL timeline_data Backup | Weekly (Sunday, 6:00 PM) | Backs up timeline database |
-| MyScripts-PostgreSQL job_scheduler Backup | Daily (7:00 AM) | Backs up job scheduler database |
-| MyScripts-Sync Macrium Backups | Weekly (Tuesday, 7:30 AM) | Syncs Macrium backups to Google Drive |
+| Task Name                                 | Schedule                                         | Description                               |
+| ----------------------------------------- | ------------------------------------------------ | ----------------------------------------- |
+| MyScripts-Monthly System Health Check     | Monthly (1st day, 2:00 AM)                       | Runs SFC and DISM system integrity checks |
+| MyScripts-Postgres Log Cleanup            | Weekly (Saturday, 3:00 PM)                       | Removes old PostgreSQL log files          |
+| MyScripts-Delete Old Downloads            | Monthly (15th day, 11:00 AM)                     | Cleans old files from Downloads folder    |
+| MyScripts-Drive Space Monitor             | Daily (weekdays 8:00 AM, weekends every 2 hours) | Monitors Google Drive space usage         |
+| MyScripts-Clear Old Recycle Bin Items     | Weekly (Sunday, 7:54 AM)                         | Empties old items from Recycle Bin        |
+| MyScripts-PostgreSQL Gnucash Backup       | Daily (10:10 AM, 9:00 PM)                        | Backs up GnuCash database                 |
+| MyScripts-PostgreSQL timeline_data Backup | Weekly (Sunday, 6:00 PM)                         | Backs up timeline database                |
+| MyScripts-PostgreSQL job_scheduler Backup | Daily (7:00 AM)                                  | Backs up job scheduler database           |
+| MyScripts-Sync Macrium Backups            | Weekly (Tuesday, 7:30 AM)                        | Syncs Macrium backups to Google Drive     |
 
 **Note:** All tasks include randomized delays to prevent simultaneous execution.
 
@@ -591,12 +627,14 @@ The installation creates the following scheduled tasks:
 To customize task schedules or settings:
 
 1. **Edit template files** in `config/tasks/*.xml.template`:
+
    - Modify triggers (schedule)
    - Adjust execution time limits
    - Change task parameters
    - Update descriptions
 
 2. **Reinstall tasks** after editing:
+
    ```powershell
    .\scripts\Install-ScheduledTasks.ps1 -Force
    ```
@@ -609,21 +647,25 @@ To customize task schedules or settings:
 ### Managing Tasks
 
 **View installed tasks:**
+
 ```powershell
 Get-ScheduledTask -TaskName "MyScripts-*"
 ```
 
 **Run a task manually:**
+
 ```powershell
 Start-ScheduledTask -TaskName "MyScripts-Monthly System Health Check"
 ```
 
 **Check task status:**
+
 ```powershell
 Get-ScheduledTask -TaskName "MyScripts-*" | Format-Table TaskName, State, LastRunTime, NextRunTime
 ```
 
 **View task history:**
+
 1. Open Task Scheduler (taskschd.msc)
 2. Select the task
 3. Click the "History" tab
@@ -646,6 +688,7 @@ To remove all scheduled tasks:
 ### Troubleshooting
 
 **Tasks not running:**
+
 1. Check Task Scheduler Event Log for errors
 2. Verify script paths are correct in the XML files
 3. Test script manually:
@@ -655,6 +698,7 @@ To remove all scheduled tasks:
 4. Ensure required dependencies are installed (PowerShell modules, Python packages, etc.)
 
 **Permission errors:**
+
 1. Run installation script as Administrator
 2. Check script execution policy:
    ```powershell
@@ -663,12 +707,14 @@ To remove all scheduled tasks:
    ```
 
 **Tasks exist but won't update:**
+
 - Use `-Force` parameter to overwrite existing tasks:
   ```powershell
   .\scripts\Install-ScheduledTasks.ps1 -Force
   ```
 
 **Task runs but script fails:**
+
 1. Check log files (if script supports logging)
 2. Verify environment variables are set correctly
 3. Run script interactively to see error messages
@@ -689,6 +735,7 @@ For a comprehensive installation check, run the automated verification script:
 ```
 
 **Expected output:**
+
 ```
 Installation Verification for My-Scripts Repository
 ==================================================
@@ -733,6 +780,7 @@ Get-Command -Module PostgresBackup
 ```
 
 **Expected output:**
+
 ```
 ModuleType Version Name                      ExportedCommands
 ---------- ------- ----                      ----------------
@@ -778,16 +826,19 @@ tree -L 2 -I 'node_modules|.git'
 **Solutions**:
 
 1. Check module path:
+
    ```powershell
    $env:PSModulePath -split [System.IO.Path]::PathSeparator
    ```
 
 2. Verify deployment completed successfully:
+
    ```powershell
    ./scripts/Deploy-Modules.ps1 -Verbose
    ```
 
 3. Check if modules are in the expected location:
+
    ```powershell
    # Windows
    Get-ChildItem "C:\Program Files\PowerShell\Modules" -Directory
@@ -821,17 +872,20 @@ tree -L 2 -I 'node_modules|.git'
 **Solutions**:
 
 1. Verify installation:
+
    ```bash
    pip show my-scripts-logging
    ```
 
 2. Reinstall:
+
    ```bash
    pip uninstall my-scripts-logging
    pip install -e .
    ```
 
 3. Check Python path:
+
    ```python
    import sys
    print('\n'.join(sys.path))
@@ -850,11 +904,13 @@ tree -L 2 -I 'node_modules|.git'
 **Solutions**:
 
 1. Verify hooks are executable:
+
    ```bash
    chmod +x .git/hooks/*
    ```
 
 2. Reinstall hooks:
+
    ```bash
    ./scripts/install-hooks.sh
    ```
@@ -871,11 +927,13 @@ tree -L 2 -I 'node_modules|.git'
 **Solutions**:
 
 1. Validate manifest syntax:
+
    ```powershell
    Test-ModuleManifest -Path src/common/ModuleName.psd1
    ```
 
 2. Check for common issues:
+
    - Invalid GUID format
    - Missing or incorrect RootModule path
    - Mismatched FunctionsToExport
@@ -892,6 +950,7 @@ tree -L 2 -I 'node_modules|.git'
 **Solutions**:
 
 1. **Windows - Add VLC to PATH:**
+
    ```powershell
    # Temporary (current session)
    $env:Path += ";C:\Program Files\VideoLAN\VLC"
@@ -901,6 +960,7 @@ tree -L 2 -I 'node_modules|.git'
    ```
 
 2. **Or specify VLC path directly in script:**
+
    ```powershell
    Start-VideoBatch -VlcPath "C:\Program Files\VideoLAN\VLC\vlc.exe"
    ```
@@ -918,6 +978,7 @@ tree -L 2 -I 'node_modules|.git'
 **Solutions**:
 
 1. **Verify PostgreSQL is running:**
+
    ```bash
    # Linux
    sudo systemctl status postgresql
@@ -930,12 +991,14 @@ tree -L 2 -I 'node_modules|.git'
    ```
 
 2. **Check connection parameters:**
+
    ```bash
    # Test connection manually
    psql -h localhost -U your-username -d postgres
    ```
 
 3. **Verify environment variables:**
+
    ```powershell
    # Windows PowerShell
    Write-Host "PGHOST: $env:PGHOST"
@@ -962,11 +1025,13 @@ tree -L 2 -I 'node_modules|.git'
 **Solutions**:
 
 1. **Check current execution policy:**
+
    ```powershell
    Get-ExecutionPolicy -List
    ```
 
 2. **Set execution policy for current user:**
+
    ```powershell
    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
    ```
@@ -983,18 +1048,21 @@ tree -L 2 -I 'node_modules|.git'
 **Solutions**:
 
 1. **Ubuntu/Debian:**
+
    ```bash
    sudo apt-get install libpq-dev python3-dev
    pip install psycopg2
    ```
 
 2. **Fedora/RHEL/CentOS:**
+
    ```bash
    sudo yum install postgresql-devel python3-devel
    pip install psycopg2
    ```
 
 3. **macOS:**
+
    ```bash
    brew install postgresql
    pip install psycopg2
@@ -1014,6 +1082,7 @@ tree -L 2 -I 'node_modules|.git'
 1. **Install system dependencies first:**
 
    **Ubuntu/Debian:**
+
    ```bash
    sudo apt-get update
    sudo apt-get install python3-opencv
@@ -1022,16 +1091,19 @@ tree -L 2 -I 'node_modules|.git'
    ```
 
    **Fedora/RHEL/CentOS:**
+
    ```bash
    sudo yum install python3-opencv
    ```
 
    **macOS:**
+
    ```bash
    brew install opencv
    ```
 
 2. **Then install Python package:**
+
    ```bash
    pip install opencv-python
    ```

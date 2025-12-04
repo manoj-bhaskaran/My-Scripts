@@ -12,6 +12,7 @@ This repository uses the [pre-commit framework](https://pre-commit.com) to enfor
 ### Why Pre-Commit Framework?
 
 **Advantages over manual git hooks:**
+
 - ✅ Configuration version-controlled (`.pre-commit-config.yaml`)
 - ✅ Automatic hook installation for all team members
 - ✅ Multi-language support (Python, PowerShell, SQL)
@@ -40,6 +41,7 @@ pre-commit install --hook-type commit-msg
 ```
 
 **What this does:**
+
 1. Installs the pre-commit framework (Python package)
 2. Installs pre-commit and commit-msg hooks to `.git/hooks/`
 3. Runs hooks on all files for validation
@@ -47,10 +49,12 @@ pre-commit install --hook-type commit-msg
 ### Prerequisites
 
 **Required:**
+
 - Python 3.7+ (for pre-commit framework)
 - pip (Python package manager)
 
 **Optional (for specific hooks):**
+
 - PowerShell 7+ (`pwsh`) - For PowerShell linting
 - Node.js - For JavaScript/TypeScript linting (if added)
 
@@ -63,45 +67,91 @@ pre-commit install --hook-type commit-msg
 These hooks run on all commits:
 
 #### **trailing-whitespace**
+
 - Removes trailing whitespace from files
 - Auto-fixes issues
 
 #### **end-of-file-fixer**
+
 - Ensures files end with a newline
 - Auto-fixes issues
 
 #### **check-yaml**
+
 - Validates YAML syntax
 - Prevents commits with broken YAML files
 
 #### **check-json**
+
 - Validates JSON syntax
 - Prevents commits with broken JSON files
 
 #### **check-added-large-files**
+
 - Warns about files >5MB
 - Configurable via `--maxkb` argument
 - Prevents accidental commits of large binaries
 
 #### **check-merge-conflict**
+
 - Detects merge conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
 - Prevents accidental commits of unresolved conflicts
 
 #### **detect-private-key**
+
 - Scans for private keys (SSH, PGP, etc.)
 - Prevents accidental credential leaks
+
+---
+
+### Git LFS Hooks (Large File Storage)
+
+The repository includes Git LFS hooks for handling large binary files:
+
+#### **pre-push** (LFS)
+
+- Uploads LFS objects before push operations
+- Handles _.sql, _.dump, _.mp4, _.zip files automatically
+- Prevents pushing without LFS objects
+
+#### **post-checkout** (LFS)
+
+- Downloads LFS objects after branch checkout
+- Ensures large files are available in working directory
+- Only runs for branch checkouts, not individual file checkouts
+
+#### **post-merge** (LFS)
+
+- Downloads LFS objects after merge operations
+- Keeps large files synchronized after merges
+
+#### **post-commit** (LFS)
+
+- Tracks new LFS objects after commits
+- Integrated with existing post-commit PowerShell automation
+
+**Tracked file types:**
+
+- `*.sql` - Database scripts and dumps
+- `*.dump` - Binary database dumps
+- `*.mp4` - Video files
+- `*.zip` - Archive files
+
+See `.gitattributes` for complete LFS configuration.
 
 ---
 
 ### Python Hooks
 
 #### **Black (Code Formatter)**
+
 - Auto-formats Python code to consistent style
 - Line length: 100 characters (configured in `pyproject.toml`)
 - Target version: Python 3.11
 - **Auto-fixes issues**
 
 **Configuration:** `pyproject.toml`
+
 ```toml
 [tool.black]
 line-length = 100
@@ -109,11 +159,13 @@ target-version = ['py311']
 ```
 
 #### **Pylint (Linter)**
+
 - Checks Python code for errors and style issues
 - Configured to show errors only (`--errors-only`)
 - Configuration: `.pylintrc`
 
 **Configuration:** `.pylintrc`
+
 ```ini
 [MASTER]
 ignore=tests
@@ -126,11 +178,13 @@ max-line-length=100
 ```
 
 #### **Bandit (Security Scanner)**
+
 - Scans Python code for security issues
 - Uses configuration from `pyproject.toml`
 - Detects common vulnerabilities (SQL injection, hardcoded passwords, etc.)
 
 **Configuration:** `pyproject.toml`
+
 ```toml
 [tool.bandit]
 exclude_dirs = ["tests", "fixtures"]
@@ -141,12 +195,14 @@ exclude_dirs = ["tests", "fixtures"]
 ### PowerShell Hooks
 
 #### **PSScriptAnalyzer**
+
 - PowerShell linting tool
 - Checks for syntax errors and best practices
 - Configured to show errors only (`-Severity Error`)
 - Requires PowerShell 7+ (`pwsh`)
 
 **Hook definition:**
+
 ```yaml
 - repo: local
   hooks:
@@ -155,7 +211,7 @@ exclude_dirs = ["tests", "fixtures"]
       entry: pwsh -Command "Invoke-ScriptAnalyzer -Path"
       language: system
       files: \.ps1$
-      args: ['-Severity', 'Error']
+      args: ["-Severity", "Error"]
 ```
 
 **Auto-installation:**
@@ -166,15 +222,18 @@ The pre-commit hook will attempt to install PSScriptAnalyzer if missing.
 ### SQL Hooks
 
 #### **SQLFluff (Linter & Formatter)**
+
 - SQL linting and formatting
 - Dialect: PostgreSQL
 - Max line length: 120 characters
 
 **Hooks:**
+
 1. `sqlfluff-lint` - Checks SQL style and syntax
 2. `sqlfluff-fix` - Auto-fixes SQL formatting issues
 
 **Configuration:** `.sqlfluffrc`
+
 ```ini
 [sqlfluff]
 dialect = postgres
@@ -187,10 +246,12 @@ exclude_rules = L003,L010
 ### Commit Message Validation
 
 #### **Commitizen**
+
 - Enforces [Conventional Commits](https://www.conventionalcommits.org/) format
 - Runs on `commit-msg` hook (after you write the message)
 
 **Required format:**
+
 ```
 <type>(<scope>): <description>
 
@@ -200,6 +261,7 @@ exclude_rules = L003,L010
 ```
 
 **Allowed types:**
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
@@ -213,6 +275,7 @@ exclude_rules = L003,L010
 - `revert`: Reverting commits
 
 **Examples:**
+
 ```bash
 ✅ feat(hooks): add pre-commit framework
 ✅ fix: resolve database timeout issue
@@ -225,6 +288,7 @@ exclude_rules = L003,L010
 ```
 
 **Configuration:** `pyproject.toml`
+
 ```toml
 [tool.commitizen]
 name = "cz_conventional_commits"
@@ -239,6 +303,7 @@ tag_format = "v$version"
 These hooks are not managed by pre-commit framework and still use the manual installation:
 
 #### **post-commit** - Post-Commit Automation
+
 - Calls `src/powershell/Invoke-PostCommitHook.ps1`
 - Mirrors committed files to staging directory
 - Deploys PowerShell modules per configuration
@@ -247,6 +312,7 @@ These hooks are not managed by pre-commit framework and still use the manual ins
 **Location:** `hooks/post-commit`
 
 #### **post-merge** - Post-Merge Automation
+
 - Calls `src/powershell/Invoke-PostMergeHook.ps1`
 - Updates staging directory with merged changes
 - Handles dependency updates
@@ -305,6 +371,7 @@ pre-commit run black --files src/python/*.py
 ### How to Bypass
 
 **Skip all hooks:**
+
 ```bash
 git commit --no-verify -m "fix: emergency hotfix"
 # or shorter
@@ -312,6 +379,7 @@ git commit -n -m "fix: emergency hotfix"
 ```
 
 **Skip specific hook:**
+
 ```bash
 # Use SKIP environment variable
 SKIP=pylint git commit -m "fix: temporary bypass"
@@ -323,6 +391,7 @@ SKIP=pylint,black git commit -m "fix: bypass multiple"
 ### Best Practices
 
 1. **Document why you bypassed:**
+
    ```bash
    git commit -n -m "fix: emergency database fix
 
@@ -356,6 +425,7 @@ git commit -m "chore: update pre-commit hooks"
 The repository includes a weekly auto-update workflow:
 
 **Workflow:** `.github/workflows/pre-commit-autoupdate.yml`
+
 - Runs every Sunday at midnight UTC
 - Automatically creates PR with hook updates
 - Can be triggered manually via GitHub Actions
@@ -365,15 +435,19 @@ The repository includes a weekly auto-update workflow:
 ## Configuration Files
 
 ### `.pre-commit-config.yaml`
+
 Main configuration file listing all hooks and their versions.
 
 ### `.pylintrc`
+
 Pylint configuration (Python linting rules).
 
 ### `pyproject.toml`
+
 Configuration for Black, Bandit, and Commitizen.
 
 ### `.sqlfluffrc`
+
 SQLFluff configuration (SQL linting rules).
 
 ---
@@ -391,6 +465,7 @@ Pre-commit hooks run automatically in CI/CD via `.github/workflows/sonarcloud.ym
 ```
 
 **Features:**
+
 - Runs on every push and pull request
 - Shows diffs for failed hooks
 - Continues on error (informational only in Phase 1)
@@ -406,12 +481,14 @@ Pre-commit hooks run automatically in CI/CD via `.github/workflows/sonarcloud.ym
 **Solutions:**
 
 1. Check if hooks are installed:
+
    ```bash
    ls -la .git/hooks/
    # Should show pre-commit and commit-msg
    ```
 
 2. Reinstall hooks:
+
    ```bash
    ./scripts/install-hooks.sh
    # Or manually
@@ -447,6 +524,7 @@ pre-commit --version
 **Problem:** `pwsh: command not found` when PSScriptAnalyzer runs
 
 **Impact:**
+
 - PowerShell linting will be skipped
 
 **Solution:**
@@ -505,6 +583,7 @@ This is normal. The hook only runs on relevant files (e.g., `.py`, `.ps1`, `.sql
 4. Use approved types: `feat`, `fix`, `docs`, etc.
 
 **Examples:**
+
 ```bash
 ✅ git commit -m "feat(hooks): add pre-commit framework"
 ✅ git commit -m "fix: resolve timeout issue"
@@ -541,6 +620,7 @@ This is normal. The hook only runs on relevant files (e.g., `.py`, `.ps1`, `.sql
 **Solution:**
 
 1. **Use Git LFS** for large files:
+
    ```bash
    git lfs install
    git lfs track "*.mp4"
@@ -550,7 +630,7 @@ This is normal. The hook only runs on relevant files (e.g., `.py`, `.ps1`, `.sql
 2. **Or increase the limit** in `.pre-commit-config.yaml`:
    ```yaml
    - id: check-added-large-files
-     args: ['--maxkb=10000']  # 10MB
+     args: ["--maxkb=10000"] # 10MB
    ```
 
 ---
@@ -635,11 +715,13 @@ cat test.txt  # Should have trailing whitespace removed
 ### Disabling Hooks Temporarily
 
 **For a single commit:**
+
 ```bash
 SKIP=hook-id git commit -m "message"
 ```
 
 **For all commits (not recommended):**
+
 ```bash
 # Uninstall hooks
 pre-commit uninstall
@@ -667,6 +749,7 @@ pre-commit install
 ### Q: Why isn't my hook running?
 
 **A:** Common causes:
+
 1. Hooks not installed (run `./scripts/install-hooks.sh`)
 2. Pre-commit not installed (run `pip install pre-commit`)
 3. No files matching the hook's pattern are staged
@@ -677,6 +760,7 @@ pre-commit install
 ### Q: How do I update hook versions?
 
 **A:**
+
 - **Manually:** `pre-commit autoupdate`
 - **Automatically:** The weekly auto-update workflow creates PRs
 
@@ -685,6 +769,7 @@ pre-commit install
 ### Q: Can I use different hooks on different branches?
 
 **A:** No, hooks are repository-wide. However, you can:
+
 - Add branch detection logic within custom hooks
 - Skip hooks on specific branches: `SKIP=hook git commit`
 
@@ -693,6 +778,7 @@ pre-commit install
 ### Q: What happens if a hook fails?
 
 **A:**
+
 - **pre-commit hooks**: Commit is **aborted**. Fix issues and retry.
 - **commit-msg**: Commit is **aborted**. Fix message and retry.
 - **Auto-fix hooks** (Black, trailing-whitespace): Files are modified. Review and re-stage.
@@ -702,6 +788,7 @@ pre-commit install
 ### Q: Do hooks work with GUI Git clients?
 
 **A:** Yes, most GUI clients respect git hooks:
+
 - ✅ GitHub Desktop
 - ✅ SourceTree
 - ✅ GitKraken
@@ -718,7 +805,7 @@ pre-commit install
   rev: 24.1.1
   hooks:
     - id: black
-      exclude: ^legacy/.*\.py$  # Exclude legacy directory
+      exclude: ^legacy/.*\.py$ # Exclude legacy directory
 ```
 
 ---

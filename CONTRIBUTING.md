@@ -16,6 +16,7 @@ Thank you for your interest in this repository. While this is primarily a person
 - [Testing Guidelines](#testing-guidelines)
 - [Documentation Standards](#documentation-standards)
 - [Version Control Practices](#version-control-practices)
+  - [Git LFS Requirements](#git-lfs-requirements)
 
 ---
 
@@ -38,6 +39,7 @@ All scripts in this repository should follow these general principles:
 This repository uses a **standardized, cross-platform logging framework** that provides consistent log formatting across Python, PowerShell, and Batch scripts. All new scripts **MUST** use this framework, and existing scripts **SHOULD** be refactored to use it during maintenance cycles.
 
 **Key Features:**
+
 - Unified log format across all languages
 - Multiple log levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 - Automatic timestamp generation with timezone support
@@ -46,6 +48,7 @@ This repository uses a **standardized, cross-platform logging framework** that p
 - Built-in log purge mechanisms for retention management
 
 **Core Specification:**
+
 - Full specification: [`docs/logging_specification.md`](docs/logging_specification.md)
 - Log format: `[YYYY-MM-DD HH:MM:SS.mmm TIMEZONE] [LEVEL] [SCRIPT_NAME] [HOST] [PROCESS_ID] [MESSAGE] [key1=value1 ...]`
 - Log directory: `<script_root_dir>/logs/`
@@ -90,6 +93,7 @@ plog.initialise_logger(
 ```
 
 **Parameters:**
+
 - `log_file_path`: Use `"auto"` for automatic path resolution, or provide a custom directory
 - `level`: Log level string ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 - `json_format`: Set to `True` for structured JSON logging (default: `False`)
@@ -148,6 +152,7 @@ plog.log_info(
 ```
 
 **Recommended Metadata Keys:**
+
 - `CorrelationId`: Unique identifier for tracking related operations
 - `User`: Username or user identifier
 - `TaskId`: Task or job identifier
@@ -247,6 +252,7 @@ Initialize-Logger `
 ```
 
 **Log Levels (Numeric):**
+
 - `10`: DEBUG
 - `20`: INFO (default)
 - `30`: WARNING
@@ -254,6 +260,7 @@ Initialize-Logger `
 - `50`: CRITICAL
 
 **Parameters:**
+
 - `LogDirectory`: Custom log directory (default: auto-resolved from script location)
 - `ScriptName`: Custom script name (default: auto-detected from caller)
 - `LogLevel`: Minimum log level to record (default: 20/INFO)
@@ -544,14 +551,14 @@ Always use placeholders instead of actual paths in examples to ensure documentat
 
 #### Standard Placeholders
 
-| Placeholder | Description | Windows Example | Linux Example |
-|------------|-------------|-----------------|---------------|
-| `<REPO_PATH>` | Git repository location | `C:\Projects\My-Scripts` | `~/dev/My-Scripts` |
-| `<SCRIPT_ROOT>` | Working/deployment directory | `C:\Users\YourName\Documents\Scripts` | `~/scripts` |
-| `<CONFIG_DIR>` | Configuration directory | `C:\Users\YourName\AppData\Local\MyScripts` | `~/.config/myscripts` |
-| `<LOG_DIR>` | Log file directory | `C:\Logs\MyScripts` | `/var/log/myscripts` |
-| `<BACKUP_DIR>` | Backup storage directory | `D:\Backups` | `~/backups` |
-| `<USERNAME>` | Current user | `YourName` | `yourname` |
+| Placeholder     | Description                  | Windows Example                             | Linux Example         |
+| --------------- | ---------------------------- | ------------------------------------------- | --------------------- |
+| `<REPO_PATH>`   | Git repository location      | `C:\Projects\My-Scripts`                    | `~/dev/My-Scripts`    |
+| `<SCRIPT_ROOT>` | Working/deployment directory | `C:\Users\YourName\Documents\Scripts`       | `~/scripts`           |
+| `<CONFIG_DIR>`  | Configuration directory      | `C:\Users\YourName\AppData\Local\MyScripts` | `~/.config/myscripts` |
+| `<LOG_DIR>`     | Log file directory           | `C:\Logs\MyScripts`                         | `/var/log/myscripts`  |
+| `<BACKUP_DIR>`  | Backup storage directory     | `D:\Backups`                                | `~/backups`           |
+| `<USERNAME>`    | Current user                 | `YourName`                                  | `yourname`            |
 
 See [Documentation Placeholders](docs/conventions/placeholders.md) for complete guide.
 
@@ -580,12 +587,14 @@ cd "C:\Users\manoj\Documents\Scripts"
 Provide both Windows and Linux examples when applicable:
 
 **Windows:**
+
 ```powershell
 cd "<SCRIPT_ROOT>"
 .\script.ps1
 ```
 
 **Linux:**
+
 ```bash
 cd "<SCRIPT_ROOT>"
 ./script.sh
@@ -596,6 +605,7 @@ cd "<SCRIPT_ROOT>"
 All scripts should include a descriptive header:
 
 **Python:**
+
 ```python
 #!/usr/bin/env python3
 """
@@ -607,6 +617,7 @@ Version: 1.0.0
 ```
 
 **PowerShell:**
+
 ```powershell
 <#
 .SYNOPSIS
@@ -650,6 +661,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/) format:
 ```
 
 **Types:**
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
@@ -658,6 +670,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/) format:
 - `chore`: Maintenance tasks
 
 **Examples:**
+
 ```
 feat(python): add Google Drive backup script with logging
 fix(powershell): resolve parameter validation in DeleteOldDownloads
@@ -671,6 +684,24 @@ refactor(common): migrate legacy scripts to use logging framework
 - Keep branches focused on a single concern
 - Merge or rebase from main regularly to avoid conflicts
 
+### Git LFS Requirements
+
+Large binary assets slow down clones and inflate repository size. To keep history lean, Git LFS is configured for database dumps, archives, and media files.
+
+1. Install the LFS hooks (once per machine):
+
+   ```bash
+   git lfs install
+   ```
+
+2. Automatic tracking is configured in [`.gitattributes`](.gitattributes) for `*.sql`, `*.dump`, `*.mp4`, and `*.zip`.
+
+3. When adding new large binaries (or new extensions that should use LFS), ensure they are covered by LFS patterns before committing. Run `git add` again after updating `.gitattributes` so tracked files are rewritten as LFS pointers.
+
+4. After cloning, run `git lfs pull` if you need the actual binary contents for development or testing.
+
+5. Do not commit large binaries outside of LFS. If you accidentally do, rewrite the commit before merging.
+
 ---
 
 ## Security Best Practices
@@ -678,16 +709,19 @@ refactor(common): migrate legacy scripts to use logging framework
 ### Logging Security
 
 1. **Never log sensitive data:**
+
    - Passwords, API keys, tokens
    - Personally Identifiable Information (PII)
    - Financial or health information
    - Full file paths that reveal user directory structures
 
 2. **Log file permissions:**
+
    - Linux/macOS: `chmod 600` (owner read/write only)
    - Windows: Configure NTFS ACLs to restrict access
 
 3. **Sanitize user input:**
+
    ```python
    # Good: Sanitized logging
    plog.log_info(f"User login attempt", metadata={"User": username})

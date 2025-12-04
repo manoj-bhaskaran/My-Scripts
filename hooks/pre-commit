@@ -25,6 +25,19 @@ log_message() {
 log_message "INFO" "Pre-commit hook started"
 echo "Running pre-commit checks..."
 
+# Check if Git LFS is available and validate LFS files
+if command -v git-lfs >/dev/null 2>&1; then
+    log_message "INFO" "Validating Git LFS configuration"
+    # Check if any LFS-tracked files are staged
+    LFS_FILES=$(git diff --cached --name-only | grep -E '\.(sql|dump|mp4|zip)$' || true)
+    if [ -n "$LFS_FILES" ]; then
+        log_message "INFO" "LFS-tracked files detected in commit: $(echo $LFS_FILES | tr '\n' ' ')"
+        echo "LFS-tracked files will be handled by Git LFS"
+    fi
+else
+    log_message "WARNING" "Git LFS not found, skipping LFS checks"
+fi
+
 # Get list of staged files
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
 

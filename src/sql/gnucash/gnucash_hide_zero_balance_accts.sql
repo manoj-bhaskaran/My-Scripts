@@ -1,6 +1,3 @@
--- Update accounts to hide zero balance accounts under 'Cash Investments'
-UPDATE accounts
-SET hidden = 1
-WHERE
-    hidden = 0
-    AND guid IN (SELECT guid FROM v_zero_balance_leaf_accounts);
+version https://git-lfs.github.com/spec/v1
+oid sha256:2098331d1d109c66d7fd60e9fd7df22e905c7df23d14728580a6357e4681f42b
+size 191
