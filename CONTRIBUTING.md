@@ -16,6 +16,7 @@ Thank you for your interest in this repository. While this is primarily a person
 - [Testing Guidelines](#testing-guidelines)
 - [Documentation Standards](#documentation-standards)
 - [Version Control Practices](#version-control-practices)
+  - [Git LFS Requirements](#git-lfs-requirements)
 
 ---
 
@@ -670,6 +671,26 @@ refactor(common): migrate legacy scripts to use logging framework
 - Use descriptive branch names: `feature/description`, `fix/issue-number`, `docs/topic`
 - Keep branches focused on a single concern
 - Merge or rebase from main regularly to avoid conflicts
+
+---
+
+### Git LFS Requirements
+
+Large binary assets slow down clones and inflate repository size. To keep history lean, Git LFS is configured for database dumps, archives, and media files.
+
+1. Install the LFS hooks (once per machine):
+
+   ```bash
+   git lfs install
+   ```
+
+2. Automatic tracking is configured in [`.gitattributes`](.gitattributes) for `*.sql`, `*.dump`, `*.mp4`, and `*.zip`.
+
+3. When adding new large binaries (or new extensions that should use LFS), ensure they are covered by LFS patterns before committing. Run `git add` again after updating `.gitattributes` so tracked files are rewritten as LFS pointers.
+
+4. After cloning, run `git lfs pull` if you need the actual binary contents for development or testing.
+
+5. Do not commit large binaries outside of LFS. If you accidentally do, rewrite the commit before merging.
 
 ---
 
