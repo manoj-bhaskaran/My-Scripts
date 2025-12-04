@@ -6,6 +6,59 @@ Generates random, Windows-compatible filenames for safe file operations using a 
 ## Version
 Current version: **2.1.0**
 
+## Quick Start
+```powershell
+Import-Module RandomName
+$name = Get-RandomFileName
+```
+
+## Common Use Cases
+1. **Temporary export names** – generate safe scratch filenames before writing files to disk.
+   ```powershell
+   $tempReport = Join-Path $env:TEMP "$(Get-RandomFileName).csv"
+   Export-Csv -InputObject $data -Path $tempReport -NoTypeInformation
+   ```
+2. **Conflict-free uploads** – avoid collisions when syncing to shared folders.
+   ```powershell
+   $safeName = "$(Get-RandomFileName -MinimumLength 12).zip"
+   Copy-Item $package "\\share\dropbox\$safeName"
+   ```
+3. **Generating queue identifiers** – use lightweight, Windows-safe IDs for local job queues.
+   ```powershell
+   New-Item -Path "$queueRoot/$(Get-RandomFileName -MaximumLength 10).job" -ItemType File
+   ```
+4. **Naming screenshot batches** – pair with capture scripts to ensure unique run folders.
+   ```powershell
+   $runFolder = Join-Path "C:\captures" (Get-RandomFileName -MaximumLength 16)
+   New-Item -ItemType Directory -Path $runFolder | Out-Null
+   ```
+5. **Placeholder names during migrations** – reserve slots while the final name is determined later.
+   ```powershell
+   $placeholder = Get-RandomFileName -MinimumLength 6 -MaximumLength 8
+   Move-Item $incoming "$destination\$placeholder.tmp"
+   ```
+
+## Parameters
+- `MinimumLength` (int, optional, default `4`): Minimum length of the generated filename; range 1–255; alias `min`.
+- `MaximumLength` (int, optional, default `32`): Maximum length of the generated filename; range 1–255; alias `max`.
+- `MaxAttempts` (int, optional, default `100`): Maximum retries to avoid reserved device names; range 1–100000.
+
+## Error Handling
+```powershell
+try {
+    $name = Get-RandomFileName -MinimumLength 2 -MaximumLength 300
+}
+catch {
+    Write-Warning "Invalid length requested. Falling back to defaults. Details: $_"
+    $name = Get-RandomFileName
+}
+```
+
+## Performance Considerations
+- Generation is in-memory and fast; keep `MaxAttempts` reasonable (default 100) to avoid unnecessary loops.
+- Narrow length ranges reduce the chance of retries and are ideal for constrained storage systems.
+- The generator uses `Get-Random` (non-cryptographic); for secure tokens, combine with a stronger generator before filesystem-safe normalization.
+
 ## Installation
 
 **Module import:**

@@ -2,13 +2,71 @@
 
 This project captures frames from videos via VLC and (optionally) runs a Python cropper to trim borders by dominant color.
 
-## Usage
-
-**Recommended (module)**
+## Quick Start
 ```powershell
 Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
 Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots
 ```
+
+## Common Use Cases
+1. **Batch snapshot extraction** – export a few frames per second from multiple videos using VLC snapshots.
+   ```powershell
+   Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 1 -UseVlcSnapshots
+   ```
+2. **Desktop/GDI capture for screen recordings** – capture playback via GDI when VLC snapshots are unavailable.
+   ```powershell
+   Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -GdiFullscreen -TimeLimitSeconds 10
+   ```
+3. **Crop-only cleanup runs** – rerun the Python cropper without capturing new frames.
+   ```powershell
+   Start-VideoBatch -CropOnly -SaveFolder .\shots -PythonScriptPath .\src\python\crop_colours.py -ReprocessCropped
+   ```
+4. **Extension-filtered processing** – restrict work to specific formats and verify playability.
+   ```powershell
+   Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -IncludeExtensions '.mp4','.mkv' -VerifyVideos
+   ```
+5. **Resumable large runs** – skip previously processed items using the processed log file.
+   ```powershell
+   Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -ProcessedLogPath .\shots\.processed_videos.txt
+   ```
+
+## Parameters
+- `SourceFolder` (string, required for capture): Root folder containing input videos.
+- `SaveFolder` (string, required): Destination folder for captured frames or cropper input.
+- `FramesPerSecond` (int, default module config): Target capture rate (1–60).
+- `UseVlcSnapshots` (switch): Enable VLC scene snapshots; omit to use GDI capture.
+- `GdiFullscreen` (switch): Ask VLC to run fullscreen/top-most during GDI capture.
+- `TimeLimitSeconds` (int, default config): Per-video capture duration; `0` uses module default.
+- `VideoLimit` (int, default `0`): Maximum number of videos to process (0 = all).
+- `IncludeExtensions` (string[]): Extensions to consider (overrides defaults).
+- `VerifyVideos` (switch): Attempt lightweight playability checks before processing.
+- `RunCropper` (switch): Invoke the Python cropper after capture.
+- `CropOnly` (switch): Run the cropper without taking screenshots.
+- `PythonScriptPath` (string): Path to `crop_colours.py` when cropping.
+- `PythonExe` (string): Python interpreter to use for the cropper.
+- `ReprocessCropped` (switch): Force re-crop even if images were processed before.
+- `KeepExistingCrops` (switch): Preserve existing crops when reprocessing.
+- `ProcessedLogPath` (string): Location of the processed/resume log under `SaveFolder` by default.
+
+## Error Handling
+```powershell
+try {
+    Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper
+}
+catch {
+    Write-Error "Video screenshot run failed: $_"
+    # Inspect on-screen VLC/cropper logs for root cause (network paths, missing VLC/Python, etc.)
+}
+```
+
+## Performance Considerations
+- VLC snapshot mode generally outperforms GDI capture; prefer `-UseVlcSnapshots` when VLC is available.
+- Set `FramesPerSecond` conservatively for long runs to reduce I/O and disk usage.
+- Enable `-IncludeExtensions` to skip unsupported formats early and speed up discovery.
+- Processed logs allow resumable runs—point `-ProcessedLogPath` at fast storage to avoid lock contention.
+- Cropper runs can be CPU intensive; use `-VideoLimit`/`-TimeLimitSeconds` to batch work into smaller chunks.
+
+## Usage
 ### GDI capture mode (desktop capture)
 
 If you prefer GDI+ desktop capture instead of VLC’s snapshot filter, omit -UseVlcSnapshots:
