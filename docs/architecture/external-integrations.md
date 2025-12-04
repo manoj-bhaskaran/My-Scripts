@@ -206,6 +206,12 @@ sequenceDiagram
 - `cloudconvert` (official Python SDK)
 - `requests`
 
+**HTTP Timeouts (connect, read in seconds)**:
+- `TIMEOUT_QUICK`: `(5, 15)` for status checks
+- `TIMEOUT_STANDARD`: `(5, 30)` for job creation and API calls
+- `TIMEOUT_UPLOAD`: `(10, 300)` for file uploads
+- `TIMEOUT_DOWNLOAD`: `(10, 300)` for file downloads
+
 ### Scripts Using CloudConvert
 
 | Script | Language | Purpose |
