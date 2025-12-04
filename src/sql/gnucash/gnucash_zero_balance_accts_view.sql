@@ -1,30 +1,3 @@
--- View to identify zero-balance leaf accounts under 'Cash Investments'
--- This view consolidates common logic used by hide/unhide scripts
-CREATE VIEW IF NOT EXISTS v_zero_balance_leaf_accounts AS
-WITH RECURSIVE account_tree AS (
-    -- Recursive CTE to get all accounts under 'Cash Investments'
-    SELECT guid, parent_guid
-    FROM accounts
-    WHERE parent_guid = (
-        SELECT guid
-        FROM accounts
-        WHERE name = 'Cash Investments'
-    )
-    UNION ALL
-    SELECT a.guid, a.parent_guid
-    FROM accounts a
-    JOIN account_tree at ON a.parent_guid = at.guid
-),
-zero_balance_accounts AS (
-    -- CTE to get accounts with zero balance
-    SELECT account_guid, SUM(value_num) AS balance
-    FROM splits
-    GROUP BY account_guid
-    HAVING SUM(value_num) = 0
-)
--- Select leaf accounts with zero balance
-SELECT a.guid
-FROM account_tree a
-LEFT JOIN accounts children ON a.guid = children.parent_guid
-JOIN zero_balance_accounts z ON a.guid = z.account_guid
-WHERE children.guid IS NULL;  -- Ensures it is a leaf account
+version https://git-lfs.github.com/spec/v1
+oid sha256:81d0710d7d6cddf93b89331176224db1e88a75b22416a3ed18a005bfea4be284
+size 1061
