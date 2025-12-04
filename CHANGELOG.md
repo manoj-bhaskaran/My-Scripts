@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replaced `Write-Host` usage in system maintenance scripts with the centralized logging framework and structured run outputs for automation (`Invoke-SystemHealthCheck.ps1`, `Install-SystemHealthCheckTask.ps1`, `Remove-DuplicateFiles.ps1`).
 - Corrected git hook launchers to call the PowerShell hook implementations from their canonical path under `src/powershell/git`.
+- Cached the PowerShell logging module's default log directory at import time to reduce repeated path resolution during logger initialization.
+- Removed the tracked `python_logging_framework.egg-info` build artifacts and expanded `.gitignore` to keep egg-info, log, and tmp files out of version control.
 
 ### Added
 
