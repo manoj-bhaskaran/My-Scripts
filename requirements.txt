@@ -9,7 +9,7 @@ google-auth-oauthlib==1.1.0
 google-auth-httplib2==0.1.1
 google-api-python-client==2.108.0
 oauth2client==4.1.3
-tqdm==4.66.3
+tqdm==4.67.1
 srtm==1.0.0; python_version < "3.11"
 networkx==3.2.1
 openpyxl==3.1.2
