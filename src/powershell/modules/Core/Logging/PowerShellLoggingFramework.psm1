@@ -11,6 +11,7 @@ $Global:LogConfig = @{
 }
 
 $Global:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration")
+$script:DefaultLogDir = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "logs"
 
 function Initialize-Logger {
     <#
@@ -21,13 +22,13 @@ function Initialize-Logger {
     Sets up global logging configuration including the log directory, log level, and script name.
     Ensures the log directory exists and determines the correct log file name based on the script
     and the current date, following the standardised logging specification.
-    The default log directory is automatically resolved relative to the invoking script’s path
-    (not the module’s path), ensuring logs go to <script_root_dir>/logs in compliance with the
-    specification.
+    The default log directory is resolved once when the module loads (../../logs relative to the
+    module path) to avoid repeated path calculations. If a null directory is explicitly passed in,
+    the logger falls back to deriving a logs folder adjacent to the calling script.
 
 .PARAMETER LogDirectory
     The directory where log files should be written. If the directory does not exist, it will be created.
-    If not specified, defaults to <script_root_dir>/logs, inferred from the caller's script path.
+    If not specified, defaults to the module's precomputed logs directory, avoiding repeated path resolution.
 
 .PARAMETER ScriptName
     The name of the script generating the logs. If not provided, the invoking script's name is used.
@@ -61,7 +62,7 @@ function Initialize-Logger {
     When enabled, JSON logging includes keys: timestamp, level, script, host, pid, message, metadata.
 #>
     param (
-        [string]$resolvedLogDir = "$PSScriptRoot/../../logs",
+        [string]$resolvedLogDir = $script:DefaultLogDir,
         [string]$ScriptName = $null,
         [int]$LogLevel = 20
     )
@@ -69,9 +70,17 @@ function Initialize-Logger {
     $Global:LogConfig.LogLevel = $LogLevel
     $Global:LogConfig.ScriptName = if ($ScriptName) { $ScriptName } else { $MyInvocation.ScriptName }
 
-    $callerScriptPath = (Get-PSCallStack)[1].ScriptName
-    $callerScriptRoot = Split-Path -Path $callerScriptPath -Parent
-    $resolvedLogDir = if ($resolvedLogDir) { $resolvedLogDir } else { Join-Path (Split-Path $callerScriptRoot -Parent) "logs" }
+    if (-not $resolvedLogDir) {
+        $callerScriptPath = (Get-PSCallStack)[1].ScriptName
+        if ($callerScriptPath) {
+            $callerScriptRoot = Split-Path -Path $callerScriptPath -Parent
+            $resolvedLogDir = Join-Path (Split-Path $callerScriptRoot -Parent) "logs"
+        }
+        else {
+            $resolvedLogDir = $script:DefaultLogDir
+        }
+    }
+
     $Global:LogConfig.LogDirectory = $resolvedLogDir
 
 
@@ -117,8 +126,6 @@ function Get-TimezoneAbbreviation {
         default { return $tz.StandardName }
     }
 }
-
-$Global:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration")
 
 function Test-MetadataKeys {
     <#

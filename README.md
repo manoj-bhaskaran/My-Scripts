@@ -213,6 +213,7 @@ All PowerShell scripts in this repository use a centralized logging framework (`
 * **Log Levels**: DEBUG (10), INFO (20), WARNING (30), ERROR (40), CRITICAL (50)
 * **Flexible Output**: Plain-text or JSON structured logging
 * **Metadata Support**: Optional metadata tagging for enhanced context
+* **Precomputed Defaults**: The PowerShell module caches its default log directory on import to minimize repeated path resolution during initialization
 
 ### Log Levels
 

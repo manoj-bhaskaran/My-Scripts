@@ -12,6 +12,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
 # Test coverage files
 .coverage
 coverage.xml
@@ -38,3 +39,7 @@ config/tasks/*.xml
 # Ignore all files in config/secrets/ except README.md
 config/secrets/*
 !config/secrets/README.md
+
+# Temporary and log files
+*.log
+*.tmp
