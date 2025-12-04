@@ -6,6 +6,7 @@ import argparse
 import time
 import logging
 from typing import Dict, Any, Tuple
+from requests.exceptions import Timeout, RequestException
 import python_logging_framework as plog
 
 # Initialize logger for this module
@@ -14,6 +15,12 @@ logger = plog.initialise_logger(__name__)
 # Constants for retry logic
 max_retries = 60  # Total 5 minutes if delay is 5 seconds
 retry_delay = 5  # Seconds
+
+# Timeout constants (connect_timeout, read_timeout) in seconds
+TIMEOUT_QUICK: Tuple[int, int] = (5, 15)  # Status checks
+TIMEOUT_STANDARD: Tuple[int, int] = (5, 30)  # API calls
+TIMEOUT_UPLOAD: Tuple[int, int] = (10, 300)  # File uploads (5 minutes)
+TIMEOUT_DOWNLOAD: Tuple[int, int] = (10, 300)  # File downloads
 
 # Constants for task names
 IMPORT_TASK = "import-my-file"
@@ -63,7 +70,18 @@ def create_upload_task(api_key: str) -> Dict[str, Any]:
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     plog.log_debug(logger, "Making API request to create an upload task.")
-    response = requests.post(url, json=payload, headers=headers)
+    try:
+        response = requests.post(
+            url, json=payload, headers=headers, timeout=TIMEOUT_STANDARD
+        )
+    except Timeout as e:
+        plog.log_error(
+            logger, f"Request timed out after {TIMEOUT_STANDARD} seconds: {e}"
+        )
+        raise
+    except RequestException as e:
+        plog.log_error(logger, f"Request failed: {e}")
+        raise
 
     if response.status_code != 201:
         plog.log_error(
@@ -101,7 +119,12 @@ def handle_file_upload(
     with open(file_name, "rb") as file:
         files = {"file": file}
         try:
-            upload_response = requests.post(upload_url, data=local_parameters, files=files)
+            upload_response = requests.post(
+                upload_url,
+                data=local_parameters,
+                files=files,
+                timeout=TIMEOUT_UPLOAD,
+            )
             upload_response.raise_for_status()
         except requests.exceptions.RequestException as e:
             plog.log_error(logger, f"Error during file upload request: {e}")
@@ -173,7 +196,18 @@ def create_conversion_task(api_key: str, output_format: str) -> Dict[str, Any]:
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     plog.log_debug(logger, "Making API request to create a conversion task.")
-    response = requests.post(url, json=payload, headers=headers)
+    try:
+        response = requests.post(
+            url, json=payload, headers=headers, timeout=TIMEOUT_STANDARD
+        )
+    except Timeout as e:
+        plog.log_error(
+            logger, f"Request timed out after {TIMEOUT_STANDARD} seconds: {e}"
+        )
+        raise
+    except RequestException as e:
+        plog.log_error(logger, f"Request failed: {e}")
+        raise
 
     if response.status_code != 201:
         plog.log_error(
@@ -202,7 +236,16 @@ def check_task_status(api_key: str, task_id: str) -> Dict[str, Any]:
     headers = {"Authorization": f"Bearer {api_key}"}
 
     plog.log_debug(logger, f"Checking status of task: {task_id}")
-    response = requests.get(url, headers=headers)
+    try:
+        response = requests.get(url, headers=headers, timeout=TIMEOUT_QUICK)
+    except Timeout as e:
+        plog.log_error(
+            logger, f"Request timed out after {TIMEOUT_QUICK} seconds: {e}"
+        )
+        raise
+    except RequestException as e:
+        plog.log_error(logger, f"Request failed: {e}")
+        raise
 
     if response.status_code != 200:
         plog.log_error(
