@@ -1,0 +1,49 @@
+#!/bin/sh
+# Pre-push hook: Git LFS and validation checks
+# Version: 1.0.0
+# Last Updated: 2025-12-04
+
+# Logging setup
+REPO_ROOT=$(git rev-parse --show-toplevel)
+LOG_DIR="$REPO_ROOT/logs"
+LOG_FILE="$LOG_DIR/git-hooks_$(date +%Y-%m-%d).log"
+HOSTNAME=$(hostname)
+PID=$$
+
+# Create log directory if it doesn't exist
+mkdir -p "$LOG_DIR"
+
+# Log function
+log_message() {
+    local level=$1
+    local message=$2
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timezone=$(date +%Z)
+    echo "[$timestamp $timezone] [$level] [pre-push] [$HOSTNAME] [$PID] $message" >> "$LOG_FILE"
+}
+
+log_message "INFO" "Pre-push hook started"
+
+# Run Git LFS pre-push if available
+if command -v git-lfs >/dev/null 2>&1; then
+    log_message "INFO" "Running Git LFS pre-push hook"
+    echo "Uploading LFS objects..."
+
+    # Git LFS pre-push hook - this handles LFS object uploads
+    git lfs pre-push "$@"
+    LFS_EXIT_CODE=$?
+
+    if [ $LFS_EXIT_CODE -ne 0 ]; then
+        log_message "ERROR" "Git LFS pre-push failed with exit code $LFS_EXIT_CODE"
+        echo "ERROR: Git LFS pre-push failed. Please check your LFS configuration."
+        exit $LFS_EXIT_CODE
+    fi
+
+    log_message "INFO" "Git LFS pre-push completed successfully"
+else
+    log_message "WARNING" "Git LFS not found, skipping LFS pre-push"
+    echo "WARNING: Git LFS not found. Large files may not be handled properly."
+fi
+
+log_message "INFO" "Pre-push hook completed successfully"
+echo "Pre-push checks completed."

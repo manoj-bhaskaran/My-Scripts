@@ -24,6 +24,18 @@ log_message() {
 
 log_message "INFO" "Post-commit hook started"
 
+# Run Git LFS post-commit if available
+if command -v git-lfs >/dev/null 2>&1; then
+    log_message "INFO" "Running Git LFS post-commit hook"
+    git lfs post-commit
+    LFS_EXIT_CODE=$?
+    if [ $LFS_EXIT_CODE -ne 0 ]; then
+        log_message "WARNING" "Git LFS post-commit returned exit code $LFS_EXIT_CODE"
+    fi
+else
+    log_message "WARNING" "Git LFS not found, skipping LFS post-commit"
+fi
+
 # Check if pwsh is available
 if ! command -v pwsh >/dev/null 2>&1; then
     log_message "WARNING" "PowerShell (pwsh) not found. Skipping post-commit script execution."
