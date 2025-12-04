@@ -229,5 +229,6 @@ jobs:
           # Override coverage paths to use new locations
           sonar-scanner \
             -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.token=$SONAR_TOKEN \
             -Dsonar.python.coverage.reportPaths=coverage/python/coverage.xml \
             -Dsonar.coverage.jacoco.xmlReportPaths=coverage/powershell/coverage.xml
