@@ -4,6 +4,92 @@
 
 The ProgressReporter module provides standardized progress reporting utilities for PowerShell scripts. It offers consistent progress bar formatting, logging integration, and a tracker object for managing complex multi-stage operations.
 
+## Quick Start
+```powershell
+Import-Module ProgressReporter
+Show-Progress -Activity "Processing files" -PercentComplete 25 -Status "Validating input"
+```
+
+## Common Use Cases
+1. **Simple loop progress** – show deterministic progress for predictable work units.
+   ```powershell
+   1..100 | ForEach-Object {
+       $percent = ($_ / 100) * 100
+       Show-Progress -Activity "Archiving" -PercentComplete $percent -Status "Item $_ of 100"
+   }
+   ```
+2. **Progress with log correlation** – pair progress updates with console/log entries.
+   ```powershell
+   Write-ProgressLog -Message "Syncing" -Current 10 -Total 50 -Activity "Sync"
+   ```
+3. **High-volume processing with throttled updates** – reduce UI overhead for large batches.
+   ```powershell
+   $tracker = New-ProgressTracker -Total 10000 -Activity "Import" -UpdateFrequency 100
+   foreach ($item in 1..10000) { Update-ProgressTracker -Tracker $tracker }
+   Complete-ProgressTracker -Tracker $tracker -FinalMessage "Import complete"
+   ```
+4. **Nested progress indicators** – show per-folder and per-file progress simultaneously.
+   ```powershell
+   Show-Progress -Activity "Folder" -PercentComplete 10 -Id 0
+   Show-Progress -Activity "File" -PercentComplete 50 -Id 1 -CurrentOperation "file.txt"
+   ```
+5. **Status-only updates** – refresh the current operation without moving the bar.
+   ```powershell
+   Write-ProgressStatus -Activity "Backup" -Status "Waiting for disk quota" -Id 0
+   ```
+
+## Parameters
+- **Show-Progress**
+  - `Activity` (string, required): Description of the work in progress.
+  - `PercentComplete` (int, default `0`): Completion percentage (0–100).
+  - `Status` (string, optional): Additional status text.
+  - `Id` (int, default `0`): Progress bar identifier for nesting.
+  - `CurrentOperation` (string, optional): Text for `Write-Progress -CurrentOperation`.
+  - `Completed` (switch): Hide the bar when finished.
+- **Write-ProgressLog**
+  - `Message` (string, required): Log message and default activity text.
+  - `Current` (int, required): Current item index.
+  - `Total` (int, required): Total item count.
+  - `Activity` (string, optional): Override activity label.
+  - `Id` (int, default `0`): Progress bar identifier.
+- **New-ProgressTracker**
+  - `Total` (int, required): Total units of work.
+  - `Activity` (string, required): Description for the progress bar.
+  - `UpdateFrequency` (int, default `1`): Emit updates every N increments.
+- **Update-ProgressTracker**
+  - `Tracker` (hashtable, required): Tracker from `New-ProgressTracker`.
+  - `Increment` (int, default `1`): Amount to advance.
+  - `Force` (switch): Emit an update even if under `UpdateFrequency` threshold.
+  - `Status` (string, optional): Status message to show.
+- **Complete-ProgressTracker**
+  - `Tracker` (hashtable, required): Tracker from `New-ProgressTracker`.
+  - `FinalMessage` (string, optional): Completion message.
+- **Write-ProgressStatus**
+  - `Activity` (string, required): Activity name.
+  - `Status` (string, required): Status text to display.
+  - `Id` (int, default `0`): Progress bar identifier.
+
+## Error Handling
+```powershell
+try {
+    $tracker = New-ProgressTracker -Total 500 -Activity "Upload" -UpdateFrequency 25
+    foreach ($i in 1..500) {
+        Update-ProgressTracker -Tracker $tracker -Status "Uploading item $i"
+    }
+    Complete-ProgressTracker -Tracker $tracker -FinalMessage "Upload finished"
+}
+catch {
+    Write-Error "Progress reporting failed: $_"
+    Show-Progress -Activity "Upload" -Completed
+}
+```
+
+## Performance Considerations
+- Set `UpdateFrequency` to a higher value for large datasets to minimize `Write-Progress` overhead.
+- Use `-Force` on `Update-ProgressTracker` sparingly to avoid excessive console redraws.
+- Keep `Activity`/`Status` strings concise to reduce rendering time in constrained consoles.
+- Use nested `Id` values thoughtfully; too many concurrent bars can slow down host rendering.
+
 ## Installation
 
 The module is automatically deployed when using the `Deploy-Modules.ps1` script.
