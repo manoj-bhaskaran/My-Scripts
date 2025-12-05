@@ -171,7 +171,8 @@ jobs:
         shell: pwsh
         run: |
           Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
-          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
+          $settingsPath = Join-Path $PWD "config/PSScriptAnalyzerSettings.psd1"
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Settings $settingsPath -Severity Error
           $results | Out-File PSScriptAnalyzerReport.txt
           if ($results) {
             Write-Host "PSScriptAnalyzer found $($results.Count) error(s)"
