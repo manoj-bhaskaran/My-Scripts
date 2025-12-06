@@ -32,6 +32,41 @@ All scripts in this repository should follow these general principles:
 
 ---
 
+## HTTP Request Guidelines
+
+### Always Specify Timeouts
+
+Never make HTTP requests without a timeout parameter:
+
+```python
+# ❌ BAD - Can hang indefinitely
+response = requests.get(url)
+
+# ✅ GOOD - Will timeout after 30 seconds
+response = requests.get(url, timeout=(5, 30))  # (connect, read)
+```
+
+### Recommended Timeout Values
+
+- **Quick API calls**: `(3, 10)` - Status checks, metadata
+- **Standard API calls**: `(5, 30)` - Most operations
+- **File uploads**: `(10, 120)` - Small to medium files
+- **Large operations**: `(10, 600)` - Large file uploads/downloads
+
+### Handle Timeout Exceptions
+
+```python
+from requests.exceptions import Timeout
+
+try:
+    response = requests.get(url, timeout=(5, 30))
+except Timeout:
+    logger.error(f"Request to {url} timed out")
+    # Handle timeout appropriately
+```
+
+---
+
 ## Logging Framework
 
 ### Overview

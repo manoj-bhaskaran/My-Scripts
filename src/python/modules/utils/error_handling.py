@@ -91,7 +91,7 @@ def with_retry(
     Example:
         >>> @with_retry(max_retries=5, retry_delay=1.0)
         ... def fetch_data(url):
-        ...     return requests.get(url).json()
+        ...     return requests.get(url, timeout=(5, 30)).json()
 
         >>> @with_retry(max_retries=3, exceptions=(IOError, OSError))
         ... def write_file(path, content):
@@ -170,7 +170,7 @@ def retry_operation(
         >>> retry_operation(copy_file, "Copy file", max_retries=5)
 
         >>> retry_operation(
-        ...     lambda: requests.get(url).json(),
+        ...     lambda: requests.get(url, timeout=(5, 30)).json(),
         ...     "Fetch data from API",
         ...     max_retries=3
         ... )

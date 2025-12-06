@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **HTTP Timeout Guidelines Documentation** (#004b) - Comprehensive documentation for HTTP request timeout best practices
+  - **Priority**: MEDIUM - Developer education and code quality improvement
+  - **Impact**: Improved code reliability, prevents indefinite hangs, establishes timeout standards
+  - **Files Modified**:
+    - `src/python/modules/utils/error_handling.py` - Fixed example code to include timeout parameters
+      - Line 94: Updated `requests.get(url)` to `requests.get(url, timeout=(5, 30))`
+      - Line 173: Updated lambda example to include timeout parameter
+    - `CONTRIBUTING.md` - Added "HTTP Request Guidelines" section
+      - "Always Specify Timeouts" with good/bad examples
+      - "Recommended Timeout Values" for different operation types
+      - "Handle Timeout Exceptions" with error handling examples
+  - **Files Added**:
+    - `docs/guides/http-requests.md` - Comprehensive HTTP request best practices guide
+      - Timeout configuration and tuple format explanation
+      - Guidelines by operation type (API endpoints, file operations, third-party APIs)
+      - Dynamic timeout calculation for file uploads/downloads
+      - Error handling patterns and examples
+      - Testing timeout behavior with pytest examples
+      - Common patterns section with complete code examples
+      - References to related documentation
+  - **Benefits**:
+    - ✅ Developers understand timeout requirements
+    - ✅ Example code demonstrates correct usage
+    - ✅ Consistent timeout values across codebase
+    - ✅ Prevents indefinite hangs in HTTP requests
+    - ✅ Clear guidelines for different operation types
+    - ✅ Dynamic timeout calculation for large files
+    - ✅ Comprehensive error handling patterns
+  - **Version Impact**: PATCH bump - documentation improvement, no breaking changes
+
 ### Changed
 
 - Replaced `Write-Host` usage in system maintenance scripts with the centralized logging framework and structured run outputs for automation (`Invoke-SystemHealthCheck.ps1`, `Install-SystemHealthCheckTask.ps1`, `Remove-DuplicateFiles.ps1`).
