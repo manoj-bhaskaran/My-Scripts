@@ -105,6 +105,7 @@ CHANGELOG
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\Core\FileSystem\FileSystem.psm1" -Force
 
 # Initialize logger
 Initialize-Logger -ScriptName "Remove-DuplicateFiles" -LogLevel 20
@@ -129,7 +130,7 @@ $script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Pat
 function New-Directory {
     param([Parameter(Mandatory = $true)][string]$DirectoryPath)
     if (-not (Test-Path -LiteralPath $DirectoryPath)) {
-        try { New-Item -ItemType Directory -Path $DirectoryPath -Force | Out-Null } catch { }
+        try { New-DirectoryIfMissing -Path $DirectoryPath -Force | Out-Null } catch { }
     }
     return (Test-Path -LiteralPath $DirectoryPath)
 }
@@ -181,7 +182,7 @@ function Initialize-LogDestination {
         $dir = Split-Path -Parent -Path $Path
         if ([string]::IsNullOrWhiteSpace($dir)) { return }
         if (-not (Test-Path -LiteralPath $dir)) {
-            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            New-DirectoryIfMissing -Path $dir -Force | Out-Null
         }
         if (-not (Test-Path -LiteralPath $Path)) {
             New-Item -ItemType File -Path $Path -Force | Out-Null

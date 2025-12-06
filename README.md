@@ -183,6 +183,7 @@ pip install -e .
 - **[PostgresBackup](src/powershell/modules/Database/PostgresBackup/)** (v2.0.0) – PostgreSQL database backup with retention management
 - **[PowerShellLoggingFramework](src/powershell/modules/Core/Logging/PowerShellLoggingFramework/)** (v2.0.0) – Cross-platform structured logging
 - **[PurgeLogs](src/powershell/modules/Core/Logging/PurgeLogs/)** (v2.0.0) – Log file purging and retention management
+- **[FileSystem](src/powershell/modules/Core/FileSystem/)** (v1.0.0) – Common file system operations (directory creation, file accessibility checks, path validation, file locking detection)
 
 **Python Modules:**
 - **[python_logging_framework](src/python/modules/logging/)** (v0.1.0) – Cross-platform structured logging for Python

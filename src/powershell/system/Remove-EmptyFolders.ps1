@@ -102,6 +102,7 @@ param (
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\Core\FileSystem\FileSystem.psm1" -Force
 
 # Initialize logger
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
@@ -114,7 +115,7 @@ function New-Directory {
     param([Parameter(Mandatory = $true)][string]$DirectoryPath)
     if ([string]::IsNullOrWhiteSpace($DirectoryPath)) { return $false }
     if (-not (Test-Path -LiteralPath $DirectoryPath)) {
-        try { New-Item -ItemType Directory -Path $DirectoryPath -Force | Out-Null } catch { return $false }
+        try { New-DirectoryIfMissing -Path $DirectoryPath -Force | Out-Null } catch { return $false }
     }
     return (Test-Path -LiteralPath $DirectoryPath)
 }
