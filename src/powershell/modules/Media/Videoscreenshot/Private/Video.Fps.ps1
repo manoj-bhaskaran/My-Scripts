@@ -83,7 +83,9 @@ function Get-VideoFps {
         # Numeric form with locale decimal separators; normalize comma → dot.
         # Examples: "29.97", "29,97" (optionally after stripping " fps")
         $normalized = $raw -replace ',', '.'
-        try { return [double]::Parse($normalized, [Globalization.CultureInfo]::InvariantCulture) } catch { }
+        try { return [double]::Parse($normalized, [Globalization.CultureInfo]::InvariantCulture) } catch {
+            # Failed to parse FPS value, will return null
+        }
         return $null
     }
 

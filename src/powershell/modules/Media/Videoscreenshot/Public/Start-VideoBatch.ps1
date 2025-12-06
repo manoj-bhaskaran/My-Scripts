@@ -211,7 +211,9 @@ function Start-VideoBatch {
         $processedSet = $tmpSet
     }
     if (-not [string]::IsNullOrWhiteSpace($ResumeFile)) {
-        try { [void]$processedSet.Add((Resolve-VideoPath -Path $ResumeFile)) } catch {}
+        try { [void]$processedSet.Add((Resolve-VideoPath -Path $ResumeFile)) } catch {
+            # Failed to add resume file to processed set (possibly path resolution issue)
+        }
     }
     Write-Debug ("Resume/processed set: Type={0}; Count={1}; Log={2}" -f $processedSet.GetType().FullName, $processedSet.Count, $processedLog)
     if ($processedSet.Count -gt 0) {

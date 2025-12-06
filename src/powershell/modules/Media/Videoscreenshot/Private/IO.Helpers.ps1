@@ -50,7 +50,9 @@ function Add-ContentWithRetry {
         }
         finally {
             if ($null -ne $fs) {
-                try { $fs.Dispose() } catch { }
+                try { $fs.Dispose() } catch {
+                    # Stream may already be disposed
+                }
             }
         }
     }
@@ -95,7 +97,9 @@ function Test-FolderWritable {
             $fs.Write($bytes, 0, $bytes.Length)
         }
         finally {
-            if ($fs) { try { $fs.Dispose() } catch { } }
+            if ($fs) { try { $fs.Dispose() } catch {
+                # Stream may already be disposed
+            } }
             Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
         }
         return $true

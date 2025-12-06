@@ -95,7 +95,9 @@ function Invoke-GdiCapture {
     if ($null -eq $screen) { $screen = $allScreens[0] }
     $bounds = $screen.Bounds  # includes X/Y offsets for multi-monitor layouts
     $deviceName = '<unknown>'
-    try { $deviceName = $screen.DeviceName } catch {}
+    try { $deviceName = $screen.DeviceName } catch {
+        # DeviceName property may not be available in all environments
+    }
     Write-Debug ("GDI: capturing screen {0} {1}x{2} at ({3},{4})" -f $deviceName, $bounds.Width, $bounds.Height, $bounds.X, $bounds.Y)
     $width = [int]$bounds.Width
     $height = [int]$bounds.Height
@@ -118,8 +120,12 @@ function Invoke-GdiCapture {
         $g.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $bitmap.Size, [System.Drawing.CopyPixelOperation]::SourceCopy)
     }
     catch {
-        if ($g) { try { $g.Dispose() } catch {} }
-        if ($bitmap) { try { $bitmap.Dispose() } catch {} }
+        if ($g) { try { $g.Dispose() } catch {
+            # Graphics object may already be disposed
+        } }
+        if ($bitmap) { try { $bitmap.Dispose() } catch {
+            # Bitmap may already be disposed
+        } }
         throw "Failed to initialize GDI capture surface: $($_.Exception.Message)"
     }
 
@@ -154,8 +160,12 @@ function Invoke-GdiCapture {
         }
     }
     finally {
-        if ($g) { try { $g.Dispose() } catch {} }
-        if ($bitmap) { try { $bitmap.Dispose() } catch {} }
+        if ($g) { try { $g.Dispose() } catch {
+            # Graphics object may already be disposed
+        } }
+        if ($bitmap) { try { $bitmap.Dispose() } catch {
+            # Bitmap may already be disposed
+        } }
         $stopwatch.Stop()
     }
 
