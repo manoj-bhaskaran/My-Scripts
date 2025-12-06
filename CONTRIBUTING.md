@@ -733,6 +733,7 @@ Large binary assets slow down clones and inflate repository size. To keep histor
 ### Script Security
 
 - Validate and sanitize all user inputs
+- Avoid `Invoke-Expression`; prefer the call operator (`&`) or `Start-Process` with explicit arguments
 - Use parameterized queries for database operations
 - Avoid executing external commands with unsanitized input
 - Keep dependencies up-to-date
