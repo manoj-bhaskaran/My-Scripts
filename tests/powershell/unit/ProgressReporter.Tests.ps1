@@ -3,7 +3,7 @@
     Comprehensive unit tests for ProgressReporter module
 
 .DESCRIPTION
-    Pester tests for the ProgressReporter PowerShell module with 40%+ code coverage
+    Pester tests for the ProgressReporter PowerShell module with 50%+ code coverage
     Tests include progress tracking, update frequency, edge cases, and integration tests
 #>
 
