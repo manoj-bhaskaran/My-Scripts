@@ -4,7 +4,8 @@
 # local-deployment-config.json files with a modern TOML-based approach.
 #
 # Version: 1.0.0
-# Created: 2025-12-06
+# Created: 2025-12-07
+# Migrated from: deployment.txt
 
 [deployment]
 # Auto-detect PowerShell module path or use custom
@@ -33,59 +34,29 @@ default-target = "System"
 # All modules are deployed in dependency order.
 
 [[modules]]
-name = "PowerShellLoggingFramework"
-source = "src/powershell/modules/Core/Logging/PowerShellLoggingFramework"
-auto-deploy = true
-test-on-deploy = true
-description = "Cross-platform structured logging framework with multiple log levels and JSON output"
-author = "Manoj Bhaskaran"
-dependencies = []
-
-[[modules]]
-name = "ErrorHandling"
-source = "src/powershell/modules/Core/ErrorHandling"
-auto-deploy = true
-test-on-deploy = true
-description = "Standardized error handling and retry logic with exponential backoff"
-author = "Manoj Bhaskaran"
-dependencies = []
-
-[[modules]]
-name = "FileOperations"
-source = "src/powershell/modules/Core/FileOperations"
-auto-deploy = true
-test-on-deploy = true
-description = "File operations with built-in retry logic and resilience"
-author = "Manoj Bhaskaran"
-dependencies = []
-
-[[modules]]
-name = "ProgressReporter"
-source = "src/powershell/modules/Core/Progress"
-auto-deploy = true
-test-on-deploy = true
-description = "Standardized progress reporting with logging integration"
-author = "Manoj Bhaskaran"
-dependencies = ["PowerShellLoggingFramework"]
-
-[[modules]]
-name = "PurgeLogs"
-source = "src/powershell/modules/Core/Logging/PurgeLogs"
-auto-deploy = true
-test-on-deploy = true
-description = "Log file purging and retention management with multiple strategies"
-author = "Manoj Bhaskaran"
-dependencies = ["PowerShellLoggingFramework"]
-
-[[modules]]
 name = "PostgresBackup"
-source = "src/powershell/modules/Database/PostgresBackup"
+source = "src\powershell\modules\Database\PostgresBackup"
 auto-deploy = true
 test-on-deploy = true
 description = "PostgreSQL database backup module with retention management and service control"
 author = "Manoj Bhaskaran"
 dependencies = ["PowerShellLoggingFramework"]
-
+[[modules]]
+name = "PowerShellLoggingFramework"
+source = "src\powershell\modules\Core\Logging"
+auto-deploy = true
+test-on-deploy = true
+description = "Cross-platform structured logging framework with multiple log levels and JSON output"
+author = "Manoj Bhaskaran"
+dependencies = []
+[[modules]]
+name = "PurgeLogs"
+source = "src\powershell\modules\Core\Logging"
+auto-deploy = true
+test-on-deploy = true
+description = "Log file purging and retention management with multiple strategies"
+author = "Manoj Bhaskaran"
+dependencies = ["PowerShellLoggingFramework"]
 [[modules]]
 name = "RandomName"
 source = "src/powershell/modules/Utilities/RandomName"
@@ -94,7 +65,6 @@ test-on-deploy = true
 description = "Generates Windows-safe random file names using a conservative allow-list"
 author = "Manoj Bhaskaran"
 dependencies = []
-
 [[modules]]
 name = "Videoscreenshot"
 source = "src/powershell/modules/Media/Videoscreenshot"
@@ -103,3 +73,27 @@ test-on-deploy = true
 description = "Video frame capture via VLC or GDI+ with optional Python cropper integration"
 author = "Manoj Bhaskaran"
 dependencies = []
+[[modules]]
+name = "ErrorHandling"
+source = "src/powershell/modules/Core/ErrorHandling"
+auto-deploy = true
+test-on-deploy = true
+description = "Standardized error handling and retry logic with exponential backoff"
+author = "Manoj Bhaskaran"
+dependencies = []
+[[modules]]
+name = "FileOperations"
+source = "src/powershell/modules/Core/FileOperations"
+auto-deploy = true
+test-on-deploy = true
+description = "File operations with built-in retry logic and resilience"
+author = "Manoj Bhaskaran"
+dependencies = []
+[[modules]]
+name = "ProgressReporter"
+source = "src/powershell/modules/Core/Progress"
+auto-deploy = true
+test-on-deploy = true
+description = "Standardized progress reporting with logging integration"
+author = "Manoj Bhaskaran"
+dependencies = ["PowerShellLoggingFramework"]
