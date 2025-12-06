@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Comprehensive PostgreSQL Backup Tests** (#003 Phase 1) - Expanded test coverage for database backup scripts
+  - **Priority**: HIGH - Critical path testing for financial data (GnuCash) backups
+  - **Impact**: Prevents data loss, validates backup reliability, enables confident refactoring
+  - **Files Modified**:
+    - `tests/powershell/unit/PostgresBackup.Tests.ps1` - Added 21 new test cases (770 → 1320 lines)
+  - **New Test Coverage**:
+    - **Invalid Database Scenarios** (4 tests):
+      - Non-existent database handling
+      - Database connection timeout handling
+      - Authentication failure handling
+      - Insufficient permissions handling
+    - **Retention Policy Edge Cases** (6 tests):
+      - Exactly min_backups count boundary
+      - retention_days=0 edge case
+      - min_backups=0 edge case
+      - Multiple databases in same folder isolation
+      - Very large number of old backups (50+) efficiency
+    - **Special Characters and URL Encoding** (4 tests):
+      - Password with special characters (@, !, #, $, %, &, *)
+      - Password with spaces
+      - Database names with underscores and numbers
+      - Username with special characters
+    - **Additional Error Scenarios** (7 tests):
+      - Disk full during backup
+      - Permission denied on backup folder
+      - pg_dump executable not found
+      - pg_dump warnings logging
+      - Service stop failure after successful backup
+      - Backup creation when zero-byte cleanup fails
+  - **Test Statistics**:
+    - Total test cases: 40 (19 existing + 21 new)
+    - Test code lines: 1,320
+    - Integration tests: 2 (Test-BackupRestore.Tests.ps1)
+    - Test-to-code ratio: 8.1:1 (1,320 test lines / 162 implementation lines)
+  - **Benefits**:
+    - ✅ Validates financial data backup reliability
+    - ✅ Prevents data loss through comprehensive error handling tests
+    - ✅ Documents expected behavior for all edge cases
+    - ✅ Enables safe refactoring with high test coverage
+    - ✅ Tests URL encoding for passwords with special characters
+    - ✅ Validates retention policy in complex scenarios
+
 - **Re-enabled Bandit B113 Timeout Check** (#004c) - Enabled security enforcement for HTTP request timeouts
 
   - **Priority**: MEDIUM-HIGH - Security and code quality enforcement

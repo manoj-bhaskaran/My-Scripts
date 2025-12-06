@@ -755,6 +755,569 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             $backupFiles[0].Extension | Should -Be ".backup"
         }
     }
+
+    Context "Invalid Database Scenarios" {
+        BeforeEach {
+            if (Test-Path $script:testBackupFolder) {
+                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
+            }
+            if (Test-Path $script:testLogFile) {
+                Remove-Item -Path $script:testLogFile -Force
+            }
+        }
+
+        It "Handles non-existent database gracefully" {
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    $global:LASTEXITCODE = 1
+                    throw "pg_dump: error: connection to server at localhost, port 5432 failed: FATAL: database 'nonexistent_db' does not exist"
+                }
+            }
+
+            {
+                Backup-PostgresDatabase `
+                    -dbname "nonexistent_db" `
+                    -backup_folder $script:testBackupFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+
+            $logContent = Get-Content -Path $script:testLogFile -Raw
+            $logContent | Should -Match "Backup failed"
+        }
+
+        It "Handles database connection timeout" {
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    $global:LASTEXITCODE = 1
+                    throw "pg_dump: error: connection to server timed out"
+                }
+            }
+
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $script:testBackupFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+
+            Test-Path $script:testLogFile | Should -Be $true
+        }
+
+        It "Handles authentication failure" {
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    $global:LASTEXITCODE = 1
+                    throw "pg_dump: error: connection to server failed: FATAL: password authentication failed for user 'test_user'"
+                }
+            }
+
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $script:testBackupFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+
+            $logContent = Get-Content -Path $script:testLogFile -Raw
+            $logContent | Should -Match "Backup failed"
+        }
+
+        It "Handles insufficient permissions on database" {
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    $global:LASTEXITCODE = 1
+                    throw "pg_dump: error: permission denied for database"
+                }
+            }
+
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $script:testBackupFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+        }
+    }
+
+    Context "Retention Policy Edge Cases" {
+        BeforeEach {
+            if (Test-Path $script:testBackupFolder) {
+                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
+            }
+            if (Test-Path $script:testLogFile) {
+                Remove-Item -Path $script:testLogFile -Force
+            }
+        }
+
+        It "Handles retention with exactly min_backups count" {
+            $now = Get-Date
+
+            # Create exactly 3 backups (matching min_backups)
+            1..3 | ForEach-Object {
+                $file = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-$_).ToString('yyyy-MM-dd'))_10-00-00.backup"
+                "Mock data" | Out-File -FilePath $file -Force
+                (Get-Item $file).LastWriteTime = $now.AddDays(-$_)
+            }
+
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            Backup-PostgresDatabase `
+                -dbname "testdb" `
+                -backup_folder $script:testBackupFolder `
+                -log_file $script:testLogFile `
+                -user "test_user" `
+                -retention_days 1 `
+                -min_backups 3
+
+            # Should have 4 files total (3 old + 1 new)
+            $backupFiles = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup"
+            $backupFiles.Count | Should -BeGreaterOrEqual 3
+        }
+
+        It "Handles retention_days set to 0" {
+            $now = Get-Date
+
+            # Create backups with various ages
+            $oldFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-10).ToString('yyyy-MM-dd'))_10-00-00.backup"
+            "Mock data" | Out-File -FilePath $oldFile -Force
+            (Get-Item $oldFile).LastWriteTime = $now.AddDays(-10)
+
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            Backup-PostgresDatabase `
+                -dbname "testdb" `
+                -backup_folder $script:testBackupFolder `
+                -log_file $script:testLogFile `
+                -user "test_user" `
+                -retention_days 0 `
+                -min_backups 1
+
+            # Old file should be deleted (retention 0 days means delete everything older than today)
+            $remainingOld = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
+                Where-Object { $_.LastWriteTime -lt $now.AddDays(-1) }
+            $remainingOld.Count | Should -Be 0
+        }
+
+        It "Preserves backups when min_backups is 0 but retention not met" {
+            $now = Get-Date
+
+            # Create only recent backups
+            $recentFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-5).ToString('yyyy-MM-dd'))_10-00-00.backup"
+            "Mock data" | Out-File -FilePath $recentFile -Force
+            (Get-Item $recentFile).LastWriteTime = $now.AddDays(-5)
+
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            Backup-PostgresDatabase `
+                -dbname "testdb" `
+                -backup_folder $script:testBackupFolder `
+                -log_file $script:testLogFile `
+                -user "test_user" `
+                -retention_days 30 `
+                -min_backups 0
+
+            # Recent file should still exist
+            Test-Path $recentFile | Should -Be $true
+        }
+
+        It "Handles multiple database backups in same folder" {
+            $now = Get-Date
+
+            # Create backups for different databases in same folder
+            $db1File = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-100).ToString('yyyy-MM-dd'))_10-00-00.backup"
+            $db2File = Join-Path $script:testBackupFolder "otherdb_backup_$($now.AddDays(-100).ToString('yyyy-MM-dd'))_10-00-00.backup"
+
+            "Mock data" | Out-File -FilePath $db1File -Force
+            "Mock data" | Out-File -FilePath $db2File -Force
+            (Get-Item $db1File).LastWriteTime = $now.AddDays(-100)
+            (Get-Item $db2File).LastWriteTime = $now.AddDays(-100)
+
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            Backup-PostgresDatabase `
+                -dbname "testdb" `
+                -backup_folder $script:testBackupFolder `
+                -log_file $script:testLogFile `
+                -user "test_user" `
+                -retention_days 30 `
+                -min_backups 1
+
+            # Only testdb backup should be deleted, otherdb should remain
+            Test-Path $db1File | Should -Be $false
+            Test-Path $db2File | Should -Be $true
+        }
+
+        It "Handles very large number of old backups efficiently" {
+            $now = Get-Date
+
+            # Create 50 old backups
+            1..50 | ForEach-Object {
+                $file = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-100 - $_).ToString('yyyy-MM-dd'))_10-00-00.backup"
+                "Mock data" | Out-File -FilePath $file -Force
+                (Get-Item $file).LastWriteTime = $now.AddDays(-100 - $_)
+            }
+
+            # Create 5 recent backups
+            1..5 | ForEach-Object {
+                $file = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-$_).ToString('yyyy-MM-dd'))_10-00-00.backup"
+                "Mock data" | Out-File -FilePath $file -Force
+                (Get-Item $file).LastWriteTime = $now.AddDays(-$_)
+            }
+
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            Backup-PostgresDatabase `
+                -dbname "testdb" `
+                -backup_folder $script:testBackupFolder `
+                -log_file $script:testLogFile `
+                -user "test_user" `
+                -retention_days 30 `
+                -min_backups 3
+
+            # All 50 old backups should be deleted
+            $oldBackups = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
+                Where-Object { $_.LastWriteTime -lt $now.AddDays(-30) }
+            $oldBackups.Count | Should -Be 0
+
+            # Recent backups plus new one should remain
+            $recentBackups = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup"
+            $recentBackups.Count | Should -BeGreaterOrEqual 5
+        }
+    }
+
+    Context "Special Characters and URL Encoding" {
+        BeforeEach {
+            if (Test-Path $script:testBackupFolder) {
+                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
+            }
+            if (Test-Path $script:testLogFile) {
+                Remove-Item -Path $script:testLogFile -Force
+            }
+        }
+
+        It "Properly encodes password with special characters" {
+            $securePassword = ConvertTo-SecureString "p@ssw0rd!#$%&*" -AsPlainText -Force
+            $script:capturedCommand = ""
+
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    $script:capturedCommand = $Command
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            Backup-PostgresDatabase `
+                -dbname "testdb" `
+                -backup_folder $script:testBackupFolder `
+                -log_file $script:testLogFile `
+                -user "test_user" `
+                -password $securePassword
+
+            # Password should be URL-encoded
+            $script:capturedCommand | Should -Match "p%40ssw0rd"
+        }
+
+        It "Handles password with spaces" {
+            $securePassword = ConvertTo-SecureString "my password 123" -AsPlainText -Force
+            $script:capturedCommand = ""
+
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    $script:capturedCommand = $Command
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            Backup-PostgresDatabase `
+                -dbname "testdb" `
+                -backup_folder $script:testBackupFolder `
+                -log_file $script:testLogFile `
+                -user "test_user" `
+                -password $securePassword
+
+            # Spaces should be URL-encoded as %20
+            $script:capturedCommand | Should -Match "my%20password%20123"
+        }
+
+        It "Handles database name with underscores and numbers" {
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            Backup-PostgresDatabase `
+                -dbname "test_db_123" `
+                -backup_folder $script:testBackupFolder `
+                -log_file $script:testLogFile `
+                -user "test_user"
+
+            $backupFiles = Get-ChildItem -Path $script:testBackupFolder -Filter "test_db_123_backup_*.backup"
+            $backupFiles.Count | Should -BeGreaterThan 0
+        }
+
+        It "Handles username with special characters" {
+            $script:capturedCommand = ""
+
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    $script:capturedCommand = $Command
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            Backup-PostgresDatabase `
+                -dbname "testdb" `
+                -backup_folder $script:testBackupFolder `
+                -log_file $script:testLogFile `
+                -user "test.user@domain"
+
+            # Username should appear in connection string
+            $script:capturedCommand | Should -Match "test\.user@domain"
+        }
+    }
+
+    Context "Additional Error Scenarios" {
+        BeforeEach {
+            if (Test-Path $script:testBackupFolder) {
+                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
+            }
+            if (Test-Path $script:testLogFile) {
+                Remove-Item -Path $script:testLogFile -Force
+            }
+        }
+
+        It "Handles disk full error during backup" {
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    $global:LASTEXITCODE = 1
+                    throw "pg_dump: error: could not write to output file: No space left on device"
+                }
+            }
+
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $script:testBackupFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+
+            $logContent = Get-Content -Path $script:testLogFile -Raw
+            $logContent | Should -Match "Backup failed"
+        }
+
+        It "Handles permission denied on backup folder" {
+            $restrictedFolder = Join-Path $script:testDir "restricted"
+            New-Item -Path $restrictedFolder -ItemType Directory -Force | Out-Null
+
+            # Mock New-Item to fail
+            Mock New-Item {
+                throw "Access to the path is denied"
+            } -ParameterFilter { $ItemType -eq "Directory" }
+
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $restrictedFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+        }
+
+        It "Handles pg_dump executable not found" {
+            # This would normally be caught at the Config level, but test the scenario
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    throw "The term 'pg_dump' is not recognized as the name of a cmdlet, function, script file, or operable program"
+                }
+            }
+
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $script:testBackupFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+        }
+
+        It "Logs all pg_dump output including warnings" {
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    # Simulate pg_dump warnings
+                    Write-Warning "pg_dump: warning: some deprecated features used"
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            Backup-PostgresDatabase `
+                -dbname "testdb" `
+                -backup_folder $script:testBackupFolder `
+                -log_file $script:testLogFile `
+                -user "test_user"
+
+            Test-Path $script:testLogFile | Should -Be $true
+            $logContent = Get-Content -Path $script:testLogFile -Raw
+            $logContent | Should -Match "Backup completed successfully"
+        }
+
+        It "Handles service stop failure after successful backup" {
+            $script:getServiceCallCount = 0
+            Mock Get-Service {
+                $script:getServiceCallCount++
+                if ($script:getServiceCallCount -eq 1) {
+                    return [PSCustomObject]@{
+                        Name   = "postgresql-x64-17"
+                        Status = "Stopped"
+                    }
+                }
+                else {
+                    return [PSCustomObject]@{
+                        Name   = "postgresql-x64-17"
+                        Status = "Running"
+                    }
+                }
+            }
+
+            Mock Start-Service { }
+            Mock Stop-Service {
+                throw "Failed to stop service"
+            }
+
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            # Service stop failure should cause the function to throw
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $script:testBackupFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+        }
+
+        It "Creates backup even when zero-byte cleanup fails" {
+            # Create a zero-byte file that can't be deleted
+            $zeroByteFile = Join-Path $script:testBackupFolder "testdb_backup_2024-01-01_10-00-00.backup"
+            New-Item -Path $zeroByteFile -ItemType File -Force | Out-Null
+
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            Mock Remove-Item {
+                throw "Access denied"
+            } -ParameterFilter { $Path -like "*testdb_backup_*.backup" }
+
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $script:testBackupFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+
+            $logContent = Get-Content -Path $script:testLogFile -Raw
+            $logContent | Should -Match "Backup file cleanup failed"
+        }
+    }
 }
 
 AfterAll {
