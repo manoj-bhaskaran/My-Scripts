@@ -246,7 +246,6 @@ delay = min(retry_delay * 2^(attempt-1), max_backoff)
 ```
 
 Example with `retry_delay=2.0` and `max_backoff=60.0`:
-
 - Attempt 1: 2.0 seconds
 - Attempt 2: 4.0 seconds
 - Attempt 3: 8.0 seconds
@@ -270,7 +269,6 @@ logging.basicConfig(
 ## Version History
 
 ### 1.0.0 (2025-11-20)
-
 - Initial release
 - `error_handling` module with decorators and retry logic
 - `file_operations` module with file operation utilities
