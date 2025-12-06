@@ -7,7 +7,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Code Formatting](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml/badge.svg)](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml)
 
-**Version:** 2.6.0 | **Last Updated:** 2025-12-06
+**Version:** 2.7.0 | **Last Updated:** 2025-12-06
 
 ---
 
@@ -756,6 +756,12 @@ For detailed code style guidelines, configuration, and troubleshooting:
   - Secrets management (database passwords)
   - Platform-specific setup
   - Troubleshooting guide
+- **[Environment Variables Reference](docs/ENVIRONMENT.md)** - Complete environment variable documentation
+  - All variables with descriptions and formats
+  - How to obtain API keys and credentials
+  - Security best practices
+  - Troubleshooting guide
+  - Quick reference tables
 
 **Module Deployment Configuration (TOML-based):**
 
