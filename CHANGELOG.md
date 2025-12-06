@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Type Hints for Logging Framework Module** (#005b Phase 2 of #005)
+  - Added comprehensive type hints to `src/python/modules/logging/python_logging_framework.py`
+  - All public functions and classes now have complete type annotations
+  - All internal functions have proper type hints
+  - Docstrings updated to match type signatures
+  - **Type Annotations Added**:
+    - `SpecFormatter` class with `format() -> str` return type
+    - `JSONFormatter` class with `format() -> str` return type
+    - `initialise_logger()` with `Logger` return type and all parameter types including `Union[str, Path]` for `log_dir`
+    - `validate_metadata_keys()` with `Dict[str, Any]` parameter and `None` return type
+    - `log_debug()`, `log_info()`, `log_warning()`, `log_error()`, `log_critical()` with proper signatures
+  - **Benefits**:
+    - ✅ Passes mypy --strict validation
+    - ✅ Clear API documentation through type signatures
+    - ✅ Better IDE support with autocomplete and inline documentation
+    - ✅ Type errors caught at development time instead of runtime
+    - ✅ Self-documenting code that's easier to maintain
+  - **Technical Notes**:
+    - Used `# type: ignore` comments to handle local logging package shadowing stdlib
+    - Added `from __future__ import annotations` for forward reference support
+    - Maintained backward compatibility with all existing code
+
 - **Type Hints Infrastructure Setup** (#594 Phase 1 of #005)
   - Installed mypy 1.7.1 for static type checking
   - Added type stub packages: types-requests 2.31.0, types-tqdm 4.66.0
