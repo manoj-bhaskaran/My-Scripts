@@ -16,13 +16,16 @@ Key Features:
 
 """
 
-import logging
+from __future__ import annotations
+
+import logging  # Standard library logging
+from logging import Logger, LogRecord, Formatter, FileHandler, StreamHandler, INFO  # type: ignore[attr-defined]
 import os
 import socket
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Any, Union
 from zoneinfo import ZoneInfo
 import json
 
@@ -31,12 +34,12 @@ IST = ZoneInfo("Asia/Kolkata")
 RECOMMENDED_METADATA_KEYS = {"CorrelationId", "User", "TaskId", "FileName", "Duration"}
 
 
-class SpecFormatter(logging.Formatter):
+class SpecFormatter(Formatter):  # type: ignore[misc]
     """
     Custom formatter for plain-text log messages according to the logging specification.
     """
 
-    def format(self, record):
+    def format(self, record: LogRecord) -> str:
         """
         Format the log record as a plain-text string with timestamp, level, script, host, PID, message, and metadata.
         """
@@ -57,12 +60,12 @@ class SpecFormatter(logging.Formatter):
         )
 
 
-class JSONFormatter(logging.Formatter):
+class JSONFormatter(Formatter):  # type: ignore[misc]
     """
     Custom formatter that outputs structured log records in JSON format.
     """
 
-    def format(self, record):
+    def format(self, record: LogRecord) -> str:
         """
         Format the log record as a JSON object with timestamp, level, script, host, PID, message, and metadata.
         """
@@ -84,23 +87,23 @@ class JSONFormatter(logging.Formatter):
 
 def initialise_logger(
     script_name: Optional[str] = None,
-    log_dir: Optional[str] = None,
-    log_level: int = logging.INFO,
+    log_dir: Optional[Union[str, Path]] = None,
+    log_level: int = INFO,
     json_format: bool = False,
     propagate: bool = False,
-) -> logging.Logger:
+) -> Logger:
     """
     Initialise and configure a logger instance.
 
     Args:
         script_name (Optional[str]): Name of the script using the logger.
-        log_dir (Optional[str]): Directory to store log files. Defaults to <root>/logs.
+        log_dir (Optional[Union[str, Path]]): Directory to store log files. Defaults to <root>/logs.
         log_level (int): Logging level (e.g., logging.INFO).
         json_format (bool): If True, use JSONFormatter; otherwise use plain text.
         propagate (bool): If False, prevent propagation to the root logger.
 
     Returns:
-        logging.Logger: Configured logger instance.
+        Logger: Configured logger instance.
     """
     if not script_name:
         script_name = os.path.basename(sys.argv[0])
@@ -115,23 +118,24 @@ def initialise_logger(
     except Exception:
         root_dir = Path.cwd()
 
-    log_dir = Path(log_dir) if log_dir else root_dir / "logs"
+    log_dir_path: Path = Path(log_dir) if log_dir else root_dir / "logs"
 
+    file_handler: Optional[FileHandler]
     try:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        file_path = log_dir / log_file_name
-        file_handler = logging.FileHandler(file_path, encoding="utf-8")
+        log_dir_path.mkdir(parents=True, exist_ok=True)
+        file_path = log_dir_path / log_file_name
+        file_handler = FileHandler(file_path, encoding="utf-8")
     except Exception as e:
         print(f"[WARNING] Failed to initialise file logging: {e}", file=sys.stderr)
         file_handler = None
 
-    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler = StreamHandler(sys.stdout)
     formatter = JSONFormatter() if json_format else SpecFormatter()
     console_handler.setFormatter(formatter)
     if file_handler:
         file_handler.setFormatter(formatter)
 
-    logger = logging.getLogger(script_name)
+    logger = logging.getLogger(script_name)  # type: ignore[attr-defined]
     logger.setLevel(log_level)
     logger.propagate = propagate
     logger.script_name = script_name
@@ -144,12 +148,12 @@ def initialise_logger(
     return logger
 
 
-def validate_metadata_keys(metadata: Dict):
+def validate_metadata_keys(metadata: Dict[str, Any]) -> None:
     """
     Validate metadata keys against the recommended specification keys.
 
     Args:
-        metadata (Dict): Dictionary of metadata key-value pairs.
+        metadata (Dict[str, Any]): Dictionary of metadata key-value pairs.
 
     Prints a warning if non-standard keys are detected.
     """
@@ -158,35 +162,35 @@ def validate_metadata_keys(metadata: Dict):
         print(f"[WARNING] Non-standard metadata keys: {invalid_keys}", file=sys.stderr)
 
 
-def log_debug(logger: logging.Logger, message: str, metadata: Optional[Dict] = None):
+def log_debug(logger: Logger, message: str, metadata: Optional[Dict[str, Any]] = None) -> None:
     """Log a DEBUG level message with optional metadata."""
     logger.debug(
         message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name}
     )
 
 
-def log_info(logger: logging.Logger, message: str, metadata: Optional[Dict] = None):
+def log_info(logger: Logger, message: str, metadata: Optional[Dict[str, Any]] = None) -> None:
     """Log an INFO level message with optional metadata."""
     logger.info(
         message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name}
     )
 
 
-def log_warning(logger: logging.Logger, message: str, metadata: Optional[Dict] = None):
+def log_warning(logger: Logger, message: str, metadata: Optional[Dict[str, Any]] = None) -> None:
     """Log a WARNING level message with optional metadata."""
     logger.warning(
         message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name}
     )
 
 
-def log_error(logger: logging.Logger, message: str, metadata: Optional[Dict] = None):
+def log_error(logger: Logger, message: str, metadata: Optional[Dict[str, Any]] = None) -> None:
     """Log an ERROR level message with optional metadata."""
     logger.error(
         message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name}
     )
 
 
-def log_critical(logger: logging.Logger, message: str, metadata: Optional[Dict] = None):
+def log_critical(logger: Logger, message: str, metadata: Optional[Dict[str, Any]] = None) -> None:
     """Log a CRITICAL level message with optional metadata."""
     logger.critical(
         message, extra={"extra_metadata": metadata or {}, "script_name": logger.script_name}
