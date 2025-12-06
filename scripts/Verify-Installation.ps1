@@ -50,7 +50,8 @@ $script:WarnCount = 0
 function Test-Prerequisite {
     param(
         [string]$Name,
-        [string]$Command,
+        [string]$Executable,
+        [string[]]$Arguments = @(),
         [version]$MinVersion,
         [switch]$Optional
     )
@@ -58,10 +59,25 @@ function Test-Prerequisite {
     Write-Verbose "Testing $Name..."
 
     try {
-        # Execute command and capture output
-        $output = Invoke-Expression $Command 2>$null
+        $resolvedCommand = Get-Command -Name $Executable -ErrorAction SilentlyContinue
 
-        if ($LASTEXITCODE -eq 0 -or $output) {
+        if (-not $resolvedCommand) {
+            if ($Optional) {
+                Write-Host "⚠️  $Name not found (optional)" -ForegroundColor Yellow
+                $script:WarnCount++
+            }
+            else {
+                Write-Host "❌ $Name not found" -ForegroundColor Red
+                $script:FailCount++
+            }
+            return $false
+        }
+
+        # Execute command and capture output
+        $output = & $resolvedCommand.Path @Arguments 2>$null
+        $exitCode = $LASTEXITCODE
+
+        if ($exitCode -eq 0 -or $output) {
             # Extract version from output
             $versionMatch = $output | Select-String -Pattern '(\d+\.[\d\.]+)' | Select-Object -First 1
 
@@ -212,10 +228,10 @@ else {
 }
 
 # Check Python
-Test-Prerequisite -Name "Python" -Command "python --version" -MinVersion ([version]"3.8.0") | Out-Null
+Test-Prerequisite -Name "Python" -Executable "python" -Arguments @("--version") -MinVersion ([version]"3.8.0") | Out-Null
 
 # Check Git
-Test-Prerequisite -Name "Git" -Command "git --version" -MinVersion ([version]"2.30.0") | Out-Null
+Test-Prerequisite -Name "Git" -Executable "git" -Arguments @("--version") -MinVersion ([version]"2.30.0") | Out-Null
 
 Write-Host ""
 Write-Host "PowerShell Modules:" -ForegroundColor Cyan
@@ -267,13 +283,13 @@ if ($IncludeOptional) {
     Write-Host "Optional Software:" -ForegroundColor Cyan
 
     # Check VLC
-    Test-Prerequisite -Name "VLC" -Command "vlc --version" -MinVersion ([version]"3.0.0") -Optional | Out-Null
+    Test-Prerequisite -Name "VLC" -Executable "vlc" -Arguments @("--version") -MinVersion ([version]"3.0.0") -Optional | Out-Null
 
     # Check PostgreSQL
-    Test-Prerequisite -Name "PostgreSQL" -Command "psql --version" -MinVersion ([version]"12.0.0") -Optional | Out-Null
+    Test-Prerequisite -Name "PostgreSQL" -Executable "psql" -Arguments @("--version") -MinVersion ([version]"12.0.0") -Optional | Out-Null
 
     # Check ADB
-    Test-Prerequisite -Name "ADB" -Command "adb --version" -MinVersion ([version]"1.0.0") -Optional | Out-Null
+    Test-Prerequisite -Name "ADB" -Executable "adb" -Arguments @("--version") -MinVersion ([version]"1.0.0") -Optional | Out-Null
 }
 
 # Summary
