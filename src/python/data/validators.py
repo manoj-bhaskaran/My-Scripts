@@ -19,6 +19,8 @@ _WS_UNDERSCORE_HYPHEN_RE = r"[\s_-]+"
 def validate_latitude(value: float | int | str | None) -> bool:
     """Return ``True`` when *value* is a valid latitude between -90 and 90 degrees."""
 
+    if value is None:
+        return False
     try:
         val = float(value)
     except (TypeError, ValueError):
@@ -29,6 +31,8 @@ def validate_latitude(value: float | int | str | None) -> bool:
 def validate_longitude(value: float | int | str | None) -> bool:
     """Return ``True`` when *value* is a valid longitude between -180 and 180 degrees."""
 
+    if value is None:
+        return False
     try:
         val = float(value)
     except (TypeError, ValueError):
@@ -234,19 +238,6 @@ def validate_extensions(
     return deduped, warnings, []
 
 
-# --- Lightweight, local mypy reveal_type checks (ignored at runtime) ---
-if TYPE_CHECKING:
-    # mypy will evaluate these; they don't run at runtime.
-    from typing import reveal_type as _reveal
-
-    _reveal(
-        validate_extensions
-    )  # expect: def (Sequence[str] | None, Mapping[str, str]) -> tuple[list[str], list[str], list[str]]
-    _reveal(
-        normalize_policy_token
-    )  # expect: def (raw: builtins.str | None, *, strict: builtins.bool, aliases: Mapping[builtins.str, builtins.str], default_value: builtins.str) -> tuple[builtins.str, list[builtins.str], list[builtins.str], Dict[builtins.str, dict]]
-
-
 def _levenshtein(a: str, b: str) -> int:
     """Simple Levenshtein distance (O(len(a)*len(b))) without external deps."""
     if a == b:
@@ -332,3 +323,16 @@ def normalize_policy_token(
         [],
         telemetry,
     )
+
+
+# --- Lightweight, local mypy reveal_type checks (ignored at runtime) ---
+if TYPE_CHECKING:
+    # mypy will evaluate these; they don't run at runtime.
+    from typing import reveal_type as _reveal
+
+    _reveal(
+        validate_extensions
+    )  # expect: def (Sequence[str] | None, Mapping[str, str]) -> tuple[list[str], list[str], list[str]]
+    _reveal(
+        normalize_policy_token
+    )  # expect: def (raw: builtins.str | None, *, strict: builtins.bool, aliases: Mapping[builtins.str, builtins.str], default_value: builtins.str) -> tuple[builtins.str], list[builtins.str], list[builtins.str], Dict[builtins.str, dict]

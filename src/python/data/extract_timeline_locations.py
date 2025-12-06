@@ -1,11 +1,16 @@
+import argparse
 import json
 import re
-import argparse
-import psycopg2
-from datetime import datetime
-from psycopg2.extras import execute_values
-from elevation import get_elevation
 from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Generator, Iterable, Iterator, List, Mapping, MutableMapping, Optional, Sequence, Tuple, cast
+
+import psycopg2
+from psycopg2.extensions import connection as PgConnection, cursor as PgCursor
+from psycopg2.extras import execute_values
+
+from elevation import get_elevation
 import python_logging_framework as plog
 
 # Initialize logger for this module
@@ -24,16 +29,25 @@ DB_PARAMS = {
 # This is used to filter out records that are too close in time
 NEAR_DUPLICATE_WINDOW_SECONDS = 30
 
+TimelineRecord = Dict[str, Any]
+ActivityRange = Dict[str, Any]
+StatsDict = Dict[str, int]
+ElevationRecord = Tuple[int, datetime, float, float]
+
 
 @contextmanager
-def get_db_cursor():
+def get_db_cursor() -> Iterator[Tuple[PgConnection, PgCursor]]:
+    """Yield a PostgreSQL connection and cursor with automatic cleanup.
+
+    Returns:
+        An iterator that provides ``(connection, cursor)`` for use within a context manager.
+
+    Raises:
+        psycopg2.OperationalError: If the database connection cannot be established.
+        Exception: Propagates any unexpected error after rolling back the transaction.
     """
-    Context manager that yields a PostgreSQL connection and cursor.
-    Automatically commits on successful exit and handles cleanup.
-    Raises errors for upstream handling.
-    """
-    conn = None
-    cur = None
+    conn: Optional[PgConnection] = None
+    cur: Optional[PgCursor] = None
     try:
         conn = psycopg2.connect(**DB_PARAMS)
         cur = conn.cursor()
@@ -53,15 +67,15 @@ def get_db_cursor():
             conn.close()
 
 
-def count_optional_fields(rec):
+def count_optional_fields(rec: Mapping[str, Any]) -> int:
     """
     Counts the number of non-null optional fields (accuracy, elevation, activity_type, confidence) in a record.
 
     Args:
-        rec (dict): A record dictionary.
+        rec: A record dictionary.
 
     Returns:
-        int: Number of optional fields that are not None.
+        Number of optional fields that are not ``None``.
     """
     # Count how many of the optional metadata fields are populated in a record.
     # Used to determine whether a new record is "richer" than an existing one.
@@ -71,15 +85,15 @@ def count_optional_fields(rec):
     )
 
 
-def extract_lat_lon(point_str):
+def extract_lat_lon(point_str: str | None) -> Tuple[Optional[float], Optional[float]]:
     """
     Extracts latitude and longitude from a string of the form '12.34°, 56.78°'.
 
     Args:
-        point_str (str): A string representing latitude and longitude with degree symbols.
+        point_str: A string representing latitude and longitude with degree symbols.
 
     Returns:
-        tuple[float, float] or (None, None): Parsed (latitude, longitude) if successful.
+        Parsed ``(latitude, longitude)`` tuple if successful; otherwise ``(None, None)``.
     """
     if not isinstance(point_str, str):
         return None, None
@@ -93,25 +107,27 @@ def extract_lat_lon(point_str):
         return None, None
 
 
-def datetime_from_iso(ts):
+def datetime_from_iso(ts: str | None) -> Optional[datetime]:
     """
     Safely parses an ISO 8601 timestamp string into a datetime object.
 
     Returns:
-        datetime or None: Parsed datetime if valid, otherwise None.
+        Parsed datetime if valid, otherwise ``None``.
     """
+    if not isinstance(ts, str):
+        return None
     try:
         return datetime.fromisoformat(ts)
     except (ValueError, TypeError):
         return None
 
 
-def get_last_processed_timestamp():
+def get_last_processed_timestamp() -> Optional[datetime]:
     """
     Fetches the last processed timestamp from the control table in PostgreSQL.
 
     Returns:
-        datetime or None: The last processed timestamp if available, otherwise None.
+        The last processed timestamp if available; otherwise ``None``.
     """
     with get_db_cursor() as (_, cur):
         cur.execute(
@@ -125,12 +141,12 @@ def get_last_processed_timestamp():
         return row[0] if row else None
 
 
-def update_last_processed_timestamp(ts):
+def update_last_processed_timestamp(ts: datetime) -> None:
     """
     Updates or inserts the last processed timestamp in the control table.
 
     Args:
-        ts (datetime): The new timestamp to store.
+        ts: The new timestamp to store.
     """
     with get_db_cursor() as (_, cur):
         cur.execute(
@@ -144,7 +160,9 @@ def update_last_processed_timestamp(ts):
         )
 
 
-def insert_records_into_postgres(records, stats):
+def insert_records_into_postgres(
+    records: Sequence[TimelineRecord], stats: StatsDict
+) -> None:
     """
     Inserts timeline records into the PostgreSQL database.
 
@@ -164,8 +182,8 @@ def insert_records_into_postgres(records, stats):
     - If no match is found, the new record is inserted.
 
     Args:
-        records (list[dict]): Timeline records to insert.
-        stats (dict): Dictionary to accumulate statistics on inserted, replaced, skipped, and duplicate records.
+        records: Timeline records to insert.
+        stats: Dictionary to accumulate statistics on inserted, replaced, skipped, and duplicate records.
     """
     stats.update(
         {
@@ -203,7 +221,9 @@ def insert_records_into_postgres(records, stats):
     plog.log_info(logger, f"🕒 Last processed timestamp updated to: {latest.isoformat()}")
 
 
-def check_near_duplicate(rec, cur, interval_str, stats):
+def check_near_duplicate(
+    rec: Mapping[str, Any], cur: PgCursor, interval_str: str, stats: StatsDict
+) -> bool:
     """
     Checks if a near-duplicate record exists in the database and decides whether to replace it.
 
@@ -215,10 +235,10 @@ def check_near_duplicate(rec, cur, interval_str, stats):
     - If the near-duplicate exists but the new record is not richer, it is skipped.
 
     Args:
-        rec (dict): The timeline record to evaluate.
-        cur (psycopg2.cursor): Active database cursor.
-        interval_str (str): SQL interval string for the time window.
-        stats (dict): Dictionary to update counts for skipped and replaced near-duplicates.
+        rec: The timeline record to evaluate.
+        cur: Active database cursor.
+        interval_str: SQL interval string for the time window.
+        stats: Dictionary to update counts for skipped and replaced near-duplicates.
 
     Returns:
         bool: True if the record should be skipped due to a non-richer near-duplicate.
@@ -261,7 +281,9 @@ def check_near_duplicate(rec, cur, interval_str, stats):
     return False
 
 
-def check_exact_timestamp_duplicate(rec, cur, stats):
+def check_exact_timestamp_duplicate(
+    rec: Mapping[str, Any], cur: PgCursor, stats: StatsDict
+) -> bool:
     """
     Checks if a record already exists in the database with the exact same timestamp.
 
@@ -270,9 +292,9 @@ def check_exact_timestamp_duplicate(rec, cur, stats):
     - If the new record is richer, the existing one is deleted.
 
     Args:
-        rec (dict): The timeline record to evaluate.
-        cur (psycopg2.cursor): Active database cursor.
-        stats (dict): Dictionary to update counts for skipped and replaced timestamp duplicates.
+        rec: The timeline record to evaluate.
+        cur: Active database cursor.
+        stats: Dictionary to update counts for skipped and replaced timestamp duplicates.
 
     Returns:
         bool: True if the record should be skipped due to a non-richer timestamp match.
@@ -304,15 +326,15 @@ def check_exact_timestamp_duplicate(rec, cur, stats):
     return False
 
 
-def perform_insert(rec, cur):
+def perform_insert(rec: Mapping[str, Any], cur: PgCursor) -> None:
     """
     Inserts the given timeline record into the database.
 
     This function assumes that the record has already passed all duplicate and richness checks.
 
     Args:
-        rec (dict): The timeline record to insert.
-        cur (psycopg2.cursor): Active database cursor.
+        rec: The timeline record to insert.
+        cur: Active database cursor.
     """
     cur.execute(
         """
@@ -338,12 +360,12 @@ def perform_insert(rec, cur):
     )
 
 
-def get_last_elevation_timestamp():
+def get_last_elevation_timestamp() -> Optional[datetime]:
     """
     Fetches the last processed timestamp for elevation updates from the control table.
 
     Returns:
-        datetime or None: The most recent timestamp recorded for elevation, or None if not set.
+        The most recent timestamp recorded for elevation, or ``None`` if not set.
     """
     with get_db_cursor() as (_, cur):
         cur.execute(
@@ -357,12 +379,12 @@ def get_last_elevation_timestamp():
         return row[0] if row else None
 
 
-def update_last_elevation_timestamp(ts):
+def update_last_elevation_timestamp(ts: datetime) -> None:
     """
     Updates the control table with the latest timestamp processed for elevation data.
 
     Args:
-        ts (datetime): The timestamp to store as last processed for elevation.
+        ts: The timestamp to store as last processed for elevation.
     """
     with get_db_cursor() as (conn, cur):
         cur.execute(
@@ -376,16 +398,18 @@ def update_last_elevation_timestamp(ts):
         )
 
 
-def fetch_records_missing_elevation(last_ts=None):
+def fetch_records_missing_elevation(
+    last_ts: Optional[datetime] = None,
+) -> List[ElevationRecord]:
     """
     Fetches timeline records that have no elevation data.
     If a last processed timestamp is provided, only records after that timestamp are returned.
 
     Args:
-        last_ts (datetime or None): Lower bound timestamp filter. If None, all missing elevation records are returned.
+        last_ts: Lower bound timestamp filter. If ``None``, all missing elevation records are returned.
 
     Returns:
-        list of tuples: Each tuple contains (location_id, timestamp, latitude, longitude).
+        List of tuples containing ``(location_id, timestamp, latitude, longitude)``.
     """
     query = """
         SELECT location_id, timestamp, latitude, longitude
@@ -402,19 +426,25 @@ def fetch_records_missing_elevation(last_ts=None):
 
     with get_db_cursor() as (_, cur):
         cur.execute(query, params)
-        return cur.fetchall()
+        rows = cur.fetchall()
+        return [
+            (int(location_id), ts, float(lat), float(lon))
+            for location_id, ts, lat, lon in rows
+        ]
 
 
-def update_elevations(records, elevation_stats):
+def update_elevations(
+    records: Sequence[ElevationRecord], elevation_stats: StatsDict
+) -> Optional[datetime]:
     """
     Updates elevation values in the database for the given timeline records using SRTM elevation data.
 
     Args:
-        records (list of tuples): Timeline records missing elevation (location_id, timestamp, latitude, longitude).
-        elevation_stats (dict): Dictionary to accumulate statistics about the elevation update process.
+        records: Timeline records missing elevation ``(location_id, timestamp, latitude, longitude)``.
+        elevation_stats: Dictionary to accumulate statistics about the elevation update process.
 
     Returns:
-        datetime or None: The latest timestamp successfully updated, or None if no updates were made.
+        The latest timestamp successfully updated, or ``None`` if no updates were made.
     """
     latest_ts = None
     if not records:
@@ -448,12 +478,12 @@ def update_elevations(records, elevation_stats):
     return latest_ts
 
 
-def initialize_stats():
+def initialize_stats() -> StatsDict:
     """
     Initializes and returns a dictionary to track statistics for timeline data processing.
 
     Returns:
-        dict: A dictionary with counters for various processing statistics.
+        A dictionary with counters for various processing statistics.
     """
     return {
         "timelinePath_read": 0,
@@ -472,14 +502,14 @@ def initialize_stats():
     }
 
 
-def print_start_message(last_processed, reprocess):
+def print_start_message(last_processed: Optional[datetime], reprocess: bool) -> None:
     """
     Prints a message indicating the start of processing, including whether reprocessing is enabled
     and the last processed timestamp if available.
 
     Args:
-        last_processed (datetime or None): The last processed timestamp, or None if not set.
-        reprocess (bool): Whether all records will be reprocessed.
+        last_processed: The last processed timestamp, or ``None`` if not set.
+        reprocess: Whether all records will be reprocessed.
     """
     if reprocess:
         plog.log_info(logger, "🔁 Reprocessing all records (ignoring last processed timestamp)")
@@ -489,19 +519,19 @@ def print_start_message(last_processed, reprocess):
         plog.log_info(logger, "▶️ Starting full processing (no prior timestamp found)")
 
 
-def load_json(input_file):
+def load_json(input_file: str | Path) -> Optional[Dict[str, Any]]:
     """
     Loads and parses a JSON file containing Google Maps Timeline data.
 
     Args:
-        input_file (str): Path to the JSON file.
+        input_file: Path to the JSON file.
 
     Returns:
-        dict or None: Parsed JSON data as a dictionary, or None if loading fails.
+        Parsed JSON data as a dictionary, or ``None`` if loading fails.
     """
     try:
         with open(input_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            data = cast(Dict[str, Any], json.load(f))
         if "semanticSegments" not in data:
             plog.log_warning(logger, "⚠️ Warning: 'semanticSegments' key missing.")
         if "rawSignals" not in data:
@@ -514,17 +544,19 @@ def load_json(input_file):
     return None
 
 
-def extract_activity_ranges(data, last_processed, stats):
+def extract_activity_ranges(
+    data: Mapping[str, Any], last_processed: Optional[datetime], stats: StatsDict
+) -> List[ActivityRange]:
     """
     Extracts activity ranges from semantic segments in the timeline data.
 
     Args:
-        data (dict): Parsed timeline JSON data.
-        last_processed (datetime or None): Lower bound timestamp filter.
-        stats (dict): Dictionary to accumulate statistics.
+        data: Parsed timeline JSON data.
+        last_processed: Lower bound timestamp filter.
+        stats: Dictionary to accumulate statistics.
 
     Returns:
-        list[dict]: List of activity range dictionaries with start/end times, type, and confidence.
+        List of activity range dictionaries with start/end times, type, and confidence.
     """
     ranges = []
     for segment in data.get("semanticSegments", []):
@@ -553,17 +585,19 @@ def extract_activity_ranges(data, last_processed, stats):
     return ranges
 
 
-def extract_timeline_path(data, last_processed, stats):
+def extract_timeline_path(
+    data: Mapping[str, Any], last_processed: Optional[datetime], stats: StatsDict
+) -> List[TimelineRecord]:
     """
     Extracts timeline path records from semantic segments in the timeline data.
 
     Args:
-        data (dict): Parsed timeline JSON data.
-        last_processed (datetime or None): Lower bound timestamp filter.
-        stats (dict): Dictionary to accumulate statistics.
+        data: Parsed timeline JSON data.
+        last_processed: Lower bound timestamp filter.
+        stats: Dictionary to accumulate statistics.
 
     Returns:
-        list[dict]: List of timeline path records with datetime, latitude, and longitude.
+        List of timeline path records with datetime, latitude, and longitude.
     """
     records = []
     for segment in data.get("semanticSegments", []):
@@ -584,17 +618,19 @@ def extract_timeline_path(data, last_processed, stats):
     return records
 
 
-def extract_raw_signals(data, last_processed, stats):
+def extract_raw_signals(
+    data: Mapping[str, Any], last_processed: Optional[datetime], stats: StatsDict
+) -> List[TimelineRecord]:
     """
     Extracts raw signal records from the timeline data.
 
     Args:
-        data (dict): Parsed timeline JSON data.
-        last_processed (datetime or None): Lower bound timestamp filter.
-        stats (dict): Dictionary to accumulate statistics.
+        data: Parsed timeline JSON data.
+        last_processed: Lower bound timestamp filter.
+        stats: Dictionary to accumulate statistics.
 
     Returns:
-        list[dict]: List of raw signal records with datetime, latitude, longitude, and accuracy.
+        List of raw signal records with datetime, latitude, longitude, and accuracy.
     """
     records = []
     for signal in data.get("rawSignals", []):
@@ -622,30 +658,32 @@ def extract_raw_signals(data, last_processed, stats):
     return records
 
 
-def extract_place_visits(data, last_processed, stats):
+def extract_place_visits(
+    data: Mapping[str, Any], last_processed: Optional[datetime], stats: StatsDict
+) -> List[TimelineRecord]:
     """
     Extracts place visit records from semantic segments in the timeline data.
 
     Args:
-        data (dict): Parsed timeline JSON data.
-        last_processed (datetime or None): Lower bound timestamp filter.
-        stats (dict): Dictionary to accumulate statistics.
+        data: Parsed timeline JSON data.
+        last_processed: Lower bound timestamp filter.
+        stats: Dictionary to accumulate statistics.
 
     Returns:
-        list[dict]: List of place visit records with datetime, latitude, longitude, and other fields.
+        List of place visit records with datetime, latitude, longitude, and other fields.
     """
 
-    def parse_visit_segment(segment, key):
+    def parse_visit_segment(segment: Mapping[str, Any], key: str) -> Optional[TimelineRecord]:
         """
         Parses a single place visit segment from the timeline data for a given time key.
 
         Args:
-            segment (dict): A semantic segment containing visit information.
-            key (str): The time key to extract, either "startTime" or "endTime".
+            segment: A semantic segment containing visit information.
+            key: The time key to extract, either "startTime" or "endTime".
 
         Returns:
-            dict or None: A dictionary representing a single place visit record if valid and within the processing window,
-                        otherwise None.
+            A dictionary representing a single place visit record if valid and within the processing window,
+            otherwise ``None``.
 
         Side Effects:
             Updates the 'stats' dictionary with counts for read, skipped, processed, and invalid records.
@@ -695,14 +733,18 @@ def extract_place_visits(data, last_processed, stats):
     return records
 
 
-def enrich_with_activities(records, activity_ranges, stats):
+def enrich_with_activities(
+    records: List[TimelineRecord],
+    activity_ranges: Sequence[ActivityRange],
+    stats: StatsDict,
+) -> None:
     """
     Enriches timeline records with activity type and confidence based on activity ranges.
 
     Args:
-        records (list[dict]): Timeline records to enrich.
-        activity_ranges (list[dict]): List of activity ranges with start/end times and activity info.
-        stats (dict): Dictionary to accumulate statistics.
+        records: Timeline records to enrich.
+        activity_ranges: List of activity ranges with start/end times and activity info.
+        stats: Dictionary to accumulate statistics.
     """
     # Enrich records with inferred activity type by matching timestamp to known activity windows.
     # First match wins. If no match, activity remains None.
@@ -722,12 +764,12 @@ def enrich_with_activities(records, activity_ranges, stats):
             stats["records_not_enriched_due_to_no_match"] += 1
 
 
-def handle_elevation_enrichment(reprocess_elevation):
+def handle_elevation_enrichment(reprocess_elevation: bool) -> None:
     """
     Handles the process of enriching timeline records with elevation data.
 
     Args:
-        reprocess_elevation (bool): If True, reprocesses all elevation data regardless of control timestamp.
+        reprocess_elevation: If True, reprocesses all elevation data regardless of control timestamp.
     """
     elevation_stats = {
         "records_considered": 0,
@@ -748,19 +790,19 @@ def handle_elevation_enrichment(reprocess_elevation):
         print(f"{k}: {v}")
 
 
-def print_summary(stats):
+def print_summary(stats: Mapping[str, int]) -> None:
     """
     Prints a summary of processing statistics.
 
     Args:
-        stats (dict): Dictionary containing statistics to print.
+        stats: Dictionary containing statistics to print.
     """
     print("\n📊 Summary:")
     for k, v in stats.items():
         print(f"{k}: {v}")
 
 
-def run_vacuum_analyze_if_supported():
+def run_vacuum_analyze_if_supported() -> None:
     """
     Executes VACUUM ANALYZE on the timeline.locations table if the PostgreSQL version supports the MAINTAIN privilege.
 
@@ -789,7 +831,7 @@ def run_vacuum_analyze_if_supported():
         plog.log_error(logger, f"❌ Could not run VACUUM ANALYZE: {e}")
 
 
-def main(input_file, reprocess, reprocess_elevation):
+def main(input_file: str, reprocess: bool, reprocess_elevation: bool) -> None:
     """
     Main entry point for processing Google Maps Timeline data.
 
@@ -803,9 +845,9 @@ def main(input_file, reprocess, reprocess_elevation):
     - Runs a VACUUM ANALYZE if supported by the PostgreSQL version.
 
     Args:
-        input_file (str): Path to the Google Timeline JSON file.
-        reprocess (bool): If True, bypasses last processed timestamp filtering.
-        reprocess_elevation (bool): If True, reprocesses elevation data regardless of control timestamp.
+        input_file: Path to the Google Timeline JSON file.
+        reprocess: If True, bypasses last processed timestamp filtering.
+        reprocess_elevation: If True, reprocesses elevation data regardless of control timestamp.
     """
     # Logger already initialized at module level
     stats = initialize_stats()
