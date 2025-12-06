@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2025-12-06
+
+### Added
+
+- **TOML-based Module Deployment Configuration** (#604 Phase 1 of #009)
+  - Created `psmodule.toml` - Single source of truth for PowerShell module deployment
+  - Created `psmodule.local.toml.example` - Example user-specific configuration overrides
+  - **Configuration Consolidation**:
+    - Replaced multiple configuration files (deployment.txt, local-deployment-config.json) with single TOML file
+    - Reduced configuration complexity from 3 files to 1
+    - Supports all 8 PowerShell modules with proper metadata
+    - Standard TOML format with comments support
+  - **Module Configuration Features**:
+    - Auto-detect PowerShell module paths or use custom paths
+    - Testing and validation options (test-on-deploy, validate-manifest, import-after-deploy)
+    - Module discovery with auto-discover and source-paths configuration
+    - Module dependencies support (e.g., PurgeLogs depends on PowerShellLoggingFramework)
+    - Per-module settings (auto-deploy, test-on-deploy, description, author)
+  - **Implementation Scripts**:
+    - `scripts/Read-ModuleConfig.ps1` - TOML parser with Tomlyn.Signed support and fallback
+    - `scripts/Migrate-ModuleConfig.ps1` - Migration script from legacy format to TOML
+    - Automatic installation of TOML parser (Tomlyn.Signed) if not available
+    - Configuration merging for local overrides (psmodule.local.toml)
+  - **Configuration Structure**:
+    - `[deployment]` section with global deployment settings
+    - `[[modules]]` array defining all 8 PowerShell modules:
+      - PowerShellLoggingFramework (Core logging framework)
+      - ErrorHandling (Standardized error handling with retry logic)
+      - FileOperations (Resilient file operations)
+      - ProgressReporter (Progress tracking with logging integration)
+      - PurgeLogs (Log retention management)
+      - PostgresBackup (PostgreSQL backup with retention)
+      - RandomName (Windows-safe random filename generation)
+      - Videoscreenshot (Video frame capture via VLC or GDI+)
+  - **Benefits**:
+    - ✅ Single configuration file (reduced from 3 to 1)
+    - ✅ Standard TOML format easier to read and edit
+    - ✅ Schema validation possible
+    - ✅ Comments supported for documentation
+    - ✅ Module dependencies explicitly defined
+    - ✅ User-specific overrides without modifying shared config
+  - **Documentation**:
+    - Updated README.md with TOML configuration section
+    - Updated .gitignore to exclude psmodule.local.toml
+    - Migration guide in Migrate-ModuleConfig.ps1
+    - Comprehensive inline documentation in all TOML files
+
 ## [2.5.0] - 2025-12-06
 
 ### Added

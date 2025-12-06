@@ -7,7 +7,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Code Formatting](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml/badge.svg)](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml)
 
-**Version:** 2.4.1 | **Last Updated:** 2025-12-06
+**Version:** 2.6.0 | **Last Updated:** 2025-12-06
 
 ---
 
@@ -756,6 +756,37 @@ For detailed code style guidelines, configuration, and troubleshooting:
   - Secrets management (database passwords)
   - Platform-specific setup
   - Troubleshooting guide
+
+**Module Deployment Configuration (TOML-based):**
+
+The repository uses a modern TOML-based configuration system for PowerShell module deployment:
+
+- **`psmodule.toml`** - Main module configuration (committed to git)
+  - Defines all 8 PowerShell modules and their deployment settings
+  - Single source of truth for module deployment
+  - Supports module dependencies, auto-deployment, and testing options
+
+- **`psmodule.local.toml`** - User-specific overrides (gitignored)
+  - Override deployment paths and settings per-user/per-machine
+  - Copy from `psmodule.local.toml.example` and customize
+  - Allows local development without modifying shared config
+
+**Migration from Legacy Configuration:**
+
+```powershell
+# Migrate from old deployment.txt to new psmodule.toml
+.\scripts\Migrate-ModuleConfig.ps1
+
+# Deploy modules using new configuration
+.\scripts\Deploy-Modules.ps1 -Force
+```
+
+**Benefits:**
+- ✅ Single configuration file (reduced from 3 files to 1)
+- ✅ Standard TOML format with comments support
+- ✅ Schema validation possible
+- ✅ Easier to edit and understand
+- ✅ Supports module dependencies
 
 ---
 
