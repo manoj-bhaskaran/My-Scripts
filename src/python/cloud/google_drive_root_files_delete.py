@@ -61,14 +61,18 @@ def get_root_files(service):
             .list(
                 q=query,
                 spaces="drive",
-                fields="nextPageToken, files(id, name)",
+                fields="nextPageToken, files(id, name, mimeType)",
                 pageToken=page_token,
                 pageSize=1000,
             )
             .execute()
         )
 
-        yield from response.get("files", [])
+        yield from (
+            file
+            for file in response.get("files", [])
+            if file.get("mimeType") != "application/vnd.google-apps.folder"
+        )
         page_token = response.get("nextPageToken", None)
         if not page_token:
             break
@@ -77,29 +81,38 @@ def get_root_files(service):
 from googleapiclient.discovery import build
 
 
-def delete_file(creds, file, retries=3):
+def _resolve_service(creds_or_service):
+    """Return a Drive service from either credentials or an existing service."""
+
+    if hasattr(creds_or_service, "files"):
+        return creds_or_service
+
+    return build("drive", "v3", credentials=creds_or_service)
+
+
+def delete_file(creds_or_service, file_id, file_name, retries=3):
     """
     Deletes a file from Google Drive with retry logic.
 
     Args:
-        creds: Google authentication credentials.
-        file (dict): File metadata dictionary containing at least 'id' and 'name'.
+        creds_or_service: Google authentication credentials or Drive service instance.
+        file_id (str): Identifier of the file to delete.
+        file_name (str): Name of the file to report in logs.
         retries (int): Number of retry attempts on failure.
 
     Returns:
         bool: True if deletion was successful, False otherwise.
     """
-    # Build a new Drive service for this thread
-    service = build("drive", "v3", credentials=creds)
+    service = _resolve_service(creds_or_service)
     for attempt in range(retries):
         try:
-            service.files().delete(fileId=file["id"]).execute()
+            service.files().delete(fileId=file_id).execute()
             return True
         except HttpError as error:
             if attempt < retries - 1:
                 time.sleep(2**attempt)
             else:
-                plog.log_info(logger, f"Failed to delete {file['name']}: {error}")
+                plog.log_info(logger, f"Failed to delete {file_name}: {error}")
                 return False
 
 
@@ -122,7 +135,10 @@ def main():
     deleted_count = 0
     with tqdm(total=total_files, desc="Deleting files", unit="file") as pbar:
         with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-            futures = {executor.submit(delete_file, creds, file): file for file in files_to_delete}
+            futures = {
+                executor.submit(delete_file, creds, file["id"], file["name"]): file
+                for file in files_to_delete
+            }
             for future in as_completed(futures):
                 if future.result():
                     deleted_count += 1

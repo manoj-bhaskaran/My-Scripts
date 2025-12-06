@@ -191,6 +191,34 @@ TOKEN_FILE = os.getenv("GDRT_TOKEN_FILE", DEFAULT_TOKEN_FILE)
 # one-time console note guard for requests→httplib2 fallback
 _PRINTED_REQUESTS_FALLBACK = False
 
+
+def get_recoverable_files(service):
+    """Return trashed Google Drive files that can be restored."""
+
+    trashed_files: List[Dict[str, Any]] = []
+    page_token: Optional[str] = None
+
+    while True:
+        response = (
+            service.files()
+            .list(
+                q="trashed = true",
+                spaces="drive",
+                fields="nextPageToken, files(id, name, trashed)",
+                pageToken=page_token,
+                pageSize=PAGE_SIZE,
+            )
+            .execute()
+        )
+
+        trashed_files.extend(file for file in response.get("files", []) if file.get("trashed"))
+
+        page_token = response.get("nextPageToken")
+        if not page_token:
+            break
+
+    return trashed_files
+
 # Extension to MIME type mapping for robust server-side filtering
 EXTENSION_MIME_TYPES = {
     "jpg": "image/jpeg",

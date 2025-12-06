@@ -430,6 +430,9 @@ pytest tests/python --cov=src/python --cov=src/common --cov-report=term-missing
 
 # Focused data-transformation checks (CSV→GPX, timeline parsing)
 pytest tests/python/unit/test_csv_to_gpx.py tests/python/unit/test_extract_timeline_locations.py
+
+# Safety-critical Google Drive delete/recover tests (fully mocked, no API calls)
+pytest tests/python/unit/test_google_drive_delete.py tests/python/unit/test_gdrive_recover.py
 ```
 
 **PowerShell Tests**:
