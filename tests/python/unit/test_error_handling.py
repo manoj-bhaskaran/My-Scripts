@@ -13,6 +13,29 @@ from src.python.modules.utils.error_handling import (
     ErrorContext,
 )
 
+# Constants for exponential backoff validation
+# This multiplier validates that the second delay is approximately 2x the first
+# (with some tolerance for timing variations in test execution)
+EXPONENTIAL_BACKOFF_MULTIPLIER = 1.5
+
+
+def validate_exponential_backoff(call_times: list) -> bool:
+    """
+    Validate that delays between calls follow exponential backoff pattern.
+    
+    Args:
+        call_times: List of timestamps when function was called
+        
+    Returns:
+        True if delays increase exponentially (second delay > first delay * 1.5)
+    """
+    if len(call_times) < 3:
+        return False
+    
+    delays = [call_times[i+1] - call_times[i] for i in range(len(call_times)-1)]
+    # Verify second delay is roughly 2x the first (using 1.5 multiplier for tolerance)
+    return delays[1] > delays[0] * EXPONENTIAL_BACKOFF_MULTIPLIER
+
 
 class TestWithErrorHandling:
     """Tests for with_error_handling decorator."""
@@ -261,3 +284,89 @@ class TestErrorContext:
             raise ValueError("test error")
 
         # Test completes without raising - error was suppressed
+
+
+class TestRetryDecoratorAdvanced:
+    """Advanced tests for retry decorator based on issue requirements."""
+
+    def test_retry_decorator_retries_on_failure(self):
+        """Test retry decorator retries failed operations."""
+        mock_func = Mock(side_effect=[ValueError, ValueError, "success"])
+
+        @with_retry(max_retries=3, retry_delay=0.01)
+        def failing_func():
+            return mock_func()
+
+        result = failing_func()
+
+        assert result == "success"
+        assert mock_func.call_count == 3
+
+    def test_retry_decorator_respects_max_retries(self):
+        """Test retry decorator stops after max retries."""
+        mock_func = Mock(side_effect=ValueError("Always fails"))
+
+        @with_retry(max_retries=3, retry_delay=0.01)
+        def failing_func():
+            return mock_func()
+
+        with pytest.raises(ValueError):
+            failing_func()
+
+        assert mock_func.call_count == 3
+
+    def test_retry_decorator_with_custom_exceptions(self):
+        """Test retry only on specific exceptions."""
+        
+        @with_retry(max_retries=3, retry_delay=0.01, exceptions=(ValueError,))
+        def func():
+            raise TypeError("Not retryable")
+
+        with pytest.raises(TypeError):
+            func()
+
+        # Should fail immediately, not retry
+
+    def test_exponential_backoff(self):
+        """Test exponential backoff between retries."""
+        call_times = []
+
+        def track_time():
+            call_times.append(time.time())
+            raise ValueError("Fail")
+
+        @with_retry(max_retries=3, retry_delay=0.1, max_backoff=60.0)
+        def failing_func():
+            return track_time()
+
+        with pytest.raises(ValueError):
+            failing_func()
+
+        # Verify delays increase exponentially using helper function
+        assert len(call_times) == 3
+        assert validate_exponential_backoff(call_times)
+
+
+class TestRetryOperationAdvanced:
+    """Advanced tests for retry_operation function."""
+
+    def test_exponential_backoff_in_retry_operation(self):
+        """Test exponential backoff in retry_operation."""
+        call_times = []
+
+        def operation():
+            call_times.append(time.time())
+            raise ValueError("Fail")
+
+        with pytest.raises(ValueError):
+            retry_operation(
+                operation,
+                "Test operation",
+                max_retries=3,
+                retry_delay=0.1,
+                max_backoff=60.0
+            )
+
+        # Verify delays increase exponentially using helper function
+        assert len(call_times) == 3
+        assert validate_exponential_backoff(call_times)
