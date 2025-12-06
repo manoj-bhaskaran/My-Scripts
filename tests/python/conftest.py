@@ -55,6 +55,127 @@ _ensure_dependency(
 
 _ensure_dependency("cv2", lambda: ModuleType("cv2"))
 _ensure_dependency("numpy", lambda: ModuleType("numpy"))
+_ensure_dependency(
+    "googleapiclient",
+    lambda: (
+        lambda:
+        # Build a minimal stub hierarchy for googleapiclient and friends
+        (
+            lambda _root: (
+                _root,
+                sys.modules.update(
+                    {
+                        "googleapiclient.errors": _root.errors,
+                        "googleapiclient.discovery": _root.discovery,
+                        "googleapiclient.http": _root.http,
+                    }
+                ),
+                sys.modules.setdefault("googleapiclient.errors", _root.errors),
+                sys.modules.setdefault("googleapiclient.discovery", _root.discovery),
+                sys.modules.setdefault("googleapiclient.http", _root.http),
+            )[0]
+        )(
+            type(
+                "_GoogleApiClientStub",
+                (),
+                {
+                    "errors": (
+                        lambda: (
+                            lambda _module: (
+                                setattr(
+                                    _module,
+                                    "HttpError",
+                                    type(
+                                        "HttpError",
+                                        (Exception,),
+                                        {
+                                            "__init__": lambda self, resp=None, content=b"", *_, **__: (
+                                                setattr(self, "resp", resp),
+                                                setattr(self, "content", content),
+                                                Exception.__init__(self, content),
+                                            )
+                                        },
+                                    ),
+                                ),
+                                _module,
+                            )[1]
+                        )()(ModuleType("googleapiclient.errors"))
+                    ),
+                    "discovery": (
+                        lambda: (
+                            lambda _module: (
+                                setattr(
+                                    _module,
+                                    "build",
+                                    lambda *_args, **_kwargs: SimpleNamespace(files=lambda: SimpleNamespace()),
+                                ),
+                                _module,
+                            )[1]
+                        )()(ModuleType("googleapiclient.discovery"))
+                    ),
+                    "http": (
+                        lambda: (
+                            lambda _module: (
+                                setattr(
+                                    _module,
+                                    "MediaIoBaseDownload",
+                                    type(
+                                        "MediaIoBaseDownload",
+                                        (),
+                                        {
+                                            "__init__": lambda self, *_, **__: None,
+                                            "next_chunk": lambda self: (None, True),
+                                        },
+                                    ),
+                                ),
+                                _module,
+                            )[1]
+                        )()(ModuleType("googleapiclient.http"))
+                    ),
+                },
+            )()
+        )
+    )(),
+)
+_ensure_dependency(
+    "google_auth_oauthlib.flow",
+    lambda: (
+        lambda _module: (
+            setattr(
+                _module,
+                "InstalledAppFlow",
+                type(
+                    "InstalledAppFlow",
+                    (),
+                    {
+                        "from_client_secrets_file": staticmethod(
+                            lambda *_args, **_kwargs: SimpleNamespace(run_local_server=lambda **__kwargs: None)
+                        )
+                    },
+                ),
+            ),
+            _module,
+        )[1]
+    )(ModuleType("google_auth_oauthlib.flow")),
+)
+_ensure_dependency(
+    "google.auth.transport.requests",
+    lambda: (
+        lambda _module: (setattr(_module, "Request", type("Request", (), {})), _module)[1]
+    )(ModuleType("google.auth.transport.requests")),
+)
+_ensure_dependency(
+    "google.oauth2.credentials",
+    lambda: (
+        lambda _module: (setattr(_module, "Credentials", type("Credentials", (), {})), _module)[1]
+    )(ModuleType("google.oauth2.credentials")),
+)
+_ensure_dependency(
+    "google.auth.credentials",
+    lambda: (
+        lambda _module: (setattr(_module, "Credentials", type("Credentials", (), {})), _module)[1]
+    )(ModuleType("google.auth.credentials")),
+)
 
 
 @pytest.fixture
