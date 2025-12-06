@@ -39,11 +39,18 @@ timeout = (connect_timeout, read_timeout)
 For file uploads/downloads, calculate based on size:
 
 ```python
-def calculate_timeout(file_size_mb: int) -> Tuple[int, int]:
-    """Calculate timeout based on file size."""
+def calculate_timeout(file_size_mb: float) -> Tuple[int, int]:
+    """Calculate timeout based on file size.
+    
+    Args:
+        file_size_mb: File size in megabytes (can be fractional)
+        
+    Returns:
+        Tuple of (connect_timeout, read_timeout) in seconds
+    """
     connect_timeout = 10
     # Assume 1 MB/s minimum transfer rate
-    read_timeout = max(60, file_size_mb * 2)
+    read_timeout = max(60, int(file_size_mb * 2))
     return (connect_timeout, read_timeout)
 
 # Usage
@@ -126,13 +133,25 @@ import os
 import requests
 from typing import Tuple
 
+def calculate_timeout(file_size_mb: float) -> Tuple[int, int]:
+    """Calculate timeout based on file size.
+    
+    Args:
+        file_size_mb: File size in megabytes (can be fractional)
+        
+    Returns:
+        Tuple of (connect_timeout, read_timeout) in seconds
+    """
+    connect_timeout = 10
+    # Assume 1 MB/s minimum transfer rate
+    read_timeout = max(60, int(file_size_mb * 2))
+    return (connect_timeout, read_timeout)
+
 def upload_file(file_path: str, upload_url: str) -> dict:
     """Upload file with size-based timeout."""
     # Calculate timeout based on file size
     file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-    connect_timeout = 10
-    read_timeout = max(60, int(file_size_mb * 2))
-    timeout = (connect_timeout, read_timeout)
+    timeout = calculate_timeout(file_size_mb)
     
     logger.info(f"Uploading {file_path} ({file_size_mb:.2f} MB) with timeout {timeout}")
     
