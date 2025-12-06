@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] - 2025-12-06
+
 ### Added
+
+- **Type Hints for Data Processing Scripts** (#005 Phase 3)
+  - Added explicit type annotations to `src/python/data/csv_to_gpx.py`, `src/python/data/validators.py`, and `src/python/data/extract_timeline_locations.py`
+  - Updated docstrings to reflect typed arguments and return values for CSV, GPX, and timeline data flows
+  - Ensured mypy compatibility for critical data-processing paths
 
 - **Type Hints for Error Handling Module** (#596 Phase 2 of #005)
   - Added comprehensive type hints to `src/python/modules/utils/error_handling.py`

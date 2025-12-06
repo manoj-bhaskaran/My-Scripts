@@ -9,12 +9,15 @@ Usage:
                          [--input_folder <input_folder>] [--output_folder <output_folder>]
 """
 
-import csv
 import argparse
+import csv
 import os
-from xml.etree.ElementTree import Element, SubElement, tostring
-from datetime import datetime
 import xml.dom.minidom
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Tuple
+from xml.etree.ElementTree import Element, SubElement, tostring
+
 from elevation import get_elevation
 import python_logging_framework as plog
 
@@ -22,8 +25,15 @@ import python_logging_framework as plog
 logger = plog.initialise_logger(__name__)
 
 
-def csv_to_gpx(input_csv, output_gpx):
-    """Convert CSV to GPX file with elevation and pretty print."""
+def csv_to_gpx(input_csv: str | Path, output_gpx: str | Path) -> None:
+    """Convert CSV to GPX file with elevation and pretty print.
+
+    Args:
+        input_csv: Path to the input CSV file containing ``lat``, ``lng``, and ``time`` columns.
+        output_gpx: Path to the GPX file that will be created.
+    """
+    input_path = Path(input_csv)
+    output_path = Path(output_gpx)
     gpx = Element(
         "gpx",
         version="1.1",
@@ -36,12 +46,10 @@ def csv_to_gpx(input_csv, output_gpx):
     name.text = "Route with Elevation"
     trkseg = SubElement(trk, "trkseg")
 
-    with open(input_csv, newline="") as csvfile:
+    with open(input_path, newline="") as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
-            lat = float(row["lat"])
-            lon = float(row["lng"])
-            time = row["time"]
+            lat, lon, time = parse_csv_row(row)
 
             trkpt = SubElement(trkseg, "trkpt", lat=str(lat), lon=str(lon))
 
@@ -60,14 +68,33 @@ def csv_to_gpx(input_csv, output_gpx):
     pretty_xml = reparsed.toprettyxml(indent="  ")
 
     # Write to file
-    with open(output_gpx, "w", encoding="utf-8") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(pretty_xml)
 
     plog.log_info(
         logger,
-        f"GPX file with elevation written: {output_gpx}",
-        metadata={"output_file": output_gpx},
+        f"GPX file with elevation written: {output_path}",
+        metadata={"output_file": str(output_path)},
     )
+
+
+def parse_csv_row(row: Dict[str, str]) -> Tuple[float, float, str]:
+    """Parse a CSV row into latitude, longitude, and timestamp values.
+
+    Args:
+        row: A mapping produced by :class:`csv.DictReader` with ``lat``, ``lng``, and ``time`` keys.
+
+    Returns:
+        A tuple ``(lat, lon, time)`` where ``lat`` and ``lon`` are floats and ``time`` is the raw timestamp string.
+
+    Raises:
+        KeyError: If any of the expected keys are missing from ``row``.
+        ValueError: If the latitude or longitude values cannot be converted to ``float``.
+    """
+    lat = float(row["lat"])
+    lon = float(row["lng"])
+    time = row["time"]
+    return lat, lon, time
 
 
 if __name__ == "__main__":
