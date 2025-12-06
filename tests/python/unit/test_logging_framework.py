@@ -11,6 +11,8 @@ import sys
 import json
 import tempfile
 from pathlib import Path
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # Add src path to allow imports
 src_logging = Path(__file__).resolve().parents[3] / "src" / "python" / "modules" / "logging"
@@ -29,6 +31,13 @@ from python_logging_framework import (
     log_critical,
     RECOMMENDED_METADATA_KEYS,
 )
+
+# Helper function to get today's log file name
+def get_log_file_path(tmp_path: Path, script_name: str) -> Path:
+    """Get the expected log file path for a given script name."""
+    IST = ZoneInfo("Asia/Kolkata")
+    today = datetime.now(IST).strftime("%Y-%m-%d")
+    return tmp_path / f"{script_name}_python_{today}.log"
 
 
 class TestSpecFormatter:
@@ -190,12 +199,8 @@ class TestLoggerNameAndCustomDir:
         for handler in logger.handlers:
             handler.flush()
 
-        # Find the log file - it has a date suffix
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        IST = ZoneInfo("Asia/Kolkata")
-        today = datetime.now(IST).strftime("%Y-%m-%d")
-        log_file = tmp_path / f"test_with_metadata_python_{today}.log"
+        # Find the log file using helper function
+        log_file = get_log_file_path(tmp_path, "test_with_metadata")
         
         assert log_file.exists()
         
@@ -210,11 +215,6 @@ class TestLoggingHelpers:
 
     def test_log_debug(self, tmp_path):
         """Test debug level logging."""
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        IST = ZoneInfo("Asia/Kolkata")
-        today = datetime.now(IST).strftime("%Y-%m-%d")
-        
         logger = initialise_logger("test_log_debug", log_dir=str(tmp_path), log_level=logging.DEBUG)
         log_debug(logger, "Debug message")
         
@@ -222,18 +222,13 @@ class TestLoggingHelpers:
         for handler in logger.handlers:
             handler.flush()
         
-        log_file = tmp_path / f"test_log_debug_python_{today}.log"
+        log_file = get_log_file_path(tmp_path, "test_log_debug")
         assert log_file.exists()
         content = log_file.read_text()
         assert "Debug message" in content
 
     def test_log_info(self, tmp_path):
         """Test info level logging."""
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        IST = ZoneInfo("Asia/Kolkata")
-        today = datetime.now(IST).strftime("%Y-%m-%d")
-        
         logger = initialise_logger("test_log_info", log_dir=str(tmp_path))
         log_info(logger, "Info message")
         
@@ -241,18 +236,13 @@ class TestLoggingHelpers:
         for handler in logger.handlers:
             handler.flush()
         
-        log_file = tmp_path / f"test_log_info_python_{today}.log"
+        log_file = get_log_file_path(tmp_path, "test_log_info")
         assert log_file.exists()
         content = log_file.read_text()
         assert "Info message" in content
 
     def test_log_warning(self, tmp_path):
         """Test warning level logging."""
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        IST = ZoneInfo("Asia/Kolkata")
-        today = datetime.now(IST).strftime("%Y-%m-%d")
-        
         logger = initialise_logger("test_log_warning", log_dir=str(tmp_path))
         log_warning(logger, "Warning message")
         
@@ -260,18 +250,13 @@ class TestLoggingHelpers:
         for handler in logger.handlers:
             handler.flush()
         
-        log_file = tmp_path / f"test_log_warning_python_{today}.log"
+        log_file = get_log_file_path(tmp_path, "test_log_warning")
         assert log_file.exists()
         content = log_file.read_text()
         assert "Warning message" in content
 
     def test_log_error(self, tmp_path):
         """Test error level logging."""
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        IST = ZoneInfo("Asia/Kolkata")
-        today = datetime.now(IST).strftime("%Y-%m-%d")
-        
         logger = initialise_logger("test_log_error", log_dir=str(tmp_path))
         log_error(logger, "Error message")
         
@@ -279,18 +264,13 @@ class TestLoggingHelpers:
         for handler in logger.handlers:
             handler.flush()
         
-        log_file = tmp_path / f"test_log_error_python_{today}.log"
+        log_file = get_log_file_path(tmp_path, "test_log_error")
         assert log_file.exists()
         content = log_file.read_text()
         assert "Error message" in content
 
     def test_log_critical(self, tmp_path):
         """Test critical level logging."""
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        IST = ZoneInfo("Asia/Kolkata")
-        today = datetime.now(IST).strftime("%Y-%m-%d")
-        
         logger = initialise_logger("test_log_critical", log_dir=str(tmp_path))
         log_critical(logger, "Critical message")
         
@@ -298,7 +278,7 @@ class TestLoggingHelpers:
         for handler in logger.handlers:
             handler.flush()
         
-        log_file = tmp_path / f"test_log_critical_python_{today}.log"
+        log_file = get_log_file_path(tmp_path, "test_log_critical")
         assert log_file.exists()
         content = log_file.read_text()
         assert "Critical message" in content

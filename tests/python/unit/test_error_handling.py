@@ -13,6 +13,29 @@ from src.python.modules.utils.error_handling import (
     ErrorContext,
 )
 
+# Constants for exponential backoff validation
+# This multiplier validates that the second delay is approximately 2x the first
+# (with some tolerance for timing variations in test execution)
+EXPONENTIAL_BACKOFF_MULTIPLIER = 1.5
+
+
+def validate_exponential_backoff(call_times: list) -> bool:
+    """
+    Validate that delays between calls follow exponential backoff pattern.
+    
+    Args:
+        call_times: List of timestamps when function was called
+        
+    Returns:
+        True if delays increase exponentially (second delay > first delay * 1.5)
+    """
+    if len(call_times) < 3:
+        return False
+    
+    delays = [call_times[i+1] - call_times[i] for i in range(len(call_times)-1)]
+    # Verify second delay is roughly 2x the first (using 1.5 multiplier for tolerance)
+    return delays[1] > delays[0] * EXPONENTIAL_BACKOFF_MULTIPLIER
+
 
 class TestWithErrorHandling:
     """Tests for with_error_handling decorator."""
@@ -319,12 +342,9 @@ class TestRetryDecoratorAdvanced:
         with pytest.raises(ValueError):
             failing_func()
 
-        # Verify delays increase exponentially
-        # First delay should be ~0.1s, second ~0.2s
+        # Verify delays increase exponentially using helper function
         assert len(call_times) == 3
-        delays = [call_times[i+1] - call_times[i] for i in range(len(call_times)-1)]
-        # Approximate check - second delay should be roughly 2x the first
-        assert delays[1] > delays[0] * 1.5
+        assert validate_exponential_backoff(call_times)
 
 
 class TestRetryOperationAdvanced:
@@ -347,8 +367,6 @@ class TestRetryOperationAdvanced:
                 max_backoff=60.0
             )
 
-        # Verify delays increase exponentially
+        # Verify delays increase exponentially using helper function
         assert len(call_times) == 3
-        delays = [call_times[i+1] - call_times[i] for i in range(len(call_times)-1)]
-        # Second delay should be roughly 2x the first
-        assert delays[1] > delays[0] * 1.5
+        assert validate_exponential_backoff(call_times)
