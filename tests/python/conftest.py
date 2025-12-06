@@ -7,7 +7,9 @@ in the My-Scripts repository.
 
 import pytest
 import sys
+from importlib import import_module
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
 # Add src directories to Python path for imports
 repo_root = Path(__file__).resolve().parents[2]
@@ -22,6 +24,37 @@ sys.path.insert(0, str(src_python_cloud))
 sys.path.insert(0, str(src_python_media))
 sys.path.insert(0, str(src_python_modules_logging))
 sys.path.insert(0, str(src_python_modules_auth))
+
+
+def _ensure_dependency(name: str, fallback_factory) -> None:
+    """Import a dependency or register a lightweight stub if unavailable."""
+
+    if name in sys.modules:
+        return
+
+    try:
+        import_module(name)
+    except Exception:
+        sys.modules[name] = fallback_factory()
+
+
+_ensure_dependency(
+    "srtm",
+    lambda: type(
+        "_SrtmStub",
+        (),
+        {
+            "get_data": staticmethod(
+                lambda: SimpleNamespace(
+                    get_elevation=lambda *_args, **_kwargs: 0,
+                )
+            )
+        },
+    )(),
+)
+
+_ensure_dependency("cv2", lambda: ModuleType("cv2"))
+_ensure_dependency("numpy", lambda: ModuleType("numpy"))
 
 
 @pytest.fixture

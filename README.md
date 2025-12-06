@@ -105,7 +105,10 @@ cd My-Scripts
 # 2. Configure repository (interactive wizard)
 ./scripts/Initialize-Configuration.ps1
 
-# 3. Install Python dependencies
+# 3. Install Python dependencies (deterministic)
+pip install -r requirements.lock
+
+# Or install the latest compatible versions within the supported ranges
 pip install -r requirements.txt
 
 # 4. Deploy PowerShell modules
@@ -125,6 +128,11 @@ The [INSTALLATION.md](INSTALLATION.md) guide includes:
 - Optional software installation (VLC, ADB, PostgreSQL)
 - Module installation and verification
 - Comprehensive troubleshooting guide
+
+The repository now ships with **dual dependency manifests**:
+
+- Use `requirements.lock` for deterministic, reproducible installs (CI, production machines).
+- Use `requirements.txt` for local development when you want the latest compatible releases within vetted version ranges.
 
 **Configuration Guide**: See [config/CONFIG_GUIDE.md](config/CONFIG_GUIDE.md) for detailed configuration instructions.
 
@@ -412,7 +420,7 @@ This repository includes comprehensive testing infrastructure to ensure code qua
 **Python Tests**:
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+pip install -r requirements.lock
 
 # Run all tests
 pytest tests/python
