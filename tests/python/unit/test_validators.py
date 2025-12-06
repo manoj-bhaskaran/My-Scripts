@@ -18,6 +18,9 @@ from validators import (
     _is_valid_extension_segments,
     _dedupe_preserve_order,
     validate_extensions,
+    validate_latitude,
+    validate_longitude,
+    validate_timestamp,
     normalize_policy_token,
     _levenshtein,
     _suggest_token,
@@ -135,6 +138,33 @@ class TestDedupePreserveOrder:
     def test_empty_sequence(self):
         """Test empty sequence."""
         assert _dedupe_preserve_order([]) == []
+
+
+class TestGeospatialValidators:
+    """Tests for basic latitude/longitude/timestamp validators."""
+
+    def test_validate_latitude(self):
+        """Test latitude validation."""
+
+        assert validate_latitude(0.0) is True
+        assert validate_latitude(90.0) is True
+        assert validate_latitude(-90.0) is True
+        assert validate_latitude(91.0) is False
+        assert validate_latitude(-91.0) is False
+
+    def test_validate_longitude(self):
+        """Test longitude validation."""
+
+        assert validate_longitude(0.0) is True
+        assert validate_longitude(180.0) is True
+        assert validate_longitude(-180.0) is True
+        assert validate_longitude(181.0) is False
+
+    def test_validate_timestamp_format(self):
+        """Test timestamp format validation."""
+
+        assert validate_timestamp("2024-01-01T12:00:00Z") is True
+        assert validate_timestamp("invalid") is False
 
 
 class TestValidateExtensions:

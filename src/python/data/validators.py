@@ -8,11 +8,45 @@ an earlier 1.5.x release line.
 """
 
 import re
+from datetime import datetime
 from typing import Iterable, List, Mapping, Sequence, Tuple, Optional, Dict
 from typing import TYPE_CHECKING, Callable
 
 # Constant for whitespace, underscore, and hyphen collapsing
 _WS_UNDERSCORE_HYPHEN_RE = r"[\s_-]+"
+
+
+def validate_latitude(value: float | int | str | None) -> bool:
+    """Return ``True`` when *value* is a valid latitude between -90 and 90 degrees."""
+
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return False
+    return -90.0 <= val <= 90.0
+
+
+def validate_longitude(value: float | int | str | None) -> bool:
+    """Return ``True`` when *value* is a valid longitude between -180 and 180 degrees."""
+
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return False
+    return -180.0 <= val <= 180.0
+
+
+def validate_timestamp(ts: str | None) -> bool:
+    """Return ``True`` when *ts* is a parseable ISO 8601 timestamp (with or without ``Z``)."""
+
+    if not isinstance(ts, str):
+        return False
+    try:
+        normalized = ts.replace("Z", "+00:00")
+        datetime.fromisoformat(normalized)
+        return True
+    except (ValueError, TypeError):
+        return False
 
 
 def _normalize_extension_token(token: str) -> str:
