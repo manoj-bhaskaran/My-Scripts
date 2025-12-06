@@ -1,0 +1,105 @@
+# psmodule.toml - Single source of truth for PowerShell module deployment
+#
+# This configuration file replaces the legacy deployment.txt and
+# local-deployment-config.json files with a modern TOML-based approach.
+#
+# Version: 1.0.0
+# Created: 2025-12-06
+
+[deployment]
+# Auto-detect PowerShell module path or use custom
+# "auto" uses the first path in $env:PSModulePath
+# Can be overridden with an absolute path
+default-path = "auto"
+
+# Testing and validation options
+test-on-deploy = true           # Run Pester tests after deployment if available
+validate-manifest = true        # Validate module manifests before deployment
+import-after-deploy = false     # Import modules after deployment to verify
+
+# Module discovery settings
+auto-discover = true            # Auto-discover modules in source-paths
+source-paths = ["src/powershell/modules"]
+
+# Deployment target (System, User, or custom path)
+# System: C:\Program Files\PowerShell\Modules (Windows) or /usr/local/share/powershell/Modules (Linux/Mac)
+# User: %USERPROFILE%\Documents\PowerShell\Modules (Windows) or ~/.local/share/powershell/Modules (Linux/Mac)
+default-target = "System"
+
+# ============================================================================
+# MODULE DEFINITIONS
+# ============================================================================
+# Each [[modules]] entry defines a PowerShell module to be deployed.
+# All modules are deployed in dependency order.
+
+[[modules]]
+name = "PowerShellLoggingFramework"
+source = "src/powershell/modules/Core/Logging/PowerShellLoggingFramework"
+auto-deploy = true
+test-on-deploy = true
+description = "Cross-platform structured logging framework with multiple log levels and JSON output"
+author = "Manoj Bhaskaran"
+dependencies = []
+
+[[modules]]
+name = "ErrorHandling"
+source = "src/powershell/modules/Core/ErrorHandling"
+auto-deploy = true
+test-on-deploy = true
+description = "Standardized error handling and retry logic with exponential backoff"
+author = "Manoj Bhaskaran"
+dependencies = []
+
+[[modules]]
+name = "FileOperations"
+source = "src/powershell/modules/Core/FileOperations"
+auto-deploy = true
+test-on-deploy = true
+description = "File operations with built-in retry logic and resilience"
+author = "Manoj Bhaskaran"
+dependencies = []
+
+[[modules]]
+name = "ProgressReporter"
+source = "src/powershell/modules/Core/Progress"
+auto-deploy = true
+test-on-deploy = true
+description = "Standardized progress reporting with logging integration"
+author = "Manoj Bhaskaran"
+dependencies = ["PowerShellLoggingFramework"]
+
+[[modules]]
+name = "PurgeLogs"
+source = "src/powershell/modules/Core/Logging/PurgeLogs"
+auto-deploy = true
+test-on-deploy = true
+description = "Log file purging and retention management with multiple strategies"
+author = "Manoj Bhaskaran"
+dependencies = ["PowerShellLoggingFramework"]
+
+[[modules]]
+name = "PostgresBackup"
+source = "src/powershell/modules/Database/PostgresBackup"
+auto-deploy = true
+test-on-deploy = true
+description = "PostgreSQL database backup module with retention management and service control"
+author = "Manoj Bhaskaran"
+dependencies = ["PowerShellLoggingFramework"]
+
+[[modules]]
+name = "RandomName"
+source = "src/powershell/modules/Utilities/RandomName"
+auto-deploy = true
+test-on-deploy = true
+description = "Generates Windows-safe random file names using a conservative allow-list"
+author = "Manoj Bhaskaran"
+dependencies = []
+
+[[modules]]
+name = "Videoscreenshot"
+source = "src/powershell/modules/Media/Videoscreenshot"
+auto-deploy = true
+test-on-deploy = true
+description = "Video frame capture via VLC or GDI+ with optional Python cropper integration"
+author = "Manoj Bhaskaran"
+dependencies = []

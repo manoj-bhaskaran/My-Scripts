@@ -1,0 +1,45 @@
+# psmodule.local.toml - User-specific overrides (NOT committed to git)
+#
+# Copy this file to psmodule.local.toml and customize for your environment.
+# This file is ignored by git and allows per-user/per-machine configuration
+# without modifying the shared psmodule.toml file.
+#
+# USAGE:
+#   1. Copy: cp psmodule.local.toml.example psmodule.local.toml
+#   2. Edit psmodule.local.toml with your local settings
+#   3. The Read-ModuleConfig function will merge your local settings
+#
+# All settings from psmodule.toml can be overridden here.
+
+[deployment]
+# Override the default deployment path
+# Examples:
+#   Windows: "C:/Custom/Path/Modules"
+#   Linux:   "/opt/powershell/modules"
+#   Mac:     "/Users/username/PowerShell/Modules"
+# default-path = "C:/Custom/Path/Modules"
+
+# Override deployment target (System, User, or custom path)
+# default-target = "User"
+
+# Override testing settings
+# test-on-deploy = false
+# validate-manifest = false
+# import-after-deploy = true
+
+# Example: Disable auto-deployment for specific modules during development
+# [[modules]]
+# name = "PowerShellLoggingFramework"
+# auto-deploy = false
+
+# Example: Use a different source path for local development
+# [[modules]]
+# name = "PostgresBackup"
+# source = "D:/Development/PostgresBackup-Dev"
+# auto-deploy = true
+
+# Example: Add additional testing for a specific module
+# [[modules]]
+# name = "Videoscreenshot"
+# test-on-deploy = true
+# import-after-deploy = true
