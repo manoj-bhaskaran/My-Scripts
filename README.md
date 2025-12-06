@@ -427,6 +427,9 @@ pytest tests/python
 
 # Run with coverage
 pytest tests/python --cov=src/python --cov=src/common --cov-report=term-missing
+
+# Focused data-transformation checks (CSV→GPX, timeline parsing)
+pytest tests/python/unit/test_csv_to_gpx.py tests/python/unit/test_extract_timeline_locations.py
 ```
 
 **PowerShell Tests**:

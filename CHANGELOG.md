@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - pg_dump warnings logging
       - Service stop failure after successful backup
       - Backup creation when zero-byte cleanup fails
+
+- **Data transformation tests for GPS/timeline processing** (#003 Phase 1)
+  - Added unit tests for CSV→GPX conversion, geospatial validators, and timeline extraction helpers
+  - Validates elevation inclusion, malformed CSV handling, JSON parsing errors, and activity enrichment flows
   - **Test Statistics**:
     - Total test cases: 40 (19 existing + 21 new)
     - Test code lines: 1,320
