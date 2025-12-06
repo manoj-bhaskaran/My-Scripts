@@ -6,10 +6,12 @@ from unittest.mock import Mock, patch
 from src.python.modules.utils.error_handling import (
     with_error_handling,
     with_retry,
+    retry_on_exception,
     retry_operation,
     is_elevated,
     require_elevated,
     safe_execute,
+    error_handler,
     ErrorContext,
 )
 
@@ -239,15 +241,15 @@ class TestSafeExecute:
         result = safe_execute(lambda: "success")
         assert result == "success"
 
-    def test_raise_on_error(self):
-        """Test raise on error (default)."""
-        with pytest.raises(ValueError):
-            safe_execute(lambda: (_ for _ in ()).throw(ValueError("error")))
-
     def test_return_none_on_error(self):
-        """Test return None on error."""
-        result = safe_execute(lambda: int("not_a_number"), on_error="return_none")
+        """Test return None on error (default behavior)."""
+        result = safe_execute(lambda: int("not_a_number"))
         assert result is None
+
+    def test_return_default_on_error(self):
+        """Test return custom default on error."""
+        result = safe_execute(lambda: int("not_a_number"), default=0)
+        assert result == 0
 
 
 class TestErrorContext:
@@ -370,3 +372,171 @@ class TestRetryOperationAdvanced:
         # Verify delays increase exponentially using helper function
         assert len(call_times) == 3
         assert validate_exponential_backoff(call_times)
+
+
+class TestRetryOnException:
+    """Tests for retry_on_exception decorator with type preservation."""
+
+    def test_retry_preserves_return_type(self):
+        """Verify retry decorator preserves function return type."""
+
+        @retry_on_exception(max_retries=3)
+        def returns_int() -> int:
+            return 42
+
+        result = returns_int()
+        # mypy should infer result is int
+        assert isinstance(result, int)
+        assert result == 42
+
+    def test_retry_with_different_types(self):
+        """Test retry with various return types."""
+
+        @retry_on_exception()
+        def returns_str() -> str:
+            return "hello"
+
+        @retry_on_exception()
+        def returns_list() -> list:
+            return [1, 2, 3]
+
+        @retry_on_exception()
+        def returns_dict() -> dict:
+            return {"key": "value"}
+
+        # Type checker should validate these
+        s: str = returns_str()
+        lst: list = returns_list()
+        d: dict = returns_dict()
+
+        assert s == "hello"
+        assert lst == [1, 2, 3]
+        assert d == {"key": "value"}
+
+    def test_retry_with_failure_then_success(self):
+        """Test retry recovers from failures."""
+        call_count = 0
+
+        @retry_on_exception(max_retries=3, delay=0.01)
+        def eventually_succeeds() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ValueError("temporary error")
+            return "success"
+
+        result = eventually_succeeds()
+        assert result == "success"
+        assert call_count == 2
+
+    def test_retry_respects_exception_filter(self):
+        """Test retry only catches specified exceptions."""
+
+        @retry_on_exception(max_retries=3, delay=0.01, exceptions=(ValueError,))
+        def raises_wrong_exception() -> int:
+            raise TypeError("wrong exception type")
+
+        with pytest.raises(TypeError):
+            raises_wrong_exception()
+
+    def test_retry_exponential_backoff(self):
+        """Test exponential backoff in retry_on_exception."""
+        call_times = []
+
+        @retry_on_exception(max_retries=3, delay=0.1, backoff=2.0)
+        def track_time() -> int:
+            call_times.append(time.time())
+            raise ValueError("Fail")
+
+        with pytest.raises(ValueError):
+            track_time()
+
+        # Verify delays increase exponentially
+        assert len(call_times) == 3
+        assert validate_exponential_backoff(call_times)
+
+
+class TestSafeExecuteGeneric:
+    """Tests for safe_execute with generic type preservation."""
+
+    def test_safe_execute_with_args(self):
+        """Test safe_execute accepts function arguments."""
+
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        result = safe_execute(add, 5, 3)
+        assert result == 8
+
+    def test_safe_execute_with_kwargs(self):
+        """Test safe_execute accepts keyword arguments."""
+
+        def greet(name: str, greeting: str = "Hello") -> str:
+            return f"{greeting}, {name}!"
+
+        result = safe_execute(greet, name="World", greeting="Hi")
+        assert result == "Hi, World!"
+
+    def test_safe_execute_returns_default_on_error(self):
+        """Test safe_execute returns default value on error."""
+
+        def failing_func() -> dict:
+            raise ValueError("error")
+
+        result = safe_execute(failing_func, default={})
+        assert result == {}
+
+    def test_safe_execute_preserves_types(self):
+        """Test safe_execute preserves return types."""
+
+        def returns_int() -> int:
+            return 42
+
+        def returns_str() -> str:
+            return "hello"
+
+        int_result = safe_execute(returns_int, default=0)
+        str_result = safe_execute(returns_str, default="")
+
+        assert isinstance(int_result, int)
+        assert isinstance(str_result, str)
+        assert int_result == 42
+        assert str_result == "hello"
+
+
+class TestErrorHandler:
+    """Tests for error_handler context manager."""
+
+    def test_error_handler_success(self):
+        """Test error_handler with successful execution."""
+        executed = False
+
+        with error_handler("Test operation"):
+            executed = True
+
+        assert executed is True
+
+    def test_error_handler_reraise(self):
+        """Test error_handler re-raises by default."""
+        with pytest.raises(ValueError):
+            with error_handler("Test operation", reraise=True):
+                raise ValueError("test error")
+
+    def test_error_handler_suppress(self):
+        """Test error_handler suppresses errors when reraise=False."""
+        executed = False
+
+        with error_handler("Test operation", reraise=False):
+            executed = True
+            raise ValueError("test error")
+
+        # Should not raise, error was suppressed
+        assert executed is True
+
+    def test_error_handler_custom_log_level(self):
+        """Test error_handler with custom log level."""
+        import logging
+
+        # Should not raise with reraise=False
+        with error_handler("Test operation", reraise=False, log_level=logging.WARNING):
+            raise ValueError("test error")
