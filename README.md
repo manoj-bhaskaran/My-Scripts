@@ -493,6 +493,43 @@ Coverage reports are automatically generated in CI/CD and uploaded to both Codec
 
 ---
 
+## Code Quality
+
+### Type Checking (Python)
+
+This repository uses **mypy** for static type checking to improve code quality and catch type-related errors early.
+
+**Run Type Checking Locally:**
+```bash
+# Install dependencies (if not already installed)
+pip install -r requirements.txt
+
+# Run mypy on Python source
+mypy src/python --config-file=mypy.ini
+
+# Type errors are informational only - they don't block commits or CI
+```
+
+**Type Checking Configuration:**
+- Configuration file: `mypy.ini`
+- Python version: 3.11
+- Mode: Permissive (Phase 1 - Infrastructure)
+- Tests excluded initially
+
+**Integration:**
+- ✅ **Pre-commit hook** - Shows type errors locally (informational, non-blocking)
+- ✅ **CI/CD** - Runs on every push and PR (informational only)
+- ✅ **Type stubs** - Includes stubs for `requests` and `tqdm`
+
+**Current Status:**
+- Phase 1 (Infrastructure): ✅ Complete
+- Phase 2 (Type Hints): Planned - Will add type hints to core modules
+- 117 type errors identified across 10 files for future cleanup
+
+Type checking helps maintain code quality without disrupting the existing workflow.
+
+---
+
 ## Security
 
 ### Dependency Security Scanning

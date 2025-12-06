@@ -89,6 +89,12 @@ jobs:
           name: Bandit-Security-Report
           path: bandit-report.json
 
+      - name: Run mypy (Type Checking)
+        run: |
+          pip install mypy types-requests types-tqdm
+          mypy src/python --config-file=mypy.ini || true  # Informational only
+        continue-on-error: true
+
       - name: Install PowerShell
         run: |
           sudo apt-get update
