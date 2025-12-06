@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Google Drive destructive-operation safeguards** (#003 Phase 1)
+  - Added fully mocked unit tests for root-level deletion and trash recovery flows
+  - Verifies folder exclusion, pagination, and API error handling to prevent accidental data loss
+  - Recovery helper tests ensure trashed items are identified without calling live APIs
+
 - **Comprehensive PostgreSQL Backup Tests** (#003 Phase 1) - Expanded test coverage for database backup scripts
   - **Priority**: HIGH - Critical path testing for financial data (GnuCash) backups
   - **Impact**: Prevents data loss, validates backup reliability, enables confident refactoring
