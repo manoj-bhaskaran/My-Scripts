@@ -24,10 +24,9 @@ exclude_dirs = ["tests", "fixtures"]
 # B101: assert (used for internal invariants)
 # B112: try-except-continue (acceptable for batch processing)
 # B405/B408: XML imports (self-generated data, not external)
-# B113: requests without timeout (should add timeouts but not blocking)
 # B318: XML parseString (self-generated GPX data)
 # B324: MD5 hash (file deduplication, not security)
-skips = ["B110", "B311", "B101", "B112", "B405", "B408", "B113", "B318", "B324"]
+skips = ["B110", "B311", "B101", "B112", "B405", "B408", "B318", "B324"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"

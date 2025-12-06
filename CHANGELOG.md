@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Re-enabled Bandit B113 Timeout Check** (#004c) - Enabled security enforcement for HTTP request timeouts
+
+  - **Priority**: MEDIUM-HIGH - Security and code quality enforcement
+  - **Impact**: Prevents new code from missing timeouts, enforced in CI/CD pipeline
+  - **Files Modified**:
+    - `pyproject.toml` - Removed B113 from skips list to enable timeout checking
+    - `src/python/modules/utils/README.md` - Updated documentation examples to include timeout parameters
+  - **Files Added**:
+    - `tests/python/unit/test_security_compliance.py` - Automated regression tests
+      - `test_all_requests_have_timeouts()` - Verifies all HTTP requests include timeout parameter
+      - `test_bandit_b113_enabled()` - Ensures B113 check is not in skip list
+      - `test_security_documentation_examples()` - Validates documentation examples comply with security requirements
+  - **CI/CD Integration**: Bandit B113 now enforced in GitHub Actions and pre-commit hooks
+  - **Benefits**: Catches timeout violations before merge, maintains code quality standards
+
 - **HTTP Timeout Guidelines Documentation** (#004b) - Comprehensive documentation for HTTP request timeout best practices
   - **Priority**: MEDIUM - Developer education and code quality improvement
   - **Impact**: Improved code reliability, prevents indefinite hangs, establishes timeout standards
@@ -83,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - safety==3.2.11 - Python dependency security scanner
     - pip-audit==2.7.3 - PyPI package auditor
   - **Workflow Features**:
-    - **Scheduled Scans**: Weekly security audits (cron: '0 2 * * 0')
+    - **Scheduled Scans**: Weekly security audits (cron: '0 2 \* \* 0')
     - **Trigger Events**: push, pull_request, schedule, manual workflow_dispatch
     - **Multi-tool Scanning**: Safety, pip-audit, and GitHub Dependency Review
     - **Detailed Reporting**: Step-by-step results in GitHub Actions summary
@@ -164,6 +179,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Removed continue-on-error from Critical CI Checks** (#521) - Made quality gates properly blocking
+
   - **Priority**: MEDIUM - Enforces code quality and security standards
   - **Impact**: Critical checks now properly fail CI builds, preventing merge of problematic code
   - **Problem Solved**:
@@ -281,6 +297,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Comprehensive Configuration Documentation** (#517) - Created complete configuration guide and validation tools
+
   - **Priority**: HIGH - Critical for user onboarding and reducing support burden
   - **Impact**: Solves fresh clone setup failures, improves user experience, reduces configuration questions
   - **Files Added**:
@@ -349,6 +366,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Version Impact**: MINOR bump - new configuration features and tools
 
 - **Added Comprehensive Tests for ErrorHandling Module** (#516) - Implemented extensive test coverage for error handling and retry utilities
+
   - **Priority**: HIGH - Critical error handling functionality requires robust testing
   - **Impact**: Enhanced code reliability, verified error handling behavior, comprehensive edge case coverage
   - **Test Coverage Added**:
@@ -468,6 +486,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Fixed Hardcoded Paths in Documentation** (#514) - Replaced hardcoded paths with placeholders for portability and clarity
+
   - **Priority**: HIGH - Documentation quality and usability issue
   - **Impact**: Improved user experience, consistent documentation, professional appearance
   - **Files Fixed**:
@@ -501,6 +520,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Version Impact**: MINOR bump - documentation improvement with new tooling
 
 - **Fixed Hardcoded Paths in PowerShell Scripts and Batch Files** (#513) - Removed hardcoded paths for portability and security
+
   - **Priority**: HIGH - Security risk with exposed credentials and broken portability
   - **Impact**: Enhanced security, improved portability, better maintainability
   - **Files Fixed**:
@@ -610,6 +630,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Centralized environment configuration** (#510)
+
   - New `.env.example` documents every environment variable with defaults and usage notes
   - Added loaders (`scripts/load-environment.sh`, `scripts/Load-Environment.ps1`) for consistent local setup
   - Validation scripts for Bash and PowerShell plus CI workflow to guard required configuration
@@ -693,6 +714,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Comprehensive Tests for Git Hooks** (#508) - Added complete test coverage for Git hook automation scripts
+
   - **Test Files**:
     - `tests/powershell/unit/Invoke-PostCommitHook.Tests.ps1`
     - `tests/powershell/unit/Invoke-PostMergeHook.Tests.ps1`
@@ -735,6 +757,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Version Impact**: PATCH bump - adds tests only, no functional changes
 
 - **Comprehensive Tests for PostgresBackup Module** (#507) - Added complete test coverage for PostgreSQL backup module
+
   - **Test File**: `tests/powershell/unit/PostgresBackup.Tests.ps1`
   - **Coverage**: Comprehensive unit tests for the `Backup-PostgresDatabase` function using Pester
   - **Platform**: Windows-specific tests (automatically skipped on Linux/macOS as PostgresBackup uses Windows services)
@@ -761,6 +784,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Version Impact**: PATCH bump - adds tests only, no functional changes
 
 - **Parameterized Issues Directory for GitHub Issue Creator** (#500) - Enhanced `create_github_issues.sh` with configurable input folder
+
   - **New Parameter**: `--issues-dir PATH` - Optional parameter to specify custom directory for issue markdown templates
     - Falls back to default `github_issues/` folder when not specified
     - Maintains full backward compatibility - existing workflows unchanged
@@ -776,6 +800,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Testing with different sets of issue templates
     - Using in CI/CD pipelines with configurable paths
   - **Examples**:
+
     ```bash
     # Use default issues directory
     ./create_github_issues.sh --repo OWNER/REPO
@@ -783,9 +808,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     # Use custom issues directory
     ./create_github_issues.sh --repo OWNER/REPO --issues-dir ./github_issues/new_batch
     ```
+
   - **Version Impact**: MINOR bump (2.0.0 → 2.1.0) - new optional feature, backward compatible
 
 - **Directory Sync with Exclusion Support** - Enhanced `Sync-Directory.ps1` (v1.1.0) for repository-to-working-copy synchronization
+
   - **New Feature**: `ExcludeFromDeletion` parameter - Array of glob patterns to preserve non-repository files
     - Supports exact matches (e.g., `.venv`, `logs`, `temp`)
     - Supports directory matches (preserves all files within excluded directories)
@@ -798,6 +825,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Use Case**: Sync Git repository to working directory while preserving logs, virtual environments, configs, and other non-repository files
   - **Documentation**: Comprehensive help with examples and parameter descriptions
   - **Examples**:
+
     ```powershell
     # Preview sync with exclusions
     .\Sync-Directory.ps1 -Source "<REPO_PATH>" -Destination "<SCRIPT_ROOT>" `
@@ -807,6 +835,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     .\Sync-Directory.ps1 -Source "<REPO_PATH>" -Destination "<SCRIPT_ROOT>" `
         -ExcludeFromDeletion @(".venv", "venv", "logs", "temp", "*.log", "backups")
     ```
+
   - **Script Naming Verification**: Confirmed `Sync-Directory.ps1` follows PowerShell naming conventions
     - `Sync` is an approved PowerShell verb
     - `Directory` is a singular noun in PascalCase
@@ -814,9 +843,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Version**: 1.1.0 (MINOR bump - new feature, backward compatible)
 
 - **Automated Release Workflow** (#465) - Complete automated release system for version management
+
   - **Release Workflow**
     - New file: `.github/workflows/release.yml` - Automated GitHub Actions release workflow
-      - Triggers on version tags (v*.*.*)
+      - Triggers on version tags (v*.*.\*)
       - Validates version format and CHANGELOG entry
       - Automatically extracts changelog for specific version
       - Creates GitHub Release with release notes
@@ -872,6 +902,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Optional module publishing to registries (future enhancement)
 
 - **Code Formatting Automation** (#464) - Comprehensive automated code formatting for all languages
+
   - **Python Formatting (Black)**
     - Enhanced `pyproject.toml` with Black configuration (line length 100, Python 3.11, exclude patterns)
     - Added `black>=24.1.0`, `bandit>=1.7.5`, `sqlfluff>=3.0.0` to `requirements.txt`
@@ -909,7 +940,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - Error handling and graceful degradation
   - **CI/CD Enforcement**
     - New workflow: `.github/workflows/code-formatting.yml` - Code formatting CI workflow
-      - Runs on push and PR to main/develop/claude/** branches
+      - Runs on push and PR to main/develop/claude/\*\* branches
       - Checks Python formatting with Black (--check --diff)
       - Checks PowerShell formatting with Format-PowerShellCode.ps1 -Check
       - Checks SQL formatting with SQLFluff lint
@@ -942,6 +973,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Comprehensive documentation and troubleshooting guides
 
 - **Pre-Commit Framework for Multi-Language Linting** (#463) - Comprehensive pre-commit hook system
+
   - **Pre-Commit Framework Installation**
     - New file: `.pre-commit-config.yaml` - Main configuration with all hooks and versions
     - Added `pre-commit>=3.0.0` to `requirements.txt`
@@ -1011,6 +1043,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Legacy hooks documented in git-hooks.md
 
 - **Architecture Documentation** (#462) - Comprehensive architecture documentation for the repository
+
   - **Core Architecture Document**
     - New file: `ARCHITECTURE.md` - High-level architecture overview at repository root
       - Design principles (language-based organization, domain categorization, shared infrastructure, cross-platform support)
@@ -1070,6 +1103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Foundation for future architectural changes and refactoring
 
 - **Shared Utilities Modules** (#461) - Extracted common patterns into reusable modules
+
   - **PowerShell Core Modules**
     - New module: `ErrorHandling` (v1.0.0) - Standardized error handling and retry logic
       - `Invoke-WithErrorHandling` - Execute script blocks with consistent error handling
@@ -1152,6 +1186,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Integration with existing logging frameworks
 
 - **Test Coverage Reporting Infrastructure** (#459) - Comprehensive coverage tracking and reporting system
+
   - **Codecov Integration**
     - New file: `codecov.yml` - Codecov service configuration
       - Coverage targets: `auto` (Phase 1 - informational only, will enforce 30% in Phase 3)
@@ -1242,6 +1277,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Target: 50%+ overall (60% Python, 50% PowerShell) by Month 9
 
 - **Complete Module Deployment Configuration** (#456) - Comprehensive module deployment system for PowerShell and Python
+
   - **PowerShell Module Manifests** - Created .psd1 manifests for all modules
     - `src/common/PostgresBackup.psd1` (v2.0.0) - PostgreSQL database backup module
     - `src/common/PowerShellLoggingFramework.psd1` (v2.0.0) - Cross-platform structured logging framework
@@ -1308,6 +1344,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Comprehensive error handling and rollback
 
 - **Git Hooks for Quality Enforcement** (#455) - Automated code quality checks and standards enforcement
+
   - New directory: `hooks/` - Tracked git hook templates for distribution
   - New directory: `scripts/` - Repository automation scripts
   - New hook: `hooks/pre-commit` (v1.0.0) - Validates code quality before commits
@@ -1365,6 +1402,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - pytest-mock >= 3.11.1
 
 ### Changed
+
 - Updated `requirements.txt` to include pytest and coverage dependencies
 - Enhanced `.github/workflows/sonarcloud.yml` with:
   - Python test execution with coverage reporting
@@ -1374,12 +1412,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated root `README.md` with testing section and instructions
 
 ### Infrastructure
+
 - CI/CD pipeline now runs all tests automatically on push and pull requests
 - Test execution completes in under 2 minutes
 - Coverage reports are generated in XML format for SonarCloud integration
 - Automated test result artifacts uploaded for each CI run
 
 ### Coverage Targets
+
 - Shared modules (src/common/): ≥30%
 - Core utilities: ≥50%
 - Overall project: ≥25%
@@ -1387,6 +1427,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Previous Releases]
 
 For changes prior to the testing framework implementation, see the Git commit history.
+
 # My Scripts Collection – Changelog
 
 All notable repository-wide changes are documented here.
@@ -1401,7 +1442,9 @@ The project follows [Semantic Versioning](https://semver.org) at the repository 
 ## [Unreleased]
 
 ### Added
+
 - **Naming Conventions Documentation** (#454) - Comprehensive naming standards for all scripts
+
   - New document: `docs/guides/naming-conventions.md` - Complete naming conventions guide with examples
   - New document: `docs/RENAME_MAPPING.md` - Detailed mapping of all renamed scripts with justifications
   - Establishes PowerShell `Verb-Noun` PascalCase standard using approved verbs
@@ -1421,7 +1464,9 @@ The project follows [Semantic Versioning](https://semver.org) at the repository 
     - Includes detailed summary reports
 
 ### Changed
+
 - **⚠️ BREAKING: Standardized Script Naming Conventions** (#454) - All scripts renamed to follow language best practices
+
   - **PowerShell Scripts** (19 renamed):
     - `logCleanup.ps1` → `Clear-PostgreSqlLog.ps1`
     - `cleanup-git-branches.ps1` → `Remove-MergedGitBranch.ps1`
@@ -1468,6 +1513,7 @@ This repository contains multiple independent scripts and modules, each with its
 - **Module-level versions**: PowerShell modules maintain their own CHANGELOG files (e.g., Videoscreenshot module)
 
 When referencing versions:
+
 - For specific script changes, see the script header or module CHANGELOG
 - For repository-wide changes affecting multiple scripts, refer to this file
 

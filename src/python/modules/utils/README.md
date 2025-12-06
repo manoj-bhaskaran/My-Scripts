@@ -30,7 +30,7 @@ from src.python.modules.utils.error_handling import with_retry
 
 @with_retry(max_retries=5, retry_delay=1.0)
 def fetch_data(url):
-    return requests.get(url).json()
+    return requests.get(url, timeout=(5, 30)).json()
 ```
 
 **`retry_operation(operation, description, ...)`** - Execute operation with retry
@@ -189,7 +189,7 @@ from src.python.modules.utils.error_handling import with_error_handling
 
 @with_error_handling(error_message="Failed to fetch data")
 def fetch_data(url):
-    return requests.get(url).json()
+    return requests.get(url, timeout=(5, 30)).json()
 ```
 
 ### Before (Manual Retry Logic)
@@ -246,6 +246,7 @@ delay = min(retry_delay * 2^(attempt-1), max_backoff)
 ```
 
 Example with `retry_delay=2.0` and `max_backoff=60.0`:
+
 - Attempt 1: 2.0 seconds
 - Attempt 2: 4.0 seconds
 - Attempt 3: 8.0 seconds
@@ -269,6 +270,7 @@ logging.basicConfig(
 ## Version History
 
 ### 1.0.0 (2025-11-20)
+
 - Initial release
 - `error_handling` module with decorators and retry logic
 - `file_operations` module with file operation utilities
