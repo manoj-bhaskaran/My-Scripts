@@ -4,16 +4,22 @@ This module provides reusable error handling utilities including retry logic,
 decorators, and privilege checking functions.
 """
 
+from __future__ import annotations
+
 import functools
 import logging
 import os
 import platform
 import time
-from typing import Any, Callable, Optional, TypeVar, Union
+from contextlib import contextmanager
+from typing import Any, Callable, Iterator, Optional, Tuple, Type, TypeVar, Union
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)  # type: ignore[name-defined,attr-defined]
 
-# Type variable for generic function typing
+# Type variable for generic function typing (preserves return type)
+T = TypeVar("T")
+
+# Type variable for decorator typing (bound to callable)
 F = TypeVar("F", bound=Callable[..., Any])
 
 
@@ -43,7 +49,7 @@ def with_error_handling(
 
     def decorator(func: F) -> F:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
@@ -73,7 +79,7 @@ def with_retry(
     max_retries: int = 3,
     retry_delay: float = 2.0,
     max_backoff: float = 60.0,
-    exceptions: tuple = (Exception,),
+    exceptions: Tuple[Type[Exception], ...] = (Exception,),
     log_errors: bool = True,
 ) -> Callable[[F], F]:
     """Decorator for automatic retry with exponential backoff.
@@ -101,7 +107,7 @@ def with_retry(
 
     def decorator(func: F) -> F:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             attempt = 0
 
             while True:
@@ -139,14 +145,64 @@ def with_retry(
     return decorator
 
 
+def retry_on_exception(
+    max_retries: int = 3,
+    delay: float = 1.0,
+    backoff: float = 2.0,
+    exceptions: Tuple[Type[Exception], ...] = (Exception,),
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """
+    Decorator to retry a function on exception.
+
+    Args:
+        max_retries: Maximum number of retry attempts
+        delay: Initial delay between retries (seconds)
+        backoff: Multiplier for delay after each retry
+        exceptions: Tuple of exception types to catch
+
+    Returns:
+        Decorated function that retries on failure
+
+    Example:
+        @retry_on_exception(max_retries=5, delay=1.0, backoff=2.0)
+        def fetch_data(url: str) -> dict:
+            return requests.get(url, timeout=(5, 30)).json()
+    """
+
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            current_delay = delay
+            last_exception: Optional[Exception] = None
+
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        time.sleep(current_delay)
+                        current_delay *= backoff
+                    continue
+
+            # All retries exhausted
+            if last_exception:
+                raise last_exception
+            raise RuntimeError("Unexpected error in retry logic")
+
+        return wrapper
+
+    return decorator
+
+
 def retry_operation(
-    operation: Callable[[], Any],
+    operation: Callable[[], T],
     description: str,
     max_retries: int = 3,
     retry_delay: float = 2.0,
     max_backoff: float = 60.0,
     log_errors: bool = True,
-) -> Any:
+) -> T:
     """Execute operation with automatic retry on failure.
 
     Args:
@@ -225,7 +281,7 @@ def is_elevated() -> bool:
         try:
             import ctypes
 
-            return ctypes.windll.shell32.IsUserAnAdmin() != 0
+            return bool(ctypes.windll.shell32.IsUserAnAdmin() != 0)  # type: ignore[attr-defined]
         except Exception:
             # Fallback: check if we can write to system directory
             try:
@@ -267,49 +323,59 @@ def require_elevated(custom_message: Optional[str] = None) -> None:
 
 
 def safe_execute(
-    func: Callable[[], Any],
-    on_error: str = "raise",
-    error_message: Optional[str] = None,
+    func: Callable[..., T],
+    *args: Any,
+    default: Optional[T] = None,
     log_errors: bool = True,
-) -> Optional[Any]:
-    """Execute function with error handling.
+    **kwargs: Any,
+) -> Union[T, None]:
+    """Execute function safely, returning default on error.
 
     Args:
-        func: Function to execute (takes no arguments).
-        on_error: Action on error - "raise", "return_none", or "continue".
-        error_message: Custom error message prefix.
-        log_errors: Whether to log errors (default: True).
+        func: Function to execute
+        *args: Positional arguments for function
+        default: Value to return on error
+        log_errors: Whether to log errors
+        **kwargs: Keyword arguments for function
 
     Returns:
-        Result of function, or None if error and on_error != "raise".
+        Function result or default value on error
 
     Example:
-        >>> result = safe_execute(
-        ...     lambda: int("not_a_number"),
-        ...     on_error="return_none",
-        ...     error_message="Invalid number format"
-        ... )
-        >>> print(result)
-        None
-
-        >>> data = safe_execute(
-        ...     lambda: json.load(open("config.json")),
-        ...     on_error="raise"
-        ... )
+        result = safe_execute(risky_operation, arg1, arg2, default={})
     """
     try:
-        return func()
+        return func(*args, **kwargs)
     except Exception as e:
         if log_errors:
-            msg = f"{error_message}: {e}" if error_message else f"Error: {e}"
-            logger.error(msg)
+            logger.error(f"Error in {func.__name__}: {e}")
+        return default
 
-        if on_error == "raise":
+
+@contextmanager
+def error_handler(
+    error_message: str,
+    reraise: bool = True,
+    log_level: int = logging.ERROR,  # type: ignore[attr-defined]
+) -> Iterator[None]:
+    """
+    Context manager for standardized error handling.
+
+    Args:
+        error_message: Error message to log
+        reraise: Whether to re-raise the exception
+        log_level: Logging level for errors
+
+    Example:
+        with error_handler("Failed to process file", reraise=False):
+            process_file(path)
+    """
+    try:
+        yield
+    except Exception as e:
+        logger.log(log_level, f"{error_message}: {e}")
+        if reraise:
             raise
-        elif on_error in ("return_none", "continue"):
-            return None
-        else:
-            raise ValueError(f"Invalid on_error value: {on_error}")
 
 
 class ErrorContext:
@@ -354,11 +420,16 @@ class ErrorContext:
         self.retry_delay = retry_delay
         self.attempt = 0
 
-    def __enter__(self):
+    def __enter__(self) -> "ErrorContext":
         """Enter context."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Any,
+    ) -> bool:
         """Exit context with error handling."""
         if exc_type is None:
             # No exception, success
@@ -394,9 +465,11 @@ class ErrorContext:
 __all__ = [
     "with_error_handling",
     "with_retry",
+    "retry_on_exception",
     "retry_operation",
     "is_elevated",
     "require_elevated",
     "safe_execute",
+    "error_handler",
     "ErrorContext",
 ]
