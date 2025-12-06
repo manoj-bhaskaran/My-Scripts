@@ -17,6 +17,7 @@ tests/
 │   ├── unit/              # Python unit tests
 │   │   ├── test_validators.py
 │   │   ├── test_logging_framework.py
+│   │   ├── test_smoke.py       # Smoke tests for Python entry-point scripts
 │   │   └── test_csv_to_gpx.py
 │   └── conftest.py        # Pytest configuration and fixtures
 ├── powershell/
@@ -24,6 +25,7 @@ tests/
 │   │   ├── ErrorHandling.Tests.ps1
 │   │   ├── FileDistributor.Tests.ps1
 │   │   ├── FileOperations.Tests.ps1
+│   │   ├── SmokeTests.Tests.ps1      # Smoke tests for PowerShell scripts
 │   │   ├── PostgresBackup.Tests.ps1
 │   │   ├── ProgressReporter.Tests.ps1
 │   │   └── RandomName.Tests.ps1
