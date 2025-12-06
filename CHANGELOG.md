@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2025-12-06
+
+### Added
+
+- **FileSystem Core Module** (#601 Phase 1 of #008)
+  - Created new `FileSystem` module under `src/powershell/modules/Core/FileSystem/`
+  - **Public Functions**:
+    - `New-DirectoryIfMissing` - Creates directories with error handling and Force parameter support
+    - `Test-FileAccessible` - Tests file accessibility for Read, Write, or ReadWrite operations
+    - `Test-PathValid` - Validates paths according to filesystem rules with optional wildcard support
+    - `Test-FileLocked` - Detects if a file is locked by another process
+  - **Private Functions**:
+    - `Get-FileLockInfo` - Internal helper to identify locking processes
+  - **Module Features**:
+    - Proper error handling with verbose logging
+    - PowerShell 5.1+ compatibility
+    - Comprehensive parameter validation
+    - Follows Public/Private module structure pattern
+  - **Testing**:
+    - Complete unit test suite in `tests/powershell/unit/FileSystem.Tests.ps1`
+    - Tests cover all public functions and edge cases
+    - Validates module exports and function isolation
+  - **Script Migrations**:
+    - Updated `Expand-ZipsAndClean.ps1` to use `New-DirectoryIfMissing` (5 instances)
+    - Updated `Remove-EmptyFolders.ps1` to use `New-DirectoryIfMissing`
+    - Updated `Remove-DuplicateFiles.ps1` to use `New-DirectoryIfMissing`
+  - **Benefits**:
+    - ✅ Reusable file system operations across scripts
+    - ✅ Consistent error handling and validation
+    - ✅ Easier to test and maintain
+    - ✅ Reduces code duplication in large scripts
+    - ✅ Foundation for further refactoring (Issue #008)
+
 ## [2.4.1] - 2025-12-06
 
 ### Added

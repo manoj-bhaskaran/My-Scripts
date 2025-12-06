@@ -237,6 +237,7 @@ param(
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\Core\FileSystem\FileSystem.psm1" -Force
 
 # Initialize logger (script name will be extracted from the script file name)
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
@@ -418,7 +419,7 @@ function Expand-ZipSmart {
     )
 
     if (-not (Test-Path -LiteralPath $DestinationRoot)) {
-        New-Item -ItemType Directory -Path $DestinationRoot -Force | Out-Null
+        New-DirectoryIfMissing -Path $DestinationRoot -Force | Out-Null
     }
 
     $destRootFull = Get-FullPath -Path $DestinationRoot
@@ -434,7 +435,7 @@ function Expand-ZipSmart {
             $target = Join-Path $DestinationRoot $safeSub
             $target = Resolve-UniqueDirectoryPath -Path $target
             if (-not (Test-Path -LiteralPath $target)) {
-                New-Item -ItemType Directory -Path $target -Force | Out-Null
+                New-DirectoryIfMissing -Path $target -Force | Out-Null
             }
             Expand-Archive -LiteralPath $ZipPath -DestinationPath $target -Force
             $written = (Get-ChildItem -Path $target -Recurse -File | Measure-Object).Count
@@ -460,7 +461,7 @@ function Expand-ZipSmart {
 
                 $destDir = Split-Path -Path $destFull -Parent
                 if (-not (Test-Path -LiteralPath $destDir)) {
-                    New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+                    New-DirectoryIfMissing -Path $destDir -Force | Out-Null
                 }
 
                 $targetPath = $destFull
@@ -520,7 +521,7 @@ function Move-Zips-ToParent {
     if (-not $WhatIfPreference) {
         $probe = Join-Path $parent ("._write_test_{0}" -f ([guid]::NewGuid().ToString('N')))
         try {
-            New-Item -ItemType Directory -Path $probe -Force | Out-Null
+            New-DirectoryIfMissing -Path $probe -Force | Out-Null
             Remove-Item -LiteralPath $probe -Recurse -Force
         }
         catch {
@@ -602,7 +603,7 @@ try {
     # Destination readiness
     if (-not (Test-Path -LiteralPath $DestinationDirectory)) {
         if ($PSCmdlet.ShouldProcess($DestinationDirectory, "Create destination directory")) {
-            New-Item -ItemType Directory -Path $DestinationDirectory -Force | Out-Null
+            New-DirectoryIfMissing -Path $DestinationDirectory -Force | Out-Null
         }
     }
 
