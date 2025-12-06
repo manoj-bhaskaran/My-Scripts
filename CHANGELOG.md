@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.1] - 2025-12-06
+
+### Fixed
+
+- **Empty Catch Blocks in PowerShell Scripts** (#001)
+  - Fixed all 33 empty catch blocks across PowerShell scripts and modules
+  - **Best-effort operations**: Added debug-level logging for non-critical failures
+    - Git merge-base detection (`Invoke-PostMergeHook.ps1`)
+    - File metadata retrieval (`FileDistributor.ps1`, `Remove-DuplicateFiles.ps1`)
+    - Path validation (`FileDistributor.ps1`)
+    - Directory creation attempts (`FileDistributor.ps1`, `Remove-DuplicateFiles.ps1`)
+    - FPS parsing (`Video.Fps.ps1`)
+    - Device name retrieval (`Gdi.Capture.ps1`)
+    - ReadOnly attribute clearing (`Remove-OldDownload.ps1`)
+  - **Resource cleanup operations**: Added explanatory comments for intentional silent handling
+    - FileStream disposal (`FileDistributor.ps1`, `IO.Helpers.ps1`)
+    - Graphics object disposal (`Gdi.Capture.ps1`)
+    - Bitmap disposal (`Gdi.Capture.ps1`)
+    - Process cleanup (`Vlc.Process.ps1`, `Cropper.Invoke.ps1`)
+    - StandardError stream reading (`Vlc.Process.ps1`)
+  - **Console/UI operations**: Added comments for environment-specific failures
+    - Console width detection (`Expand-ZipsAndClean.ps1`)
+    - Resume file path resolution (`Start-VideoBatch.ps1`)
+    - Timestamp parsing in log files (`Clear-LogFile.ps1`)
+  - **Impact**: Improved debugging capability and code maintainability
+  - **Module Updates**: 
+    - PurgeLogs: v2.0.0 → v2.0.1
+    - Videoscreenshot: v3.0.2 → v3.0.3
+
+## [2.7.0] - 2025-12-06
+
 ### Added
 
 - **Comprehensive Environment Variable Documentation** (#606 Phase 1 of #010)
