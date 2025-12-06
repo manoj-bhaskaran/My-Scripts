@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Comprehensive Environment Variable Documentation** (#606 Phase 1 of #010)
+  - Created `docs/ENVIRONMENT.md` - Complete environment variable reference guide
+  - **Documentation Sections**:
+    - Quick start guide for environment setup
+    - Required variables (MY_SCRIPTS_ROOT, Google Drive, CloudConvert)
+    - Optional variables (PostgreSQL, logging, backup, email, advanced settings)
+    - CI/CD secrets configuration (GitHub Actions)
+    - Standard OS environment variables reference
+    - Comprehensive setup instructions (dev, CI/CD, production)
+    - Security best practices (secret management, key rotation, file permissions)
+    - Troubleshooting guide with common issues and solutions
+    - Validation script documentation
+    - Quick reference tables
+  - **Variable Documentation** (23 application-defined variables):
+    - Each variable includes: description, format, how to obtain, example, used by, security notes
+    - Clear marking of required vs optional variables
+    - Default values and fallback behavior
+    - Line number references for code usage
+  - **Security Features**:
+    - Never commit secrets guidelines
+    - Different keys per environment recommendations
+    - Key rotation best practices
+    - File permission instructions (Windows/Linux/Mac)
+    - Secret management tool recommendations (Credential Manager, Keychain, Vault)
+  - **Troubleshooting Coverage**:
+    - Environment variable not found
+    - Invalid credentials/authentication failures
+    - Scripts can't find .env file
+    - Permission denied errors
+    - PostgreSQL connection failures
+    - Log file location issues
+  - **Integration**:
+    - Updated README.md with reference to environment documentation
+    - Updated .gitignore with comprehensive environment file patterns (.env, .env.local, .env.*.local)
+    - Cross-references to Configuration Guide, Installation Guide, Contributing Guidelines
+  - **Benefits**:
+    - ✅ Single source of truth for environment variables
+    - ✅ Clear onboarding path for new users
+    - ✅ Security best practices documented
+    - ✅ Comprehensive troubleshooting guide
+    - ✅ Supports all 3 environments (dev, CI/CD, production)
+    - ✅ Foundation for future environment improvements (Phase 2: Validation, Phase 3: Templates)
+
 ## [2.6.0] - 2025-12-06
 
 ### Added
