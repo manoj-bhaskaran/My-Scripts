@@ -22,6 +22,11 @@ from python_logging_framework import (
     JSONFormatter,
     initialise_logger,
     validate_metadata_keys,
+    log_info,
+    log_debug,
+    log_warning,
+    log_error,
+    log_critical,
     RECOMMENDED_METADATA_KEYS,
 )
 
@@ -149,3 +154,151 @@ class TestRecommendedMetadataKeys:
         """Test that recommended keys include common metadata."""
         assert "CorrelationId" in RECOMMENDED_METADATA_KEYS
         assert "User" in RECOMMENDED_METADATA_KEYS
+
+
+class TestLoggerNameAndCustomDir:
+    """Tests for logger initialization with custom parameters."""
+
+    def test_initialise_logger_creates_logger(self):
+        """Test logger initialization."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logger = initialise_logger("test_module", log_dir=tmpdir)
+            assert logger.name == "test_module"
+            assert isinstance(logger, logging.Logger)
+
+    def test_logger_uses_custom_log_dir(self, tmp_path):
+        """Test custom log directory."""
+        log_dir = tmp_path / "logs"
+        logger = initialise_logger("test", log_dir=str(log_dir))
+
+        # Log something
+        log_info(logger, "Test message")
+
+        # Verify log file created in custom dir
+        assert log_dir.exists()
+        log_files = list(log_dir.glob("*.log"))
+        assert len(log_files) > 0
+
+    def test_log_with_metadata(self, tmp_path):
+        """Test logging with structured metadata."""
+        logger = initialise_logger("test_with_metadata", log_dir=str(tmp_path))
+
+        metadata = {"user_id": 123, "action": "delete"}
+        log_info(logger, "User action", metadata=metadata)
+
+        # Flush handlers to ensure logs are written
+        for handler in logger.handlers:
+            handler.flush()
+
+        # Find the log file - it has a date suffix
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        log_file = tmp_path / f"test_with_metadata_python_{today}.log"
+        
+        assert log_file.exists()
+        
+        # Verify metadata in log file
+        content = log_file.read_text()
+        assert "user_id" in content
+        assert "123" in content
+
+
+class TestLoggingHelpers:
+    """Tests for logging helper functions."""
+
+    def test_log_debug(self, tmp_path):
+        """Test debug level logging."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        
+        logger = initialise_logger("test_log_debug", log_dir=str(tmp_path), log_level=logging.DEBUG)
+        log_debug(logger, "Debug message")
+        
+        # Flush handlers
+        for handler in logger.handlers:
+            handler.flush()
+        
+        log_file = tmp_path / f"test_log_debug_python_{today}.log"
+        assert log_file.exists()
+        content = log_file.read_text()
+        assert "Debug message" in content
+
+    def test_log_info(self, tmp_path):
+        """Test info level logging."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        
+        logger = initialise_logger("test_log_info", log_dir=str(tmp_path))
+        log_info(logger, "Info message")
+        
+        # Flush handlers
+        for handler in logger.handlers:
+            handler.flush()
+        
+        log_file = tmp_path / f"test_log_info_python_{today}.log"
+        assert log_file.exists()
+        content = log_file.read_text()
+        assert "Info message" in content
+
+    def test_log_warning(self, tmp_path):
+        """Test warning level logging."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        
+        logger = initialise_logger("test_log_warning", log_dir=str(tmp_path))
+        log_warning(logger, "Warning message")
+        
+        # Flush handlers
+        for handler in logger.handlers:
+            handler.flush()
+        
+        log_file = tmp_path / f"test_log_warning_python_{today}.log"
+        assert log_file.exists()
+        content = log_file.read_text()
+        assert "Warning message" in content
+
+    def test_log_error(self, tmp_path):
+        """Test error level logging."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        
+        logger = initialise_logger("test_log_error", log_dir=str(tmp_path))
+        log_error(logger, "Error message")
+        
+        # Flush handlers
+        for handler in logger.handlers:
+            handler.flush()
+        
+        log_file = tmp_path / f"test_log_error_python_{today}.log"
+        assert log_file.exists()
+        content = log_file.read_text()
+        assert "Error message" in content
+
+    def test_log_critical(self, tmp_path):
+        """Test critical level logging."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        
+        logger = initialise_logger("test_log_critical", log_dir=str(tmp_path))
+        log_critical(logger, "Critical message")
+        
+        # Flush handlers
+        for handler in logger.handlers:
+            handler.flush()
+        
+        log_file = tmp_path / f"test_log_critical_python_{today}.log"
+        assert log_file.exists()
+        content = log_file.read_text()
+        assert "Critical message" in content

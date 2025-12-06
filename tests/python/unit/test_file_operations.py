@@ -276,3 +276,49 @@ class TestSafeAppendText:
         safe_append_text(file_path, "line 3\n")
 
         assert file_path.read_text() == "line 1\nline 2\nline 3\n"
+
+
+class TestEnsureDirectoryAdvanced:
+    """Advanced tests for ensure_directory based on issue requirements."""
+
+    def test_ensure_directory_creates_dir(self, tmp_path):
+        """Test directory creation."""
+        new_dir = tmp_path / "new" / "nested" / "dir"
+
+        result = ensure_directory(new_dir)
+
+        assert result.exists()
+        assert result.is_dir()
+
+    def test_ensure_directory_handles_existing(self, tmp_path):
+        """Test handling of existing directory."""
+        existing = tmp_path / "existing"
+        existing.mkdir()
+
+        result = ensure_directory(existing)
+
+        assert result.exists()
+        # Should not raise error
+
+
+class TestSafeWriteTextAdvanced:
+    """Advanced tests for safe_write_text based on issue requirements."""
+
+    def test_safe_file_write_creates_parent_dirs(self, tmp_path):
+        """Test file write creates parent directories."""
+        nested = tmp_path / "a" / "b" / "c" / "file.txt"
+
+        safe_write_text(nested, "content")
+
+        assert nested.exists()
+        assert nested.read_text() == "content"
+
+    def test_safe_write_text_with_encoding(self, tmp_path):
+        """Test safe write with custom encoding."""
+        file_path = tmp_path / "unicode.txt"
+        content = "Hello 世界 🌍"
+
+        result = safe_write_text(file_path, content, encoding="utf-8")
+
+        assert result is True
+        assert file_path.read_text(encoding="utf-8") == content
