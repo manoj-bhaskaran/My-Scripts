@@ -98,16 +98,16 @@ try {
     Write-LogInfo "Backup invocation completed" -Metadata @{ Database = $dbname; BackupFolder = $backup_folder }
 
     Write-Output ([PSCustomObject]@{
-        Database      = $dbname
-        BackupFolder  = $backup_folder
-        LogFolder     = $log_folder
-        User          = $user
-        RetentionDays = $retention_days
-        MinBackups    = $min_backups
-        PasswordFile  = $PasswordFile
-        Result        = $invokeResult
-        Status        = "Success"
-    })
+            Database      = $dbname
+            BackupFolder  = $backup_folder
+            LogFolder     = $log_folder
+            User          = $user
+            RetentionDays = $retention_days
+            MinBackups    = $min_backups
+            PasswordFile  = $PasswordFile
+            Result        = $invokeResult
+            Status        = "Success"
+        })
 }
 catch {
     Write-LogError "Backup invocation failed" -Metadata @{ Database = $dbname; Error = $_ }

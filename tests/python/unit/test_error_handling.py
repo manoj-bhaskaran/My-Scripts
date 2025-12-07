@@ -24,17 +24,17 @@ EXPONENTIAL_BACKOFF_MULTIPLIER = 1.5
 def validate_exponential_backoff(call_times: list) -> bool:
     """
     Validate that delays between calls follow exponential backoff pattern.
-    
+
     Args:
         call_times: List of timestamps when function was called
-        
+
     Returns:
         True if delays increase exponentially (second delay > first delay * 1.5)
     """
     if len(call_times) < 3:
         return False
-    
-    delays = [call_times[i+1] - call_times[i] for i in range(len(call_times)-1)]
+
+    delays = [call_times[i + 1] - call_times[i] for i in range(len(call_times) - 1)]
     # Verify second delay is roughly 2x the first (using 1.5 multiplier for tolerance)
     return delays[1] > delays[0] * EXPONENTIAL_BACKOFF_MULTIPLIER
 
@@ -319,7 +319,7 @@ class TestRetryDecoratorAdvanced:
 
     def test_retry_decorator_with_custom_exceptions(self):
         """Test retry only on specific exceptions."""
-        
+
         @with_retry(max_retries=3, retry_delay=0.01, exceptions=(ValueError,))
         def func():
             raise TypeError("Not retryable")
@@ -362,11 +362,7 @@ class TestRetryOperationAdvanced:
 
         with pytest.raises(ValueError):
             retry_operation(
-                operation,
-                "Test operation",
-                max_retries=3,
-                retry_delay=0.1,
-                max_backoff=60.0
+                operation, "Test operation", max_retries=3, retry_delay=0.1, max_backoff=60.0
             )
 
         # Verify delays increase exponentially using helper function

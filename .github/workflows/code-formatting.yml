@@ -27,7 +27,7 @@ jobs:
           cache: 'pip'
 
       - name: Report Python cache status
-        run: echo "Python cache hit: ${{ steps.setup-python.outputs.cache-hit }}"
+        run: echo "Python cache hit:" "${{ steps.setup-python.outputs.cache-hit }}"
 
       - name: Install Python formatting tools
         run: |
@@ -55,7 +55,7 @@ jobs:
           key: ${{ runner.os }}-psmodules-v1
 
       - name: Report PowerShell module cache status
-        run: echo "PowerShell module cache hit: ${{ steps.cache-pwsh.outputs.cache-hit }}"
+        run: echo "PowerShell module cache hit:" "${{ steps.cache-pwsh.outputs.cache-hit }}"
 
       - name: Install PSScriptAnalyzer
         shell: pwsh

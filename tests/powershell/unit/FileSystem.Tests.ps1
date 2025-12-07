@@ -113,13 +113,15 @@ Describe "FileSystem Module" {
             $file = "TestDrive:/locked.txt"
             "content" | Out-File $file
 
+            # Resolve the path for .NET file operations
+            $resolvedPath = (Get-Item -Path $file).FullName
+
             # Open the file with exclusive access to lock it
-            $stream = [System.IO.File]::Open($file, 'Open', 'ReadWrite', 'None')
+            $stream = [System.IO.File]::Open($resolvedPath, 'Open', 'ReadWrite', 'None')
 
             try {
                 Test-FileLocked -Path $file | Should -Be $true
-            }
-            finally {
+            } finally {
                 $stream.Close()
             }
         }
@@ -128,7 +130,10 @@ Describe "FileSystem Module" {
             $file = "TestDrive:/temp-lock.txt"
             "content" | Out-File $file
 
-            $stream = [System.IO.File]::Open($file, 'Open', 'ReadWrite', 'None')
+            # Resolve the path for .NET file operations
+            $resolvedPath = (Get-Item -Path $file).FullName
+
+            $stream = [System.IO.File]::Open($resolvedPath, 'Open', 'ReadWrite', 'None')
             $stream.Close()
 
             Test-FileLocked -Path $file | Should -Be $false

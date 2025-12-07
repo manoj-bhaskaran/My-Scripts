@@ -2,7 +2,10 @@
 ignore=tests
 
 [MESSAGES CONTROL]
-disable=C0111,R0913
+# Disable import-error for pre-commit since dependencies might not be installed
+# Disable no-member for dynamic attributes
+# Keep existing disables for docstrings and too-many-arguments
+disable=C0111,R0913,E0401,E1101
 
 [FORMAT]
 max-line-length=100

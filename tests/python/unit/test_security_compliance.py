@@ -43,11 +43,11 @@ class TestSecurityCompliance:
 
         for file_path in python_files:
             # Skip test files and __pycache__
-            if 'test_' in file_path.name or '__pycache__' in str(file_path):
+            if "test_" in file_path.name or "__pycache__" in str(file_path):
                 continue
 
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
 
                 # Parse the Python file into an AST
@@ -61,13 +61,16 @@ class TestSecurityCompliance:
             for node in ast.walk(tree):
                 if isinstance(node, ast.Call):
                     # Check for requests.method() calls
-                    if (isinstance(node.func, ast.Attribute) and
-                        isinstance(node.func.value, ast.Name) and
-                        node.func.value.id == 'requests' and
-                        node.func.attr in ['get', 'post', 'put', 'delete', 'patch', 'head', 'options']):
+                    if (
+                        isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "requests"
+                        and node.func.attr
+                        in ["get", "post", "put", "delete", "patch", "head", "options"]
+                    ):
 
                         # Check if timeout keyword argument is present
-                        has_timeout = any(kw.arg == 'timeout' for kw in node.keywords)
+                        has_timeout = any(kw.arg == "timeout" for kw in node.keywords)
 
                         if not has_timeout:
                             violation = f"{file_path}:Line {node.lineno} - {node.func.attr}() call missing timeout"
@@ -84,9 +87,9 @@ class TestSecurityCompliance:
 
         # Assert no violations found
         assert len(violations) == 0, (
-            f"Found {len(violations)} HTTP requests without timeout parameters:\n" +
-            "\n".join(f"  - {v}" for v in violations) +
-            "\n\nAll requests.* calls must include a timeout parameter to prevent indefinite hangs."
+            f"Found {len(violations)} HTTP requests without timeout parameters:\n"
+            + "\n".join(f"  - {v}" for v in violations)
+            + "\n\nAll requests.* calls must include a timeout parameter to prevent indefinite hangs."
         )
 
     def test_bandit_b113_enabled(self):
@@ -101,11 +104,11 @@ class TestSecurityCompliance:
         if not pyproject_path.exists():
             pytest.skip("pyproject.toml not found")
 
-        with open(pyproject_path, 'r', encoding='utf-8') as f:
+        with open(pyproject_path, "r", encoding="utf-8") as f:
             content = f.read()
 
         # Check that B113 is not in the skips list
-        assert 'B113' not in content, (
+        assert "B113" not in content, (
             "B113 check should be enabled (not in skips list) in pyproject.toml. "
             "This ensures Bandit will catch requests calls without timeouts."
         )
@@ -122,25 +125,26 @@ class TestSecurityCompliance:
         violations = []
 
         # Check documentation files
-        doc_patterns = [
-            "**/*.md",
-            "**/*.rst",
-            "docs/**/*.txt"
-        ]
+        doc_patterns = ["**/*.md", "**/*.rst", "docs/**/*.txt"]
 
         for pattern in doc_patterns:
             for doc_file in Path(".").glob(pattern):
                 if doc_file.is_file():
                     try:
-                        with open(doc_file, 'r', encoding='utf-8') as f:
+                        with open(doc_file, "r", encoding="utf-8") as f:
                             lines = f.readlines()
 
                         for line_num, line in enumerate(lines, 1):
                             # Look for requests calls in code blocks or examples
-                            if ('requests.' in line and
-                                any(method in line for method in ['get(', 'post(', 'put(', 'delete(', 'patch(']) and
-                                'timeout=' not in line and
-                                '```' not in line):  # Skip markdown code fence lines
+                            if (
+                                "requests." in line
+                                and any(
+                                    method in line
+                                    for method in ["get(", "post(", "put(", "delete(", "patch("]
+                                )
+                                and "timeout=" not in line
+                                and "```" not in line
+                            ):  # Skip markdown code fence lines
 
                                 violation = f"{doc_file}:Line {line_num} - Example missing timeout"
                                 violations.append(violation)

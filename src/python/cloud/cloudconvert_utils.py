@@ -71,13 +71,9 @@ def create_upload_task(api_key: str) -> Dict[str, Any]:
 
     plog.log_debug(logger, "Making API request to create an upload task.")
     try:
-        response = requests.post(
-            url, json=payload, headers=headers, timeout=TIMEOUT_STANDARD
-        )
+        response = requests.post(url, json=payload, headers=headers, timeout=TIMEOUT_STANDARD)
     except Timeout as e:
-        plog.log_error(
-            logger, f"Request timed out after {TIMEOUT_STANDARD} seconds: {e}"
-        )
+        plog.log_error(logger, f"Request timed out after {TIMEOUT_STANDARD} seconds: {e}")
         raise
     except RequestException as e:
         plog.log_error(logger, f"Request failed: {e}")
@@ -197,13 +193,9 @@ def create_conversion_task(api_key: str, output_format: str) -> Dict[str, Any]:
 
     plog.log_debug(logger, "Making API request to create a conversion task.")
     try:
-        response = requests.post(
-            url, json=payload, headers=headers, timeout=TIMEOUT_STANDARD
-        )
+        response = requests.post(url, json=payload, headers=headers, timeout=TIMEOUT_STANDARD)
     except Timeout as e:
-        plog.log_error(
-            logger, f"Request timed out after {TIMEOUT_STANDARD} seconds: {e}"
-        )
+        plog.log_error(logger, f"Request timed out after {TIMEOUT_STANDARD} seconds: {e}")
         raise
     except RequestException as e:
         plog.log_error(logger, f"Request failed: {e}")
@@ -239,9 +231,7 @@ def check_task_status(api_key: str, task_id: str) -> Dict[str, Any]:
     try:
         response = requests.get(url, headers=headers, timeout=TIMEOUT_QUICK)
     except Timeout as e:
-        plog.log_error(
-            logger, f"Request timed out after {TIMEOUT_QUICK} seconds: {e}"
-        )
+        plog.log_error(logger, f"Request timed out after {TIMEOUT_QUICK} seconds: {e}")
         raise
     except RequestException as e:
         plog.log_error(logger, f"Request failed: {e}")

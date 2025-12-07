@@ -36,7 +36,7 @@ jobs:
           cache: 'pip'
 
       - name: Report Python cache status
-        run: echo "Python cache hit: ${{ steps.setup-python.outputs.cache-hit }}"
+        run: echo "Python cache hit:" "${{ steps.setup-python.outputs.cache-hit }}"
 
       - name: Install security scanning tools
         run: |

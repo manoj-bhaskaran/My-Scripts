@@ -488,16 +488,16 @@ Write-LogInfo $Summary
 Write-LogInfo "Duplicate file scan completed."
 
 $result = [PSCustomObject]@{
-    ParentDirectory       = $ParentDirectory
-    LogFile               = $Global:LogConfig.LogFilePath
-    DuplicateFilesFound   = $TotalDuplicatesFound
-    DuplicateFilesDeleted = $TotalDeleted
-    DuplicateFilesRetained= $TotalRetained
-    DryRun                = [bool]$DryRun
-    WouldDeleteCount      = if ($DryRun) { $WouldDeleteCount } else { 0 }
-    HashFailures          = $script:HashFailures
-    Warnings              = $script:Warnings
-    CriticalErrors        = $script:CriticalErrors
+    ParentDirectory        = $ParentDirectory
+    LogFile                = $Global:LogConfig.LogFilePath
+    DuplicateFilesFound    = $TotalDuplicatesFound
+    DuplicateFilesDeleted  = $TotalDeleted
+    DuplicateFilesRetained = $TotalRetained
+    DryRun                 = [bool]$DryRun
+    WouldDeleteCount       = if ($DryRun) { $WouldDeleteCount } else { 0 }
+    HashFailures           = $script:HashFailures
+    Warnings               = $script:Warnings
+    CriticalErrors         = $script:CriticalErrors
 }
 
 Write-Output $result

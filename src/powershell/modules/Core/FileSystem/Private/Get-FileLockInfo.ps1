@@ -30,9 +30,9 @@ function Get-FileLockInfo {
     }
 
     $lockInfo = [PSCustomObject]@{
-        FilePath = $Path
-        IsLocked = $true
-        ProcessId = $null
+        FilePath    = $Path
+        IsLocked    = $true
+        ProcessId   = $null
         ProcessName = $null
     }
 
@@ -49,7 +49,8 @@ function Get-FileLockInfo {
             $processes = Get-Process | Where-Object {
                 try {
                     $_.Modules.FileName -contains $Path
-                } catch {
+                }
+                catch {
                     $false
                 }
             }

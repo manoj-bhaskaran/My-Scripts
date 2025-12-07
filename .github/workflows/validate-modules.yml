@@ -4,25 +4,25 @@ permissions:
 
 on:
   push:
-    branches: [ main, develop, 'claude/**' ]
+    branches: [main, develop, "claude/**"]
     paths:
-      - 'src/powershell/modules/**/*.psm1'
-      - 'src/powershell/modules/**/*.psd1'
-      - 'src/python/modules/**/*.py'
-      - 'setup.py'
-      - 'config/modules/deployment.txt'
-      - 'scripts/Deploy-Modules.ps1'
-      - '.github/workflows/validate-modules.yml'
+      - "src/powershell/modules/**/*.psm1"
+      - "src/powershell/modules/**/*.psd1"
+      - "src/python/modules/**/*.py"
+      - "setup.py"
+      - "config/modules/deployment.txt"
+      - "scripts/Deploy-Modules.ps1"
+      - ".github/workflows/validate-modules.yml"
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths:
-      - 'src/powershell/modules/**/*.psm1'
-      - 'src/powershell/modules/**/*.psd1'
-      - 'src/python/modules/**/*.py'
-      - 'setup.py'
-      - 'config/modules/deployment.txt'
-      - 'scripts/Deploy-Modules.ps1'
-      - '.github/workflows/validate-modules.yml'
+      - "src/powershell/modules/**/*.psm1"
+      - "src/powershell/modules/**/*.psd1"
+      - "src/python/modules/**/*.py"
+      - "setup.py"
+      - "config/modules/deployment.txt"
+      - "scripts/Deploy-Modules.ps1"
+      - ".github/workflows/validate-modules.yml"
 
 jobs:
   validate-powershell-manifests:
@@ -49,7 +49,7 @@ jobs:
           key: ${{ runner.os }}-psmodules-v1
 
       - name: Report PowerShell module cache status
-        run: echo "PowerShell module cache hit: ${{ steps.cache-pwsh.outputs.cache-hit }}"
+        run: echo "PowerShell module cache hit:" "${{ steps.cache-pwsh.outputs.cache-hit }}"
 
       - name: Validate all PowerShell module manifests
         shell: pwsh
@@ -57,9 +57,26 @@ jobs:
           Write-Host "Validating PowerShell module manifests..." -ForegroundColor Cyan
           Write-Host ""
 
-          $manifests = Get-ChildItem -Path . -Recurse -Filter *.psd1 | Where-Object {
+          # Find .psd1 files that are likely to be PowerShell module manifests
+          $allPsd1Files = Get-ChildItem -Path . -Recurse -Filter *.psd1 | Where-Object {
               $_.FullName -notmatch '[\\/]\.git[\\/]' -and
               $_.FullName -notmatch '[\\/]node_modules[\\/]'
+          }
+
+          # Filter to only include actual module manifests (exclude config files)
+          $manifests = $allPsd1Files | Where-Object {
+              # Exclude known configuration files
+              $_.Name -ne 'PSScriptAnalyzerSettings.psd1' -and
+              # Exclude files in config directories
+              $_.DirectoryName -notmatch '[\\/]config[\\/]?$' -and
+              # Include files in module directories (containing .psm1 files or Public/Private folders)
+              (
+                  (Test-Path (Join-Path $_.DirectoryName "*.psm1")) -or
+                  (Test-Path (Join-Path $_.DirectoryName "Public")) -or
+                  (Test-Path (Join-Path $_.DirectoryName "Private")) -or
+                  # Or files that are in src/powershell/modules hierarchy
+                  ($_.FullName -match '[\\/]src[\\/]powershell[\\/]modules[\\/]')
+              )
           }
 
           $failedCount = 0
@@ -178,11 +195,11 @@ jobs:
         uses: actions/setup-python@v5
         id: setup-python
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: "pip"
 
       - name: Report Python cache status
-        run: echo "Python cache hit: ${{ steps.setup-python.outputs.cache-hit }}"
+        run: echo "Python cache hit:" "${{ steps.setup-python.outputs.cache-hit }}"
 
       - name: Install Python module
         run: |

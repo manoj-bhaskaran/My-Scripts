@@ -99,10 +99,10 @@ foreach ($line in $configLines) {
     }
 
     $module = [PSCustomObject]@{
-        Name = $fields[0]
-        Source = $fields[1] -replace '\\', '/'
-        Targets = $fields[2] -split ',' | ForEach-Object { $_.Trim() }
-        Author = if ($fields.Count -ge 4) { $fields[3] } else { $env:USERNAME }
+        Name        = $fields[0]
+        Source      = $fields[1] -replace '\\', '/'
+        Targets     = $fields[2] -split ',' | ForEach-Object { $_.Trim() }
+        Author      = if ($fields.Count -ge 4) { $fields[3] } else { $env:USERNAME }
         Description = if ($fields.Count -ge 5) { $fields[4] } else { "PowerShell module" }
     }
 
@@ -185,7 +185,8 @@ foreach ($module in $modules) {
 
     $dependencyList = if ($dependencies.Count -gt 0) {
         '["' + ($dependencies -join '", "') + '"]'
-    } else {
+    }
+    else {
         '[]'
     }
 
