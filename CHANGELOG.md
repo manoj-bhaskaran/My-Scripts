@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Resume file path resolution (`Start-VideoBatch.ps1`)
     - Timestamp parsing in log files (`Clear-LogFile.ps1`)
   - **Impact**: Improved debugging capability and code maintainability
-  - **Module Updates**: 
+  - **Module Updates**:
     - PurgeLogs: v2.0.0 → v2.0.1
     - Videoscreenshot: v3.0.2 → v3.0.3
 
