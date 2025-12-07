@@ -84,8 +84,15 @@ function Initialize-Logger {
     $Global:LogConfig.LogDirectory = $resolvedLogDir
 
 
+    # Ensure the log directory exists, creating parent directories as needed
     if (-not (Test-Path $resolvedLogDir)) {
-        New-Item -Path $resolvedLogDir -ItemType Directory -Force | Out-Null
+        try {
+            New-Item -Path $resolvedLogDir -ItemType Directory -Force | Out-Null
+        }
+        catch {
+            Write-Warning "Failed to create log directory '$resolvedLogDir': $_"
+            throw
+        }
     }
 
     $dateStr = (Get-Date -Format 'yyyy-MM-dd')
@@ -215,6 +222,12 @@ function Write-Log {
     }
 
     try {
+        # Ensure the log file's directory exists before writing
+        $logFileDir = Split-Path -Path $Global:LogConfig.LogFilePath -Parent
+        if ($logFileDir -and -not (Test-Path $logFileDir)) {
+            New-Item -Path $logFileDir -ItemType Directory -Force | Out-Null
+        }
+        
         Add-Content -Path $Global:LogConfig.LogFilePath -Value $logLine -Encoding UTF8
     }
     catch {
