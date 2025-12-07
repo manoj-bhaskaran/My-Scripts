@@ -7,9 +7,11 @@
 
 ## Executive Summary
 
-**Finding:** All GitHub Actions workflows are **correctly configured** and should run on pull requests to `main`. The workflows themselves are not the source of the problem.
+**Finding:** Critical YAML syntax errors in all GitHub Actions workflow files prevented them from executing.
 
-**Root Cause:** The issue is **NOT in the workflow files**. Based on the investigation, the most likely cause is a change to **GitHub repository settings** (branch protection rules or required status checks) that cannot be verified from the code repository alone.
+**Root Cause:** YAML syntax errors in echo commands with embedded GitHub Actions expressions (`${{ }}`). The workflows had invalid syntax like `echo "text: ${{ expr }}"` which caused the YAML parser to fail, preventing the workflows from running at all.
+
+**Resolution:** Fixed all echo commands by splitting quoted strings: `echo "text:" "${{ expr }}"`. All 8 workflow files now have valid YAML syntax and can execute properly.
 
 ## Investigation Details
 
@@ -80,82 +82,134 @@ Git history analysis shows:
 
 ## Root Cause Analysis
 
-### What This Investigation Rules Out
+### Confirmed Root Cause
 
-❌ **NOT** a workflow file configuration issue
-❌ **NOT** missing or deleted workflows
-❌ **NOT** incorrect trigger conditions
-❌ **NOT** workflows in wrong branch
-❌ **NOT** YAML syntax errors
+✅ **YAML Syntax Errors in Workflow Files**
 
-### Most Likely Root Cause
+All workflow files contained invalid YAML syntax that prevented them from being parsed and executed by GitHub Actions.
 
-✅ **GitHub Repository Settings Changed**
+**Specific Issue:**
+```yaml
+# INVALID - caused parser failure:
+run: echo "Python cache hit: ${{ steps.setup-python.outputs.cache-hit }}"
 
-The most probable explanation is that GitHub repository settings were modified, specifically:
+# VALID - fixed syntax:
+run: echo "Python cache hit:" "${{ steps.setup-python.outputs.cache-hit }}"
+```
 
-1. **Branch Protection Rules** may have been changed to only require CodeQL checks
-2. **Required Status Checks** may have been reduced from the full list to only CodeQL
-3. **Status Check Configuration** may have been reset or modified
+**Why This Caused Complete Failure:**
+1. YAML parser cannot handle `${{ }}` expressions inside a single quoted string
+2. Parser failure prevented workflow from being registered
+3. GitHub Actions showed "Waiting for status to be reported" because workflows never started
+4. CodeQL continued working because it uses GitHub's UI-based configuration (no YAML file)
 
-### Why This Is The Most Likely Cause
+**Files Affected:**
+- `.github/workflows/code-formatting.yml` (2 occurrences)
+- `.github/workflows/security-scan.yml` (1 occurrence)
+- `.github/workflows/sonarcloud.yml` (3 occurrences)
+- `.github/workflows/validate-modules.yml` (2 occurrences)
+- `.github/workflows/pre-commit-autoupdate.yml` (1 occurrence)
 
-1. **Workflows are correctly configured** - they should run automatically on PRs to `main`
-2. **CodeQL is running** - proves that GitHub Actions is enabled and working
-3. **Only CodeQL is running** - suggests other checks are not required/enforced
-4. **Cannot verify from code** - branch protection settings are not stored in the repository
+**Total:** 9 YAML syntax errors across 5 workflow files
 
-## Required Actions
+### What This Investigation Revealed
 
-### Immediate Actions (GitHub UI)
+✅ **Workflow trigger configurations are correct** - they target the right branches
+✅ **Workflow permissions are correctly set** - no permission issues
+✅ **All workflows exist in main branch** - not a branching issue
+❌ **YAML syntax errors prevented execution** - the actual root cause
 
-The following must be checked and configured in the GitHub repository settings:
+## Resolution Applied
 
-#### 1. Verify Branch Protection Rules
+### Fix Implementation
 
-Navigate to: **Repository → Settings → Branches → Branch protection rules → `main`**
+**Commit:** `fix: correct YAML syntax errors in GitHub Actions workflows (#632)`
 
-Check the following:
-- [ ] "Require status checks to pass before merging" is enabled
-- [ ] The following status checks are selected as **required**:
-  - [ ] `SonarCloud` (from sonarcloud.yml)
-  - [ ] `Python Dependency Security Scan` (from security-scan.yml)
-  - [ ] `Dependency Review` (from security-scan.yml)
-  - [ ] `Check Code Formatting` (from code-formatting.yml)
-  - [ ] `CodeQL` (from GitHub Code Scanning)
+**Changes Made:**
+1. Fixed all echo commands with embedded GitHub Actions expressions
+2. Separated quoted strings to avoid YAML parser conflicts
+3. Validated all workflow files with Python's `yaml.safe_load()`
+4. Confirmed all 8 workflow files now parse successfully
 
-#### 2. Verify GitHub Actions Secrets
+**Validation Command:**
+```bash
+python3 -c "import yaml, glob; [yaml.safe_load(open(f)) for f in glob.glob('.github/workflows/*.yml')]"
+```
 
-Navigate to: **Repository → Settings → Secrets and variables → Actions**
+**Result:** ✅ All workflow files validated successfully
 
-Ensure the following secrets are configured:
-- [ ] `SONAR_TOKEN` - SonarCloud authentication token
-- [ ] `CODECOV_TOKEN` - Codecov upload token (if used)
-- [ ] `GITHUB_TOKEN` - Should be automatically available
+### Expected Behavior After Fix
 
-Missing secrets will cause workflows to fail (though they should still run).
+After the fix is merged to the PR branch:
 
-#### 3. Verify GitHub Actions Permissions
+1. ✅ **SonarCloud** workflow should execute
+2. ✅ **Python Dependency Security Scan** workflow should execute
+3. ✅ **Dependency Review** workflow should execute
+4. ✅ **Check Code Formatting** workflow should execute
+5. ✅ **CodeQL** checks continue to run (unaffected)
 
-Navigate to: **Repository → Settings → Actions → General**
+All workflows should transition from "Waiting for status to be reported" to actively running.
 
-Check:
-- [ ] "Allow all actions and reusable workflows" is selected
-- [ ] Workflow permissions are set to "Read and write permissions"
+### Verification Steps
 
-### Testing The Fix
+1. **Check PR Status Checks** - All workflows should now appear and run
+2. **Review Actions Tab** - Workflow runs should be visible for the branch
+3. **Monitor Execution** - Workflows may take 2-5 minutes to complete
+4. **Verify Required Checks** - All required checks should pass before merge
 
-After updating branch protection rules:
+## How This Issue Was Introduced
 
-1. Create a test PR from a feature branch to `main`
-2. Verify all the following checks appear:
-   - CodeQL (2 checks: JavaScript/Python)
-   - SonarCloud
-   - Python Dependency Security Scan
-   - Dependency Review (if from a fork or if dependencies changed)
-   - Check Code Formatting
+The YAML syntax errors were introduced in commit `002221a` - "Add dependency caching across CI workflows". This commit added cache status reporting across multiple workflow files:
 
-3. Checks should be **required** before the PR can be merged
+```yaml
+# Added in commit 002221a - contains syntax error:
+- name: Report Python cache status
+  run: echo "Python cache hit: ${{ steps.setup-python.outputs.cache-hit }}"
+```
+
+The intent was good (reporting cache hits for debugging), but the YAML syntax was invalid. The error persisted because:
+
+1. **Local YAML linters may not catch GitHub Actions-specific syntax issues**
+2. **Workflows were tested individually but syntax validation wasn't comprehensive**
+3. **The error pattern was copy-pasted across multiple files**
+
+## Prevention for Future
+
+### 1. Pre-Commit YAML Validation
+
+Add a pre-commit hook to validate workflow YAML syntax:
+
+```yaml
+# .pre-commit-config.yaml
+- repo: local
+  hooks:
+    - id: validate-workflows
+      name: Validate GitHub Actions Workflows
+      entry: python3 -c "import yaml, sys, glob; [yaml.safe_load(open(f)) for f in glob.glob('.github/workflows/*.yml')]; sys.exit(0)"
+      language: system
+      pass_filenames: false
+```
+
+### 2. Use GitHub Actions Workflow Validator
+
+Install and use `actionlint` for comprehensive workflow validation:
+
+```bash
+# Install actionlint
+brew install actionlint  # macOS
+# or download from https://github.com/rhysd/actionlint
+
+# Validate workflows
+actionlint .github/workflows/*.yml
+```
+
+### 3. Test Workflows in Branch Before Merging
+
+When modifying workflows:
+1. Push changes to a feature branch
+2. Create a draft PR to test workflow execution
+3. Verify all workflows start and run (even if they fail on content)
+4. Only merge once workflows execute successfully
 
 ## Additional Recommendations
 
