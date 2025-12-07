@@ -742,7 +742,9 @@ Write-Host "==== Expand-ZipsAndClean Summary ===="
 
 # Detect console width; for narrow consoles, use a clean list view
 $consoleWidth = 120
-try { $consoleWidth = $Host.UI.RawUI.WindowSize.Width } catch {}
+try { $consoleWidth = $Host.UI.RawUI.WindowSize.Width } catch {
+    # Console width unavailable (non-interactive or headless mode), using default
+}
 
 if ($consoleWidth -lt 120) {
     $summaryView | Format-List

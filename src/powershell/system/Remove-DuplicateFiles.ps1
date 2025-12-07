@@ -130,7 +130,9 @@ $script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Pat
 function New-Directory {
     param([Parameter(Mandatory = $true)][string]$DirectoryPath)
     if (-not (Test-Path -LiteralPath $DirectoryPath)) {
-        try { New-DirectoryIfMissing -Path $DirectoryPath -Force | Out-Null } catch { }
+        try { New-DirectoryIfMissing -Path $DirectoryPath -Force | Out-Null } catch {
+            Write-LogDebug "Failed to create directory ${DirectoryPath}: $_"
+        }
     }
     return (Test-Path -LiteralPath $DirectoryPath)
 }
@@ -400,7 +402,9 @@ if ($useIndexing) {
                         if ($fileObj) { $dupeBuckets[$h] += $fileObj }
                     }
                     else {
-                        try { $seenByHash[$h] = Get-Item -LiteralPath $filePath -ErrorAction Stop } catch { }
+                        try { $seenByHash[$h] = Get-Item -LiteralPath $filePath -ErrorAction Stop } catch {
+                            Write-LogDebug "Failed to get file item for ${filePath}: $_"
+                        }
                     }
                 }
                 $hashedSoFar++

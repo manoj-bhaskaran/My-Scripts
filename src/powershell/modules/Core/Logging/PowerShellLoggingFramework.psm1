@@ -75,7 +75,8 @@ function Initialize-Logger {
         if ($callerScriptPath) {
             $callerScriptRoot = Split-Path -Path $callerScriptPath -Parent
             $resolvedLogDir = Join-Path (Split-Path $callerScriptRoot -Parent) "logs"
-        } else {
+        }
+        else {
             $resolvedLogDir = $script:DefaultLogDir
         }
     }
@@ -87,7 +88,8 @@ function Initialize-Logger {
     if (-not (Test-Path $resolvedLogDir)) {
         try {
             New-Item -Path $resolvedLogDir -ItemType Directory -Force | Out-Null
-        } catch {
+        }
+        catch {
             Write-Warning "Failed to create log directory '$resolvedLogDir': $_"
             throw
         }
@@ -197,7 +199,8 @@ function Write-Log {
     $metaStr = if ($Metadata.Count -gt 0) {
         Test-MetadataKeys -Metadata $Metadata
         $Metadata.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } -join ' '
-    } else {
+    }
+    else {
         ""
     }
 
@@ -212,7 +215,8 @@ function Write-Log {
             metadata  = $Metadata
         }
         $logLine = $logObject | ConvertTo-Json -Depth 5 -Compress
-    } else {
+    }
+    else {
         $logLine = "[${timestamp}] [$Level] [$scriptName] [$hostName] [$PID] $Message"
         if ($metaStr) { $logLine += " [$metaStr]" }
     }
@@ -224,12 +228,14 @@ function Write-Log {
             # Always create directory structure - .NET method handles existing directories gracefully
             try {
                 [System.IO.Directory]::CreateDirectory($logFileDir) | Out-Null
-            } catch {
+            }
+            catch {
                 Write-Warning "Failed to create log directory '$logFileDir' using .NET method: $_"
                 # Fallback to PowerShell method
                 try {
                     $null = New-Item -Path $logFileDir -ItemType Directory -Force -ErrorAction Stop
-                } catch {
+                }
+                catch {
                     Write-Warning "Failed to create log directory '$logFileDir' using PowerShell method: $_"
                 }
             }
@@ -237,7 +243,8 @@ function Write-Log {
 
         # Use .NET method for cross-platform file writing reliability
         [System.IO.File]::AppendAllText($Global:LogConfig.LogFilePath, "$logLine`n", [System.Text.Encoding]::UTF8)
-    } catch {
+    }
+    catch {
         Write-Warning "Failed to write to log file '$($Global:LogConfig.LogFilePath)': $_"
         Write-Output $logLine
     }

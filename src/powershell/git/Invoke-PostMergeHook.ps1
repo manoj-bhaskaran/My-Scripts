@@ -372,7 +372,9 @@ if ($unmerged) {
 
 # Determine changed files from merge using merge-base for accuracy; fallbacks included
 $mergeBase = $null
-try { $mergeBase = git -C $script:RepoPath merge-base ORIG_HEAD HEAD 2>$null } catch {}
+try { $mergeBase = git -C $script:RepoPath merge-base ORIG_HEAD HEAD 2>$null } catch {
+    Write-LogDebug "Failed to determine merge-base, will use fallback method: $_"
+}
 
 if ($mergeBase) {
     $modifiedFiles = git -C $script:RepoPath diff --name-only --diff-filter=ACMRT $mergeBase HEAD

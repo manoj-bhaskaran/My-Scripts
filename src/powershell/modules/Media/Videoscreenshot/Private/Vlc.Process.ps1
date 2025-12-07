@@ -226,7 +226,9 @@ function Start-VlcProcess {
     if ($p.HasExited -and $p.ExitCode -ne 0) {
         # Safe: streams are closed after process exit; read synchronously for diagnostics.
         $stderrText = ''
-        try { $stderrText = $p.StandardError.ReadToEnd() } catch { }
+        try { $stderrText = $p.StandardError.ReadToEnd() } catch {
+            # Stream may already be disposed or not available
+        }
         throw ("VLC startup failed (ExitCode={0}). stderr: {1}" -f $p.ExitCode, ($stderrText ?? ''))
     }
     Write-Debug ("TRACE Start-VlcProcess: leaving; returning Process Id={0}" -f $p.Id)
@@ -338,7 +340,9 @@ function Stop-Vlc {
         [Parameter(Mandatory)][Diagnostics.Process]$Process
     )
     # Refresh process state to get latest HasExited value
-    try { $null = $Process.Refresh() } catch {}
+    try { $null = $Process.Refresh() } catch {
+        # Process may already be disposed
+    }
 
     # If already exited, no need to wait (common case with --play-and-exit)
     if ($Process.HasExited) {
@@ -347,16 +351,22 @@ function Stop-Vlc {
     }
 
     # Try graceful shutdown
-    try { $null = $Process.CloseMainWindow() } catch {}
+    try { $null = $Process.CloseMainWindow() } catch {
+        # Process may not have a main window or may already be closing
+    }
 
     # Only wait if still running
     if (-not $Process.HasExited) {
-        try { $null = $Process.WaitForExit($Context.Config.StopVlcWaitMs) } catch {}
+        try { $null = $Process.WaitForExit($Context.Config.StopVlcWaitMs) } catch {
+            # Wait operation may fail if process already exited
+        }
     }
 
     # Force kill if still running
     if (-not $Process.HasExited) {
         Write-Debug "VLC still running; forcing PID $($Process.Id)"
-        try { Stop-Process -Id $Process.Id -Force; $null = Wait-Process -Id $Process.Id -Timeout $Context.Config.WaitProcessTimeoutSeconds -ErrorAction SilentlyContinue; $null = $Process.Refresh() } catch {}
+        try { Stop-Process -Id $Process.Id -Force; $null = Wait-Process -Id $Process.Id -Timeout $Context.Config.WaitProcessTimeoutSeconds -ErrorAction SilentlyContinue; $null = $Process.Refresh() } catch {
+            # Process may have already exited or may not exist
+        }
     }
 }

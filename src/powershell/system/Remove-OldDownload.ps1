@@ -247,7 +247,9 @@ try {
                         try {
                             Set-ItemProperty -LiteralPath $literalForOps -Name Attributes -Value ([IO.FileAttributes]::Normal) -ErrorAction SilentlyContinue
                         }
-                        catch { }
+                        catch {
+                            Write-LogDebug "Failed to clear ReadOnly attribute for ${literalForOps}: $_"
+                        }
                     }
 
                     # Perform deletion with hard error on failure

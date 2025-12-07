@@ -82,7 +82,9 @@ if [ -n "$CHANGED_PS_FILES" ]; then
         # PowerShell linting will be handled by CI workflows
         log_message "INFO" "Skipping PowerShell linting in pre-commit hook (handled by CI)"
         echo "PowerShell linting skipped (will be checked in CI)"
-        PS_EXIT_CODE=0        if [ $PS_EXIT_CODE -ne 0 ]; then
+        PS_EXIT_CODE=0
+
+        if [ $PS_EXIT_CODE -ne 0 ]; then
             log_message "ERROR" "PowerShell linting failed"
             echo "ERROR: PowerShell linting failed. Please fix the issues above before committing."
             CHECKS_FAILED=1

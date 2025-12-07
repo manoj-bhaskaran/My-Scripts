@@ -224,7 +224,9 @@ function Invoke-Cropper {
     $cancelKeyPressSupported = $false
     try {
         $handler = [ConsoleCancelEventHandler] { param($evtSender, $evtArgs)
-            try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch {}
+            try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch {
+                # Process may have already exited or may not exist
+            }
             $evtArgs.Cancel = $true   # prevent PowerShell from terminating; we handle cleanup
             $script:__cropperCancelled = $true
         }

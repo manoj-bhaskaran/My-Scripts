@@ -1,6 +1,6 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '3.0.2'
+  ModuleVersion     = '3.0.3'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
@@ -14,7 +14,7 @@
   PrivateData       = @{
     PSData = @{
       Tags         = @('video','vlc','gdi','screenshots','crop','python','images','automation')
-      ReleaseNotes = 'Usage & requirements are documented in the module README. External deps: VLC on PATH; Python only when using the cropper.'
+      ReleaseNotes = '3.0.3: Fixed empty catch blocks in error handling (added explanatory comments for resource cleanup, process termination).'
     }
   }
 }

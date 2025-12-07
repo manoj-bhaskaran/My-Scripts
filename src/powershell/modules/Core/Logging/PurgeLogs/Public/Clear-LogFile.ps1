@@ -96,7 +96,9 @@ function Clear-LogFile {
                             return
                         }
                     }
-                    catch {}
+                    catch {
+                        # Timestamp parsing failed, retain the line (malformed log entry)
+                    }
                 }
                 $retainedLines.Add($_)
             }

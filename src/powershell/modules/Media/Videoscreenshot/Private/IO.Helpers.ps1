@@ -18,42 +18,42 @@
   Add-ContentWithRetry -Path "$env:TEMP\log.txt" -Value "hello"
 #>
 function Add-ContentWithRetry {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Value,
-        [ValidateRange(1, 10)][int]$MaxAttempts = 3
-    )
-    # Contract: succeeds or throws. No partial returns.
-    for ($i = 1; $i -le $MaxAttempts; $i++) {
-        $fs = $null
-        try {
-            # Build the payload (value + newline) once per attempt.
-            $nl = [Environment]::NewLine
-            $bytes = [System.Text.Encoding]::UTF8.GetBytes($Value + $nl)
-            # Exclusive append prevents interleaving writes from other processes.
-            $fs = [System.IO.File]::Open(
-                $Path,
-                [System.IO.FileMode]::Append,
-                [System.IO.FileAccess]::Write,
-                [System.IO.FileShare]::None
-            )
-            $fs.Write($bytes, 0, $bytes.Length)
-            return $true
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path,
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Value,
+    [ValidateRange(1, 10)][int]$MaxAttempts = 3
+  )
+  # Contract: succeeds or throws. No partial returns.
+  for ($i = 1; $i -le $MaxAttempts; $i++) {
+    $fs = $null
+    try {
+      # Build the payload (value + newline) once per attempt.
+      $nl = [Environment]::NewLine
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes($Value + $nl)
+      # Exclusive append prevents interleaving writes from other processes.
+      $fs = [System.IO.File]::Open(
+        $Path,
+        [System.IO.FileMode]::Append,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None
+      )
+      $fs.Write($bytes, 0, $bytes.Length)
+      return $true
+    } catch {
+      if ($i -ge $MaxAttempts) {
+        throw ("Failed to append to '{0}' after {1} attempts: {2}" -f $Path, $MaxAttempts, $_.Exception.Message)
+      }
+      # Linear backoff helps absorb transient sharing violations / AV scans.
+      Start-Sleep -Milliseconds (200 * $i)
+    } finally {
+      if ($null -ne $fs) {
+        try { $fs.Dispose() } catch {
+          # Stream may already be disposed
         }
-        catch {
-            if ($i -ge $MaxAttempts) {
-                throw ("Failed to append to '{0}' after {1} attempts: {2}" -f $Path, $MaxAttempts, $_.Exception.Message)
-            }
-            # Linear backoff helps absorb transient sharing violations / AV scans.
-            Start-Sleep -Milliseconds (200 * $i)
-        }
-        finally {
-            if ($null -ne $fs) {
-                try { $fs.Dispose() } catch { }
-            }
-        }
+      }
     }
+  }
 }
 <#
 .SYNOPSIS
@@ -75,32 +75,34 @@ function Add-ContentWithRetry {
   Test-FolderWritable -Folder '/mnt/share' -NoCreate
 #>
 function Test-FolderWritable {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Folder,
-        [Alias('CheckOnly')][switch]$NoCreate
-    )
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Folder,
+    [Alias('CheckOnly')][switch]$NoCreate
+  )
+  try {
+    # Create the folder unless the caller explicitly disabled creation.
+    if (-not (Test-Path -LiteralPath $Folder)) {
+      if ($NoCreate) { throw "Folder does not exist and -NoCreate was specified: $Folder" }
+      New-Item -ItemType Directory -Path $Folder -Force | Out-Null
+    }
+    # Exclusive write probe: ensures we can create and write a brand new file.
+    $tmp = Join-Path $Folder (".writetest_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
+    $fs = $null
     try {
-        # Create the folder unless the caller explicitly disabled creation.
-        if (-not (Test-Path -LiteralPath $Folder)) {
-            if ($NoCreate) { throw "Folder does not exist and -NoCreate was specified: $Folder" }
-            New-Item -ItemType Directory -Path $Folder -Force | Out-Null
+      $fs = [System.IO.File]::Open($tmp, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes('ok')
+      $fs.Write($bytes, 0, $bytes.Length)
+    } finally {
+      if ($fs) {
+        try { $fs.Dispose() } catch {
+          # Stream may already be disposed
         }
-        # Exclusive write probe: ensures we can create and write a brand new file.
-        $tmp = Join-Path $Folder (".writetest_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
-        $fs = $null
-        try {
-            $fs = [System.IO.File]::Open($tmp, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-            $bytes = [System.Text.Encoding]::UTF8.GetBytes('ok')
-            $fs.Write($bytes, 0, $bytes.Length)
-        }
-        finally {
-            if ($fs) { try { $fs.Dispose() } catch { } }
-            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
-        }
-        return $true
+      }
+      Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
     }
-    catch {
-        throw "Folder is not writable: $Folder – $($_.Exception.Message)"
-    }
+    return $true
+  } catch {
+    throw "Folder is not writable: $Folder – $($_.Exception.Message)"
+  }
 }

@@ -7,9 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.1] - 2025-12-06
+
+### Fixed
+
+- **Empty Catch Blocks in PowerShell Scripts** (#001)
+  - Fixed all 33 empty catch blocks across PowerShell scripts and modules
+  - **Best-effort operations**: Added debug-level logging for non-critical failures
+    - Git merge-base detection (`Invoke-PostMergeHook.ps1`)
+    - File metadata retrieval (`FileDistributor.ps1`, `Remove-DuplicateFiles.ps1`)
+    - Path validation (`FileDistributor.ps1`)
+    - Directory creation attempts (`FileDistributor.ps1`, `Remove-DuplicateFiles.ps1`)
+    - FPS parsing (`Video.Fps.ps1`)
+    - Device name retrieval (`Gdi.Capture.ps1`)
+    - ReadOnly attribute clearing (`Remove-OldDownload.ps1`)
+  - **Resource cleanup operations**: Added explanatory comments for intentional silent handling
+    - FileStream disposal (`FileDistributor.ps1`, `IO.Helpers.ps1`)
+    - Graphics object disposal (`Gdi.Capture.ps1`)
+    - Bitmap disposal (`Gdi.Capture.ps1`)
+    - Process cleanup (`Vlc.Process.ps1`, `Cropper.Invoke.ps1`)
+    - StandardError stream reading (`Vlc.Process.ps1`)
+  - **Console/UI operations**: Added comments for environment-specific failures
+    - Console width detection (`Expand-ZipsAndClean.ps1`)
+    - Resume file path resolution (`Start-VideoBatch.ps1`)
+    - Timestamp parsing in log files (`Clear-LogFile.ps1`)
+  - **Impact**: Improved debugging capability and code maintainability
+  - **Module Updates**:
+    - PurgeLogs: v2.0.0 → v2.0.1
+    - Videoscreenshot: v3.0.2 → v3.0.3
+
+## [2.7.0] - 2025-12-06
+
 ### Added
 
 - **CI Checks Investigation Report** (#632)
+
   - Comprehensive analysis of GitHub Actions workflow configurations
   - Verified all CI workflows are correctly configured for pull requests
   - Root cause identified: Issue is in GitHub repository settings, not workflow files
@@ -51,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Log file location issues
   - **Integration**:
     - Updated README.md with reference to environment documentation
-    - Updated .gitignore with comprehensive environment file patterns (.env, .env.local, .env.*.local)
+    - Updated .gitignore with comprehensive environment file patterns (.env, .env.local, .env.\*.local)
     - Cross-references to Configuration Guide, Installation Guide, Contributing Guidelines
   - **Benefits**:
     - ✅ Single source of truth for environment variables
@@ -146,16 +178,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Type Hints for Data Processing Scripts** (#005 Phase 3)
+
   - Added explicit type annotations to `src/python/data/csv_to_gpx.py`, `src/python/data/validators.py`, and `src/python/data/extract_timeline_locations.py`
   - Updated docstrings to reflect typed arguments and return values for CSV, GPX, and timeline data flows
   - Ensured mypy compatibility for critical data-processing paths
 
 - **Type Hints for Error Handling Module** (#596 Phase 2 of #005)
+
   - Added comprehensive type hints to `src/python/modules/utils/error_handling.py`
   - **New Functions with Full Type Support**:
     - `retry_on_exception()` decorator with generic type preservation using `TypeVar[T]`
     - `error_handler()` context manager with proper Iterator type hints
-    - Enhanced `safe_execute()` with generics accepting *args and **kwargs
+    - Enhanced `safe_execute()` with generics accepting \*args and \*\*kwargs
   - **Improved Existing Functions**:
     - `retry_operation()` now uses generic `TypeVar[T]` for return type preservation
     - `with_retry()` decorator updated with proper tuple type annotations
@@ -170,7 +204,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Added comprehensive type preservation tests (13 new tests)
     - Tests verify return type preservation for int, str, list, dict types
     - Tests validate decorator behavior with different exception types
-    - Tests confirm proper argument passing with *args and **kwargs
+    - Tests confirm proper argument passing with \*args and \*\*kwargs
   - **Benefits**:
     - ✅ Passes mypy --strict validation
     - ✅ Complete type safety with generic decorators
@@ -185,6 +219,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - All 42 unit tests pass successfully
 
 - **Type Hints for Logging Framework Module** (#005b Phase 2 of #005)
+
   - Added comprehensive type hints to `src/python/modules/logging/python_logging_framework.py`
   - All public functions and classes now have complete type annotations
   - All internal functions have proper type hints
@@ -207,6 +242,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Maintained backward compatibility with all existing code
 
 - **Type Hints Infrastructure Setup** (#594 Phase 1 of #005)
+
   - Installed mypy 1.7.1 for static type checking
   - Added type stub packages: types-requests 2.31.0, types-tqdm 4.66.0
   - Configured mypy.ini with permissive settings (python 3.11)
@@ -221,6 +257,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Next Steps**: Phase 2 will add type hints to core modules
 
 - **Comprehensive Tests for Shared PowerShell Modules** (#003f Phase 2)
+
   - Added comprehensive unit tests for critical shared PowerShell infrastructure modules
   - **Priority**: HIGH - High reuse means high impact from bugs
   - **Coverage Achievements**:
@@ -258,6 +295,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Total**: 110 tests passing, 95 new tests added
 
 - **Comprehensive Tests for Shared Python Modules** (#003e Phase 2)
+
   - Added comprehensive unit tests for critical shared infrastructure modules
   - **Priority**: HIGH - High reuse means high impact from bugs
   - **Coverage Achievements**:
@@ -289,11 +327,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Total**: 76 tests passing, 17 new tests added
 
 - **Google Drive destructive-operation safeguards** (#003 Phase 1)
+
   - Added fully mocked unit tests for root-level deletion and trash recovery flows
   - Verifies folder exclusion, pagination, and API error handling to prevent accidental data loss
   - Recovery helper tests ensure trashed items are identified without calling live APIs
 
 - **Comprehensive PostgreSQL Backup Tests** (#003 Phase 1) - Expanded test coverage for database backup scripts
+
   - **Priority**: HIGH - Critical path testing for financial data (GnuCash) backups
   - **Impact**: Prevents data loss, validates backup reliability, enables confident refactoring
   - **Files Modified**:
@@ -311,7 +351,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - Multiple databases in same folder isolation
       - Very large number of old backups (50+) efficiency
     - **Special Characters and URL Encoding** (4 tests):
-      - Password with special characters (@, !, #, $, %, &, *)
+      - Password with special characters (@, !, #, $, %, &, \*)
       - Password with spaces
       - Database names with underscores and numbers
       - Username with special characters
@@ -324,6 +364,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - Backup creation when zero-byte cleanup fails
 
 - **Data transformation tests for GPS/timeline processing** (#003 Phase 1)
+
   - Added unit tests for CSV→GPX conversion, geospatial validators, and timeline extraction helpers
   - Validates elevation inclusion, malformed CSV handling, JSON parsing errors, and activity enrichment flows
   - **Test Statistics**:

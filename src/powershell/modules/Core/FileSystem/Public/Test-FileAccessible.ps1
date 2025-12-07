@@ -66,13 +66,16 @@ function Test-FileAccessible {
                 (Test-FileAccessible -Path $Path -Access Write)
             }
         }
-    } catch [System.IO.IOException] {
+    }
+    catch [System.IO.IOException] {
         Write-Verbose "File not accessible: $_"
         return $false
-    } catch [System.UnauthorizedAccessException] {
+    }
+    catch [System.UnauthorizedAccessException] {
         Write-Verbose "Access denied: $_"
         return $false
-    } catch {
+    }
+    catch {
         Write-Verbose "Error checking file access: $_"
         return $false
     }

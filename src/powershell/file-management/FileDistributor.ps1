@@ -503,7 +503,9 @@ function New-Ref {
 function New-Directory {
     param([Parameter(Mandatory = $true)][string]$DirectoryPath)
     if (-not (Test-Path -LiteralPath $DirectoryPath)) {
-        try { New-Item -ItemType Directory -Path $DirectoryPath -Force | Out-Null } catch { }
+        try { New-Item -ItemType Directory -Path $DirectoryPath -Force | Out-Null } catch {
+            Write-LogDebug "Failed to create directory ${DirectoryPath}: $_"
+        }
     }
     return (Test-Path -LiteralPath $DirectoryPath)
 }
@@ -551,7 +553,9 @@ function Resolve-FilePathIfDirectory {
             return
         }
     }
-    catch { }
+    catch {
+        Write-LogDebug "Failed to test path ${p}: $_"
+    }
     # If it doesn't exist but clearly looks like a directory (trailing slash), treat as directory
     if ($p -match '[\\/]\s*$') {
         $Path.Value = (Join-Path -Path $p -ChildPath $DefaultFileName)
@@ -1203,7 +1207,9 @@ function DistributeFilesToSubfolders {
                 elseif ($DeleteMode -eq "EndOfScript") {
                     if (-not $FilesToDelete.Value) { $FilesToDelete.Value = @() }
                     $queuedSize = $null; $queuedMtimeUtc = $null
-                    try { $finfo = Get-Item -LiteralPath $filePath -ErrorAction Stop; $queuedSize = $finfo.Length; $queuedMtimeUtc = $finfo.LastWriteTimeUtc } catch { }
+                    try { $finfo = Get-Item -LiteralPath $filePath -ErrorAction Stop; $queuedSize = $finfo.Length; $queuedMtimeUtc = $finfo.LastWriteTimeUtc } catch {
+                        Write-LogDebug "Failed to get file info for ${filePath}: $_"
+                    }
                     $FilesToDelete.Value += [pscustomobject]@{
                         Path = $filePath; Size = $queuedSize; LastWriteTimeUtc = $queuedMtimeUtc
                         QueuedAtUtc = (Get-Date).ToUniversalTime(); SessionId = $script:SessionId
@@ -1566,7 +1572,9 @@ function RebalanceSubfoldersByAverage {
                     elseif ($DeleteMode -eq "EndOfScript") {
                         if (-not $FilesToDelete.Value) { $FilesToDelete.Value = @() }
                         $qSize = $null; $qMtime = $null
-                        try { $fi = Get-Item -LiteralPath $file.FullName -ErrorAction Stop; $qSize = $fi.Length; $qMtime = $fi.LastWriteTimeUtc } catch {}
+                        try { $fi = Get-Item -LiteralPath $file.FullName -ErrorAction Stop; $qSize = $fi.Length; $qMtime = $fi.LastWriteTimeUtc } catch {
+                            Write-LogDebug "Failed to get file info for $($file.FullName): $_"
+                        }
                         $FilesToDelete.Value += [pscustomobject]@{ Path = $file.FullName; Size = $qSize; LastWriteTimeUtc = $qMtime; QueuedAtUtc = (Get-Date).ToUniversalTime(); SessionId = $script:SessionId }
                     }
                 }
@@ -1639,7 +1647,9 @@ function ConsolidateSubfoldersToMinimum {
             $totalFiles += [int]$rootResidual
         }
     }
-    catch { }
+    catch {
+        LogMessage -Message "Consolidation: failed to check target root for residual files: $($_.Exception.Message)" -IsWarning
+    }
 
     if ($totalFiles -le 0) {
         LogMessage -Message "Consolidation: no files to consolidate."
@@ -1677,14 +1687,18 @@ function ConsolidateSubfoldersToMinimum {
             LogMessage -Message "Consolidation: failed enumerating files in '$o': $($_.Exception.Message)" -IsWarning
         }
     }
-    try { $filesToMove += (Get-ChildItem -LiteralPath $TargetFolder -File -Force -ErrorAction Stop) } catch {}
+    try { $filesToMove += (Get-ChildItem -LiteralPath $TargetFolder -File -Force -ErrorAction Stop) } catch {
+        Write-LogDebug "Failed to enumerate files in target folder root: $_"
+    }
 
     if (-not $filesToMove -or $filesToMove.Count -eq 0) {
         LogMessage -Message "Consolidation: nothing to move; proceeding to delete empty subfolders (if any)."
     }
     else {
         # Shuffle to reduce bias
-        try { if ($filesToMove.Count -gt 1) { $filesToMove = $filesToMove | Get-Random -Count $filesToMove.Count } } catch { }
+        try { if ($filesToMove.Count -gt 1) { $filesToMove = $filesToMove | Get-Random -Count $filesToMove.Count } } catch {
+            Write-LogDebug "Failed to shuffle files for consolidation: $_"
+        }
 
         $totalMoves = $filesToMove.Count
         $GlobalFileCounter.Value = 0
@@ -1697,7 +1711,9 @@ function ConsolidateSubfoldersToMinimum {
             if ($eligible.Count -eq 0) {
                 # Safety: all keepers exhausted; create a new keeper (rare unless counts changed concurrently)
                 $newK = Join-Path -Path $TargetFolder -ChildPath (Get-RandomFileName)
-                try { New-Item -ItemType Directory -Path $newK -Force | Out-Null } catch { }
+                try { New-Item -ItemType Directory -Path $newK -Force | Out-Null } catch {
+                    Write-LogDebug "Failed to create new keeper directory ${newK}: $_"
+                }
                 $keepers += $newK
                 $liveCounts[$newK] = 0
                 $capacity[$newK] = $FilesPerFolderLimit
@@ -1732,7 +1748,9 @@ function ConsolidateSubfoldersToMinimum {
                     elseif ($DeleteMode -eq "EndOfScript") {
                         if (-not $FilesToDelete.Value) { $FilesToDelete.Value = @() }
                         $queuedSize = $null; $queuedMtimeUtc = $null
-                        try { $fi = Get-Item -LiteralPath $file.FullName -ErrorAction Stop; $queuedSize = $fi.Length; $queuedMtimeUtc = $fi.LastWriteTimeUtc } catch { }
+                        try { $fi = Get-Item -LiteralPath $file.FullName -ErrorAction Stop; $queuedSize = $fi.Length; $queuedMtimeUtc = $fi.LastWriteTimeUtc } catch {
+                            Write-LogDebug "Failed to get file info for $($file.FullName): $_"
+                        }
                         $FilesToDelete.Value += [pscustomobject]@{
                             Path = $file.FullName; Size = $queuedSize; LastWriteTimeUtc = $queuedMtimeUtc
                             QueuedAtUtc = (Get-Date).ToUniversalTime(); SessionId = $script:SessionId
@@ -2032,9 +2050,15 @@ function ReleaseFileLock {
         return
     }
     $fileName = "<unknown>"
-    try { $fileName = $FileStream.Name } catch { }
-    try { $FileStream.Close() } catch { }
-    try { $FileStream.Dispose() } catch { }
+    try { $fileName = $FileStream.Name } catch {
+        # Stream may not have a name if already disposed
+    }
+    try { $FileStream.Close() } catch {
+        # Stream may already be closed
+    }
+    try { $FileStream.Dispose() } catch {
+        # Stream may already be disposed
+    }
     LogMessage -Message "Released lock on $fileName"
 }
 

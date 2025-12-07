@@ -31,8 +31,7 @@ function Save-ImageWithRetry {
         try {
             $Bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
             return
-        }
-        catch {
+        } catch {
             if ($i -ge $Attempts) {
                 throw ("GDI capture: failed to save '{0}' after {1} attempt(s): {2}" -f $Path, $Attempts, $_.Exception.Message)
             }
@@ -71,16 +70,14 @@ function Invoke-GdiCapture {
     try {
         Add-Type -AssemblyName System.Drawing | Out-Null
         Add-Type -AssemblyName System.Windows.Forms | Out-Null
-    }
-    catch {
+    } catch {
         throw "GDI capture requires Windows (System.Drawing & System.Windows.Forms). $_"
     }
 
     if (-not (Test-Path -LiteralPath $SaveFolder)) {
         try {
             New-Item -ItemType Directory -Path $SaveFolder -Force | Out-Null
-        }
-        catch {
+        } catch {
             throw "Unable to create SaveFolder '$SaveFolder': $($_.Exception.Message)"
         }
     }
@@ -95,7 +92,9 @@ function Invoke-GdiCapture {
     if ($null -eq $screen) { $screen = $allScreens[0] }
     $bounds = $screen.Bounds  # includes X/Y offsets for multi-monitor layouts
     $deviceName = '<unknown>'
-    try { $deviceName = $screen.DeviceName } catch {}
+    try { $deviceName = $screen.DeviceName } catch {
+        # DeviceName property may not be available in all environments
+    }
     Write-Debug ("GDI: capturing screen {0} {1}x{2} at ({3},{4})" -f $deviceName, $bounds.Width, $bounds.Height, $bounds.X, $bounds.Y)
     $width = [int]$bounds.Width
     $height = [int]$bounds.Height
@@ -116,10 +115,17 @@ function Invoke-GdiCapture {
         $g = [System.Drawing.Graphics]::FromImage($bitmap)
         # Warm-up one copy; include X/Y so multi-monitor offsets are respected.
         $g.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $bitmap.Size, [System.Drawing.CopyPixelOperation]::SourceCopy)
-    }
-    catch {
-        if ($g) { try { $g.Dispose() } catch {} }
-        if ($bitmap) { try { $bitmap.Dispose() } catch {} }
+    } catch {
+        if ($g) {
+            try { $g.Dispose() } catch {
+                # Graphics object may already be disposed
+            }
+        }
+        if ($bitmap) {
+            try { $bitmap.Dispose() } catch {
+                # Bitmap may already be disposed
+            }
+        }
         throw "Failed to initialize GDI capture surface: $($_.Exception.Message)"
     }
 
@@ -137,8 +143,7 @@ function Invoke-GdiCapture {
                 Save-ImageWithRetry -Bitmap $bitmap -Path $path -Attempts 3
                 $framesSaved++
                 $index++
-            }
-            catch {
+            } catch {
                 throw ("GDI capture save failed at frame {0}: {1}" -f $index, $_.Exception.Message)
             }
 
@@ -147,15 +152,21 @@ function Invoke-GdiCapture {
             $sleepMs = $intervalMs - $elapsedThisFrame
             if ($sleepMs -gt 0) {
                 Start-Sleep -Milliseconds $sleepMs
-            }
-            else {
+            } else {
                 # If we can't keep up, continue without additional delay
             }
         }
-    }
-    finally {
-        if ($g) { try { $g.Dispose() } catch {} }
-        if ($bitmap) { try { $bitmap.Dispose() } catch {} }
+    } finally {
+        if ($g) {
+            try { $g.Dispose() } catch {
+                # Graphics object may already be disposed
+            }
+        }
+        if ($bitmap) {
+            try { $bitmap.Dispose() } catch {
+                # Bitmap may already be disposed
+            }
+        }
         $stopwatch.Stop()
     }
 
