@@ -75,8 +75,7 @@ function Initialize-Logger {
         if ($callerScriptPath) {
             $callerScriptRoot = Split-Path -Path $callerScriptPath -Parent
             $resolvedLogDir = Join-Path (Split-Path $callerScriptRoot -Parent) "logs"
-        }
-        else {
+        } else {
             $resolvedLogDir = $script:DefaultLogDir
         }
     }
@@ -88,8 +87,7 @@ function Initialize-Logger {
     if (-not (Test-Path $resolvedLogDir)) {
         try {
             New-Item -Path $resolvedLogDir -ItemType Directory -Force | Out-Null
-        }
-        catch {
+        } catch {
             Write-Warning "Failed to create log directory '$resolvedLogDir': $_"
             throw
         }
@@ -199,8 +197,7 @@ function Write-Log {
     $metaStr = if ($Metadata.Count -gt 0) {
         Test-MetadataKeys -Metadata $Metadata
         $Metadata.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } -join ' '
-    }
-    else {
+    } else {
         ""
     }
 
@@ -215,8 +212,7 @@ function Write-Log {
             metadata  = $Metadata
         }
         $logLine = $logObject | ConvertTo-Json -Depth 5 -Compress
-    }
-    else {
+    } else {
         $logLine = "[${timestamp}] [$Level] [$scriptName] [$hostName] [$PID] $Message"
         if ($metaStr) { $logLine += " [$metaStr]" }
     }
@@ -227,10 +223,9 @@ function Write-Log {
         if ($logFileDir -and -not (Test-Path $logFileDir)) {
             New-Item -Path $logFileDir -ItemType Directory -Force | Out-Null
         }
-        
+
         Add-Content -Path $Global:LogConfig.LogFilePath -Value $logLine -Encoding UTF8
-    }
-    catch {
+    } catch {
         Write-Warning "Failed to write to log file '$($Global:LogConfig.LogFilePath)': $_"
         Write-Output $logLine
     }
