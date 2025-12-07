@@ -21,7 +21,7 @@ Describe "PowerShellLoggingFramework" {
     Context "Logger Initialization" {
         It "Creates logger with default settings" {
             $logDir = Join-Path $script:testLogDir "default_test"
-            
+
             Initialize-Logger -resolvedLogDir $logDir -ScriptName "TestLogger" -LogLevel 20
 
             $Global:LogConfig | Should -Not -BeNullOrEmpty
@@ -32,7 +32,7 @@ Describe "PowerShellLoggingFramework" {
 
         It "Uses custom log directory" {
             $customDir = Join-Path $script:testLogDir "CustomLogs"
-            
+
             Initialize-Logger -resolvedLogDir $customDir -ScriptName "Test" -LogLevel 20
 
             Test-Path $customDir | Should -Be $true
@@ -41,7 +41,7 @@ Describe "PowerShellLoggingFramework" {
 
         It "Sets log level correctly" {
             $logDir = Join-Path $script:testLogDir "level_test"
-            
+
             Initialize-Logger -resolvedLogDir $logDir -ScriptName "Test" -LogLevel 10
 
             $Global:LogConfig.LogLevel | Should -Be 10
@@ -49,7 +49,7 @@ Describe "PowerShellLoggingFramework" {
 
         It "Creates log file path with date format" {
             $logDir = Join-Path $script:testLogDir "date_test"
-            
+
             Initialize-Logger -resolvedLogDir $logDir -ScriptName "MyScript.ps1" -LogLevel 20
 
             $dateStr = Get-Date -Format 'yyyy-MM-dd'
@@ -59,7 +59,7 @@ Describe "PowerShellLoggingFramework" {
 
         It "Creates log directory if it doesn't exist" {
             $newLogDir = Join-Path $script:testLogDir "new_dir_$(Get-Random)"
-            
+
             Initialize-Logger -resolvedLogDir $newLogDir -ScriptName "Test" -LogLevel 20
 
             Test-Path $newLogDir | Should -Be $true
@@ -67,7 +67,7 @@ Describe "PowerShellLoggingFramework" {
 
         It "Handles script name without extension" {
             $logDir = Join-Path $script:testLogDir "no_ext_test"
-            
+
             Initialize-Logger -resolvedLogDir $logDir -ScriptName "ScriptWithoutExtension" -LogLevel 20
 
             $Global:LogConfig.LogFilePath | Should -Match "ScriptWithoutExtension_powershell_"
@@ -184,7 +184,7 @@ Describe "PowerShellLoggingFramework" {
             Write-LogInfo -Message "Timestamp field test"
 
             $content = Get-Content $Global:LogConfig.LogFilePath | Select-Object -Last 1
-            
+
             # Check raw JSON string for ISO 8601 format
             $content | Should -Match '"timestamp":\s*"\d{4}-\d{2}-\d{2}T'
         }
@@ -194,7 +194,7 @@ Describe "PowerShellLoggingFramework" {
 
             $content = Get-Content $Global:LogConfig.LogFilePath | Select-Object -Last 1
             $json = $content | ConvertFrom-Json
-            
+
             $json.level | Should -Be "WARNING"
         }
 
@@ -203,7 +203,7 @@ Describe "PowerShellLoggingFramework" {
 
             $content = Get-Content $Global:LogConfig.LogFilePath | Select-Object -Last 1
             $json = $content | ConvertFrom-Json
-            
+
             $json.script | Should -Be "JsonTest"
         }
 
@@ -212,7 +212,7 @@ Describe "PowerShellLoggingFramework" {
 
             $content = Get-Content $Global:LogConfig.LogFilePath | Select-Object -Last 1
             $json = $content | ConvertFrom-Json
-            
+
             $json.host | Should -Be $env:COMPUTERNAME
         }
 
@@ -221,7 +221,7 @@ Describe "PowerShellLoggingFramework" {
 
             $content = Get-Content $Global:LogConfig.LogFilePath | Select-Object -Last 1
             $json = $content | ConvertFrom-Json
-            
+
             $json.pid | Should -Be $PID
         }
 
@@ -230,7 +230,7 @@ Describe "PowerShellLoggingFramework" {
 
             $content = Get-Content $Global:LogConfig.LogFilePath | Select-Object -Last 1
             $json = $content | ConvertFrom-Json
-            
+
             $json.message | Should -Be "Message field test"
         }
 
@@ -239,7 +239,7 @@ Describe "PowerShellLoggingFramework" {
 
             $content = Get-Content $Global:LogConfig.LogFilePath | Select-Object -Last 1
             $json = $content | ConvertFrom-Json
-            
+
             # Metadata should exist as a field (even if empty hashtable)
             $json.PSObject.Properties.Name | Should -Contain "metadata"
         }
@@ -332,7 +332,7 @@ Describe "PowerShellLoggingFramework" {
     Context "Timezone Handling" {
         It "Returns timezone abbreviation" {
             $tz = Get-TimezoneAbbreviation
-            
+
             $tz | Should -Not -BeNullOrEmpty
             $tz | Should -BeOfType [string]
         }
@@ -382,7 +382,7 @@ Describe "PowerShellLoggingFramework" {
         It "Falls back to console output when file write fails" {
             $invalidPath = "Z:\InvalidDrive\InvalidFolder\test.log"
             $Global:LogConfig.LogFilePath = $invalidPath
-            
+
             # Should not throw, should warn and output to console
             { Write-LogInfo -Message "Fallback test" -WarningAction SilentlyContinue } | Should -Not -Throw
         }
@@ -411,7 +411,7 @@ Describe "PowerShellLoggingFramework" {
     Context "Integration Tests" {
         It "Supports full logging workflow" {
             $workflowLogDir = Join-Path $script:testLogDir "workflow_test"
-            
+
             # Initialize
             Initialize-Logger -resolvedLogDir $workflowLogDir -ScriptName "WorkflowTest" -LogLevel 10
             $Global:LogConfig.JsonFormat = $false
@@ -435,13 +435,13 @@ Describe "PowerShellLoggingFramework" {
         It "Switches between plain text and JSON format" {
             $switchLogDir = Join-Path $script:testLogDir "format_switch"
             Initialize-Logger -resolvedLogDir $switchLogDir -ScriptName "FormatSwitch" -LogLevel 10
-            
+
             # Start with plain text
             $Global:LogConfig.JsonFormat = $false
             $plainFile = Join-Path $switchLogDir "plain_$(Get-Random).log"
             $Global:LogConfig.LogFilePath = $plainFile
             Write-LogInfo -Message "Plain text message"
-            
+
             # Switch to JSON
             $Global:LogConfig.JsonFormat = $true
             $jsonFile = Join-Path $switchLogDir "json_$(Get-Random).log"
@@ -451,7 +451,7 @@ Describe "PowerShellLoggingFramework" {
             # Verify formats
             $plainContent = Get-Content $plainFile -Raw
             $plainContent | Should -Match "\[INFO\]"
-            
+
             $jsonContent = Get-Content $jsonFile -Raw
             { $jsonContent | ConvertFrom-Json } | Should -Not -Throw
         }

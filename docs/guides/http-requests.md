@@ -41,10 +41,10 @@ For file uploads/downloads, calculate based on size:
 ```python
 def calculate_timeout(file_size_mb: float) -> Tuple[int, int]:
     """Calculate timeout based on file size.
-    
+
     Args:
         file_size_mb: File size in megabytes (can be fractional)
-        
+
     Returns:
         Tuple of (connect_timeout, read_timeout) in seconds
     """
@@ -135,10 +135,10 @@ from typing import Tuple
 
 def calculate_timeout(file_size_mb: float) -> Tuple[int, int]:
     """Calculate timeout based on file size.
-    
+
     Args:
         file_size_mb: File size in megabytes (can be fractional)
-        
+
     Returns:
         Tuple of (connect_timeout, read_timeout) in seconds
     """
@@ -152,9 +152,9 @@ def upload_file(file_path: str, upload_url: str) -> dict:
     # Calculate timeout based on file size
     file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
     timeout = calculate_timeout(file_size_mb)
-    
+
     logger.info(f"Uploading {file_path} ({file_size_mb:.2f} MB) with timeout {timeout}")
-    
+
     try:
         with open(file_path, 'rb') as f:
             files = {'file': f}
