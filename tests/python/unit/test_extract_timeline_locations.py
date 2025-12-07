@@ -204,8 +204,14 @@ def test_load_json_success_and_failure(tmp_path, monkeypatch):
     # Successful load with missing keys triggers warnings
     mock_warns = []
     mock_errors = []
-    monkeypatch.setattr("extract_timeline_locations.plog.log_warning", lambda *args, **kwargs: mock_warns.append(args))
-    monkeypatch.setattr("extract_timeline_locations.plog.log_error", lambda *args, **kwargs: mock_errors.append(args))
+    monkeypatch.setattr(
+        "extract_timeline_locations.plog.log_warning",
+        lambda *args, **kwargs: mock_warns.append(args),
+    )
+    monkeypatch.setattr(
+        "extract_timeline_locations.plog.log_error",
+        lambda *args, **kwargs: mock_errors.append(args),
+    )
 
     payload = {"semanticSegments": []}
     json_file = tmp_path / "timeline.json"

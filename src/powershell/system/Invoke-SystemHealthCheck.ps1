@@ -64,14 +64,14 @@ try {
         Write-LogError "This script must be run as Administrator!"
         Write-LogWarning "Please right-click and select 'Run as Administrator'"
         $adminResult = [PSCustomObject]@{
-            Status         = 'RequiresAdministrator'
-            LogFile        = $Global:LogConfig.LogFilePath
-            SystemDrive    = $env:SystemDrive
-            FreeSpaceGB    = $null
-            SfcExitCode    = $null
-            DismExitCode   = $null
-            StartedAt      = $runStartTime
-            CompletedAt    = Get-Date
+            Status       = 'RequiresAdministrator'
+            LogFile      = $Global:LogConfig.LogFilePath
+            SystemDrive  = $env:SystemDrive
+            FreeSpaceGB  = $null
+            SfcExitCode  = $null
+            DismExitCode = $null
+            StartedAt    = $runStartTime
+            CompletedAt  = Get-Date
         }
         Write-Output $adminResult
         exit 1
@@ -181,16 +181,16 @@ try {
     Write-LogInfo ""
 
     $result = [PSCustomObject]@{
-        Status          = if ($sfcExitCode -eq 0 -and $dismExitCode -eq 0) { 'Success' } else { 'CompletedWithWarnings' }
-        LogFile         = $Global:LogConfig.LogFilePath
-        SystemDrive     = $systemDrive
-        FreeSpaceGB     = $freeSpaceGB
-        SfcExitCode     = $sfcExitCode
-        SfcDurationMins = [math]::Round($sfcDuration, 2)
-        DismExitCode    = $dismExitCode
-        DismDurationMins= [math]::Round($dismDuration, 2)
-        StartedAt       = $runStartTime
-        CompletedAt     = $totalEndTime
+        Status           = if ($sfcExitCode -eq 0 -and $dismExitCode -eq 0) { 'Success' } else { 'CompletedWithWarnings' }
+        LogFile          = $Global:LogConfig.LogFilePath
+        SystemDrive      = $systemDrive
+        FreeSpaceGB      = $freeSpaceGB
+        SfcExitCode      = $sfcExitCode
+        SfcDurationMins  = [math]::Round($sfcDuration, 2)
+        DismExitCode     = $dismExitCode
+        DismDurationMins = [math]::Round($dismDuration, 2)
+        StartedAt        = $runStartTime
+        CompletedAt      = $totalEndTime
     }
 
     Write-Output $result

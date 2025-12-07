@@ -219,6 +219,7 @@ def get_recoverable_files(service):
 
     return trashed_files
 
+
 # Extension to MIME type mapping for robust server-side filtering
 EXTENSION_MIME_TYPES = {
     "jpg": "image/jpeg",
@@ -1136,6 +1137,17 @@ class DriveTrashRecoveryTool:
         if bool(self.args.after_date):
             base_fields.append("modifiedTime")
         return ", ".join(base_fields)
+
+    def _format_fetch_metadata_error_with_context(
+        self, e: Exception, status: Optional[int], fid: str, fields: str = None
+    ) -> str:
+        """Format fetch metadata error with context information."""
+        if status is not None:
+            detail = getattr(e, "content", b"")
+            detail_str = detail.decode(errors="ignore") if hasattr(detail, "decode") else str(e)
+            return f"files.get(fileId={fid}) failed: HTTP {status}: {detail_str}"
+        else:
+            return f"files.get(fileId={fid}) failed: {e}"
 
     def _log_fetch_metadata_retry(
         self, fid: str, e: Exception, status: Optional[int], attempt: int

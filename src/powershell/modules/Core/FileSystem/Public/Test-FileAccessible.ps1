@@ -54,7 +54,7 @@ function Test-FileAccessible {
             }
             'ReadWrite' {
                 return (Test-FileAccessible -Path $Path -Access Read) -and
-                       (Test-FileAccessible -Path $Path -Access Write)
+                (Test-FileAccessible -Path $Path -Access Write)
             }
         }
     }

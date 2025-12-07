@@ -9,11 +9,11 @@ function Write-LogMessage {
     )
 
     $levelMap = @{
-        'DEBUG'   = 'Write-LogDebug'
-        'INFO'    = 'Write-LogInfo'
-        'WARNING' = 'Write-LogWarning'
-        'ERROR'   = 'Write-LogError'
-        'CRITICAL'= 'Write-LogCritical'
+        'DEBUG'    = 'Write-LogDebug'
+        'INFO'     = 'Write-LogInfo'
+        'WARNING'  = 'Write-LogWarning'
+        'ERROR'    = 'Write-LogError'
+        'CRITICAL' = 'Write-LogCritical'
     }
 
     $commandName = $levelMap[$Level]

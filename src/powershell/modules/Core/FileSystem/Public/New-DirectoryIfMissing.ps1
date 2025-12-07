@@ -41,8 +41,8 @@ function New-DirectoryIfMissing {
     try {
         $params = @{
             ItemType = 'Directory'
-            Path = $Path
-            Force = $Force
+            Path     = $Path
+            Force    = $Force
         }
         $dir = New-Item @params
         Write-Verbose "Created directory: $Path"

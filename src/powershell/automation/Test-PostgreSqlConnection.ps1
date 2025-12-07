@@ -1,5 +1,5 @@
 # PSScriptAnalyzer suppression: Test/utility script with hardcoded credentials for connection testing
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification='Test script with hardcoded credentials')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'Test script with hardcoded credentials')]
 param()
 
 # Define the connection string for ODBC

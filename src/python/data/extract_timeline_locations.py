@@ -4,7 +4,20 @@ import re
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Generator, Iterable, Iterator, List, Mapping, MutableMapping, Optional, Sequence, Tuple, cast
+from typing import (
+    Any,
+    Dict,
+    Generator,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Sequence,
+    Tuple,
+    cast,
+)
 
 import psycopg2
 from psycopg2.extensions import connection as PgConnection, cursor as PgCursor
@@ -160,9 +173,7 @@ def update_last_processed_timestamp(ts: datetime) -> None:
         )
 
 
-def insert_records_into_postgres(
-    records: Sequence[TimelineRecord], stats: StatsDict
-) -> None:
+def insert_records_into_postgres(records: Sequence[TimelineRecord], stats: StatsDict) -> None:
     """
     Inserts timeline records into the PostgreSQL database.
 
@@ -428,8 +439,7 @@ def fetch_records_missing_elevation(
         cur.execute(query, params)
         rows = cur.fetchall()
         return [
-            (int(location_id), ts, float(lat), float(lon))
-            for location_id, ts, lat, lon in rows
+            (int(location_id), ts, float(lat), float(lon)) for location_id, ts, lat, lon in rows
         ]
 
 
