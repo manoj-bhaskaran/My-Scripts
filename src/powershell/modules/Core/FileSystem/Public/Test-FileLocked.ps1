@@ -29,19 +29,20 @@ function Test-FileLocked {
     }
 
     try {
+        # Resolve the path to handle TestDrive: and other PowerShell drives
+        $resolvedPath = (Get-Item -Path $Path -ErrorAction Stop).FullName
+
         $file = [System.IO.File]::Open(
-            $Path,
+            $resolvedPath,
             'Open',
             'ReadWrite',
             'None'
         )
         $file.Close()
         return $false  # Not locked
-    }
-    catch [System.IO.IOException] {
+    } catch [System.IO.IOException] {
         return $true  # Locked
-    }
-    catch {
+    } catch {
         Write-Warning "Unexpected error checking file lock: $_"
         return $false
     }
