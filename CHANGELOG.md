@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.2] - 2025-12-07
+
+### Changed
+
+- Replaced `Write-Host` with `Write-Information` in `scripts/Load-Environment.ps1` to keep environment-loading messages redirectable while remaining user-visible.
+- Documented intentional `Write-Host` usage in `scripts/Check-DocumentationPaths.ps1` with PSScriptAnalyzer suppression for interactive color-coded diagnostics.
+- Added console output stream guidelines to `README.md` and `CONTRIBUTING.md`, including code review checks for logging and `Write-Host` justification.
+
 ## [2.7.1] - 2025-12-06
 
 ### Fixed

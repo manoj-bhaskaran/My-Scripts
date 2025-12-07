@@ -26,6 +26,10 @@
     Last Updated: 2025-11-29
 #>
 
+# Intentional use of Write-Host for interactive, color-coded diagnostics.
+# Output is not consumed by automation pipelines; results are interpreted visually.
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Interactive reporting tool that requires color-coded console output')]
+
 param(
     [string]$Path = ".",
     [string[]]$ExcludePath = @(
@@ -44,6 +48,7 @@ $patterns = @{
 }
 
 # Get all markdown files
+# Using Write-Host for visibility and to provide immediate color-coded feedback to interactive users.
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "DOCUMENTATION PATH CHECKER v1.0.3" -ForegroundColor Cyan
