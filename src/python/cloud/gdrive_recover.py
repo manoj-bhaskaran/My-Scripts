@@ -886,7 +886,7 @@ class DriveTrashRecoveryTool:
         transient_errors[0] += 1
         transient_ids.append(fid)
         self._id_prefetch_errors[fid] = self._format_fetch_metadata_error_with_context(
-            e, status, fid, fields=fields
+            e, status, fid
         )
         err_count[0] += 1
         return True
@@ -1139,7 +1139,7 @@ class DriveTrashRecoveryTool:
         return ", ".join(base_fields)
 
     def _format_fetch_metadata_error_with_context(
-        self, e: Exception, status: Optional[int], fid: str, fields: str = None
+        self, e: Exception, status: Optional[int], fid: str
     ) -> str:
         """Format fetch metadata error with context information."""
         if status is not None:
@@ -1185,7 +1185,7 @@ class DriveTrashRecoveryTool:
                 return (
                     None,
                     False,
-                    self._format_fetch_metadata_error_with_context(e, status, fid, fields=fields),
+                    self._format_fetch_metadata_error_with_context(e, status, fid),
                 )
         return None, False, "Unknown error"
 
