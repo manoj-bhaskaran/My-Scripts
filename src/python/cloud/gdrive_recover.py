@@ -865,7 +865,7 @@ class DriveTrashRecoveryTool:
             skipped_non_trashed[0] += 1
 
     def _handle_prefetch_error(
-        self, fid, status, e, attempt, buckets, transient_errors, transient_ids, err_count, fields
+        self, fid, status, e, attempt, buckets, transient_errors, transient_ids, err_count
     ):
         """Handle error during metadata fetch for a file ID."""
         if status == 404:
@@ -927,7 +927,6 @@ class DriveTrashRecoveryTool:
                     transient_errors,
                     transient_ids,
                     err_count,
-                    fields,
                 )
                 if handled:
                     return
