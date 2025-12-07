@@ -218,13 +218,25 @@ function Write-Log {
     }
 
     try {
-        # Ensure the log file's directory exists before writing
+        # Ensure the log file's directory exists before writing using .NET methods for reliability
         $logFileDir = Split-Path -Path $Global:LogConfig.LogFilePath -Parent
-        if ($logFileDir -and -not (Test-Path $logFileDir)) {
-            New-Item -Path $logFileDir -ItemType Directory -Force | Out-Null
+        if ($logFileDir) {
+            # Always create directory structure - .NET method handles existing directories gracefully
+            try {
+                [System.IO.Directory]::CreateDirectory($logFileDir) | Out-Null
+            } catch {
+                Write-Warning "Failed to create log directory '$logFileDir' using .NET method: $_"
+                # Fallback to PowerShell method
+                try {
+                    $null = New-Item -Path $logFileDir -ItemType Directory -Force -ErrorAction Stop
+                } catch {
+                    Write-Warning "Failed to create log directory '$logFileDir' using PowerShell method: $_"
+                }
+            }
         }
 
-        Add-Content -Path $Global:LogConfig.LogFilePath -Value $logLine -Encoding UTF8
+        # Use .NET method for cross-platform file writing reliability
+        [System.IO.File]::AppendAllText($Global:LogConfig.LogFilePath, "$logLine`n", [System.Text.Encoding]::UTF8)
     } catch {
         Write-Warning "Failed to write to log file '$($Global:LogConfig.LogFilePath)': $_"
         Write-Output $logLine
