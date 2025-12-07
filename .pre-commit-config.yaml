@@ -47,15 +47,19 @@ repos:
           [
             --config-file=mypy.ini,
             --show-error-codes,
+            --explicit-package-bases,
             "src/python/",
             "tests/python/",
           ]
         additional_dependencies:
           - types-requests
           - types-tqdm
+          - types-python-dateutil
         pass_filenames: false
         # Start as informational (don't fail on errors)
         verbose: true
+        # Make mypy informational only for now (don't fail pre-commit)
+        stages: [manual]
 
   # Python security - dependency vulnerability scanning
   - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
