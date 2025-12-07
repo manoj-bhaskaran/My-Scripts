@@ -67,9 +67,17 @@ function Test-PathValid {
         $fileName = Split-Path -Path $Path -Leaf -ErrorAction SilentlyContinue
 
         if ($fileName) {
+            # Check for wildcards when not allowed
+            if (-not $AllowWildcards) {
+                if ($fileName.Contains('*') -or $fileName.Contains('?')) {
+                    Write-Verbose "Filename contains wildcard character when not allowed"
+                    return $false
+                }
+            }
+
             # Check standard invalid filename characters
             foreach ($char in $invalidFileNameChars) {
-                # Skip wildcards if allowed
+                # Skip wildcards if allowed (they were already checked above)
                 if ($AllowWildcards -and ($char -eq '*' -or $char -eq '?')) {
                     continue
                 }
