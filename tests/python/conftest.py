@@ -80,7 +80,7 @@ _ensure_dependency(
                 (),
                 {
                     "errors": (
-                        lambda _module=None: (
+                        lambda: (
                             lambda _module: (
                                 setattr(
                                     _module,
@@ -99,10 +99,10 @@ _ensure_dependency(
                                 ),
                                 _module,
                             )[1]
-                        )()(ModuleType("googleapiclient.errors"))
+                        )(ModuleType("googleapiclient.errors"))
                     ),
                     "discovery": (
-                        lambda _module=None: (
+                        lambda: (
                             lambda _module: (
                                 setattr(
                                     _module,
@@ -113,10 +113,10 @@ _ensure_dependency(
                                 ),
                                 _module,
                             )[1]
-                        )()(ModuleType("googleapiclient.discovery"))
+                        )(ModuleType("googleapiclient.discovery"))
                     ),
                     "http": (
-                        lambda _module=None: (
+                        lambda: (
                             lambda _module: (
                                 setattr(
                                     _module,
@@ -132,7 +132,7 @@ _ensure_dependency(
                                 ),
                                 _module,
                             )[1]
-                        )()(ModuleType("googleapiclient.http"))
+                        )(ModuleType("googleapiclient.http"))
                     ),
                 },
             )()
