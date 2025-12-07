@@ -121,11 +121,13 @@ function Invoke-GdiCapture {
     }
     catch {
         if ($g) { try { $g.Dispose() } catch {
-            # Graphics object may already be disposed
-        } }
+                # Graphics object may already be disposed
+            } 
+        }
         if ($bitmap) { try { $bitmap.Dispose() } catch {
-            # Bitmap may already be disposed
-        } }
+                # Bitmap may already be disposed
+            } 
+        }
         throw "Failed to initialize GDI capture surface: $($_.Exception.Message)"
     }
 
@@ -161,11 +163,13 @@ function Invoke-GdiCapture {
     }
     finally {
         if ($g) { try { $g.Dispose() } catch {
-            # Graphics object may already be disposed
-        } }
+                # Graphics object may already be disposed
+            } 
+        }
         if ($bitmap) { try { $bitmap.Dispose() } catch {
-            # Bitmap may already be disposed
-        } }
+                # Bitmap may already be disposed
+            } 
+        }
         $stopwatch.Stop()
     }
 

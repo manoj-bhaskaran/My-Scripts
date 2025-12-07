@@ -40,9 +40,11 @@ function Test-FileLocked {
         )
         $file.Close()
         return $false  # Not locked
-    } catch [System.IO.IOException] {
+    }
+    catch [System.IO.IOException] {
         return $true  # Locked
-    } catch {
+    }
+    catch {
         Write-Warning "Unexpected error checking file lock: $_"
         return $false
     }

@@ -121,7 +121,8 @@ Describe "FileSystem Module" {
 
             try {
                 Test-FileLocked -Path $file | Should -Be $true
-            } finally {
+            }
+            finally {
                 $stream.Close()
             }
         }

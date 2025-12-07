@@ -102,7 +102,8 @@ function Test-PathValid {
         $null = [System.IO.Path]::GetFullPath($Path)
 
         return $true
-    } catch {
+    }
+    catch {
         Write-Verbose "Path validation failed: $_"
         return $false
     }

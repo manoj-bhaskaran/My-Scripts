@@ -98,8 +98,9 @@ function Test-FolderWritable {
         }
         finally {
             if ($fs) { try { $fs.Dispose() } catch {
-                # Stream may already be disposed
-            } }
+                    # Stream may already be disposed
+                } 
+            }
             Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
         }
         return $true

@@ -59,7 +59,8 @@ function New-DirectoryIfMissing {
         $dir = New-Item @params
         Write-Verbose "Created directory: $Path"
         return $dir
-    } catch {
+    }
+    catch {
         Write-Error "Failed to create directory '$Path': $_"
         throw
     }
