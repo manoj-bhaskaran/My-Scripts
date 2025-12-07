@@ -99,7 +99,7 @@ _ensure_dependency(
                                 ),
                                 _module,
                             )[1]
-                        )()(ModuleType("googleapiclient.errors"))
+                        )(ModuleType("googleapiclient.errors"))
                     ),
                     "discovery": (
                         lambda: (
@@ -107,11 +107,13 @@ _ensure_dependency(
                                 setattr(
                                     _module,
                                     "build",
-                                    lambda *_args, **_kwargs: SimpleNamespace(files=lambda: SimpleNamespace()),
+                                    lambda *_args, **_kwargs: SimpleNamespace(
+                                        files=lambda: SimpleNamespace()
+                                    ),
                                 ),
                                 _module,
                             )[1]
-                        )()(ModuleType("googleapiclient.discovery"))
+                        )(ModuleType("googleapiclient.discovery"))
                     ),
                     "http": (
                         lambda: (
@@ -130,7 +132,7 @@ _ensure_dependency(
                                 ),
                                 _module,
                             )[1]
-                        )()(ModuleType("googleapiclient.http"))
+                        )(ModuleType("googleapiclient.http"))
                     ),
                 },
             )()
@@ -149,7 +151,9 @@ _ensure_dependency(
                     (),
                     {
                         "from_client_secrets_file": staticmethod(
-                            lambda *_args, **_kwargs: SimpleNamespace(run_local_server=lambda **__kwargs: None)
+                            lambda *_args, **_kwargs: SimpleNamespace(
+                                run_local_server=lambda **__kwargs: None
+                            )
                         )
                     },
                 ),
@@ -160,9 +164,9 @@ _ensure_dependency(
 )
 _ensure_dependency(
     "google.auth.transport.requests",
-    lambda: (
-        lambda _module: (setattr(_module, "Request", type("Request", (), {})), _module)[1]
-    )(ModuleType("google.auth.transport.requests")),
+    lambda: (lambda _module: (setattr(_module, "Request", type("Request", (), {})), _module)[1])(
+        ModuleType("google.auth.transport.requests")
+    ),
 )
 _ensure_dependency(
     "google.oauth2.credentials",

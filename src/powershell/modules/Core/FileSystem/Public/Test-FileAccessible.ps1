@@ -39,30 +39,40 @@ function Test-FileAccessible {
     }
 
     try {
-        $file = Get-Item -Path $Path -ErrorAction Stop
+        $item = Get-Item -Path $Path -ErrorAction Stop
+
+        # Return false if it's a directory (we only test files)
+        if ($item.PSIsContainer) {
+            Write-Verbose "Path is a directory, not a file: $Path"
+            return $false
+        }
+
+        # Use the resolved full path for .NET file operations
+        $resolvedPath = $item.FullName
 
         switch ($Access) {
             'Read' {
-                $stream = [System.IO.File]::OpenRead($Path)
+                $stream = [System.IO.File]::OpenRead($resolvedPath)
                 $stream.Close()
                 return $true
             }
             'Write' {
-                $stream = [System.IO.File]::OpenWrite($Path)
+                $stream = [System.IO.File]::OpenWrite($resolvedPath)
                 $stream.Close()
                 return $true
             }
             'ReadWrite' {
                 return (Test-FileAccessible -Path $Path -Access Read) -and
-                       (Test-FileAccessible -Path $Path -Access Write)
+                (Test-FileAccessible -Path $Path -Access Write)
             }
         }
-    }
-    catch [System.IO.IOException] {
+    } catch [System.IO.IOException] {
         Write-Verbose "File not accessible: $_"
         return $false
-    }
-    catch {
+    } catch [System.UnauthorizedAccessException] {
+        Write-Verbose "Access denied: $_"
+        return $false
+    } catch {
         Write-Verbose "Error checking file access: $_"
         return $false
     }

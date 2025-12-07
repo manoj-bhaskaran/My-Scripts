@@ -32,6 +32,7 @@ from python_logging_framework import (
     RECOMMENDED_METADATA_KEYS,
 )
 
+
 # Helper function to get today's log file name
 def get_log_file_path(tmp_path: Path, script_name: str) -> Path:
     """Get the expected log file path for a given script name."""
@@ -201,9 +202,9 @@ class TestLoggerNameAndCustomDir:
 
         # Find the log file using helper function
         log_file = get_log_file_path(tmp_path, "test_with_metadata")
-        
+
         assert log_file.exists()
-        
+
         # Verify metadata in log file
         content = log_file.read_text()
         assert "user_id" in content
@@ -217,11 +218,11 @@ class TestLoggingHelpers:
         """Test debug level logging."""
         logger = initialise_logger("test_log_debug", log_dir=str(tmp_path), log_level=logging.DEBUG)
         log_debug(logger, "Debug message")
-        
+
         # Flush handlers
         for handler in logger.handlers:
             handler.flush()
-        
+
         log_file = get_log_file_path(tmp_path, "test_log_debug")
         assert log_file.exists()
         content = log_file.read_text()
@@ -231,11 +232,11 @@ class TestLoggingHelpers:
         """Test info level logging."""
         logger = initialise_logger("test_log_info", log_dir=str(tmp_path))
         log_info(logger, "Info message")
-        
+
         # Flush handlers
         for handler in logger.handlers:
             handler.flush()
-        
+
         log_file = get_log_file_path(tmp_path, "test_log_info")
         assert log_file.exists()
         content = log_file.read_text()
@@ -245,11 +246,11 @@ class TestLoggingHelpers:
         """Test warning level logging."""
         logger = initialise_logger("test_log_warning", log_dir=str(tmp_path))
         log_warning(logger, "Warning message")
-        
+
         # Flush handlers
         for handler in logger.handlers:
             handler.flush()
-        
+
         log_file = get_log_file_path(tmp_path, "test_log_warning")
         assert log_file.exists()
         content = log_file.read_text()
@@ -259,11 +260,11 @@ class TestLoggingHelpers:
         """Test error level logging."""
         logger = initialise_logger("test_log_error", log_dir=str(tmp_path))
         log_error(logger, "Error message")
-        
+
         # Flush handlers
         for handler in logger.handlers:
             handler.flush()
-        
+
         log_file = get_log_file_path(tmp_path, "test_log_error")
         assert log_file.exists()
         content = log_file.read_text()
@@ -273,11 +274,11 @@ class TestLoggingHelpers:
         """Test critical level logging."""
         logger = initialise_logger("test_log_critical", log_dir=str(tmp_path))
         log_critical(logger, "Critical message")
-        
+
         # Flush handlers
         for handler in logger.handlers:
             handler.flush()
-        
+
         log_file = get_log_file_path(tmp_path, "test_log_critical")
         assert log_file.exists()
         content = log_file.read_text()

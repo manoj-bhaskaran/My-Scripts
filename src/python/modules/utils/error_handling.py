@@ -328,7 +328,7 @@ def safe_execute(
     default: Optional[T] = None,
     log_errors: bool = True,
     **kwargs: Any,
-) -> Union[T, None]:
+) -> T | None:
     """Execute function safely, returning default on error.
 
     Args:

@@ -39,16 +39,27 @@ function New-DirectoryIfMissing {
     }
 
     try {
+        if (-not $Force) {
+            # Check if parent directory exists when Force is not used
+            $parentPath = Split-Path -Path $Path -Parent
+            if ($parentPath -and -not (Test-Path $parentPath)) {
+                throw "Cannot create directory '$Path' because parent directory '$parentPath' does not exist. Use -Force to create parent directories."
+            }
+        }
+
         $params = @{
             ItemType = 'Directory'
-            Path = $Path
-            Force = $Force
+            Path     = $Path
         }
+
+        if ($Force) {
+            $params.Force = $true
+        }
+
         $dir = New-Item @params
         Write-Verbose "Created directory: $Path"
         return $dir
-    }
-    catch {
+    } catch {
         Write-Error "Failed to create directory '$Path': $_"
         throw
     }

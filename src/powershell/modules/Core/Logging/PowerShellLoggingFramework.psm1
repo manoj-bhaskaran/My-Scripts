@@ -75,8 +75,7 @@ function Initialize-Logger {
         if ($callerScriptPath) {
             $callerScriptRoot = Split-Path -Path $callerScriptPath -Parent
             $resolvedLogDir = Join-Path (Split-Path $callerScriptRoot -Parent) "logs"
-        }
-        else {
+        } else {
             $resolvedLogDir = $script:DefaultLogDir
         }
     }
@@ -84,8 +83,14 @@ function Initialize-Logger {
     $Global:LogConfig.LogDirectory = $resolvedLogDir
 
 
+    # Ensure the log directory exists, creating parent directories as needed
     if (-not (Test-Path $resolvedLogDir)) {
-        New-Item -Path $resolvedLogDir -ItemType Directory -Force | Out-Null
+        try {
+            New-Item -Path $resolvedLogDir -ItemType Directory -Force | Out-Null
+        } catch {
+            Write-Warning "Failed to create log directory '$resolvedLogDir': $_"
+            throw
+        }
     }
 
     $dateStr = (Get-Date -Format 'yyyy-MM-dd')
@@ -192,8 +197,7 @@ function Write-Log {
     $metaStr = if ($Metadata.Count -gt 0) {
         Test-MetadataKeys -Metadata $Metadata
         $Metadata.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } -join ' '
-    }
-    else {
+    } else {
         ""
     }
 
@@ -208,16 +212,32 @@ function Write-Log {
             metadata  = $Metadata
         }
         $logLine = $logObject | ConvertTo-Json -Depth 5 -Compress
-    }
-    else {
+    } else {
         $logLine = "[${timestamp}] [$Level] [$scriptName] [$hostName] [$PID] $Message"
         if ($metaStr) { $logLine += " [$metaStr]" }
     }
 
     try {
-        Add-Content -Path $Global:LogConfig.LogFilePath -Value $logLine -Encoding UTF8
-    }
-    catch {
+        # Ensure the log file's directory exists before writing using .NET methods for reliability
+        $logFileDir = Split-Path -Path $Global:LogConfig.LogFilePath -Parent
+        if ($logFileDir) {
+            # Always create directory structure - .NET method handles existing directories gracefully
+            try {
+                [System.IO.Directory]::CreateDirectory($logFileDir) | Out-Null
+            } catch {
+                Write-Warning "Failed to create log directory '$logFileDir' using .NET method: $_"
+                # Fallback to PowerShell method
+                try {
+                    $null = New-Item -Path $logFileDir -ItemType Directory -Force -ErrorAction Stop
+                } catch {
+                    Write-Warning "Failed to create log directory '$logFileDir' using PowerShell method: $_"
+                }
+            }
+        }
+
+        # Use .NET method for cross-platform file writing reliability
+        [System.IO.File]::AppendAllText($Global:LogConfig.LogFilePath, "$logLine`n", [System.Text.Encoding]::UTF8)
+    } catch {
         Write-Warning "Failed to write to log file '$($Global:LogConfig.LogFilePath)': $_"
         Write-Output $logLine
     }

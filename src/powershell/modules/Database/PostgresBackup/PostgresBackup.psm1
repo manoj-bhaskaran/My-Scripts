@@ -12,7 +12,8 @@ if (Test-Path -LiteralPath $publicDir) {
 
 $publicFunctions = if (Test-Path -LiteralPath $publicDir) {
     Get-ChildItem -Path $publicDir -Filter '*.ps1' -File | Select-Object -ExpandProperty BaseName
-} else {
+}
+else {
     @()
 }
 

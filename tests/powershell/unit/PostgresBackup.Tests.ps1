@@ -12,7 +12,7 @@
 #>
 
 # Suppress PSScriptAnalyzer warning for test credential creation
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification='Test file requires plaintext conversion for credential mocking')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'Test file requires plaintext conversion for credential mocking')]
 param()
 
 BeforeAll {

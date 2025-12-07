@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CI Checks Investigation Report** (#632)
+  - Comprehensive analysis of GitHub Actions workflow configurations
+  - Verified all CI workflows are correctly configured for pull requests
+  - Root cause identified: Issue is in GitHub repository settings, not workflow files
+  - Documented required status checks and branch protection configuration
+  - Created `CI_INVESTIGATION_REPORT.md` with detailed findings and remediation steps
+  - Workflow analysis confirms: sonarcloud.yml, security-scan.yml, code-formatting.yml all properly configured
+  - Recommendations for ensuring all CI checks run on pull requests to main branch
+
 - **Comprehensive Environment Variable Documentation** (#606 Phase 1 of #010)
   - Created `docs/ENVIRONMENT.md` - Complete environment variable reference guide
   - **Documentation Sections**:

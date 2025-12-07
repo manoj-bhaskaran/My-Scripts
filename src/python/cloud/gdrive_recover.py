@@ -219,6 +219,7 @@ def get_recoverable_files(service):
 
     return trashed_files
 
+
 # Extension to MIME type mapping for robust server-side filtering
 EXTENSION_MIME_TYPES = {
     "jpg": "image/jpeg",
@@ -864,7 +865,7 @@ class DriveTrashRecoveryTool:
             skipped_non_trashed[0] += 1
 
     def _handle_prefetch_error(
-        self, fid, status, e, attempt, buckets, transient_errors, transient_ids, err_count, fields
+        self, fid, status, e, attempt, buckets, transient_errors, transient_ids, err_count
     ):
         """Handle error during metadata fetch for a file ID."""
         if status == 404:
@@ -885,7 +886,7 @@ class DriveTrashRecoveryTool:
         transient_errors[0] += 1
         transient_ids.append(fid)
         self._id_prefetch_errors[fid] = self._format_fetch_metadata_error_with_context(
-            e, status, fid, fields=fields
+            e, status, fid
         )
         err_count[0] += 1
         return True
@@ -926,7 +927,6 @@ class DriveTrashRecoveryTool:
                     transient_errors,
                     transient_ids,
                     err_count,
-                    fields,
                 )
                 if handled:
                     return
@@ -1137,6 +1137,17 @@ class DriveTrashRecoveryTool:
             base_fields.append("modifiedTime")
         return ", ".join(base_fields)
 
+    def _format_fetch_metadata_error_with_context(
+        self, e: Exception, status: Optional[int], fid: str
+    ) -> str:
+        """Format fetch metadata error with context information."""
+        if status is not None:
+            detail = getattr(e, "content", b"")
+            detail_str = detail.decode(errors="ignore") if hasattr(detail, "decode") else str(e)
+            return f"files.get(fileId={fid}) failed: HTTP {status}: {detail_str}"
+        else:
+            return f"files.get(fileId={fid}) failed: {e}"
+
     def _log_fetch_metadata_retry(
         self, fid: str, e: Exception, status: Optional[int], attempt: int
     ):
@@ -1173,7 +1184,7 @@ class DriveTrashRecoveryTool:
                 return (
                     None,
                     False,
-                    self._format_fetch_metadata_error_with_context(e, status, fid, fields=fields),
+                    self._format_fetch_metadata_error_with_context(e, status, fid),
                 )
         return None, False, "Unknown error"
 

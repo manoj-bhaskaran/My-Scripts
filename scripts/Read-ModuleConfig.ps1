@@ -88,7 +88,7 @@ function ConvertFrom-TomlBasic {
 
     $result = @{
         deployment = @{}
-        modules = @()
+        modules    = @()
     }
 
     $currentTable = $null
@@ -133,7 +133,7 @@ function ConvertFrom-TomlBasic {
                 '^true$' { $true }           # Boolean
                 '^false$' { $false }         # Boolean
                 '^\d+$' { [int]$value }      # Integer
-                '^\[(.+)\]$' {              # Array
+                '^\[(.+)\]$' { # Array
                     $arrayContent = $Matches[1]
                     $arrayContent -split ',' | ForEach-Object {
                         $_.Trim().Trim('"').Trim("'")
@@ -203,7 +203,8 @@ try {
     $scriptRoot = $PSScriptRoot
     $repoRoot = if ($scriptRoot) {
         Split-Path -Path $scriptRoot -Parent
-    } else {
+    }
+    else {
         Get-Location
     }
 
