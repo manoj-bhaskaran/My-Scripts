@@ -1,10 +1,11 @@
 #!/bin/bash
 # Install pre-commit hooks
-# Version: 2.0.0
-# Last Updated: 2025-11-21
+# Version: 3.0.0
+# Last Updated: 2025-12-09
 #
 # This script installs the pre-commit framework and configures git hooks
 # Run this script after cloning the repository or when hooks are updated.
+# Note: All validation hooks now use pre-commit framework exclusively.
 
 set -e  # Exit on error
 

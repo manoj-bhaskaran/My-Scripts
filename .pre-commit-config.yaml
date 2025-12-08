@@ -11,9 +11,24 @@ repos:
       - id: check-yaml
       - id: check-json
       - id: check-added-large-files
-        args: ["--maxkb=5000"]
+        args: ["--maxkb=10240"] # Standardized to 10MB (matching manual hook)
       - id: check-merge-conflict
       - id: detect-private-key
+
+  # Custom local hooks for debug statement detection
+  - repo: local
+    hooks:
+      - id: check-debug-statements
+        name: Check for debug statements
+        entry: python
+        args:
+          [
+            "-c",
+            'import re, sys, os; [sys.exit(1) for f in [os.path.join(r,fn) for r,_,fs in os.walk(".") for fn in fs if fn.endswith((".py",".js",".ts",".ps1")) and not any(x in r for x in [".git",".venv","venv","node_modules"])] if os.path.isfile(f) and re.search(r"Write-Debug.*TODO|print.*DEBUG|console\.log|debugger;", open(f,encoding="utf-8",errors="ignore").read())]',
+          ]
+        language: system
+        pass_filenames: false
+        files: \.(py|js|ts|ps1)$
 
   # Python hooks
   - repo: https://github.com/psf/black
