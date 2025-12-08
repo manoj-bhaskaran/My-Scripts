@@ -1,13 +1,24 @@
 # Git Hooks Guide (Pre-Commit Framework)
 
-**Version:** 2.0.0
-**Last Updated:** 2025-11-21
+**Version:** 3.0.0
+**Last Updated:** 2025-12-09
 
 ---
 
 ## Overview
 
-This repository uses the [pre-commit framework](https://pre-commit.com) to enforce code quality and maintain consistency. Pre-commit is a multi-language package manager for pre-commit hooks that helps catch issues before they're committed or pushed.
+This repository uses **exclusively** the [pre-commit framework](https://pre-commit.com) to enforce code quality and maintain consistency. All validation hooks (pre-commit, commit-msg) are managed through this single system, with only PowerShell automation hooks (post-commit, post-merge) remaining as standalone scripts.
+
+### Migration from Dual Hook System
+
+**Previous Issue:** The repository previously used both manual shell script hooks AND pre-commit framework simultaneously, creating confusion, duplication, and conflicts.
+
+**Resolution (v3.0.0):** All validation hooks have been migrated to pre-commit framework:
+
+- ✅ **Removed manual hooks**: `pre-commit`, `commit-msg`, `pre-push`, `post-checkout`
+- ✅ **Standardized file size threshold**: 10MB across all systems
+- ✅ **Eliminated duplication**: Single pylint execution, unified commit message validation
+- ✅ **Retained PowerShell automation**: `post-commit`, `post-merge` remain as standalone scripts
 
 ### Why Pre-Commit Framework?
 
@@ -21,6 +32,7 @@ This repository uses the [pre-commit framework](https://pre-commit.com) to enfor
 - ✅ Per-hook configuration and selective execution
 - ✅ Fast execution with caching
 - ✅ Easy to add/remove hooks
+- ✅ **No more dual system confusion**
 
 ---
 
@@ -298,9 +310,9 @@ tag_format = "v$version"
 
 ---
 
-### Legacy Hooks (Post-Commit, Post-Merge)
+### PowerShell Automation Hooks (Post-Commit, Post-Merge)
 
-These hooks are not managed by pre-commit framework and still use the manual installation:
+These hooks are not managed by pre-commit framework as they handle PowerShell automation and are installed separately:
 
 #### **post-commit** - Post-Commit Automation
 
