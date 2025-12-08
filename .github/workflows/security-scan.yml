@@ -103,6 +103,9 @@ jobs:
           retention-days: 30
 
       - name: Security Scan Summary
+        env:
+          SAFETY_STATUS: ${{ env.SAFETY_STATUS }}
+          AUDIT_STATUS: ${{ env.AUDIT_STATUS }}
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
