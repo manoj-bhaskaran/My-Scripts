@@ -109,29 +109,25 @@ jobs:
           echo "## Overall Security Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # Get exit codes with fallback defaults
-          SAFETY_EXIT="${{ steps.safety.outputs.safety_exit }}"
-          AUDIT_EXIT="${{ steps.pip-audit.outputs.audit_exit }}"
+          # Use environment variables set by previous steps
+          SAFETY_STATUS="${SAFETY_STATUS:-failure}"
+          AUDIT_STATUS="${AUDIT_STATUS:-failure}"
 
-          # Default to failure if outputs are empty
-          SAFETY_EXIT="${SAFETY_EXIT:-1}"
-          AUDIT_EXIT="${AUDIT_EXIT:-1}"
-
-          echo "🔍 Debug: Safety exit code: $SAFETY_EXIT" >> $GITHUB_STEP_SUMMARY
-          echo "🔍 Debug: Audit exit code: $AUDIT_EXIT" >> $GITHUB_STEP_SUMMARY
+          echo "🔍 Debug: Safety status: $SAFETY_STATUS" >> $GITHUB_STEP_SUMMARY
+          echo "🔍 Debug: Audit status: $AUDIT_STATUS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "$SAFETY_EXIT" == "0" ] && [ "$AUDIT_EXIT" == "0" ]; then
+          if [ "$SAFETY_STATUS" == "success" ] && [ "$AUDIT_STATUS" == "success" ]; then
             echo "✅ **All security checks passed**" >> $GITHUB_STEP_SUMMARY
             echo "No known security vulnerabilities were detected in your Python dependencies." >> $GITHUB_STEP_SUMMARY
             exit 0
           else
             echo "⚠️ **Security vulnerabilities detected - please review and remediate**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            if [ "$SAFETY_EXIT" != "0" ]; then
+            if [ "$SAFETY_STATUS" != "success" ]; then
               echo "- Safety scan detected vulnerabilities" >> $GITHUB_STEP_SUMMARY
             fi
-            if [ "$AUDIT_EXIT" != "0" ]; then
+            if [ "$AUDIT_STATUS" != "success" ]; then
               echo "- pip-audit scan detected vulnerabilities" >> $GITHUB_STEP_SUMMARY
             fi
             echo "" >> $GITHUB_STEP_SUMMARY
