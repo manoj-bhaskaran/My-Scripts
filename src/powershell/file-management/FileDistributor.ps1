@@ -410,6 +410,9 @@ param(
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 
+# Import FileQueue module for queue management
+Import-Module "$PSScriptRoot\..\modules\FileManagement\FileQueue\FileQueue.psd1" -Force
+
 # Initialize logger
 Initialize-Logger -ScriptName "FileDistributor" -LogLevel 20
 
@@ -1205,16 +1208,14 @@ function DistributeFilesToSubfolders {
                     LogMessage -Message "Copied from $file to $destinationFile and immediately deleted original."
                 }
                 elseif ($DeleteMode -eq "EndOfScript") {
-                    if (-not $FilesToDelete.Value) { $FilesToDelete.Value = @() }
-                    $queuedSize = $null; $queuedMtimeUtc = $null
-                    try { $finfo = Get-Item -LiteralPath $filePath -ErrorAction Stop; $queuedSize = $finfo.Length; $queuedMtimeUtc = $finfo.LastWriteTimeUtc } catch {
-                        Write-LogDebug "Failed to get file info for ${filePath}: $_"
+                    # Use FileQueue module to add file to deletion queue
+                    $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $filePath -ValidateFile $false
+                    if ($queueResult) {
+                        LogMessage -Message "Copied from $file to $destinationFile. Original pending deletion at end of script."
                     }
-                    $FilesToDelete.Value += [pscustomobject]@{
-                        Path = $filePath; Size = $queuedSize; LastWriteTimeUtc = $queuedMtimeUtc
-                        QueuedAtUtc = (Get-Date).ToUniversalTime(); SessionId = $script:SessionId
+                    else {
+                        LogMessage -Message "Failed to queue file for deletion: $filePath" -IsWarning
                     }
-                    LogMessage -Message "Copied from $file to $destinationFile. Original pending deletion at end of script."
                 }
             }
             catch {
@@ -1570,12 +1571,11 @@ function RebalanceSubfoldersByAverage {
                         Remove-File -FilePath $file.FullName
                     }
                     elseif ($DeleteMode -eq "EndOfScript") {
-                        if (-not $FilesToDelete.Value) { $FilesToDelete.Value = @() }
-                        $qSize = $null; $qMtime = $null
-                        try { $fi = Get-Item -LiteralPath $file.FullName -ErrorAction Stop; $qSize = $fi.Length; $qMtime = $fi.LastWriteTimeUtc } catch {
-                            Write-LogDebug "Failed to get file info for $($file.FullName): $_"
+                        # Use FileQueue module to add file to deletion queue
+                        $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $file.FullName -ValidateFile $false
+                        if (-not $queueResult) {
+                            Write-LogDebug "Failed to queue file for deletion: $($file.FullName)"
                         }
-                        $FilesToDelete.Value += [pscustomobject]@{ Path = $file.FullName; Size = $qSize; LastWriteTimeUtc = $qMtime; QueuedAtUtc = (Get-Date).ToUniversalTime(); SessionId = $script:SessionId }
                     }
                 }
                 catch {
@@ -1746,14 +1746,10 @@ function ConsolidateSubfoldersToMinimum {
                         Remove-File -FilePath $file.FullName
                     }
                     elseif ($DeleteMode -eq "EndOfScript") {
-                        if (-not $FilesToDelete.Value) { $FilesToDelete.Value = @() }
-                        $queuedSize = $null; $queuedMtimeUtc = $null
-                        try { $fi = Get-Item -LiteralPath $file.FullName -ErrorAction Stop; $queuedSize = $fi.Length; $queuedMtimeUtc = $fi.LastWriteTimeUtc } catch {
-                            Write-LogDebug "Failed to get file info for $($file.FullName): $_"
-                        }
-                        $FilesToDelete.Value += [pscustomobject]@{
-                            Path = $file.FullName; Size = $queuedSize; LastWriteTimeUtc = $queuedMtimeUtc
-                            QueuedAtUtc = (Get-Date).ToUniversalTime(); SessionId = $script:SessionId
+                        # Use FileQueue module to add file to deletion queue
+                        $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $file.FullName -ValidateFile $false
+                        if (-not $queueResult) {
+                            Write-LogDebug "Failed to queue file for deletion: $($file.FullName)"
                         }
                     }
                 }
@@ -1795,6 +1791,36 @@ function ConsolidateSubfoldersToMinimum {
         }
     }
     LogMessage -Message ("Consolidation: removed {0} empty subfolder(s); {1} skipped." -f $deleted, $skipped)
+}
+
+function ConvertFrom-FileQueue {
+    <#
+    .SYNOPSIS
+        Converts a FileQueue to an array for state persistence.
+    #>
+    param (
+        [PSCustomObject]$Queue
+    )
+
+    $queueArray = @()
+    $tempQueue = [System.Collections.Generic.Queue[PSCustomObject]]::new()
+
+    while ($Queue.Items.Count -gt 0) {
+        $item = $Queue.Items.Dequeue()
+        $queueArray += [pscustomobject]@{
+            Path = $item.SourcePath
+            Size = $item.Size
+            LastWriteTimeUtc = $item.LastWriteTimeUtc
+            QueuedAtUtc = $item.QueuedAtUtc
+            SessionId = $item.SessionId
+        }
+        $tempQueue.Enqueue($item)
+    }
+
+    # Restore the queue
+    $Queue.Items = $tempQueue
+
+    return $queueArray
 }
 
 function SaveState {
@@ -2236,7 +2262,7 @@ function Main {
         LogMessage -Message "Parameter validation completed"
 
         # Initialize stable [ref] holders (do not overwrite these variables later, only set .Value)
-        $FilesToDelete = New-Ref @()     # queue for EndOfScript deletions
+        $FilesToDelete = New-FileQueue -Name "FilesToDelete" -SessionId $script:SessionId -MaxSize -1
         $GlobalFileCounter = New-Ref 0   # running count
 
         $fileLockRef = [ref]$null
@@ -2330,44 +2356,45 @@ function Main {
                         $sourceFiles = ConvertPathsToItems($state['sourceFiles'])
                     }
 
-                    # End-of-script deletion queue becomes relevant once phases may have queued deletes
-                    if ($DeleteMode -eq 'EndOfScript' -and $lastCheckpoint -in 3, 4, 5, 6, 7 -and $state.ContainsKey('FilesToDelete')) {
-                        $FilesToDelete = New-Ref @($state['FilesToDelete'])
-                    }
                 }
 
-                # Load FilesToDelete only for EndOfScript mode and lastCheckpoint 3..7
+                # Load FilesToDelete using FileQueue module for EndOfScript mode and lastCheckpoint 3..7
                 if ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4, 5, 6, 7 -and $state.ContainsKey("FilesToDelete")) {
                     $loadedQueue = $state.FilesToDelete
-                    # Normalize to object entries and wrap in [ref]
-                    $normalized = @()
+                    $restoredCount = 0
+
+                    # Add items from state to the queue
                     foreach ($e in $loadedQueue) {
+                        # Normalize legacy string entries to object format
                         if ($e -is [string]) {
-                            $normalized += [pscustomobject]@{
-                                Path = $e; Size = $null; LastWriteTimeUtc = $null; QueuedAtUtc = $null; SessionId = $script:SessionId
-                            }
+                            $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $e -ValidateFile $false
                         }
                         else {
-                            $normalized += $e
+                            # Add with existing metadata
+                            $FilesToDelete.Items.Enqueue([pscustomobject]@{
+                                SourcePath = $e.Path
+                                TargetPath = $null
+                                Size = $e.Size
+                                LastWriteTimeUtc = $e.LastWriteTimeUtc
+                                QueuedAtUtc = if ($e.PSObject.Properties.Name -contains 'QueuedAtUtc') { $e.QueuedAtUtc } else { (Get-Date).ToUniversalTime() }
+                                SessionId = if ($e.PSObject.Properties.Name -contains 'SessionId') { $e.SessionId } else { $script:SessionId }
+                                Attempts = 0
+                                Metadata = @{}
+                            })
                         }
+                        $restoredCount++
                     }
-                    $FilesToDelete.Value = $normalized
 
-                    if (-not $FilesToDelete.Value -or $FilesToDelete.Value.Count -eq 0) {
+                    if ($restoredCount -eq 0) {
                         Write-Output "No files to delete from the previous session."
                     }
                     else {
-                        Write-Output "Loaded $($FilesToDelete.Value.Count) files to delete from the previous session."
+                        Write-Output "Loaded $restoredCount files to delete from the previous session."
                     }
                 }
                 elseif ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4, 5, 6, 7) {
                     # If DeleteMode is EndOfScript but no FilesToDelete key exists
                     LogMessage -Message "State file does not contain FilesToDelete key for EndOfScript mode." -IsWarning
-                    $FilesToDelete.Value = @() # Re-initialize queue (do not replace the [ref] holder)
-                }
-                else {
-                    # Default initialisation when EndOfScript mode does not apply
-                    $FilesToDelete.Value = @() # Ensure FilesToDelete is always defined without replacing [ref]
                 }
             }
             else {
@@ -2509,7 +2536,7 @@ function Main {
 
             # Conditionally add FilesToDelete for EndOfScript mode
             if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = $FilesToDelete.Value
+                $additionalVars["FilesToDelete"] = ConvertFrom-FileQueue -Queue $FilesToDelete
             }
 
             # Save the state with the consolidated additional variables
@@ -2542,7 +2569,7 @@ function Main {
                 MaxFilesToCopy         = $MaxFilesToCopy
             }
             if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = $FilesToDelete.Value
+                $additionalVars["FilesToDelete"] = ConvertFrom-FileQueue -Queue $FilesToDelete
             }
             SaveState -Checkpoint 4 -AdditionalVariables $additionalVars -fileLock $fileLockRef
         }
@@ -2570,7 +2597,7 @@ function Main {
 
             # Conditionally add FilesToDelete if DeleteMode is EndOfScript
             if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = $FilesToDelete.Value
+                $additionalVars["FilesToDelete"] = ConvertFrom-FileQueue -Queue $FilesToDelete
             }
 
             # Save state with checkpoint 4 and additional variables
@@ -2600,7 +2627,7 @@ function Main {
                 MaxFilesToCopy         = $MaxFilesToCopy
             }
             if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = $FilesToDelete.Value
+                $additionalVars["FilesToDelete"] = ConvertFrom-FileQueue -Queue $FilesToDelete
             }
             SaveState -Checkpoint 6 -AdditionalVariables $additionalVars -fileLock $fileLockRef
         }
@@ -2628,7 +2655,7 @@ function Main {
                 MaxFilesToCopy         = $MaxFilesToCopy
             }
             if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = $FilesToDelete.Value
+                $additionalVars["FilesToDelete"] = ConvertFrom-FileQueue -Queue $FilesToDelete
             }
             SaveState -Checkpoint 7 -AdditionalVariables $additionalVars -fileLock $fileLockRef
         }
@@ -2640,20 +2667,18 @@ function Main {
 
             if (Test-EndOfScriptCondition -Condition $EndOfScriptDeletionCondition -Warnings $effectiveWarnings -Errors $effectiveErrors) {
 
-                # Attempt to delete each queued entry (same-session only)
-                foreach ($entry in $FilesToDelete.Value) {
-                    $entryPath = $null; $entrySession = $null; $entrySize = $null; $entryMtimeUtc = $null
-                    if ($entry -is [string]) {
-                        # Legacy entry (should only happen if not normalized); treat conservatively
-                        $entryPath = $entry
-                        $entrySession = $script:SessionId
+                # Process deletion queue using FileQueue module
+                while ($FilesToDelete.Items.Count -gt 0) {
+                    $entry = Get-NextQueueItem -Queue $FilesToDelete -IncrementAttempts $false
+
+                    if ($null -eq $entry) {
+                        break
                     }
-                    else {
-                        $entryPath = $entry.Path
-                        $entrySession = $entry.SessionId
-                        $entrySize = $entry.Size
-                        $entryMtimeUtc = $entry.LastWriteTimeUtc
-                    }
+
+                    $entryPath = $entry.SourcePath
+                    $entrySession = $entry.SessionId
+                    $entrySize = $entry.Size
+                    $entryMtimeUtc = $entry.LastWriteTimeUtc
 
                     if ($entrySession -ne $script:SessionId) {
                         LogMessage -Message "Skipping deletion for '$entryPath' — queued by a different session ($entrySession)." -IsWarning
