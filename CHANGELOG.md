@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **FileQueue Module** (#602)
+  - Created new `FileManagement/FileQueue` module for queue management operations
+  - Public Functions:
+    - `New-FileQueue`: Create file distribution queues with configurable size limits
+    - `Add-FileToQueue`: Add files with metadata tracking
+    - `Get-NextQueueItem`: Retrieve next item (dequeue or peek)
+    - `Remove-QueueItem`: Remove items by path, session, or custom filter
+    - `Save-QueueState`: Persist queue to JSON
+    - `Restore-QueueState`: Restore queue from saved state
+  - Private Functions:
+    - `Initialize-QueueState`: Helper for state structure initialization
+    - `Update-QueueMetrics`: Helper for queue statistics management
+  - Features:
+    - Session tracking for queue ownership
+    - Metadata capture (size, timestamps, custom properties)
+    - State persistence across sessions
+    - FIFO processing with peek support
+    - Flexible item removal with filters
+
+### Changed
+
+- **FileDistributor.ps1 Refactoring** (#602, Phase 2)
+  - Extracted queue management logic into FileQueue module
+  - Replaced inline queue operations with module function calls
+  - Added `ConvertFrom-FileQueue` helper function for state persistence
+  - Improved code maintainability and reusability
+  - Queue now uses object-oriented approach with methods (Enqueue, Dequeue, Peek, Clear)
+  - Maintains backward compatibility with existing state files
+  - Part of Phase 2 refactoring to address large complex scripts (#008)
+
+### Technical Details
+
+- Module Location: `src/powershell/modules/FileManagement/FileQueue/`
+- Comprehensive Pester test suite with 70%+ coverage
+- PowerShell 5.1+ compatible
+- Supports unlimited queue size with `-MaxSize -1`
+- Queue items track: SourcePath, TargetPath, Size, LastWriteTimeUtc, QueuedAtUtc, SessionId, Attempts, Metadata
+
 ## [2.7.2] - 2025-12-07
 
 ### Changed
