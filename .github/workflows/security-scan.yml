@@ -5,14 +5,14 @@ on:
     branches:
       - main
       - develop
-      - 'claude/**'
+      - "claude/**"
   pull_request:
     branches:
       - main
       - develop
   schedule:
     # Run weekly on Sundays at 2:00 AM UTC
-    - cron: '0 2 * * 0'
+    - cron: "0 2 * * 0"
   workflow_dispatch:
 
 permissions:
@@ -32,8 +32,8 @@ jobs:
         uses: actions/setup-python@v5
         id: setup-python
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: "pip"
 
       - name: Report Python cache status
         run: echo "Python cache hit:" "${{ steps.setup-python.outputs.cache-hit }}"
@@ -45,26 +45,28 @@ jobs:
 
       - name: Run Safety check
         id: safety
+        continue-on-error: true
         run: |
           echo "## Safety Security Scan Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if safety check --json -r requirements.txt > safety-report.json 2>&1; then
             echo "✅ **Safety Check**: No known security vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
-            safety_exit=0
+            echo "safety_exit=0" >> $GITHUB_OUTPUT
+            echo "SAFETY_STATUS=success" >> $GITHUB_ENV
           else
             echo "⚠️ **Safety Check**: Vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             safety check -r requirements.txt >> $GITHUB_STEP_SUMMARY 2>&1 || true
             echo '```' >> $GITHUB_STEP_SUMMARY
-            safety_exit=1
+            echo "safety_exit=1" >> $GITHUB_OUTPUT
+            echo "SAFETY_STATUS=failure" >> $GITHUB_ENV
           fi
-          echo "safety_exit=$safety_exit" >> $GITHUB_OUTPUT
-          exit 0
 
       - name: Run pip-audit check
         id: pip-audit
+        continue-on-error: true
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## pip-audit Security Scan Results" >> $GITHUB_STEP_SUMMARY
@@ -72,17 +74,17 @@ jobs:
 
           if pip-audit -r requirements.txt --desc > pip-audit-report.txt 2>&1; then
             echo "✅ **pip-audit Check**: No known security vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
-            audit_exit=0
+            echo "audit_exit=0" >> $GITHUB_OUTPUT
+            echo "AUDIT_STATUS=success" >> $GITHUB_ENV
           else
             echo "⚠️ **pip-audit Check**: Vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             cat pip-audit-report.txt >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-            audit_exit=1
+            echo "audit_exit=1" >> $GITHUB_OUTPUT
+            echo "AUDIT_STATUS=failure" >> $GITHUB_ENV
           fi
-          echo "audit_exit=$audit_exit" >> $GITHUB_OUTPUT
-          exit 0
 
       - name: Upload Safety report
         if: always()
@@ -107,17 +109,38 @@ jobs:
           echo "## Overall Security Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ steps.safety.outputs.safety_exit }}" == "0" ] && [ "${{ steps.pip-audit.outputs.audit_exit }}" == "0" ]; then
+          # Get exit codes with fallback defaults
+          SAFETY_EXIT="${{ steps.safety.outputs.safety_exit }}"
+          AUDIT_EXIT="${{ steps.pip-audit.outputs.audit_exit }}"
+
+          # Default to failure if outputs are empty
+          SAFETY_EXIT="${SAFETY_EXIT:-1}"
+          AUDIT_EXIT="${AUDIT_EXIT:-1}"
+
+          echo "🔍 Debug: Safety exit code: $SAFETY_EXIT" >> $GITHUB_STEP_SUMMARY
+          echo "🔍 Debug: Audit exit code: $AUDIT_EXIT" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$SAFETY_EXIT" == "0" ] && [ "$AUDIT_EXIT" == "0" ]; then
             echo "✅ **All security checks passed**" >> $GITHUB_STEP_SUMMARY
+            echo "No known security vulnerabilities were detected in your Python dependencies." >> $GITHUB_STEP_SUMMARY
             exit 0
           else
             echo "⚠️ **Security vulnerabilities detected - please review and remediate**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [ "$SAFETY_EXIT" != "0" ]; then
+              echo "- Safety scan detected vulnerabilities" >> $GITHUB_STEP_SUMMARY
+            fi
+            if [ "$AUDIT_EXIT" != "0" ]; then
+              echo "- pip-audit scan detected vulnerabilities" >> $GITHUB_STEP_SUMMARY
+            fi
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
             echo "1. Review the vulnerability reports above" >> $GITHUB_STEP_SUMMARY
             echo "2. Update affected packages to secure versions" >> $GITHUB_STEP_SUMMARY
             echo "3. Test the application with updated dependencies" >> $GITHUB_STEP_SUMMARY
             echo "4. Commit the updated requirements.txt" >> $GITHUB_STEP_SUMMARY
+            echo "5. Re-run this security scan to verify fixes" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
 
