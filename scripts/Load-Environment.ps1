@@ -7,7 +7,7 @@ $envFile = Join-Path $PSScriptRoot ".." ".env"
 
 if (-not (Test-Path $envFile)) {
     Write-Warning ".env file not found at: $envFile"
-    Write-Host "Copy .env.example to .env and configure your values"
+    Write-Information "Copy .env.example to .env and configure your values" -InformationAction Continue
     return
 }
 
@@ -32,4 +32,4 @@ Get-Content $envFile | ForEach-Object {
     }
 }
 
-Write-Host "Environment loaded from $envFile" -ForegroundColor Green
+Write-Information "Environment loaded from $envFile" -InformationAction Continue
