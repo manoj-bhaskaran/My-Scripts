@@ -224,6 +224,8 @@ All PowerShell scripts in this repository use a centralized logging framework (`
 * **Metadata Support**: Optional metadata tagging for enhanced context
 * **Precomputed Defaults**: The PowerShell module caches its default log directory on import to minimize repeated path resolution during initialization
 
+> **Console output guidance:** Production scripts should log via `PowerShellLoggingFramework`. Lightweight utilities that skip logger initialization should use `Write-Information` (with `-InformationAction Continue`) for user-facing messages so output remains redirectable. Reserve `Write-Host` for interactive, color-coded tools only and document its intentional use.
+
 ### Log Levels
 
 The framework supports five log levels, controllable via the `-LogLevel` parameter when initializing the logger:

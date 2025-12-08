@@ -9,6 +9,7 @@ Thank you for your interest in this repository. While this is primarily a person
 - [Code Standards](#code-standards)
 - [Logging Framework](#logging-framework)
   - [Overview](#overview)
+  - [Console Output Streams](#console-output-streams)
   - [Python Logging](#python-logging)
   - [PowerShell Logging](#powershell-logging)
   - [Batch Script Logging](#batch-script-logging)
@@ -90,6 +91,16 @@ This repository uses a **standardized, cross-platform logging framework** that p
 - Filename pattern: `<script_name>_<language>_YYYY-MM-DD.log`
 - Default timezone: IST (Asia/Kolkata)
 - Default retention: 30 days
+
+---
+
+### Console Output Streams
+
+- **Default**: Production-ready PowerShell scripts must initialize `PowerShellLoggingFramework` and emit messages through `Write-LogInfo`, `Write-LogWarning`, `Write-LogError`, etc.
+- **Lightweight utilities**: When the logging module is intentionally not imported, prefer `Write-Information` for user-facing messages (`-InformationAction Continue` keeps output visible while remaining redirectable). Continue to use `Write-Warning`/`Write-Error` for warnings and failures.
+- **Write-Host usage**: Reserved for interactive, color-coded diagnostics only. Add an inline justification and a `PSAvoidUsingWriteHost` suppression when you intentionally choose `Write-Host` (for example, in reporting tools such as `scripts/Check-DocumentationPaths.ps1`).
+- **Automation compatibility**: When a script's output might be piped or captured by CI, avoid `Write-Host` and prefer structured logs or `Write-Information`/`Write-Output` instead.
+- **Code review checklist**: Verify that new or modified scripts follow the above routing rules and that any `Write-Host` usage is documented and justified.
 
 ---
 

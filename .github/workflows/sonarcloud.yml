@@ -30,15 +30,15 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          java-version: "17"
+          distribution: "temurin"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         id: setup-python
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: "pip"
 
       - name: Report Python cache status
         run: echo "Python cache hit:" "${{ steps.setup-python.outputs.cache-hit }}"
@@ -227,15 +227,49 @@ jobs:
         run: |
           echo "${{ github.workspace }}/sonar-scanner/sonar-scanner-6.0.0.4432-linux/bin" >> $GITHUB_PATH
 
+      - name: Check SonarCloud Token
+        run: |
+          if [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
+            echo "::error::SONAR_TOKEN secret is not configured!"
+            echo "::error::Please configure SONAR_TOKEN in GitHub repository secrets:"
+            echo "::error::1. Go to https://sonarcloud.io"
+            echo "::error::2. Sign in with GitHub"
+            echo "::error::3. Go to My Account → Security"
+            echo "::error::4. Generate a new token"
+            echo "::error::5. Add it as SONAR_TOKEN secret in GitHub repository settings"
+            echo "::error::6. Repository → Settings → Secrets and variables → Actions → New repository secret"
+            exit 1
+          fi
+          echo "✅ SonarCloud token is configured"
+
       - name: SonarCloud Scan
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
+          # Verify coverage files exist before scanning
+          echo "🔍 Checking coverage files..."
+          if [ ! -f "coverage/python/coverage.xml" ]; then
+            echo "::warning::Python coverage file not found: coverage/python/coverage.xml"
+          else
+            echo "✅ Found Python coverage file"
+          fi
+
+          if [ ! -f "coverage/powershell/coverage.xml" ]; then
+            echo "::warning::PowerShell coverage file not found: coverage/powershell/coverage.xml"
+          else
+            echo "✅ Found PowerShell coverage file"
+          fi
+
+          echo "🚀 Starting SonarCloud analysis..."
+
           # Configuration is in sonar-project.properties
           # Override coverage paths to use new locations
           sonar-scanner \
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.token=$SONAR_TOKEN \
             -Dsonar.python.coverage.reportPaths=coverage/python/coverage.xml \
-            -Dsonar.coverage.jacoco.xmlReportPaths=coverage/powershell/coverage.xml
+            -Dsonar.coverage.jacoco.xmlReportPaths=coverage/powershell/coverage.xml \
+            -Dsonar.verbose=false
+
+          echo "✅ SonarCloud analysis completed successfully!"
