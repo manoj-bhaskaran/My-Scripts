@@ -117,7 +117,45 @@ If this is `false`, permissions won't be tracked in the repository.
 - `/hooks/pre-push` (line 1: `#!/bin/sh` shebang present)
 - Both files have correct shebang but lack executable bit
 
+## Resolution
+
+**Status:** RESOLVED (as of commit 2c14c5d)
+
+This issue was **automatically resolved** by the migration to the pre-commit framework system (PR #655, addressing issue #647).
+
+### How It Was Resolved
+
+The problematic hooks (`post-checkout` and `pre-push`) were removed entirely when the repository migrated from manual git hooks to the pre-commit framework:
+
+- **Commit:** 874c5d9 - "fix(hooks): migrate to single pre-commit framework system"
+- **Merge:** 2c14c5d - Merged via PR #655
+- **Date:** December 9, 2025
+
+### Files Removed
+
+The following hooks were deleted (no longer needed with pre-commit framework):
+- `hooks/commit-msg` (82 lines removed)
+- `hooks/post-checkout` (61 lines removed) - ✓ Had permission issue
+- `hooks/pre-commit` (175 lines removed)
+- `hooks/pre-push` (49 lines removed) - ✓ Had permission issue
+
+### Current State
+
+- **Remaining hooks:** `post-commit` and `post-merge` (PowerShell automation hooks)
+- **Current permissions:** Both have correct executable permissions (755)
+- **Git tracking:** Both tracked as executable (100755)
+- **Hook management:** Standardized via `.pre-commit-config.yaml`
+
+### Benefits of Migration
+
+1. ✅ Eliminated permission issues (files no longer exist)
+2. ✅ Standardized hook management via pre-commit framework
+3. ✅ Automatic hook installation and updates
+4. ✅ Consistent configuration across all environments
+5. ✅ Built-in permission handling by pre-commit framework
+
 ## Related Issues
 
 - #001: Git Hooks Not Installed
 - #006: Missing Dependencies (Git LFS)
+- #647: Dual Hook Management System Creates Confusion (resolved by migration)

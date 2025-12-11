@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Git Hook Permission Issues** (#648)
+  - Issue automatically resolved by migration to pre-commit framework (PR #655, issue #647)
+  - Removed hooks with permission problems: `post-checkout` and `pre-push`
+  - Remaining hooks (`post-commit`, `post-merge`) have correct executable permissions
+  - All hook management now standardized via `.pre-commit-config.yaml`
+  - Updated analysis documentation to reflect resolution status
+  - **Impact**: Eliminated permission-related hook execution failures
+
 ### Added
 
 - **FileQueue Module** (#602)
