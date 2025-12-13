@@ -88,22 +88,9 @@ repos:
     hooks:
       - id: psscriptanalyzer
         name: PSScriptAnalyzer
-        entry: bash -c 'pwsh -NoProfile -Command "
-          $settingsPath = Join-Path $PWD \"config/PSScriptAnalyzerSettings.psd1\";
-          $results = @();
-          foreach ($file in $args) {
-            if (Test-Path $file) {
-              $fileResults = Invoke-ScriptAnalyzer -Path $file -Settings $settingsPath -Severity Error;
-              if ($fileResults) { $results += $fileResults }
-            }
-          };
-          if ($results) {
-            $results | Format-List;
-            exit 1
-          }
-        " --'
+        entry: bash -c 'pwsh -NoProfile -Command "$settingsPath = Join-Path $PWD \"config/PSScriptAnalyzerSettings.psd1\"; $results = @(); foreach ($file in $args) { if (Test-Path $file) { $fileResults = Invoke-ScriptAnalyzer -Path $file -Settings $settingsPath -Severity Error; if ($fileResults) { $results += $fileResults } } }; if ($results) { $results | Format-List; exit 1 }" --'
         language: system
-        files: \.(ps1|psm1|psd1)$
+        files: '\.ps1$|\.psm1$|\.psd1$'
         pass_filenames: true
         require_serial: true
 
