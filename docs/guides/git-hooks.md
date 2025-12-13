@@ -1,7 +1,7 @@
 # Git Hooks Guide (Pre-Commit Framework)
 
-**Version:** 3.0.0
-**Last Updated:** 2025-12-09
+**Version:** 3.1.0
+**Last Updated:** 2025-12-13
 
 ---
 
@@ -211,7 +211,9 @@ exclude_dirs = ["tests", "fixtures"]
 - PowerShell linting tool
 - Checks for syntax errors and best practices
 - Configured to show errors only (`-Severity Error`)
+- Uses same settings as CI (`config/PSScriptAnalyzerSettings.psd1`)
 - Requires PowerShell 7+ (`pwsh`)
+- **Status**: Enabled as of v3.1.0 (previously disabled due to "temp file issues")
 
 **Hook definition:**
 
@@ -220,14 +222,20 @@ exclude_dirs = ["tests", "fixtures"]
   hooks:
     - id: psscriptanalyzer
       name: PSScriptAnalyzer
-      entry: pwsh -Command "Invoke-ScriptAnalyzer -Path"
+      entry: bash -c 'pwsh -NoProfile -Command "..."'
       language: system
-      files: \.ps1$
-      args: ["-Severity", "Error"]
+      files: \.(ps1|psm1|psd1)$
+      pass_filenames: true
 ```
 
-**Auto-installation:**
-The pre-commit hook will attempt to install PSScriptAnalyzer if missing.
+**Installation:**
+PSScriptAnalyzer must be manually installed on your system:
+
+```powershell
+Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+```
+
+If PSScriptAnalyzer is not installed, the hook will skip PowerShell files with a warning.
 
 ---
 
@@ -850,6 +858,6 @@ For issues or questions:
 
 ---
 
-**Document Version:** 2.0.0
-**Last Updated:** 2025-11-21
-**Related Issue:** #463
+**Document Version:** 3.1.0
+**Last Updated:** 2025-12-13
+**Related Issues:** #463, #651

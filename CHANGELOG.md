@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **PowerShell Linting in Pre-Commit Hook** (#651)
+  - Enabled PSScriptAnalyzer in `.pre-commit-config.yaml` for local PowerShell validation
+  - Uses same settings as CI (`config/PSScriptAnalyzerSettings.psd1`)
+  - Runs on all PowerShell files (`.ps1`, `.psm1`, `.psd1`)
+  - Checks only for errors (`-Severity Error`)
+  - **Impact**: Provides immediate feedback on PowerShell code quality before pushing to CI
+  - **Consistency**: PowerShell linting now runs locally just like Python linting
+
 ### Fixed
 
 - **Git Hook Permission Issues** (#648)
@@ -16,6 +26,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All hook management now standardized via `.pre-commit-config.yaml`
   - Updated analysis documentation to reflect resolution status
   - **Impact**: Eliminated permission-related hook execution failures
+
+### Changed
+
+- **Documentation Updates** (#651)
+  - Updated `docs/guides/git-hooks.md` to reflect enabled PowerShell linting
+  - Removed misleading "auto-installation" claim for PSScriptAnalyzer
+  - Added accurate installation instructions for PSScriptAnalyzer module
+  - Document version bumped to 3.1.0
+
+### Removed
+
+- **Outdated PowerShell Hook Comments** (#651)
+  - Removed "environment-specific" and "temp file issues" comments
+  - Cleaned up misleading documentation about disabled features
 
 ### Added
 
