@@ -8,6 +8,15 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.0.5] - 2026-01-03
+### Fixed
+- **Processed videos tracking**: Fixed bug where some videos, despite being processed and having screenshots taken, were not being written to the `.processed_videos` file, causing unnecessary reprocessing on restart. Changes include:
+  - Modified exception handling to capture errors instead of re-throwing, allowing processing status to be logged even when errors occur
+  - Added GDI mode fallback to count files on disk when stats are null (matching VLC snapshot mode behavior)
+  - Added final file count verification that overrides stats if actual files were saved
+  - All videos are now **always** logged with appropriate status: `'Failed'` (with error details), `'Processed'` with `'NoFrames'` reason, or `'Processed'` on success
+  - Ensures reliable resume functionality across restarts by guaranteeing every attempted video is tracked
+
 ## [3.0.4] - 2026-01-03
 ### Fixed
 - **Python module import robustness**: Enhanced `Invoke-Cropper` to prevent "No module named crop_colours" errors:
