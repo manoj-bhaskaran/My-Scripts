@@ -7,6 +7,17 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
 ## [Unreleased]
+
+## [3.0.4] - 2026-01-03
+### Fixed
+- **Python module import robustness**: Enhanced `Invoke-Cropper` to prevent "No module named crop_colours" errors:
+  - Added pre-flight check to verify `media.crop_colours` module is importable before execution
+  - Explicitly initialize ProcessStartInfo.Environment collection to ensure proper environment variable inheritance
+  - Added file existence verification for crop_colours.py before attempting module invocation
+  - Improved error messages with PYTHONPATH details and specific import diagnostics
+  - Added debug logging to display exact Python command and PYTHONPATH value
+
+## [3.0.3] - 2026-01-03
 ### Fixed
 - **Python module import failure**: Fixed "No module named crop_colours" error when using `-RunCropper` without specifying `-PythonScriptPath`. The module now automatically configures PYTHONPATH to include `src/python` and uses the correct module path `media.crop_colours` instead of `crop_colours`.
 

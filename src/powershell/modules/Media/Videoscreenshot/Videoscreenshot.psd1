@@ -1,6 +1,6 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '3.0.3'
+  ModuleVersion     = '3.0.4'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
@@ -14,7 +14,7 @@
   PrivateData       = @{
     PSData = @{
       Tags         = @('video','vlc','gdi','screenshots','crop','python','images','automation')
-      ReleaseNotes = '3.0.3: Fixed empty catch blocks in error handling (added explanatory comments for resource cleanup, process termination).'
+      ReleaseNotes = '3.0.4: Enhanced Python module import with pre-flight checks, explicit environment initialization, and detailed diagnostic logging for media.crop_colours module invocation.'
     }
   }
 }
