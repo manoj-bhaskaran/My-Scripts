@@ -294,6 +294,8 @@ function Start-VideoBatch {
         $p = $null
         $snapStats = $null
         $gdiStats = $null
+        $processingFailed = $false
+        $processingError = $null
 
         # Compute the per-video cap:
         # Prefer MaxPerVideoSeconds (explicit) over TimeLimitSeconds (legacy).
@@ -331,8 +333,9 @@ function Start-VideoBatch {
             }
         }
         catch {
-            Write-Message -Level Error -Message ("Processing failed for: {0} — {1}" -f $video.FullName, $_.Exception.Message)
-            throw
+            $processingFailed = $true
+            $processingError = $_.Exception.Message
+            Write-Message -Level Error -Message ("Processing failed for: {0} — {1}" -f $video.FullName, $processingError)
         }
         finally {
             if ($p) {
@@ -370,10 +373,32 @@ function Start-VideoBatch {
                 $framesDelta = [int]$gdiStats.FramesSaved
                 $achievedFps = $gdiStats.AchievedFps
             }
+            else {
+                # Fallback for GDI mode: compute delta from disk counts
+                $postCount = (Get-ChildItem -Path $SaveFolder -Filter "${scenePrefix}*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+                $framesDelta = [int]($postCount - $preCount)
+            }
         }
 
-        if ($framesDelta -le 0) {
+        # Always do a final file count check to ensure accuracy
+        # This catches cases where stats might be incorrect but files were actually saved
+        $actualPostCount = (Get-ChildItem -Path $SaveFolder -Filter "${scenePrefix}*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+        $actualFramesDelta = [int]($actualPostCount - $preCount)
+        if ($actualFramesDelta -gt $framesDelta) {
+            Write-Debug ("Stats reported {0} frames but disk shows {1} frames; using actual count" -f $framesDelta, $actualFramesDelta)
+            $framesDelta = $actualFramesDelta
+        }
+
+        # Determine status and log the video as processed
+        if ($processingFailed) {
+            # Even if processing failed, log it to avoid reprocessing
+            $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Failed' -Reason $processingError
+            Write-Message -Level Warn -Message ("Video marked as failed (will not retry): {0}" -f $video.FullName)
+        }
+        elseif ($framesDelta -le 0) {
             Write-Message -Level Warn -Message ("No frames produced for: {0}" -f $video.FullName)
+            # Still log it to avoid reprocessing the same video
+            $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Processed' -Reason 'NoFrames'
         }
         else {
             if ($null -ne $achievedFps) {
