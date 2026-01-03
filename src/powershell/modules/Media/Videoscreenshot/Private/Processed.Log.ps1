@@ -22,10 +22,10 @@ function Resolve-VideoPath {
   Build a normalized set of already-processed video paths.
 .DESCRIPTION
   Reads a processed log and returns a HashSet[string] of normalized absolute paths.
-  Supports both the current TSV format (`<FullPath>`<tab>`<Status>`) and the
-  **legacy format** that contains one `<FullPath>` per line. Blank lines and
+  Supports both the current TSV format (`<FullPath>`<tab>`<Status>`<tab>`<Reason>`<tab>`<Timestamp>`)
+  and the **legacy format** that contains one `<FullPath>` per line. Blank lines and
   comment lines (starting with '#') are ignored. Status values in TSV are
-  currently informational; presence of the path implies “already processed”.
+  currently informational; presence of the path implies "already processed".
 .PARAMETER Path
   Path to the processed log. The file may be missing (returns an empty set).
 .OUTPUTS
@@ -47,7 +47,8 @@ function Get-ResumeIndex {
 
             $rawPath = $null
             if ($line -like "*`t*") {
-                # TSV (current) format: <FullPath>\t<Status>[\t<Reason>]
+                # TSV (current) format: <FullPath>\t<Status>\t<Reason>\t<Timestamp>
+                # Path is always in the first column
                 $rawPath = ($line.Split("`t"))[0]
             }
             else {
@@ -78,8 +79,9 @@ function Get-ResumeIndex {
 .SYNOPSIS
   Append a processed/skip record to the processed log.
 .DESCRIPTION
-  Writes a TSV line in the form `<FullPath>\t<Status>\t<Reason?>`. The current
-  skipper accepts both TSV (this) and legacy single-column logs; new writes use TSV.
+  Writes a TSV line in the form `<FullPath>\t<Status>\t<Reason>\t<Timestamp>`.
+  The path is written in the first column for compatibility with Get-ResumeIndex.
+  The reader accepts both TSV (this) and legacy single-column logs; new writes use TSV.
 .PARAMETER Path
   Processed log path to append to (created if missing).
 .PARAMETER VideoPath
@@ -97,8 +99,10 @@ function Write-ProcessedLog {
         [Parameter(Mandatory)][ValidateSet('Processed', 'TimedOutProcessed', 'Skipped', 'Failed')][string]$Status,
         [string]$Reason = ''
     )
+    # TSV format: <FullPath>\t<Status>\t<Reason>\t<Timestamp>
+    # Path must be first column for Get-ResumeIndex to work correctly
     $ts = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss.fffK')
-    $line = "{0}`t{1}`t{2}`t{3}" -f $ts, $Status, ($Reason ?? ''), (Resolve-VideoPath -Path $VideoPath)
+    $line = "{0}`t{1}`t{2}`t{3}" -f (Resolve-VideoPath -Path $VideoPath), $Status, ($Reason ?? ''), $ts
     # Using-style write with retry (exclusive append)
     for ($i = 1; $i -le 3; $i++) {
         try {
