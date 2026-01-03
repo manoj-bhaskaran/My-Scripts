@@ -6,6 +6,13 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [Unreleased]
+### Fixed
+- **Python module import failure**: Fixed "No module named crop_colours" error when using `-RunCropper` without specifying `-PythonScriptPath`. The module now automatically configures PYTHONPATH to include `src/python` and uses the correct module path `media.crop_colours` instead of `crop_colours`.
+
+### Added
+- **Python package structure**: Added `__init__.py` to `src/python/media/` to make it a proper Python package, enabling module-based invocation with `python -m media.crop_colours`.
+
 ## [3.0.2] - 2025-11-16
 ### Fixed
 - **Duplicate screenshots (vlcScreenshot mode)**: Fixed issue #436 where the final frame of a video was captured repeatedly in some runs. `Wait-ForSnapshotFrames` now monitors the VLC process and exits early (with a 2-second grace period) after VLC terminates, preventing duplicate frames caused by continued polling after video completion.
