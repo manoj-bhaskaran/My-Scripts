@@ -1,6 +1,6 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '3.0.4'
+  ModuleVersion     = '3.0.5'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
@@ -14,7 +14,7 @@
   PrivateData       = @{
     PSData = @{
       Tags         = @('video','vlc','gdi','screenshots','crop','python','images','automation')
-      ReleaseNotes = '3.0.4: Enhanced Python module import with pre-flight checks, explicit environment initialization, and detailed diagnostic logging for media.crop_colours module invocation.'
+      ReleaseNotes = '3.0.5: Fixed bug where processed videos were not being written to .processed_videos file, causing unnecessary reprocessing. All videos are now tracked with appropriate status (Processed/Failed) regardless of outcome.'
     }
   }
 }
