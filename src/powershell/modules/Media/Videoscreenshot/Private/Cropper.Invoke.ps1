@@ -227,11 +227,62 @@ function Invoke-Cropper {
         if ($moduleRoot) {
             $pythonSrc = Join-Path $moduleRoot 'src' 'python'
             if (Test-Path $pythonSrc -PathType Container) {
+                # Verify the media package exists
+                $mediaPackage = Join-Path $pythonSrc 'media'
+                $cropScript = Join-Path $mediaPackage 'crop_colours.py'
+                if (-not (Test-Path $cropScript -PathType Leaf)) {
+                    throw "Python module not found: $cropScript. Ensure the repository is up-to-date and src/python/media/crop_colours.py exists."
+                }
+
+                # Access .Environment property to auto-populate with current environment
+                $null = $psi.Environment
+                # Set PYTHONPATH to include src/python
                 $existingPath = [System.Environment]::GetEnvironmentVariable('PYTHONPATH')
                 $newPath = if ($existingPath) { "$pythonSrc$([System.IO.Path]::PathSeparator)$existingPath" } else { $pythonSrc }
                 $psi.Environment['PYTHONPATH'] = $newPath
-                Write-Debug ("Invoke-Cropper: Set PYTHONPATH to include: {0}" -f $pythonSrc)
+                Write-Debug ("Invoke-Cropper: Set PYTHONPATH={0}" -f $newPath)
+
+                # Pre-flight check: verify Python can import the module
+                $psiTest = [System.Diagnostics.ProcessStartInfo]::new()
+                $psiTest.FileName = $pythonCmd
+                $null = $psiTest.ArgumentList.Add('-c')
+                $null = $psiTest.ArgumentList.Add('import sys; sys.path.insert(0, r"{0}"); import media.crop_colours' -f $pythonSrc)
+                $psiTest.UseShellExecute = $false
+                $psiTest.RedirectStandardOutput = $true
+                $psiTest.RedirectStandardError = $true
+                $psiTest.CreateNoWindow = $true
+                # Copy PYTHONPATH to test process
+                $null = $psiTest.Environment
+                $psiTest.Environment['PYTHONPATH'] = $newPath
+
+                $pTest = [System.Diagnostics.Process]::new()
+                $pTest.StartInfo = $psiTest
+                $null = $pTest.Start()
+                $testOut = $pTest.StandardOutput.ReadToEnd()
+                $testErr = $pTest.StandardError.ReadToEnd()
+                $pTest.WaitForExit()
+
+                if ($pTest.ExitCode -ne 0) {
+                    $errDetail = if ($testErr) { $testErr } else { $testOut }
+                    throw ("Pre-flight check failed: Python cannot import media.crop_colours. PYTHONPATH={0}. Error: {1}" -f $newPath, $errDetail.Trim())
+                }
+                Write-Debug "Invoke-Cropper: Pre-flight check passed (media.crop_colours is importable)"
             }
+            else {
+                throw "Python source directory not found: $pythonSrc. Ensure the repository structure is intact."
+            }
+        }
+        else {
+            throw "Could not locate repository root (no .git directory found). Unable to set PYTHONPATH for module invocation."
+        }
+    }
+
+    # Debug: Log the exact command being executed
+    if ($PSBoundParameters.ContainsKey('Debug') -or $DebugPreference -eq 'Continue') {
+        $cmdDisplay = "$pythonCmd $($pyArgs -join ' ')"
+        Write-Debug ("Invoke-Cropper: Executing command: {0}" -f $cmdDisplay)
+        if ($useModuleInvoke) {
+            Write-Debug ("Invoke-Cropper: PYTHONPATH={0}" -f $psi.Environment['PYTHONPATH'])
         }
     }
 
