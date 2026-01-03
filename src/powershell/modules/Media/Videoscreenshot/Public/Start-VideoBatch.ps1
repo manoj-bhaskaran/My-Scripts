@@ -43,7 +43,7 @@ By default, existing crops are deleted and regenerated.
 When used with -ReprocessCropped, do not delete existing crops; new outputs are added alongside.
 .PARAMETER PythonScriptPath
 Path to crop_colours.py. If omitted, the module will invoke the cropper as a
-Python module (`python -m crop_colours`) which requires `crop_colours` to be importable via `PYTHONPATH`.
+Python module (`python -m media.crop_colours`). PYTHONPATH is automatically configured to include src/python.
 .PARAMETER PythonExe
 Python interpreter to use (optional; falls back to py/python in helper).
 .PARAMETER ClearSnapshotsBeforeRun
@@ -124,7 +124,7 @@ function Start-VideoBatch {
             }
         }
         else {
-            Write-Debug "CropOnly: PythonScriptPath not supplied; will attempt module invocation via 'python -m crop_colours'."
+            Write-Debug "CropOnly: PythonScriptPath not supplied; will attempt module invocation via 'python -m media.crop_colours'."
         }
         if (-not (Test-Path -LiteralPath $SaveFolder -PathType Container)) {
             throw "SaveFolder not found (CropOnly expects images here): $SaveFolder"
@@ -170,8 +170,8 @@ function Start-VideoBatch {
             }
         }
         else {
-            # No explicit script path: we'll rely on `python -m crop_colours` (PYTHONPATH/importable module)
-            Write-Debug "RunCropper: PythonScriptPath not supplied; will invoke via 'python -m crop_colours'."
+            # No explicit script path: we'll rely on `python -m media.crop_colours` (PYTHONPATH auto-configured)
+            Write-Debug "RunCropper: PythonScriptPath not supplied; will invoke via 'python -m media.crop_colours'."
         }
     }
 

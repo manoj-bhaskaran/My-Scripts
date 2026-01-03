@@ -101,9 +101,9 @@ When `-RunCropper` is set, the module invokes the Python cropper after capture. 
 - **If `-PythonScriptPath` is provided** (path to `crop_colours.py`), the script file is executed directly.
 - **If `-PythonScriptPath` is omitted**, the module falls back to **module invocation**:
   ```
-  python -m crop_colours --input <SaveFolder> --skip-bad-images --allow-empty --recurse --preserve-alpha
+  python -m media.crop_colours --input <SaveFolder> --skip-bad-images --allow-empty --recurse --preserve-alpha
   ```
-  Ensure `crop_colours` is importable (e.g., installed or discoverable via `PYTHONPATH`).
+  PYTHONPATH is automatically configured to include `src/python` from the repository root.
 
 To force a full re-crop, use:
 ```

@@ -6,8 +6,8 @@
   Invokes the cropper with safe, opinionated defaults (non-destructive and robust).
   If -PythonScriptPath is provided, the file is executed directly:
       python <crop_colours.py> --input <folder> --skip-bad-images --allow-empty --recurse --preserve-alpha [--reprocess-cropped [--keep-existing-crops]] [--debug]
-  If -PythonScriptPath is omitted, the module form is used (requires PYTHONPATH/importable module):
-      python -m crop_colours --input <folder> --skip-bad-images --allow-empty --recurse --preserve-alpha [--reprocess-cropped [--keep-existing-crops]] [--debug]
+  If -PythonScriptPath is omitted, the module form is used (PYTHONPATH automatically set to include src/python):
+      python -m media.crop_colours --input <folder> --skip-bad-images --allow-empty --recurse --preserve-alpha [--reprocess-cropped [--keep-existing-crops]] [--debug]
 
   This helper follows the “helpers throw; caller owns user-facing messages” policy:
   - It validates Python is available.
@@ -73,7 +73,7 @@ function Invoke-Cropper {
     }
     else {
         $useModuleInvoke = $true
-        Write-Debug "Invoke-Cropper: PythonScriptPath not supplied; using module invocation (-m crop_colours)."
+        Write-Debug "Invoke-Cropper: PythonScriptPath not supplied; using module invocation (-m media.crop_colours)."
     }
     if (-not (Test-Path -LiteralPath $InputFolder -PathType Container)) {
         throw "InputFolder not found for cropper: $InputFolder"
@@ -183,7 +183,7 @@ function Invoke-Cropper {
     # Per design, these flags are not made configurable here.
     $pyArgs = @()
     if ($useModuleInvoke) {
-        $pyArgs += @('-m', 'crop_colours')
+        $pyArgs += @('-m', 'media.crop_colours')
     }
     else {
         $pyArgs += @("$resolvedScript")
@@ -212,6 +212,28 @@ function Invoke-Cropper {
     $psi.RedirectStandardOutput = $false
     $psi.RedirectStandardError = $false
     $psi.CreateNoWindow = $false
+
+    # If using module invocation, ensure PYTHONPATH includes src/python directory
+    if ($useModuleInvoke) {
+        # Locate repository root (parent of src/python directory)
+        $moduleRoot = $PSScriptRoot
+        # Navigate up from Private/ to module root
+        while ($moduleRoot -and -not (Test-Path (Join-Path $moduleRoot '.git') -PathType Container)) {
+            $parent = Split-Path -Parent $moduleRoot
+            if ($parent -eq $moduleRoot) { break }  # reached root without finding .git
+            $moduleRoot = $parent
+        }
+
+        if ($moduleRoot) {
+            $pythonSrc = Join-Path $moduleRoot 'src' 'python'
+            if (Test-Path $pythonSrc -PathType Container) {
+                $existingPath = [System.Environment]::GetEnvironmentVariable('PYTHONPATH')
+                $newPath = if ($existingPath) { "$pythonSrc$([System.IO.Path]::PathSeparator)$existingPath" } else { $pythonSrc }
+                $psi.Environment['PYTHONPATH'] = $newPath
+                Write-Debug ("Invoke-Cropper: Set PYTHONPATH to include: {0}" -f $pythonSrc)
+            }
+        }
+    }
 
     $p = [System.Diagnostics.Process]::new()
     $p.StartInfo = $psi
