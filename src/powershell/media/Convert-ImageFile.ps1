@@ -148,12 +148,6 @@
         about large append-only log files.
 #>
 
-# Import logging framework
-Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
-
-# Initialize logger
-Initialize-Logger -ScriptName "picconvert" -LogLevel 20
-
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory = $false)]
@@ -186,6 +180,12 @@ param(
     [ValidateRange(1, 1048576)]
     [int]$LogWarnSizeMB = 10
 )
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName "picconvert" -LogLevel 20
 
 # region: Globals / State -------------------------------------------------------------------------
 
