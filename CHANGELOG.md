@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Conventional Commits Validation Duplication** (#653)
+  - Resolved duplicate commit message validation between manual hook and commitizen
+  - Manual `hooks/commit-msg` was removed in commit 874c5d9 (2025-12-09)
+  - Standardized on commitizen hook via `.pre-commit-config.yaml`
+  - Updated analysis documentation with resolution status
+  - **Impact**: Eliminated duplicate validation, reduced maintenance burden
+  - **Related**: Part of broader migration to single pre-commit framework system (PR #655, Issue #647)
+
 - **Git Hook Permission Issues** (#648)
   - Issue automatically resolved by migration to pre-commit framework (PR #655, issue #647)
   - Removed hooks with permission problems: `post-checkout` and `pre-push`
