@@ -3,8 +3,28 @@
 **Priority:** Low
 **Type:** Duplication
 **Component:** Git Hooks (commit-msg)
+**Status:** ✅ RESOLVED
 
-## Description
+## Resolution
+
+**Resolved In:** Commit `874c5d9` (2025-12-09)
+**Resolution Type:** Manual hook removed in favor of pre-commit framework
+
+The duplicate commit message validation has been resolved by removing the manual `hooks/commit-msg` script and standardizing on the commitizen hook managed by the pre-commit framework. This change was part of the broader migration to a single hook management system.
+
+**Actions Taken:**
+- ✅ Removed `hooks/commit-msg` (82 lines)
+- ✅ Retained commitizen hook in `.pre-commit-config.yaml`
+- ✅ Updated documentation in `docs/guides/git-hooks.md`
+- ✅ Standardized to single validation system
+
+**Related Changes:**
+- PR #655: Migration to single pre-commit framework system
+- Issue #647: Dual hook management system
+
+---
+
+## Original Issue Description
 
 Commit message validation for Conventional Commits format is implemented twice:
 1. Manual shell script in `hooks/commit-msg`
