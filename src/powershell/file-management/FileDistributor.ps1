@@ -413,8 +413,7 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 # Import FileQueue module for queue management
 Import-Module "$PSScriptRoot\..\modules\FileManagement\FileQueue\FileQueue.psd1" -Force
 
-# Initialize logger
-Initialize-Logger -ScriptName "FileDistributor" -LogLevel 20
+# Note: Logger initialization moved to after LogFilePath resolution
 
 # Display help and exit if -Help is specified
 if ($Help) {
@@ -811,6 +810,13 @@ $StateFilePath = $script:StateFilePath
 Initialize-FilePath -FilePath $LogFilePath -CreateFile
 # Ensure state directory exists early (file may be created later by locking/atomic write)
 Initialize-FilePath -FilePath $StateFilePath
+
+# Initialize logger with the resolved log directory
+$logDirectory = Split-Path -Path $LogFilePath -Parent
+Initialize-Logger -resolvedLogDir $logDirectory -ScriptName "FileDistributor" -LogLevel 20
+# Override the framework's auto-generated filename to use the user's exact path
+$Global:LogConfig.LogFilePath = $LogFilePath
+
 # ===== Random name provider resolution (module-only) =====
 function Import-RandomNameProvider {
     param(
@@ -2807,7 +2813,9 @@ function Main {
 
     }
     catch {
-        LogMessage -Message "$($_.Exception.Message)" -IsError
+        LogMessage -Message "FATAL ERROR: $($_.Exception.Message)" -IsError -ConsoleOutput
+        LogMessage -Message "Stack Trace: $($_.ScriptStackTrace)" -IsError
+        throw
     }
     finally {
         if ($fileLockRef -and ($fileLockRef.PSObject.Properties.Name -contains 'Value') -and $fileLockRef.Value) {
