@@ -2267,6 +2267,14 @@ function Main {
 
         $fileLockRef = [ref]$null
 
+        # Initialize variables that will be used in the summary section
+        # These must be initialized before checkpoint blocks to ensure they're always available
+        $totalSourceFilesAll = 0
+        $totalSourceFiles = 0
+        $totalTargetFilesBefore = 0
+        $subfolders = @()
+        $sourceFiles = @()
+
         try {
             # Restart logic
             $lastCheckpoint = 0
@@ -2433,6 +2441,7 @@ function Main {
         }
 
         if ($lastCheckpoint -lt 2) {
+            LogMessage -Message "Enumerating source and target files..." -ConsoleOutput
             # Count files in the source and target folder before distribution
             $sourceFilesAll = Get-ChildItem -Path $SourceFolder -Recurse -File
             $totalSourceFilesAll = $sourceFilesAll.Count
@@ -2453,7 +2462,7 @@ function Main {
             $totalTargetFilesBefore = (Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object).Count
             $totalTargetFilesBefore = if ($null -eq $totalTargetFilesBefore) { 0 } else { $totalTargetFilesBefore }
             $totalFiles = $totalSourceFiles + $totalTargetFilesBefore # per-phase denominator
-            LogMessage -Message "Source File Count (selected): $totalSourceFiles of $totalSourceFilesAll total. Target File Count Before: $totalTargetFilesBefore."
+            LogMessage -Message "Source File Count (selected): $totalSourceFiles of $totalSourceFilesAll total. Target File Count Before: $totalTargetFilesBefore." -ConsoleOutput
 
             # Get subfolders in the target folder
             LogMessage -Message "DEBUG: About to enumerate subfolders in: '$TargetFolder'" -IsDebug
@@ -2464,7 +2473,7 @@ function Main {
                 $allItems = Get-ChildItem -LiteralPath $TargetFolder -Force -ErrorAction Stop
                 LogMessage -Message "DEBUG: Total items found: $($allItems.Count)" -IsDebug
 
-                $subfolders = $allItems | Where-Object { $_.PSIsContainer }
+                $subfolders = @($allItems | Where-Object { $_.PSIsContainer })
 
                 LogMessage -Message "DEBUG: Directory items found: $($subfolders.Count)" -IsDebug
                 if ($subfolders -and $subfolders.Count -gt 0) {
@@ -2543,19 +2552,34 @@ function Main {
             SaveState -Checkpoint 3 -AdditionalVariables $additionalVars -fileLock $fileLockRef
         }
         # --- NEW: Source → Target distribution phase (Checkpoint 4) ---
-        if ($lastCheckpoint -lt 4 -and $totalSourceFiles -gt 0 -and $null -ne $sourceFiles -and $sourceFiles.Count -gt 0 -and $subfolders -and $subfolders.Count -gt 0) {
-            LogMessage -Message ("Distributing {0} source file(s) to subfolders..." -f $totalSourceFiles)
-            $GlobalFileCounter.Value = 0
-            DistributeFilesToSubfolders -Files $sourceFiles `
-                -Subfolders $subfolders `
-                -TargetRoot $TargetFolder `
-                -Limit $FilesPerFolderLimit `
-                -ShowProgress:$ShowProgress `
-                -UpdateFrequency:$UpdateFrequency `
-                -DeleteMode $DeleteMode `
-                -FilesToDelete $FilesToDelete `
-                -GlobalFileCounter $GlobalFileCounter `
-                -TotalFiles $totalSourceFiles
+        if ($lastCheckpoint -lt 4) {
+            if ($totalSourceFiles -gt 0 -and $null -ne $sourceFiles -and $sourceFiles.Count -gt 0 -and $subfolders -and $subfolders.Count -gt 0) {
+                LogMessage -Message ("Distributing {0} source file(s) to subfolders..." -f $totalSourceFiles) -ConsoleOutput
+                $GlobalFileCounter.Value = 0
+                DistributeFilesToSubfolders -Files $sourceFiles `
+                    -Subfolders $subfolders `
+                    -TargetRoot $TargetFolder `
+                    -Limit $FilesPerFolderLimit `
+                    -ShowProgress:$ShowProgress `
+                    -UpdateFrequency:$UpdateFrequency `
+                    -DeleteMode $DeleteMode `
+                    -FilesToDelete $FilesToDelete `
+                    -GlobalFileCounter $GlobalFileCounter `
+                    -TotalFiles $totalSourceFiles
+            }
+            else {
+                # Log why we're skipping distribution
+                if ($totalSourceFiles -eq 0) {
+                    LogMessage -Message "No files to distribute from source folder." -ConsoleOutput
+                }
+                elseif (-not $subfolders -or $subfolders.Count -eq 0) {
+                    LogMessage -Message "No subfolders available in target. Creating first subfolder..." -ConsoleOutput
+                    # Create at least one subfolder if source has files but target has none
+                    if ($totalSourceFiles -gt 0) {
+                        $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders 1 -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
+                    }
+                }
+            }
 
             # Persist after Source → Target copy (Checkpoint 4)
             $additionalVars = @{
@@ -2576,7 +2600,7 @@ function Main {
 
         if ($lastCheckpoint -lt 5) {
             # Redistribute files within the target folder and subfolders if needed (now Checkpoint 5)
-            LogMessage -Message "Redistributing files in target folders..."
+            LogMessage -Message "Redistributing files in target folders..." -ConsoleOutput
             LogMessage -Message ("DEBUG: About to call RedistributeFilesInTarget with {0} subfolders" -f $subfolders.Count) -IsDebug
             RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders `
                 -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress `
