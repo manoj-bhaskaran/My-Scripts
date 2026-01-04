@@ -433,6 +433,17 @@ function Start-VideoBatch {
         }
     }
 
+    # Clean up the PID registry file created for this run
+    if ($pidFile -and (Test-Path -LiteralPath $pidFile)) {
+        try {
+            Remove-Item -LiteralPath $pidFile -Force -ErrorAction Stop
+            Write-Debug "Cleaned up PID registry: $pidFile"
+        }
+        catch {
+            Write-Message -Level Warn -Message ("Failed to remove PID registry file '{0}': {1}" -f $pidFile, $_.Exception.Message)
+        }
+    }
+
     $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed {1} file(s)" -f ($MyInvocation.MyCommand.Module.Version.ToString()), $processedCount)
     Write-Debug 'TRACE Start-VideoBatch: leaving (no output intended)'
     return
