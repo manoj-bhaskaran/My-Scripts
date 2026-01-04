@@ -228,8 +228,10 @@ jobs:
           echo "${{ github.workspace }}/sonar-scanner/sonar-scanner-6.0.0.4432-linux/bin" >> $GITHUB_PATH
 
       - name: Check SonarCloud Token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          if [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
+          if [ -z "$SONAR_TOKEN" ]; then
             echo "::error::SONAR_TOKEN secret is not configured!"
             echo "::error::Please configure SONAR_TOKEN in GitHub repository secrets:"
             echo "::error::1. Go to https://sonarcloud.io"
