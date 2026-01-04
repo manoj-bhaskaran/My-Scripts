@@ -455,7 +455,17 @@ def list_images(folder: str, recurse: bool = False) -> list[str]:
     """Return sorted absolute image paths with valid extensions. Optionally recurse."""
     root = Path(folder)
     it = root.rglob("*") if recurse else root.iterdir()
-    return sorted(str(p.resolve()) for p in it if p.is_file() and p.suffix.lower() in VALID_EXTS)
+
+    def should_include(path: Path) -> bool:
+        """Check if path should be included (exclude Cropped folder)."""
+        if not path.is_file() or path.suffix.lower() not in VALID_EXTS:
+            return False
+        # Exclude any files that are inside a "Cropped" folder
+        if "Cropped" in path.parts:
+            return False
+        return True
+
+    return sorted(str(p.resolve()) for p in it if should_include(p))
 
 
 def get_processed_set(folder: str) -> set[str]:
