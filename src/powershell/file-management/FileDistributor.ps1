@@ -2813,7 +2813,9 @@ function Main {
 
     }
     catch {
-        LogMessage -Message "$($_.Exception.Message)" -IsError
+        LogMessage -Message "FATAL ERROR: $($_.Exception.Message)" -IsError -ConsoleOutput
+        LogMessage -Message "Stack Trace: $($_.ScriptStackTrace)" -IsError
+        throw
     }
     finally {
         if ($fileLockRef -and ($fileLockRef.PSObject.Properties.Name -contains 'Value') -and $fileLockRef.Value) {
