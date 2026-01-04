@@ -1053,7 +1053,7 @@ function DistributeFilesToSubfolders {
         [switch]$ShowProgress,
         [int]$UpdateFrequency,
         [string]$DeleteMode,
-        [ref]$FilesToDelete,
+        $FilesToDelete,  # FileQueue object (PSCustomObject) - reference type, no [ref] needed
         [ref]$GlobalFileCounter,
         [int]$TotalFiles
     )
@@ -1253,7 +1253,7 @@ function RedistributeFilesInTarget {
         [switch]$ShowProgress,
         [int]$UpdateFrequency,
         [string]$DeleteMode,
-        [ref]$FilesToDelete,
+        $FilesToDelete,  # FileQueue object (PSCustomObject) - reference type, no [ref] needed
         [ref]$GlobalFileCounter,
         [int]$TotalFiles
     )
@@ -1431,7 +1431,7 @@ function RebalanceSubfoldersByAverage {
         [switch]$ShowProgress,
         [int]$UpdateFrequency = 100,
         [Parameter(Mandatory = $true)][string]$DeleteMode,
-        [Parameter(Mandatory = $true)][ref]$FilesToDelete,
+        [Parameter(Mandatory = $true)]$FilesToDelete,  # FileQueue object (PSCustomObject) - reference type, no [ref] needed
         [Parameter(Mandatory = $true)][ref]$GlobalFileCounter
     )
 
@@ -1610,7 +1610,7 @@ function ConsolidateSubfoldersToMinimum {
         [switch]$ShowProgress,
         [int]$UpdateFrequency = 100,
         [Parameter(Mandatory = $true)][string]$DeleteMode,
-        [Parameter(Mandatory = $true)][ref]$FilesToDelete,
+        [Parameter(Mandatory = $true)]$FilesToDelete,  # FileQueue object (PSCustomObject) - reference type, no [ref] needed
         [Parameter(Mandatory = $true)][ref]$GlobalFileCounter
     )
 
