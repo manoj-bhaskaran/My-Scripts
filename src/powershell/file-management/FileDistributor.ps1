@@ -6,9 +6,10 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.1.0
+ 4.2.0
 
  CHANGELOG:
+   4.2.0 - Added -RebalanceTolerance parameter to make rebalance tolerance configurable (default: 10%)
    4.1.0 - Distribution algorithm: weighted random selection based on available capacity
    4.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
    3.5.0 - Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling
@@ -113,10 +114,13 @@ The script errors out if the module cannot be located.
 Optional. **Opt-in** consolidation phase. When specified, after Source→Target distribution and target-root redistribution, pack all files into the **minimum number of subfolders** allowed by `FilesPerFolderLimit`. Randomly selects the required number of *keeper* subfolders, moves files from the others, and deletes any subfolders that become empty.
 
 .PARAMETER RebalanceToAverage
-Optional. **Opt-in** *rebalancing* phase. When specified, after Source→Target distribution and target-root redistribution, compute the **average files per existing subfolder** and move files **among existing subfolders only** so that no subfolder deviates by more than **±10%** from that average.
+Optional. **Opt-in** *rebalancing* phase. When specified, after Source→Target distribution and target-root redistribution, compute the **average files per existing subfolder** and move files **among existing subfolders only** so that no subfolder deviates by more than the specified tolerance from that average.
 - Does **not** create or delete subfolders.
 - Always honors `FilesPerFolderLimit`.
 - Incompatible with `-ConsolidateToMinimum`; both switches **cannot** be used together (the script will error).
+
+.PARAMETER RebalanceTolerance
+Optional. Specifies the tolerance percentage for rebalancing when using `-RebalanceToAverage`. Defaults to 10, meaning folders are rebalanced to be within ±10% of the average. For example, if the tolerance is 15, folders will be rebalanced to be within ±15% of the average file count.
 
 .EXAMPLE
 Tune retries (unlimited attempts, capped backoff 5 minutes) while copying:
@@ -201,6 +205,15 @@ To display the script's help text:
 
 .NOTES
 # CHANGELOG
+## 4.2.0 — 2026-01-05
+### Added
+- **`-RebalanceTolerance` parameter:** New optional parameter to configure the tolerance percentage for the `-RebalanceToAverage` feature. Defaults to 10, meaning folders are rebalanced to be within ±10% of the average file count.
+  - **Usage:** `-RebalanceTolerance 15` will rebalance folders to be within ±15% of average instead of the default ±10%.
+  - **Flexibility:** Allows users to control how strictly folders should be balanced. Lower values (e.g., 5) create tighter balance; higher values (e.g., 20) allow more variance.
+  - The tolerance is applied to both donor identification (folders above `avg * (1 + tolerance/100)`) and receiver identification (folders below `avg * (1 - tolerance/100)`).
+### Notes
+- No breaking changes. Default behavior remains ±10% when `-RebalanceTolerance` is not specified.
+
 ## 4.1.0 — 2026-01-05
 ### Changed
 - **Distribution algorithm:** Switched from "fill emptiest folder first" to **weighted random selection** based on available capacity. Files are now distributed randomly across multiple eligible folders, with probability weighted by each folder's remaining capacity (`FilesPerFolderLimit - currentCount`).
@@ -414,7 +427,8 @@ param(
     [int]$RemoveEntriesOlderThan,
     [switch]$Help,
     [switch]$ConsolidateToMinimum,
-    [switch]$RebalanceToAverage
+    [switch]$RebalanceToAverage,
+    [int]$RebalanceTolerance = 10
 )
 
 # Import logging framework
@@ -1472,6 +1486,7 @@ function RebalanceSubfoldersByAverage {
     param (
         [Parameter(Mandatory = $true)][string]$TargetFolder,
         [Parameter(Mandatory = $true)][int]$FilesPerFolderLimit,
+        [int]$Tolerance = 10,
         [switch]$ShowProgress,
         [int]$UpdateFrequency = 100,
         [Parameter(Mandatory = $true)][string]$DeleteMode,
@@ -1479,7 +1494,12 @@ function RebalanceSubfoldersByAverage {
         [Parameter(Mandatory = $true)][ref]$GlobalFileCounter
     )
 
-    LogMessage -Message "Rebalance: computing average and deviation thresholds (±10%)..."
+    # Calculate tolerance multipliers
+    $toleranceDecimal = [double]$Tolerance / 100.0
+    $lowerMultiplier = 1.0 - $toleranceDecimal
+    $upperMultiplier = 1.0 + $toleranceDecimal
+
+    LogMessage -Message ("Rebalance: computing average and deviation thresholds (±{0}%)..." -f $Tolerance)
 
     # Enumerate subfolders and counts
     $subfolders = @()
@@ -1516,8 +1536,8 @@ function RebalanceSubfoldersByAverage {
     }
 
     $avg = [double]$totalFiles / [double]$subfolders.Count
-    $low = [int][math]::Floor($avg * 0.9)
-    $high = [int][math]::Ceiling($avg * 1.1)
+    $low = [int][math]::Floor($avg * $lowerMultiplier)
+    $high = [int][math]::Ceiling($avg * $upperMultiplier)
 
     LogMessage -Message ("Rebalance: totalFiles={0}, subfolders={1}, avg={2:N2}, lowerBound={3}, upperBound={4} (limit={5})" -f $totalFiles, $subfolders.Count, $avg, $low, $high, $FilesPerFolderLimit)
 
@@ -2741,10 +2761,11 @@ function Main {
 
         # --- Optional: Rebalance among existing subfolders (Checkpoint 7) ---
         if ($RebalanceToAverage -and $lastCheckpoint -lt 7) {
-            LogMessage -Message "Rebalancing files among existing subfolders to within ±10% of average... (opt-in)"
+            LogMessage -Message ("Rebalancing files among existing subfolders to within ±{0}% of average... (opt-in)" -f $RebalanceTolerance)
 
             RebalanceSubfoldersByAverage -TargetFolder $TargetFolder `
                 -FilesPerFolderLimit $FilesPerFolderLimit `
+                -Tolerance $RebalanceTolerance `
                 -ShowProgress:$ShowProgress `
                 -UpdateFrequency:$UpdateFrequency `
                 -DeleteMode $DeleteMode `
