@@ -2291,6 +2291,8 @@ function Main {
         $totalTargetFilesBefore = 0
         $subfolders = @()
         $sourceFiles = @()
+        $skippedFilesByExtension = @{}  # Hashtable to track skipped files by extension
+        $totalSkippedFiles = 0
 
         try {
             # Restart logic
@@ -2460,9 +2462,40 @@ function Main {
         if ($lastCheckpoint -lt 2) {
             LogMessage -Message "Enumerating source and target files..." -ConsoleOutput
             # Count files in the source and target folder before distribution
-            # Filter to only include .jpg and .png files
-            $sourceFilesAll = Get-ChildItem -Path $SourceFolder -Recurse -File -Include *.jpg, *.png
+            # First, get ALL files to track what's being skipped
+            $allSourceFiles = Get-ChildItem -Path $SourceFolder -Recurse -File
+            $totalEnumeratedFiles = $allSourceFiles.Count
+
+            # Define allowed extensions
+            $allowedExtensions = @('.jpg', '.png')
+
+            # Filter to only include .jpg and .png files and track skipped files by extension
+            $sourceFilesAll = @()
+            foreach ($file in $allSourceFiles) {
+                $ext = $file.Extension.ToLower()
+                if ($ext -in $allowedExtensions) {
+                    $sourceFilesAll += $file
+                }
+                else {
+                    # Track skipped files by extension
+                    if (-not $skippedFilesByExtension.ContainsKey($ext)) {
+                        $skippedFilesByExtension[$ext] = 0
+                    }
+                    $skippedFilesByExtension[$ext]++
+                    $totalSkippedFiles++
+                }
+            }
             $totalSourceFilesAll = $sourceFilesAll.Count
+
+            # Log skipped file statistics
+            if ($totalSkippedFiles -gt 0) {
+                LogMessage -Message "Skipped $totalSkippedFiles file(s) with non-compliant extensions:" -ConsoleOutput
+                foreach ($ext in ($skippedFilesByExtension.Keys | Sort-Object)) {
+                    $count = $skippedFilesByExtension[$ext]
+                    $extDisplay = if ([string]::IsNullOrEmpty($ext)) { "(no extension)" } else { $ext }
+                    LogMessage -Message "  $extDisplay : $count file(s)" -ConsoleOutput
+                }
+            }
 
             # Apply copy cap
             if ($MaxFilesToCopy -eq 0) {
@@ -2769,10 +2802,27 @@ function Main {
         $totalTargetFilesAfter = if ($null -eq $totalTargetFilesAfter) { 0 } else { $totalTargetFilesAfter }
 
         # Log summary message
+        LogMessage -Message "===== File Distribution Summary =====" -ConsoleOutput
         LogMessage -Message "Original number of files in the source folder (enumerated): $totalSourceFilesAll" -ConsoleOutput
+
+        # Display skipped file statistics
+        if ($totalSkippedFiles -gt 0) {
+            LogMessage -Message "Files skipped (non-compliant extensions): $totalSkippedFiles" -ConsoleOutput
+            foreach ($ext in ($skippedFilesByExtension.Keys | Sort-Object)) {
+                $count = $skippedFilesByExtension[$ext]
+                $extDisplay = if ([string]::IsNullOrEmpty($ext)) { "(no extension)" } else { $ext }
+                LogMessage -Message "  $extDisplay : $count file(s)" -ConsoleOutput
+            }
+        }
+        else {
+            LogMessage -Message "Files skipped (non-compliant extensions): 0" -ConsoleOutput
+        }
+
         LogMessage -Message "Files selected for copying this run: $totalSourceFiles" -ConsoleOutput
         LogMessage -Message "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -ConsoleOutput
         LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
+        LogMessage -Message "Total warnings: $script:Warnings" -ConsoleOutput
+        LogMessage -Message "Total errors: $script:Errors" -ConsoleOutput
 
         if ($totalSourceFiles + $totalTargetFilesBefore -ne $totalTargetFilesAfter) {
             LogMessage -Message "Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -IsWarning
