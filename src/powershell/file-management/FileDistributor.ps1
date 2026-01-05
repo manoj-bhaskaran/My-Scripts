@@ -1537,6 +1537,8 @@ function RebalanceSubfoldersByAverage {
         return
     }
 
+    LogMessage -Message ("Rebalance: enumerating files from {0} subfolder(s)..." -f $subfolders.Count)
+
     $folderCounts = @{}
     $totalFiles = 0
     foreach ($sf in $subfolders) {
@@ -1544,6 +1546,7 @@ function RebalanceSubfoldersByAverage {
         $count = 0
         try {
             $count = (Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop | Measure-Object).Count
+            LogMessage -Message ("DEBUG: Folder '{0}' contains {1} file(s)" -f (Split-Path -Leaf $p), $count) -IsDebug
         }
         catch {
             LogMessage -Message "Rebalance: failed to count files in '$p': $($_.Exception.Message)" -IsWarning
@@ -1561,7 +1564,19 @@ function RebalanceSubfoldersByAverage {
     $low = [int][math]::Floor($avg * $lowerMultiplier)
     $high = [int][math]::Ceiling($avg * $upperMultiplier)
 
-    LogMessage -Message ("Rebalance: totalFiles={0}, subfolders={1}, avg={2:N2}, lowerBound={3}, upperBound={4} (limit={5})" -f $totalFiles, $subfolders.Count, $avg, $low, $high, $FilesPerFolderLimit)
+    LogMessage -Message ("Rebalance: totalFiles={0}, subfolders={1}, avg={2:N2}, lowerBound={3}, upperBound={4} (limit={5}, tolerance=±{6}%)" -f $totalFiles, $subfolders.Count, $avg, $low, $high, $FilesPerFolderLimit, $Tolerance)
+
+    # Log current distribution summary
+    LogMessage -Message "Rebalance: === CURRENT DISTRIBUTION ==="
+    foreach ($sf in ($subfolders | Sort-Object { $folderCounts[$_.FullName] } -Descending)) {
+        $p = $sf.FullName
+        $count = $folderCounts[$p]
+        $folderName = Split-Path -Leaf $p
+        $deviation = $count - $avg
+        $deviationPct = if ($avg -gt 0) { ($deviation / $avg) * 100 } else { 0 }
+        $status = if ($count -gt $high) { "DONOR" } elseif ($count -lt $low) { "RECEIVER" } else { "BALANCED" }
+        LogMessage -Message ("  {0}: {1} files (avg {2:+0.0;-0.0;0}%, {3:+0;-0;0} files) [{4}]" -f $folderName, $count, $deviationPct, $deviation, $status)
+    }
 
     # Classify donors and receivers
     $donors = @()
@@ -1580,7 +1595,7 @@ function RebalanceSubfoldersByAverage {
     }
 
     if (-not $donors -and -not $receivers) {
-        LogMessage -Message "Rebalance: all subfolders already within ±10% of average. Nothing to do."
+        LogMessage -Message ("Rebalance: all subfolders already within ±{0}% of average. Nothing to do." -f $Tolerance)
         return
     }
     if (-not $receivers) {
@@ -1593,6 +1608,27 @@ function RebalanceSubfoldersByAverage {
     $plannedMoves = [int][Math]::Min([int]$totalSurplus, [int]$totalDeficit)
 
     LogMessage -Message ("Rebalance: donors={0} (surplus={1}), receivers={2} (deficit={3}), plannedMoves={4}" -f $donors.Count, $totalSurplus, $receivers.Count, $totalDeficit, $plannedMoves)
+
+    # Log detailed donor/receiver breakdown
+    if ($donors.Count -gt 0) {
+        LogMessage -Message "Rebalance: === DONORS (above upper bound) ==="
+        foreach ($d in ($donors | Sort-Object -Property Surplus -Descending)) {
+            $folderName = Split-Path -Leaf $d.Path
+            $currentCount = $folderCounts[$d.Path]
+            LogMessage -Message ("  {0}: {1} files (surplus: {2})" -f $folderName, $currentCount, $d.Surplus)
+        }
+    }
+
+    if ($receivers.Count -gt 0) {
+        LogMessage -Message "Rebalance: === RECEIVERS (below lower bound) ==="
+        foreach ($r in ($receivers | Sort-Object -Property Deficit -Descending)) {
+            $folderName = Split-Path -Leaf $r.Path
+            $currentCount = $folderCounts[$r.Path]
+            LogMessage -Message ("  {0}: {1} files (deficit: {2})" -f $folderName, $currentCount, $r.Deficit)
+        }
+    }
+
+    LogMessage -Message ("Rebalance: beginning file transfers ({0} files to move)..." -f $plannedMoves)
 
     if ($plannedMoves -le 0) {
         LogMessage -Message "Rebalance: no feasible moves. Nothing to do."
@@ -1617,9 +1653,14 @@ function RebalanceSubfoldersByAverage {
     }
 
     $GlobalFileCounter.Value = 0
+    $totalMoved = 0
+    $totalFailed = 0
+    $lastLoggedProgress = 0
+
     foreach ($d in $donors) {
         if ($GlobalFileCounter.Value -ge $plannedMoves) { break }
         $src = $d.Path
+        $srcFolderName = Split-Path -Leaf $src
         $moveCount = [int][Math]::Min([int]$d.Surplus, [int]($plannedMoves - $GlobalFileCounter.Value))
         if ($moveCount -le 0) { continue }
 
@@ -1630,6 +1671,7 @@ function RebalanceSubfoldersByAverage {
             if ($allFiles.Count -gt 0) {
                 $moveCount = [Math]::Min($moveCount, $allFiles.Count)
                 $candidates = if ($moveCount -lt $allFiles.Count) { $allFiles | Get-Random -Count $moveCount } else { $allFiles }
+                LogMessage -Message ("DEBUG: Selected {0} file(s) from donor '{1}'" -f $candidates.Count, $srcFolderName) -IsDebug
             }
         }
         catch {
@@ -1643,9 +1685,13 @@ function RebalanceSubfoldersByAverage {
             $destFolder = Get-BestReceiver $receiverMap
             if (-not $destFolder) { break } # no more capacity anywhere
 
+            $destFolderName = Split-Path -Leaf $destFolder
+
             # Prepare destination and copy
             $newName = ResolveFileNameConflict -TargetFolder $destFolder -OriginalFileName $file.Name
             $dest = Join-Path -Path $destFolder -ChildPath $newName
+
+            LogMessage -Message ("DEBUG: Moving '{0}' from '{1}' to '{2}'" -f $file.Name, $srcFolderName, $destFolderName) -IsDebug
 
             Copy-ItemWithRetry -Path $file.FullName -Destination $dest -RetryDelay $RetryDelay -RetryCount $RetryCount
             if (Test-Path -LiteralPath $dest) {
@@ -1672,20 +1718,57 @@ function RebalanceSubfoldersByAverage {
                 catch {
                     LogMessage -Message "Rebalance: post-copy handling failed for '$($file.FullName)': $($_.Exception.Message)" -IsWarning
                 }
+                $totalMoved++
                 $GlobalFileCounter.Value++
+
+                # Show progress (visual and logged)
                 if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
                     $pct = [math]::Floor(($GlobalFileCounter.Value / $plannedMoves) * 100)
                     Write-Progress -Activity "Rebalancing subfolders" -Status "Moved $($GlobalFileCounter.Value) of $plannedMoves" -PercentComplete $pct
                 }
+
+                # Log progress periodically
+                if ($GlobalFileCounter.Value - $lastLoggedProgress -ge ($plannedMoves / 10)) {
+                    $pct = if ($plannedMoves -gt 0) { ($GlobalFileCounter.Value / $plannedMoves) * 100 } else { 0 }
+                    LogMessage -Message ("Rebalance: progress - moved {0}/{1} files ({2:N1}%)" -f $GlobalFileCounter.Value, $plannedMoves, $pct)
+                    $lastLoggedProgress = $GlobalFileCounter.Value
+                }
             }
             else {
+                $totalFailed++
                 LogMessage -Message "Rebalance: failed to copy '$($file.FullName)' to '$dest'." -IsError
             }
         }
     }
 
     if ($ShowProgress) { Write-Progress -Activity "Rebalancing subfolders" -Status "Complete" -Completed }
-    LogMessage -Message ("Rebalance: moved {0} file(s) of planned {1}." -f $GlobalFileCounter.Value, $plannedMoves)
+
+    # Log final results
+    LogMessage -Message "Rebalance: === FINAL RESULTS ==="
+    LogMessage -Message ("  Files moved successfully: {0}" -f $totalMoved)
+    if ($totalFailed -gt 0) {
+        LogMessage -Message ("  Files failed to move: {0}" -f $totalFailed) -IsWarning
+    }
+    LogMessage -Message ("Rebalance: redistribution complete - moved {0} of {1} planned file(s)" -f $totalMoved, $plannedMoves)
+
+    # Log final distribution (verify)
+    LogMessage -Message "Rebalance: === FINAL DISTRIBUTION (verification) ==="
+    foreach ($sf in ($subfolders | Sort-Object FullName)) {
+        $p = $sf.FullName
+        try {
+            $finalCount = (Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop | Measure-Object).Count
+            $folderName = Split-Path -Leaf $p
+            $originalCount = $folderCounts[$p]
+            $delta = $finalCount - $originalCount
+            $finalDeviation = $finalCount - $avg
+            $finalDeviationPct = if ($avg -gt 0) { ($finalDeviation / $avg) * 100 } else { 0 }
+            $status = if ($finalCount -gt $high) { "DONOR" } elseif ($finalCount -lt $low) { "RECEIVER" } else { "BALANCED" }
+            LogMessage -Message ("  {0}: {1} files (was {2}, {3:+0;-0;0}) [avg {4:+0.0;-0.0;0}%] [{5}]" -f $folderName, $finalCount, $originalCount, $delta, $finalDeviationPct, $status)
+        }
+        catch {
+            LogMessage -Message ("  {0}: unable to verify (error enumerating)" -f (Split-Path -Leaf $p)) -IsWarning
+        }
+    }
 }
 
 function RandomizeDistributionAcrossFolders {
