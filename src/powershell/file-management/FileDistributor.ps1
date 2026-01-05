@@ -569,6 +569,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
+$script:Version = "4.4.0"
 $script:Warnings = 0
 $script:Errors = 0
 $script:SessionId = $null
@@ -2607,6 +2608,7 @@ function RemoveLogEntries {
 # Main script logic
 function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
+    LogMessage -Message "Version: $script:Version" -ConsoleOutput
     $script:DebugMode = ($DebugPreference -ne 'SilentlyContinue')
     Import-RandomNameProvider -ModulePath $RandomNameModulePath
 
