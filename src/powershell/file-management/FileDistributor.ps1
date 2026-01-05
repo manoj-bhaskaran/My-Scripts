@@ -6,9 +6,10 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.3.0
+ 4.4.0
 
  CHANGELOG:
+   4.4.0 - Made SourceFolder optional; omitting it enables rebalance-only mode (no -MaxFilesToCopy 0 needed)
    4.3.0 - Added -RandomizeDistribution to completely redistribute all files randomly across folders
    4.2.0 - Added -RebalanceTolerance parameter to make rebalance tolerance configurable (default: 10%)
    4.1.0 - Distribution algorithm: weighted random selection based on available capacity
@@ -24,7 +25,9 @@ File name conflicts are resolved using the **RandomName** module’s `Get-Random
 All actions are logged to a specified log file. Progress updates are displayed during processing if enabled, configurable by file count.
 
 .PARAMETER SourceFolder
-Mandatory. Specifies the path to the source folder containing the files to be copied.
+Optional. Specifies the path to the source folder containing the files to be copied.
+If not specified, the script runs in rebalance-only mode (no files are copied from source).
+Use rebalance-only mode with `-RebalanceToAverage`, `-ConsolidateToMinimum`, or `-RandomizeDistribution`.
 
 .PARAMETER TargetFolder
 Mandatory. Specifies the path to the target folder where the files will be distributed.
@@ -196,6 +199,22 @@ Rebalance existing subfolders to within ±10% of the current average (no new fol
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -RebalanceToAverage
 
 .EXAMPLE
+Rebalance-only mode: rebalance existing files without copying any new files (no SourceFolder required):
+.\FileDistributor.ps1 -TargetFolder "C:\Target" -RebalanceToAverage
+
+.EXAMPLE
+Rebalance-only mode with custom tolerance: rebalance to within ±15% without copying:
+.\FileDistributor.ps1 -TargetFolder "C:\Target" -RebalanceToAverage -RebalanceTolerance 15
+
+.EXAMPLE
+Consolidate-only mode: pack existing files into minimum folders without copying new files:
+.\FileDistributor.ps1 -TargetFolder "C:\Target" -ConsolidateToMinimum
+
+.EXAMPLE
+Randomize-only mode: completely redistribute all existing files randomly:
+.\FileDistributor.ps1 -TargetFolder "C:\Target" -RandomizeDistribution
+
+.EXAMPLE
 To truncate the log file if it exceeds 10 megabytes:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateIfLarger 10M
 
@@ -213,6 +232,23 @@ To display the script's help text:
 
 .NOTES
 # CHANGELOG
+## 4.4.0 — 2026-01-05
+### Added
+- **Optional SourceFolder for rebalance-only mode:** SourceFolder parameter is now optional. When omitted, the script automatically runs in rebalance-only mode (no files copied from source).
+  - **Use case:** Run `-RebalanceToAverage`, `-ConsolidateToMinimum`, or `-RandomizeDistribution` on existing target files without providing a source folder.
+  - **Examples:**
+    - `.\FileDistributor.ps1 -TargetFolder "C:\Target" -RebalanceToAverage`
+    - `.\FileDistributor.ps1 -TargetFolder "C:\Target" -ConsolidateToMinimum`
+    - `.\FileDistributor.ps1 -TargetFolder "C:\Target" -RandomizeDistribution`
+  - **Automatic behavior:** When SourceFolder is not provided, `MaxFilesToCopy` is automatically set to 0 and source enumeration is skipped.
+### Changed
+- Parameter validation logic: SourceFolder omission automatically enables rebalance-only mode
+- Source file enumeration is completely skipped when running in rebalance-only mode
+- State file restoration handles empty SourceFolder gracefully for rebalance-only sessions
+### Notes
+- No breaking changes. Existing behavior unchanged when SourceFolder is provided.
+- Enhanced UX: Users no longer need to specify `-MaxFilesToCopy 0` for rebalance-only operations.
+
 ## 4.3.0 — 2026-01-05
 ### Added
 - **`-RandomizeDistribution` parameter:** New optional switch to perform full randomized redistribution of ALL files across ALL existing subfolders. Completely ignores current distribution and redistributes from scratch.
@@ -472,7 +508,8 @@ if ($Help) {
 
     Write-Host "`nPARAMETERS" -ForegroundColor Yellow
     Write-Host "- SourceFolder:" -ForegroundColor Green
-    Write-Host "  Mandatory. Specifies the path to the source folder containing the files to be copied." -ForegroundColor White
+    Write-Host "  Optional. Specifies the path to the source folder containing the files to be copied." -ForegroundColor White
+    Write-Host "  If not specified, runs in rebalance-only mode (no files copied from source)." -ForegroundColor White
     Write-Host "- TargetFolder:" -ForegroundColor Green
     Write-Host "  Mandatory. Specifies the path to the target folder where the files will be distributed." -ForegroundColor White
     Write-Host "- FilesPerFolderLimit:" -ForegroundColor Green
@@ -2630,16 +2667,18 @@ function Main {
         if (-not $script:SessionId) { $script:SessionId = [guid]::NewGuid().ToString() }
 
         # Require SourceFolder/TargetFolder explicitly (removed user-specific defaults)
+        # SourceFolder is optional for rebalance-only mode (automatically sets MaxFilesToCopy = 0)
         if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
-            LogMessage -Message "SourceFolder not specified. Provide -SourceFolder with a valid path." -IsError
-            throw "Missing required parameter: -SourceFolder"
+            # No source folder = rebalance-only mode
+            $MaxFilesToCopy = 0
+            LogMessage -Message "SourceFolder not specified. Running in rebalance-only mode (no files will be copied)." -ConsoleOutput
         }
         if ([string]::IsNullOrWhiteSpace($TargetFolder)) {
             LogMessage -Message "TargetFolder not specified. Provide -TargetFolder with a valid path." -IsError
             throw "Missing required parameter: -TargetFolder"
         }
 
-        if (!(Test-Path -Path $SourceFolder)) {
+        if (-not [string]::IsNullOrWhiteSpace($SourceFolder) -and !(Test-Path -Path $SourceFolder)) {
             LogMessage -Message "Source folder '$SourceFolder' does not exist." -IsError
             throw "Source folder not found."
         }
@@ -2729,12 +2768,17 @@ function Main {
                 if ($state.ContainsKey("SourceFolder")) {
                     $savedSourceFolder = $state.SourceFolder
 
-                    # Validate the loaded SourceFolder
-                    if ($SourceFolder -ne $savedSourceFolder) {
-                        throw "SourceFolder mismatch: Restarted script must use the saved SourceFolder ('$savedSourceFolder'). Aborting."
+                    # Validate the loaded SourceFolder (allow empty for rebalance-only mode)
+                    if (-not [string]::IsNullOrWhiteSpace($savedSourceFolder)) {
+                        if ($SourceFolder -ne $savedSourceFolder) {
+                            throw "SourceFolder mismatch: Restarted script must use the saved SourceFolder ('$savedSourceFolder'). Aborting."
+                        }
+                        $SourceFolder = $savedSourceFolder
+                        LogMessage -Message "SourceFolder restored from state file: $SourceFolder"
                     }
-                    $SourceFolder = $savedSourceFolder
-                    LogMessage -Message "SourceFolder restored from state file: $SourceFolder"
+                    else {
+                        LogMessage -Message "SourceFolder was empty in state file (rebalance-only mode)."
+                    }
                 }
                 else {
                     throw "State file does not contain SourceFolder. Unable to enforce."
@@ -2864,54 +2908,65 @@ function Main {
 
         if ($lastCheckpoint -lt 2) {
             LogMessage -Message "Enumerating source and target files..." -ConsoleOutput
-            # Count files in the source and target folder before distribution
-            # First, get ALL files to track what's being skipped
-            $allSourceFiles = Get-ChildItem -Path $SourceFolder -Recurse -File
-            $totalEnumeratedFiles = $allSourceFiles.Count
 
-            # Define allowed extensions
-            $allowedExtensions = @('.jpg', '.png')
-
-            # Filter to only include .jpg and .png files and track skipped files by extension
-            $sourceFilesAll = @()
-            foreach ($file in $allSourceFiles) {
-                $ext = $file.Extension.ToLower()
-                if ($ext -in $allowedExtensions) {
-                    $sourceFilesAll += $file
-                }
-                else {
-                    # Track skipped files by extension
-                    if (-not $skippedFilesByExtension.ContainsKey($ext)) {
-                        $skippedFilesByExtension[$ext] = 0
-                    }
-                    $skippedFilesByExtension[$ext]++
-                    $totalSkippedFiles++
-                }
-            }
-            $totalSourceFilesAll = $sourceFilesAll.Count
-
-            # Log skipped file statistics
-            if ($totalSkippedFiles -gt 0) {
-                LogMessage -Message "Skipped $totalSkippedFiles file(s) with non-compliant extensions:" -ConsoleOutput
-                foreach ($ext in ($skippedFilesByExtension.Keys | Sort-Object)) {
-                    $count = $skippedFilesByExtension[$ext]
-                    $extDisplay = if ([string]::IsNullOrEmpty($ext)) { "(no extension)" } else { $ext }
-                    LogMessage -Message "  $extDisplay : $count file(s)" -ConsoleOutput
-                }
-            }
-
-            # Apply copy cap
-            if ($MaxFilesToCopy -eq 0) {
+            # Skip source enumeration if SourceFolder not provided (rebalance-only mode)
+            if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
+                LogMessage -Message "Skipping source enumeration (rebalance-only mode)." -ConsoleOutput
+                $sourceFilesAll = @()
+                $totalSourceFilesAll = 0
                 $sourceFiles = @()
-            }
-            elseif ($MaxFilesToCopy -gt 0) {
-                # Selection policy: maintain enumeration order; change to | Get-Random -Count $MaxFilesToCopy to sample
-                $sourceFiles = $sourceFilesAll | Select-Object -First $MaxFilesToCopy
+                $totalSourceFiles = 0
             }
             else {
-                $sourceFiles = $sourceFilesAll
+                # Count files in the source and target folder before distribution
+                # First, get ALL files to track what's being skipped
+                $allSourceFiles = Get-ChildItem -Path $SourceFolder -Recurse -File
+                $totalEnumeratedFiles = $allSourceFiles.Count
+
+                # Define allowed extensions
+                $allowedExtensions = @('.jpg', '.png')
+
+                # Filter to only include .jpg and .png files and track skipped files by extension
+                $sourceFilesAll = @()
+                foreach ($file in $allSourceFiles) {
+                    $ext = $file.Extension.ToLower()
+                    if ($ext -in $allowedExtensions) {
+                        $sourceFilesAll += $file
+                    }
+                    else {
+                        # Track skipped files by extension
+                        if (-not $skippedFilesByExtension.ContainsKey($ext)) {
+                            $skippedFilesByExtension[$ext] = 0
+                        }
+                        $skippedFilesByExtension[$ext]++
+                        $totalSkippedFiles++
+                    }
+                }
+                $totalSourceFilesAll = $sourceFilesAll.Count
+
+                # Log skipped file statistics
+                if ($totalSkippedFiles -gt 0) {
+                    LogMessage -Message "Skipped $totalSkippedFiles file(s) with non-compliant extensions:" -ConsoleOutput
+                    foreach ($ext in ($skippedFilesByExtension.Keys | Sort-Object)) {
+                        $count = $skippedFilesByExtension[$ext]
+                        $extDisplay = if ([string]::IsNullOrEmpty($ext)) { "(no extension)" } else { $ext }
+                        LogMessage -Message "  $extDisplay : $count file(s)" -ConsoleOutput
+                    }
+                }
+
+                # Apply copy cap
+                if ($MaxFilesToCopy -eq 0) {
+                    $sourceFiles = @()
+                }
+                elseif ($MaxFilesToCopy -gt 0) {
+                    # Selection policy: maintain enumeration order; change to | Get-Random -Count $MaxFilesToCopy to sample
+                    $sourceFiles = $sourceFilesAll | Select-Object -First $MaxFilesToCopy
+                }
+                else {
+                    $sourceFiles = $sourceFilesAll
+                }
+                $totalSourceFiles = $sourceFiles.Count
             }
-            $totalSourceFiles = $sourceFiles.Count
 
             $totalTargetFilesBefore = (Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object).Count
             $totalTargetFilesBefore = if ($null -eq $totalTargetFilesBefore) { 0 } else { $totalTargetFilesBefore }
