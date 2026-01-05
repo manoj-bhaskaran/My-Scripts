@@ -1715,18 +1715,25 @@ function RandomizeDistributionAcrossFolders {
         return
     }
 
-    # Enumerate all files in all subfolders
+    LogMessage -Message ("Randomize: enumerating files from {0} subfolder(s)..." -f $subfolders.Count)
+
+    # Enumerate all files in all subfolders and track current counts
     $allFiles = @()
     $totalFiles = 0
+    $currentCounts = @{}
+
     foreach ($sf in $subfolders) {
         $p = $sf.FullName
         try {
             $files = @(Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop)
             $allFiles += $files
             $totalFiles += $files.Count
+            $currentCounts[$p] = $files.Count
+            LogMessage -Message ("DEBUG: Folder '{0}' contains {1} file(s)" -f (Split-Path -Leaf $p), $files.Count) -IsDebug
         }
         catch {
             LogMessage -Message "Randomize: failed to enumerate files in '$p': $($_.Exception.Message)" -IsWarning
+            $currentCounts[$p] = 0
         }
     }
 
@@ -1735,12 +1742,27 @@ function RandomizeDistributionAcrossFolders {
         return
     }
 
-    LogMessage -Message ("Randomize: found {0} file(s) across {1} subfolder(s). Shuffling and redistributing..." -f $totalFiles, $subfolders.Count)
+    LogMessage -Message ("Randomize: found {0} file(s) total across {1} subfolder(s)" -f $totalFiles, $subfolders.Count)
+
+    # Log current distribution summary
+    LogMessage -Message "Randomize: === CURRENT DISTRIBUTION ==="
+    $avg = [double]$totalFiles / [double]$subfolders.Count
+    foreach ($sf in ($subfolders | Sort-Object { $currentCounts[$_.FullName] } -Descending)) {
+        $p = $sf.FullName
+        $count = $currentCounts[$p]
+        $folderName = Split-Path -Leaf $p
+        $deviation = $count - $avg
+        $deviationPct = if ($avg -gt 0) { ($deviation / $avg) * 100 } else { 0 }
+        LogMessage -Message ("  {0}: {1} files (avg {2:+0.0;-0.0;0}%, {3:+0;-0;0} files)" -f $folderName, $count, $deviationPct, $deviation)
+    }
+    LogMessage -Message ("Randomize: average = {0:N2} files per folder" -f $avg)
 
     # Shuffle files randomly
+    LogMessage -Message "Randomize: shuffling file list randomly..."
     try {
         if ($allFiles.Count -gt 1) {
             $allFiles = $allFiles | Get-Random -Count $allFiles.Count
+            LogMessage -Message "Randomize: shuffle complete"
         }
     }
     catch {
@@ -1749,9 +1771,10 @@ function RandomizeDistributionAcrossFolders {
 
     # Calculate target files per folder (even distribution)
     $targetPerFolder = [int][Math]::Ceiling([double]$totalFiles / [double]$subfolders.Count)
-    LogMessage -Message ("Randomize: target ~{0} files per folder (total={1}, folders={2})" -f $targetPerFolder, $totalFiles, $subfolders.Count)
+    LogMessage -Message ("Randomize: target = {0} files per folder (ceiling of {1} total / {2} folders)" -f $targetPerFolder, $totalFiles, $subfolders.Count)
 
     # Assign files to folders using round-robin
+    LogMessage -Message "Randomize: assigning files to folders using round-robin through shuffled list..."
     $assignments = @{}
     foreach ($sf in $subfolders) {
         $assignments[$sf.FullName] = @()
@@ -1768,24 +1791,73 @@ function RandomizeDistributionAcrossFolders {
         $folderIndex = ($folderIndex + 1) % $subfolderPaths.Count
     }
 
+    # Log planned distribution summary
+    LogMessage -Message "Randomize: === PLANNED DISTRIBUTION ==="
+    foreach ($sf in ($subfolders | Sort-Object { $assignments[$_.FullName].Count } -Descending)) {
+        $p = $sf.FullName
+        $plannedCount = $assignments[$p].Count
+        $currentCount = $currentCounts[$p]
+        $delta = $plannedCount - $currentCount
+        $folderName = Split-Path -Leaf $p
+        LogMessage -Message ("  {0}: {1} files (currently {2}, {3:+0;-0;0})" -f $folderName, $plannedCount, $currentCount, $delta)
+    }
+
+    # Calculate move statistics
+    $filesStaying = 0
+    $filesMoving = 0
+    foreach ($file in $allFiles) {
+        $currentFolder = Split-Path -Path $file.FullName -Parent
+        $assignedFolder = $null
+        foreach ($p in $subfolderPaths) {
+            if ($assignments[$p] -contains $file) {
+                $assignedFolder = $p
+                break
+            }
+        }
+        if ($currentFolder -eq $assignedFolder) {
+            $filesStaying++
+        }
+        else {
+            $filesMoving++
+        }
+    }
+
+    $stayingPct = if ($totalFiles -gt 0) { ($filesStaying / $totalFiles) * 100 } else { 0 }
+    $movingPct = if ($totalFiles -gt 0) { ($filesMoving / $totalFiles) * 100 } else { 0 }
+
+    LogMessage -Message "Randomize: === MOVE STATISTICS ==="
+    LogMessage -Message ("  Files staying in current folder: {0} ({1:N1}%)" -f $filesStaying, $stayingPct)
+    LogMessage -Message ("  Files moving to different folder: {0} ({1:N1}%)" -f $filesMoving, $movingPct)
+    LogMessage -Message ("Randomize: beginning file redistribution ({0} files to move)..." -f $filesMoving)
+
     # Move files to their assigned destinations
     $GlobalFileCounter.Value = 0
     $totalMoves = 0
+    $totalSkipped = 0
+    $totalErrors = 0
+    $lastLoggedProgress = 0
 
     foreach ($destFolder in $subfolderPaths) {
         $filesToMove = $assignments[$destFolder]
         if ($filesToMove.Count -eq 0) { continue }
 
+        $destFolderName = Split-Path -Leaf $destFolder
+        LogMessage -Message ("DEBUG: Processing {0} file(s) assigned to folder '{1}'" -f $filesToMove.Count, $destFolderName) -IsDebug
+
         foreach ($file in $filesToMove) {
             # Skip if file is already in the target folder
             $currentFolder = Split-Path -Path $file.FullName -Parent
             if ($currentFolder -eq $destFolder) {
+                $totalSkipped++
+                LogMessage -Message ("DEBUG: Skipping '{0}' - already in assigned folder" -f $file.Name) -IsDebug
                 continue
             }
 
             # Resolve file name conflict
             $newName = ResolveFileNameConflict -TargetFolder $destFolder -OriginalFileName $file.Name
             $dest = Join-Path -Path $destFolder -ChildPath $newName
+
+            LogMessage -Message ("DEBUG: Moving '{0}' from '{1}' to '{2}'" -f $file.Name, (Split-Path -Leaf $currentFolder), $destFolderName) -IsDebug
 
             # Copy file to destination
             Copy-ItemWithRetry -Path $file.FullName -Destination $dest -RetryDelay $RetryDelay -RetryCount $RetryCount
@@ -1813,19 +1885,51 @@ function RandomizeDistributionAcrossFolders {
                     LogMessage -Message "Randomize: failed to handle original file '$($file.FullName)': $($_.Exception.Message)" -IsWarning
                 }
 
-                # Show progress
+                # Show progress (visual and logged)
                 if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
-                    Write-Progress -Activity "Randomizing distribution" -Status ("Moved {0} of ~{1} files" -f $GlobalFileCounter.Value, $totalFiles) -PercentComplete (($GlobalFileCounter.Value / $totalFiles) * 100)
+                    Write-Progress -Activity "Randomizing distribution" -Status ("Moved {0} of {1} files" -f $GlobalFileCounter.Value, $filesMoving) -PercentComplete (($GlobalFileCounter.Value / $filesMoving) * 100)
+                }
+
+                # Log progress periodically
+                if ($GlobalFileCounter.Value - $lastLoggedProgress -ge ($filesMoving / 10)) {
+                    $pct = if ($filesMoving -gt 0) { ($GlobalFileCounter.Value / $filesMoving) * 100 } else { 0 }
+                    LogMessage -Message ("Randomize: progress - moved {0}/{1} files ({2:N1}%)" -f $GlobalFileCounter.Value, $filesMoving, $pct)
+                    $lastLoggedProgress = $GlobalFileCounter.Value
                 }
             }
             else {
+                $totalErrors++
                 LogMessage -Message "Randomize: failed to copy '$($file.FullName)' to '$dest'" -IsWarning
             }
         }
     }
 
     if ($ShowProgress) { Write-Progress -Activity "Randomizing distribution" -Status "Complete" -Completed }
-    LogMessage -Message ("Randomize: moved {0} file(s) to achieve random even distribution." -f $totalMoves)
+
+    # Log final results
+    LogMessage -Message "Randomize: === FINAL RESULTS ==="
+    LogMessage -Message ("  Files moved successfully: {0}" -f $totalMoves)
+    LogMessage -Message ("  Files skipped (already in assigned folder): {0}" -f $totalSkipped)
+    if ($totalErrors -gt 0) {
+        LogMessage -Message ("  Files failed to move: {0}" -f $totalErrors) -IsWarning
+    }
+    LogMessage -Message ("Randomize: redistribution complete - moved {0} file(s) to achieve random even distribution" -f $totalMoves)
+
+    # Log final distribution (verify)
+    LogMessage -Message "Randomize: === FINAL DISTRIBUTION (verification) ==="
+    foreach ($sf in ($subfolders | Sort-Object FullName)) {
+        $p = $sf.FullName
+        try {
+            $finalCount = (Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop | Measure-Object).Count
+            $folderName = Split-Path -Leaf $p
+            $originalCount = $currentCounts[$p]
+            $delta = $finalCount - $originalCount
+            LogMessage -Message ("  {0}: {1} files (was {2}, {3:+0;-0;0})" -f $folderName, $finalCount, $originalCount, $delta)
+        }
+        catch {
+            LogMessage -Message ("  {0}: unable to verify (error enumerating)" -f (Split-Path -Leaf $p)) -IsWarning
+        }
+    }
 }
 
 function ConsolidateSubfoldersToMinimum {
