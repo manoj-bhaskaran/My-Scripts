@@ -9,7 +9,7 @@ The script ensures that files are evenly distributed across subfolders in the ta
  4.4.0
 
  CHANGELOG:
-   4.4.0 - Made SourceFolder optional when MaxFilesToCopy=0 for rebalance-only mode
+   4.4.0 - Made SourceFolder optional; omitting it enables rebalance-only mode (no -MaxFilesToCopy 0 needed)
    4.3.0 - Added -RandomizeDistribution to completely redistribute all files randomly across folders
    4.2.0 - Added -RebalanceTolerance parameter to make rebalance tolerance configurable (default: 10%)
    4.1.0 - Distribution algorithm: weighted random selection based on available capacity
@@ -25,8 +25,9 @@ File name conflicts are resolved using the **RandomName** module’s `Get-Random
 All actions are logged to a specified log file. Progress updates are displayed during processing if enabled, configurable by file count.
 
 .PARAMETER SourceFolder
-Specifies the path to the source folder containing the files to be copied.
-This parameter is mandatory unless `-MaxFilesToCopy 0` is specified for rebalance-only mode.
+Optional. Specifies the path to the source folder containing the files to be copied.
+If not specified, the script runs in rebalance-only mode (no files are copied from source).
+Use rebalance-only mode with `-RebalanceToAverage`, `-ConsolidateToMinimum`, or `-RandomizeDistribution`.
 
 .PARAMETER TargetFolder
 Mandatory. Specifies the path to the target folder where the files will be distributed.
@@ -199,15 +200,19 @@ Rebalance existing subfolders to within ±10% of the current average (no new fol
 
 .EXAMPLE
 Rebalance-only mode: rebalance existing files without copying any new files (no SourceFolder required):
-.\FileDistributor.ps1 -TargetFolder "C:\Target" -MaxFilesToCopy 0 -RebalanceToAverage
+.\FileDistributor.ps1 -TargetFolder "C:\Target" -RebalanceToAverage
 
 .EXAMPLE
 Rebalance-only mode with custom tolerance: rebalance to within ±15% without copying:
-.\FileDistributor.ps1 -TargetFolder "C:\Target" -MaxFilesToCopy 0 -RebalanceToAverage -RebalanceTolerance 15
+.\FileDistributor.ps1 -TargetFolder "C:\Target" -RebalanceToAverage -RebalanceTolerance 15
 
 .EXAMPLE
 Consolidate-only mode: pack existing files into minimum folders without copying new files:
-.\FileDistributor.ps1 -TargetFolder "C:\Target" -MaxFilesToCopy 0 -ConsolidateToMinimum
+.\FileDistributor.ps1 -TargetFolder "C:\Target" -ConsolidateToMinimum
+
+.EXAMPLE
+Randomize-only mode: completely redistribute all existing files randomly:
+.\FileDistributor.ps1 -TargetFolder "C:\Target" -RandomizeDistribution
 
 .EXAMPLE
 To truncate the log file if it exceeds 10 megabytes:
@@ -229,19 +234,20 @@ To display the script's help text:
 # CHANGELOG
 ## 4.4.0 — 2026-01-05
 ### Added
-- **Optional SourceFolder for rebalance-only mode:** SourceFolder parameter is now optional when `-MaxFilesToCopy 0` is specified. This enables rebalance-only operations without requiring a source folder.
-  - **Use case:** Run `-RebalanceToAverage`, `-ConsolidateToMinimum`, or `-RandomizeDistribution` on existing target files without copying any new files.
+- **Optional SourceFolder for rebalance-only mode:** SourceFolder parameter is now optional. When omitted, the script automatically runs in rebalance-only mode (no files copied from source).
+  - **Use case:** Run `-RebalanceToAverage`, `-ConsolidateToMinimum`, or `-RandomizeDistribution` on existing target files without providing a source folder.
   - **Examples:**
-    - `.\FileDistributor.ps1 -TargetFolder "C:\Target" -MaxFilesToCopy 0 -RebalanceToAverage`
-    - `.\FileDistributor.ps1 -TargetFolder "C:\Target" -MaxFilesToCopy 0 -ConsolidateToMinimum`
-  - **Validation:** Script validates that SourceFolder is provided when MaxFilesToCopy ≠ 0, and skips source enumeration when SourceFolder is not provided.
+    - `.\FileDistributor.ps1 -TargetFolder "C:\Target" -RebalanceToAverage`
+    - `.\FileDistributor.ps1 -TargetFolder "C:\Target" -ConsolidateToMinimum`
+    - `.\FileDistributor.ps1 -TargetFolder "C:\Target" -RandomizeDistribution`
+  - **Automatic behavior:** When SourceFolder is not provided, `MaxFilesToCopy` is automatically set to 0 and source enumeration is skipped.
 ### Changed
-- Parameter validation logic updated to make SourceFolder optional based on MaxFilesToCopy value
-- Source file enumeration is skipped when running in rebalance-only mode
-- State file restoration now handles empty SourceFolder for rebalance-only sessions
+- Parameter validation logic: SourceFolder omission automatically enables rebalance-only mode
+- Source file enumeration is completely skipped when running in rebalance-only mode
+- State file restoration handles empty SourceFolder gracefully for rebalance-only sessions
 ### Notes
 - No breaking changes. Existing behavior unchanged when SourceFolder is provided.
-- Enhanced usability for users who only want to rebalance existing target files.
+- Enhanced UX: Users no longer need to specify `-MaxFilesToCopy 0` for rebalance-only operations.
 
 ## 4.3.0 — 2026-01-05
 ### Added
@@ -502,8 +508,8 @@ if ($Help) {
 
     Write-Host "`nPARAMETERS" -ForegroundColor Yellow
     Write-Host "- SourceFolder:" -ForegroundColor Green
-    Write-Host "  Specifies the path to the source folder containing the files to be copied." -ForegroundColor White
-    Write-Host "  Mandatory unless -MaxFilesToCopy 0 is specified for rebalance-only mode." -ForegroundColor White
+    Write-Host "  Optional. Specifies the path to the source folder containing the files to be copied." -ForegroundColor White
+    Write-Host "  If not specified, runs in rebalance-only mode (no files copied from source)." -ForegroundColor White
     Write-Host "- TargetFolder:" -ForegroundColor Green
     Write-Host "  Mandatory. Specifies the path to the target folder where the files will be distributed." -ForegroundColor White
     Write-Host "- FilesPerFolderLimit:" -ForegroundColor Green
@@ -2661,15 +2667,11 @@ function Main {
         if (-not $script:SessionId) { $script:SessionId = [guid]::NewGuid().ToString() }
 
         # Require SourceFolder/TargetFolder explicitly (removed user-specific defaults)
-        # SourceFolder is optional when MaxFilesToCopy is 0 (rebalance-only mode)
+        # SourceFolder is optional for rebalance-only mode (automatically sets MaxFilesToCopy = 0)
         if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
-            if ($MaxFilesToCopy -ne 0) {
-                LogMessage -Message "SourceFolder not specified. Provide -SourceFolder with a valid path, or use -MaxFilesToCopy 0 for rebalance-only mode." -IsError
-                throw "Missing required parameter: -SourceFolder"
-            }
-            else {
-                LogMessage -Message "SourceFolder not specified. Running in rebalance-only mode (MaxFilesToCopy = 0)." -ConsoleOutput
-            }
+            # No source folder = rebalance-only mode
+            $MaxFilesToCopy = 0
+            LogMessage -Message "SourceFolder not specified. Running in rebalance-only mode (no files will be copied)." -ConsoleOutput
         }
         if ([string]::IsNullOrWhiteSpace($TargetFolder)) {
             LogMessage -Message "TargetFolder not specified. Provide -TargetFolder with a valid path." -IsError
