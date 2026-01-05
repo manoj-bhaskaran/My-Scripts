@@ -1248,7 +1248,6 @@ function DistributeFilesToSubfolders {
         if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
             $percentComplete = [math]::Floor(($GlobalFileCounter.Value / $TotalFiles) * 100)
             Write-Progress -Activity "Distributing Files" -Status "Processed $($GlobalFileCounter.Value) of $TotalFiles files" -PercentComplete $percentComplete
-            LogMessage -Message "Processed $($GlobalFileCounter.Value) of $TotalFiles files." -ConsoleOutput
         }
     }
 
