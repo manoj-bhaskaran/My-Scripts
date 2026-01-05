@@ -639,6 +639,17 @@ function Invoke-WithRetry {
         catch {
             $attempt++
             $err = $_.Exception.Message
+
+            # Check if this is a "file not found" error - handle gracefully without crashing
+            $isFileNotFound = ($err -match "Cannot find path" -and $err -match "does not exist") -or
+                              ($_.Exception -is [System.Management.Automation.ItemNotFoundException])
+
+            if ($isFileNotFound) {
+                # File doesn't exist - log as warning and skip this file instead of crashing
+                LogMessage -Message "File not found (skipping): $Description. Error: $err" -IsWarning
+                return
+            }
+
             if ($RetryCount -ne 0 -and $attempt -ge $RetryCount) {
                 LogMessage -Message "Operation failed after $attempt attempt(s): $Description. Error: $err" -IsError
                 throw
@@ -2449,7 +2460,8 @@ function Main {
         if ($lastCheckpoint -lt 2) {
             LogMessage -Message "Enumerating source and target files..." -ConsoleOutput
             # Count files in the source and target folder before distribution
-            $sourceFilesAll = Get-ChildItem -Path $SourceFolder -Recurse -File
+            # Filter to only include .jpg and .png files
+            $sourceFilesAll = Get-ChildItem -Path $SourceFolder -Recurse -File -Include *.jpg, *.png
             $totalSourceFilesAll = $sourceFilesAll.Count
 
             # Apply copy cap
