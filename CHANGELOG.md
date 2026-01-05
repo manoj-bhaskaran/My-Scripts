@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **FileDistributor.ps1: Console Feedback for Rebalancing Operations** (v4.4.1)
+  - Added console output for early exit conditions in `-RebalanceToAverage`, `-ConsolidateToMinimum`, and `-RandomizeDistribution` modes
+  - Users now see clear messages when operations are skipped due to:
+    - All subfolders already balanced within tolerance
+    - Insufficient subfolders for rebalancing
+    - No files to process
+    - Already at or below minimal subfolder count
+    - No feasible moves or capacity issues
+  - Previously these conditions were only logged to file, making it unclear why operations completed without action
+  - **Impact**: Improved user experience by providing immediate feedback on why rebalancing operations were skipped
+
+- **FileDistributor.ps1: Cleaner Output in Rebalance-Only Mode** (v4.4.1)
+  - Suppressed source-related messages when SourceFolder is not provided (rebalance-only mode)
+  - Changes include:
+    - "Preparing for distribution" message only shown when copying from source
+    - "Enumerating source and target files..." changed to "Enumerating target files..." in rebalance-only mode
+    - Removed redundant "Skipping source enumeration (rebalance-only mode)." message
+    - File count summary shows only target count in rebalance-only mode
+    - Separate "File Rebalancing Summary" with relevant information only (excludes source file counts, skipped extensions, and files selected for copying)
+  - **Impact**: Reduced console noise in rebalance-only operations, making output more concise and relevant to the actual operation being performed
+
 - **Conventional Commits Validation Duplication** (#653)
   - Resolved duplicate commit message validation between manual hook and commitizen
   - Manual `hooks/commit-msg` was removed in commit 874c5d9 (2025-12-09)
