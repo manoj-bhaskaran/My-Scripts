@@ -1445,7 +1445,7 @@ function RebalanceSubfoldersByAverage {
         [Parameter(Mandatory = $true)][ref]$GlobalFileCounter
     )
 
-    LogMessage -Message "Rebalance: computing average and deviation thresholds (±10%)..."
+    LogMessage -Message "Rebalance: computing average and deviation thresholds (±10%)..." -ConsoleOutput
 
     # Enumerate subfolders and counts
     $subfolders = @()
@@ -1457,7 +1457,7 @@ function RebalanceSubfoldersByAverage {
         return
     }
     if (-not $subfolders -or $subfolders.Count -le 1) {
-        LogMessage -Message "Rebalance: need at least two subfolders. Nothing to do."
+        LogMessage -Message "Rebalance: need at least two subfolders. Nothing to do." -ConsoleOutput
         return
     }
 
@@ -1477,7 +1477,7 @@ function RebalanceSubfoldersByAverage {
     }
 
     if ($totalFiles -le 0) {
-        LogMessage -Message "Rebalance: no files to rebalance."
+        LogMessage -Message "Rebalance: no files to rebalance." -ConsoleOutput
         return
     }
 
@@ -1486,7 +1486,7 @@ function RebalanceSubfoldersByAverage {
     $highC = [int][math]::Ceiling($avg * 1.1)
     $high = [Math]::Min($highC, $FilesPerFolderLimit)
 
-    LogMessage -Message ("Rebalance: totalFiles={0}, subfolders={1}, avg={2:N2}, lowerBound={3}, upperBound={4} (limit={5})" -f $totalFiles, $subfolders.Count, $avg, $low, $high, $FilesPerFolderLimit)
+    LogMessage -Message ("Rebalance: totalFiles={0}, subfolders={1}, avg={2:N2}, lowerBound={3}, upperBound={4} (limit={5})" -f $totalFiles, $subfolders.Count, $avg, $low, $high, $FilesPerFolderLimit) -ConsoleOutput
 
     # Classify donors and receivers
     $donors = @()
@@ -1505,11 +1505,11 @@ function RebalanceSubfoldersByAverage {
     }
 
     if (-not $donors -and -not $receivers) {
-        LogMessage -Message "Rebalance: all subfolders already within ±10% of average. Nothing to do."
+        LogMessage -Message "Rebalance: all subfolders already within ±10% of average. Nothing to do." -ConsoleOutput
         return
     }
     if (-not $receivers) {
-        LogMessage -Message "Rebalance: no receivers below lower bound; cannot reduce above-average folders without capacity. Nothing to do."
+        LogMessage -Message "Rebalance: no receivers below lower bound; cannot reduce above-average folders without capacity. Nothing to do." -ConsoleOutput
         return
     }
 
@@ -1517,10 +1517,10 @@ function RebalanceSubfoldersByAverage {
     $totalDeficit = ($receivers | Measure-Object -Property Deficit -Sum).Sum
     $plannedMoves = [int][Math]::Min([int]$totalSurplus, [int]$totalDeficit)
 
-    LogMessage -Message ("Rebalance: donors={0} (surplus={1}), receivers={2} (deficit={3}), plannedMoves={4}" -f $donors.Count, $totalSurplus, $receivers.Count, $totalDeficit, $plannedMoves)
+    LogMessage -Message ("Rebalance: donors={0} (surplus={1}), receivers={2} (deficit={3}), plannedMoves={4}" -f $donors.Count, $totalSurplus, $receivers.Count, $totalDeficit, $plannedMoves) -ConsoleOutput
 
     if ($plannedMoves -le 0) {
-        LogMessage -Message "Rebalance: no feasible moves. Nothing to do."
+        LogMessage -Message "Rebalance: no feasible moves. Nothing to do." -ConsoleOutput
         return
     }
 
@@ -1610,7 +1610,7 @@ function RebalanceSubfoldersByAverage {
     }
 
     if ($ShowProgress) { Write-Progress -Activity "Rebalancing subfolders" -Status "Complete" -Completed }
-    LogMessage -Message ("Rebalance: moved {0} file(s) of planned {1}." -f $GlobalFileCounter.Value, $plannedMoves)
+    LogMessage -Message ("Rebalance: moved {0} file(s) of planned {1}." -f $GlobalFileCounter.Value, $plannedMoves) -ConsoleOutput
 }
 
 function ConsolidateSubfoldersToMinimum {
@@ -2707,8 +2707,9 @@ function Main {
         }
 
         # --- Optional: Rebalance among existing subfolders (Checkpoint 7) ---
+        LogMessage -Message "DEBUG: Before Checkpoint 7 - RebalanceToAverage=$RebalanceToAverage, lastCheckpoint=$lastCheckpoint" -IsDebug
         if ($RebalanceToAverage -and $lastCheckpoint -lt 7) {
-            LogMessage -Message "Rebalancing files among existing subfolders to within ±10% of average... (opt-in)"
+            LogMessage -Message "Rebalancing files among existing subfolders to within ±10% of average... (opt-in)" -ConsoleOutput
 
             RebalanceSubfoldersByAverage -TargetFolder $TargetFolder `
                 -FilesPerFolderLimit $FilesPerFolderLimit `
