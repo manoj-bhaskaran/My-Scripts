@@ -6,9 +6,10 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.0.0
+ 4.1.0
 
  CHANGELOG:
+   4.1.0 - Distribution algorithm: weighted random selection based on available capacity
    4.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
    3.5.0 - Distribution update: random-balanced placement; EndOfScript deletions hardened; state-file corruption handling
 
@@ -200,6 +201,15 @@ To display the script's help text:
 
 .NOTES
 # CHANGELOG
+## 4.1.0 — 2026-01-05
+### Changed
+- **Distribution algorithm:** Switched from "fill emptiest folder first" to **weighted random selection** based on available capacity. Files are now distributed randomly across multiple eligible folders, with probability weighted by each folder's remaining capacity (`FilesPerFolderLimit - currentCount`).
+  - **Benefit:** Prevents all files from a batch going to a single newly-created folder. When new folders are created due to existing folders reaching the limit, files are spread across multiple folders rather than sequentially filling one at a time.
+  - **Behavior:** Folders with more available capacity have higher probability of receiving files, but all eligible folders can receive files from the same batch, maintaining better distribution randomness.
+  - The change applies to both source-to-target distribution and within-target redistribution phases.
+### Notes
+- No breaking changes or new parameters. Existing scripts will work unchanged but will see improved file distribution across folders.
+
 ## 3.5.0 — 2025-10-02
 ### Added
 - **`-RebalanceToAverage` (opt-in):** After Source→Target and target-root redistribution, compute the **average files per existing subfolder** and move files so every subfolder is within **±10%** of that average. No subfolders are created or deleted, and `FilesPerFolderLimit` is always respected.
@@ -1132,7 +1142,7 @@ function DistributeFilesToSubfolders {
         $filePath = if ($file -is [System.IO.FileSystemInfo]) { $file.FullName } else { [string]$file }
         $originalName = if ($file -is [System.IO.FileSystemInfo]) { $file.Name } else { [System.IO.Path]::GetFileName($filePath) }
 
-        # Choose eligible targets (under limit), biased to least-filled
+        # Choose eligible targets (under limit) using weighted random selection
         $eligible = @()
         foreach ($p in $subfolderPaths) {
             if ($folderCounts[$p] -lt $Limit) { $eligible += $p }
@@ -1142,11 +1152,35 @@ function DistributeFilesToSubfolders {
             LogMessage -Message "All subfolders appear at/over limit ($Limit). Selecting among all subfolders (best effort)." -IsWarning
         }
 
-        $minCount = ($eligible | ForEach-Object { $folderCounts[$_] } | Measure-Object -Minimum).Minimum
-        $candidates = @($eligible | Where-Object { $folderCounts[$_] -eq $minCount })
-        $destinationFolder = if ($candidates.Count -gt 1) { $candidates | Get-Random } else { $candidates[0] }
+        # Weighted random selection based on available capacity
+        if ($eligible.Count -eq 1) {
+            $destinationFolder = $eligible[0]
+        }
+        else {
+            # Calculate weights based on available capacity (Limit - current count)
+            $weights = @{}
+            $totalWeight = 0
+            foreach ($p in $eligible) {
+                $availableCapacity = $Limit - $folderCounts[$p]
+                $weight = [Math]::Max(1, $availableCapacity)  # Ensure minimum weight of 1
+                $weights[$p] = $weight
+                $totalWeight += $weight
+            }
 
-        LogMessage -Message "DEBUG: Eligible count: $($eligible.Count), Min count: $minCount, Candidates count: $($candidates.Count)" -IsDebug
+            # Select folder using weighted random selection
+            $randomValue = Get-Random -Minimum 0 -Maximum $totalWeight
+            $cumulativeWeight = 0
+            $destinationFolder = $eligible[0]  # fallback
+            foreach ($p in $eligible) {
+                $cumulativeWeight += $weights[$p]
+                if ($randomValue -lt $cumulativeWeight) {
+                    $destinationFolder = $p
+                    break
+                }
+            }
+        }
+
+        LogMessage -Message "DEBUG: Eligible count: $($eligible.Count), Selected: $destinationFolder (count: $($folderCounts[$destinationFolder]))" -IsDebug
         LogMessage -Message "Selected destination before resolve: '$destinationFolder'"
 
         # Last-mile guards (never root, always under TargetRoot, must exist)
