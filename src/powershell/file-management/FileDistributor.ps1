@@ -241,6 +241,12 @@ To display the script's help text:
   - Already at or below minimal subfolder count
   - No feasible moves or capacity issues
 - Previously these conditions were only logged to file, making it unclear why operations completed without action.
+- **Cleaner output in rebalance-only mode:** Suppressed source-related messages when SourceFolder is not provided. Changes include:
+  - "Preparing for distribution" message only shown when copying from source
+  - "Enumerating source and target files..." changed to "Enumerating target files..." in rebalance-only mode
+  - Removed redundant "Skipping source enumeration (rebalance-only mode)." message
+  - File count summary shows only target count in rebalance-only mode
+  - Separate "File Rebalancing Summary" with relevant information only (excludes source file counts, skipped extensions, and files selected for copying)
 
 ## 4.4.0 — 2026-01-05
 ### Added
@@ -2910,7 +2916,10 @@ function Main {
 
         if ($lastCheckpoint -lt 1) {
             # No upfront renaming: we now rename at copy time to preserve source integrity until copy succeeds.
-            LogMessage -Message "Preparing for distribution (no upfront renaming; rename occurs at copy time)." -ConsoleOutput
+            # Only show this message if we're actually copying from a source folder
+            if (-not [string]::IsNullOrWhiteSpace($SourceFolder)) {
+                LogMessage -Message "Preparing for distribution (no upfront renaming; rename occurs at copy time)." -ConsoleOutput
+            }
             $additionalVars = @{
                 deleteMode   = $DeleteMode # Persist DeleteMode
                 SourceFolder = $SourceFolder # Persist SourceFolder
@@ -2919,17 +2928,16 @@ function Main {
         }
 
         if ($lastCheckpoint -lt 2) {
-            LogMessage -Message "Enumerating source and target files..." -ConsoleOutput
-
             # Skip source enumeration if SourceFolder not provided (rebalance-only mode)
             if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
-                LogMessage -Message "Skipping source enumeration (rebalance-only mode)." -ConsoleOutput
+                LogMessage -Message "Enumerating target files..." -ConsoleOutput
                 $sourceFilesAll = @()
                 $totalSourceFilesAll = 0
                 $sourceFiles = @()
                 $totalSourceFiles = 0
             }
             else {
+                LogMessage -Message "Enumerating source and target files..." -ConsoleOutput
                 # Count files in the source and target folder before distribution
                 # First, get ALL files to track what's being skipped
                 $allSourceFiles = Get-ChildItem -Path $SourceFolder -Recurse -File
@@ -2983,7 +2991,14 @@ function Main {
             $totalTargetFilesBefore = (Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object).Count
             $totalTargetFilesBefore = if ($null -eq $totalTargetFilesBefore) { 0 } else { $totalTargetFilesBefore }
             $totalFiles = $totalSourceFiles + $totalTargetFilesBefore # per-phase denominator
-            LogMessage -Message "Source File Count (selected): $totalSourceFiles of $totalSourceFilesAll total. Target File Count Before: $totalTargetFilesBefore." -ConsoleOutput
+
+            # Show appropriate message based on whether we have a source folder
+            if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
+                LogMessage -Message "Target File Count Before: $totalTargetFilesBefore." -ConsoleOutput
+            }
+            else {
+                LogMessage -Message "Source File Count (selected): $totalSourceFiles of $totalSourceFilesAll total. Target File Count Before: $totalTargetFilesBefore." -ConsoleOutput
+            }
 
             # Get subfolders in the target folder
             LogMessage -Message "DEBUG: About to enumerate subfolders in: '$TargetFolder'" -IsDebug
@@ -3300,34 +3315,52 @@ function Main {
         $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
         $totalTargetFilesAfter = if ($null -eq $totalTargetFilesAfter) { 0 } else { $totalTargetFilesAfter }
 
-        # Log summary message
-        LogMessage -Message "===== File Distribution Summary =====" -ConsoleOutput
-        LogMessage -Message "Original number of files in the source folder (enumerated): $totalSourceFilesAll" -ConsoleOutput
+        # Log summary message - different format for rebalance-only mode
+        if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
+            # Rebalance-only mode summary
+            LogMessage -Message "===== File Rebalancing Summary =====" -ConsoleOutput
+            LogMessage -Message "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -ConsoleOutput
+            LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
+            LogMessage -Message "Total warnings: $script:Warnings" -ConsoleOutput
+            LogMessage -Message "Total errors: $script:Errors" -ConsoleOutput
 
-        # Display skipped file statistics
-        if ($totalSkippedFiles -gt 0) {
-            LogMessage -Message "Files skipped (non-compliant extensions): $totalSkippedFiles" -ConsoleOutput
-            foreach ($ext in ($skippedFilesByExtension.Keys | Sort-Object)) {
-                $count = $skippedFilesByExtension[$ext]
-                $extDisplay = if ([string]::IsNullOrEmpty($ext)) { "(no extension)" } else { $ext }
-                LogMessage -Message "  $extDisplay : $count file(s)" -ConsoleOutput
+            if ($totalTargetFilesBefore -ne $totalTargetFilesAfter) {
+                LogMessage -Message "File count changed during rebalancing. Possible discrepancy detected." -IsWarning
+            }
+            else {
+                LogMessage -Message "File rebalancing completed successfully." -ConsoleOutput
             }
         }
         else {
-            LogMessage -Message "Files skipped (non-compliant extensions): 0" -ConsoleOutput
-        }
+            # Normal distribution mode summary
+            LogMessage -Message "===== File Distribution Summary =====" -ConsoleOutput
+            LogMessage -Message "Original number of files in the source folder (enumerated): $totalSourceFilesAll" -ConsoleOutput
 
-        LogMessage -Message "Files selected for copying this run: $totalSourceFiles" -ConsoleOutput
-        LogMessage -Message "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -ConsoleOutput
-        LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
-        LogMessage -Message "Total warnings: $script:Warnings" -ConsoleOutput
-        LogMessage -Message "Total errors: $script:Errors" -ConsoleOutput
+            # Display skipped file statistics
+            if ($totalSkippedFiles -gt 0) {
+                LogMessage -Message "Files skipped (non-compliant extensions): $totalSkippedFiles" -ConsoleOutput
+                foreach ($ext in ($skippedFilesByExtension.Keys | Sort-Object)) {
+                    $count = $skippedFilesByExtension[$ext]
+                    $extDisplay = if ([string]::IsNullOrEmpty($ext)) { "(no extension)" } else { $ext }
+                    LogMessage -Message "  $extDisplay : $count file(s)" -ConsoleOutput
+                }
+            }
+            else {
+                LogMessage -Message "Files skipped (non-compliant extensions): 0" -ConsoleOutput
+            }
 
-        if ($totalSourceFiles + $totalTargetFilesBefore -ne $totalTargetFilesAfter) {
-            LogMessage -Message "Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -IsWarning
-        }
-        else {
-            LogMessage -Message "File distribution and cleanup completed successfully." -ConsoleOutput
+            LogMessage -Message "Files selected for copying this run: $totalSourceFiles" -ConsoleOutput
+            LogMessage -Message "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -ConsoleOutput
+            LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
+            LogMessage -Message "Total warnings: $script:Warnings" -ConsoleOutput
+            LogMessage -Message "Total errors: $script:Errors" -ConsoleOutput
+
+            if ($totalSourceFiles + $totalTargetFilesBefore -ne $totalTargetFilesAfter) {
+                LogMessage -Message "Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -IsWarning
+            }
+            else {
+                LogMessage -Message "File distribution and cleanup completed successfully." -ConsoleOutput
+            }
         }
 
         # Release the file lock before deleting state file
