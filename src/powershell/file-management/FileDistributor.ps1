@@ -232,6 +232,16 @@ To display the script's help text:
 
 .NOTES
 # CHANGELOG
+## 4.4.1 — 2026-01-05
+### Fixed
+- **Console feedback for rebalancing operations:** Added console output for early exit conditions in `-RebalanceToAverage`, `-ConsolidateToMinimum`, and `-RandomizeDistribution` modes. Users now see clear messages when operations are skipped due to:
+  - All subfolders already balanced within tolerance
+  - Insufficient subfolders for rebalancing
+  - No files to process
+  - Already at or below minimal subfolder count
+  - No feasible moves or capacity issues
+- Previously these conditions were only logged to file, making it unclear why operations completed without action.
+
 ## 4.4.0 — 2026-01-05
 ### Added
 - **Optional SourceFolder for rebalance-only mode:** SourceFolder parameter is now optional. When omitted, the script automatically runs in rebalance-only mode (no files copied from source).
@@ -569,7 +579,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.4.0"
+$script:Version = "4.4.1"
 $script:Warnings = 0
 $script:Errors = 0
 $script:SessionId = $null
@@ -1571,7 +1581,7 @@ function RebalanceSubfoldersByAverage {
         return
     }
     if (-not $subfolders -or $subfolders.Count -le 1) {
-        LogMessage -Message "Rebalance: need at least two subfolders. Nothing to do."
+        LogMessage -Message "Rebalance: need at least two subfolders. Nothing to do." -ConsoleOutput
         return
     }
 
@@ -1594,7 +1604,7 @@ function RebalanceSubfoldersByAverage {
     }
 
     if ($totalFiles -le 0) {
-        LogMessage -Message "Rebalance: no files to rebalance."
+        LogMessage -Message "Rebalance: no files to rebalance." -ConsoleOutput
         return
     }
 
@@ -1633,11 +1643,11 @@ function RebalanceSubfoldersByAverage {
     }
 
     if (-not $donors -and -not $receivers) {
-        LogMessage -Message ("Rebalance: all subfolders already within ±{0}% of average. Nothing to do." -f $Tolerance)
+        LogMessage -Message ("Rebalance: all subfolders already within ±{0}% of average. Nothing to do." -f $Tolerance) -ConsoleOutput
         return
     }
     if (-not $receivers) {
-        LogMessage -Message "Rebalance: no receivers below lower bound; cannot reduce above-average folders without capacity. Nothing to do."
+        LogMessage -Message "Rebalance: no receivers below lower bound; cannot reduce above-average folders without capacity. Nothing to do." -ConsoleOutput
         return
     }
 
@@ -1669,7 +1679,7 @@ function RebalanceSubfoldersByAverage {
     LogMessage -Message ("Rebalance: beginning file transfers ({0} files to move)..." -f $plannedMoves)
 
     if ($plannedMoves -le 0) {
-        LogMessage -Message "Rebalance: no feasible moves. Nothing to do."
+        LogMessage -Message "Rebalance: no feasible moves. Nothing to do." -ConsoleOutput
         return
     }
 
@@ -1832,7 +1842,7 @@ function RandomizeDistributionAcrossFolders {
         return
     }
     if (-not $subfolders -or $subfolders.Count -eq 0) {
-        LogMessage -Message "Randomize: no subfolders present; nothing to do."
+        LogMessage -Message "Randomize: no subfolders present; nothing to do." -ConsoleOutput
         return
     }
 
@@ -1859,7 +1869,7 @@ function RandomizeDistributionAcrossFolders {
     }
 
     if ($totalFiles -le 0) {
-        LogMessage -Message "Randomize: no files to redistribute."
+        LogMessage -Message "Randomize: no files to redistribute." -ConsoleOutput
         return
     }
 
@@ -2076,7 +2086,7 @@ function ConsolidateSubfoldersToMinimum {
         return
     }
     if (-not $subfolders -or $subfolders.Count -eq 0) {
-        LogMessage -Message "Consolidation: no subfolders present; nothing to do."
+        LogMessage -Message "Consolidation: no subfolders present; nothing to do." -ConsoleOutput
         return
     }
 
@@ -2108,7 +2118,7 @@ function ConsolidateSubfoldersToMinimum {
     }
 
     if ($totalFiles -le 0) {
-        LogMessage -Message "Consolidation: no files to consolidate."
+        LogMessage -Message "Consolidation: no files to consolidate." -ConsoleOutput
         return
     }
 
@@ -2119,7 +2129,7 @@ function ConsolidateSubfoldersToMinimum {
     LogMessage -Message ("Consolidation: totalFiles={0}, limit={1}, existingSubfolders={2}, needed={3}" -f $totalFiles, $FilesPerFolderLimit, $existingCount, $needed)
 
     if ($existingCount -le $needed) {
-        LogMessage -Message "Consolidation: already at or below minimal subfolder count ($existingCount ≤ $needed). Nothing to do."
+        LogMessage -Message "Consolidation: already at or below minimal subfolder count ($existingCount ≤ $needed). Nothing to do." -ConsoleOutput
         return
     }
 
