@@ -1483,8 +1483,7 @@ function RebalanceSubfoldersByAverage {
 
     $avg = [double]$totalFiles / [double]$subfolders.Count
     $low = [int][math]::Floor($avg * 0.9)
-    $highC = [int][math]::Ceiling($avg * 1.1)
-    $high = [Math]::Min($highC, $FilesPerFolderLimit)
+    $high = [int][math]::Ceiling($avg * 1.1)
 
     LogMessage -Message ("Rebalance: totalFiles={0}, subfolders={1}, avg={2:N2}, lowerBound={3}, upperBound={4} (limit={5})" -f $totalFiles, $subfolders.Count, $avg, $low, $high, $FilesPerFolderLimit)
 
