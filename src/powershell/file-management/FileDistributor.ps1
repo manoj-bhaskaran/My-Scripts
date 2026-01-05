@@ -1434,6 +1434,47 @@ function RedistributeFilesInTarget {
     LogMessage -Message "File redistribution completed: Processed $redistributionProcessed of $redistributionTotal files in the target folder."
 }
 
+# Helper function to calculate folder distribution statistics
+function Get-FolderDistributionStats {
+    param (
+        [Parameter(Mandatory = $true)][hashtable]$FolderCounts
+    )
+
+    if ($FolderCounts.Count -eq 0) {
+        return [pscustomobject]@{
+            Average = 0
+            StdDev = 0
+            Min = 0
+            Max = 0
+            Count = 0
+        }
+    }
+
+    $counts = @($FolderCounts.Values)
+    $avg = ($counts | Measure-Object -Average).Average
+    $min = ($counts | Measure-Object -Minimum).Minimum
+    $max = ($counts | Measure-Object -Maximum).Maximum
+
+    # Calculate standard deviation
+    $sumOfSquares = 0
+    foreach ($c in $counts) {
+        $sumOfSquares += [Math]::Pow($c - $avg, 2)
+    }
+    $stdDev = if ($counts.Count -gt 1) {
+        [Math]::Sqrt($sumOfSquares / $counts.Count)
+    } else {
+        0
+    }
+
+    return [pscustomobject]@{
+        Average = $avg
+        StdDev = $stdDev
+        Min = $min
+        Max = $max
+        Count = $counts.Count
+    }
+}
+
 function RebalanceSubfoldersByAverage {
     param (
         [Parameter(Mandatory = $true)][string]$TargetFolder,
@@ -1481,12 +1522,22 @@ function RebalanceSubfoldersByAverage {
         return
     }
 
+    # Calculate and display BEFORE statistics
+    $beforeStats = Get-FolderDistributionStats -FolderCounts $folderCounts
+    LogMessage -Message "===== Rebalance: Distribution Statistics (BEFORE) =====" -ConsoleOutput
+    LogMessage -Message ("  Subfolders: {0}" -f $beforeStats.Count) -ConsoleOutput
+    LogMessage -Message ("  Total files: {0}" -f $totalFiles) -ConsoleOutput
+    LogMessage -Message ("  Average per folder: {0:N2}" -f $beforeStats.Average) -ConsoleOutput
+    LogMessage -Message ("  Standard deviation: {0:N2}" -f $beforeStats.StdDev) -ConsoleOutput
+    LogMessage -Message ("  Lowest count: {0}" -f $beforeStats.Min) -ConsoleOutput
+    LogMessage -Message ("  Highest count: {0}" -f $beforeStats.Max) -ConsoleOutput
+
     $avg = [double]$totalFiles / [double]$subfolders.Count
     $low = [int][math]::Floor($avg * 0.9)
     $highC = [int][math]::Ceiling($avg * 1.1)
     $high = [Math]::Min($highC, $FilesPerFolderLimit)
 
-    LogMessage -Message ("Rebalance: totalFiles={0}, subfolders={1}, avg={2:N2}, lowerBound={3}, upperBound={4} (limit={5})" -f $totalFiles, $subfolders.Count, $avg, $low, $high, $FilesPerFolderLimit) -ConsoleOutput
+    LogMessage -Message ("Rebalance: target range: {0} to {1} files per folder (±10% of average, limit={2})" -f $low, $high, $FilesPerFolderLimit) -ConsoleOutput
 
     # Classify donors and receivers
     $donors = @()
@@ -1505,6 +1556,11 @@ function RebalanceSubfoldersByAverage {
     }
 
     if (-not $donors -and -not $receivers) {
+        # Show the current distribution even though we're not rebalancing
+        $currentStats = Get-FolderDistributionStats -FolderCounts $folderCounts
+        LogMessage -Message "===== Rebalance: Current Distribution Statistics =====" -ConsoleOutput
+        LogMessage -Message ("  Subfolders: {0}, Total files: {1}" -f $currentStats.Count, $totalFiles) -ConsoleOutput
+        LogMessage -Message ("  Average: {0:N2}, StdDev: {1:N2}, Min: {2}, Max: {3}" -f $currentStats.Average, $currentStats.StdDev, $currentStats.Min, $currentStats.Max) -ConsoleOutput
         LogMessage -Message "Rebalance: all subfolders already within ±10% of average. Nothing to do." -ConsoleOutput
         return
     }
@@ -1611,6 +1667,38 @@ function RebalanceSubfoldersByAverage {
 
     if ($ShowProgress) { Write-Progress -Activity "Rebalancing subfolders" -Status "Complete" -Completed }
     LogMessage -Message ("Rebalance: moved {0} file(s) of planned {1}." -f $GlobalFileCounter.Value, $plannedMoves) -ConsoleOutput
+
+    # Recalculate folder counts and display AFTER statistics
+    $folderCountsAfter = @{}
+    $totalFilesAfter = 0
+    foreach ($sf in $subfolders) {
+        $p = $sf.FullName
+        $count = 0
+        try {
+            $count = (Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop | Measure-Object).Count
+        }
+        catch {
+            LogMessage -Message "Rebalance: failed to count files in '$p' for after stats: $($_.Exception.Message)" -IsWarning
+        }
+        $folderCountsAfter[$p] = [int]$count
+        $totalFilesAfter += [int]$count
+    }
+
+    $afterStats = Get-FolderDistributionStats -FolderCounts $folderCountsAfter
+    LogMessage -Message "===== Rebalance: Distribution Statistics (AFTER) =====" -ConsoleOutput
+    LogMessage -Message ("  Subfolders: {0}" -f $afterStats.Count) -ConsoleOutput
+    LogMessage -Message ("  Total files: {0}" -f $totalFilesAfter) -ConsoleOutput
+    LogMessage -Message ("  Average per folder: {0:N2}" -f $afterStats.Average) -ConsoleOutput
+    LogMessage -Message ("  Standard deviation: {0:N2}" -f $afterStats.StdDev) -ConsoleOutput
+    LogMessage -Message ("  Lowest count: {0}" -f $afterStats.Min) -ConsoleOutput
+    LogMessage -Message ("  Highest count: {0}" -f $afterStats.Max) -ConsoleOutput
+    # Calculate improvement percentage (avoid division by zero)
+    $improvementPct = if ($beforeStats.StdDev -gt 0) {
+        (($beforeStats.StdDev - $afterStats.StdDev) / $beforeStats.StdDev) * 100
+    } else {
+        0
+    }
+    LogMessage -Message ("  Improvement: StdDev reduced by {0:N2} ({1:N1}%)" -f ($beforeStats.StdDev - $afterStats.StdDev), $improvementPct) -ConsoleOutput
 }
 
 function ConsolidateSubfoldersToMinimum {
