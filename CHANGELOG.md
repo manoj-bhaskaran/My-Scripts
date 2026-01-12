@@ -48,6 +48,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Lift Simulator Database Backup Job**
+  - Added scheduled backup automation for `lift_simulator` PostgreSQL database
+  - New script: `src/powershell/backup/Backup-LiftSimulatorDatabase.ps1`
+  - Scheduled task template: `config/tasks/PostgreSQL lift_simulator Backup.xml.template`
+  - Comprehensive setup documentation: `src/powershell/backup/README-LiftSimulator.md`
+  - Features:
+    - Daily backups at 07:30 UTC with 1-hour random delay
+    - 90-day retention policy with minimum 3 backups always retained
+    - Secure authentication via .pgpass file with ACL validation
+    - Timestamped backup files in custom PostgreSQL format
+    - Integrated logging via PowerShellLoggingFramework
+    - Automatic backup cleanup and maintenance
+    - Task Scheduler integration for unattended operation
+  - Documentation includes:
+    - PostgreSQL user privilege verification queries
+    - Step-by-step privilege grant instructions
+    - Authentication setup with .pgpass configuration
+    - Security hardening recommendations
+    - Troubleshooting guide
+    - Backup restoration procedures
+  - Leverages existing PostgresBackup module for consistent backup operations
+  - Compatible with lift-simulator project documentation references
+
 - **FileQueue Module** (#602)
   - Created new `FileManagement/FileQueue` module for queue management operations
   - Public Functions:
