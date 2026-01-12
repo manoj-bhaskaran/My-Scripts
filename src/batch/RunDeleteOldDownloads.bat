@@ -102,7 +102,7 @@ exit /b
 :WriteLog
 setlocal
 :: Get timestamp, timezone, hostname, and PID using PowerShell
-for /f "usebackq tokens=1,2,3,4 delims=|" %%a in (`powershell -NoProfile -Command "$ts=Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'; $tz=(Get-TimeZone).StandardName; $hostname=$env:COMPUTERNAME; $pid=$PID; Write-Output \"$ts|$tz|$hostname|$pid\""`) do (
+for /f "usebackq tokens=1,2,3,4 delims=;" %%a in (`powershell -NoProfile -Command "$ts=Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'; $tz=(Get-TimeZone).StandardName; $hostname=$env:COMPUTERNAME; $pid=$PID; Write-Output \"$ts;$tz;$hostname;$pid\""`) do (
     set "TS=%%a"
     set "TZ=%%b"
     set "HOST=%%c"
