@@ -48,12 +48,16 @@ function Backup-PostgresDatabase {
             Wait-ServiceStatus -ServiceName $service_name -DesiredStatus 'Running' -MaxWaitTime $max_wait_time -PollSeconds $service_start_wait -LogFilePath $log_file
         }
 
-        # Handle password, defaulting to empty string for .pgpass authentication
-        $PlainPassword = if ($password) { (New-Object System.Management.Automation.PSCredential($user, $password)).GetNetworkCredential().Password } else { "" }
-        $EscapedPassword = [System.Net.WebUtility]::UrlEncode($PlainPassword)
-
         # Execute pg_dump to create a custom-format backup
-        & $pg_dump_path --dbname="postgresql://${user}:${EscapedPassword}@localhost/${dbname}" --file=$backup_file --format=custom *>&1 | Add-Content -Path $log_file -Encoding utf8
+        if ($password) {
+            # Password provided explicitly - use connection string format
+            $PlainPassword = (New-Object System.Management.Automation.PSCredential($user, $password)).GetNetworkCredential().Password
+            $EscapedPassword = [System.Net.WebUtility]::UrlEncode($PlainPassword)
+            & $pg_dump_path --dbname="postgresql://${user}:${EscapedPassword}@localhost/${dbname}" --file=$backup_file --format=custom *>&1 | Add-Content -Path $log_file -Encoding utf8
+        } else {
+            # No password provided - use standard options to allow .pgpass lookup
+            & $pg_dump_path -U $user -d $dbname -h localhost --file=$backup_file --format=custom *>&1 | Add-Content -Path $log_file -Encoding utf8
+        }
         if ($LASTEXITCODE -eq 0) {
             $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
             Add-Content -Path $log_file -Value "[$timestamp] ${dbname}: Backup completed successfully: $backup_file" -Encoding utf8

@@ -667,8 +667,11 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                 -log_file $script:testLogFile `
                 -user "test_user"
 
-            # Should use empty password (relying on .pgpass)
-            $script:capturedCommand | Should -Match "test_user:@localhost"
+            # Should use standard options (not connection string) to allow .pgpass lookup
+            $script:capturedCommand | Should -Match "-U test_user"
+            $script:capturedCommand | Should -Match "-d testdb"
+            $script:capturedCommand | Should -Match "-h localhost"
+            $script:capturedCommand | Should -Not -Match "postgresql://"
         }
 
         It "Uses provided password when specified" {
