@@ -22,9 +22,10 @@
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 3.1.0
-    Last Updated: 2025-11-22
+    Version: 3.2.0
+    Last Updated: 2026-01-12
     CHANGELOG:
+        3.2.0 - Added retry mechanism for file copy operations to handle locked files
         3.1.0 - Fixed logging initialization order and config loading sequence
         3.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
         2.6   - Previous version with custom Write-Message function
@@ -201,6 +202,64 @@ function Test-TextSafe {
     if ($Text.Length -gt $Max) { return $false }
     if ($Text -match '[\u0000-\u001F\|]') { return $false } # control chars or pipe forbidden
     return $true
+}
+
+function Copy-ItemWithRetry {
+    <#
+    .SYNOPSIS
+        Copies a file with retry logic to handle locked files (e.g., "user-mapped section open" errors).
+    .DESCRIPTION
+        Attempts to copy a file with exponential backoff retry mechanism. This is particularly
+        useful for executable files (.bat, .cmd, .exe, .ps1) that may be locked by Windows.
+    .PARAMETER Source
+        Source file path
+    .PARAMETER Destination
+        Destination file path
+    .PARAMETER MaxRetries
+        Maximum number of retry attempts (default: 3)
+    .PARAMETER InitialDelayMs
+        Initial delay in milliseconds before first retry (default: 100)
+    .RETURNS
+        $true if copy succeeded, $false if all retries failed
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [int]$MaxRetries = 3,
+        [int]$InitialDelayMs = 100
+    )
+
+    $attempt = 0
+    $delayMs = $InitialDelayMs
+
+    while ($attempt -le $MaxRetries) {
+        try {
+            Copy-Item -LiteralPath $Source -Destination $Destination -Force -ErrorAction Stop
+            return $true
+        }
+        catch {
+            $attempt++
+            $errorMsg = $_.Exception.Message
+
+            # Check for file locking errors
+            $isLockError = $errorMsg -match 'user-mapped section open' -or
+                          $errorMsg -match 'being used by another process' -or
+                          $errorMsg -match 'cannot access the file'
+
+            if ($isLockError -and $attempt -le $MaxRetries) {
+                Write-Message ("Copy attempt {0}/{1} failed for {2}: {3}. Retrying in {4}ms..." -f $attempt, $MaxRetries, (Split-Path $Source -Leaf), $errorMsg, $delayMs)
+                Start-Sleep -Milliseconds $delayMs
+                $delayMs = $delayMs * 2  # Exponential backoff
+            }
+            else {
+                # Non-lock error or max retries reached
+                Write-Message ("Failed to copy {0} after {1} attempt(s): {2}" -f $Source, $attempt, $errorMsg)
+                return $false
+            }
+        }
+    }
+
+    return $false
 }
 
 # ==============================================================================================
@@ -403,12 +462,13 @@ foreach ($rel in $modifiedFiles) {
     if ((Test-Path -LiteralPath $src) -and -not (Test-Ignored $rel)) {
         $dst = Join-Path $script:DestinationFolder $rel
         New-DirectoryIfMissing (Split-Path $dst -Parent)
-        try {
-            Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
+
+        $copySuccess = Copy-ItemWithRetry -Source $src -Destination $dst
+        if ($copySuccess) {
             Write-Message ("Copied file {0} to {1}" -f $src, $dst)
         }
-        catch {
-            Write-Message ("Failed to copy {0}: {1}" -f $src, $_.Exception.Message)
+        else {
+            Write-Message ("Skipped copying {0} (file may be in use)" -f $src)
         }
     }
     else {
