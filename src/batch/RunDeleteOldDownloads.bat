@@ -74,8 +74,9 @@ if "%RC%"=="0" (
   call :LogError "Script failed with exit code: %RC%"
 )
 
-:: On failure, show a MessageBox to the interactive user
-if not "%RC%"=="0" (
+:: On fatal failure (exit code 1), show a MessageBox to the interactive user
+:: Exit code 2 (partial failures) is logged but doesn't trigger popup
+if "%RC%"=="1" (
   call :LogInfo "Displaying error message to user"
   "%RUNNER%" -NoLogo -NoProfile -Command ^
     "Add-Type -AssemblyName System.Windows.Forms; " ^
