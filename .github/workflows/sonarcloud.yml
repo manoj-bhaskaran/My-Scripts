@@ -232,17 +232,38 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           if [ -z "$SONAR_TOKEN" ]; then
-            echo "::error::SONAR_TOKEN secret is not configured!"
-            echo "::error::Please configure SONAR_TOKEN in GitHub repository secrets:"
+            echo "::error::SONAR_TOKEN secret is not configured or is empty!"
+            echo "::error::"
+            echo "::error::Common causes:"
+            echo "::error::1. Running on a Pull Request from a FORK (secrets are not available for security)"
+            echo "::error::2. Secret exists but has an empty/whitespace value"
+            echo "::error::3. Token was revoked on SonarCloud"
+            echo "::error::4. Secret name mismatch (must be exactly 'SONAR_TOKEN')"
+            echo "::error::"
+            echo "::error::To configure SONAR_TOKEN in GitHub repository secrets:"
             echo "::error::1. Go to https://sonarcloud.io"
             echo "::error::2. Sign in with GitHub"
             echo "::error::3. Go to My Account → Security"
-            echo "::error::4. Generate a new token"
-            echo "::error::5. Add it as SONAR_TOKEN secret in GitHub repository settings"
-            echo "::error::6. Repository → Settings → Secrets and variables → Actions → New repository secret"
+            echo "::error::4. Generate a new token (type: User Token)"
+            echo "::error::5. Add it as SONAR_TOKEN secret in GitHub repository settings:"
+            echo "::error::   → Repository → Settings → Secrets and variables → Actions → New repository secret"
+            echo "::error::6. Ensure the token value is NOT empty"
+            echo "::error::"
+            echo "::error::Context: github.event_name=${{ github.event_name }}, github.repository=${{ github.repository }}"
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "::warning::This is a pull request. If from a fork, secrets are not available for security reasons."
+              echo "::notice::Fork PR SonarCloud scans will only work after merging to main branch."
+            fi
             exit 1
           fi
-          echo "✅ SonarCloud token is configured"
+
+          # Validate token format (SonarCloud tokens start with 'squ_' for user tokens)
+          if [[ ! "$SONAR_TOKEN" =~ ^squ_ ]]; then
+            echo "::warning::SONAR_TOKEN does not appear to be a valid SonarCloud user token format (should start with 'squ_')"
+            echo "::warning::This might be an old token format. Consider regenerating a new user token."
+          fi
+
+          echo "✅ SonarCloud token is configured and appears valid"
 
       - name: SonarCloud Scan
         env:
