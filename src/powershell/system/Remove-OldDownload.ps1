@@ -72,12 +72,6 @@
       - Verifies deletion with Test-Path and records the result.
 #>
 
-# Import logging framework
-Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
-
-# Initialize logger
-Initialize-Logger -ScriptName "DeleteOldDownloads" -LogLevel 20
-
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param(
     [Parameter()]
@@ -107,6 +101,12 @@ param(
     [Parameter()]
     [switch]$PassThru
 )
+
+# Import logging framework
+Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
+
+# Initialize logger
+Initialize-Logger -ScriptName "DeleteOldDownloads" -LogLevel 20
 
 #region --- Setup & Utilities ---
 
