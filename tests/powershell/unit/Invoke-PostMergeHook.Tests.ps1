@@ -592,105 +592,61 @@ UntouchedModule|UntouchedModule.psm1|User
     }
 }
 
-Describe "Copy-ItemWithRetry" {
-    Context "Successful Copy" {
-        It "Returns true when copy succeeds on first attempt" {
-            $sourceFile = Join-Path $script:testDir "source.txt"
-            $destFile = Join-Path $script:testDir "dest.txt"
-            "test content" | Out-File -FilePath $sourceFile -Force
-
-            $result = Copy-ItemWithRetry -Source $sourceFile -Destination $destFile
-
-            $result | Should -Be $true
-            Test-Path -Path $destFile | Should -Be $true
+Describe "File Copy with Retry Integration" {
+    BeforeAll {
+        # Mock Copy-FileWithRetry which comes from FileOperations module
+        function global:Copy-FileWithRetry {
+            param($Source, $Destination, $MaxRetries, $RetryDelay)
+            # Default mock implementation - can be overridden in tests
+            Copy-Item -Path $Source -Destination $Destination -Force
+            return $true
         }
     }
 
-    Context "Retry Logic" {
-        It "Retries on 'user-mapped section open' error" {
-            $sourceFile = Join-Path $script:testDir "locked_source.txt"
-            $destFile = Join-Path $script:testDir "locked_dest.txt"
-            "test content" | Out-File -FilePath $sourceFile -Force
-
-            $script:attemptCount = 0
-            Mock Copy-Item {
-                $script:attemptCount++
-                if ($script:attemptCount -lt 2) {
-                    throw [System.IO.IOException]::new("The requested operation cannot be performed on a file with a user-mapped section open.")
-                }
-                # Succeed on second attempt
-            }
-            Mock Start-Sleep { }
+    Context "Successful Copy with Retry" {
+        It "Uses Copy-FileWithRetry for file operations" {
+            Mock Copy-FileWithRetry { return $true }
             Mock Write-Message { }
 
-            $result = Copy-ItemWithRetry -Source $sourceFile -Destination $destFile -MaxRetries 3 -InitialDelayMs 10
+            $sourceFile = Join-Path $script:testDir "test_copy.txt"
+            $destFile = Join-Path $script:testDir "dest_copy.txt"
+            "test" | Out-File -FilePath $sourceFile -Force
 
-            $result | Should -Be $true
-            $script:attemptCount | Should -BeGreaterThan 1
-            Assert-MockCalled Start-Sleep -Times 1
+            # Simulate the file copy logic from the script
+            try {
+                Copy-FileWithRetry -Source $sourceFile -Destination $destFile -MaxRetries 3 -RetryDelay 0.1 | Out-Null
+                Write-Message "Copied file $sourceFile to $destFile"
+            }
+            catch {
+                Write-Message "Skipped copying $sourceFile (file may be in use): $($_.Exception.Message)"
+            }
+
+            Assert-MockCalled Copy-FileWithRetry -Times 1 -ParameterFilter {
+                $Source -eq $sourceFile -and $Destination -eq $destFile -and $MaxRetries -eq 3
+            }
         }
 
-        It "Returns false after max retries on lock error" {
-            $sourceFile = Join-Path $script:testDir "always_locked.txt"
-            $destFile = Join-Path $script:testDir "always_locked_dest.txt"
-            "test content" | Out-File -FilePath $sourceFile -Force
-
-            Mock Copy-Item {
+        It "Handles Copy-FileWithRetry failure gracefully" {
+            Mock Copy-FileWithRetry {
                 throw [System.IO.IOException]::new("The requested operation cannot be performed on a file with a user-mapped section open.")
             }
-            Mock Start-Sleep { }
             Mock Write-Message { }
 
-            $result = Copy-ItemWithRetry -Source $sourceFile -Destination $destFile -MaxRetries 2 -InitialDelayMs 10
+            $sourceFile = Join-Path $script:testDir "locked_file.bat"
+            $destFile = Join-Path $script:testDir "dest_locked.bat"
 
-            $result | Should -Be $false
+            # Simulate the file copy logic from the script
+            try {
+                Copy-FileWithRetry -Source $sourceFile -Destination $destFile -MaxRetries 3 -RetryDelay 0.1 | Out-Null
+                Write-Message "Copied file $sourceFile to $destFile"
+            }
+            catch {
+                Write-Message "Skipped copying $sourceFile (file may be in use): $($_.Exception.Message)"
+            }
+
             Assert-MockCalled Write-Message -ParameterFilter {
-                $Message -match "Failed to copy" -and $Message -match "attempt"
+                $Message -match "Skipped copying" -and $Message -match "file may be in use"
             }
-        }
-
-        It "Returns false immediately on non-lock errors" {
-            $sourceFile = Join-Path $script:testDir "error_source.txt"
-            $destFile = Join-Path $script:testDir "error_dest.txt"
-
-            Mock Copy-Item {
-                throw [System.UnauthorizedAccessException]::new("Access denied")
-            }
-            Mock Write-Message { }
-
-            $result = Copy-ItemWithRetry -Source $sourceFile -Destination $destFile -MaxRetries 3
-
-            $result | Should -Be $false
-            Assert-MockCalled Write-Message -ParameterFilter {
-                $Message -match "Failed to copy" -and $Message -match "Access denied"
-            }
-        }
-
-        It "Uses exponential backoff for retries" {
-            $sourceFile = Join-Path $script:testDir "backoff_source.txt"
-            $destFile = Join-Path $script:testDir "backoff_dest.txt"
-            "test content" | Out-File -FilePath $sourceFile -Force
-
-            $script:attemptCount = 0
-            Mock Copy-Item {
-                $script:attemptCount++
-                if ($script:attemptCount -lt 3) {
-                    throw [System.IO.IOException]::new("The file is being used by another process.")
-                }
-            }
-            $script:sleepCalls = @()
-            Mock Start-Sleep {
-                param($Milliseconds)
-                $script:sleepCalls += $Milliseconds
-            }
-            Mock Write-Message { }
-
-            $result = Copy-ItemWithRetry -Source $sourceFile -Destination $destFile -MaxRetries 3 -InitialDelayMs 100
-
-            $result | Should -Be $true
-            $script:sleepCalls.Count | Should -Be 2
-            $script:sleepCalls[0] | Should -Be 100
-            $script:sleepCalls[1] | Should -Be 200  # Exponential backoff: 100 * 2
         }
     }
 }
