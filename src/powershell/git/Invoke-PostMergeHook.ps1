@@ -22,9 +22,10 @@
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 3.1.0
-    Last Updated: 2025-11-22
+    Version: 3.2.0
+    Last Updated: 2026-01-12
     CHANGELOG:
+        3.2.0 - Integrated Copy-FileWithRetry from FileOperations module to handle locked files
         3.1.0 - Fixed logging initialization order and config loading sequence
         3.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
         2.6   - Previous version with custom Write-Message function
@@ -94,6 +95,10 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 
 # Initialize logger with the correct log directory
 Initialize-Logger -resolvedLogDir $logsDir -ScriptName "post-merge-my-scripts" -LogLevel 20
+
+# Import FileOperations module for Copy-FileWithRetry
+Import-Module "$PSScriptRoot\..\modules\Core\ErrorHandling\ErrorHandling.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psm1" -Force
 
 # Deployment configuration lives under repo\config\modules\
 $configPath = Join-Path $script:RepoPath "config\modules\deployment.txt"
@@ -403,12 +408,16 @@ foreach ($rel in $modifiedFiles) {
     if ((Test-Path -LiteralPath $src) -and -not (Test-Ignored $rel)) {
         $dst = Join-Path $script:DestinationFolder $rel
         New-DirectoryIfMissing (Split-Path $dst -Parent)
+
         try {
-            Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
+            # Use Copy-FileWithRetry with faster retry for post-merge operations
+            # RetryDelay of 0.1 seconds (100ms) with 3 retries
+            Copy-FileWithRetry -Source $src -Destination $dst -MaxRetries 3 -RetryDelay 0.1 | Out-Null
             Write-Message ("Copied file {0} to {1}" -f $src, $dst)
         }
         catch {
-            Write-Message ("Failed to copy {0}: {1}" -f $src, $_.Exception.Message)
+            # Log warning but continue with other files
+            Write-Message ("Skipped copying {0} (file may be in use): {1}" -f $src, $_.Exception.Message)
         }
     }
     else {
