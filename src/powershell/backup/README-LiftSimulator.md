@@ -5,6 +5,7 @@ This document provides setup instructions for the automated backup of the `lift_
 ## Overview
 
 - **Database**: `lift_simulator`
+- **Schemas**: `public` and `lift_simulator`
 - **Backup Script**: `Backup-LiftSimulatorDatabase.ps1`
 - **Schedule**: Daily at 07:30 UTC (±1 hour random delay)
 - **Retention Policy**: 90 days (minimum 3 backups always retained)
@@ -20,7 +21,7 @@ This document provides setup instructions for the automated backup of the `lift_
 
 ### 2. Backup User Requirements
 
-The `backup_user` PostgreSQL account must have sufficient privileges to back up the `lift_simulator` database.
+The `backup_user` PostgreSQL account must have sufficient privileges to back up the `lift_simulator` database. This includes SELECT access to all tables in both the `public` and `lift_simulator` schemas.
 
 #### Check if Backup User Exists
 
@@ -53,13 +54,14 @@ FROM pg_database
 WHERE datname = 'lift_simulator';
 
 -- Check if backup_user can read all tables in lift_simulator
+-- Note: This database contains two schemas: 'public' and 'lift_simulator'
 \c lift_simulator
 SELECT
     schemaname,
     tablename,
     has_table_privilege('backup_user', schemaname || '.' || tablename, 'SELECT') AS can_read
 FROM pg_tables
-WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+WHERE schemaname IN ('public', 'lift_simulator')
 ORDER BY schemaname, tablename;
 ```
 
@@ -74,22 +76,24 @@ If the backup user lacks privileges, grant them as follows:
 -- Grant CONNECT privilege on database
 GRANT CONNECT ON DATABASE lift_simulator TO backup_user;
 
--- Grant USAGE on schemas (adjust schema names as needed)
+-- Grant USAGE on both schemas (public and lift_simulator)
 GRANT USAGE ON SCHEMA public TO backup_user;
+GRANT USAGE ON SCHEMA lift_simulator TO backup_user;
 
--- Grant SELECT on all existing tables
+-- Grant SELECT on all existing tables in both schemas
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO backup_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA lift_simulator TO backup_user;
 
--- Grant SELECT on all future tables (recommended)
+-- Grant SELECT on all future tables (recommended) in both schemas
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
 GRANT SELECT ON TABLES TO backup_user;
 
--- Grant SELECT on all sequences (if needed for complete backup)
-GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO backup_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA lift_simulator
+GRANT SELECT ON TABLES TO backup_user;
 
--- If you have additional schemas, repeat for each:
--- GRANT USAGE ON SCHEMA schema_name TO backup_user;
--- GRANT SELECT ON ALL TABLES IN SCHEMA schema_name TO backup_user;
+-- Grant SELECT on all sequences (if needed for complete backup) in both schemas
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO backup_user;
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA lift_simulator TO backup_user;
 ```
 
 #### Verify Privileges Again
@@ -100,10 +104,17 @@ After granting privileges, verify with:
 -- Verify backup_user can connect
 SELECT has_database_privilege('backup_user', 'lift_simulator', 'CONNECT');
 
--- Test actual read access to a table (replace 'your_table' with an actual table name)
+-- Test actual read access to tables in both schemas
+-- (replace 'your_table' with actual table names from each schema)
 \c lift_simulator
 SET ROLE backup_user;
-SELECT COUNT(*) FROM your_table;
+
+-- Test public schema access
+SELECT COUNT(*) FROM public.your_table_name;
+
+-- Test lift_simulator schema access
+SELECT COUNT(*) FROM lift_simulator.your_table_name;
+
 RESET ROLE;
 ```
 
