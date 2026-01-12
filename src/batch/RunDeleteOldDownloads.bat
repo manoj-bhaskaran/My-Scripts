@@ -22,7 +22,7 @@ set "LOG_FILE=%LOG_DIR%\%SCRIPT_NAME%_batch_%LOG_DATE%.log"
 
 :: Get script directory and navigate to repository root
 set "SCRIPT_DIR=%~dp0"
-set "REPO_ROOT=%SCRIPT_DIR%.."
+set "REPO_ROOT=%SCRIPT_DIR%..\.."
 
 :: Build path to PowerShell script using relative path
 set "SCRIPT=%REPO_ROOT%\src\powershell\system\Remove-OldDownload.ps1"
