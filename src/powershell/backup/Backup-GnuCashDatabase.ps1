@@ -1,26 +1,42 @@
 <#
+ .VERSION
+     3.0.0
 .SYNOPSIS
-    Backup script for GnuCash database with secure password handling.
+    Runs a PostgreSQL backup for the gnucash_db database via the PostgresBackup module.
 
 .DESCRIPTION
-    Backs up the gnucash_db database using PostgreSQL pg_dump with secure password management.
-    Supports environment variables and relative paths for portability.
-
-.PARAMETER PasswordFile
-    Path to the encrypted password file. If not specified, uses environment variable
-    PGBACKUP_PASSWORD_FILE or defaults to config/secrets/pgbackup_user_pwd.txt
+    - Ensures backup and log folders exist under:
+        D:\pgbackup\gnucash_db\
+        D:\pgbackup\gnucash_db\logs
+    - Builds a timestamped log file in the logs folder and passes it to the module.
+    - Imports the PostgresBackup module (highest available version on PSModulePath).
+    - Invokes Backup-PostgresDatabase with retention defaults.
+    - Returns exit code 0 on success, 1 on failure (Task Scheduler friendly).
 
 .NOTES
-    VERSION: 2.1.0
-    CHANGELOG:
-        2.0.0 - Removed hardcoded paths, added portable path resolution (Issue #513)
-        1.0.0 - Initial release
-#>
+    CHANGELOG
+    ## 3.0.0 - 2026-01-12
+    ### Changed
+    - Migrated from encrypted password file to .pgpass authentication
+    - Replaced pg_backup_common.ps1 call with PostgresBackup module
+    - Aligned with lift_simulator backup architecture
+    - Uses PowerShellLoggingFramework for standardized logging
+    - Implements .pgpass authentication validation with ACL checks
 
-[CmdletBinding()]
-param(
-    [string]$PasswordFile
-)
+    ## 2.1.0 - Previous
+    - Removed hardcoded paths, added portable path resolution (Issue #513)
+
+    ## 1.0.0 - Initial
+    - Initial release with encrypted password file
+
+    Authentication uses .pgpass for backup_user.
+    Requires:
+      - PostgresBackup module deployed/available on PSModulePath
+      - .pgpass (or equivalent) with entry for gnucash_db database
+      - backup_user with sufficient privileges on gnucash_db database
+    Author: Manoj Bhaskaran
+    Last Updated: 2026-01-12
+#>
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
@@ -28,88 +44,159 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 # Initialize logger
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 
-# Parameters for gnucash_db backup
-$dbname = "gnucash_db"
-$backup_folder = "D:\pgbackup\gnucash_db"
-$log_folder = "D:\pgbackup\logs"
-$user = "backup_user"
-$retention_days = 90
-$min_backups = 3
+# === Preflight & Hardening ===
+$ErrorActionPreference = 'Stop'
 
-# Determine password file location
-if (-not $PasswordFile) {
-    # Try environment variable first
-    if ($env:PGBACKUP_PASSWORD_FILE) {
-        $PasswordFile = $env:PGBACKUP_PASSWORD_FILE
-        Write-LogInfo "Using password file from environment variable" -Metadata @{ PasswordFile = $PasswordFile }
-    }
-    # Fall back to config directory (relative to repository root)
-    else {
-        # Navigate from script location to repository root
-        $scriptRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
-        $PasswordFile = Join-Path $scriptRoot "config" "secrets" "pgbackup_user_pwd.txt"
-        Write-LogInfo "Using default password file location" -Metadata @{ PasswordFile = $PasswordFile }
-    }
+# Resolve .pgpass and enforce explicit use via PGPASSFILE
+$PgPass = if ($env:PGPASSFILE) { $env:PGPASSFILE } else { Join-Path $env:APPDATA 'postgresql\pgpass.conf' }
+
+if (-not (Test-Path -LiteralPath $PgPass)) {
+    throw "Missing .pgpass at '$PgPass'. Create it or set PGPASSFILE to a valid path."
 }
 
-# Validate password file exists
-if (-not (Test-Path $PasswordFile)) {
-    $errorMsg = @"
-Password file not found: $PasswordFile
+# Set PGPASSFILE explicitly so libpq uses the intended file
+$env:PGPASSFILE = $PgPass
 
-To fix this issue:
-1. Create the password file using:
-   Read-Host "Enter pgbackup user password" -AsSecureString | ConvertFrom-SecureString | Out-File -FilePath "$PasswordFile"
-
-2. Or set the PGBACKUP_PASSWORD_FILE environment variable:
-   [Environment]::SetEnvironmentVariable("PGBACKUP_PASSWORD_FILE", "C:\path\to\password.txt", "User")
-
-3. Ensure the password file is in the secure config directory and NOT committed to version control.
-"@
-    Write-LogError $errorMsg
-    throw "Password file not found: $PasswordFile"
-}
-
-Write-LogInfo "Validated password file location" -Metadata @{ PasswordFile = $PasswordFile }
-
-# Read password securely
+# ACL sanity warning (Windows): discourage wide-readable ACLs
 try {
-    $password = Get-Content $PasswordFile -ErrorAction Stop | ConvertTo-SecureString -ErrorAction Stop
-    Write-LogInfo "Password loaded successfully"
+    $acl = Get-Acl -LiteralPath $PgPass
+    $bad = $acl.Access | Where-Object {
+        $_.IdentityReference -match 'Everyone|Users|Authenticated Users'
+    }
+    if ($bad) {
+        Write-Warning ("Suspicious ACLs on .pgpass: " + (($bad | Select-Object -ExpandProperty IdentityReference | Select-Object -Unique) -join ', ') + ". Restrict access to the current user for better security.")
+    }
 }
 catch {
-    Write-LogError "Failed to read or decrypt password file" -Metadata @{ Error = $_ }
-    Write-LogError "The password file may be corrupted or not properly encrypted."
-    Write-LogError "Recreate it using: Read-Host 'Enter password' -AsSecureString | ConvertFrom-SecureString | Out-File '$PasswordFile'"
-    throw "Failed to read password: $_"
+    Write-Warning "Could not inspect ACLs for .pgpass at '$PgPass': $($_.Exception.Message)"
+}
+# === End Preflight ===
+
+function Invoke-BackupMain {
+
+    [CmdletBinding()]
+    param(
+        # Override defaults if needed when calling from Task Scheduler
+        [string]$Database = 'gnucash_db',
+        [string]$BackupRoot = 'D:\pgbackup\gnucash_db',          # where .backup files go
+        [string]$LogsRoot = 'D:\pgbackup\gnucash_db\logs',      # where .log files go
+        [string]$UserName = 'backup_user',                      # PG user
+        [int]   $RetentionDays = 90,
+        [int]   $MinBackups = 3,
+
+        # If you want to force a specific PostgresBackup version, set this (e.g., '1.0.4')
+        [string]$ModuleVersion
+    )
+
+    Set-StrictMode -Version Latest
+    $ErrorActionPreference = 'Stop'
+
+    # ----- Helpers -----
+    function New-DirectoryIfMissing {
+        param([Parameter(Mandatory = $true)][string]$Path)
+        if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+            New-Item -ItemType Directory -Path $Path -Force | Out-Null
+        }
+    }
+
+    # ----- Ensure folders -----
+    try {
+        New-DirectoryIfMissing -Path $BackupRoot
+        New-DirectoryIfMissing -Path $LogsRoot
+    }
+    catch {
+        Write-LogError "ERROR: Failed to ensure backup/log directories: $_"
+        exit 1
+    }
+
+    # ----- Build timestamped log path (module will append UTF-8) -----
+    $Timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $LogFile = Join-Path $LogsRoot ("{0}_backup_{1}.log" -f $Database, $Timestamp)
+
+    Write-LogInfo "Backup root  : $BackupRoot"
+    Write-LogInfo "Logs root    : $LogsRoot"
+    Write-LogInfo "Log file     : $LogFile"
+    Write-LogInfo "Database     : $Database"
+    Write-LogInfo "User         : $UserName"
+    if ($PSBoundParameters.ContainsKey('ModuleVersion')) {
+        Write-LogInfo "Module ver   : $ModuleVersion (requested)"
+    }
+
+    # ----- Import the PostgresBackup module -----
+    try {
+        if ($PSBoundParameters.ContainsKey('ModuleVersion') -and $ModuleVersion) {
+            Import-Module -Name PostgresBackup -RequiredVersion $ModuleVersion -ErrorAction Stop
+        }
+        else {
+            Import-Module -Name PostgresBackup -ErrorAction Stop
+        }
+    }
+    catch {
+        Write-LogError "ERROR: Failed to import PostgresBackup module: $_"
+        exit 1
+    }
+
+    # ----- Invoke backup -----
+    try {
+        Write-LogInfo "Starting backup via PostgresBackup::Backup-PostgresDatabase"
+        Backup-PostgresDatabase `
+            -dbname          $Database `
+            -backup_folder   $BackupRoot `
+            -log_file        $LogFile `
+            -user            $UserName `
+            -retention_days  $RetentionDays `
+            -min_backups     $MinBackups
+
+        # If the function throws, we won't reach here; success means exit code 0.
+        Write-LogInfo "Backup completed successfully."
+        Write-Output ([PSCustomObject]@{
+                Database      = $Database
+                BackupRoot    = $BackupRoot
+                LogsRoot      = $LogsRoot
+                LogFile       = $LogFile
+                User          = $UserName
+                RetentionDays = $RetentionDays
+                MinBackups    = $MinBackups
+                Status        = 'Success'
+            })
+        exit 0
+    }
+    catch {
+        # The module also logs failures to $LogFile; we still surface a clear status/exit code here.
+        Write-LogError "ERROR: Backup failed: $_"
+        Write-Output ([PSCustomObject]@{
+                Database      = $Database
+                BackupRoot    = $BackupRoot
+                LogsRoot      = $LogsRoot
+                LogFile       = $LogFile
+                User          = $UserName
+                RetentionDays = $RetentionDays
+                MinBackups    = $MinBackups
+                Status        = 'Failed'
+                Error         = $_.ToString()
+            })
+        exit 1
+    }
 }
 
-# Call the common backup script
 try {
-    $invokeResult = & "$PSScriptRoot\pg_backup_common.ps1" `
-        -dbname $dbname `
-        -backup_folder $backup_folder `
-        -log_folder $log_folder `
-        -user $user `
-        -password $password `
-        -retention_days $retention_days `
-        -min_backups $min_backups
-
-    Write-LogInfo "Backup invocation completed" -Metadata @{ Database = $dbname; BackupFolder = $backup_folder }
-
-    Write-Output ([PSCustomObject]@{
-            Database      = $dbname
-            BackupFolder  = $backup_folder
-            LogFolder     = $log_folder
-            User          = $user
-            RetentionDays = $retention_days
-            MinBackups    = $min_backups
-            PasswordFile  = $PasswordFile
-            Result        = $invokeResult
-            Status        = "Success"
-        })
+    Invoke-BackupMain
+    exit 0
 }
 catch {
-    Write-LogError "Backup invocation failed" -Metadata @{ Database = $dbname; Error = $_ }
-    throw
+    $e = $_.Exception
+    $innerMsg = ''
+    if ($e -and $e.InnerException) { $innerMsg = $e.InnerException.Message }
+
+    $msg = @(
+        "Backup FAILED.",
+        "Message: $($_.ToString())",
+        "Type: $($e.GetType().FullName)",
+        ("HResult: " + ('0x{0:X8}' -f $e.HResult)),
+        ("Inner: " + $innerMsg),
+        ("ScriptStack: " + $_.ScriptStackTrace),
+        ("StackTrace: " + $e.StackTrace)
+    ) -join "`r`n"
+    Write-LogError $msg
+    exit 1
 }
