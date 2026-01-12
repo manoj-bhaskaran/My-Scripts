@@ -14,55 +14,72 @@ This directory stores sensitive configuration files that should **NEVER** be com
 
 ## Setup Instructions
 
-### PostgreSQL Backup Password
+### PostgreSQL Backup Authentication
 
-The PostgreSQL backup scripts (`Backup-GnuCashDatabase.ps1` and `Backup-TimelineDatabase.ps1`) require an encrypted password file.
+The PostgreSQL backup scripts (`Backup-GnuCashDatabase.ps1`, `Backup-TimelineDatabase.ps1`, and `Backup-LiftSimulatorDatabase.ps1`) use PostgreSQL's `.pgpass` file for secure authentication.
 
-#### Creating the Password File
+#### Setting Up .pgpass Authentication
 
-1. **Create the encrypted password file:**
+1. **Create the .pgpass file:**
+
+   The default location is `%APPDATA%\postgresql\pgpass.conf` on Windows.
 
    ```powershell
-   # Navigate to this directory
-   cd config/secrets
+   # Create the directory if it doesn't exist
+   $pgpassDir = Join-Path $env:APPDATA "postgresql"
+   if (-not (Test-Path $pgpassDir)) {
+       New-Item -ItemType Directory -Path $pgpassDir -Force
+   }
 
-   # Create encrypted password file
-   Read-Host "Enter pgbackup user password" -AsSecureString | ConvertFrom-SecureString | Out-File -FilePath "pgbackup_user_pwd.txt"
+   # Create or edit the pgpass.conf file
+   $pgpassFile = Join-Path $pgpassDir "pgpass.conf"
+   notepad $pgpassFile
    ```
 
-2. **Verify the file was created:**
+2. **Add database entries to .pgpass:**
 
-   ```powershell
-   Get-Item pgbackup_user_pwd.txt
+   Each line should follow the format: `hostname:port:database:username:password`
+
+   ```text
+   localhost:5432:gnucash_db:backup_user:your_password_here
+   localhost:5432:timeline_data:backup_user:your_password_here
+   localhost:5432:lift_simulator:backup_user:your_password_here
+   localhost:5432:*:backup_user:your_password_here
    ```
 
-   You should see a file containing an encrypted string.
+   You can use `*` as a wildcard for any field.
 
-3. **Test the backup script:**
+3. **Secure the .pgpass file:**
+
+   Restrict file permissions to prevent unauthorized access:
 
    ```powershell
-   # Run the backup script - it should automatically find the password file
+   $pgpassFile = Join-Path $env:APPDATA "postgresql\pgpass.conf"
+   $acl = Get-Acl $pgpassFile
+   $acl.SetAccessRuleProtection($true, $false)
+   $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+   $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($user, "FullControl", "Allow")
+   $acl.SetAccessRule($rule)
+   Set-Acl $pgpassFile $acl
+   ```
+
+4. **Test the backup script:**
+
+   ```powershell
+   # Run the backup script - it should automatically use .pgpass
    .\src\powershell\backup\Backup-GnuCashDatabase.ps1 -Verbose
    ```
 
-#### Using a Custom Password File Location
+#### Using a Custom .pgpass Location
 
-If you want to store the password file in a different location, you have two options:
-
-**Option 1: Set Environment Variable (Recommended)**
+If you want to use a different location for your .pgpass file:
 
 ```powershell
-# Set for current user (persists across sessions)
-[Environment]::SetEnvironmentVariable("PGBACKUP_PASSWORD_FILE", "C:\path\to\your\password.txt", "User")
+# Set PGPASSFILE environment variable (persists across sessions)
+[Environment]::SetEnvironmentVariable("PGPASSFILE", "C:\path\to\your\pgpass.conf", "User")
 
 # Or set for current session only
-$env:PGBACKUP_PASSWORD_FILE = "C:\path\to\your\password.txt"
-```
-
-**Option 2: Pass as Parameter**
-
-```powershell
-.\src\powershell\backup\Backup-GnuCashDatabase.ps1 -PasswordFile "C:\path\to\your\password.txt"
+$env:PGPASSFILE = "C:\path\to\your\pgpass.conf"
 ```
 
 ### Handle.exe Path (Optional)
@@ -88,9 +105,10 @@ This directory may contain:
 ```
 config/secrets/
 ├── README.md (this file)
-├── pgbackup_user_pwd.txt (PostgreSQL backup password - encrypted)
-└── *.pwd (other encrypted password files)
+└── *.pwd (legacy encrypted password files - no longer used by backup scripts)
 ```
+
+Note: PostgreSQL backup scripts now use `.pgpass` authentication located at `%APPDATA%\postgresql\pgpass.conf` instead of files in this directory.
 
 ## Security Best Practices
 
@@ -134,38 +152,50 @@ Read-Host "Enter new pgbackup user password" -AsSecureString | ConvertFrom-Secur
 
 ## Troubleshooting
 
-### "Password file not found" Error
+### "Missing .pgpass" Error
 
 If you see this error, ensure:
 
-1. The password file exists at `config/secrets/pgbackup_user_pwd.txt`
-2. Or the `PGBACKUP_PASSWORD_FILE` environment variable is set correctly
-3. Or you're passing the `-PasswordFile` parameter
+1. The .pgpass file exists at `%APPDATA%\postgresql\pgpass.conf`
+2. Or the `PGPASSFILE` environment variable is set to a valid path
+3. The file has the correct format (see setup instructions above)
 
-### "Failed to read or decrypt password file" Error
-
-This error indicates:
-
-1. The password file is corrupted
-2. The password file was created by a different Windows user
-3. The file is not properly encrypted
-
-**Solution:** Recreate the password file:
+**Solution:** Create the .pgpass file:
 
 ```powershell
-Remove-Item config/secrets/pgbackup_user_pwd.txt -ErrorAction SilentlyContinue
-Read-Host "Enter password" -AsSecureString | ConvertFrom-SecureString | Out-File -FilePath "config/secrets/pgbackup_user_pwd.txt"
+$pgpassDir = Join-Path $env:APPDATA "postgresql"
+New-Item -ItemType Directory -Path $pgpassDir -Force -ErrorAction SilentlyContinue
+
+$pgpassFile = Join-Path $pgpassDir "pgpass.conf"
+@"
+localhost:5432:gnucash_db:backup_user:your_password_here
+localhost:5432:timeline_data:backup_user:your_password_here
+localhost:5432:lift_simulator:backup_user:your_password_here
+"@ | Out-File -FilePath $pgpassFile -Encoding ASCII
 ```
 
-### Password File Created on Different Machine
+### "Authentication Failed" Error
 
-SecureString encryption is **user-specific** and **machine-specific**. If you move the repository to a different machine or user account, you must recreate the password file.
+If PostgreSQL authentication fails:
+
+1. Verify the password in .pgpass is correct
+2. Ensure the database name, username, and port match your PostgreSQL configuration
+3. Test the connection manually: `psql -U backup_user -d gnucash_db`
+4. Check PostgreSQL logs for authentication errors
+
+### "Suspicious ACLs on .pgpass" Warning
+
+This warning indicates that the .pgpass file has overly permissive access rights. Restrict access to the current user only (see step 3 in setup instructions).
+
+### Moving .pgpass to Another Machine
+
+Unlike encrypted SecureString files, .pgpass files are **portable** between machines. Simply copy the file and ensure proper file permissions are set on the target machine.
 
 ## Environment Variables Reference
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `PGBACKUP_PASSWORD_FILE` | PostgreSQL backup password file location | `C:\secure\pgbackup.txt` |
+| `PGPASSFILE` | PostgreSQL .pgpass file location | `C:\secure\pgpass.conf` |
 | `HANDLE_EXE_PATH` | Handle.exe utility location | `C:\Tools\handle.exe` |
 | `SCRIPTS_OLD_ROOT1` | Old script root for task scheduler updates | `C:\OldScripts` |
 | `TASK_SCHEDULER_OUTPUT` | Output directory for task scheduler XMLs | `C:\Tasks` |
