@@ -20,10 +20,19 @@ python recover_extensions.py --move-unknowns --debug
 """
 
 import re
+import sys
 import time
 import argparse
-import python_logging_framework as plog
 from pathlib import Path
+
+# Add module paths to sys.path for imports
+script_dir = Path(__file__).resolve().parent
+repo_root = script_dir.parent.parent.parent
+modules_logging = repo_root / "src" / "python" / "modules" / "logging"
+
+sys.path.insert(0, str(modules_logging))
+
+import python_logging_framework as plog
 from collections import defaultdict
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed

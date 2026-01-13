@@ -24,6 +24,18 @@ Notes:
 """
 
 from __future__ import print_function
+import sys
+from pathlib import Path
+
+# Add module paths to sys.path for imports
+script_dir = Path(__file__).resolve().parent
+repo_root = script_dir.parent.parent.parent
+modules_logging = repo_root / "src" / "python" / "modules" / "logging"
+modules_auth = repo_root / "src" / "python" / "modules" / "auth"
+
+sys.path.insert(0, str(modules_logging))
+sys.path.insert(0, str(modules_auth))
+
 from googleapiclient.errors import HttpError
 from google_drive_auth import authenticate_and_get_drive_service
 from google.auth.credentials import Credentials
