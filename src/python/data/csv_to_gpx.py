@@ -12,11 +12,21 @@ Usage:
 import argparse
 import csv
 import os
+import sys
 import xml.dom.minidom
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Tuple
 from xml.etree.ElementTree import Element, SubElement, tostring
+
+# Add module paths to sys.path for imports
+script_dir = Path(__file__).resolve().parent
+repo_root = script_dir.parent.parent.parent
+modules_logging = repo_root / "src" / "python" / "modules" / "logging"
+modules_auth = repo_root / "src" / "python" / "modules" / "auth"
+
+sys.path.insert(0, str(modules_logging))
+sys.path.insert(0, str(modules_auth))
 
 from elevation import get_elevation
 import python_logging_framework as plog

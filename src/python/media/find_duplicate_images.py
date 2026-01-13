@@ -26,9 +26,19 @@ CHANGELOG:
 """
 
 import os
+import sys
 import csv
 import hashlib
 import argparse
+from pathlib import Path
+
+# Add module paths to sys.path for imports
+script_dir = Path(__file__).resolve().parent
+repo_root = script_dir.parent.parent.parent
+modules_logging = repo_root / "src" / "python" / "modules" / "logging"
+
+sys.path.insert(0, str(modules_logging))
+
 import python_logging_framework as plog
 import logging
 import json

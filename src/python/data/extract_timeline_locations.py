@@ -1,6 +1,7 @@
 import argparse
 import json
 import re
+import sys
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,15 @@ from typing import (
     Tuple,
     cast,
 )
+
+# Add module paths to sys.path for imports
+script_dir = Path(__file__).resolve().parent
+repo_root = script_dir.parent.parent.parent
+modules_logging = repo_root / "src" / "python" / "modules" / "logging"
+modules_auth = repo_root / "src" / "python" / "modules" / "auth"
+
+sys.path.insert(0, str(modules_logging))
+sys.path.insert(0, str(modules_auth))
 
 import psycopg2
 from psycopg2.extensions import connection as PgConnection, cursor as PgCursor
