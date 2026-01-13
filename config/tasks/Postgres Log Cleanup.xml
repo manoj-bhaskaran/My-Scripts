@@ -45,8 +45,8 @@
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>powershell.exe</Command>
-      <Arguments>-ExecutionPolicy Bypass -File C:\Users\manoj\Documents\Scripts\src\powershell\logCleanUp.ps1</Arguments>
+      <Command>pwsh.exe</Command>
+      <Arguments>-ExecutionPolicy Bypass -File C:\Users\manoj\Documents\Scripts\src\powershell\system\Clear-PostgreSqlLog.ps1</Arguments>
     </Exec>
   </Actions>
 </Task>
