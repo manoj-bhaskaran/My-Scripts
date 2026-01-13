@@ -55,8 +55,8 @@
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>powershell</Command>
-      <Arguments>backup\Sync-MacriumBackups.ps1</Arguments>
+      <Command>powershell.exe</Command>
+      <Arguments>-ExecutionPolicy Bypass -NoProfile -File "C:\Users\manoj\Documents\Scripts\src\powershell\backup\Sync-MacriumBackups.ps1"</Arguments>
     </Exec>
   </Actions>
 </Task>

@@ -28,9 +28,6 @@
 .PARAMETER RcloneRemote
     The rclone remote (and optional path) to sync to. Can include spaces. Example: "gdrive:Macrium Backups".
 
-.PARAMETER LogFile
-    Full path to the log file where execution details are appended. Default: "$env:USERPROFILE\Documents\Scripts\Sync-MacriumBackups.log".
-
 .PARAMETER MaxChunkMB
     The upper limit (in MB) for dynamically calculated rclone --drive-chunk-size. Default: 2048.
 
@@ -48,9 +45,22 @@
     Runs the sync with rclone --progress output shown on the console, suitable for manual invocation.
 
 .NOTES
-    Version: 2.0.0
+    Version: 2.1.0
 
     CHANGELOG
+    ## 2.1.0 - 2026-01-13
+    ### Changed
+    - Configure logging to centralized Scripts\logs directory
+    - Removed LogFile parameter (now automatically set to logs directory)
+    - Framework logs: Sync-MacriumBackups.ps1_powershell_YYYY-MM-DD.log
+    - Rclone logs: Sync-MacriumBackups_rclone.log
+    - Added log path output on script start for verification
+
+    ### Fixed
+    - Use rclone's --log-file parameter instead of PowerShell redirection
+    - Eliminates PowerShell stderr errors when rclone writes INFO messages
+    - Cleaner log output without RemoteException errors
+
     ## 2.0.0 - 2025-11-16
     ### Changed
     - Migrated to PowerShellLoggingFramework.psm1 for standardized logging
@@ -60,7 +70,6 @@
 param(
     [string]$SourcePath = "E:\Macrium Backups",
     [string]$RcloneRemote = "gdrive:",
-    [string]$LogFile = "C:\Users\manoj\Documents\Scripts\Sync-MacriumBackups.log",
     [int]$MaxChunkMB = 2048,
     [string]$PreferredSSID = "ManojNew_5G",
     [string]$FallbackSSID = "ManojNew",
@@ -70,8 +79,25 @@ param(
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 
-# Initialize logger
-Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
+# Initialize logger with custom log directory at script root
+# PSScriptRoot is at: Scripts\src\powershell\backup
+# We need to go up 3 levels to reach Scripts root
+$scriptRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
+$logDir = Join-Path $scriptRoot "logs"
+
+# Create logs directory if it doesn't exist
+if (-not (Test-Path $logDir)) {
+    New-Item -Path $logDir -ItemType Directory -Force | Out-Null
+}
+
+# Set LogFile path for rclone output redirection
+$LogFile = Join-Path $logDir "Sync-MacriumBackups_rclone.log"
+
+Initialize-Logger -resolvedLogDir $logDir -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
+
+# Output log paths for verification
+Write-Host "Framework logs: $($Global:LogConfig.LogFilePath)" -ForegroundColor Cyan
+Write-Host "Rclone logs: $LogFile" -ForegroundColor Cyan
 
 Add-Type -Namespace SleepControl -Name PowerMgmt -MemberDefinition @"
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -190,38 +216,30 @@ function Sync-Backups {
         "--delete-before",
         "--retries", "5",
         "--low-level-retries", "10",
-        "--timeout", "5m"
+        "--timeout", "5m",
+        "--log-level=INFO"
     )
 
     # Adjust logging based on mode
     if ($Interactive) {
         $rcloneArgs += "--progress"
-        $rcloneArgs += "--log-level=INFO"  # keep log messages for clarity
-    }
-    else {
-        $rcloneArgs += "--log-level=INFO"
-    }
-    Write-LogInfo "Starting sync with chunk size: $chunkSize"
-    if ($Interactive) {
         Write-LogInfo "Running rclone in interactive mode (output goes to console)"
-        & rclone @rcloneArgs
     }
     else {
-        Write-LogInfo "Running rclone in non-interactive mode (output redirected to log)"
-        & rclone @rcloneArgs *>> $LogFile
+        # Use rclone's --log-file to write directly to log (avoids PowerShell stderr issues)
+        $rcloneArgs += "--log-file=$LogFile"
+        Write-LogInfo "Running rclone in non-interactive mode (output logged to $LogFile)"
     }
+
+    Write-LogInfo "Starting sync with chunk size: $chunkSize"
+    & rclone @rcloneArgs
+
     if ($LASTEXITCODE -eq 0) {
         Write-LogInfo "Sync completed successfully"
     }
     else {
         Write-LogError "Sync failed with exit code $LASTEXITCODE"
     }
-}
-
-# Ensure log directory exists
-$logDir = Split-Path $LogFile
-if (-not (Test-Path $logDir)) {
-    New-Item -ItemType Directory -Path $logDir | Out-Null
 }
 
 # Execution Flow
