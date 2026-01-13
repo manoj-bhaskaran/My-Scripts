@@ -56,6 +56,10 @@
     - Automatic lock release in finally block to ensure cleanup
     - Detailed logging for lock acquisition, waiting, and release
 
+    ### Fixed
+    - Handle AbandonedMutexException from crashed previous instances as successful lock acquisition
+    - Prevent false-positive concurrent instance detection when previous run crashed unexpectedly
+
     ## 2.2.0 - 2026-01-13
     ### Added
     - Persistent state tracking with JSON state file (Sync-MacriumBackups_state.json)
@@ -264,6 +268,9 @@ function New-ScriptMutex {
         Attempts to acquire a script-wide mutex. If another instance is running,
         waits for up to the specified timeout. Returns the mutex object if acquired,
         or $null if unable to acquire within timeout.
+
+        Handles abandoned mutexes (from crashed instances) by treating them as
+        successfully acquired and continuing execution.
     #>
     param(
         [Parameter(Mandatory = $false)]
@@ -277,7 +284,14 @@ function New-ScriptMutex {
 
         Write-LogInfo "Attempting to acquire instance lock (timeout: ${TimeoutSeconds}s)..."
 
-        $acquired = $mutex.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds))
+        try {
+            $acquired = $mutex.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds))
+        }
+        catch [System.Threading.AbandonedMutexException] {
+            # Mutex is acquired, but previous owner didn't release it cleanly (crashed)
+            Write-LogWarning "Previous instance crashed or exited unexpectedly (abandoned mutex). Lock acquired successfully."
+            return $mutex
+        }
 
         if ($acquired) {
             Write-LogInfo "Instance lock acquired successfully"
