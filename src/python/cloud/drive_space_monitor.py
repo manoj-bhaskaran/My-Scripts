@@ -26,8 +26,8 @@ from google_drive_auth import authenticate_and_get_drive_service
 import python_logging_framework as plog  # Uses standardised logging framework
 
 # Initialize logger for this module
-# Use __file__ instead of __name__ to ensure correct log file naming and path resolution
-logger = plog.initialise_logger(__file__, log_dir=repo_root / "logs")
+# Use Path(__file__).name to get just the filename for proper log file naming
+logger = plog.initialise_logger(Path(__file__).name, log_dir=repo_root / "logs")
 
 
 def format_size(bytes_size):

@@ -50,8 +50,8 @@ from itertools import groupby
 from tqdm import tqdm  # Import tqdm for the progress bar
 
 # Initialize logger for this module
-# Use __file__ instead of __name__ to ensure correct log file naming and path resolution
-logger = plog.initialise_logger(__file__, log_dir=repo_root / "logs")
+# Use Path(__file__).name to get just the filename for proper log file naming
+logger = plog.initialise_logger(Path(__file__).name, log_dir=repo_root / "logs")
 from collections import defaultdict
 from logging.handlers import QueueHandler, QueueListener
 from threading import Lock
