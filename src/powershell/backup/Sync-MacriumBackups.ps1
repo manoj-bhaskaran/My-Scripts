@@ -45,9 +45,21 @@
     Runs the sync with rclone --progress output shown on the console, suitable for manual invocation.
 
 .NOTES
-    Version: 2.2.0
+    Version: 2.3.0
 
     CHANGELOG
+    ## 2.3.0 - 2026-01-13
+    ### Added
+    - Single-instance locking using named mutex to prevent concurrent runs
+    - Mutex-based lock with 120-second timeout when another instance is running
+    - Graceful exit with exit code 2 when lock cannot be acquired
+    - Automatic lock release in finally block to ensure cleanup
+    - Detailed logging for lock acquisition, waiting, and release
+
+    ### Fixed
+    - Handle AbandonedMutexException from crashed previous instances as successful lock acquisition
+    - Prevent false-positive concurrent instance detection when previous run crashed unexpectedly
+
     ## 2.2.0 - 2026-01-13
     ### Added
     - Persistent state tracking with JSON state file (Sync-MacriumBackups_state.json)
@@ -246,6 +258,81 @@ function Complete-StateFile {
 
 #endregion
 
+#region Instance Locking Functions
+
+function New-ScriptMutex {
+    <#
+    .SYNOPSIS
+        Acquires a named mutex to prevent concurrent script execution.
+    .DESCRIPTION
+        Attempts to acquire a script-wide mutex. If another instance is running,
+        waits for up to the specified timeout. Returns the mutex object if acquired,
+        or $null if unable to acquire within timeout.
+
+        Handles abandoned mutexes (from crashed instances) by treating them as
+        successfully acquired and continuing execution.
+    #>
+    param(
+        [Parameter(Mandatory = $false)]
+        [int]$TimeoutSeconds = 120
+    )
+
+    $mutexName = "Global\Sync-MacriumBackups-SingleInstance"
+
+    try {
+        $mutex = New-Object System.Threading.Mutex($false, $mutexName)
+
+        Write-LogInfo "Attempting to acquire instance lock (timeout: ${TimeoutSeconds}s)..."
+
+        try {
+            $acquired = $mutex.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds))
+        }
+        catch [System.Threading.AbandonedMutexException] {
+            # Mutex is acquired, but previous owner didn't release it cleanly (crashed)
+            Write-LogWarning "Previous instance crashed or exited unexpectedly (abandoned mutex). Lock acquired successfully."
+            return $mutex
+        }
+
+        if ($acquired) {
+            Write-LogInfo "Instance lock acquired successfully"
+            return $mutex
+        }
+        else {
+            Write-LogWarning "Could not acquire instance lock within ${TimeoutSeconds} seconds. Another instance may be running."
+            $mutex.Dispose()
+            return $null
+        }
+    }
+    catch {
+        Write-LogError "Failed to create or acquire mutex: $_"
+        return $null
+    }
+}
+
+function Release-ScriptMutex {
+    <#
+    .SYNOPSIS
+        Releases the script instance mutex.
+    #>
+    param(
+        [Parameter(Mandatory = $false)]
+        [System.Threading.Mutex]$Mutex
+    )
+
+    if ($null -ne $Mutex) {
+        try {
+            $Mutex.ReleaseMutex()
+            $Mutex.Dispose()
+            Write-LogInfo "Instance lock released"
+        }
+        catch {
+            Write-LogWarning "Failed to release mutex: $_"
+        }
+    }
+}
+
+#endregion
+
 function Test-BackupPath {
     Update-StateStep -StepName "Test-BackupPath"
     if (-not (Test-Path $SourcePath)) {
@@ -403,6 +490,14 @@ try {
     # Initialize state tracking
     $script:currentState = Initialize-StateFile
 
+    # Acquire instance lock to prevent concurrent runs
+    $script:instanceMutex = New-ScriptMutex -TimeoutSeconds 120
+    if ($null -eq $script:instanceMutex) {
+        Write-LogWarning "Skipping sync run - another instance is already running"
+        Complete-StateFile -Status "Failed" -ExitCode 2
+        exit 2
+    }
+
     # Prevent sleep & display timeout
     [SleepControl.PowerMgmt]::SetThreadExecutionState([uint32]"0x80000003") | Out-Null
     Write-LogInfo "System sleep and display timeout temporarily disabled"
@@ -419,6 +514,9 @@ catch {
     throw
 }
 finally {
+    # Release instance lock
+    Release-ScriptMutex -Mutex $script:instanceMutex
+
     # Restore normal sleep behavior
     [SleepControl.PowerMgmt]::SetThreadExecutionState([uint32]"0x80000000") | Out-Null
     Write-LogInfo "System sleep and display timeout restored"
