@@ -34,20 +34,51 @@
 .PARAMETER Interactive
     Optional switch. When enabled, rclone will display a live progress bar and more interactive feedback on the console. This is intended for manual use and disables log redirection of the progress meter.
 
+.PARAMETER AutoResume
+    Optional switch. When enabled, the script checks the previous run's status from the state file. If the last run succeeded, the script exits without running (unless -Force is used). If the last run failed or was interrupted, the script proceeds with a full sync run.
+
+.PARAMETER Force
+    Optional switch. When used with -AutoResume, forces the script to run even if the previous run succeeded. Without -AutoResume, this parameter has no effect.
+
 .EXAMPLE
     .\Sync-MacriumBackups.ps1
 
-    Runs the sync using default source path, remote, and logging settings in non-interactive mode.
+    Runs the sync using default source path, remote, and logging settings in non-interactive mode. Creates a fresh state file.
 
 .EXAMPLE
     .\Sync-MacriumBackups.ps1 -Interactive
 
     Runs the sync with rclone --progress output shown on the console, suitable for manual invocation.
 
+.EXAMPLE
+    .\Sync-MacriumBackups.ps1 -AutoResume
+
+    Checks the previous run status. Only runs if the last run failed or was interrupted. Skips execution if last run succeeded.
+
+.EXAMPLE
+    .\Sync-MacriumBackups.ps1 -AutoResume -Force
+
+    Forces a sync run regardless of the previous run's status.
+
 .NOTES
-    Version: 2.3.0
+    Version: 2.4.0
 
     CHANGELOG
+    ## 2.4.0 - 2026-01-13
+    ### Added
+    - Auto-resume behavior with -AutoResume flag to intelligently restart sync based on previous run status
+    - -Force flag to override auto-resume logic and run sync regardless of previous success
+    - Invoke-AutoResumeLogic function to evaluate previous run state and determine if sync should proceed
+    - Clean start behavior (default) that removes existing state file when AutoResume is not set
+    - Enhanced logging for resume/retry scenarios showing previous run context
+    - Exit code 0 when previous run succeeded and -Force not set (with AutoResume)
+    - Decision path logging clearly showing why sync is running or being skipped
+
+    ### Changed
+    - Initialize-StateFile now accepts CleanStart parameter for explicit state cleanup
+    - Modified state initialization to log different messages for resume vs retry scenarios
+    - Updated parameter documentation with AutoResume and Force usage examples
+
     ## 2.3.0 - 2026-01-13
     ### Added
     - Single-instance locking using named mutex to prevent concurrent runs
@@ -95,7 +126,9 @@ param(
     [int]$MaxChunkMB = 2048,
     [string]$PreferredSSID = "ManojNew_5G",
     [string]$FallbackSSID = "ManojNew",
-    [switch]$Interactive
+    [switch]$Interactive,
+    [switch]$AutoResume,
+    [switch]$Force
 )
 
 # Import logging framework
@@ -187,15 +220,39 @@ function Initialize-StateFile {
     .SYNOPSIS
         Initializes the state file at script start and checks for interrupted runs.
     .DESCRIPTION
-        Creates a new run ID and sets status to InProgress. If a previous run was
-        in progress, it logs a warning about the interrupted run.
+        Creates a new run ID and sets status to InProgress.
+
+        Behavior depends on AutoResume flag:
+        - Without AutoResume: Performs clean start, removes any existing state
+        - With AutoResume: Previous state has already been evaluated by Invoke-AutoResumeLogic
+    .PARAMETER CleanStart
+        When true, explicitly removes existing state file before creating new one (default behavior without AutoResume).
     #>
+    param(
+        [bool]$CleanStart = $false
+    )
+
     # Check previous state
     $previousState = Read-StateFile
 
-    if ($null -ne $previousState -and $previousState.status -eq "InProgress") {
-        Write-LogWarning "Previous run (ID: $($previousState.lastRunId)) was interrupted. Last step: $($previousState.lastStep)"
-        Write-LogWarning "Previous run started at: $($previousState.startTime)"
+    # Handle clean start (default behavior without AutoResume)
+    if ($CleanStart) {
+        if ($null -ne $previousState) {
+            Write-LogInfo "Clean start requested. Removing previous state file."
+            if (Test-Path $StateFile) {
+                Remove-Item -Path $StateFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    else {
+        # With AutoResume, log context if previous run was interrupted
+        # (This happens when Invoke-AutoResumeLogic decided to proceed despite interruption)
+        if ($null -ne $previousState -and $previousState.status -eq "InProgress") {
+            Write-LogInfo "Resuming after interrupted run (ID: $($previousState.lastRunId)). Last step: $($previousState.lastStep)"
+        }
+        elseif ($null -ne $previousState -and $previousState.status -eq "Failed") {
+            Write-LogInfo "Retrying after failed run (ID: $($previousState.lastRunId))."
+        }
     }
 
     # Create new state
@@ -253,6 +310,77 @@ function Complete-StateFile {
         $currentState.lastExitCode = $ExitCode
         Write-StateFile -State $currentState
         Write-LogInfo "State finalized: $Status (Exit code: $ExitCode)"
+    }
+}
+
+function Invoke-AutoResumeLogic {
+    <#
+    .SYNOPSIS
+        Evaluates whether the script should proceed based on AutoResume and Force flags.
+    .DESCRIPTION
+        When AutoResume is enabled, this function checks the previous run state and determines
+        if the sync should run. Returns $true if sync should proceed, $false if it should skip.
+
+        Decision logic:
+        - If AutoResume not set: Always return $true (fresh run, handled by caller)
+        - If AutoResume set:
+          - No state file: Return $true (first run)
+          - Last status "Succeeded" + Force not set: Return $false (skip)
+          - Last status "Succeeded" + Force set: Return $true (forced run)
+          - Last status "Failed" or "InProgress": Return $true (resume/retry)
+    #>
+
+    # If AutoResume is not set, the caller will handle fresh run initialization
+    if (-not $AutoResume) {
+        Write-LogInfo "AutoResume not enabled. Proceeding with fresh run."
+        return $true
+    }
+
+    Write-LogInfo "AutoResume enabled. Checking previous run status..."
+
+    # Read previous state
+    $previousState = Read-StateFile
+
+    # No state file exists - treat as first run
+    if ($null -eq $previousState) {
+        Write-LogInfo "No previous state file found. Treating as first run."
+        return $true
+    }
+
+    $lastStatus = $previousState.status
+    $lastRunId = $previousState.lastRunId
+    $lastStartTime = $previousState.startTime
+
+    Write-LogInfo "Previous run status: $lastStatus (Run ID: $lastRunId, Started: $lastStartTime)"
+
+    # Decision tree based on last status
+    switch ($lastStatus) {
+        "Succeeded" {
+            if ($Force) {
+                Write-LogInfo "Previous run succeeded, but -Force flag is set. Proceeding with sync."
+                return $true
+            }
+            else {
+                Write-LogInfo "Previous run succeeded. No action required. Use -Force to override."
+                # Exit gracefully without running sync
+                return $false
+            }
+        }
+
+        "Failed" {
+            Write-LogInfo "Previous run failed. Proceeding with sync to retry."
+            return $true
+        }
+
+        "InProgress" {
+            Write-LogWarning "Previous run was interrupted (status: InProgress). Proceeding with sync to complete."
+            return $true
+        }
+
+        default {
+            Write-LogWarning "Unknown previous status '$lastStatus'. Proceeding with sync."
+            return $true
+        }
     }
 }
 
@@ -487,8 +615,19 @@ function Sync-Backups {
 try {
     Write-LogInfo "Starting Macrium backup sync script"
 
+    # Check auto-resume logic to determine if sync should run
+    $shouldProceed = Invoke-AutoResumeLogic
+
+    if (-not $shouldProceed) {
+        # Previous run succeeded and Force not set - exit gracefully
+        Write-LogInfo "Exiting without running sync. Previous run already succeeded."
+        exit 0
+    }
+
     # Initialize state tracking
-    $script:currentState = Initialize-StateFile
+    # Use CleanStart when AutoResume is NOT set (default behavior)
+    $cleanStart = -not $AutoResume
+    $script:currentState = Initialize-StateFile -CleanStart $cleanStart
 
     # Acquire instance lock to prevent concurrent runs
     $script:instanceMutex = New-ScriptMutex -TimeoutSeconds 120
