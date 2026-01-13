@@ -21,9 +21,20 @@
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 
 # Initialize logger with custom log directory at script root
-$scriptRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+# PSScriptRoot is at: Scripts\src\powershell\system
+# We need to go up 3 levels to reach Scripts root
+$scriptRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
 $logDir = Join-Path $scriptRoot "logs"
+
+# Create logs directory if it doesn't exist
+if (-not (Test-Path $logDir)) {
+    New-Item -Path $logDir -ItemType Directory -Force | Out-Null
+}
+
 Initialize-Logger -resolvedLogDir $logDir -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
+
+# Output log path for verification
+Write-Host "Logging to: $($Global:LogConfig.LogFilePath)" -ForegroundColor Cyan
 
 # Define the path to the directory
 $logDirectory = "D:\Program Files\PostgreSQL\17\data\log"
