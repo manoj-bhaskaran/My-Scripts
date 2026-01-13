@@ -38,7 +38,8 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Initialize logger for this module
-logger = plog.initialise_logger(__name__)
+# Use Path(__file__).name to get just the filename for proper log file naming
+logger = plog.initialise_logger(Path(__file__).name, log_dir=repo_root / "logs")
 
 # Dictionary mapping compiled regex patterns of file signatures (magic numbers) to file extensions.
 SIGNATURES = {

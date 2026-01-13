@@ -19,7 +19,8 @@ from requests.exceptions import Timeout, RequestException
 import python_logging_framework as plog
 
 # Initialize logger for this module
-logger = plog.initialise_logger(__name__)
+# Use Path(__file__).name to get just the filename for proper log file naming
+logger = plog.initialise_logger(Path(__file__).name, log_dir=repo_root / "logs")
 
 # Constants for retry logic
 max_retries = 60  # Total 5 minutes if delay is 5 seconds

@@ -32,7 +32,8 @@ from elevation import get_elevation
 import python_logging_framework as plog
 
 # Initialize logger for this module
-logger = plog.initialise_logger(__name__)
+# Use Path(__file__).name to get just the filename for proper log file naming
+logger = plog.initialise_logger(Path(__file__).name, log_dir=repo_root / "logs")
 
 
 def csv_to_gpx(input_csv: str | Path, output_gpx: str | Path) -> None:
