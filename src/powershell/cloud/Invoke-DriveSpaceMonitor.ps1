@@ -71,11 +71,13 @@ $pythonExe = $null
 
 # Check common Python locations in order of preference
 $pythonPaths = @(
-    # Virtual environment (if exists in common locations)
+    # Virtual environment in repository root (most common)
+    (Join-Path $scriptRoot "venv\Scripts\python.exe"),
     (Join-Path $scriptRoot ".venv\Scripts\python.exe"),
+    # Fallback: hardcoded common locations
     "D:\My Scripts\venv\Scripts\python.exe",
     "$env:USERPROFILE\Documents\Scripts\venv\Scripts\python.exe",
-    # System Python
+    # System Python (last resort)
     "python.exe",
     "python3.exe",
     # Windows Store Python
