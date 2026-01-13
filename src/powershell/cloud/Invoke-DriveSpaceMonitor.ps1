@@ -9,14 +9,17 @@
 .PARAMETER Threshold
     Storage usage threshold percentage (0-100). Default: 80
 
-.PARAMETER Debug
+.PARAMETER EnableDebug
     Enable debug logging in the Python script.
 
 .EXAMPLE
     .\Invoke-DriveSpaceMonitor.ps1 -Threshold 80
 
+.EXAMPLE
+    .\Invoke-DriveSpaceMonitor.ps1 -Threshold 80 -EnableDebug
+
 .NOTES
-    Version: 1.0.0
+    Version: 1.0.1
     Author: Manoj Bhaskaran
     Created: 2026-01-13
 
@@ -31,7 +34,7 @@ param(
     [int]$Threshold = 80,
 
     [Parameter()]
-    [switch]$Debug
+    [switch]$EnableDebug
 )
 
 # Determine script root (repository root)
@@ -120,7 +123,7 @@ $arguments = @(
     "--threshold", $Threshold
 )
 
-if ($Debug) {
+if ($EnableDebug) {
     $arguments += "--debug"
 }
 
