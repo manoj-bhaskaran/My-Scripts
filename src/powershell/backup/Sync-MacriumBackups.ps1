@@ -56,6 +56,11 @@
     - Rclone logs: Sync-MacriumBackups_rclone.log
     - Added log path output on script start for verification
 
+    ### Fixed
+    - Use rclone's --log-file parameter instead of PowerShell redirection
+    - Eliminates PowerShell stderr errors when rclone writes INFO messages
+    - Cleaner log output without RemoteException errors
+
     ## 2.0.0 - 2025-11-16
     ### Changed
     - Migrated to PowerShellLoggingFramework.psm1 for standardized logging
@@ -211,26 +216,24 @@ function Sync-Backups {
         "--delete-before",
         "--retries", "5",
         "--low-level-retries", "10",
-        "--timeout", "5m"
+        "--timeout", "5m",
+        "--log-level=INFO"
     )
 
     # Adjust logging based on mode
     if ($Interactive) {
         $rcloneArgs += "--progress"
-        $rcloneArgs += "--log-level=INFO"  # keep log messages for clarity
-    }
-    else {
-        $rcloneArgs += "--log-level=INFO"
-    }
-    Write-LogInfo "Starting sync with chunk size: $chunkSize"
-    if ($Interactive) {
         Write-LogInfo "Running rclone in interactive mode (output goes to console)"
-        & rclone @rcloneArgs
     }
     else {
-        Write-LogInfo "Running rclone in non-interactive mode (output redirected to log)"
-        & rclone @rcloneArgs *>> $LogFile
+        # Use rclone's --log-file to write directly to log (avoids PowerShell stderr issues)
+        $rcloneArgs += "--log-file=$LogFile"
+        Write-LogInfo "Running rclone in non-interactive mode (output logged to $LogFile)"
     }
+
+    Write-LogInfo "Starting sync with chunk size: $chunkSize"
+    & rclone @rcloneArgs
+
     if ($LASTEXITCODE -eq 0) {
         Write-LogInfo "Sync completed successfully"
     }
