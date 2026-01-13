@@ -15,7 +15,8 @@ import python_logging_framework as plog
 import networkx as nx
 
 # Initialize logger for this module
-logger = plog.initialise_logger(__name__)
+# Use __file__ instead of __name__ to ensure correct log file naming and path resolution
+logger = plog.initialise_logger(__file__, log_dir=repo_root / "logs")
 
 # Constants
 SEAT_NO_COL = "Seat No"

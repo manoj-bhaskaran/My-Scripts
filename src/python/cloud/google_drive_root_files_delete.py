@@ -47,7 +47,8 @@ import time
 import python_logging_framework as plog
 
 # Initialize logger for this module
-logger = plog.initialise_logger(__name__)
+# Use __file__ instead of __name__ to ensure correct log file naming and path resolution
+logger = plog.initialise_logger(__file__, log_dir=repo_root / "logs")
 
 MAX_THREADS = 4  # Maximum number of threads for parallel deletion
 
