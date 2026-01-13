@@ -20,8 +20,10 @@
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 
-# Initialize logger
-Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
+# Initialize logger with custom log directory at script root
+$scriptRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+$logDir = Join-Path $scriptRoot "logs"
+Initialize-Logger -resolvedLogDir $logDir -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 
 # Define the path to the directory
 $logDirectory = "D:\Program Files\PostgreSQL\17\data\log"
