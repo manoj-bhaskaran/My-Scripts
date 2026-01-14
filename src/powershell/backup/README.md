@@ -4,12 +4,18 @@ Scripts for automated database backups and synchronization.
 
 ## Scripts
 
+### Backup Scripts
 - **Backup-GnuCashDatabase.ps1** - PostgreSQL backup for GnuCash database (structured logging + object output)
 - **Backup-JobSchedulerDatabase.ps1** - Job scheduler database backup automation
 - **Backup-TimelineDatabase.ps1** - Timeline data database backup (structured logging + object output)
 - **Backup-PostgreSqlCommon.ps1** - Common PostgreSQL backup functions
-- **Sync-MacriumBackups.ps1** - Macrium backup synchronization between local and remote storage
+
+### Synchronization Scripts
+- **Sync-MacriumBackups.ps1** - Macrium backup synchronization between local and remote storage with auto-resume capability
 - **scripts/Sync-Directory.ps1** - File synchronization utility that emits capturable summaries for automation
+
+### Task Registration Scripts
+- **Register-SyncMacriumBackupsTask.ps1** - Automated Windows Task Scheduler registration for Sync-MacriumBackups startup execution
 
 ## Dependencies
 
@@ -23,7 +29,37 @@ Scripts for automated database backups and synchronization.
 
 ## Scheduling
 
-These scripts are configured to run automatically via Windows Task Scheduler. Task definitions are located in:
+These scripts are configured to run automatically via Windows Task Scheduler.
+
+### Automated Task Registration
+
+For **Sync-MacriumBackups.ps1**, use the automated registration script for quick setup:
+
+```powershell
+# Register task to run at startup (requires Administrator privileges)
+.\Register-SyncMacriumBackupsTask.ps1
+
+# Register task to run as SYSTEM account
+.\Register-SyncMacriumBackupsTask.ps1 -RunAsUser "SYSTEM"
+
+# Remove the scheduled task
+.\Register-SyncMacriumBackupsTask.ps1 -Remove
+
+# Use custom script path
+.\Register-SyncMacriumBackupsTask.ps1 -ScriptPath "C:\Custom\Path\Sync-MacriumBackups.ps1"
+```
+
+**Features of the registered task:**
+- Runs automatically at system startup and user logon
+- Executes with `-AutoResume` flag for intelligent restart behavior
+- Waits for network availability before starting
+- Automatically retries up to 3 times (every 15 minutes) on failure
+- Runs with highest privileges (Administrator)
+- Allows execution on battery power
+
+### Manual Task Definitions
+
+Pre-configured task XML definitions are located in:
 - `config/tasks/PostgreSQL Gnucash Backup.xml`
 - `config/tasks/PostgreSQL job_scheduler Backup.xml`
 - `config/tasks/PostgreSQL timeline_data Backup.xml`
