@@ -46,6 +46,9 @@ For **Sync-MacriumBackups.ps1**, use the automated registration script for quick
 # Register task in a custom Task Scheduler folder
 .\Register-SyncMacriumBackupsTask.ps1 -TaskPath "\Backup Tasks\"
 
+# Register task in a nested folder structure (auto-creates all levels)
+.\Register-SyncMacriumBackupsTask.ps1 -TaskPath "\Backups\Nightly\"
+
 # Register task in the root Task Scheduler Library
 .\Register-SyncMacriumBackupsTask.ps1 -TaskPath "\"
 

@@ -32,7 +32,7 @@
 .PARAMETER TaskPath
     The folder path in Task Scheduler where the task will be created. Must start and end with backslash.
     Default: "\My Scheduled Tasks\"
-    The folder will be created automatically if it doesn't exist.
+    The folder (including nested paths) will be created automatically if it doesn't exist.
 
 .EXAMPLE
     .\Register-SyncMacriumBackupsTask.ps1
@@ -60,15 +60,25 @@
     Creates or updates the scheduled task in a custom folder "Backup Tasks" in Task Scheduler.
 
 .EXAMPLE
+    .\Register-SyncMacriumBackupsTask.ps1 -TaskPath "\Backups\Nightly\"
+
+    Creates or updates the scheduled task in a nested folder path. Both "Backups" and "Nightly" folders will be created if they don't exist.
+
+.EXAMPLE
     .\Register-SyncMacriumBackupsTask.ps1 -TaskPath "\"
 
     Creates or updates the scheduled task in the root Task Scheduler Library folder.
 
 .NOTES
-    Version: 1.1.0
+    Version: 1.2.0
     Requires: PowerShell 5.1+ and Administrator privileges
 
     CHANGELOG
+    ## 1.2.0 - 2026-01-14
+    ### Fixed
+    - Nested folder path creation now works correctly by creating each segment sequentially
+    - Previously nested paths like "\Backups\Nightly\" would fail; now they're created level-by-level
+
     ## 1.1.0 - 2026-01-14
     ### Added
     - TaskPath parameter to specify Task Scheduler folder location (default: "\My Scheduled Tasks\")
@@ -163,16 +173,50 @@ Write-Host "[INFO] Run As User: $RunAsUser`n" -ForegroundColor Cyan
 try {
     # Ensure the task folder exists (create if it doesn't)
     if ($TaskPath -ne "\") {
-        $folderName = $TaskPath.Trim('\')
+        $folderPath = $TaskPath.Trim('\')
         try {
+            # Check if the full path already exists
             $folder = Get-ScheduledTask -TaskPath $TaskPath -ErrorAction SilentlyContinue | Select-Object -First 1
             if (-not $folder) {
                 Write-Host "[INFO] Creating Task Scheduler folder: $TaskPath" -ForegroundColor Yellow
+
+                # Initialize COM object
                 $scheduleService = New-Object -ComObject Schedule.Service
                 $scheduleService.Connect()
-                $rootFolder = $scheduleService.GetFolder("\")
-                $rootFolder.CreateFolder($folderName) | Out-Null
-                Write-Host "[SUCCESS] Folder created successfully." -ForegroundColor Green
+
+                # Split the path into segments and create each level
+                $segments = $folderPath -split '\\'
+                $currentFolder = $scheduleService.GetFolder("\")
+                $currentPath = ""
+
+                foreach ($segment in $segments) {
+                    if ([string]::IsNullOrWhiteSpace($segment)) {
+                        continue
+                    }
+
+                    $currentPath += "\$segment"
+
+                    # Try to get the folder; if it doesn't exist, create it
+                    try {
+                        $currentFolder = $scheduleService.GetFolder($currentPath)
+                        Write-Host "  [INFO] Folder exists: $currentPath" -ForegroundColor Gray
+                    }
+                    catch {
+                        # Folder doesn't exist, create it
+                        try {
+                            $parentPath = if ($currentPath.LastIndexOf('\') -eq 0) { "\" } else { $currentPath.Substring(0, $currentPath.LastIndexOf('\')) }
+                            $parentFolder = $scheduleService.GetFolder($parentPath)
+                            $parentFolder.CreateFolder($segment) | Out-Null
+                            $currentFolder = $scheduleService.GetFolder($currentPath)
+                            Write-Host "  [SUCCESS] Created folder: $currentPath" -ForegroundColor Green
+                        }
+                        catch {
+                            Write-Host "  [WARNING] Could not create folder segment '$segment': $_" -ForegroundColor Yellow
+                        }
+                    }
+                }
+
+                Write-Host "[SUCCESS] Task Scheduler folder structure ready: $TaskPath" -ForegroundColor Green
             }
             else {
                 Write-Host "[INFO] Task Scheduler folder already exists: $TaskPath" -ForegroundColor Gray
