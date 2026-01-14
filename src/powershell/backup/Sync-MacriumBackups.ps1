@@ -145,8 +145,9 @@ if (-not (Test-Path $logDir)) {
     New-Item -Path $logDir -ItemType Directory -Force | Out-Null
 }
 
-# Set LogFile path for rclone output redirection
-$LogFile = Join-Path $logDir "Sync-MacriumBackups_rclone.log"
+# Set LogFile path for rclone output redirection (include date for traceability)
+$dateStamp = (Get-Date).ToString("yyyy-MM-dd")
+$LogFile = Join-Path $logDir "Sync-MacriumBackups_rclone_$dateStamp.log"
 
 Initialize-Logger -resolvedLogDir $logDir -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 
@@ -238,6 +239,19 @@ function Initialize-StateFile {
     # Handle clean start (default behavior without AutoResume)
     if ($CleanStart) {
         if ($null -ne $previousState) {
+            # If previous run was interrupted, mark it as such before cleaning
+            if ($previousState.status -eq "InProgress") {
+                Write-LogWarning "Previous run was interrupted (possible reboot/crash)"
+                Write-LogInfo "Previous run details - Run ID: $($previousState.lastRunId), Started: $($previousState.startTime), Last step: $($previousState.lastStep)"
+
+                # Mark the previous state as Interrupted
+                $previousState.status = "Interrupted"
+                $previousState.endTime = (Get-Date).ToString("o")
+                $previousState.reason = "Previous run ended without completion (possible reboot/crash)"
+                Write-StateFile -State $previousState
+                Write-LogInfo "Previous state marked as Interrupted"
+            }
+
             Write-LogInfo "Clean start requested. Removing previous state file."
             if (Test-Path $StateFile) {
                 Remove-Item -Path $StateFile -Force -ErrorAction SilentlyContinue
@@ -248,7 +262,15 @@ function Initialize-StateFile {
         # With AutoResume, log context if previous run was interrupted
         # (This happens when Invoke-AutoResumeLogic decided to proceed despite interruption)
         if ($null -ne $previousState -and $previousState.status -eq "InProgress") {
-            Write-LogInfo "Resuming after interrupted run (ID: $($previousState.lastRunId)). Last step: $($previousState.lastStep)"
+            Write-LogWarning "Previous run was interrupted (possible reboot/crash)"
+            Write-LogInfo "Previous run details - Run ID: $($previousState.lastRunId), Started: $($previousState.startTime), Last step: $($previousState.lastStep)"
+
+            # Mark the previous state as Interrupted before proceeding
+            $previousState.status = "Interrupted"
+            $previousState.endTime = (Get-Date).ToString("o")
+            $previousState.reason = "Previous run ended without completion (possible reboot/crash)"
+            Write-StateFile -State $previousState
+            Write-LogInfo "Previous state marked as Interrupted"
         }
         elseif ($null -ne $previousState -and $previousState.status -eq "Failed") {
             Write-LogInfo "Retrying after failed run (ID: $($previousState.lastRunId))."
