@@ -1,0 +1,245 @@
+<#
+.SYNOPSIS
+    Registers or removes a Windows Scheduled Task for automatic Sync-MacriumBackups execution at startup.
+
+.DESCRIPTION
+    This script creates or updates a scheduled task named "Sync-MacriumBackups-Startup" that:
+    - Runs at system startup (primary trigger) and user logon (fallback trigger)
+    - Executes Sync-MacriumBackups.ps1 with -AutoResume flag for intelligent restart behavior
+    - Waits for network availability before starting
+    - Automatically retries up to 3 times (every 15 minutes) if the task fails
+    - Runs with highest privileges to ensure proper system access
+    - Uses PowerShell Core (pwsh) with bypass execution policy
+
+    The task is designed to be resilient and self-healing, leveraging the AutoResume
+    feature of Sync-MacriumBackups.ps1 to avoid redundant runs while ensuring
+    interrupted or failed syncs are automatically retried.
+
+.PARAMETER Remove
+    When specified, removes the scheduled task instead of creating/updating it.
+
+.PARAMETER TaskName
+    The name of the scheduled task to create or remove. Default: "Sync-MacriumBackups-Startup"
+
+.PARAMETER ScriptPath
+    The full path to Sync-MacriumBackups.ps1. If not specified, defaults to the script
+    located in the same directory as this registration script.
+
+.PARAMETER RunAsUser
+    The user account under which the task will run. Default: Current user ($env:USERNAME)
+    Use "SYSTEM" to run as Local System account (requires admin privileges).
+
+.EXAMPLE
+    .\Register-SyncMacriumBackupsTask.ps1
+
+    Creates or updates the scheduled task using default settings (current user, script in same directory).
+
+.EXAMPLE
+    .\Register-SyncMacriumBackupsTask.ps1 -RunAsUser "SYSTEM"
+
+    Creates or updates the scheduled task to run as Local System account.
+
+.EXAMPLE
+    .\Register-SyncMacriumBackupsTask.ps1 -Remove
+
+    Removes the scheduled task.
+
+.EXAMPLE
+    .\Register-SyncMacriumBackupsTask.ps1 -ScriptPath "C:\Scripts\Sync-MacriumBackups.ps1"
+
+    Creates or updates the scheduled task using a custom script path.
+
+.NOTES
+    Version: 1.0.0
+    Requires: PowerShell 5.1+ and Administrator privileges
+
+    CHANGELOG
+    ## 1.0.0 - 2026-01-14
+    ### Added
+    - Initial implementation with task creation and removal functionality
+    - Dual triggers: At startup (primary) and At logon (fallback)
+    - Network availability condition before task execution
+    - Automatic retry mechanism (15 minutes interval, up to 3 attempts)
+    - AutoResume flag integration for intelligent sync restart behavior
+    - Configurable task name, script path, and user account
+    - Detailed output showing task configuration and registration status
+#>
+
+[CmdletBinding(SupportsShouldProcess = $true)]
+param(
+    [Parameter(Mandatory = $false)]
+    [switch]$Remove,
+
+    [Parameter(Mandatory = $false)]
+    [string]$TaskName = "Sync-MacriumBackups-Startup",
+
+    [Parameter(Mandatory = $false)]
+    [string]$ScriptPath,
+
+    [Parameter(Mandatory = $false)]
+    [string]$RunAsUser = $env:USERNAME
+)
+
+#Requires -RunAsAdministrator
+
+# Determine script path if not provided
+if ([string]::IsNullOrWhiteSpace($ScriptPath)) {
+    $ScriptPath = Join-Path $PSScriptRoot "Sync-MacriumBackups.ps1"
+}
+
+# Validate script path exists
+if (-not (Test-Path $ScriptPath)) {
+    Write-Error "Sync-MacriumBackups.ps1 not found at: $ScriptPath"
+    Write-Error "Please specify the correct path using -ScriptPath parameter."
+    exit 1
+}
+
+# Get absolute path
+$ScriptPath = (Resolve-Path $ScriptPath).Path
+
+Write-Host "`n========================================" -ForegroundColor Cyan
+Write-Host "Sync-MacriumBackups Task Registration" -ForegroundColor Cyan
+Write-Host "========================================`n" -ForegroundColor Cyan
+
+# Handle removal
+if ($Remove) {
+    Write-Host "[INFO] Attempting to remove task: $TaskName" -ForegroundColor Yellow
+
+    try {
+        $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+
+        if ($null -ne $existingTask) {
+            Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Stop
+            Write-Host "[SUCCESS] Scheduled task '$TaskName' has been removed." -ForegroundColor Green
+        }
+        else {
+            Write-Host "[INFO] Task '$TaskName' does not exist. Nothing to remove." -ForegroundColor Yellow
+        }
+    }
+    catch {
+        Write-Error "Failed to remove scheduled task: $_"
+        exit 1
+    }
+
+    exit 0
+}
+
+# Task registration logic
+Write-Host "[INFO] Task Name: $TaskName" -ForegroundColor Cyan
+Write-Host "[INFO] Script Path: $ScriptPath" -ForegroundColor Cyan
+Write-Host "[INFO] Run As User: $RunAsUser`n" -ForegroundColor Cyan
+
+try {
+    # Check if task already exists
+    $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    $isUpdate = $null -ne $existingTask
+
+    if ($isUpdate) {
+        Write-Host "[INFO] Existing task found. Will update configuration." -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "[INFO] Creating new scheduled task." -ForegroundColor Yellow
+    }
+
+    # Define the action
+    $actionArgs = @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", "`"$ScriptPath`"",
+        "-AutoResume"
+    )
+    $actionArgString = $actionArgs -join " "
+
+    $action = New-ScheduledTaskAction `
+        -Execute "pwsh.exe" `
+        -Argument $actionArgString
+
+    Write-Host "`n[ACTION] Command to execute:" -ForegroundColor Cyan
+    Write-Host "  pwsh.exe $actionArgString" -ForegroundColor Gray
+
+    # Define triggers
+    # Trigger 1: At startup (primary)
+    $triggerStartup = New-ScheduledTaskTrigger -AtStartup
+
+    # Trigger 2: At logon (fallback)
+    $triggerLogon = New-ScheduledTaskTrigger -AtLogOn -User $RunAsUser
+
+    Write-Host "`n[TRIGGERS]" -ForegroundColor Cyan
+    Write-Host "  1. At system startup" -ForegroundColor Gray
+    Write-Host "  2. At user logon ($RunAsUser)" -ForegroundColor Gray
+
+    # Define settings
+    $settings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable `
+        -RunOnlyIfNetworkAvailable `
+        -RestartInterval (New-TimeSpan -Minutes 15) `
+        -RestartCount 3 `
+        -ExecutionTimeLimit (New-TimeSpan -Hours 4)
+
+    Write-Host "`n[SETTINGS]" -ForegroundColor Cyan
+    Write-Host "  - Network Required: Yes (waits for network before starting)" -ForegroundColor Gray
+    Write-Host "  - Allow on Battery: Yes" -ForegroundColor Gray
+    Write-Host "  - Retry on Failure: Yes (every 15 minutes, up to 3 times)" -ForegroundColor Gray
+    Write-Host "  - Execution Time Limit: 4 hours" -ForegroundColor Gray
+    Write-Host "  - Start When Available: Yes (runs if missed during offline)" -ForegroundColor Gray
+
+    # Define principal (user and privilege level)
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId $RunAsUser `
+        -LogonType Interactive `
+        -RunLevel Highest
+
+    Write-Host "`n[PRINCIPAL]" -ForegroundColor Cyan
+    Write-Host "  - User: $RunAsUser" -ForegroundColor Gray
+    Write-Host "  - Run Level: Highest (Administrator privileges)" -ForegroundColor Gray
+    Write-Host "  - Logon Type: Interactive" -ForegroundColor Gray
+
+    # Register or update the task
+    Write-Host "`n[REGISTRATION]" -ForegroundColor Cyan
+
+    $registerParams = @{
+        TaskName    = $TaskName
+        Action      = $action
+        Trigger     = @($triggerStartup, $triggerLogon)
+        Settings    = $settings
+        Principal   = $principal
+        Description = "Automatically runs Sync-MacriumBackups.ps1 at startup with AutoResume flag to sync Macrium Reflect backups to Google Drive. Includes network availability check and automatic retry on failure."
+        Force       = $true
+    }
+
+    $task = Register-ScheduledTask @registerParams -ErrorAction Stop
+
+    if ($isUpdate) {
+        Write-Host "[SUCCESS] Scheduled task '$TaskName' has been updated successfully." -ForegroundColor Green
+    }
+    else {
+        Write-Host "[SUCCESS] Scheduled task '$TaskName' has been created successfully." -ForegroundColor Green
+    }
+
+    # Display task summary
+    Write-Host "`n========================================" -ForegroundColor Cyan
+    Write-Host "Task Registration Summary" -ForegroundColor Cyan
+    Write-Host "========================================`n" -ForegroundColor Cyan
+
+    Write-Host "Task Name      : $TaskName" -ForegroundColor White
+    Write-Host "Status         : $($task.State)" -ForegroundColor White
+    Write-Host "Next Run Time  : $((Get-ScheduledTaskInfo -TaskName $TaskName).NextRunTime)" -ForegroundColor White
+    Write-Host "Script         : $ScriptPath" -ForegroundColor White
+    Write-Host "Run As         : $RunAsUser" -ForegroundColor White
+
+    Write-Host "`n[NEXT STEPS]" -ForegroundColor Cyan
+    Write-Host "  - The task will run automatically at next startup/logon" -ForegroundColor Gray
+    Write-Host "  - You can manually test it by running: Start-ScheduledTask -TaskName '$TaskName'" -ForegroundColor Gray
+    Write-Host "  - View task details in Task Scheduler (taskschd.msc) under Task Scheduler Library" -ForegroundColor Gray
+    Write-Host "  - To remove this task, run: .\Register-SyncMacriumBackupsTask.ps1 -Remove`n" -ForegroundColor Gray
+
+    Write-Host "[SUCCESS] Task registration completed successfully.`n" -ForegroundColor Green
+}
+catch {
+    Write-Host "`n[ERROR] Failed to register scheduled task:" -ForegroundColor Red
+    Write-Host "  $_" -ForegroundColor Red
+    Write-Host "`nPlease ensure you are running this script as Administrator.`n" -ForegroundColor Yellow
+    exit 1
+}
