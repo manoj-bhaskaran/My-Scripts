@@ -61,9 +61,27 @@
     Forces a sync run regardless of the previous run's status.
 
 .NOTES
-    Version: 2.4.0
+    Version: 2.5.0
 
     CHANGELOG
+    ## 2.5.0 - 2026-01-14
+    ### Added
+    - Post-run verification summary showing exit code and sync duration after rclone completes
+    - Sync duration tracking: captures syncStartTime and syncDurationSeconds in state file
+    - Format-Duration helper function for human-readable duration formatting (e.g., "5h 23m 15s")
+    - Startup sanity check: corrupt/unreadable state files are renamed with timestamp instead of deleted
+    - Corrupt state files preserved for debugging with .corrupt_TIMESTAMP suffix
+
+    ### Changed
+    - Complete-StateFile now accepts and persists SyncDurationSeconds parameter
+    - State structure includes syncStartTime and syncDurationSeconds fields
+    - Read-StateFile handles corrupt files gracefully by renaming them before continuing
+    - Enhanced state finalization logging includes formatted sync duration when available
+
+    ### Fixed
+    - Improved state consistency: all error paths guaranteed to update state to Failed before exit
+    - State file corruption no longer blocks script execution
+
     ## 2.4.0 - 2026-01-13
     ### Added
     - Auto-resume behavior with -AutoResume flag to intelligently restart sync based on previous run status
@@ -166,10 +184,37 @@ Add-Type -Namespace SleepControl -Name PowerMgmt -MemberDefinition @"
 
 #region State Management Functions
 
+function Format-Duration {
+    <#
+    .SYNOPSIS
+        Formats a duration in seconds to a human-readable string.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [double]$Seconds
+    )
+
+    $timeSpan = [TimeSpan]::FromSeconds($Seconds)
+
+    if ($timeSpan.TotalHours -ge 1) {
+        return "{0:N0}h {1:N0}m {2:N0}s" -f $timeSpan.Hours, $timeSpan.Minutes, $timeSpan.Seconds
+    }
+    elseif ($timeSpan.TotalMinutes -ge 1) {
+        return "{0:N0}m {1:N0}s" -f $timeSpan.Minutes, $timeSpan.Seconds
+    }
+    else {
+        return "{0:N2}s" -f $timeSpan.TotalSeconds
+    }
+}
+
 function Read-StateFile {
     <#
     .SYNOPSIS
         Reads the state file if it exists and returns the state object.
+    .DESCRIPTION
+        If the state file is corrupt or unreadable, it will be renamed with a timestamp
+        to preserve it for debugging, and the function will return null to allow the script
+        to continue with a fresh state.
     #>
     if (Test-Path $StateFile) {
         try {
@@ -177,7 +222,22 @@ function Read-StateFile {
             return ($stateJson | ConvertFrom-Json)
         }
         catch {
-            Write-LogWarning "Failed to read state file: $_"
+            # State file is corrupt - rename it with timestamp and continue safely
+            $timestamp = (Get-Date).ToString("yyyyMMdd_HHmmss")
+            $corruptFile = "$StateFile.corrupt_$timestamp"
+
+            Write-LogWarning "State file is corrupt or unreadable: $_"
+            Write-LogInfo "Renaming corrupt state file to: $corruptFile"
+
+            try {
+                Move-Item -Path $StateFile -Destination $corruptFile -Force -ErrorAction Stop
+                Write-LogInfo "Corrupt state file preserved for debugging. Continuing with fresh state."
+            }
+            catch {
+                Write-LogWarning "Failed to rename corrupt state file: $_. Attempting to delete it."
+                Remove-Item -Path $StateFile -Force -ErrorAction SilentlyContinue
+            }
+
             return $null
         }
     }
@@ -286,6 +346,8 @@ function Initialize-StateFile {
         endTime = $null
         lastExitCode = $null
         lastStep = "Initialize"
+        syncStartTime = $null
+        syncDurationSeconds = $null
     }
 
     Write-StateFile -State $newState
@@ -314,7 +376,7 @@ function Update-StateStep {
 function Complete-StateFile {
     <#
     .SYNOPSIS
-        Marks the state as completed (Succeeded or Failed) with end time and exit code.
+        Marks the state as completed (Succeeded or Failed) with end time, exit code, and sync duration.
     #>
     param(
         [Parameter(Mandatory = $true)]
@@ -322,7 +384,10 @@ function Complete-StateFile {
         [string]$Status,
 
         [Parameter(Mandatory = $false)]
-        [int]$ExitCode = 0
+        [int]$ExitCode = 0,
+
+        [Parameter(Mandatory = $false)]
+        [double]$SyncDurationSeconds = $null
     )
 
     $currentState = Read-StateFile
@@ -330,8 +395,21 @@ function Complete-StateFile {
         $currentState.status = $Status
         $currentState.endTime = (Get-Date).ToString("o")
         $currentState.lastExitCode = $ExitCode
+
+        if ($null -ne $SyncDurationSeconds) {
+            $currentState.syncDurationSeconds = [math]::Round($SyncDurationSeconds, 2)
+        }
+
         Write-StateFile -State $currentState
-        Write-LogInfo "State finalized: $Status (Exit code: $ExitCode)"
+
+        # Log finalization with duration if available
+        if ($null -ne $SyncDurationSeconds) {
+            $durationFormatted = Format-Duration -Seconds $SyncDurationSeconds
+            Write-LogInfo "State finalized: $Status (Exit code: $ExitCode, Sync duration: $durationFormatted)"
+        }
+        else {
+            Write-LogInfo "State finalized: $Status (Exit code: $ExitCode)"
+        }
     }
 }
 
@@ -620,16 +698,35 @@ function Sync-Backups {
     }
 
     Write-LogInfo "Starting sync with chunk size: $chunkSize"
-    & rclone @rcloneArgs
 
-    if ($LASTEXITCODE -eq 0) {
+    # Capture sync start time and persist to state
+    $syncStartTime = Get-Date
+    $currentState = Read-StateFile
+    if ($null -ne $currentState) {
+        $currentState.syncStartTime = $syncStartTime.ToString("o")
+        Write-StateFile -State $currentState
+    }
+
+    # Run rclone and capture duration
+    & rclone @rcloneArgs
+    $rcloneExitCode = $LASTEXITCODE
+    $syncEndTime = Get-Date
+    $syncDuration = ($syncEndTime - $syncStartTime).TotalSeconds
+
+    # Post-run verification summary
+    Write-LogInfo "=== Post-Run Verification Summary ==="
+    Write-LogInfo "Rclone exit code: $rcloneExitCode"
+    Write-LogInfo "Sync duration: $(Format-Duration -Seconds $syncDuration)"
+    Write-LogInfo "===================================="
+
+    if ($rcloneExitCode -eq 0) {
         Write-LogInfo "Sync completed successfully"
-        Complete-StateFile -Status "Succeeded" -ExitCode 0
+        Complete-StateFile -Status "Succeeded" -ExitCode $rcloneExitCode -SyncDurationSeconds $syncDuration
     }
     else {
-        Write-LogError "Sync failed with exit code $LASTEXITCODE"
-        Complete-StateFile -Status "Failed" -ExitCode $LASTEXITCODE
-        exit $LASTEXITCODE
+        Write-LogError "Sync failed with exit code $rcloneExitCode"
+        Complete-StateFile -Status "Failed" -ExitCode $rcloneExitCode -SyncDurationSeconds $syncDuration
+        exit $rcloneExitCode
     }
 }
 
