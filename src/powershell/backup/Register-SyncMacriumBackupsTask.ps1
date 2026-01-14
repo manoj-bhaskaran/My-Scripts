@@ -157,16 +157,29 @@ try {
     Write-Host "`n[ACTION] Command to execute:" -ForegroundColor Cyan
     Write-Host "  pwsh.exe $actionArgString" -ForegroundColor Gray
 
+    # Determine if RunAsUser is a service account
+    $serviceAccounts = @("SYSTEM", "LOCAL SERVICE", "NETWORK SERVICE", "NT AUTHORITY\SYSTEM", "NT AUTHORITY\LOCAL SERVICE", "NT AUTHORITY\NETWORK SERVICE")
+    $isServiceAccount = $serviceAccounts -contains $RunAsUser
+
     # Define triggers
-    # Trigger 1: At startup (primary)
+    # Trigger 1: At startup (primary - always included)
     $triggerStartup = New-ScheduledTaskTrigger -AtStartup
 
-    # Trigger 2: At logon (fallback)
-    $triggerLogon = New-ScheduledTaskTrigger -AtLogOn -User $RunAsUser
+    # Trigger 2: At logon (fallback - only for regular user accounts)
+    # Service accounts like SYSTEM don't have logon events, so we skip this trigger for them
+    $triggers = @($triggerStartup)
 
     Write-Host "`n[TRIGGERS]" -ForegroundColor Cyan
     Write-Host "  1. At system startup" -ForegroundColor Gray
-    Write-Host "  2. At user logon ($RunAsUser)" -ForegroundColor Gray
+
+    if (-not $isServiceAccount) {
+        $triggerLogon = New-ScheduledTaskTrigger -AtLogOn -User $RunAsUser
+        $triggers += $triggerLogon
+        Write-Host "  2. At user logon ($RunAsUser)" -ForegroundColor Gray
+    }
+    else {
+        Write-Host "  (Logon trigger omitted - service accounts don't have logon events)" -ForegroundColor Gray
+    }
 
     # Define settings
     $settings = New-ScheduledTaskSettingsSet `
@@ -186,15 +199,26 @@ try {
     Write-Host "  - Start When Available: Yes (runs if missed during offline)" -ForegroundColor Gray
 
     # Define principal (user and privilege level)
-    $principal = New-ScheduledTaskPrincipal `
-        -UserId $RunAsUser `
-        -LogonType Interactive `
-        -RunLevel Highest
+    # Service accounts require -LogonType ServiceAccount, regular users use Interactive
+    if ($isServiceAccount) {
+        $principal = New-ScheduledTaskPrincipal `
+            -UserId $RunAsUser `
+            -LogonType ServiceAccount `
+            -RunLevel Highest
+        $logonTypeDisplay = "ServiceAccount"
+    }
+    else {
+        $principal = New-ScheduledTaskPrincipal `
+            -UserId $RunAsUser `
+            -LogonType Interactive `
+            -RunLevel Highest
+        $logonTypeDisplay = "Interactive"
+    }
 
     Write-Host "`n[PRINCIPAL]" -ForegroundColor Cyan
     Write-Host "  - User: $RunAsUser" -ForegroundColor Gray
     Write-Host "  - Run Level: Highest (Administrator privileges)" -ForegroundColor Gray
-    Write-Host "  - Logon Type: Interactive" -ForegroundColor Gray
+    Write-Host "  - Logon Type: $logonTypeDisplay" -ForegroundColor Gray
 
     # Register or update the task
     Write-Host "`n[REGISTRATION]" -ForegroundColor Cyan
@@ -202,7 +226,7 @@ try {
     $registerParams = @{
         TaskName    = $TaskName
         Action      = $action
-        Trigger     = @($triggerStartup, $triggerLogon)
+        Trigger     = $triggers
         Settings    = $settings
         Principal   = $principal
         Description = "Automatically runs Sync-MacriumBackups.ps1 at startup with AutoResume flag to sync Macrium Reflect backups to Google Drive. Includes network availability check and automatic retry on failure."
@@ -230,7 +254,12 @@ try {
     Write-Host "Run As         : $RunAsUser" -ForegroundColor White
 
     Write-Host "`n[NEXT STEPS]" -ForegroundColor Cyan
-    Write-Host "  - The task will run automatically at next startup/logon" -ForegroundColor Gray
+    if ($isServiceAccount) {
+        Write-Host "  - The task will run automatically at next system startup" -ForegroundColor Gray
+    }
+    else {
+        Write-Host "  - The task will run automatically at next startup/logon" -ForegroundColor Gray
+    }
     Write-Host "  - You can manually test it by running: Start-ScheduledTask -TaskName '$TaskName'" -ForegroundColor Gray
     Write-Host "  - View task details in Task Scheduler (taskschd.msc) under Task Scheduler Library" -ForegroundColor Gray
     Write-Host "  - To remove this task, run: .\Register-SyncMacriumBackupsTask.ps1 -Remove`n" -ForegroundColor Gray
