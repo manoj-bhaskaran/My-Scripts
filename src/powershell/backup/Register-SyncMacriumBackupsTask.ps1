@@ -29,10 +29,15 @@
     The user account under which the task will run. Default: Current user ($env:USERNAME)
     Use "SYSTEM" to run as Local System account (requires admin privileges).
 
+.PARAMETER TaskPath
+    The folder path in Task Scheduler where the task will be created. Must start and end with backslash.
+    Default: "\My Scheduled Tasks\"
+    The folder (including nested paths) will be created automatically if it doesn't exist.
+
 .EXAMPLE
     .\Register-SyncMacriumBackupsTask.ps1
 
-    Creates or updates the scheduled task using default settings (current user, script in same directory).
+    Creates or updates the scheduled task using default settings (current user, script in same directory, in "My Scheduled Tasks" folder).
 
 .EXAMPLE
     .\Register-SyncMacriumBackupsTask.ps1 -RunAsUser "SYSTEM"
@@ -49,11 +54,41 @@
 
     Creates or updates the scheduled task using a custom script path.
 
+.EXAMPLE
+    .\Register-SyncMacriumBackupsTask.ps1 -TaskPath "\Backup Tasks\"
+
+    Creates or updates the scheduled task in a custom folder "Backup Tasks" in Task Scheduler.
+
+.EXAMPLE
+    .\Register-SyncMacriumBackupsTask.ps1 -TaskPath "\Backups\Nightly\"
+
+    Creates or updates the scheduled task in a nested folder path. Both "Backups" and "Nightly" folders will be created if they don't exist.
+
+.EXAMPLE
+    .\Register-SyncMacriumBackupsTask.ps1 -TaskPath "\"
+
+    Creates or updates the scheduled task in the root Task Scheduler Library folder.
+
 .NOTES
-    Version: 1.0.0
+    Version: 1.2.0
     Requires: PowerShell 5.1+ and Administrator privileges
 
     CHANGELOG
+    ## 1.2.0 - 2026-01-14
+    ### Fixed
+    - Nested folder path creation now works correctly by creating each segment sequentially
+    - Previously nested paths like "\Backups\Nightly\" would fail; now they're created level-by-level
+
+    ## 1.1.0 - 2026-01-14
+    ### Added
+    - TaskPath parameter to specify Task Scheduler folder location (default: "\My Scheduled Tasks\")
+    - Automatic folder creation if the specified TaskPath doesn't exist
+    - Folder path display in output messages
+
+    ### Fixed
+    - SYSTEM account logon type handling (now uses ServiceAccount logon type)
+    - Omit logon trigger for service accounts (SYSTEM, LOCAL SERVICE, NETWORK SERVICE)
+
     ## 1.0.0 - 2026-01-14
     ### Added
     - Initial implementation with task creation and removal functionality
@@ -77,7 +112,11 @@ param(
     [string]$ScriptPath,
 
     [Parameter(Mandatory = $false)]
-    [string]$RunAsUser = $env:USERNAME
+    [string]$RunAsUser = $env:USERNAME,
+
+    [Parameter(Mandatory = $false)]
+    [ValidatePattern('^\\.*\\$|^\\$')]
+    [string]$TaskPath = "\My Scheduled Tasks\"
 )
 
 #Requires -RunAsAdministrator
@@ -103,17 +142,17 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 
 # Handle removal
 if ($Remove) {
-    Write-Host "[INFO] Attempting to remove task: $TaskName" -ForegroundColor Yellow
+    Write-Host "[INFO] Attempting to remove task: $TaskPath$TaskName" -ForegroundColor Yellow
 
     try {
-        $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+        $existingTask = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction SilentlyContinue
 
         if ($null -ne $existingTask) {
-            Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Stop
-            Write-Host "[SUCCESS] Scheduled task '$TaskName' has been removed." -ForegroundColor Green
+            Unregister-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Confirm:$false -ErrorAction Stop
+            Write-Host "[SUCCESS] Scheduled task '$TaskPath$TaskName' has been removed." -ForegroundColor Green
         }
         else {
-            Write-Host "[INFO] Task '$TaskName' does not exist. Nothing to remove." -ForegroundColor Yellow
+            Write-Host "[INFO] Task '$TaskPath$TaskName' does not exist. Nothing to remove." -ForegroundColor Yellow
         }
     }
     catch {
@@ -126,12 +165,70 @@ if ($Remove) {
 
 # Task registration logic
 Write-Host "[INFO] Task Name: $TaskName" -ForegroundColor Cyan
+Write-Host "[INFO] Task Path: $TaskPath" -ForegroundColor Cyan
+Write-Host "[INFO] Full Task Path: $TaskPath$TaskName" -ForegroundColor Cyan
 Write-Host "[INFO] Script Path: $ScriptPath" -ForegroundColor Cyan
 Write-Host "[INFO] Run As User: $RunAsUser`n" -ForegroundColor Cyan
 
 try {
+    # Ensure the task folder exists (create if it doesn't)
+    if ($TaskPath -ne "\") {
+        $folderPath = $TaskPath.Trim('\')
+        try {
+            # Check if the full path already exists
+            $folder = Get-ScheduledTask -TaskPath $TaskPath -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $folder) {
+                Write-Host "[INFO] Creating Task Scheduler folder: $TaskPath" -ForegroundColor Yellow
+
+                # Initialize COM object
+                $scheduleService = New-Object -ComObject Schedule.Service
+                $scheduleService.Connect()
+
+                # Split the path into segments and create each level
+                $segments = $folderPath -split '\\'
+                $currentFolder = $scheduleService.GetFolder("\")
+                $currentPath = ""
+
+                foreach ($segment in $segments) {
+                    if ([string]::IsNullOrWhiteSpace($segment)) {
+                        continue
+                    }
+
+                    $currentPath += "\$segment"
+
+                    # Try to get the folder; if it doesn't exist, create it
+                    try {
+                        $currentFolder = $scheduleService.GetFolder($currentPath)
+                        Write-Host "  [INFO] Folder exists: $currentPath" -ForegroundColor Gray
+                    }
+                    catch {
+                        # Folder doesn't exist, create it
+                        try {
+                            $parentPath = if ($currentPath.LastIndexOf('\') -eq 0) { "\" } else { $currentPath.Substring(0, $currentPath.LastIndexOf('\')) }
+                            $parentFolder = $scheduleService.GetFolder($parentPath)
+                            $parentFolder.CreateFolder($segment) | Out-Null
+                            $currentFolder = $scheduleService.GetFolder($currentPath)
+                            Write-Host "  [SUCCESS] Created folder: $currentPath" -ForegroundColor Green
+                        }
+                        catch {
+                            Write-Host "  [WARNING] Could not create folder segment '$segment': $_" -ForegroundColor Yellow
+                        }
+                    }
+                }
+
+                Write-Host "[SUCCESS] Task Scheduler folder structure ready: $TaskPath" -ForegroundColor Green
+            }
+            else {
+                Write-Host "[INFO] Task Scheduler folder already exists: $TaskPath" -ForegroundColor Gray
+            }
+        }
+        catch {
+            Write-Host "[WARNING] Could not verify/create folder (may already exist): $_" -ForegroundColor Yellow
+        }
+    }
+
     # Check if task already exists
-    $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    $existingTask = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction SilentlyContinue
     $isUpdate = $null -ne $existingTask
 
     if ($isUpdate) {
@@ -225,6 +322,7 @@ try {
 
     $registerParams = @{
         TaskName    = $TaskName
+        TaskPath    = $TaskPath
         Action      = $action
         Trigger     = $triggers
         Settings    = $settings
@@ -236,10 +334,10 @@ try {
     $task = Register-ScheduledTask @registerParams -ErrorAction Stop
 
     if ($isUpdate) {
-        Write-Host "[SUCCESS] Scheduled task '$TaskName' has been updated successfully." -ForegroundColor Green
+        Write-Host "[SUCCESS] Scheduled task '$TaskPath$TaskName' has been updated successfully." -ForegroundColor Green
     }
     else {
-        Write-Host "[SUCCESS] Scheduled task '$TaskName' has been created successfully." -ForegroundColor Green
+        Write-Host "[SUCCESS] Scheduled task '$TaskPath$TaskName' has been created successfully." -ForegroundColor Green
     }
 
     # Display task summary
@@ -248,8 +346,10 @@ try {
     Write-Host "========================================`n" -ForegroundColor Cyan
 
     Write-Host "Task Name      : $TaskName" -ForegroundColor White
+    Write-Host "Task Path      : $TaskPath" -ForegroundColor White
+    Write-Host "Full Path      : $TaskPath$TaskName" -ForegroundColor White
     Write-Host "Status         : $($task.State)" -ForegroundColor White
-    Write-Host "Next Run Time  : $((Get-ScheduledTaskInfo -TaskName $TaskName).NextRunTime)" -ForegroundColor White
+    Write-Host "Next Run Time  : $((Get-ScheduledTaskInfo -TaskName $TaskName -TaskPath $TaskPath).NextRunTime)" -ForegroundColor White
     Write-Host "Script         : $ScriptPath" -ForegroundColor White
     Write-Host "Run As         : $RunAsUser" -ForegroundColor White
 
@@ -260,9 +360,18 @@ try {
     else {
         Write-Host "  - The task will run automatically at next startup/logon" -ForegroundColor Gray
     }
-    Write-Host "  - You can manually test it by running: Start-ScheduledTask -TaskName '$TaskName'" -ForegroundColor Gray
-    Write-Host "  - View task details in Task Scheduler (taskschd.msc) under Task Scheduler Library" -ForegroundColor Gray
-    Write-Host "  - To remove this task, run: .\Register-SyncMacriumBackupsTask.ps1 -Remove`n" -ForegroundColor Gray
+    Write-Host "  - You can manually test it by running: Start-ScheduledTask -TaskName '$TaskName' -TaskPath '$TaskPath'" -ForegroundColor Gray
+
+    $taskLocationDisplay = if ($TaskPath -eq "\") { "Task Scheduler Library (root)" } else { "Task Scheduler Library$TaskPath" }
+    Write-Host "  - View task details in Task Scheduler (taskschd.msc) under $taskLocationDisplay" -ForegroundColor Gray
+
+    if ($TaskPath -eq "\My Scheduled Tasks\") {
+        Write-Host "  - To remove this task, run: .\Register-SyncMacriumBackupsTask.ps1 -Remove" -ForegroundColor Gray
+    }
+    else {
+        Write-Host "  - To remove this task, run: .\Register-SyncMacriumBackupsTask.ps1 -Remove -TaskPath '$TaskPath'" -ForegroundColor Gray
+    }
+    Write-Host "" -ForegroundColor Gray
 
     Write-Host "[SUCCESS] Task registration completed successfully.`n" -ForegroundColor Green
 }

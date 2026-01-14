@@ -37,25 +37,40 @@ For **Sync-MacriumBackups.ps1**, use the automated registration script for quick
 
 ```powershell
 # Register task to run at startup (requires Administrator privileges)
+# By default, creates task in "\My Scheduled Tasks\" folder
 .\Register-SyncMacriumBackupsTask.ps1
 
 # Register task to run as SYSTEM account
 .\Register-SyncMacriumBackupsTask.ps1 -RunAsUser "SYSTEM"
 
+# Register task in a custom Task Scheduler folder
+.\Register-SyncMacriumBackupsTask.ps1 -TaskPath "\Backup Tasks\"
+
+# Register task in a nested folder structure (auto-creates all levels)
+.\Register-SyncMacriumBackupsTask.ps1 -TaskPath "\Backups\Nightly\"
+
+# Register task in the root Task Scheduler Library
+.\Register-SyncMacriumBackupsTask.ps1 -TaskPath "\"
+
 # Remove the scheduled task
 .\Register-SyncMacriumBackupsTask.ps1 -Remove
+
+# Remove task from custom folder
+.\Register-SyncMacriumBackupsTask.ps1 -Remove -TaskPath "\Backup Tasks\"
 
 # Use custom script path
 .\Register-SyncMacriumBackupsTask.ps1 -ScriptPath "C:\Custom\Path\Sync-MacriumBackups.ps1"
 ```
 
 **Features of the registered task:**
-- Runs automatically at system startup and user logon
+- Organized in custom Task Scheduler folder (default: "My Scheduled Tasks")
+- Runs automatically at system startup and user logon (service accounts: startup only)
 - Executes with `-AutoResume` flag for intelligent restart behavior
 - Waits for network availability before starting
 - Automatically retries up to 3 times (every 15 minutes) on failure
 - Runs with highest privileges (Administrator)
 - Allows execution on battery power
+- Supports both regular user accounts and service accounts (SYSTEM, LOCAL SERVICE, NETWORK SERVICE)
 
 ### Manual Task Definitions
 
