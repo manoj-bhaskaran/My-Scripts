@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Sync-MacriumBackups.ps1: Improved sanitized rclone command logging** (v2.6.3)
+  - Added single-line sanitized command output for easy copy/paste reproduction
+  - Logged multi-line arguments without a dangling backslash-only line
+
 - **Remove-MergedGitBranch.ps1: Dry-run safety and log file output** (v2.7.3)
   - Dry-run now avoids pruning remote-tracking branches to prevent accidental deletion prompts
   - `-LogFile` now routes logging output to the specified file path
