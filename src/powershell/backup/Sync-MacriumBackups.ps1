@@ -61,9 +61,14 @@
     Forces a sync run regardless of the previous run's status.
 
 .NOTES
-    Version: 2.6.1
+    Version: 2.6.2
 
     CHANGELOG
+    ## 2.6.2 - 2026-01-15
+    ### Fixed
+    - Enhanced rclone command logging to display each argument on a separate line for better debugging
+    - Ensures full command can be reconstructed even when rclone fails with syntax errors
+
     ## 2.6.1 - 2026-01-15
     ### Fixed
     - Allowed 4096 MB rclone chunk size when MaxChunkMB is set to the documented maximum
@@ -202,7 +207,7 @@ param(
 )
 
 # Script Version (extracted from .NOTES for programmatic access)
-$ScriptVersion = "2.6.1"
+$ScriptVersion = "2.6.2"
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
@@ -925,7 +930,18 @@ function Sync-Backups {
 
     $sanitizedArgs = Get-SanitizedRcloneArgs -Args $rcloneArgs
     $sanitizedCommandLine = Format-RcloneCommandLine -Args $sanitizedArgs
-    Write-LogInfo "Rclone command (sanitized): $sanitizedCommandLine"
+
+    # Log the full command line for debugging (especially important when rclone fails)
+    Write-LogInfo "Rclone command line (sanitized):"
+    Write-LogInfo "  rclone \"
+    foreach ($arg in $sanitizedArgs) {
+        if ($arg -match "\s") {
+            Write-LogInfo "    `"$arg`""
+        }
+        else {
+            Write-LogInfo "    $arg"
+        }
+    }
     Write-LogInfo "Starting sync with chunk size: $chunkSize"
 
     # Capture sync start time and persist to state
