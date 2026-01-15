@@ -61,9 +61,14 @@
     Forces a sync run regardless of the previous run's status.
 
 .NOTES
-    Version: 2.6.5
+    Version: 2.6.6
 
     CHANGELOG
+    ## 2.6.6 - 2026-01-15
+    ### Fixed
+    - Added missing 'reason' property to state object initialization to fix AutoResume functionality
+    - Resolved "property 'reason' cannot be found" error in Mark-InterruptedState function
+
     ## 2.6.5 - 2026-01-15
     ### Fixed
     - Aligned rclone log formatting with supported --log-format options (date,time,microseconds)
@@ -222,7 +227,7 @@ param(
 )
 
 # Script Version (extracted from .NOTES for programmatic access)
-$ScriptVersion = "2.6.5"
+$ScriptVersion = "2.6.6"
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
@@ -433,6 +438,7 @@ function Initialize-StateFile {
         lastStep = "Initialize"
         syncStartTime = $null
         syncDurationSeconds = $null
+        reason = $null
     }
 
     Write-StateFile -State $newState
