@@ -89,6 +89,6 @@ For `Sync-MacriumBackups.ps1`, the `-MaxChunkMB` parameter accepts 64-4096 MB an
 ## Logging and automation
 
 - All backup utilities use the PowerShell Logging Framework and write logs to the standard logs directory as defined in the logging specification.
-- `Sync-MacriumBackups.ps1` logs sanitized rclone command lines in single-line and multi-line formats for auditability and aligns rclone log timestamps with the framework log format.
+- `Sync-MacriumBackups.ps1` logs sanitized rclone command lines in single-line and multi-line formats for auditability and uses rclone log-format options `date,time,microseconds` for timestamp precision.
 - Backup launcher scripts emit structured `PSCustomObject` summaries via `Write-Output` so task schedulers and automation can capture results programmatically.
 - `scripts/Sync-Directory.ps1` returns a plan (counts + relative paths) when run with `-PreviewOnly` and a detailed action log after execution.
