@@ -675,10 +675,11 @@ function Test-Network {
     # Step 1: Get current SSID with proper validation
     $currentSSID = Get-CurrentSSID
 
+    # Treat null SSID as disconnected state - allow reconnection attempt
     if ($null -eq $currentSSID) {
-        Write-LogError "Unable to determine current SSID. Wi-Fi may not be connected or interface data is unavailable."
-        Complete-StateFile -Status "Failed" -ExitCode 1
-        exit 1
+        Write-LogInfo "Wi-Fi adapter is present but not connected. Will attempt to connect..."
+        # Set to empty string to trigger the "not connected" branch below
+        $currentSSID = ""
     }
 
     if ($currentSSID -eq $PreferredSSID) {
