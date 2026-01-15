@@ -155,12 +155,12 @@ param(
     # ===========================
     [Parameter(Mandatory=$false)]
     [ValidateNotNullOrEmpty()]
-    [ValidatePattern('^[a-zA-Z0-9\s_-]+$')]
+    [ValidatePattern('^[^"`$|;&<>\r\n\t]+$')]
     [string]$PreferredSSID = "ManojNew_5G",
 
     [Parameter(Mandatory=$false)]
     [ValidateNotNullOrEmpty()]
-    [ValidatePattern('^[a-zA-Z0-9\s_-]+$')]
+    [ValidatePattern('^[^"`$|;&<>\r\n\t]+$')]
     [string]$FallbackSSID = "ManojNew",
 
     # ===========================

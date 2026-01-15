@@ -8,7 +8,7 @@ This document summarizes the improvements made to the parameter block in `Sync-M
 ### 1. Security Enhancements
 
 #### SSID Parameter Validation
-Added `[ValidatePattern('^[a-zA-Z0-9\s_-]+$')]` to both SSID parameters:
+Added `[ValidatePattern('^[^"\`$|;&<>\r\n\t]+$')]` to both SSID parameters using a **blacklist approach**:
 - **PreferredSSID**
 - **FallbackSSID**
 
@@ -17,16 +17,32 @@ Added `[ValidatePattern('^[a-zA-Z0-9\s_-]+$')]` to both SSID parameters:
 - Blocks variable expansion attacks via dollar signs (`$`)
 - Prevents command chaining via pipes (`|`) and ampersands (`&`)
 - Blocks escape sequence injection via backticks (`` ` ``)
-- Prevents quote-based string breaking
-- Maintains support for legitimate SSID characters (alphanumeric, spaces, underscores, hyphens)
+- Prevents quote-based string breaking via double quotes (`"`)
+- Blocks redirection operators (`<`, `>`)
+- Prevents line-breaking attacks (newlines, carriage returns, tabs)
+- **Allows legitimate WiFi names with common punctuation** (periods, apostrophes, plus signs, parentheses, etc.)
+
+**Blacklist vs Whitelist Approach:**
+The pattern uses a **negative character class** to block only dangerous characters, rather than restricting to a limited whitelist. This ensures real-world WiFi names like "Joe's WiFi", "Home.Network", or "Guest (2.4GHz)" work correctly while still preventing command injection.
 
 **Example Blocked Inputs:**
 ```powershell
 # These will now fail at parameter validation:
--PreferredSSID "Test;whoami"              # Command injection
--PreferredSSID "Test`$ENV:PATH"           # Variable expansion
--PreferredSSID "Test|Get-Process"         # Command chaining
--PreferredSSID "Test&calc"                # Background execution
+-PreferredSSID "Test;whoami"              # Command injection via semicolon
+-PreferredSSID "Test`$ENV:PATH"           # Variable expansion via dollar sign
+-PreferredSSID "Test|Get-Process"         # Command chaining via pipe
+-PreferredSSID "Test&calc"                # Background execution via ampersand
+-PreferredSSID "Test`"break"              # String breaking via quote
+```
+
+**Example Allowed Inputs (legitimate WiFi names):**
+```powershell
+# These legitimate SSIDs are now allowed:
+-PreferredSSID "Joe's WiFi"               # Apostrophe
+-PreferredSSID "Home.Network"             # Period
+-PreferredSSID "WiFi-5G+"                 # Plus sign
+-PreferredSSID "Guest (2.4GHz)"           # Parentheses
+-PreferredSSID "Net@Home"                 # At sign
 ```
 
 #### MaxChunkMB Range Validation
@@ -142,12 +158,12 @@ param(
     # ===========================
     [Parameter(Mandatory=$false)]
     [ValidateNotNullOrEmpty()]
-    [ValidatePattern('^[a-zA-Z0-9\s_-]+$')]
+    [ValidatePattern('^[^"`$|;&<>\r\n\t]+$')]
     [string]$PreferredSSID = "ManojNew_5G",
 
     [Parameter(Mandatory=$false)]
     [ValidateNotNullOrEmpty()]
-    [ValidatePattern('^[a-zA-Z0-9\s_-]+$')]
+    [ValidatePattern('^[^"`$|;&<>\r\n\t]+$')]
     [string]$FallbackSSID = "ManojNew",
 
     # ===========================
@@ -202,8 +218,8 @@ param(
 |-----------|------|-----------|------------|---------------|
 | SourcePath | string | No | NotNullOrEmpty | "E:\Macrium Backups" |
 | RcloneRemote | string | No | NotNullOrEmpty | "gdrive:" |
-| PreferredSSID | string | No | NotNullOrEmpty + Pattern `^[a-zA-Z0-9\s_-]+$` | "ManojNew_5G" |
-| FallbackSSID | string | No | NotNullOrEmpty + Pattern `^[a-zA-Z0-9\s_-]+$` | "ManojNew" |
+| PreferredSSID | string | No | NotNullOrEmpty + Pattern `^[^"\`$|;&<>\r\n\t]+$` | "ManojNew_5G" |
+| FallbackSSID | string | No | NotNullOrEmpty + Pattern `^[^"\`$|;&<>\r\n\t]+$` | "ManojNew" |
 | MaxChunkMB | int | No | Range(64, 4096) | 2048 |
 | Interactive | switch | No | N/A | $false |
 | AutoResume | switch | No | N/A | $false |

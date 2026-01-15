@@ -37,7 +37,15 @@ This document outlines test cases for the improved parameter block validation in
 ```
 **Expected**: Parameters accepted, script proceeds
 
-#### Test 1.4: Valid MaxChunkMB Values
+#### Test 1.4: Valid SSID with Common Punctuation
+```powershell
+.\Sync-MacriumBackups.ps1 -PreferredSSID "Joe's WiFi" -FallbackSSID "Home.Network"
+.\Sync-MacriumBackups.ps1 -PreferredSSID "WiFi-5G+" -FallbackSSID "Guest (2.4GHz)"
+.\Sync-MacriumBackups.ps1 -PreferredSSID "Net@Home" -FallbackSSID "Café_WiFi"
+```
+**Expected**: All common punctuation (apostrophes, periods, plus, parentheses, at signs) should be accepted
+
+#### Test 1.5: Valid MaxChunkMB Values
 ```powershell
 .\Sync-MacriumBackups.ps1 -MaxChunkMB 64
 .\Sync-MacriumBackups.ps1 -MaxChunkMB 512
@@ -46,7 +54,7 @@ This document outlines test cases for the improved parameter block validation in
 ```
 **Expected**: All values within range [64-4096] should be accepted
 
-#### Test 1.5: Valid Paths
+#### Test 1.6: Valid Paths
 ```powershell
 .\Sync-MacriumBackups.ps1 -SourcePath "D:\Backups" -RcloneRemote "gdrive:Backup Folder"
 ```
@@ -158,30 +166,41 @@ This document outlines test cases for the improved parameter block validation in
 ### Expected Validation Error Format:
 ```
 ParameterBindingValidationException: Cannot validate argument on parameter 'PreferredSSID'.
-The argument "Test;whoami" does not match the "^[a-zA-Z0-9\s_-]+$" pattern.
-Supply an argument that matches "^[a-zA-Z0-9\s_-]+$" and try the command again.
+The argument "Test;whoami" does not match the "^[^"`$|;&<>\r\n\t]+$" pattern.
+Supply an argument that matches "^[^"`$|;&<>\r\n\t]+$" and try the command again.
 ```
 
 ## Security Improvements
 
 ### Command Injection Prevention
-The ValidatePattern attribute on SSID parameters prevents common command injection vectors:
-- Semicolons (`;`) - command separators
-- Pipes (`|`) - command chaining
-- Ampersands (`&`) - background execution
+The ValidatePattern attribute on SSID parameters uses a **blacklist approach** to block dangerous characters while allowing legitimate WiFi names:
+
+**Blocked Characters** (prevent command injection):
+- Double quotes (`"`) - string breaking
+- Backticks (`` ` ``) - PowerShell escape character
 - Dollar signs (`$`) - variable expansion
-- Backticks (`` ` ``) - escape characters
-- Quotes (`"`, `'`) - string breaking
+- Pipes (`|`) - command chaining
+- Semicolons (`;`) - command separators
+- Ampersands (`&`) - background execution/command chaining
+- Angle brackets (`<`, `>`) - redirection operators
+- Newlines/carriage returns (`\r`, `\n`) - command splitting
+- Tabs (`\t`) - parsing issues
 
 ### Allowed Characters
-The pattern `^[a-zA-Z0-9\s_-]+$` allows:
+The pattern `^[^"\`$|;&<>\r\n\t]+$` allows most printable characters including:
 - Letters (a-z, A-Z)
 - Numbers (0-9)
 - Spaces (for SSIDs like "My Network")
-- Underscores (`_`)
-- Hyphens (`-`)
+- Common punctuation: periods (`.`), apostrophes (`'`), hyphens (`-`), underscores (`_`)
+- Parentheses, plus signs, at signs, commas, and other common symbols
+- Any character that is NOT in the blocked list
 
-This covers the vast majority of legitimate WiFi SSID naming conventions while blocking malicious input.
+**This approach balances security with usability** - it blocks command injection vectors while supporting real-world WiFi naming conventions like:
+- "Joe's WiFi" (apostrophe)
+- "Home.Network" (period)
+- "WiFi-5G+" (plus sign)
+- "Guest (2.4GHz)" (parentheses)
+- "Net@Home" (at sign)
 
 ## Validation Rules Summary
 
@@ -189,8 +208,8 @@ This covers the vast majority of legitimate WiFi SSID naming conventions while b
 |-----------|------------------|---------------|
 | SourcePath | NotNullOrEmpty | Any valid path string |
 | RcloneRemote | NotNullOrEmpty | Any valid remote string |
-| PreferredSSID | NotNullOrEmpty + Pattern | `^[a-zA-Z0-9\s_-]+$` |
-| FallbackSSID | NotNullOrEmpty + Pattern | `^[a-zA-Z0-9\s_-]+$` |
+| PreferredSSID | NotNullOrEmpty + Pattern | `^[^"\`$|;&<>\r\n\t]+$` (blocks dangerous chars) |
+| FallbackSSID | NotNullOrEmpty + Pattern | `^[^"\`$|;&<>\r\n\t]+$` (blocks dangerous chars) |
 | MaxChunkMB | Range | 64 to 4096 MB |
 | Interactive | Switch (boolean) | N/A |
 | AutoResume | Switch (boolean) | N/A |
