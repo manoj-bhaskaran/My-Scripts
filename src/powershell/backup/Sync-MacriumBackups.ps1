@@ -61,9 +61,17 @@
     Forces a sync run regardless of the previous run's status.
 
 .NOTES
-    Version: 2.5.1
+    Version: 2.6.0
 
     CHANGELOG
+    ## 2.6.0 - 2026-01-15
+    ### Changed
+    - Refactored Initialize-StateFile to eliminate duplicated interrupted state handling logic
+    - Added Mark-InterruptedState helper function to consolidate state marking logic
+    - Extracted script version from .NOTES into dedicated $ScriptVersion variable for programmatic access
+    - Enhanced state file to include scriptVersion field for version tracking
+    - Improved logging to include script version at startup and state initialization
+
     ## 2.5.1 - 2026-01-15
     ### Added
     - Sanitized rclone command line logging for auditability
@@ -188,6 +196,9 @@ param(
     [Parameter(Mandatory=$false)]
     [switch]$Force
 )
+
+# Script Version (extracted from .NOTES for programmatic access)
+$ScriptVersion = "2.6.0"
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
@@ -319,6 +330,32 @@ function Write-StateFile {
     }
 }
 
+function Mark-InterruptedState {
+    <#
+    .SYNOPSIS
+        Helper function to mark a previous state as interrupted and persist it.
+    .DESCRIPTION
+        Centralizes the logic for marking an interrupted run, logging the details,
+        and writing the updated state to the state file.
+    .PARAMETER State
+        The state object to mark as interrupted.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$State
+    )
+
+    Write-LogWarning "Previous run was interrupted (possible reboot/crash)"
+    Write-LogInfo "Previous run details - Run ID: $($State.lastRunId), Started: $($State.startTime), Last step: $($State.lastStep)"
+
+    # Mark the state as Interrupted
+    $State.status = "Interrupted"
+    $State.endTime = (Get-Date).ToString("o")
+    $State.reason = "Previous run ended without completion (possible reboot/crash)"
+    Write-StateFile -State $State
+    Write-LogInfo "Previous state marked as Interrupted"
+}
+
 function Initialize-StateFile {
     <#
     .SYNOPSIS
@@ -339,22 +376,14 @@ function Initialize-StateFile {
     # Check previous state
     $previousState = Read-StateFile
 
+    # Handle interrupted state first (applies to both clean start and resume scenarios)
+    if ($null -ne $previousState -and $previousState.status -eq "InProgress") {
+        Mark-InterruptedState -State $previousState
+    }
+
     # Handle clean start (default behavior without AutoResume)
     if ($CleanStart) {
         if ($null -ne $previousState) {
-            # If previous run was interrupted, mark it as such before cleaning
-            if ($previousState.status -eq "InProgress") {
-                Write-LogWarning "Previous run was interrupted (possible reboot/crash)"
-                Write-LogInfo "Previous run details - Run ID: $($previousState.lastRunId), Started: $($previousState.startTime), Last step: $($previousState.lastStep)"
-
-                # Mark the previous state as Interrupted
-                $previousState.status = "Interrupted"
-                $previousState.endTime = (Get-Date).ToString("o")
-                $previousState.reason = "Previous run ended without completion (possible reboot/crash)"
-                Write-StateFile -State $previousState
-                Write-LogInfo "Previous state marked as Interrupted"
-            }
-
             Write-LogInfo "Clean start requested. Removing previous state file."
             if (Test-Path $StateFile) {
                 Remove-Item -Path $StateFile -Force -ErrorAction SilentlyContinue
@@ -362,20 +391,8 @@ function Initialize-StateFile {
         }
     }
     else {
-        # With AutoResume, log context if previous run was interrupted
-        # (This happens when Invoke-AutoResumeLogic decided to proceed despite interruption)
-        if ($null -ne $previousState -and $previousState.status -eq "InProgress") {
-            Write-LogWarning "Previous run was interrupted (possible reboot/crash)"
-            Write-LogInfo "Previous run details - Run ID: $($previousState.lastRunId), Started: $($previousState.startTime), Last step: $($previousState.lastStep)"
-
-            # Mark the previous state as Interrupted before proceeding
-            $previousState.status = "Interrupted"
-            $previousState.endTime = (Get-Date).ToString("o")
-            $previousState.reason = "Previous run ended without completion (possible reboot/crash)"
-            Write-StateFile -State $previousState
-            Write-LogInfo "Previous state marked as Interrupted"
-        }
-        elseif ($null -ne $previousState -and $previousState.status -eq "Failed") {
+        # With AutoResume, log context if retrying after failure
+        if ($null -ne $previousState -and $previousState.status -eq "Failed") {
             Write-LogInfo "Retrying after failed run (ID: $($previousState.lastRunId))."
         }
     }
@@ -384,6 +401,7 @@ function Initialize-StateFile {
     $newRunId = [guid]::NewGuid().ToString()
     $newState = @{
         lastRunId = $newRunId
+        scriptVersion = $ScriptVersion
         status = "InProgress"
         startTime = (Get-Date).ToString("o")
         endTime = $null
@@ -394,7 +412,7 @@ function Initialize-StateFile {
     }
 
     Write-StateFile -State $newState
-    Write-LogInfo "State tracking initialized. Run ID: $newRunId"
+    Write-LogInfo "State tracking initialized. Run ID: $newRunId, Script version: $ScriptVersion"
 
     return $newState
 }
@@ -939,7 +957,7 @@ function Sync-Backups {
 
 # Execution Flow
 try {
-    Write-LogInfo "Starting Macrium backup sync script"
+    Write-LogInfo "Starting Macrium backup sync script (version $ScriptVersion)"
 
     # Check auto-resume logic to determine if sync should run
     $shouldProceed = Invoke-AutoResumeLogic
