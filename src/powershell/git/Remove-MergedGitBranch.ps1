@@ -68,7 +68,7 @@ param (
     [string]$WorkingDirectory = "",
     [int]$KeepRecent = 10,
     [switch]$Silent,
-    [string]$LogFile = "C:\Users\manoj\Documents\Scripts\cleanup-git-branches.log"
+    [string]$LogFile = ""
 )
 
 # Import logging framework
@@ -76,6 +76,11 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 
 # Initialize logger
 Initialize-Logger -ScriptName "cleanup-git-branches" -LogLevel 20
+
+if (-not [string]::IsNullOrWhiteSpace($LogFile)) {
+    $expandedLogFile = [Environment]::ExpandEnvironmentVariables($LogFile)
+    $Global:LogConfig.LogFilePath = $expandedLogFile
+}
 
 if ($Silent) {
     $env:GIT_TERMINAL_PROMPT = "0"
@@ -104,17 +109,33 @@ if (-not (Test-Path ".git")) {
 try {
 
     # Fetch and prune stale remote tracking branches
-    Write-LogInfo "Fetching and pruning remote branches from '$RemoteName'..."
-    if ($Silent) {
-        try {
-            git fetch $RemoteName --prune --quiet 2>&1 | Out-Null
+    if ($DryRun) {
+        Write-LogInfo "Dry run: fetching remote branches from '$RemoteName' without pruning..."
+        if ($Silent) {
+            try {
+                git fetch $RemoteName --dry-run --quiet 2>&1 | Out-Null
+            }
+            catch {
+                Write-LogError "Fetch failed silently: $($_.Exception.Message)"
+            }
         }
-        catch {
-            Write-LogError "Fetch failed silently: $($_.Exception.Message)"
+        else {
+            git fetch $RemoteName --dry-run
         }
     }
     else {
-        git fetch $RemoteName --prune
+        Write-LogInfo "Fetching and pruning remote branches from '$RemoteName'..."
+        if ($Silent) {
+            try {
+                git fetch $RemoteName --prune --quiet 2>&1 | Out-Null
+            }
+            catch {
+                Write-LogError "Fetch failed silently: $($_.Exception.Message)"
+            }
+        }
+        else {
+            git fetch $RemoteName --prune
+        }
     }
 
     # Get the current branch
