@@ -690,7 +690,7 @@ function Test-Network {
         $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
         if ($availableNetworks -match $PreferredSSID) {
             Write-LogInfo "Switching from '$FallbackSSID' to preferred network '$PreferredSSID'"
-            netsh wlan connect name=$PreferredSSID
+            netsh wlan connect name="$PreferredSSID"
             Start-Sleep -Seconds 10
 
             $currentSSID = Get-CurrentSSID
@@ -716,11 +716,11 @@ function Test-Network {
         $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
         if ($availableNetworks -match $PreferredSSID) {
             Write-LogInfo "Connecting to preferred network '$PreferredSSID'"
-            netsh wlan connect name=$PreferredSSID
+            netsh wlan connect name="$PreferredSSID"
         }
         elseif ($availableNetworks -match $FallbackSSID) {
             Write-LogInfo "Connecting to fallback network '$FallbackSSID'"
-            netsh wlan connect name=$FallbackSSID
+            netsh wlan connect name="$FallbackSSID"
         }
         else {
             Write-LogError "Neither '$PreferredSSID' nor '$FallbackSSID' WiFi networks are available."
