@@ -37,7 +37,9 @@ The `Remove-MergedGitBranch.ps1` script helps maintain repository hygiene by:
 - Identifying branches that have been merged into main/master
 - Offering to delete local branches
 - Optionally removing corresponding remote branches
+- Supporting dry-run mode that avoids pruning remote-tracking branches
 
 ## Logging
 
-All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
+All scripts use the PowerShell Logging Framework and write logs to the standard logs directory. Use `-LogFile` on
+`Remove-MergedGitBranch.ps1` to direct logs to a specific file path.

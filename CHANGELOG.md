@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Remove-MergedGitBranch.ps1: Dry-run safety and log file output** (v2.7.3)
+  - Dry-run now avoids pruning remote-tracking branches to prevent accidental deletion prompts
+  - `-LogFile` now routes logging output to the specified file path
+
 - **Sync-MacriumBackups.ps1: MaxChunkMB 4096 honored** (v2.6.1)
   - Added 4096 MB to the allowed rclone chunk size options so the documented MaxChunkMB range is honored
   - Prevents 4096 MB inputs from silently capping to 2048 MB
