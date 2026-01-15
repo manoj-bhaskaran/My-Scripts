@@ -87,5 +87,6 @@ Database connection parameters are typically configured within each script or re
 ## Logging and automation
 
 - All backup utilities use the PowerShell Logging Framework and write logs to the standard logs directory as defined in the logging specification.
+- `Sync-MacriumBackups.ps1` logs the sanitized rclone command line for auditability and aligns rclone log timestamps with the framework log format.
 - Backup launcher scripts emit structured `PSCustomObject` summaries via `Write-Output` so task schedulers and automation can capture results programmatically.
 - `scripts/Sync-Directory.ps1` returns a plan (counts + relative paths) when run with `-PreviewOnly` and a detailed action log after execution.
