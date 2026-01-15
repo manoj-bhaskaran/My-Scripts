@@ -61,9 +61,13 @@
     Forces a sync run regardless of the previous run's status.
 
 .NOTES
-    Version: 2.6.0
+    Version: 2.6.1
 
     CHANGELOG
+    ## 2.6.1 - 2026-01-15
+    ### Fixed
+    - Allowed 4096 MB rclone chunk size when MaxChunkMB is set to the documented maximum
+
     ## 2.6.0 - 2026-01-15
     ### Changed
     - Refactored Initialize-StateFile to eliminate duplicated interrupted state handling logic
@@ -198,7 +202,7 @@ param(
 )
 
 # Script Version (extracted from .NOTES for programmatic access)
-$ScriptVersion = "2.6.0"
+$ScriptVersion = "2.6.1"
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
@@ -825,7 +829,7 @@ function Get-ChunkSize {
     $halfFreeMB = [math]::Floor($freeMB / 2)
 
     # Allowed rclone chunk sizes (in MB)
-    $allowedSizes = @(64, 128, 256, 512, 1024, 2048)
+    $allowedSizes = @(64, 128, 256, 512, 1024, 2048, 4096)
 
     # Select the largest allowable chunk size that fits within both thresholds
     $chunk = $allowedSizes | Where-Object { $_ -le $halfFreeMB -and $_ -le $MaxChunkMB } | Select-Object -Last 1

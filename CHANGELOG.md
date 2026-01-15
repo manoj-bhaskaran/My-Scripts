@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Sync-MacriumBackups.ps1: MaxChunkMB 4096 honored** (v2.6.1)
+  - Added 4096 MB to the allowed rclone chunk size options so the documented MaxChunkMB range is honored
+  - Prevents 4096 MB inputs from silently capping to 2048 MB
+
 - **FileDistributor.ps1: Console Feedback for Rebalancing Operations** (v4.4.1)
   - Added console output for early exit conditions in `-RebalanceToAverage`, `-ConsolidateToMinimum`, and `-RandomizeDistribution` modes
   - Users now see clear messages when operations are skipped due to:
