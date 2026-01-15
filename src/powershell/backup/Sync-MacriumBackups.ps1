@@ -61,9 +61,24 @@
     Forces a sync run regardless of the previous run's status.
 
 .NOTES
-    Version: 2.6.2
+    Version: 2.6.5
 
     CHANGELOG
+    ## 2.6.5 - 2026-01-15
+    ### Fixed
+    - Aligned rclone log formatting with supported --log-format options (date,time,microseconds)
+    - Removed unsupported log time format detection logic to match rclone documentation
+
+    ## 2.6.4 - 2026-01-15
+    ### Fixed
+    - Avoided unsupported rclone log date flags by detecting available options before adding them
+    - Ensured sanitized rclone command logging always includes arguments by avoiding $Args parameter collisions
+
+    ## 2.6.3 - 2026-01-15
+    ### Fixed
+    - Added single-line and multi-line sanitized rclone command output for easier reconstruction and debugging
+    - Avoided logging a dangling rclone backslash line without arguments
+
     ## 2.6.2 - 2026-01-15
     ### Fixed
     - Enhanced rclone command logging to display each argument on a separate line for better debugging
@@ -207,7 +222,7 @@ param(
 )
 
 # Script Version (extracted from .NOTES for programmatic access)
-$ScriptVersion = "2.6.2"
+$ScriptVersion = "2.6.5"
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
@@ -848,7 +863,7 @@ function Get-ChunkSize {
 }
 
 function Get-SanitizedRcloneArgs {
-    param([string[]]$Args)
+    param([string[]]$Arguments)
 
     $sensitiveFlags = @(
         "--password",
@@ -867,8 +882,8 @@ function Get-SanitizedRcloneArgs {
 
     $sanitized = New-Object System.Collections.Generic.List[string]
 
-    for ($i = 0; $i -lt $Args.Count; $i++) {
-        $arg = $Args[$i]
+    for ($i = 0; $i -lt $Arguments.Count; $i++) {
+        $arg = $Arguments[$i]
         $splitArg = $arg -split "=", 2
 
         if ($splitArg.Count -eq 2 -and $sensitiveFlags -contains $splitArg[0]) {
@@ -878,7 +893,7 @@ function Get-SanitizedRcloneArgs {
 
         if ($sensitiveFlags -contains $arg) {
             $sanitized.Add($arg)
-            if ($i + 1 -lt $Args.Count) {
+            if ($i + 1 -lt $Arguments.Count) {
                 $sanitized.Add("******")
                 $i++
             }
@@ -892,9 +907,9 @@ function Get-SanitizedRcloneArgs {
 }
 
 function Format-RcloneCommandLine {
-    param([string[]]$Args)
+    param([string[]]$Arguments)
 
-    $formattedArgs = $Args | ForEach-Object {
+    $formattedArgs = $Arguments | ForEach-Object {
         if ($_ -match "\s") { '"' + $_ + '"' } else { $_ }
     }
 
@@ -913,8 +928,7 @@ function Sync-Backups {
         "--low-level-retries", "10",
         "--timeout", "5m",
         "--log-level=INFO",
-        "--log-format", "date,time",
-        "--log-date-format", "2006-01-02 15:04:05.000"
+        "--log-format", "date,time,microseconds"
     )
 
     # Adjust logging based on mode
@@ -928,19 +942,17 @@ function Sync-Backups {
         Write-LogInfo "Running rclone in non-interactive mode (output logged to $LogFile)"
     }
 
-    $sanitizedArgs = Get-SanitizedRcloneArgs -Args $rcloneArgs
-    $sanitizedCommandLine = Format-RcloneCommandLine -Args $sanitizedArgs
+    $sanitizedArgs = Get-SanitizedRcloneArgs -Arguments $rcloneArgs
+    $sanitizedCommandLine = Format-RcloneCommandLine -Arguments $sanitizedArgs
 
     # Log the full command line for debugging (especially important when rclone fails)
-    Write-LogInfo "Rclone command line (sanitized):"
-    Write-LogInfo "  rclone \"
+    Write-LogInfo "Rclone command line (sanitized, single-line):"
+    Write-LogInfo "  $sanitizedCommandLine"
+    Write-LogInfo "Rclone command line (sanitized, multi-line):"
+    Write-LogInfo "  rclone"
     foreach ($arg in $sanitizedArgs) {
-        if ($arg -match "\s") {
-            Write-LogInfo "    `"$arg`""
-        }
-        else {
-            Write-LogInfo "    $arg"
-        }
+        $formattedArg = if ($arg -match "\s") { "`"$arg`"" } else { $arg }
+        Write-LogInfo "    $formattedArg"
     }
     Write-LogInfo "Starting sync with chunk size: $chunkSize"
 
