@@ -61,9 +61,15 @@
     Forces a sync run regardless of the previous run's status.
 
 .NOTES
-    Version: 2.5.0
+    Version: 2.5.1
 
     CHANGELOG
+    ## 2.5.1 - 2026-01-15
+    ### Added
+    - Sanitized rclone command line logging for auditability
+    - Framework log entries for framework, rclone, and state file paths
+    - Consistent rclone log timestamp formatting aligned with framework logs
+
     ## 2.5.0 - 2026-01-14
     ### Added
     - Post-run verification summary showing exit code and sync duration after rclone completes
@@ -210,6 +216,9 @@ $StateFile = Join-Path $logDir "Sync-MacriumBackups_state.json"
 Write-Host "Framework logs: $($Global:LogConfig.LogFilePath)" -ForegroundColor Cyan
 Write-Host "Rclone logs: $LogFile" -ForegroundColor Cyan
 Write-Host "State file: $StateFile" -ForegroundColor Cyan
+Write-LogInfo "Framework logs: $($Global:LogConfig.LogFilePath)"
+Write-LogInfo "Rclone logs: $LogFile"
+Write-LogInfo "State file: $StateFile"
 
 Add-Type -Namespace SleepControl -Name PowerMgmt -MemberDefinition @"
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -811,6 +820,60 @@ function Get-ChunkSize {
     return "$chunk" + "M"
 }
 
+function Get-SanitizedRcloneArgs {
+    param([string[]]$Args)
+
+    $sensitiveFlags = @(
+        "--password",
+        "--password-command",
+        "--pass",
+        "--token",
+        "--client-id",
+        "--client-secret",
+        "--account",
+        "--config",
+        "--crypt-password",
+        "--crypt-remote",
+        "--drive-client-secret",
+        "--drive-client-id"
+    )
+
+    $sanitized = New-Object System.Collections.Generic.List[string]
+
+    for ($i = 0; $i -lt $Args.Count; $i++) {
+        $arg = $Args[$i]
+        $splitArg = $arg -split "=", 2
+
+        if ($splitArg.Count -eq 2 -and $sensitiveFlags -contains $splitArg[0]) {
+            $sanitized.Add("$($splitArg[0])=******")
+            continue
+        }
+
+        if ($sensitiveFlags -contains $arg) {
+            $sanitized.Add($arg)
+            if ($i + 1 -lt $Args.Count) {
+                $sanitized.Add("******")
+                $i++
+            }
+            continue
+        }
+
+        $sanitized.Add($arg)
+    }
+
+    return $sanitized.ToArray()
+}
+
+function Format-RcloneCommandLine {
+    param([string[]]$Args)
+
+    $formattedArgs = $Args | ForEach-Object {
+        if ($_ -match "\s") { '"' + $_ + '"' } else { $_ }
+    }
+
+    return "rclone " + ($formattedArgs -join " ")
+}
+
 function Sync-Backups {
     Update-StateStep -StepName "Sync-Backups"
     $chunkSize = Get-ChunkSize
@@ -822,7 +885,9 @@ function Sync-Backups {
         "--retries", "5",
         "--low-level-retries", "10",
         "--timeout", "5m",
-        "--log-level=INFO"
+        "--log-level=INFO",
+        "--log-format", "date,time",
+        "--log-date-format", "2006-01-02 15:04:05.000"
     )
 
     # Adjust logging based on mode
@@ -836,6 +901,9 @@ function Sync-Backups {
         Write-LogInfo "Running rclone in non-interactive mode (output logged to $LogFile)"
     }
 
+    $sanitizedArgs = Get-SanitizedRcloneArgs -Args $rcloneArgs
+    $sanitizedCommandLine = Format-RcloneCommandLine -Args $sanitizedArgs
+    Write-LogInfo "Rclone command (sanitized): $sanitizedCommandLine"
     Write-LogInfo "Starting sync with chunk size: $chunkSize"
 
     # Capture sync start time and persist to state

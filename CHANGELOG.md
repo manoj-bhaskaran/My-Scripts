@@ -89,6 +89,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - State persistence across sessions
     - FIFO processing with peek support
     - Flexible item removal with filters
+- **Sync-MacriumBackups Logging Enhancements**
+  - Log the sanitized rclone command line for auditing
+  - Log framework, rclone, and state file paths to the framework log
+  - Align rclone log timestamp format with the logging framework for consistency
 
 ### Changed
 
