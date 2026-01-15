@@ -84,6 +84,8 @@ Pre-configured task XML definitions are located in:
 
 Database connection parameters are typically configured within each script or read from environment variables. Check individual scripts for specific configuration requirements.
 
+For `Sync-MacriumBackups.ps1`, the `-MaxChunkMB` parameter accepts 64-4096 MB and the script selects the largest supported rclone chunk size at or below your limit and available memory.
+
 ## Logging and automation
 
 - All backup utilities use the PowerShell Logging Framework and write logs to the standard logs directory as defined in the logging specification.
