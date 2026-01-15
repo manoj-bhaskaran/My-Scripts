@@ -582,13 +582,105 @@ function Test-Rclone {
     Write-LogInfo "Validated Google Drive remote `"$RcloneRemote`""
 }
 
+function Test-WifiAdapter {
+    <#
+    .SYNOPSIS
+    Validates that a Wi-Fi adapter/interface is present and enabled.
+
+    .DESCRIPTION
+    Checks for the presence of a Wi-Fi adapter by querying network interfaces.
+    Returns $true if a valid Wi-Fi adapter is found, $false otherwise.
+    #>
+
+    try {
+        $wlanInterfaces = netsh wlan show interfaces 2>&1
+
+        # Check if the command succeeded and returned interface data
+        if ($LASTEXITCODE -ne 0) {
+            Write-LogError "Wi-Fi adapter query failed. WLAN AutoConfig service may not be running."
+            return $false
+        }
+
+        # Check if output contains interface information
+        $interfaceOutput = $wlanInterfaces -join "`n"
+        if ([string]::IsNullOrWhiteSpace($interfaceOutput) -or $interfaceOutput -match "There is no wireless interface") {
+            Write-LogError "No Wi-Fi adapter detected. Please ensure Wi-Fi hardware is enabled."
+            return $false
+        }
+
+        return $true
+    }
+    catch {
+        Write-LogError "Failed to check Wi-Fi adapter: $_"
+        return $false
+    }
+}
+
+function Get-CurrentSSID {
+    <#
+    .SYNOPSIS
+    Safely retrieves the current Wi-Fi SSID with proper validation.
+
+    .DESCRIPTION
+    Parses netsh output to extract the SSID, using anchored regex to avoid
+    matching BSSID or other fields. Returns the SSID string or $null if not found.
+    #>
+
+    try {
+        $wlanOutput = netsh wlan show interfaces 2>&1
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-LogError "Failed to query Wi-Fi interfaces."
+            return $null
+        }
+
+        # Use anchored regex to match only the SSID line, not BSSID
+        # Pattern: start of line (^), optional whitespace (\s*), literal "SSID", optional whitespace, colon
+        # This ensures we don't match "BSSID" which contains "SSID"
+        $ssidLine = $wlanOutput | Where-Object { $_ -match '^\s*SSID\s*:' } | Select-Object -First 1
+
+        if (-not $ssidLine) {
+            Write-LogError "Could not find SSID in netsh output. Wi-Fi may not be connected."
+            return $null
+        }
+
+        # Extract the SSID value after the colon
+        $ssid = ($ssidLine -split ':', 2)[1].Trim()
+
+        if ([string]::IsNullOrWhiteSpace($ssid)) {
+            Write-LogError "Parsed SSID is empty. Wi-Fi may not be connected to a network."
+            return $null
+        }
+
+        return $ssid
+    }
+    catch {
+        Write-LogError "Failed to parse SSID: $_"
+        return $null
+    }
+}
+
 function Test-Network {
     Update-StateStep -StepName "Test-Network"
     # Use Google's public DNS for internet connectivity test
     $connectivityTestTarget = "8.8.8.8"
 
-    # Step 1: Get current SSID
-    $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
+    # Step 0: Pre-check Wi-Fi adapter presence
+    if (-not (Test-WifiAdapter)) {
+        Write-LogError "Wi-Fi adapter validation failed. Cannot proceed with network connectivity test."
+        Complete-StateFile -Status "Failed" -ExitCode 1
+        exit 1
+    }
+
+    # Step 1: Get current SSID with proper validation
+    $currentSSID = Get-CurrentSSID
+
+    # Treat null SSID as disconnected state - allow reconnection attempt
+    if ($null -eq $currentSSID) {
+        Write-LogInfo "Wi-Fi adapter is present but not connected. Will attempt to connect..."
+        # Set to empty string to trigger the "not connected" branch below
+        $currentSSID = ""
+    }
 
     if ($currentSSID -eq $PreferredSSID) {
         Write-LogInfo "Connected to preferred network '$PreferredSSID'"
@@ -600,7 +692,13 @@ function Test-Network {
             Write-LogInfo "Switching from '$FallbackSSID' to preferred network '$PreferredSSID'"
             netsh wlan connect name=$PreferredSSID
             Start-Sleep -Seconds 10
-            $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
+
+            $currentSSID = Get-CurrentSSID
+            if ($null -eq $currentSSID) {
+                Write-LogWarning "Unable to verify SSID after connection attempt. Assuming connection failed."
+                $currentSSID = $FallbackSSID
+            }
+
             if ($currentSSID -eq $PreferredSSID) {
                 Write-LogInfo "Switched successfully to '$PreferredSSID'"
             }
@@ -631,9 +729,16 @@ function Test-Network {
         }
 
         Start-Sleep -Seconds 10
-        $currentSSID = (netsh wlan show interfaces | Select-String "SSID" | Select-Object -First 1).ToString().Split(':')[1].Trim()
+
+        $currentSSID = Get-CurrentSSID
+        if ($null -eq $currentSSID) {
+            Write-LogError "Unable to verify SSID after connection attempt. Connection likely failed."
+            Complete-StateFile -Status "Failed" -ExitCode 1
+            exit 1
+        }
+
         if ($currentSSID -ne $PreferredSSID -and $currentSSID -ne $FallbackSSID) {
-            Write-LogError "Failed to connect to preferred or fallback WiFi networks."
+            Write-LogError "Failed to connect to preferred or fallback WiFi networks. Connected to: '$currentSSID'"
             Complete-StateFile -Status "Failed" -ExitCode 1
             exit 1
         }
