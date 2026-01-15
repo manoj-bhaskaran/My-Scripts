@@ -139,13 +139,47 @@
     - Replaced Write-Log calls with Write-LogInfo, Write-LogError, Write-LogWarning
 #>
 param(
+    # ===========================
+    # Path Parameters
+    # ===========================
+    [Parameter(Mandatory=$false)]
+    [ValidateNotNullOrEmpty()]
     [string]$SourcePath = "E:\Macrium Backups",
+
+    [Parameter(Mandatory=$false)]
+    [ValidateNotNullOrEmpty()]
     [string]$RcloneRemote = "gdrive:",
-    [int]$MaxChunkMB = 2048,
+
+    # ===========================
+    # Network Parameters
+    # ===========================
+    [Parameter(Mandatory=$false)]
+    [ValidateNotNullOrEmpty()]
+    [ValidatePattern('^[^"`$|;&<>\r\n\t]+$')]
     [string]$PreferredSSID = "ManojNew_5G",
+
+    [Parameter(Mandatory=$false)]
+    [ValidateNotNullOrEmpty()]
+    [ValidatePattern('^[^"`$|;&<>\r\n\t]+$')]
     [string]$FallbackSSID = "ManojNew",
+
+    # ===========================
+    # Rclone Configuration
+    # ===========================
+    [Parameter(Mandatory=$false)]
+    [ValidateRange(64, 4096)]
+    [int]$MaxChunkMB = 2048,
+
+    # ===========================
+    # Execution Control
+    # ===========================
+    [Parameter(Mandatory=$false)]
     [switch]$Interactive,
+
+    [Parameter(Mandatory=$false)]
     [switch]$AutoResume,
+
+    [Parameter(Mandatory=$false)]
     [switch]$Force
 )
 
