@@ -185,23 +185,23 @@ param(
     # ===========================
     # Path Parameters
     # ===========================
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
     [string]$SourcePath = "E:\Macrium Backups",
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
     [string]$RcloneRemote = "gdrive:",
 
     # ===========================
     # Network Parameters
     # ===========================
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
     [ValidatePattern('^[^"`$|;&<>\r\n\t]+$')]
     [string]$PreferredSSID = "ManojNew_5G",
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
     [ValidatePattern('^[^"`$|;&<>\r\n\t]+$')]
     [string]$FallbackSSID = "ManojNew",
@@ -209,20 +209,20 @@ param(
     # ===========================
     # Rclone Configuration
     # ===========================
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [ValidateRange(64, 4096)]
     [int]$MaxChunkMB = 2048,
 
     # ===========================
     # Execution Control
     # ===========================
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$Interactive,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$AutoResume,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [switch]$Force
 )
 
@@ -429,16 +429,16 @@ function Initialize-StateFile {
     # Create new state
     $newRunId = [guid]::NewGuid().ToString()
     $newState = @{
-        lastRunId = $newRunId
-        scriptVersion = $ScriptVersion
-        status = "InProgress"
-        startTime = (Get-Date).ToString("o")
-        endTime = $null
-        lastExitCode = $null
-        lastStep = "Initialize"
-        syncStartTime = $null
+        lastRunId           = $newRunId
+        scriptVersion       = $ScriptVersion
+        status              = "InProgress"
+        startTime           = (Get-Date).ToString("o")
+        endTime             = $null
+        lastExitCode        = $null
+        lastStep            = "Initialize"
+        syncStartTime       = $null
         syncDurationSeconds = $null
-        reason = $null
+        reason              = $null
     }
 
     Write-StateFile -State $newState

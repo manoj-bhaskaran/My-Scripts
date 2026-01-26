@@ -742,7 +742,7 @@ function Invoke-WithRetry {
 
             # Check if this is a "file not found" error - handle gracefully without crashing
             $isFileNotFound = ($err -match "Cannot find path" -and $err -match "does not exist") -or
-                              ($_.Exception -is [System.Management.Automation.ItemNotFoundException])
+            ($_.Exception -is [System.Management.Automation.ItemNotFoundException])
 
             if ($isFileNotFound) {
                 # File doesn't exist - log as warning and skip this file instead of crashing
@@ -2280,11 +2280,11 @@ function ConvertFrom-FileQueue {
     while ($Queue.Items.Count -gt 0) {
         $item = $Queue.Items.Dequeue()
         $queueArray += [pscustomobject]@{
-            Path = $item.SourcePath
-            Size = $item.Size
+            Path             = $item.SourcePath
+            Size             = $item.Size
             LastWriteTimeUtc = $item.LastWriteTimeUtc
-            QueuedAtUtc = $item.QueuedAtUtc
-            SessionId = $item.SessionId
+            QueuedAtUtc      = $item.QueuedAtUtc
+            SessionId        = $item.SessionId
         }
         $tempQueue.Enqueue($item)
     }
@@ -2864,15 +2864,15 @@ function Main {
                         else {
                             # Add with existing metadata
                             $FilesToDelete.Items.Enqueue([pscustomobject]@{
-                                SourcePath = $e.Path
-                                TargetPath = $null
-                                Size = $e.Size
-                                LastWriteTimeUtc = $e.LastWriteTimeUtc
-                                QueuedAtUtc = if ($e.PSObject.Properties.Name -contains 'QueuedAtUtc') { $e.QueuedAtUtc } else { (Get-Date).ToUniversalTime() }
-                                SessionId = if ($e.PSObject.Properties.Name -contains 'SessionId') { $e.SessionId } else { $script:SessionId }
-                                Attempts = 0
-                                Metadata = @{}
-                            })
+                                    SourcePath       = $e.Path
+                                    TargetPath       = $null
+                                    Size             = $e.Size
+                                    LastWriteTimeUtc = $e.LastWriteTimeUtc
+                                    QueuedAtUtc      = if ($e.PSObject.Properties.Name -contains 'QueuedAtUtc') { $e.QueuedAtUtc } else { (Get-Date).ToUniversalTime() }
+                                    SessionId        = if ($e.PSObject.Properties.Name -contains 'SessionId') { $e.SessionId } else { $script:SessionId }
+                                    Attempts         = 0
+                                    Metadata         = @{}
+                                })
                         }
                         $restoredCount++
                     }

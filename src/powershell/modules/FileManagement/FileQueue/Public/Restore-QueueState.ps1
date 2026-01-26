@@ -82,34 +82,34 @@ function Restore-QueueState {
                 try {
                     # Normalize item to ensure all expected properties exist
                     $normalizedItem = [PSCustomObject]@{
-                        SourcePath = $item.SourcePath
-                        TargetPath = $item.TargetPath
-                        Size = $item.Size
+                        SourcePath       = $item.SourcePath
+                        TargetPath       = $item.TargetPath
+                        Size             = $item.Size
                         LastWriteTimeUtc = if ($item.PSObject.Properties.Name -contains 'LastWriteTimeUtc') {
                             $item.LastWriteTimeUtc
                         }
                         else {
                             $null
                         }
-                        QueuedAtUtc = if ($item.PSObject.Properties.Name -contains 'QueuedAtUtc') {
+                        QueuedAtUtc      = if ($item.PSObject.Properties.Name -contains 'QueuedAtUtc') {
                             $item.QueuedAtUtc
                         }
                         else {
                             (Get-Date).ToUniversalTime()
                         }
-                        SessionId = if ($item.PSObject.Properties.Name -contains 'SessionId') {
+                        SessionId        = if ($item.PSObject.Properties.Name -contains 'SessionId') {
                             $item.SessionId
                         }
                         else {
                             $Queue.SessionId
                         }
-                        Attempts = if ($item.PSObject.Properties.Name -contains 'Attempts') {
+                        Attempts         = if ($item.PSObject.Properties.Name -contains 'Attempts') {
                             $item.Attempts
                         }
                         else {
                             0
                         }
-                        Metadata = if ($item.PSObject.Properties.Name -contains 'Metadata') {
+                        Metadata         = if ($item.PSObject.Properties.Name -contains 'Metadata') {
                             $item.Metadata
                         }
                         else {

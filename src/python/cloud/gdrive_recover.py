@@ -1517,7 +1517,7 @@ class DriveTrashRecoveryTool:
             self._print_single_operation_privilege(operation, result)
 
     def _print_single_operation_privilege(self, operation: str, result: Dict[str, Any]):
-        status_symbol = {"pass": "✓", "fail": "❌"}.get(result["status"], "?")
+        status_symbol = {"pass": "✓", "fail": "❌"}.get(result["status"], "?")  # nosec B105
         print(f"  {operation.title()}: {status_symbol} {result['status'].upper()}")
         if result["error"]:
             print(f"    Error: {result['error']}")

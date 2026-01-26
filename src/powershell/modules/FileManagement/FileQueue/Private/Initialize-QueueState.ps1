@@ -43,13 +43,13 @@ function Initialize-QueueState {
     process {
         try {
             $state = [PSCustomObject]@{
-                Name = $Queue.Name
-                SessionId = $Queue.SessionId
-                Created = $Queue.Created
-                Processed = $Queue.Processed
-                Failed = $Queue.Failed
-                MaxSize = $Queue.MaxSize
-                ItemCount = $Queue.Items.Count
+                Name            = $Queue.Name
+                SessionId       = $Queue.SessionId
+                Created         = $Queue.Created
+                Processed       = $Queue.Processed
+                Failed          = $Queue.Failed
+                MaxSize         = $Queue.MaxSize
+                ItemCount       = $Queue.Items.Count
                 LastStateUpdate = (Get-Date).ToUniversalTime()
             }
 

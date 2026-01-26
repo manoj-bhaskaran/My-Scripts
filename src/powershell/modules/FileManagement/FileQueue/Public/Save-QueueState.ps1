@@ -108,15 +108,15 @@ function Save-QueueState {
 
             # Create state object
             $state = [PSCustomObject]@{
-                Name = $Queue.Name
+                Name      = $Queue.Name
                 SessionId = $Queue.SessionId
-                Created = $Queue.Created
+                Created   = $Queue.Created
                 Processed = $Queue.Processed
-                Failed = $Queue.Failed
-                MaxSize = $Queue.MaxSize
+                Failed    = $Queue.Failed
+                MaxSize   = $Queue.MaxSize
                 ItemCount = $itemsArray.Count
-                SavedAt = (Get-Date).ToUniversalTime()
-                Items = $itemsArray
+                SavedAt   = (Get-Date).ToUniversalTime()
+                Items     = $itemsArray
             }
 
             # Serialize to JSON

@@ -90,7 +90,7 @@ Describe "FileQueue Module" {
             $file = "TestDrive:\test.txt"
             "content" | Out-File -FilePath $file
 
-            $metadata = @{Priority = 1; Category = "Important"}
+            $metadata = @{Priority = 1; Category = "Important" }
             Add-FileToQueue -Queue $queue -FilePath $file -Metadata $metadata
 
             $item = Get-NextQueueItem -Queue $queue
@@ -261,7 +261,7 @@ Describe "FileQueue Module" {
             for ($i = 1; $i -le 5; $i++) {
                 $file = "TestDrive:\file$i.txt"
                 "content" | Out-File -FilePath $file
-                Add-FileToQueue -Queue $queue -FilePath $file -Metadata @{Priority = $i}
+                Add-FileToQueue -Queue $queue -FilePath $file -Metadata @{Priority = $i }
             }
 
             # Remove items with priority > 3
@@ -319,7 +319,7 @@ Describe "FileQueue Module" {
             $file = "TestDrive:\test.txt"
             "content" | Out-File -FilePath $file
 
-            $metadata = @{Priority = 1; Type = "Test"}
+            $metadata = @{Priority = 1; Type = "Test" }
             Add-FileToQueue -Queue $queue -FilePath $file -Metadata $metadata
 
             Save-QueueState -Queue $queue -Force

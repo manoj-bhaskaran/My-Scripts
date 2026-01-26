@@ -95,14 +95,14 @@ function Add-FileToQueue {
 
         # Create queue item with metadata
         $queueItem = [PSCustomObject]@{
-            SourcePath = $FilePath
-            TargetPath = $TargetPath
-            Size = $queuedSize
+            SourcePath       = $FilePath
+            TargetPath       = $TargetPath
+            Size             = $queuedSize
             LastWriteTimeUtc = $queuedMtimeUtc
-            QueuedAtUtc = (Get-Date).ToUniversalTime()
-            SessionId = $Queue.SessionId
-            Attempts = 0
-            Metadata = $Metadata
+            QueuedAtUtc      = (Get-Date).ToUniversalTime()
+            SessionId        = $Queue.SessionId
+            Attempts         = 0
+            Metadata         = $Metadata
         }
 
         # Add to queue

@@ -70,14 +70,14 @@ function New-FileQueue {
 
         # Create the queue object
         $queue = [PSCustomObject]@{
-            Name = $Name
-            Items = [System.Collections.Generic.Queue[PSCustomObject]]::new()
-            MaxSize = $MaxSize
+            Name      = $Name
+            Items     = [System.Collections.Generic.Queue[PSCustomObject]]::new()
+            MaxSize   = $MaxSize
             StatePath = $StatePath
             SessionId = $SessionId
-            Created = (Get-Date).ToUniversalTime()
+            Created   = (Get-Date).ToUniversalTime()
             Processed = 0
-            Failed = 0
+            Failed    = 0
         }
 
         # Add methods to the queue object

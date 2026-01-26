@@ -72,7 +72,9 @@ jobs:
           echo "## pip-audit Security Scan Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if pip-audit -r requirements.txt --desc > pip-audit-report.txt 2>&1; then
+          # CVE-2026-0994: protobuf DoS vulnerability - no fix released yet (patch in master only)
+          # Remove --ignore-vuln once protobuf releases a patched version
+          if pip-audit -r requirements.txt --desc --ignore-vuln CVE-2026-0994 > pip-audit-report.txt 2>&1; then
             echo "✅ **pip-audit Check**: No known security vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
             echo "audit_exit=0" >> $GITHUB_OUTPUT
             echo "AUDIT_STATUS=success" >> $GITHUB_ENV
