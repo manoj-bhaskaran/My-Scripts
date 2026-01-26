@@ -81,7 +81,8 @@ function Test-SonarProjectProperties {
         if ($found) {
             $value = ($found -split '=', 2)[1]
             Write-Status "Found $prop = $value" -Type Success
-        } else {
+        }
+        else {
             Write-Status "Missing required property: $prop" -Type Error
             $allFound = $false
         }
@@ -104,7 +105,8 @@ function Test-CoverageFiles {
         if (Test-Path $file) {
             Write-Status "$desc found at $file" -Type Success
             $foundAny = $true
-        } else {
+        }
+        else {
             Write-Status "$desc not found at $file (will be generated during tests)" -Type Warning
         }
     }
@@ -144,7 +146,8 @@ function Test-SonarToken {
         $response = Invoke-RestMethod -Uri 'https://sonarcloud.io/api/authentication/validate' -Headers $headers -Method Get
         Write-Status "Token validation successful" -Type Success
         return $true
-    } catch {
+    }
+    catch {
         Write-Status "Token validation failed: $($_.Exception.Message)" -Type Error
         return $false
     }
@@ -206,7 +209,8 @@ try {
 
     Write-Status "✅ SonarCloud configuration validation passed!" -Type Success
 
-} catch {
+}
+catch {
     Write-Status "Validation failed with error: $($_.Exception.Message)" -Type Error
     exit 1
 }
