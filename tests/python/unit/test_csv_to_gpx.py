@@ -58,10 +58,12 @@ def test_csv_to_gpx_conversion(tmp_path):
     """Test basic CSV to GPX conversion."""
 
     csv_file = tmp_path / "test.csv"
-    csv_file.write_text("""lat,lng,time
+    csv_file.write_text(
+        """lat,lng,time
 37.7749,-122.4194,2024-01-01T12:00:00Z
 37.7750,-122.4195,2024-01-01T12:01:00Z
-""")
+"""
+    )
 
     gpx_file = tmp_path / "output.gpx"
 

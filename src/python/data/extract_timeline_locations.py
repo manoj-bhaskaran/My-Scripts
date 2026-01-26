@@ -154,11 +154,13 @@ def get_last_processed_timestamp() -> Optional[datetime]:
         The last processed timestamp if available; otherwise ``None``.
     """
     with get_db_cursor() as (_, cur):
-        cur.execute("""
+        cur.execute(
+            """
             SELECT last_processed_timestamp
             FROM timeline.control
             WHERE control_key = 'timeline_main'
-        """)
+        """
+        )
         row = cur.fetchone()
         return row[0] if row else None
 
@@ -388,11 +390,13 @@ def get_last_elevation_timestamp() -> Optional[datetime]:
         The most recent timestamp recorded for elevation, or ``None`` if not set.
     """
     with get_db_cursor() as (_, cur):
-        cur.execute("""
+        cur.execute(
+            """
             SELECT last_processed_timestamp
             FROM timeline.control
             WHERE control_key = 'elevation_main'
-        """)
+        """
+        )
         row = cur.fetchone()
         return row[0] if row else None
 
