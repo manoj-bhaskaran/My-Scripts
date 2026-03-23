@@ -41,7 +41,7 @@ jobs:
       - name: Install security scanning tools
         run: |
           python -m pip install --upgrade pip
-          pip install $(grep -E '^safety==' requirements.lock) $(grep -E '^pip-audit==' requirements.lock)
+          pip install "$(grep -E '^safety==' requirements.lock)" "$(grep -E '^pip-audit==' requirements.lock)"
 
       - name: Run Safety check
         id: safety

@@ -33,5 +33,5 @@ types-requests==2.32.4.20260107
 types-tqdm==4.67.0.20250809
 
 # Security scanning
-safety>=3.7.0,<4.0.0
+safety>=3.7.0,<4.0.0; python_version >= "3.9"
 pip-audit>=2.7.3,<3.0.0

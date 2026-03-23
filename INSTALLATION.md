@@ -160,7 +160,7 @@ pip install -r requirements.txt
 pip3 install -r requirements.lock
 ```
 
-`requirements.lock` also pins the `pre-commit` runtime stack (`virtualenv` and `filelock`) to patched versions so local tooling matches CI security scans. The pinned `virtualenv` build is `20.36.1` because some package indexes do not publish `20.36.2`, which caused `pip-audit` environment creation to fail.
+`requirements.lock` also pins the `pre-commit` runtime stack (`virtualenv` and `filelock`) to patched versions so local tooling matches CI security scans. The pinned `virtualenv` build is `20.36.1` because some package indexes do not publish `20.36.2`, which caused `pip-audit` environment creation to fail. Security tooling now uses `safety==3.7.0` on Python 3.9+ so `pip-audit` can install the lockfile without the old `safety==3.2.11` / `filelock==3.20.3` dependency clash.
 
 ## Optional Software Installation
 

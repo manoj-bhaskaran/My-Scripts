@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **pip-audit resolver conflict with Safety/filelock** (v2.7.5)
+  - Replaced the stale `safety==3.2.11` lockfile pin with `safety==3.7.0` and aligned it to the Python 3.9+ support window already required by newer Safety releases
+  - Kept the patched `filelock==3.20.3` override intact so the `pre-commit` stack stays on the secure dependency set while `pip-audit` can now install `requirements.lock` successfully
+  - Updated README and installation guidance to document the new Safety pin and the Python-version marker used by security tooling
+
 - **Python dev dependency security overrides** (v2.7.4)
   - Added explicit `virtualenv>=20.36.1` and `filelock>=3.20.3` constraints to `requirements.txt` so future resolves avoid the known TOCTOU advisories reported in the `pre-commit` runtime stack
   - Pinned `virtualenv==20.36.1` and `filelock==3.20.3` in `requirements.lock` so Safety and `pip-audit` scan the same patched dependency set used by CI
