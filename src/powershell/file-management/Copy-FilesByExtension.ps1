@@ -118,11 +118,11 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 Initialize-Logger -ScriptName 'CopyFilesByExtension' -LogLevel 20
 #endregion
 
-$Script:Version   = '1.2.0'
-$script:Copied    = 0
-$script:Skipped   = 0
-$script:Failed    = 0
-$script:Deleted   = 0
+$Script:Version = '1.2.0'
+$script:Copied = 0
+$script:Skipped = 0
+$script:Failed = 0
+$script:Deleted = 0
 $script:DelFailed = 0
 
 #region ── Load .env ────────────────────────────────────────────────────────────
@@ -156,7 +156,7 @@ else {
 #endregion
 
 #region ── Resolve configuration (parameter overrides .env) ─────────────────────
-if (-not $SourceFolder)      { $SourceFolder      = $env:COPY_EXT_SOURCE }
+if (-not $SourceFolder) { $SourceFolder = $env:COPY_EXT_SOURCE }
 if (-not $DestinationFolder) { $DestinationFolder = $env:COPY_EXT_DEST }
 
 if (-not $Extensions) {
@@ -193,9 +193,9 @@ if ($DeleteMode -notin $validDeleteModes) {
 
 #region ── Validate ──────────────────────────────────────────────────────────────
 $missingConfig = @()
-if (-not $SourceFolder)      { $missingConfig += 'SourceFolder (or env COPY_EXT_SOURCE)' }
+if (-not $SourceFolder) { $missingConfig += 'SourceFolder (or env COPY_EXT_SOURCE)' }
 if (-not $DestinationFolder) { $missingConfig += 'DestinationFolder (or env COPY_EXT_DEST)' }
-if (-not $Extensions)        { $missingConfig += 'Extensions (or env COPY_EXT_EXTENSIONS)' }
+if (-not $Extensions) { $missingConfig += 'Extensions (or env COPY_EXT_EXTENSIONS)' }
 
 if ($missingConfig.Count -gt 0) {
     $msg = "Missing required configuration: $($missingConfig -join '; ')"
@@ -213,7 +213,7 @@ if (-not (Test-Path -LiteralPath $SourceFolder)) {
 
 # Resolve both paths to absolute form once (GetFullPath works even if dest doesn't exist yet)
 $resolvedSource = [System.IO.Path]::GetFullPath($SourceFolder).TrimEnd('\')
-$resolvedDest   = [System.IO.Path]::GetFullPath($DestinationFolder).TrimEnd('\')
+$resolvedDest = [System.IO.Path]::GetFullPath($DestinationFolder).TrimEnd('\')
 
 # Detect when destination is nested inside the source tree (relevant for -Recurse)
 $destIsUnderSource = $resolvedDest.StartsWith($resolvedSource + '\', [System.StringComparison]::OrdinalIgnoreCase)
@@ -225,16 +225,27 @@ if ($destIsUnderSource -and $Recurse) {
 $Extensions = $Extensions |
     ForEach-Object { $_ -split ',' } |
     ForEach-Object { $_.Trim().ToLowerInvariant() } |
-    Where-Object   { $_ -ne '' } |
+    Where-Object { $_ -ne '' } |
     ForEach-Object { if ($_ -notmatch '^\.' ) { ".$_" } else { $_ } }
 #endregion
 
 #region ── Helpers ──────────────────────────────────────────────────────────────
 function Remove-ToRecycleBin {
-    param([Parameter(Mandatory)][string]$FilePath)
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+    param(
+        [Parameter(Mandatory)]
+        [string]$FilePath
+    )
+
     Add-Type -AssemblyName Microsoft.VisualBasic
-    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
-        $FilePath, 'OnlyErrorDialogs', 'SendToRecycleBin')
+
+    if ($PSCmdlet.ShouldProcess($FilePath, 'Move to Recycle Bin')) {
+        [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
+            $FilePath,
+            'OnlyErrorDialogs',
+            'SendToRecycleBin'
+        )
+    }
 }
 
 function Get-UniqueDestPath {
@@ -242,9 +253,9 @@ function Get-UniqueDestPath {
         [Parameter(Mandatory)][string]$Directory,
         [Parameter(Mandatory)][string]$FileName
     )
-    $base  = [IO.Path]::GetFileNameWithoutExtension($FileName)
-    $ext   = [IO.Path]::GetExtension($FileName)
-    $dest  = Join-Path $Directory $FileName
+    $base = [IO.Path]::GetFileNameWithoutExtension($FileName)
+    $ext = [IO.Path]::GetExtension($FileName)
+    $dest = Join-Path $Directory $FileName
     $index = 1
     while (Test-Path -LiteralPath $dest) {
         $dest = Join-Path $Directory "${base}_${index}${ext}"
@@ -255,13 +266,13 @@ function Get-UniqueDestPath {
 #endregion
 
 #region ── Main ─────────────────────────────────────────────────────────────────
-$engine     = if ($PSVersionTable.PSVersion.Major -lt 6) { 'Windows PowerShell' } else { 'PowerShell' }
-$engineVer  = $PSVersionTable.PSVersion.ToString()
+$engine = if ($PSVersionTable.PSVersion.Major -lt 6) { 'Windows PowerShell' } else { 'PowerShell' }
+$engineVer = $PSVersionTable.PSVersion.ToString()
 $scriptName = $MyInvocation.MyCommand.Name
 
 Write-LogInfo "===== $scriptName started | v$Script:Version | $engine $engineVer ====="
 Write-LogInfo ("Source='{0}' | Dest='{1}' | Extensions=[{2}] | Recurse={3} | ConflictMode={4} | DeleteMode={5}" `
-    -f $SourceFolder, $DestinationFolder, ($Extensions -join ','), $Recurse, $ConflictMode, $DeleteMode)
+        -f $SourceFolder, $DestinationFolder, ($Extensions -join ','), $Recurse, $ConflictMode, $DeleteMode)
 
 try {
     # Ensure destination folder exists
@@ -281,13 +292,13 @@ try {
     }
     if ($Recurse) { $gciParams.Recurse = $true }
 
-    $allFiles   = Get-ChildItem @gciParams
+    $allFiles = Get-ChildItem @gciParams
     $candidates = $allFiles | Where-Object {
         ($Extensions -contains $_.Extension.ToLowerInvariant()) -and
         (-not ($destIsUnderSource -and
-               $_.FullName.StartsWith($resolvedDest + '\', [System.StringComparison]::OrdinalIgnoreCase)))
+            $_.FullName.StartsWith($resolvedDest + '\', [System.StringComparison]::OrdinalIgnoreCase)))
     }
-    $total      = ($candidates | Measure-Object).Count
+    $total = ($candidates | Measure-Object).Count
 
     Write-LogInfo "Found $total file(s) matching extensions: $($Extensions -join ', ')"
 
@@ -296,7 +307,7 @@ try {
     }
     else {
         foreach ($file in $candidates) {
-            $srcPath  = $file.FullName
+            $srcPath = $file.FullName
             $fileName = $file.Name
             $destPath = Join-Path $DestinationFolder $fileName
 
@@ -372,7 +383,7 @@ try {
 
     # Summary
     Write-LogInfo ("Summary: Total={0}, Copied={1}, Skipped={2}, CopyFailed={3}, Deleted={4}, DeleteFailed={5}" `
-        -f $total, $script:Copied, $script:Skipped, $script:Failed, $script:Deleted, $script:DelFailed)
+            -f $total, $script:Copied, $script:Skipped, $script:Failed, $script:Deleted, $script:DelFailed)
     Write-LogInfo "===== $scriptName ended ====="
 
     $exitCode = if (($script:Failed -gt 0) -or ($script:DelFailed -gt 0)) { 2 } else { 0 }
