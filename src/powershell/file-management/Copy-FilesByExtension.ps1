@@ -1,5 +1,5 @@
 <#PSScriptInfo
-.VERSION 1.1.0
+.VERSION 1.2.0
 #>
 
 <#
@@ -64,10 +64,13 @@
     .\Copy-FilesByExtension.ps1 -DeleteMode RecycleBin
 
 .NOTES
-    VERSION: 1.1.0
+    VERSION: 1.2.0
     CHANGELOG:
-        1.1.0 - Flatten comma-separated values in -Extensions parameter; all params
-                already take priority over .env (no logic change, defensive fix)
+        1.2.0 - Fix -Recurse:$false not overriding COPY_EXT_RECURSE (use
+                PSBoundParameters instead of IsPresent); validate ConflictMode and
+                DeleteMode when sourced from .env; exclude destination subtree from
+                recursive enumeration to prevent re-processing already-copied files
+        1.1.0 - Flatten comma-separated values in -Extensions parameter
         1.0.0 - Initial release
 
     .env variables (all optional when the equivalent parameter is supplied):
@@ -115,7 +118,7 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 Initialize-Logger -ScriptName 'CopyFilesByExtension' -LogLevel 20
 #endregion
 
-$Script:Version   = '1.1.0'
+$Script:Version   = '1.2.0'
 $script:Copied    = 0
 $script:Skipped   = 0
 $script:Failed    = 0
@@ -163,7 +166,7 @@ if (-not $Extensions) {
     }
 }
 
-if (-not $Recurse.IsPresent) {
+if (-not $PSBoundParameters.ContainsKey('Recurse')) {
     if ($env:COPY_EXT_RECURSE -match '^(1|true|yes)$') { $Recurse = $true }
 }
 
@@ -173,6 +176,18 @@ if (-not $ConflictMode) {
 
 if (-not $DeleteMode) {
     $DeleteMode = if ($env:COPY_EXT_DELETE_MODE) { $env:COPY_EXT_DELETE_MODE } else { 'Immediate' }
+}
+
+# Validate enum values that may have come from .env (not covered by [ValidateSet])
+$validConflictModes = @('Rename', 'Skip', 'Overwrite')
+if ($ConflictMode -notin $validConflictModes) {
+    $msg = "Invalid ConflictMode '$ConflictMode'. Must be one of: $($validConflictModes -join ', ')."
+    Write-LogError $msg; Write-Error $msg; exit 1
+}
+$validDeleteModes = @('Immediate', 'RecycleBin', 'None')
+if ($DeleteMode -notin $validDeleteModes) {
+    $msg = "Invalid DeleteMode '$DeleteMode'. Must be one of: $($validDeleteModes -join ', ')."
+    Write-LogError $msg; Write-Error $msg; exit 1
 }
 #endregion
 
@@ -194,6 +209,16 @@ if (-not (Test-Path -LiteralPath $SourceFolder)) {
     Write-LogError $msg
     Write-Error $msg
     exit 1
+}
+
+# Resolve both paths to absolute form once (GetFullPath works even if dest doesn't exist yet)
+$resolvedSource = [System.IO.Path]::GetFullPath($SourceFolder).TrimEnd('\')
+$resolvedDest   = [System.IO.Path]::GetFullPath($DestinationFolder).TrimEnd('\')
+
+# Detect when destination is nested inside the source tree (relevant for -Recurse)
+$destIsUnderSource = $resolvedDest.StartsWith($resolvedSource + '\', [System.StringComparison]::OrdinalIgnoreCase)
+if ($destIsUnderSource -and $Recurse) {
+    Write-LogInfo "Note: destination '$resolvedDest' is inside the source tree – its files will be excluded from enumeration."
 }
 
 # Normalise extensions: split any comma-separated items, lowercase, add leading dot
@@ -257,7 +282,11 @@ try {
     if ($Recurse) { $gciParams.Recurse = $true }
 
     $allFiles   = Get-ChildItem @gciParams
-    $candidates = $allFiles | Where-Object { $Extensions -contains $_.Extension.ToLowerInvariant() }
+    $candidates = $allFiles | Where-Object {
+        ($Extensions -contains $_.Extension.ToLowerInvariant()) -and
+        (-not ($destIsUnderSource -and
+               $_.FullName.StartsWith($resolvedDest + '\', [System.StringComparison]::OrdinalIgnoreCase)))
+    }
     $total      = ($candidates | Measure-Object).Count
 
     Write-LogInfo "Found $total file(s) matching extensions: $($Extensions -join ', ')"
