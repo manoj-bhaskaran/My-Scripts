@@ -555,13 +555,13 @@ This repository includes automated security scanning to detect vulnerabilities i
 
 ```bash
 # Install security scanning tools
-pip install safety pip-audit
+pip install $(grep -E '^safety==' requirements.lock) $(grep -E '^pip-audit==' requirements.lock)
 
-# Run safety check
-safety check -r requirements.txt
+# Run safety check against the locked dependency set used by CI/production
+safety check -r requirements.lock
 
-# Run pip-audit
-pip-audit -r requirements.txt --desc
+# Run pip-audit against the locked dependency set used by CI/production
+pip-audit -r requirements.lock --desc
 
 # Run both via pre-commit
 pre-commit run python-safety-dependencies-check --all-files
@@ -572,6 +572,7 @@ pre-commit run python-safety-dependencies-check --all-files
 - Pre-commit hook configured in `.pre-commit-config.yaml`
 - Reports are uploaded as GitHub Actions artifacts (30-day retention)
 - Builds fail on detected vulnerabilities to ensure prompt remediation
+- CI audits `requirements.lock` so results match the reproducible dependency set that the repository supports
 
 **Enabling Dependabot (Recommended):**
 

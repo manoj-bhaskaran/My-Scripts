@@ -41,7 +41,7 @@ jobs:
       - name: Install security scanning tools
         run: |
           python -m pip install --upgrade pip
-          pip install safety pip-audit
+          pip install $(grep -E '^safety==' requirements.lock) $(grep -E '^pip-audit==' requirements.lock)
 
       - name: Run Safety check
         id: safety
@@ -50,7 +50,7 @@ jobs:
           echo "## Safety Security Scan Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if safety check --json -r requirements.txt > safety-report.json 2>&1; then
+          if safety check --json -r requirements.lock > safety-report.json 2>&1; then
             echo "✅ **Safety Check**: No known security vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
             echo "safety_exit=0" >> $GITHUB_OUTPUT
             echo "SAFETY_STATUS=success" >> $GITHUB_ENV
@@ -58,7 +58,7 @@ jobs:
             echo "⚠️ **Safety Check**: Vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-            safety check -r requirements.txt >> $GITHUB_STEP_SUMMARY 2>&1 || true
+            safety check -r requirements.lock >> $GITHUB_STEP_SUMMARY 2>&1 || true
             echo '```' >> $GITHUB_STEP_SUMMARY
             echo "safety_exit=1" >> $GITHUB_OUTPUT
             echo "SAFETY_STATUS=failure" >> $GITHUB_ENV
@@ -74,7 +74,7 @@ jobs:
 
           # CVE-2026-0994: protobuf DoS vulnerability - no fix released yet (patch in master only)
           # Remove --ignore-vuln once protobuf releases a patched version
-          if pip-audit -r requirements.txt --desc --ignore-vuln CVE-2026-0994 > pip-audit-report.txt 2>&1; then
+          if pip-audit -r requirements.lock --desc --ignore-vuln CVE-2026-0994 > pip-audit-report.txt 2>&1; then
             echo "✅ **pip-audit Check**: No known security vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
             echo "audit_exit=0" >> $GITHUB_OUTPUT
             echo "AUDIT_STATUS=success" >> $GITHUB_ENV
@@ -140,7 +140,7 @@ jobs:
             echo "1. Review the vulnerability reports above" >> $GITHUB_STEP_SUMMARY
             echo "2. Update affected packages to secure versions" >> $GITHUB_STEP_SUMMARY
             echo "3. Test the application with updated dependencies" >> $GITHUB_STEP_SUMMARY
-            echo "4. Commit the updated requirements.txt" >> $GITHUB_STEP_SUMMARY
+            echo "4. Commit the updated requirements.lock (and requirements.txt if ranges changed)" >> $GITHUB_STEP_SUMMARY
             echo "5. Re-run this security scan to verify fixes" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
