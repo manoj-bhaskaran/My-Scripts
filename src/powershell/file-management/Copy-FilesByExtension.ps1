@@ -1,5 +1,5 @@
 <#PSScriptInfo
-.VERSION 1.0.0
+.VERSION 1.1.0
 #>
 
 <#
@@ -64,7 +64,11 @@
     .\Copy-FilesByExtension.ps1 -DeleteMode RecycleBin
 
 .NOTES
-    VERSION: 1.0.0
+    VERSION: 1.1.0
+    CHANGELOG:
+        1.1.0 - Flatten comma-separated values in -Extensions parameter; all params
+                already take priority over .env (no logic change, defensive fix)
+        1.0.0 - Initial release
 
     .env variables (all optional when the equivalent parameter is supplied):
         COPY_EXT_SOURCE         Source folder path
@@ -111,7 +115,7 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 Initialize-Logger -ScriptName 'CopyFilesByExtension' -LogLevel 20
 #endregion
 
-$Script:Version   = '1.0.0'
+$Script:Version   = '1.1.0'
 $script:Copied    = 0
 $script:Skipped   = 0
 $script:Failed    = 0
@@ -192,11 +196,12 @@ if (-not (Test-Path -LiteralPath $SourceFolder)) {
     exit 1
 }
 
-# Normalise extensions: lowercase, leading dot
-$Extensions = $Extensions | ForEach-Object {
-    $e = $_.Trim().ToLowerInvariant()
-    if ($e -notmatch '^\.' ) { ".$e" } else { $e }
-}
+# Normalise extensions: split any comma-separated items, lowercase, add leading dot
+$Extensions = $Extensions |
+    ForEach-Object { $_ -split ',' } |
+    ForEach-Object { $_.Trim().ToLowerInvariant() } |
+    Where-Object   { $_ -ne '' } |
+    ForEach-Object { if ($_ -notmatch '^\.' ) { ".$_" } else { $_ } }
 #endregion
 
 #region ── Helpers ──────────────────────────────────────────────────────────────
