@@ -7,7 +7,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Code Formatting](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml/badge.svg)](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml)
 
-**Version:** 2.7.5 | **Last Updated:** 2026-03-23
+**Version:** 2.7.6 | **Last Updated:** 2026-03-23
 
 ---
 
@@ -133,7 +133,7 @@ The repository now ships with **dual dependency manifests**:
 
 - Use `requirements.lock` for deterministic, reproducible installs (CI, production machines).
 - Use `requirements.txt` for local development when you want the latest compatible releases within vetted version ranges.
-- The manifests explicitly pin `virtualenv` and `filelock` to patched versions because repository tooling such as `pre-commit` depends on them transitively. The lockfile now uses `virtualenv==20.36.1`, which remains available on package indexes where `20.36.2` is missing. It also pins `safety==3.7.0` (enabled on Python 3.9+) so `pip-audit` can install the full lockfile without the older `safety==3.2.11` vs. `filelock==3.20.3` resolver conflict.
+- The manifests explicitly pin `virtualenv` and `filelock` to patched versions because repository tooling such as `pre-commit` depends on them transitively. The lockfile uses `virtualenv==20.36.1`, which remains available on package indexes where `20.36.2` is missing. Security scanning now standardizes on `pip-audit`, removing the vulnerable transitive `nltk` dependency that arrived through Safety while preserving the patched `filelock==3.20.3` override for the `pre-commit` runtime stack.
 
 **Configuration Guide**: See [config/CONFIG_GUIDE.md](config/CONFIG_GUIDE.md) for detailed configuration instructions.
 
@@ -542,12 +542,11 @@ Type checking helps maintain code quality without disrupting the existing workfl
 This repository includes automated security scanning to detect vulnerabilities in Python dependencies.
 
 **Security Tools:**
-- **[Safety](https://pyup.io/safety/)** - Checks dependencies against known vulnerability databases
 - **[pip-audit](https://pypi.org/project/pip-audit/)** - PyPI package auditor (OSV and PyPI Advisory databases)
 - **[GitHub Dependency Review](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review)** - Native GitHub security scanning
 
 **Automated Scans:**
-- ✅ **On every push and PR** - Runs safety and pip-audit checks
+- ✅ **On every push and PR** - Runs pip-audit checks
 - ✅ **Weekly schedule** - Automated scans every Sunday at 2:00 AM UTC
 - ✅ **Pre-commit hook** - Validates dependencies before allowing commits
 - ✅ **Pull request reviews** - GitHub Dependency Review action comments on PRs
@@ -556,19 +555,16 @@ This repository includes automated security scanning to detect vulnerabilities i
 
 ```bash
 # Install security scanning tools
-pip install "$(grep -E '^safety==' requirements.lock)" "$(grep -E '^pip-audit==' requirements.lock)"
+pip install "$(grep -E '^pip-audit==' requirements.lock)"
 
 # Optional: install the patched pre-commit runtime stack from the lockfile
 pip install $(grep -E '^pre-commit==' requirements.lock) $(grep -E '^virtualenv==' requirements.lock) $(grep -E '^filelock==' requirements.lock)
 
-# Run safety check against the locked dependency set used by CI/production
-safety check -r requirements.lock
-
 # Run pip-audit against the locked dependency set used by CI/production
 pip-audit -r requirements.lock --desc
 
-# Run both via pre-commit
-pre-commit run python-safety-dependencies-check --all-files
+# Run the dependency audit hook via pre-commit
+pre-commit run python-pip-audit --all-files
 ```
 
 **Workflow Configuration:**
@@ -578,7 +574,7 @@ pre-commit run python-safety-dependencies-check --all-files
 - Builds fail on detected vulnerabilities to ensure prompt remediation
 - CI audits `requirements.lock` so results match the reproducible dependency set that the repository supports
 - `requirements.lock` includes explicit patched pins for the `pre-commit` runtime stack (`virtualenv` and `filelock`) so local and CI scans see the same secure dependency set
-- `safety` is pinned to `3.7.0` (Python 3.9+) so `pip-audit` can materialize the lockfile cleanly while keeping the newer `filelock==3.20.3` override
+- Security scanning is standardized on `pip-audit`, which avoids the vulnerable transitive `nltk` dependency introduced by Safety while continuing to audit the locked dependency set
 
 **Enabling Dependabot (Recommended):**
 

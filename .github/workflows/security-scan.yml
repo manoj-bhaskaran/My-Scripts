@@ -41,28 +41,7 @@ jobs:
       - name: Install security scanning tools
         run: |
           python -m pip install --upgrade pip
-          pip install "$(grep -E '^safety==' requirements.lock)" "$(grep -E '^pip-audit==' requirements.lock)"
-
-      - name: Run Safety check
-        id: safety
-        continue-on-error: true
-        run: |
-          echo "## Safety Security Scan Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if safety check --json -r requirements.lock > safety-report.json 2>&1; then
-            echo "✅ **Safety Check**: No known security vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
-            echo "safety_exit=0" >> $GITHUB_OUTPUT
-            echo "SAFETY_STATUS=success" >> $GITHUB_ENV
-          else
-            echo "⚠️ **Safety Check**: Vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            safety check -r requirements.lock >> $GITHUB_STEP_SUMMARY 2>&1 || true
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            echo "safety_exit=1" >> $GITHUB_OUTPUT
-            echo "SAFETY_STATUS=failure" >> $GITHUB_ENV
-          fi
+          pip install "$(grep -E '^pip-audit==' requirements.lock)"
 
       - name: Run pip-audit check
         id: pip-audit
@@ -88,14 +67,6 @@ jobs:
             echo "AUDIT_STATUS=failure" >> $GITHUB_ENV
           fi
 
-      - name: Upload Safety report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: safety-report
-          path: safety-report.json
-          retention-days: 30
-
       - name: Upload pip-audit report
         if: always()
         uses: actions/upload-artifact@v4
@@ -106,7 +77,6 @@ jobs:
 
       - name: Security Scan Summary
         env:
-          SAFETY_STATUS: ${{ env.SAFETY_STATUS }}
           AUDIT_STATUS: ${{ env.AUDIT_STATUS }}
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -114,36 +84,28 @@ jobs:
           echo "## Overall Security Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # Use environment variables set by previous steps
-          SAFETY_STATUS="${SAFETY_STATUS:-failure}"
           AUDIT_STATUS="${AUDIT_STATUS:-failure}"
 
-          echo "🔍 Debug: Safety status: $SAFETY_STATUS" >> $GITHUB_STEP_SUMMARY
           echo "🔍 Debug: Audit status: $AUDIT_STATUS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "$SAFETY_STATUS" == "success" ] && [ "$AUDIT_STATUS" == "success" ]; then
+          if [ "$AUDIT_STATUS" == "success" ]; then
             echo "✅ **All security checks passed**" >> $GITHUB_STEP_SUMMARY
             echo "No known security vulnerabilities were detected in your Python dependencies." >> $GITHUB_STEP_SUMMARY
             exit 0
-          else
-            echo "⚠️ **Security vulnerabilities detected - please review and remediate**" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            if [ "$SAFETY_STATUS" != "success" ]; then
-              echo "- Safety scan detected vulnerabilities" >> $GITHUB_STEP_SUMMARY
-            fi
-            if [ "$AUDIT_STATUS" != "success" ]; then
-              echo "- pip-audit scan detected vulnerabilities" >> $GITHUB_STEP_SUMMARY
-            fi
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
-            echo "1. Review the vulnerability reports above" >> $GITHUB_STEP_SUMMARY
-            echo "2. Update affected packages to secure versions" >> $GITHUB_STEP_SUMMARY
-            echo "3. Test the application with updated dependencies" >> $GITHUB_STEP_SUMMARY
-            echo "4. Commit the updated requirements.lock (and requirements.txt if ranges changed)" >> $GITHUB_STEP_SUMMARY
-            echo "5. Re-run this security scan to verify fixes" >> $GITHUB_STEP_SUMMARY
-            exit 1
           fi
+
+          echo "⚠️ **Security vulnerabilities detected - please review and remediate**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- pip-audit scan detected vulnerabilities" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review the vulnerability reports above" >> $GITHUB_STEP_SUMMARY
+          echo "2. Update affected packages to secure versions" >> $GITHUB_STEP_SUMMARY
+          echo "3. Test the application with updated dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "4. Commit the updated requirements.lock (and requirements.txt if ranges changed)" >> $GITHUB_STEP_SUMMARY
+          echo "5. Re-run this security scan to verify fixes" >> $GITHUB_STEP_SUMMARY
+          exit 1
 
   dependency-review:
     name: Dependency Review
