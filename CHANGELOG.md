@@ -10,9 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Python dev dependency security overrides** (v2.7.4)
-  - Added explicit `virtualenv>=20.36.2` and `filelock>=3.20.3` constraints to `requirements.txt` so future resolves avoid the known TOCTOU advisories reported in the `pre-commit` runtime stack
-  - Pinned `virtualenv==20.36.2` and `filelock==3.20.3` in `requirements.lock` so Safety and `pip-audit` scan the same patched dependency set used by CI
+  - Added explicit `virtualenv>=20.36.1` and `filelock>=3.20.3` constraints to `requirements.txt` so future resolves avoid the known TOCTOU advisories reported in the `pre-commit` runtime stack
+  - Pinned `virtualenv==20.36.1` and `filelock==3.20.3` in `requirements.lock` so Safety and `pip-audit` scan the same patched dependency set used by CI
   - Updated README installation and security guidance to document the patched lockfile-based workflow
+
+- **pip-audit lockfile install compatibility**
+  - Replaced the unavailable `virtualenv==20.36.2` lockfile pin with `virtualenv==20.36.1`, which is present on the package index used by automation
+  - Relaxed the floating `requirements.txt` lower bound to `virtualenv>=20.36.1` so development installs stay aligned with the lockfile
+  - Updated installation guidance to explain the `pip-audit` failure mode and the compatible replacement pin
 
 - **Security scans: audit the locked dependency set**
   - Updated GitHub Actions security scanning to install pinned `safety` and `pip-audit` versions from `requirements.lock`
