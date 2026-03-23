@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Security scans: audit the locked dependency set**
+  - Updated GitHub Actions security scanning to install pinned `safety` and `pip-audit` versions from `requirements.lock`
+  - Switched Safety and `pip-audit` checks from `requirements.txt` to `requirements.lock` so CI audits the reproducible dependency set instead of re-resolving floating ranges
+  - Updated the README security commands to match the lockfile-based workflow and reduce false positives from transient dependency resolution
+
 - **Sync-MacriumBackups.ps1: Align rclone log format with documentation** (v2.6.5)
   - Set rclone log format to `date,time,microseconds` (documented options) for consistent timestamps
   - Removed unsupported log time format probing to avoid unknown-flag errors
