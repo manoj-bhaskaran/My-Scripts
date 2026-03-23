@@ -27,7 +27,7 @@ jobs:
 
       - name: Install pre-commit
         run: |
-          pip install pre-commit
+          pip install $(grep -E '^pre-commit==' requirements.lock) $(grep -E '^virtualenv==' requirements.lock) $(grep -E '^filelock==' requirements.lock)
 
       - name: Update pre-commit hooks
         run: |

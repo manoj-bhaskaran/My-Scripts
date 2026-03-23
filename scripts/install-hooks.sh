@@ -58,9 +58,9 @@ if ! command -v ${PIP_CMD} &> /dev/null; then
     exit 1
 fi
 
-# Install pre-commit framework
+# Install pre-commit framework with patched runtime dependencies from the lockfile
 echo -e "${BLUE}Installing pre-commit framework...${NC}"
-${PIP_CMD} install pre-commit --quiet --upgrade
+${PIP_CMD} install --quiet --upgrade     "$(grep -E '^pre-commit==' "$REPO_ROOT/requirements.lock")"     "$(grep -E '^virtualenv==' "$REPO_ROOT/requirements.lock")"     "$(grep -E '^filelock==' "$REPO_ROOT/requirements.lock")"
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ Pre-commit framework installed successfully${NC}"
