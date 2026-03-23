@@ -32,7 +32,7 @@ repos:
 
   # Python hooks
   - repo: https://github.com/psf/black
-    rev: 24.3.0
+    rev: 26.3.1
     hooks:
       - id: black
         language_version: python3.12
@@ -77,11 +77,16 @@ repos:
         stages: [manual]
 
   # Python security - dependency vulnerability scanning
-  - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
-    rev: v1.3.3
+  - repo: local
     hooks:
-      - id: python-safety-dependencies-check
-        files: requirements.*\.txt$
+      - id: python-pip-audit
+        name: python-pip-audit
+        entry: pip-audit
+        language: python
+        additional_dependencies: ["pip-audit==2.7.3"]
+        args: ["-r", "requirements.lock", "--ignore-vuln", "CVE-2026-0994"]
+        pass_filenames: false
+        files: ^requirements\.(lock|txt)$
 
   # PowerShell hooks - Disabled for pre-commit (environment-specific)
   # PowerShell linting still runs in CI via sonarcloud.yml workflow

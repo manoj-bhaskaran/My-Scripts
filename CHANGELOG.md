@@ -7,7 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.6] - 2026-03-23
+
 ### Fixed
+
+- **Removed Safety from the security toolchain to eliminate vulnerable transitive NLTK installs**
+  - Dropped `safety` from `requirements.txt` and `requirements.lock`, keeping `pip-audit` as the repository's dependency scanner
+  - Replaced the Safety-based pre-commit hook with a local `python-pip-audit` hook pinned to `pip-audit==2.7.3`
+  - Simplified `.github/workflows/security-scan.yml` to install and run only `pip-audit`, while preserving the existing temporary `CVE-2026-0994` ignore
+  - Updated README and installation guidance to document the new single-tool scanning workflow and the rationale for removing Safety's vulnerable `nltk` transitive dependency
+
+### Fixed
+
+- **pip-audit resolver conflict with Safety/filelock** (v2.7.5)
+  - Replaced the stale `safety==3.2.11` lockfile pin with `safety==3.7.0` and aligned it to the Python 3.9+ support window already required by newer Safety releases
+  - Kept the patched `filelock==3.20.3` override intact so the `pre-commit` stack stays on the secure dependency set while `pip-audit` can now install `requirements.lock` successfully
+  - Updated README and installation guidance to document the new Safety pin and the Python-version marker used by security tooling
+
+- **Python dev dependency security overrides** (v2.7.4)
+  - Added explicit `virtualenv>=20.36.1` and `filelock>=3.20.3` constraints to `requirements.txt` so future resolves avoid the known TOCTOU advisories reported in the `pre-commit` runtime stack
+  - Pinned `virtualenv==20.36.1` and `filelock==3.20.3` in `requirements.lock` so Safety and `pip-audit` scan the same patched dependency set used by CI
+  - Updated README installation and security guidance to document the patched lockfile-based workflow
+
+- **pip-audit lockfile install compatibility**
+  - Replaced the unavailable `virtualenv==20.36.2` lockfile pin with `virtualenv==20.36.1`, which is present on the package index used by automation
+  - Relaxed the floating `requirements.txt` lower bound to `virtualenv>=20.36.1` so development installs stay aligned with the lockfile
+  - Updated installation guidance to explain the `pip-audit` failure mode and the compatible replacement pin
+
+- **Security scans: audit the locked dependency set**
+  - Updated GitHub Actions security scanning to install pinned `safety` and `pip-audit` versions from `requirements.lock`
+  - Switched Safety and `pip-audit` checks from `requirements.txt` to `requirements.lock` so CI audits the reproducible dependency set instead of re-resolving floating ranges
+  - Updated the README security commands to match the lockfile-based workflow and reduce false positives from transient dependency resolution
 
 - **Sync-MacriumBackups.ps1: Align rclone log format with documentation** (v2.6.5)
   - Set rclone log format to `date,time,microseconds` (documented options) for consistent timestamps

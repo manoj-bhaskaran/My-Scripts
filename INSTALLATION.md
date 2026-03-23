@@ -150,12 +150,17 @@ This file controls which modules are deployed and where they go.
 ### 4. Install Python Dependencies
 
 ```bash
-# Install all required Python packages
+# Install the reproducible, CI-matched dependency set (recommended)
+pip install -r requirements.lock
+
+# Or install the latest compatible versions from the supported ranges
 pip install -r requirements.txt
 
 # Or with Python 3 explicitly
-pip3 install -r requirements.txt
+pip3 install -r requirements.lock
 ```
+
+`requirements.lock` also pins the `pre-commit` runtime stack (`virtualenv` and `filelock`) to patched versions so local tooling matches CI security scans. The pinned `virtualenv` build is `20.36.1` because some package indexes do not publish `20.36.2`, which caused `pip-audit` environment creation to fail. Security tooling now standardizes on `pip-audit`, which removes the vulnerable transitive `nltk` dependency previously introduced by Safety while keeping the patched `filelock==3.20.3` override intact.
 
 ## Optional Software Installation
 
