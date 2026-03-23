@@ -30,5 +30,4 @@ bandit==1.7.9
 sqlfluff==3.5.0
 
 # Security scanning
-safety==3.7.0; python_version >= "3.9"
 pip-audit==2.7.3

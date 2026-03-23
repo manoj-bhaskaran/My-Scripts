@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.6] - 2026-03-23
+
+### Fixed
+
+- **Removed Safety from the security toolchain to eliminate vulnerable transitive NLTK installs**
+  - Dropped `safety` from `requirements.txt` and `requirements.lock`, keeping `pip-audit` as the repository's dependency scanner
+  - Replaced the Safety-based pre-commit hook with a local `python-pip-audit` hook pinned to `pip-audit==2.7.3`
+  - Simplified `.github/workflows/security-scan.yml` to install and run only `pip-audit`, while preserving the existing temporary `CVE-2026-0994` ignore
+  - Updated README and installation guidance to document the new single-tool scanning workflow and the rationale for removing Safety's vulnerable `nltk` transitive dependency
+
 ### Fixed
 
 - **pip-audit resolver conflict with Safety/filelock** (v2.7.5)
