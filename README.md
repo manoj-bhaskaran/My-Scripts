@@ -133,7 +133,7 @@ The repository now ships with **dual dependency manifests**:
 
 - Use `requirements.lock` for deterministic, reproducible installs (CI, production machines).
 - Use `requirements.txt` for local development when you want the latest compatible releases within vetted version ranges.
-- The manifests explicitly pin `virtualenv` and `filelock` to patched versions because repository tooling such as `pre-commit` depends on them transitively.
+- The manifests explicitly pin `virtualenv` and `filelock` to patched versions because repository tooling such as `pre-commit` depends on them transitively. The lockfile now uses `virtualenv==20.36.1`, which remains available on package indexes where `20.36.2` is missing.
 
 **Configuration Guide**: See [config/CONFIG_GUIDE.md](config/CONFIG_GUIDE.md) for detailed configuration instructions.
 
