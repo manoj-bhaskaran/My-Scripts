@@ -150,12 +150,17 @@ This file controls which modules are deployed and where they go.
 ### 4. Install Python Dependencies
 
 ```bash
-# Install all required Python packages
+# Install the reproducible, CI-matched dependency set (recommended)
+pip install -r requirements.lock
+
+# Or install the latest compatible versions from the supported ranges
 pip install -r requirements.txt
 
 # Or with Python 3 explicitly
-pip3 install -r requirements.txt
+pip3 install -r requirements.lock
 ```
+
+`requirements.lock` also pins the `pre-commit` runtime stack (`virtualenv` and `filelock`) to patched versions so local tooling matches CI security scans.
 
 ## Optional Software Installation
 

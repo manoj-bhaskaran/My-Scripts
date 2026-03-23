@@ -7,7 +7,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Code Formatting](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml/badge.svg)](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml)
 
-**Version:** 2.7.1 | **Last Updated:** 2025-12-06
+**Version:** 2.7.4 | **Last Updated:** 2026-03-23
 
 ---
 
@@ -133,6 +133,7 @@ The repository now ships with **dual dependency manifests**:
 
 - Use `requirements.lock` for deterministic, reproducible installs (CI, production machines).
 - Use `requirements.txt` for local development when you want the latest compatible releases within vetted version ranges.
+- The manifests explicitly pin `virtualenv` and `filelock` to patched versions because repository tooling such as `pre-commit` depends on them transitively.
 
 **Configuration Guide**: See [config/CONFIG_GUIDE.md](config/CONFIG_GUIDE.md) for detailed configuration instructions.
 
@@ -557,6 +558,9 @@ This repository includes automated security scanning to detect vulnerabilities i
 # Install security scanning tools
 pip install $(grep -E '^safety==' requirements.lock) $(grep -E '^pip-audit==' requirements.lock)
 
+# Optional: install the patched pre-commit runtime stack from the lockfile
+pip install $(grep -E '^pre-commit==' requirements.lock) $(grep -E '^virtualenv==' requirements.lock) $(grep -E '^filelock==' requirements.lock)
+
 # Run safety check against the locked dependency set used by CI/production
 safety check -r requirements.lock
 
@@ -573,6 +577,7 @@ pre-commit run python-safety-dependencies-check --all-files
 - Reports are uploaded as GitHub Actions artifacts (30-day retention)
 - Builds fail on detected vulnerabilities to ensure prompt remediation
 - CI audits `requirements.lock` so results match the reproducible dependency set that the repository supports
+- `requirements.lock` includes explicit patched pins for the `pre-commit` runtime stack (`virtualenv` and `filelock`) so local and CI scans see the same secure dependency set
 
 **Enabling Dependabot (Recommended):**
 
