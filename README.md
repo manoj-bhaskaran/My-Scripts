@@ -7,7 +7,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Code Formatting](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml/badge.svg)](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml)
 
-**Version:** 2.7.4 | **Last Updated:** 2026-03-23
+**Version:** 2.7.5 | **Last Updated:** 2026-03-23
 
 ---
 
@@ -133,7 +133,7 @@ The repository now ships with **dual dependency manifests**:
 
 - Use `requirements.lock` for deterministic, reproducible installs (CI, production machines).
 - Use `requirements.txt` for local development when you want the latest compatible releases within vetted version ranges.
-- The manifests explicitly pin `virtualenv` and `filelock` to patched versions because repository tooling such as `pre-commit` depends on them transitively. The lockfile now uses `virtualenv==20.36.1`, which remains available on package indexes where `20.36.2` is missing.
+- The manifests explicitly pin `virtualenv` and `filelock` to patched versions because repository tooling such as `pre-commit` depends on them transitively. The lockfile now uses `virtualenv==20.36.1`, which remains available on package indexes where `20.36.2` is missing. It also pins `safety==3.7.0` (enabled on Python 3.9+) so `pip-audit` can install the full lockfile without the older `safety==3.2.11` vs. `filelock==3.20.3` resolver conflict.
 
 **Configuration Guide**: See [config/CONFIG_GUIDE.md](config/CONFIG_GUIDE.md) for detailed configuration instructions.
 
@@ -556,7 +556,7 @@ This repository includes automated security scanning to detect vulnerabilities i
 
 ```bash
 # Install security scanning tools
-pip install $(grep -E '^safety==' requirements.lock) $(grep -E '^pip-audit==' requirements.lock)
+pip install "$(grep -E '^safety==' requirements.lock)" "$(grep -E '^pip-audit==' requirements.lock)"
 
 # Optional: install the patched pre-commit runtime stack from the lockfile
 pip install $(grep -E '^pre-commit==' requirements.lock) $(grep -E '^virtualenv==' requirements.lock) $(grep -E '^filelock==' requirements.lock)
@@ -578,6 +578,7 @@ pre-commit run python-safety-dependencies-check --all-files
 - Builds fail on detected vulnerabilities to ensure prompt remediation
 - CI audits `requirements.lock` so results match the reproducible dependency set that the repository supports
 - `requirements.lock` includes explicit patched pins for the `pre-commit` runtime stack (`virtualenv` and `filelock`) so local and CI scans see the same secure dependency set
+- `safety` is pinned to `3.7.0` (Python 3.9+) so `pip-audit` can materialize the lockfile cleanly while keeping the newer `filelock==3.20.3` override
 
 **Enabling Dependabot (Recommended):**
 
