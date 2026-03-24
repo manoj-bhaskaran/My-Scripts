@@ -18,6 +18,13 @@
     Path to the module deployment configuration file.
     Defaults to ../config/modules/deployment.txt relative to this script.
 
+.PARAMETER SkipIndexRebuild
+    Skip the automatic repo index rebuild that normally runs after deployment.
+
+.PARAMETER CacheDir
+    Directory where the JSON index cache files are written.
+    Passed through to Update-RepoIndex.ps1; uses its own default when omitted.
+
 .EXAMPLE
     .\Deploy-Modules.ps1
     Deploys all modules with prompts for overwrites.
@@ -39,7 +46,9 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [switch]$Force,
-    [string]$ConfigPath
+    [string]$ConfigPath,
+    [switch]$SkipIndexRebuild,
+    [string]$CacheDir
 )
 
 # Determine repository root and config path
@@ -268,3 +277,25 @@ Write-Host "All modules deployed successfully!" -ForegroundColor Green
 Write-Host ""
 Write-Host "To verify, run:" -ForegroundColor Cyan
 Write-Host "  Get-Module -ListAvailable -Name PostgresBackup,PowerShellLoggingFramework,PurgeLogs,RandomName,Videoscreenshot,ErrorHandling,FileOperations,ProgressReporter"
+
+# Rebuild the repo index only when at least one module was actually deployed
+# and the caller has not opted out. Skipped deployments (already up-to-date)
+# and WhatIf runs don't change the index so there's nothing to rebuild.
+if ($deployedCount -gt 0 -and -not $SkipIndexRebuild) {
+    Write-Host ""
+    Write-Host "Rebuilding repo index..." -ForegroundColor Cyan
+    $indexScript = Join-Path $scriptRoot "Update-RepoIndex.ps1"
+    if (Test-Path $indexScript) {
+        $indexParams = @{ PsRoot = Join-Path $repoRoot "src" "powershell" }
+        if ($CacheDir) { $indexParams.CacheDir = $CacheDir }
+        try {
+            & $indexScript @indexParams
+        }
+        catch {
+            Write-Warning "Repo index rebuild failed (non-fatal): $_"
+        }
+    }
+    else {
+        Write-Warning "Update-RepoIndex.ps1 not found; skipping index rebuild."
+    }
+}

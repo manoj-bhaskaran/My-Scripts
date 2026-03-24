@@ -440,7 +440,35 @@ foreach ($rel in $modifiedFiles) {
 # 3) Deploy touched modules based on config\module-deployment-config.txt.
 Deploy-ModuleFromConfig -RepoPath $script:RepoPath -ConfigPath $configPath -TouchedRelPaths $modifiedFiles
 
-# 4) Remove deleted files from the DestinationFolder staging mirror.
+# 4) Rebuild the repo index only when PowerShell files were structurally
+#    changed: added, copied, renamed, or deleted. Plain modifications (M) do
+#    not affect the index because the script name and path remain the same.
+if ($hasParent) {
+    $newOrRenamedPsFiles = @(git -C $script:RepoPath diff --name-only --diff-filter=ACR HEAD~1 HEAD |
+        Where-Object { $_ -match '\.(ps1|psm1|psd1)$' })
+}
+else {
+    # First commit — every tracked PS file is brand new.
+    $newOrRenamedPsFiles = @($modifiedFiles | Where-Object { $_ -match '\.(ps1|psm1|psd1)$' })
+}
+$deletedPsFiles = @($deletedFiles | Where-Object { $_ -match '\.(ps1|psm1|psd1)$' })
+$hasPsChanges = ($newOrRenamedPsFiles.Count + $deletedPsFiles.Count) -gt 0
+if ($hasPsChanges) {
+    $indexScript = Join-Path $script:RepoPath "scripts\Update-RepoIndex.ps1"
+    if (Test-Path -LiteralPath $indexScript) {
+        $indexParams = @{ PsRoot = Join-Path $script:RepoPath "src\powershell" }
+        if ($localConfig.PSObject.Properties['cacheDir']) { $indexParams.CacheDir = $localConfig.cacheDir }
+        try {
+            & $indexScript @indexParams
+            Write-Message "Repo index rebuilt successfully."
+        }
+        catch {
+            Write-Message ("Repo index rebuild failed (non-fatal): {0}" -f $_)
+        }
+    }
+}
+
+# 5) Remove deleted files from the DestinationFolder staging mirror.
 foreach ($rel in $deletedFiles) {
     $dst = Join-Path $script:DestinationFolder $rel
     if (Test-Path -LiteralPath $dst) {
