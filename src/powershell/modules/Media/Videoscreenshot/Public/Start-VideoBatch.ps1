@@ -149,7 +149,7 @@ function Start-VideoBatch {
             throw
         }
 
-        $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — crop-only mode" -f ($MyInvocation.MyCommand.Module.Version.ToString()))
+        $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — crop-only mode" -f ($context.Version))
         Write-Debug 'TRACE Start-VideoBatch: leaving (CropOnly)'
         return
     }
@@ -444,7 +444,7 @@ function Start-VideoBatch {
         }
     }
 
-    $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed {1} file(s)" -f ($MyInvocation.MyCommand.Module.Version.ToString()), $processedCount)
+    $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed {1} file(s)" -f ($context.Version), $processedCount)
     Write-Debug 'TRACE Start-VideoBatch: leaving (no output intended)'
     return
 }
