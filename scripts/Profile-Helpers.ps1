@@ -124,11 +124,14 @@ function Update-RepoIndex {
     )
 
     # Single recursive pass — collect all PowerShell-relevant file types.
+    # Split the full path into segments and reject any file whose path contains
+    # an excluded directory at *any* depth, not just the immediate parent.
     $files =
         Get-ChildItem -Path $Root -Recurse -File -ErrorAction SilentlyContinue |
         Where-Object {
             $_.Extension -in '.ps1', '.psm1', '.psd1' -and
-            ($excludeDirs -notcontains $_.Directory.Name)
+            -not ($_.FullName.Split([IO.Path]::DirectorySeparatorChar) |
+                  Where-Object { $excludeDirs -contains $_ })
         }
 
     # Build the script index from .ps1 files.
