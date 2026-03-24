@@ -1,5 +1,5 @@
 <#PSScriptInfo
-.VERSION 1.3.0
+.VERSION 1.4.0
 #>
 
 <#
@@ -46,6 +46,13 @@
     - None        Do not delete the source file.
     Overrides env var: COPY_EXT_DELETE_MODE
 
+.PARAMETER FileNamePattern
+    Wildcard pattern that the file name (without path) must match for the file
+    to be copied (e.g. 'IMG_*', '*_backup.*', 'report??.pdf').
+    Matching is case-insensitive. When omitted, all files whose extension
+    matches are eligible.
+    Overrides env var: COPY_EXT_NAME_PATTERN
+
 .PARAMETER PassThru
     Return a summary object to the pipeline when the script finishes.
     When this switch is NOT specified, a human-readable diagnostics summary is
@@ -57,6 +64,11 @@
         -DestinationFolder D:\Photos\Sorted -Extensions jpg,png
 
 .EXAMPLE
+    # Copy only .jpg files whose names start with 'IMG_'
+    .\Copy-FilesByExtension.ps1 -SourceFolder D:\Photos\Inbox `
+        -DestinationFolder D:\Photos\Sorted -Extensions jpg -FileNamePattern 'IMG_*'
+
+.EXAMPLE
     # Dry run (no files are actually copied or deleted)
     .\Copy-FilesByExtension.ps1 -SourceFolder D:\Inbox -DestinationFolder D:\Sorted `
         -Extensions pdf,docx -WhatIf
@@ -66,8 +78,9 @@
     .\Copy-FilesByExtension.ps1 -DeleteMode RecycleBin
 
 .NOTES
-    VERSION: 1.3.0
+    VERSION: 1.4.0
     CHANGELOG:
+        1.4.0 - Add -FileNamePattern parameter for wildcard matching on file names
         1.3.0 - Write diagnostics/statistics to the console when not in PassThru mode
         1.2.0 - Fix -Recurse:$false not overriding COPY_EXT_RECURSE (use
                 PSBoundParameters instead of IsPresent); validate ConflictMode and
@@ -83,6 +96,7 @@
         COPY_EXT_RECURSE        true | false  (default: false)
         COPY_EXT_CONFLICT_MODE  Rename | Skip | Overwrite  (default: Rename)
         COPY_EXT_DELETE_MODE    Immediate | RecycleBin | None  (default: Immediate)
+        COPY_EXT_NAME_PATTERN   Wildcard pattern for file names, e.g. IMG_*
 
     Exit codes:
         0  Success – all files copied (and deleted, if applicable) without error.
@@ -113,6 +127,9 @@ param(
     [string]$DeleteMode,
 
     [Parameter()]
+    [string]$FileNamePattern,
+
+    [Parameter()]
     [switch]$PassThru
 )
 
@@ -121,7 +138,7 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 Initialize-Logger -ScriptName 'CopyFilesByExtension' -LogLevel 20
 #endregion
 
-$Script:Version = '1.3.0'
+$Script:Version = '1.4.0'
 $script:Copied = 0
 $script:Skipped = 0
 $script:Failed = 0
@@ -171,6 +188,10 @@ if (-not $Extensions) {
 
 if (-not $PSBoundParameters.ContainsKey('Recurse')) {
     if ($env:COPY_EXT_RECURSE -match '^(1|true|yes)$') { $Recurse = $true }
+}
+
+if (-not $FileNamePattern) {
+    if ($env:COPY_EXT_NAME_PATTERN) { $FileNamePattern = $env:COPY_EXT_NAME_PATTERN }
 }
 
 if (-not $ConflictMode) {
@@ -274,8 +295,8 @@ $engineVer = $PSVersionTable.PSVersion.ToString()
 $scriptName = $MyInvocation.MyCommand.Name
 
 Write-LogInfo "===== $scriptName started | v$Script:Version | $engine $engineVer ====="
-Write-LogInfo ("Source='{0}' | Dest='{1}' | Extensions=[{2}] | Recurse={3} | ConflictMode={4} | DeleteMode={5}" `
-        -f $SourceFolder, $DestinationFolder, ($Extensions -join ','), $Recurse, $ConflictMode, $DeleteMode)
+Write-LogInfo ("Source='{0}' | Dest='{1}' | Extensions=[{2}] | FileNamePattern='{3}' | Recurse={4} | ConflictMode={5} | DeleteMode={6}" `
+        -f $SourceFolder, $DestinationFolder, ($Extensions -join ','), $(if ($FileNamePattern) { $FileNamePattern } else { '*' }), $Recurse, $ConflictMode, $DeleteMode)
 
 try {
     # Ensure destination folder exists
@@ -299,11 +320,14 @@ try {
     $candidates = $allFiles | Where-Object {
         ($Extensions -contains $_.Extension.ToLowerInvariant()) -and
         (-not ($destIsUnderSource -and
-            $_.FullName.StartsWith($resolvedDest + '\', [System.StringComparison]::OrdinalIgnoreCase)))
+            $_.FullName.StartsWith($resolvedDest + '\', [System.StringComparison]::OrdinalIgnoreCase))) -and
+        (-not $FileNamePattern -or $_.Name -ilike $FileNamePattern)
     }
     $total = ($candidates | Measure-Object).Count
 
-    Write-LogInfo "Found $total file(s) matching extensions: $($Extensions -join ', ')"
+    $matchDesc = "extensions: $($Extensions -join ', ')"
+    if ($FileNamePattern) { $matchDesc += " | pattern: '$FileNamePattern'" }
+    Write-LogInfo "Found $total file(s) matching $matchDesc"
 
     if ($total -eq 0) {
         Write-LogInfo 'No matching files to copy.'
@@ -410,6 +434,9 @@ try {
         Write-Host ("  Source      : {0}" -f $SourceFolder)
         Write-Host ("  Destination : {0}" -f $DestinationFolder)
         Write-Host ("  Extensions  : {0}" -f ($Extensions -join ', '))
+        if ($FileNamePattern) {
+            Write-Host ("  Name pattern: {0}" -f $FileNamePattern)
+        }
         Write-Host ''
         Write-Host ("  Files found : {0}" -f $total)
         Write-Host ("  Copied      : {0}" -f $script:Copied)
