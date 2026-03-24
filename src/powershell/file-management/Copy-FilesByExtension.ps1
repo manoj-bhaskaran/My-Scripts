@@ -1,5 +1,5 @@
 <#PSScriptInfo
-.VERSION 1.2.0
+.VERSION 1.3.0
 #>
 
 <#
@@ -48,6 +48,8 @@
 
 .PARAMETER PassThru
     Return a summary object to the pipeline when the script finishes.
+    When this switch is NOT specified, a human-readable diagnostics summary is
+    written to the console (host) instead.
 
 .EXAMPLE
     # Copy .jpg and .png from D:\Photos\Inbox to D:\Photos\Sorted, delete originals
@@ -64,8 +66,9 @@
     .\Copy-FilesByExtension.ps1 -DeleteMode RecycleBin
 
 .NOTES
-    VERSION: 1.2.0
+    VERSION: 1.3.0
     CHANGELOG:
+        1.3.0 - Write diagnostics/statistics to the console when not in PassThru mode
         1.2.0 - Fix -Recurse:$false not overriding COPY_EXT_RECURSE (use
                 PSBoundParameters instead of IsPresent); validate ConflictMode and
                 DeleteMode when sourced from .env; exclude destination subtree from
@@ -118,7 +121,7 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 Initialize-Logger -ScriptName 'CopyFilesByExtension' -LogLevel 20
 #endregion
 
-$Script:Version = '1.2.0'
+$Script:Version = '1.3.0'
 $script:Copied = 0
 $script:Skipped = 0
 $script:Failed = 0
@@ -399,6 +402,27 @@ try {
             DeleteFailed = $script:DelFailed
             ExitCode     = $exitCode
         }
+    }
+    else {
+        $statusColour = if ($exitCode -eq 0) { 'Green' } elseif ($exitCode -eq 2) { 'Yellow' } else { 'Red' }
+        Write-Host ''
+        Write-Host '===== Copy-FilesByExtension Summary =====' -ForegroundColor Cyan
+        Write-Host ("  Source      : {0}" -f $SourceFolder)
+        Write-Host ("  Destination : {0}" -f $DestinationFolder)
+        Write-Host ("  Extensions  : {0}" -f ($Extensions -join ', '))
+        Write-Host ''
+        Write-Host ("  Files found : {0}" -f $total)
+        Write-Host ("  Copied      : {0}" -f $script:Copied)
+        Write-Host ("  Skipped     : {0}" -f $script:Skipped)
+        Write-Host ("  Copy errors : {0}" -f $script:Failed)
+        if ($DeleteMode -ne 'None') {
+            Write-Host ("  Deleted     : {0}" -f $script:Deleted)
+            Write-Host ("  Del errors  : {0}" -f $script:DelFailed)
+        }
+        Write-Host ''
+        Write-Host ("  Status      : {0}" -f $(if ($exitCode -eq 0) { 'Success' } elseif ($exitCode -eq 2) { 'Completed with errors' } else { 'Failed' })) -ForegroundColor $statusColour
+        Write-Host '==========================================' -ForegroundColor Cyan
+        Write-Host ''
     }
 
     exit $exitCode
