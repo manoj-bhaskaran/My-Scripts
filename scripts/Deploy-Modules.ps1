@@ -278,8 +278,10 @@ Write-Host ""
 Write-Host "To verify, run:" -ForegroundColor Cyan
 Write-Host "  Get-Module -ListAvailable -Name PostgresBackup,PowerShellLoggingFramework,PurgeLogs,RandomName,Videoscreenshot,ErrorHandling,FileOperations,ProgressReporter"
 
-# Rebuild the repo index unless the caller opted out.
-if (-not $SkipIndexRebuild) {
+# Rebuild the repo index only when at least one module was actually deployed
+# and the caller has not opted out. Skipped deployments (already up-to-date)
+# and WhatIf runs don't change the index so there's nothing to rebuild.
+if ($deployedCount -gt 0 -and -not $SkipIndexRebuild) {
     Write-Host ""
     Write-Host "Rebuilding repo index..." -ForegroundColor Cyan
     $indexScript = Join-Path $scriptRoot "Update-RepoIndex.ps1"

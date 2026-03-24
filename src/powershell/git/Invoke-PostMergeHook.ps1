@@ -428,18 +428,23 @@ foreach ($rel in $modifiedFiles) {
 # 2) Deploy touched modules based on config\module-deployment-config.txt.
 Deploy-ModuleFromConfig -RepoPath $script:RepoPath -ConfigPath $configPath -TouchedRelPaths $modifiedFiles
 
-# 3) Rebuild the repo index so newly merged scripts/modules are immediately
+# 3) Rebuild the repo index if any PowerShell files were added, changed, or
+#    deleted in this merge, so newly merged scripts/modules are immediately
 #    available without a manual Update-RepoIndex call.
-$indexScript = Join-Path $script:RepoPath "scripts\Update-RepoIndex.ps1"
-if (Test-Path -LiteralPath $indexScript) {
-    $indexParams = @{ PsRoot = Join-Path $script:RepoPath "src\powershell" }
-    if ($localConfig.cacheDir) { $indexParams.CacheDir = $localConfig.cacheDir }
-    try {
-        & $indexScript @indexParams
-        Write-Message "Repo index rebuilt successfully."
-    }
-    catch {
-        Write-Message ("Repo index rebuild failed (non-fatal): {0}" -f $_)
+$allChangedFiles = @($modifiedFiles) + @($deletedFiles)
+$hasPsChanges = $allChangedFiles | Where-Object { $_ -match '\.(ps1|psm1|psd1)$' }
+if ($hasPsChanges) {
+    $indexScript = Join-Path $script:RepoPath "scripts\Update-RepoIndex.ps1"
+    if (Test-Path -LiteralPath $indexScript) {
+        $indexParams = @{ PsRoot = Join-Path $script:RepoPath "src\powershell" }
+        if ($localConfig.cacheDir) { $indexParams.CacheDir = $localConfig.cacheDir }
+        try {
+            & $indexScript @indexParams
+            Write-Message "Repo index rebuilt successfully."
+        }
+        catch {
+            Write-Message ("Repo index rebuild failed (non-fatal): {0}" -f $_)
+        }
     }
 }
 
