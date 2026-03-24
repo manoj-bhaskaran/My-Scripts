@@ -1,4 +1,5 @@
 {
   "stagingMirror": "C:\\Users\\YourUsername\\Documents\\Scripts",
-  "enabled": true
+  "enabled": true,
+  "cacheDir": "C:\\Users\\YourUsername\\AppData\\Local\\MyScripts"
 }

@@ -428,7 +428,22 @@ foreach ($rel in $modifiedFiles) {
 # 2) Deploy touched modules based on config\module-deployment-config.txt.
 Deploy-ModuleFromConfig -RepoPath $script:RepoPath -ConfigPath $configPath -TouchedRelPaths $modifiedFiles
 
-# 3) Remove deleted files from the DestinationFolder staging mirror.
+# 3) Rebuild the repo index so newly merged scripts/modules are immediately
+#    available without a manual Update-RepoIndex call.
+$indexScript = Join-Path $script:RepoPath "scripts\Update-RepoIndex.ps1"
+if (Test-Path -LiteralPath $indexScript) {
+    $indexParams = @{ PsRoot = Join-Path $script:RepoPath "src\powershell" }
+    if ($localConfig.cacheDir) { $indexParams.CacheDir = $localConfig.cacheDir }
+    try {
+        & $indexScript @indexParams
+        Write-Message "Repo index rebuilt successfully."
+    }
+    catch {
+        Write-Message ("Repo index rebuild failed (non-fatal): {0}" -f $_)
+    }
+}
+
+# 4) Remove deleted files from the DestinationFolder staging mirror.
 foreach ($rel in $deletedFiles) {
     $dst = Join-Path $script:DestinationFolder $rel
     if (Test-Path -LiteralPath $dst) {

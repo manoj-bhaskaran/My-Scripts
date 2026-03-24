@@ -107,6 +107,15 @@ if [ "$INSTALL_POWERSHELL" = true ]; then
     echo ""
     echo "PowerShell modules installed successfully!"
     echo ""
+
+    # Rebuild the repo index so newly deployed scripts/modules are immediately available.
+    INDEX_SCRIPT="$SCRIPT_DIR/Update-RepoIndex.ps1"
+    if [ -f "$INDEX_SCRIPT" ]; then
+        echo "Rebuilding repo index..."
+        $PWSH_CMD -NoProfile -ExecutionPolicy Bypass -File "$INDEX_SCRIPT"
+        echo "Repo index rebuilt."
+        echo ""
+    fi
 fi
 
 # Install Python modules
