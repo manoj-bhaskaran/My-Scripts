@@ -3,9 +3,9 @@
 #
 # Dot-sourced by $PROFILE. Requires these variables to be set BEFORE
 # dot-sourcing:
-#   $RepoRoot   - e.g. C:\Users\manoj\Documents\Scripts\src
-#   $PsRoot     - e.g. C:\Users\manoj\Documents\Scripts\src\powershell
-#   $CacheDir   - e.g. $env:LOCALAPPDATA\MyScripts
+#   $RepoRoot   - root of the repo's src folder
+#   $PsRoot     - root of the PowerShell subtree within the repo
+#   $CacheDir   - local cache directory (e.g. under $env:LOCALAPPDATA)
 #
 # Goals:
 #   1) All repo .ps1 scripts under $PsRoot are runnable from anywhere
