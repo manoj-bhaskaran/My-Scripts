@@ -238,6 +238,10 @@ function Run-RepoScript {
     if (-not $global:RepoScripts.ContainsKey($key)) {
         throw ("Repo script not found under {0}: {1}" -f $PsRoot, $Name)
     }
+    # Ensure repo modules are loaded before invoking the script. This mirrors
+    # what the PSReadLine Enter handler does, so that Run-RepoScript works
+    # correctly in non-interactive shells and hosts where the handler is absent.
+    Ensure-RepoModulesLoaded
     & $global:RepoScripts[$key] @Args
 }
 
