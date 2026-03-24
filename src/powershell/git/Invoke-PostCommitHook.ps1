@@ -440,11 +440,19 @@ foreach ($rel in $modifiedFiles) {
 # 3) Deploy touched modules based on config\module-deployment-config.txt.
 Deploy-ModuleFromConfig -RepoPath $script:RepoPath -ConfigPath $configPath -TouchedRelPaths $modifiedFiles
 
-# 4) Rebuild the repo index if any PowerShell files were added, changed, or
-#    deleted in this commit, so newly committed scripts/modules are immediately
-#    available without a manual Update-RepoIndex call.
-$allChangedFiles = @($modifiedFiles) + @($deletedFiles)
-$hasPsChanges = $allChangedFiles | Where-Object { $_ -match '\.(ps1|psm1|psd1)$' }
+# 4) Rebuild the repo index only when PowerShell files were structurally
+#    changed: added, copied, renamed, or deleted. Plain modifications (M) do
+#    not affect the index because the script name and path remain the same.
+if ($hasParent) {
+    $newOrRenamedPsFiles = @(git -C $script:RepoPath diff --name-only --diff-filter=ACR HEAD~1 HEAD |
+        Where-Object { $_ -match '\.(ps1|psm1|psd1)$' })
+}
+else {
+    # First commit — every tracked PS file is brand new.
+    $newOrRenamedPsFiles = @($modifiedFiles | Where-Object { $_ -match '\.(ps1|psm1|psd1)$' })
+}
+$deletedPsFiles = @($deletedFiles | Where-Object { $_ -match '\.(ps1|psm1|psd1)$' })
+$hasPsChanges = ($newOrRenamedPsFiles.Count + $deletedPsFiles.Count) -gt 0
 if ($hasPsChanges) {
     $indexScript = Join-Path $script:RepoPath "scripts\Update-RepoIndex.ps1"
     if (Test-Path -LiteralPath $indexScript) {
