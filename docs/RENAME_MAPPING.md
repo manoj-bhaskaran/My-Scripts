@@ -10,9 +10,9 @@ This document details all script renames performed to standardize naming convent
 
 ## Summary
 
-- **PowerShell Scripts Renamed:** 19
+- **PowerShell Scripts Renamed:** 20
 - **Python Scripts Renamed:** 2
-- **Total Files Affected:** 21
+- **Total Files Affected:** 22
 
 ---
 
@@ -28,6 +28,7 @@ All PowerShell script names must follow the `Verb-Noun` pattern where:
 | 1 | `logCleanup.ps1` | `Clear-PostgreSqlLog.ps1` | `Clear` | Uses approved verb `Clear` for removing old log files. Specifies PostgreSQL in noun for clarity. |
 | 2 | `cleanup-git-branches.ps1` | `Remove-MergedGitBranch.ps1` | `Remove` | Uses approved verb `Remove` instead of non-standard "cleanup". Singular noun `Branch` per PowerShell conventions. |
 | 3 | `picconvert.ps1` | `Convert-ImageFile.ps1` | `Convert` | Uses approved verb `Convert` for file conversion. Generic noun `ImageFile` as it handles multiple image types. |
+| 20 | `Convert-ImageFile.ps1` | `Move-ImageFileToBatch.ps1` | `Move` | `Convert` implies format conversion; the script renames extensions and moves files into batched subfolders. `Move` accurately reflects the move-semantics (copy then delete source). |
 | 4 | `post-commit-my-scripts.ps1` | `Invoke-PostCommitHook.ps1` | `Invoke` | Uses approved verb `Invoke` for executing hook scripts. Noun clearly identifies it as a Git post-commit hook. |
 | 5 | `post-merge-my-scripts.ps1` | `Invoke-PostMergeHook.ps1` | `Invoke` | Uses approved verb `Invoke` for executing hook scripts. Noun clearly identifies it as a Git post-merge hook. |
 | 6 | `DeleteOldDownloads.ps1` | `Remove-OldDownload.ps1` | `Remove` | `Delete` is not an approved verb. Uses `Remove` instead. Singular noun `Download` per PowerShell conventions. |
@@ -102,6 +103,7 @@ The following approved verbs were used in these renames:
 | `Backup` | Data | Create a backup copy | Database backup scripts |
 | `Clear` | Common | Remove or reset content | Log cleanup scripts |
 | `Convert` | Data | Change format | Image conversion |
+| `Move` | Common | Move a resource to another location | Image file batching |
 | `Get` | Common | Retrieve information | File handle retrieval |
 | `Invoke` | Lifecycle | Execute or run | Git hooks, API calls |
 | `Remove` | Common | Delete or eliminate | File/branch deletion |
@@ -172,6 +174,9 @@ After renaming, verify:
 ---
 
 ## Version History
+
+- **v2.1.0** (2026-03-24) - Further rename for semantic accuracy
+  - Renamed `Convert-ImageFile.ps1` → `Move-ImageFileToBatch.ps1` (entry #20)
 
 - **v2.0.0** (2025-11-18) - Initial standardization of naming conventions across repository
   - Renamed 19 PowerShell scripts to Verb-Noun PascalCase

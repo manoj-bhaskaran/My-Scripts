@@ -5,7 +5,7 @@ Scripts for image and video processing, conversion, and manipulation.
 ## Scripts
 
 - **ConvertTo-Jpeg.ps1** - Converts images to JPEG format
-- **Convert-ImageFile.ps1** - General-purpose image format conversion
+- **Move-ImageFileToBatch.ps1** - Renames .jpeg/.jpg_large to .jpg and moves files into per-extension, size-limited subfolders
 - **Show-RandomImage.ps1** - Displays a random image from a specified directory
 - **Show-VideoscreenshotDeprecation.ps1** - Videoscreenshot module deprecation notice and migration guide
 
@@ -34,8 +34,8 @@ The conversion scripts support various image formats including:
 # Convert images to JPEG
 .\ConvertTo-Jpeg.ps1 -Path "C:\Images" -Quality 90
 
-# General format conversion
-.\Convert-ImageFile.ps1 -Source "image.png" -OutputFormat "jpg"
+# Organise images into batched subfolders
+.\Move-ImageFileToBatch.ps1 -SourceDir "D:\Photos" -DestDir "F:\Media" -ShowProgress
 ```
 
 ## Video Screenshot Module

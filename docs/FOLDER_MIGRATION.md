@@ -67,7 +67,7 @@ This document maps the reorganization of the My-Scripts repository from a langua
 | Old Path | New Path | Description |
 |----------|----------|-------------|
 | `src/powershell/ConvertTo-Jpeg.ps1` | `src/powershell/media/ConvertTo-Jpeg.ps1` | JPEG conversion |
-| `src/powershell/Convert-ImageFile.ps1` | `src/powershell/media/Convert-ImageFile.ps1` | Image format conversion |
+| `src/powershell/Convert-ImageFile.ps1` | `src/powershell/media/Move-ImageFileToBatch.ps1` | Extension rename and batched file move |
 | `src/powershell/Show-RandomImage.ps1` | `src/powershell/media/Show-RandomImage.ps1` | Random image display |
 | `src/powershell/Show-VideoscreenshotDeprecation.ps1` | `src/powershell/media/Show-VideoscreenshotDeprecation.ps1` | Videoscreenshot deprecation notice |
 
