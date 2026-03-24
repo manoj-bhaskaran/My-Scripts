@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-03-24
+
 ### Changed
 
 - **Renamed `Convert-ImageFile.ps1` → `Move-ImageFileToBatch.ps1`**
