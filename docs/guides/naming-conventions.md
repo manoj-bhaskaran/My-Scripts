@@ -95,8 +95,8 @@ Get-Verb | Format-Table Verb, Group, Description
    - ❌ `Backup-GnuCashDatabaseToBackupLocationWithCompression.ps1` (too verbose)
 
 3. **Use PascalCase for Both Parts**
-   - ✅ `Convert-ImageFile.ps1`
-   - ❌ `convert-imagefile.ps1`, `Convert-image_file.ps1`
+   - ✅ `Move-ImageFileToBatch.ps1`
+   - ❌ `move-imagefiletobatch.ps1`, `Move-image_file_to_batch.ps1`
 
 4. **Avoid Abbreviations** (except well-known ones)
    - ✅ `Test-PostgreSqlConnection.ps1`, `Get-HttpResponse.ps1`
@@ -313,7 +313,7 @@ CI/CD pipeline includes:
 
 - `Backup-GnuCashDatabase.ps1` - Database backup script
 - `Clear-PostgreSqlLog.ps1` - Log cleanup script
-- `Convert-ImageFile.ps1` - Image conversion tool
+- `Move-ImageFileToBatch.ps1` - Image file organiser (extension rename + batched move)
 - `Get-FileHandle.ps1` - File handle inspector
 - `Invoke-PostCommitHook.ps1` - Git post-commit hook
 - `Remove-MergedGitBranch.ps1` - Git branch cleanup

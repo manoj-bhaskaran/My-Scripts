@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Renamed `Convert-ImageFile.ps1` → `Move-ImageFileToBatch.ps1`**
+  - The script organises files into batched subfolders and renames extensions; it does not convert image formats
+  - `Move` better reflects the primary action (move semantics: copy then delete source) and aligns with the PowerShell approved verb list
+  - Updated `src/powershell/media/README.md`, `docs/guides/naming-conventions.md`, `docs/FOLDER_MIGRATION.md`, and `docs/RENAME_MAPPING.md` to reflect the new name
+
 ## [2.7.6] - 2026-03-23
 
 ### Fixed
