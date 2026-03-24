@@ -457,7 +457,7 @@ if ($hasPsChanges) {
     $indexScript = Join-Path $script:RepoPath "scripts\Update-RepoIndex.ps1"
     if (Test-Path -LiteralPath $indexScript) {
         $indexParams = @{ PsRoot = Join-Path $script:RepoPath "src\powershell" }
-        if ($localConfig.cacheDir) { $indexParams.CacheDir = $localConfig.cacheDir }
+        if ($localConfig.PSObject.Properties['cacheDir']) { $indexParams.CacheDir = $localConfig.cacheDir }
         try {
             & $indexScript @indexParams
             Write-Message "Repo index rebuilt successfully."
