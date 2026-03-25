@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.1] - 2026-03-25
+
+### Fixed
+
+- **Security scan: ignore pygments ReDoS advisory `GHSA-5239-wwwm-4pmq`**
+  - No patched version of pygments has been released; upstream has not yet responded to the disclosure
+  - Added `--ignore-vuln GHSA-5239-wwwm-4pmq` to the `pip-audit` invocation in `security-scan.yml` to unblock CI until a fix is available, following the same pattern as the existing `CVE-2026-0994` ignore
+  - Comment added as a reminder to remove the ignore once pygments ships a patched release
+
 ## [2.9.0] - 2026-03-25
 
 ### Added
