@@ -6,9 +6,10 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.4.0
+ 4.5.0
 
  CHANGELOG:
+   4.5.0 - Added .mp4 to allowed file extensions for distribution
    4.4.0 - Made SourceFolder optional; omitting it enables rebalance-only mode (no -MaxFilesToCopy 0 needed)
    4.3.0 - Added -RandomizeDistribution to completely redistribute all files randomly across folders
    4.2.0 - Added -RebalanceTolerance parameter to make rebalance tolerance configurable (default: 10%)
@@ -585,7 +586,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.4.1"
+$script:Version = "4.5.0"
 $script:Warnings = 0
 $script:Errors = 0
 $script:SessionId = $null
@@ -2944,9 +2945,9 @@ function Main {
                 $totalEnumeratedFiles = $allSourceFiles.Count
 
                 # Define allowed extensions
-                $allowedExtensions = @('.jpg', '.png')
+                $allowedExtensions = @('.jpg', '.png', '.mp4')
 
-                # Filter to only include .jpg and .png files and track skipped files by extension
+                # Filter to only include .jpg, .png, and .mp4 files and track skipped files by extension
                 $sourceFilesAll = @()
                 foreach ($file in $allSourceFiles) {
                     $ext = $file.Extension.ToLower()

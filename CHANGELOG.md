@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-03-25
+
+### Added
+
+- **FileDistributor.ps1 v4.5.0: support `.mp4` files**
+  - Added `.mp4` to the list of allowed extensions so MP4 video files are distributed alongside `.jpg` and `.png` images
+
 ## [2.8.0] - 2026-03-24
 
 ### Changed
