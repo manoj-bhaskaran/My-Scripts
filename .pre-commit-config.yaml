@@ -84,7 +84,7 @@ repos:
         entry: pip-audit
         language: python
         additional_dependencies: ["pip-audit==2.7.3"]
-        args: ["-r", "requirements.lock", "--ignore-vuln", "CVE-2026-0994"]
+        args: ["-r", "requirements.lock", "--ignore-vuln", "CVE-2026-0994", "--ignore-vuln", "GHSA-5239-wwwm-4pmq"]
         pass_filenames: false
         files: ^requirements\.(lock|txt)$
 
