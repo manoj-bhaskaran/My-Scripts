@@ -448,6 +448,53 @@ Describe "Invoke-WithRetry" {
             $script:attemptCount | Should -Be 1
         }
     }
+
+    Context "IgnoreFileNotFound" {
+        BeforeEach {
+            Reset-LoggingTracking
+        }
+
+        It "Skips ItemNotFoundException when IgnoreFileNotFound is set" {
+            $script:attemptCount = 0
+
+            $result = Invoke-WithRetry -Operation {
+                $script:attemptCount++
+                throw [System.Management.Automation.ItemNotFoundException]::new("Cannot find path 'C:\\missing.txt' because it does not exist.")
+            } -Description "Copy optional file" -RetryCount 3 -RetryDelay 0 -IgnoreFileNotFound
+
+            $result | Should -BeNullOrEmpty
+            $script:attemptCount | Should -Be 1
+            $script:LogWarningCalled | Should -Be $true
+            $script:LogWarningMessage | Should -BeLike "*Skipping operation due to file-not-found*"
+        }
+
+        It "Skips matching cannot-find-path message when IgnoreFileNotFound is set" {
+            $script:attemptCount = 0
+
+            $result = Invoke-WithRetry -Operation {
+                $script:attemptCount++
+                throw "Cannot find path 'C:\\missing.txt' because it does not exist."
+            } -Description "Copy optional file" -RetryCount 3 -RetryDelay 0 -IgnoreFileNotFound
+
+            $result | Should -BeNullOrEmpty
+            $script:attemptCount | Should -Be 1
+            $script:LogWarningCalled | Should -Be $true
+            $script:LogWarningMessage | Should -BeLike "*Skipping operation due to file-not-found*"
+        }
+
+        It "Preserves existing behavior when IgnoreFileNotFound is not set" {
+            $script:attemptCount = 0
+
+            {
+                Invoke-WithRetry -Operation {
+                    $script:attemptCount++
+                    throw [System.Management.Automation.ItemNotFoundException]::new("Cannot find path 'C:\\missing.txt' because it does not exist.")
+                } -Description "Copy required file" -RetryCount 2 -RetryDelay 0 -LogErrors $false
+            } | Should -Throw
+
+            $script:attemptCount | Should -Be 2
+        }
+    }
 }
 
 Describe "Test-IsElevated" {

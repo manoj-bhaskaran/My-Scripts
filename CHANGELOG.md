@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-03-26
+
+### Added
+
+- **ErrorHandling v1.1.0: optional file-not-found skip in `Invoke-WithRetry`**
+  - Added `-IgnoreFileNotFound` switch to `Invoke-WithRetry` in `Core/ErrorHandling`
+  - When enabled, `ItemNotFoundException` and matching "Cannot find path ... does not exist" errors now log a warning and return without retry/rethrow
+  - Default behavior remains unchanged for existing callers that do not set the switch
+  - Updated ErrorHandling module documentation and tests to cover the new switch behavior
+
 ## [2.10.6] - 2026-03-26
 
 ### Fixed

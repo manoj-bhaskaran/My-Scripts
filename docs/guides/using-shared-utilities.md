@@ -91,6 +91,11 @@ Import-Module ErrorHandling
 Invoke-WithRetry -Operation {
     Copy-Item $source $destination -Force
 } -Description "Copy file" -RetryCount 3 -RetryDelay 2
+
+# Optional: treat missing source files as warning-and-skip
+Invoke-WithRetry -Operation {
+    Copy-Item $optionalSource $destination -Force
+} -Description "Copy optional file" -IgnoreFileNotFound
 ```
 
 ##### Test-IsElevated
