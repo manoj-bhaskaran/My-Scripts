@@ -6,9 +6,10 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.5.0
+ 4.6.0
 
  CHANGELOG:
+   4.6.0 - Decomposed Main into orchestration sub-functions for checkpointed phases and cleanup
    4.5.0 - Added .mp4 to allowed file extensions for distribution
    4.4.0 - Made SourceFolder optional; omitting it enables rebalance-only mode (no -MaxFilesToCopy 0 needed)
    4.3.0 - Added -RandomizeDistribution to completely redistribute all files randomly across folders
@@ -586,7 +587,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.5.0"
+$script:Version = "4.6.0"
 $script:Warnings = 0
 $script:Errors = 0
 $script:SessionId = $null
@@ -2623,789 +2624,422 @@ function RemoveLogEntries {
 }
 
 # Main script logic
+
+function Invoke-ParameterValidation {
+    param([hashtable]$RunState)
+
+    LogMessage -Message "Validating parameters: SourceFolder - $SourceFolder, TargetFolder - $TargetFolder, FilesPerFolderLimit - $FilesPerFolderLimit, MaxFilesToCopy - $MaxFilesToCopy"
+
+    if (-not $script:SessionId) { $script:SessionId = [guid]::NewGuid().ToString() }
+
+    if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
+        $script:MaxFilesToCopy = 0
+        LogMessage -Message "SourceFolder not specified. Running in rebalance-only mode (no files will be copied)." -ConsoleOutput
+    }
+    else {
+        $script:MaxFilesToCopy = $MaxFilesToCopy
+    }
+
+    if ([string]::IsNullOrWhiteSpace($TargetFolder)) {
+        LogMessage -Message "TargetFolder not specified. Provide -TargetFolder with a valid path." -IsError
+        throw "Missing required parameter: -TargetFolder"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($SourceFolder) -and !(Test-Path -Path $SourceFolder)) {
+        LogMessage -Message "Source folder '$SourceFolder' does not exist." -IsError
+        throw "Source folder not found."
+    }
+
+    if (!($FilesPerFolderLimit -gt 0)) {
+        LogMessage -Message "Incorrect value for FilesPerFolderLimit. Resetting to default: 20000." -IsWarning
+        $script:FilesPerFolderLimit = 20000
+    }
+
+    if (!(Test-Path -Path $TargetFolder)) {
+        LogMessage -Message "Target folder '$TargetFolder' does not exist. Creating it." -IsWarning
+        New-Item -ItemType Directory -Path $TargetFolder -Force | Out-Null
+    }
+
+    if (-not ("RecycleBin", "Immediate", "EndOfScript" -contains $DeleteMode)) {
+        LogMessage -Message "Invalid value for DeleteMode: $DeleteMode. Valid options are 'RecycleBin', 'Immediate', 'EndOfScript'." -IsError
+        throw "Invalid DeleteMode."
+    }
+
+    $exclusiveOptions = @($ConsolidateToMinimum, $RebalanceToAverage, $RandomizeDistribution)
+    $enabledCount = ($exclusiveOptions | Where-Object { $_ }).Count
+    if ($enabledCount -gt 1) {
+        LogMessage -Message "Parameters -ConsolidateToMinimum, -RebalanceToAverage, and -RandomizeDistribution are mutually exclusive. Choose only one." -IsError
+        throw "Mutually exclusive options: only one of -ConsolidateToMinimum, -RebalanceToAverage, or -RandomizeDistribution can be specified"
+    }
+
+    if (-not ("NoWarnings", "WarningsOnly" -contains $EndOfScriptDeletionCondition)) {
+        LogMessage -Message "Invalid value for EndOfScriptDeletionCondition: $EndOfScriptDeletionCondition. Valid options are 'NoWarnings', 'WarningsOnly'." -IsError
+        throw "Invalid EndOfScriptDeletionCondition."
+    }
+
+    if ($script:MaxFilesToCopy -lt -1) {
+        LogMessage -Message "Invalid MaxFilesToCopy '$script:MaxFilesToCopy'. Using -1 (no limit)." -IsWarning
+        $script:MaxFilesToCopy = -1
+    }
+
+    $RunState.FilesToDelete = New-FileQueue -Name "FilesToDelete" -SessionId $script:SessionId -MaxSize -1
+    $RunState.GlobalFileCounter = New-Ref 0
+    LogMessage -Message "Parameter validation completed"
+}
+
+function Invoke-RestoreCheckpoint {
+    param(
+        [hashtable]$RunState,
+        [ref]$FileLockRef,
+        [ref]$PriorWarnings,
+        [ref]$PriorErrors
+    )
+
+    $RunState.LastCheckpoint = 0
+
+    if ($Restart) {
+        $FileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+        LogMessage -Message "Restart requested. Loading checkpoint..." -ConsoleOutput
+
+        $state = LoadState -fileLock $FileLockRef
+        $RunState.State = $state
+        $RunState.LastCheckpoint = $state.Checkpoint
+
+        if ($RunState.LastCheckpoint -gt 0) {
+            if ($state.PSObject.Properties.Name -contains 'SessionId' -and $state.SessionId) {
+                $script:SessionId = [string]$state.SessionId
+            }
+            else {
+                $script:SessionId = [guid]::NewGuid().ToString()
+                LogMessage -Message "Legacy state without SessionId; generated new SessionId for this resume." -IsWarning
+            }
+
+            if ($state.PSObject.Properties.Name -contains 'WarningsSoFar') { $PriorWarnings.Value = [int]$state.WarningsSoFar }
+            if ($state.PSObject.Properties.Name -contains 'ErrorsSoFar') { $PriorErrors.Value = [int]$state.ErrorsSoFar }
+            LogMessage -Message "Restarting from checkpoint $($RunState.LastCheckpoint)" -ConsoleOutput
+        }
+        else {
+            LogMessage -Message "Checkpoint not found. Executing from top..." -IsWarning
+        }
+
+        if ($state.ContainsKey("SourceFolder")) {
+            $savedSourceFolder = $state.SourceFolder
+            if (-not [string]::IsNullOrWhiteSpace($savedSourceFolder)) {
+                if ($SourceFolder -ne $savedSourceFolder) {
+                    throw "SourceFolder mismatch: Restarted script must use the saved SourceFolder ('$savedSourceFolder'). Aborting."
+                }
+                $script:SourceFolder = $savedSourceFolder
+            }
+        }
+        else {
+            throw "State file does not contain SourceFolder. Unable to enforce."
+        }
+
+        if ($state.ContainsKey("deleteMode")) {
+            $savedDeleteMode = $state.deleteMode
+            if ($DeleteMode -ne $savedDeleteMode) {
+                throw "DeleteMode mismatch: Restarted script must use the saved DeleteMode ('$savedDeleteMode'). Aborting."
+            }
+            $script:DeleteMode = $savedDeleteMode
+        }
+        else {
+            throw "State file does not contain DeleteMode. Unable to enforce."
+        }
+
+        if ($RunState.LastCheckpoint -in 2..7 -and $null -ne $state) {
+            if ($state.ContainsKey('totalSourceFiles')) { $RunState.totalSourceFiles = [int]$state['totalSourceFiles'] }
+            if ($state.ContainsKey('totalTargetFilesBefore')) { $RunState.totalTargetFilesBefore = [int]$state['totalTargetFilesBefore'] }
+            if ($state.ContainsKey('totalSourceFilesAll')) { $RunState.totalSourceFilesAll = [int]$state['totalSourceFilesAll'] }
+            if ($state.ContainsKey('MaxFilesToCopy')) {
+                $savedMax = [int]$state['MaxFilesToCopy']
+                if ($script:MaxFilesToCopy -ne $savedMax) {
+                    throw "MaxFilesToCopy mismatch: Restarted script must use the saved MaxFilesToCopy ($savedMax). Aborting."
+                }
+                $script:MaxFilesToCopy = $savedMax
+            }
+            if ($state.ContainsKey('subfolders')) { $RunState.subfolders = ConvertPathsToItems($state['subfolders']) }
+            if ($RunState.LastCheckpoint -in 2, 3 -and $state.ContainsKey('sourceFiles')) { $RunState.sourceFiles = ConvertPathsToItems($state['sourceFiles']) }
+        }
+
+        if ($DeleteMode -eq "EndOfScript" -and $RunState.LastCheckpoint -in 3, 4, 5, 6, 7 -and $state.ContainsKey("FilesToDelete")) {
+            foreach ($e in $state.FilesToDelete) {
+                if ($e -is [string]) {
+                    Add-FileToQueue -Queue $RunState.FilesToDelete -FilePath $e -ValidateFile $false | Out-Null
+                }
+                else {
+                    $RunState.FilesToDelete.Items.Enqueue([pscustomobject]@{
+                        SourcePath       = $e.Path
+                        TargetPath       = $null
+                        Size             = $e.Size
+                        LastWriteTimeUtc = $e.LastWriteTimeUtc
+                        QueuedAtUtc      = if ($e.PSObject.Properties.Name -contains 'QueuedAtUtc') { $e.QueuedAtUtc } else { (Get-Date).ToUniversalTime() }
+                        SessionId        = if ($e.PSObject.Properties.Name -contains 'SessionId') { $e.SessionId } else { $script:SessionId }
+                        Attempts         = 0
+                        Metadata         = @{}
+                    })
+                }
+            }
+        }
+    }
+    else {
+        if (Test-Path -Path $StateFilePath) {
+            LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
+            Remove-Item -Path $StateFilePath -Force
+        }
+        $FileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+    }
+}
+
+function Invoke-DistributionPhase {
+    param([hashtable]$RunState,[ref]$FileLockRef)
+
+    if ($RunState.LastCheckpoint -lt 1) {
+        if (-not [string]::IsNullOrWhiteSpace($SourceFolder)) {
+            LogMessage -Message "Preparing for distribution (no upfront renaming; rename occurs at copy time)." -ConsoleOutput
+        }
+        SaveState -Checkpoint 1 -AdditionalVariables @{ deleteMode = $DeleteMode; SourceFolder = $SourceFolder } -fileLock $FileLockRef
+    }
+
+    if ($RunState.LastCheckpoint -lt 2) {
+        if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
+            LogMessage -Message "Enumerating target files..." -ConsoleOutput
+            $RunState.sourceFiles = @(); $RunState.totalSourceFiles = 0; $RunState.totalSourceFilesAll = 0
+        }
+        else {
+            LogMessage -Message "Enumerating source and target files..." -ConsoleOutput
+            $allSourceFiles = Get-ChildItem -Path $SourceFolder -Recurse -File
+            $allowedExtensions = @('.jpg', '.png', '.mp4')
+            $sourceFilesAll = @()
+            foreach ($file in $allSourceFiles) {
+                $ext = $file.Extension.ToLower()
+                if ($ext -in $allowedExtensions) { $sourceFilesAll += $file }
+                else {
+                    if (-not $RunState.skippedFilesByExtension.ContainsKey($ext)) { $RunState.skippedFilesByExtension[$ext] = 0 }
+                    $RunState.skippedFilesByExtension[$ext]++
+                    $RunState.totalSkippedFiles++
+                }
+            }
+            $RunState.totalSourceFilesAll = $sourceFilesAll.Count
+            if ($script:MaxFilesToCopy -eq 0) { $RunState.sourceFiles = @() }
+            elseif ($script:MaxFilesToCopy -gt 0) { $RunState.sourceFiles = $sourceFilesAll | Select-Object -First $script:MaxFilesToCopy }
+            else { $RunState.sourceFiles = $sourceFilesAll }
+            $RunState.totalSourceFiles = $RunState.sourceFiles.Count
+        }
+
+        $RunState.totalTargetFilesBefore = (Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object).Count
+        $RunState.totalTargetFilesBefore = if ($null -eq $RunState.totalTargetFilesBefore) { 0 } else { $RunState.totalTargetFilesBefore }
+        $totalFiles = $RunState.totalSourceFiles + $RunState.totalTargetFilesBefore
+
+        $RunState.subfolders = @(Get-ChildItem -LiteralPath $TargetFolder -Force | Where-Object { $_.PSIsContainer })
+        if ($totalFiles / $FilesPerFolderLimit -gt $RunState.subfolders.Count) {
+            $additionalFolders = [math]::Ceiling($totalFiles / $FilesPerFolderLimit) - $RunState.subfolders.Count
+            $RunState.subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
+        }
+
+        SaveState -Checkpoint 2 -AdditionalVariables @{
+            sourceFiles            = ConvertItemsToPaths($RunState.sourceFiles)
+            totalSourceFiles       = $RunState.totalSourceFiles
+            totalSourceFilesAll    = $RunState.totalSourceFilesAll
+            totalTargetFilesBefore = $RunState.totalTargetFilesBefore
+            subfolders             = ConvertItemsToPaths($RunState.subfolders)
+            deleteMode             = $DeleteMode
+            SourceFolder           = $SourceFolder
+            MaxFilesToCopy         = $script:MaxFilesToCopy
+        } -fileLock $FileLockRef
+    }
+
+    if ($RunState.LastCheckpoint -lt 3) {
+        $cp3 = @{
+            totalSourceFiles       = $RunState.totalSourceFiles
+            totalSourceFilesAll    = $RunState.totalSourceFilesAll
+            totalTargetFilesBefore = $RunState.totalTargetFilesBefore
+            subfolders             = ConvertItemsToPaths($RunState.subfolders)
+            deleteMode             = $DeleteMode
+            SourceFolder           = $SourceFolder
+            MaxFilesToCopy         = $script:MaxFilesToCopy
+        }
+        if ($DeleteMode -eq "EndOfScript") { $cp3["FilesToDelete"] = ConvertFrom-FileQueue -Queue $RunState.FilesToDelete }
+        SaveState -Checkpoint 3 -AdditionalVariables $cp3 -fileLock $FileLockRef
+    }
+
+    if ($RunState.LastCheckpoint -lt 4) {
+        if ($RunState.totalSourceFiles -gt 0 -and $RunState.sourceFiles.Count -gt 0) {
+            DistributeFilesToSubfolders -Files $RunState.sourceFiles -Subfolders $RunState.subfolders -TargetRoot $TargetFolder -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles $RunState.totalSourceFiles
+        }
+        $cp4 = @{
+            sourceFiles            = ConvertItemsToPaths($RunState.sourceFiles)
+            totalSourceFiles       = $RunState.totalSourceFiles
+            totalSourceFilesAll    = $RunState.totalSourceFilesAll
+            totalTargetFilesBefore = $RunState.totalTargetFilesBefore
+            subfolders             = ConvertItemsToPaths($RunState.subfolders)
+            deleteMode             = $DeleteMode
+            SourceFolder           = $SourceFolder
+            MaxFilesToCopy         = $script:MaxFilesToCopy
+        }
+        if ($DeleteMode -eq "EndOfScript") { $cp4["FilesToDelete"] = ConvertFrom-FileQueue -Queue $RunState.FilesToDelete }
+        SaveState -Checkpoint 4 -AdditionalVariables $cp4 -fileLock $FileLockRef
+    }
+
+    if ($RunState.LastCheckpoint -lt 5) {
+        RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $RunState.subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles 0
+        $cp5 = @{
+            totalSourceFiles       = $RunState.totalSourceFiles
+            totalSourceFilesAll    = $RunState.totalSourceFilesAll
+            totalTargetFilesBefore = $RunState.totalTargetFilesBefore
+            deleteMode             = $DeleteMode
+            SourceFolder           = $SourceFolder
+            MaxFilesToCopy         = $script:MaxFilesToCopy
+        }
+        if ($DeleteMode -eq "EndOfScript") { $cp5["FilesToDelete"] = ConvertFrom-FileQueue -Queue $RunState.FilesToDelete }
+        SaveState -Checkpoint 5 -AdditionalVariables $cp5 -fileLock $FileLockRef
+    }
+}
+
+function Invoke-PostProcessingPhase {
+    param([hashtable]$RunState,[ref]$FileLockRef)
+
+    if ($ConsolidateToMinimum -and $RunState.LastCheckpoint -lt 6) {
+        ConsolidateSubfoldersToMinimum -TargetFolder $TargetFolder -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
+        $cp6 = @{ totalSourceFiles=$RunState.totalSourceFiles; totalSourceFilesAll=$RunState.totalSourceFilesAll; totalTargetFilesBefore=$RunState.totalTargetFilesBefore; subfolders=ConvertItemsToPaths((Get-ChildItem -LiteralPath $TargetFolder -Directory -Force)); deleteMode=$DeleteMode; SourceFolder=$SourceFolder; MaxFilesToCopy=$script:MaxFilesToCopy }
+        if ($DeleteMode -eq "EndOfScript") { $cp6["FilesToDelete"] = ConvertFrom-FileQueue -Queue $RunState.FilesToDelete }
+        SaveState -Checkpoint 6 -AdditionalVariables $cp6 -fileLock $FileLockRef
+    }
+
+    if ($RebalanceToAverage -and $RunState.LastCheckpoint -lt 7) {
+        RebalanceSubfoldersByAverage -TargetFolder $TargetFolder -FilesPerFolderLimit $FilesPerFolderLimit -Tolerance $RebalanceTolerance -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
+        $cp7 = @{ totalSourceFiles=$RunState.totalSourceFiles; totalSourceFilesAll=$RunState.totalSourceFilesAll; totalTargetFilesBefore=$RunState.totalTargetFilesBefore; subfolders=ConvertItemsToPaths((Get-ChildItem -LiteralPath $TargetFolder -Directory -Force)); deleteMode=$DeleteMode; SourceFolder=$SourceFolder; MaxFilesToCopy=$script:MaxFilesToCopy }
+        if ($DeleteMode -eq "EndOfScript") { $cp7["FilesToDelete"] = ConvertFrom-FileQueue -Queue $RunState.FilesToDelete }
+        SaveState -Checkpoint 7 -AdditionalVariables $cp7 -fileLock $FileLockRef
+    }
+
+    if ($RandomizeDistribution -and $RunState.LastCheckpoint -lt 8) {
+        RandomizeDistributionAcrossFolders -TargetFolder $TargetFolder -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
+        $cp8 = @{ totalSourceFiles=$RunState.totalSourceFiles; totalSourceFilesAll=$RunState.totalSourceFilesAll; totalTargetFilesBefore=$RunState.totalTargetFilesBefore; subfolders=ConvertItemsToPaths((Get-ChildItem -LiteralPath $TargetFolder -Directory -Force)); deleteMode=$DeleteMode; SourceFolder=$SourceFolder; MaxFilesToCopy=$script:MaxFilesToCopy }
+        if ($DeleteMode -eq "EndOfScript") { $cp8["FilesToDelete"] = ConvertFrom-FileQueue -Queue $RunState.FilesToDelete }
+        SaveState -Checkpoint 8 -AdditionalVariables $cp8 -fileLock $FileLockRef
+    }
+}
+
+function Invoke-EndOfScriptDeletion {
+    param([hashtable]$RunState,[int]$PriorWarnings,[int]$PriorErrors)
+
+    if ($DeleteMode -ne "EndOfScript") { return }
+
+    $effectiveWarnings = [Math]::Max($Warnings, $PriorWarnings)
+    $effectiveErrors = [Math]::Max($Errors, $PriorErrors)
+
+    if (-not (Test-EndOfScriptCondition -Condition $EndOfScriptDeletionCondition -Warnings $effectiveWarnings -Errors $effectiveErrors)) {
+        LogMessage -Message "End-of-script deletion skipped due to warnings or errors."
+        return
+    }
+
+    while ($RunState.FilesToDelete.Items.Count -gt 0) {
+        $entry = Get-NextQueueItem -Queue $RunState.FilesToDelete -IncrementAttempts $false
+        if ($null -eq $entry) { break }
+        if ($entry.SessionId -ne $script:SessionId) { continue }
+        if (-not (Test-Path -Path $entry.SourcePath)) { continue }
+
+        $okToDelete = $true
+        try {
+            $fi = Get-Item -LiteralPath $entry.SourcePath -ErrorAction Stop
+            if ($null -ne $entry.Size -and $fi.Length -ne $entry.Size) { $okToDelete = $false }
+            if ($null -ne $entry.LastWriteTimeUtc -and $fi.LastWriteTimeUtc -ne $entry.LastWriteTimeUtc) { $okToDelete = $false }
+        }
+        catch { LogMessage -Message "Could not stat queued file before deletion: $($_.Exception.Message)" -IsDebug }
+
+        if ($okToDelete) {
+            try { Remove-File -FilePath $entry.SourcePath } catch { LogMessage -Message "Failed to delete file $($entry.SourcePath). Error: $($_.Exception.Message)" -IsWarning }
+        }
+    }
+}
+
+function Invoke-PostRunCleanup {
+    param([hashtable]$RunState,[ref]$FileLockRef)
+
+    $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
+    $totalTargetFilesAfter = if ($null -eq $totalTargetFilesAfter) { 0 } else { $totalTargetFilesAfter }
+
+    if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
+        LogMessage -Message "===== File Rebalancing Summary =====" -ConsoleOutput
+        LogMessage -Message "Original number of files in the target folder hierarchy: $($RunState.totalTargetFilesBefore)" -ConsoleOutput
+        LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
+    }
+    else {
+        LogMessage -Message "===== File Distribution Summary =====" -ConsoleOutput
+        LogMessage -Message "Original number of files in the source folder (enumerated): $($RunState.totalSourceFilesAll)" -ConsoleOutput
+        LogMessage -Message "Files selected for copying this run: $($RunState.totalSourceFiles)" -ConsoleOutput
+        LogMessage -Message "Original number of files in the target folder hierarchy: $($RunState.totalTargetFilesBefore)" -ConsoleOutput
+        LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
+    }
+    LogMessage -Message "Total warnings: $script:Warnings" -ConsoleOutput
+    LogMessage -Message "Total errors: $script:Errors" -ConsoleOutput
+
+    if ($FileLockRef.Value) { ReleaseFileLock -FileStream $FileLockRef.Value; $FileLockRef.Value = $null }
+    Remove-Item -Path $StateFilePath -Force
+
+    if ($CleanupDuplicates) {
+        $dupScript = Join-Path -Path $script:ScriptRoot -ChildPath "Remove-DuplicateFiles.ps1"
+        if (Test-Path -LiteralPath $dupScript) { & $dupScript -ParentDirectory $TargetFolder -LogFilePath $LogFilePath -DryRun:$false }
+    }
+
+    if ($CleanupEmptyFolders) {
+        $emptyScript = Join-Path -Path $script:ScriptRoot -ChildPath "Remove-EmptyFolders.ps1"
+        if (Test-Path -LiteralPath $emptyScript) { & $emptyScript -ParentDirectory $TargetFolder -LogFilePath $LogFilePath -DryRun:$false }
+    }
+}
+
+# Main script logic
 function Main {
     LogMessage -Message "FileDistributor starting..." -ConsoleOutput
     LogMessage -Message "Version: $script:Version" -ConsoleOutput
     $script:DebugMode = ($DebugPreference -ne 'SilentlyContinue')
     Import-RandomNameProvider -ModulePath $RandomNameModulePath
 
-    # Track prior counters from any persisted state for cross-restart safety
-    $priorWarnings = 0; $priorErrors = 0
-    # Handle log entry removal
+    $priorWarnings = 0
+    $priorErrors = 0
+
     if (-not $Restart) {
         $beforeTimestamp = $null
         if ($RemoveEntriesBefore) {
-            try {
-                $beforeTimestamp = [datetime]::Parse($RemoveEntriesBefore)
-            }
-            catch {
-                LogMessage -Message "Invalid timestamp format for RemoveEntriesBefore: $RemoveEntriesBefore" -IsError
-                throw "Invalid timestamp format. Use 'YYYY-MM-DD HH:MM:SS' or ISO 8601."
-            }
+            try { $beforeTimestamp = [datetime]::Parse($RemoveEntriesBefore) }
+            catch { throw "Invalid timestamp format. Use 'YYYY-MM-DD HH:MM:SS' or ISO 8601." }
         }
-
-        if ($RemoveEntriesOlderThan -lt 0) {
-            LogMessage -Message "Invalid value for RemoveEntriesOlderThan: $RemoveEntriesOlderThan. Must be a non-negative integer." -IsError
-            throw "Invalid value for RemoveEntriesOlderThan. Must be a non-negative integer."
-        }
-
+        if ($RemoveEntriesOlderThan -lt 0) { throw "Invalid value for RemoveEntriesOlderThan. Must be a non-negative integer." }
         if ($beforeTimestamp -or $RemoveEntriesOlderThan) {
             RemoveLogEntries -LogFilePath $LogFilePath -BeforeTimestamp $beforeTimestamp -OlderThanDays $RemoveEntriesOlderThan
         }
-    }
-
-    # Handle log truncation for fresh runs
-    if (-not $Restart) {
         if ($TruncateIfLarger) {
             try {
                 $thresholdBytes = ConvertToBytes -Size $TruncateIfLarger
-                if ((Test-Path -Path $LogFilePath) -and ((Get-Item -Path $LogFilePath).Length -gt $thresholdBytes)) {
-                    Clear-Content -Path $LogFilePath -Force
-                    LogMessage -Message "Log file truncated due to size exceeding ${TruncateIfLarger}: $LogFilePath"
-                }
+                if ((Test-Path -Path $LogFilePath) -and ((Get-Item -Path $LogFilePath).Length -gt $thresholdBytes)) { Clear-Content -Path $LogFilePath -Force }
             }
-            catch {
-                LogMessage -Message "Failed to evaluate or truncate log file based on size: $($_.Exception.Message)" -IsError
-            }
+            catch { LogMessage -Message "Failed to evaluate or truncate log file based on size: $($_.Exception.Message)" -IsError }
         }
         elseif ($TruncateLog) {
-            try {
-                Clear-Content -Path $LogFilePath -Force
-                LogMessage -Message "Log file truncated: $LogFilePath"
-            }
-            catch {
-                LogMessage -Message "Failed to truncate log file: $($_.Exception.Message)" -IsError
-            }
+            try { Clear-Content -Path $LogFilePath -Force } catch { LogMessage -Message "Failed to truncate log file: $($_.Exception.Message)" -IsError }
         }
     }
 
-    LogMessage -Message "Validating parameters: SourceFolder - $SourceFolder, TargetFolder - $TargetFolder, FilesPerFolderLimit - $FilesPerFolderLimit, MaxFilesToCopy - $MaxFilesToCopy"
+    $runState = @{
+        totalSourceFilesAll = 0
+        totalSourceFiles = 0
+        totalTargetFilesBefore = 0
+        subfolders = @()
+        sourceFiles = @()
+        skippedFilesByExtension = @{}
+        totalSkippedFiles = 0
+    }
+    $fileLockRef = [ref]$null
 
     try {
-        # Ensure source and target folders exist
-        if (-not $script:SessionId) { $script:SessionId = [guid]::NewGuid().ToString() }
-
-        # Require SourceFolder/TargetFolder explicitly (removed user-specific defaults)
-        # SourceFolder is optional for rebalance-only mode (automatically sets MaxFilesToCopy = 0)
-        if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
-            # No source folder = rebalance-only mode
-            $MaxFilesToCopy = 0
-            LogMessage -Message "SourceFolder not specified. Running in rebalance-only mode (no files will be copied)." -ConsoleOutput
-        }
-        if ([string]::IsNullOrWhiteSpace($TargetFolder)) {
-            LogMessage -Message "TargetFolder not specified. Provide -TargetFolder with a valid path." -IsError
-            throw "Missing required parameter: -TargetFolder"
-        }
-
-        if (-not [string]::IsNullOrWhiteSpace($SourceFolder) -and !(Test-Path -Path $SourceFolder)) {
-            LogMessage -Message "Source folder '$SourceFolder' does not exist." -IsError
-            throw "Source folder not found."
-        }
-
-        if (!($FilesPerFolderLimit -gt 0)) {
-            LogMessage -Message "Incorrect value for FilesPerFolderLimit. Resetting to default: 20000." -IsWarning
-            $FilesPerFolderLimit = 20000
-        }
-
-        if (!(Test-Path -Path $TargetFolder)) {
-            LogMessage -Message "Target folder '$TargetFolder' does not exist. Creating it." -IsWarning
-            New-Item -ItemType Directory -Path $TargetFolder -Force
-        }
-
-        # Validate input parameters
-        if (-not ("RecycleBin", "Immediate", "EndOfScript" -contains $DeleteMode)) {
-            LogMessage -Message "Invalid value for DeleteMode: $DeleteMode. Valid options are 'RecycleBin', 'Immediate', 'EndOfScript'." -IsError
-            exit 1
-        }
-
-        # Enforce mutual exclusivity
-        $exclusiveOptions = @($ConsolidateToMinimum, $RebalanceToAverage, $RandomizeDistribution)
-        $enabledCount = ($exclusiveOptions | Where-Object { $_ }).Count
-        if ($enabledCount -gt 1) {
-            LogMessage -Message "Parameters -ConsolidateToMinimum, -RebalanceToAverage, and -RandomizeDistribution are mutually exclusive. Choose only one." -IsError
-            throw "Mutually exclusive options: only one of -ConsolidateToMinimum, -RebalanceToAverage, or -RandomizeDistribution can be specified"
-        }
-
-        if (-not ("NoWarnings", "WarningsOnly" -contains $EndOfScriptDeletionCondition)) {
-            LogMessage -Message "Invalid value for EndOfScriptDeletionCondition: $EndOfScriptDeletionCondition. Valid options are 'NoWarnings', 'WarningsOnly'." -IsError
-            exit 1
-        }
-
-        # Validate MaxFilesToCopy
-        if ($MaxFilesToCopy -lt -1) {
-            LogMessage -Message "Invalid MaxFilesToCopy '$MaxFilesToCopy'. Using -1 (no limit)." -IsWarning
-            $MaxFilesToCopy = -1
-        }
-
-        LogMessage -Message "Parameter validation completed"
-
-        # Initialize stable [ref] holders (do not overwrite these variables later, only set .Value)
-        $FilesToDelete = New-FileQueue -Name "FilesToDelete" -SessionId $script:SessionId -MaxSize -1
-        $GlobalFileCounter = New-Ref 0   # running count
-
-        $fileLockRef = [ref]$null
-
-        # Initialize variables that will be used in the summary section
-        # These must be initialized before checkpoint blocks to ensure they're always available
-        $totalSourceFilesAll = 0
-        $totalSourceFiles = 0
-        $totalTargetFilesBefore = 0
-        $subfolders = @()
-        $sourceFiles = @()
-        $skippedFilesByExtension = @{}  # Hashtable to track skipped files by extension
-        $totalSkippedFiles = 0
-
-        try {
-            # Restart logic
-            $lastCheckpoint = 0
-            if ($Restart) {
-                # Acquire a lock on the state file
-                $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
-
-                LogMessage -Message "Restart requested. Loading checkpoint..." -ConsoleOutput
-                $state = LoadState -fileLock $fileLockRef
-                $lastCheckpoint = $state.Checkpoint
-                if ($lastCheckpoint -gt 0) {
-                    # Restore session id (or create if missing for legacy states)
-                    if ($state.PSObject.Properties.Name -contains 'SessionId' -and $state.SessionId) {
-                        $script:SessionId = [string]$state.SessionId
-                    }
-                    else {
-                        $script:SessionId = [guid]::NewGuid().ToString()
-                        LogMessage -Message "Legacy state without SessionId; generated new SessionId for this resume." -IsWarning
-                    }
-                    # Capture prior counters to aggregate with current run
-                    if ($state.PSObject.Properties.Name -contains 'WarningsSoFar') { $priorWarnings = [int]$state.WarningsSoFar }
-                    if ($state.PSObject.Properties.Name -contains 'ErrorsSoFar') { $priorErrors = [int]$state.ErrorsSoFar }
-                    LogMessage -Message "Restarting from checkpoint $lastCheckpoint" -ConsoleOutput
-                }
-                else {
-                    LogMessage -Message "Checkpoint not found. Executing from top..." -IsWarning
-                }
-
-                # Restore SourceFolder
-                if ($state.ContainsKey("SourceFolder")) {
-                    $savedSourceFolder = $state.SourceFolder
-
-                    # Validate the loaded SourceFolder (allow empty for rebalance-only mode)
-                    if (-not [string]::IsNullOrWhiteSpace($savedSourceFolder)) {
-                        if ($SourceFolder -ne $savedSourceFolder) {
-                            throw "SourceFolder mismatch: Restarted script must use the saved SourceFolder ('$savedSourceFolder'). Aborting."
-                        }
-                        $SourceFolder = $savedSourceFolder
-                        LogMessage -Message "SourceFolder restored from state file: $SourceFolder"
-                    }
-                    else {
-                        LogMessage -Message "SourceFolder was empty in state file (rebalance-only mode)."
-                    }
-                }
-                else {
-                    throw "State file does not contain SourceFolder. Unable to enforce."
-                }
-
-                # Restore DeleteMode
-                if ($state.ContainsKey("deleteMode")) {
-                    $savedDeleteMode = $state.deleteMode
-
-                    # Validate the loaded DeleteMode
-                    if (-not ("RecycleBin", "Immediate", "EndOfScript" -contains $savedDeleteMode)) {
-                        throw "Invalid value for DeleteMode in state file: '$savedDeleteMode'. Valid options are 'RecycleBin', 'Immediate', 'EndOfScript'."
-                    }
-
-                    if ($DeleteMode -ne $savedDeleteMode) {
-                        throw "DeleteMode mismatch: Restarted script must use the saved DeleteMode ('$savedDeleteMode'). Aborting."
-                    }
-                    $DeleteMode = $savedDeleteMode
-                    Write-Output "DeleteMode restored from state file: $DeleteMode"
-                }
-                else {
-                    throw "State file does not contain DeleteMode. Unable to enforce."
-                }
-
-                # Load checkpoint-specific state (scalars + collections) in one place
-                if ($lastCheckpoint -in 2..7 -and $null -ne $state) {
-
-                    # --- Scalars (cheap; always safe to load) ---
-                    if ($state.ContainsKey('totalSourceFiles')) { $totalSourceFiles = [int]$state['totalSourceFiles'] }
-                    if ($state.ContainsKey('totalTargetFilesBefore')) { $totalTargetFilesBefore = [int]$state['totalTargetFilesBefore'] }
-                    if ($state.ContainsKey('totalSourceFilesAll')) { $totalSourceFilesAll = [int]$state['totalSourceFilesAll'] }
-
-                    if ($state.ContainsKey('MaxFilesToCopy')) {
-                        $savedMax = [int]$state['MaxFilesToCopy']
-                        if ($MaxFilesToCopy -ne $savedMax) {
-                            throw "MaxFilesToCopy mismatch: Restarted script must use the saved MaxFilesToCopy ($savedMax). Aborting."
-                        }
-                        $MaxFilesToCopy = $savedMax
-                    }
-
-                    # --- Collections (path -> object conversions only when needed) ---
-                    if ($state.ContainsKey('subfolders')) {
-                        # Needed by both phases and for post-phase logging
-                        $subfolders = ConvertPathsToItems($state['subfolders'])
-                    }
-
-                    if ($lastCheckpoint -in 2, 3 -and $state.ContainsKey('sourceFiles')) {
-                        # Only needed to run/finish the Source→Target copy before CP4 is saved
-                        $sourceFiles = ConvertPathsToItems($state['sourceFiles'])
-                    }
-
-                }
-
-                # Load FilesToDelete using FileQueue module for EndOfScript mode and lastCheckpoint 3..7
-                if ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4, 5, 6, 7 -and $state.ContainsKey("FilesToDelete")) {
-                    $loadedQueue = $state.FilesToDelete
-                    $restoredCount = 0
-
-                    # Add items from state to the queue
-                    foreach ($e in $loadedQueue) {
-                        # Normalize legacy string entries to object format
-                        if ($e -is [string]) {
-                            $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $e -ValidateFile $false
-                        }
-                        else {
-                            # Add with existing metadata
-                            $FilesToDelete.Items.Enqueue([pscustomobject]@{
-                                    SourcePath       = $e.Path
-                                    TargetPath       = $null
-                                    Size             = $e.Size
-                                    LastWriteTimeUtc = $e.LastWriteTimeUtc
-                                    QueuedAtUtc      = if ($e.PSObject.Properties.Name -contains 'QueuedAtUtc') { $e.QueuedAtUtc } else { (Get-Date).ToUniversalTime() }
-                                    SessionId        = if ($e.PSObject.Properties.Name -contains 'SessionId') { $e.SessionId } else { $script:SessionId }
-                                    Attempts         = 0
-                                    Metadata         = @{}
-                                })
-                        }
-                        $restoredCount++
-                    }
-
-                    if ($restoredCount -eq 0) {
-                        Write-Output "No files to delete from the previous session."
-                    }
-                    else {
-                        Write-Output "Loaded $restoredCount files to delete from the previous session."
-                    }
-                }
-                elseif ($DeleteMode -eq "EndOfScript" -and $lastCheckpoint -in 3, 4, 5, 6, 7) {
-                    # If DeleteMode is EndOfScript but no FilesToDelete key exists
-                    LogMessage -Message "State file does not contain FilesToDelete key for EndOfScript mode." -IsWarning
-                }
-            }
-            else {
-
-                # Check if a restart state file exists
-                if (Test-Path -Path $StateFilePath) {
-
-                    LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
-
-                    try {
-                        Remove-Item -Path $StateFilePath -Force
-                        LogMessage -Message "State file $StateFilePath deleted."
-                    }
-                    catch {
-                        LogMessage -Message "Failed to delete state file $StateFilePath. Error: $_" -IsError
-                        throw "An error occurred while deleting the state file: $($_.Exception.Message)"
-                    }
-                }
-                # Acquire the file lock after deleting the file
-                $fileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
-            }
-        }
-        catch {
-            LogMessage -Message "An unexpected error occurred: $($_.Exception.Message)" -IsError
-            throw
-        }
-
-        if ($lastCheckpoint -lt 1) {
-            # No upfront renaming: we now rename at copy time to preserve source integrity until copy succeeds.
-            # Only show this message if we're actually copying from a source folder
-            if (-not [string]::IsNullOrWhiteSpace($SourceFolder)) {
-                LogMessage -Message "Preparing for distribution (no upfront renaming; rename occurs at copy time)." -ConsoleOutput
-            }
-            $additionalVars = @{
-                deleteMode   = $DeleteMode # Persist DeleteMode
-                SourceFolder = $SourceFolder # Persist SourceFolder
-            }
-            SaveState -Checkpoint 1 -AdditionalVariables $additionalVars -fileLock $fileLockRef
-        }
-
-        if ($lastCheckpoint -lt 2) {
-            # Skip source enumeration if SourceFolder not provided (rebalance-only mode)
-            if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
-                LogMessage -Message "Enumerating target files..." -ConsoleOutput
-                $sourceFilesAll = @()
-                $totalSourceFilesAll = 0
-                $sourceFiles = @()
-                $totalSourceFiles = 0
-            }
-            else {
-                LogMessage -Message "Enumerating source and target files..." -ConsoleOutput
-                # Count files in the source and target folder before distribution
-                # First, get ALL files to track what's being skipped
-                $allSourceFiles = Get-ChildItem -Path $SourceFolder -Recurse -File
-                $totalEnumeratedFiles = $allSourceFiles.Count
-
-                # Define allowed extensions
-                $allowedExtensions = @('.jpg', '.png', '.mp4')
-
-                # Filter to only include .jpg, .png, and .mp4 files and track skipped files by extension
-                $sourceFilesAll = @()
-                foreach ($file in $allSourceFiles) {
-                    $ext = $file.Extension.ToLower()
-                    if ($ext -in $allowedExtensions) {
-                        $sourceFilesAll += $file
-                    }
-                    else {
-                        # Track skipped files by extension
-                        if (-not $skippedFilesByExtension.ContainsKey($ext)) {
-                            $skippedFilesByExtension[$ext] = 0
-                        }
-                        $skippedFilesByExtension[$ext]++
-                        $totalSkippedFiles++
-                    }
-                }
-                $totalSourceFilesAll = $sourceFilesAll.Count
-
-                # Log skipped file statistics
-                if ($totalSkippedFiles -gt 0) {
-                    LogMessage -Message "Skipped $totalSkippedFiles file(s) with non-compliant extensions:" -ConsoleOutput
-                    foreach ($ext in ($skippedFilesByExtension.Keys | Sort-Object)) {
-                        $count = $skippedFilesByExtension[$ext]
-                        $extDisplay = if ([string]::IsNullOrEmpty($ext)) { "(no extension)" } else { $ext }
-                        LogMessage -Message "  $extDisplay : $count file(s)" -ConsoleOutput
-                    }
-                }
-
-                # Apply copy cap
-                if ($MaxFilesToCopy -eq 0) {
-                    $sourceFiles = @()
-                }
-                elseif ($MaxFilesToCopy -gt 0) {
-                    # Selection policy: maintain enumeration order; change to | Get-Random -Count $MaxFilesToCopy to sample
-                    $sourceFiles = $sourceFilesAll | Select-Object -First $MaxFilesToCopy
-                }
-                else {
-                    $sourceFiles = $sourceFilesAll
-                }
-                $totalSourceFiles = $sourceFiles.Count
-            }
-
-            $totalTargetFilesBefore = (Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object).Count
-            $totalTargetFilesBefore = if ($null -eq $totalTargetFilesBefore) { 0 } else { $totalTargetFilesBefore }
-            $totalFiles = $totalSourceFiles + $totalTargetFilesBefore # per-phase denominator
-
-            # Show appropriate message based on whether we have a source folder
-            if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
-                LogMessage -Message "Target File Count Before: $totalTargetFilesBefore." -ConsoleOutput
-            }
-            else {
-                LogMessage -Message "Source File Count (selected): $totalSourceFiles of $totalSourceFilesAll total. Target File Count Before: $totalTargetFilesBefore." -ConsoleOutput
-            }
-
-            # Get subfolders in the target folder
-            LogMessage -Message "DEBUG: About to enumerate subfolders in: '$TargetFolder'" -IsDebug
-            LogMessage -Message "DEBUG: Target folder exists: $(Test-Path -LiteralPath $TargetFolder)" -IsDebug
-            LogMessage -Message "DEBUG: Target folder is directory: $(Test-Path -LiteralPath $TargetFolder -PathType Container)" -IsDebug
-
-            try {
-                $allItems = Get-ChildItem -LiteralPath $TargetFolder -Force -ErrorAction Stop
-                LogMessage -Message "DEBUG: Total items found: $($allItems.Count)" -IsDebug
-
-                $subfolders = @($allItems | Where-Object { $_.PSIsContainer })
-
-                LogMessage -Message "DEBUG: Directory items found: $($subfolders.Count)" -IsDebug
-                if ($subfolders -and $subfolders.Count -gt 0) {
-                    $subfolderNames = @($subfolders | ForEach-Object {
-                            if ($_ -and $_.FullName) {
-                                "'$($_.FullName)'"
-                            }
-                        })
-                    LogMessage -Message ("DEBUG: Initial subfolders collected ({0} items): {1}" -f $subfolders.Count, ($subfolderNames -join ', ')) -IsDebug
-                }
-                else {
-                    LogMessage -Message "DEBUG: Initial subfolders collected: NONE"
-                }
-            }
-            catch {
-                LogMessage -Message "DEBUG: Error during Get-ChildItem: $($_.Exception.Message)" -IsError
-                $subfolders = @()
-            }
-            # Determine if subfolders need to be created
-            LogMessage -Message "Total Files Before: $totalFiles."
-            $currentFolderCount = $subfolders.Count
-            LogMessage -Message "Sub-folder Count Before: $currentFolderCount."
-
-            if ($totalFiles / $FilesPerFolderLimit -gt $currentFolderCount) {
-                $additionalFolders = [math]::Ceiling($totalFiles / $FilesPerFolderLimit) - $currentFolderCount
-                LogMessage -Message "Need to create $additionalFolders subfolders"
-                $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
-            }
-
-            $additionalVars = @{
-                sourceFiles            = ConvertItemsToPaths($sourceFiles)             # selected-only
-                totalSourceFiles       = $totalSourceFiles                        # selected-only
-                totalSourceFilesAll    = $totalSourceFilesAll                  # full enumeration
-                totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders             = ConvertItemsToPaths($subfolders)
-                deleteMode             = $DeleteMode # Persist DeleteMode
-                SourceFolder           = $SourceFolder # Persist SourceFolder
-                MaxFilesToCopy         = $MaxFilesToCopy
-            }
-
-            SaveState -Checkpoint 2 -AdditionalVariables $additionalVars -fileLock $fileLockRef
-        }
-
-        if ($lastCheckpoint -lt 3) {
-            # Add this diagnostic before calling DistributeFilesToSubfolders
-            if ($state.subfolders) {
-                LogMessage -Message ("DEBUG: State subfolders raw count: {0}" -f $state.subfolders.Count) -IsDebug
-            }
-            if ($subfolders -and $subfolders.Count -gt 0) {
-                $subfolderNames = @($subfolders | ForEach-Object {
-                        if ($_ -and $_.FullName) { "'$($_.FullName)'" }
-                    })
-                LogMessage -Message ("DEBUG: Converted subfolders ({0} items): {1}" -f $subfolders.Count, ($subfolderNames -join ', ')) -IsDebug
-            }
-            else {
-                LogMessage -Message "DEBUG: Converted subfolders: NONE (count: $(if ($subfolders) { $subfolders.Count } else { 'null' }))" -IsDebug
-            }
-
-            # Common base for additional variables
-            $additionalVars = @{
-                totalSourceFiles       = $totalSourceFiles
-                totalSourceFilesAll    = $totalSourceFilesAll
-                totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders             = ConvertItemsToPaths($subfolders)
-                deleteMode             = $DeleteMode # Persist DeleteMode
-                SourceFolder           = $SourceFolder # Persist SourceFolder
-                MaxFilesToCopy         = $MaxFilesToCopy
-            }
-
-            # Conditionally add FilesToDelete for EndOfScript mode
-            if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = ConvertFrom-FileQueue -Queue $FilesToDelete
-            }
-
-            # Save the state with the consolidated additional variables
-            SaveState -Checkpoint 3 -AdditionalVariables $additionalVars -fileLock $fileLockRef
-        }
-        # --- NEW: Source → Target distribution phase (Checkpoint 4) ---
-        if ($lastCheckpoint -lt 4) {
-            if ($totalSourceFiles -gt 0 -and $null -ne $sourceFiles -and $sourceFiles.Count -gt 0 -and $subfolders -and $subfolders.Count -gt 0) {
-                LogMessage -Message ("Distributing {0} source file(s) to subfolders..." -f $totalSourceFiles) -ConsoleOutput
-                $GlobalFileCounter.Value = 0
-                DistributeFilesToSubfolders -Files $sourceFiles `
-                    -Subfolders $subfolders `
-                    -TargetRoot $TargetFolder `
-                    -Limit $FilesPerFolderLimit `
-                    -ShowProgress:$ShowProgress `
-                    -UpdateFrequency:$UpdateFrequency `
-                    -DeleteMode $DeleteMode `
-                    -FilesToDelete $FilesToDelete `
-                    -GlobalFileCounter $GlobalFileCounter `
-                    -TotalFiles $totalSourceFiles
-            }
-            else {
-                # Log why we're skipping distribution
-                if ($totalSourceFiles -eq 0) {
-                    LogMessage -Message "No files to distribute from source folder." -ConsoleOutput
-                }
-                elseif (-not $subfolders -or $subfolders.Count -eq 0) {
-                    LogMessage -Message "No subfolders available in target. Creating first subfolder..." -ConsoleOutput
-                    # Create at least one subfolder if source has files but target has none
-                    if ($totalSourceFiles -gt 0) {
-                        $subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders 1 -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
-                    }
-                }
-            }
-
-            # Persist after Source → Target copy (Checkpoint 4)
-            $additionalVars = @{
-                sourceFiles            = ConvertItemsToPaths($sourceFiles)
-                totalSourceFiles       = $totalSourceFiles
-                totalSourceFilesAll    = $totalSourceFilesAll
-                totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders             = ConvertItemsToPaths($subfolders)
-                deleteMode             = $DeleteMode
-                SourceFolder           = $SourceFolder
-                MaxFilesToCopy         = $MaxFilesToCopy
-            }
-            if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = ConvertFrom-FileQueue -Queue $FilesToDelete
-            }
-            SaveState -Checkpoint 4 -AdditionalVariables $additionalVars -fileLock $fileLockRef
-        }
-
-        if ($lastCheckpoint -lt 5) {
-            # Redistribute files within the target folder and subfolders if needed (now Checkpoint 5)
-            LogMessage -Message "Redistributing files in target folders..." -ConsoleOutput
-            LogMessage -Message ("DEBUG: About to call RedistributeFilesInTarget with {0} subfolders" -f $subfolders.Count) -IsDebug
-            RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $subfolders `
-                -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress `
-                -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode `
-                -FilesToDelete $FilesToDelete -GlobalFileCounter $GlobalFileCounter `
-                -TotalFiles 0 # Not used now; function computes its own totals
-
-            # Save post-redistribution state (Checkpoint 5)
-            # Base additional variables
-            $additionalVars = @{
-                totalSourceFiles       = $totalSourceFiles
-                totalSourceFilesAll    = $totalSourceFilesAll
-                totalTargetFilesBefore = $totalTargetFilesBefore
-                deleteMode             = $DeleteMode # Persist DeleteMode
-                SourceFolder           = $SourceFolder # Persist SourceFolder
-                MaxFilesToCopy         = $MaxFilesToCopy
-            }
-
-            # Conditionally add FilesToDelete if DeleteMode is EndOfScript
-            if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = ConvertFrom-FileQueue -Queue $FilesToDelete
-            }
-
-            # Save state with checkpoint 4 and additional variables
-            SaveState -Checkpoint 5 -AdditionalVariables $additionalVars -fileLock $fileLockRef
-        }
-
-        # --- Optional: Consolidate into minimum # of subfolders (Checkpoint 6) ---
-        if ($ConsolidateToMinimum -and $lastCheckpoint -lt 6) {
-            LogMessage -Message "Consolidating files into the minimum number of subfolders... (opt-in)"
-
-            ConsolidateSubfoldersToMinimum -TargetFolder $TargetFolder `
-                -FilesPerFolderLimit $FilesPerFolderLimit `
-                -ShowProgress:$ShowProgress `
-                -UpdateFrequency:$UpdateFrequency `
-                -DeleteMode $DeleteMode `
-                -FilesToDelete $FilesToDelete `
-                -GlobalFileCounter $GlobalFileCounter
-
-            # Save post-consolidation state (Checkpoint 6)
-            $additionalVars = @{
-                totalSourceFiles       = $totalSourceFiles
-                totalSourceFilesAll    = $totalSourceFilesAll
-                totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders             = ConvertItemsToPaths( (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force | ForEach-Object { $_ }) )
-                deleteMode             = $DeleteMode
-                SourceFolder           = $SourceFolder
-                MaxFilesToCopy         = $MaxFilesToCopy
-            }
-            if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = ConvertFrom-FileQueue -Queue $FilesToDelete
-            }
-            SaveState -Checkpoint 6 -AdditionalVariables $additionalVars -fileLock $fileLockRef
-        }
-
-        # --- Optional: Rebalance among existing subfolders (Checkpoint 7) ---
-        if ($RebalanceToAverage -and $lastCheckpoint -lt 7) {
-            LogMessage -Message ("Rebalancing files among existing subfolders to within ±{0}% of average... (opt-in)" -f $RebalanceTolerance)
-
-            RebalanceSubfoldersByAverage -TargetFolder $TargetFolder `
-                -FilesPerFolderLimit $FilesPerFolderLimit `
-                -Tolerance $RebalanceTolerance `
-                -ShowProgress:$ShowProgress `
-                -UpdateFrequency:$UpdateFrequency `
-                -DeleteMode $DeleteMode `
-                -FilesToDelete $FilesToDelete `
-                -GlobalFileCounter $GlobalFileCounter
-
-            # Save post-rebalance state (Checkpoint 7)
-            $additionalVars = @{
-                totalSourceFiles       = $totalSourceFiles
-                totalSourceFilesAll    = $totalSourceFilesAll
-                totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders             = ConvertItemsToPaths( (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force | ForEach-Object { $_ }) )
-                deleteMode             = $DeleteMode
-                SourceFolder           = $SourceFolder
-                MaxFilesToCopy         = $MaxFilesToCopy
-            }
-            if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = ConvertFrom-FileQueue -Queue $FilesToDelete
-            }
-            SaveState -Checkpoint 7 -AdditionalVariables $additionalVars -fileLock $fileLockRef
-        }
-
-        # --- Optional: Randomize distribution across all subfolders (Checkpoint 8) ---
-        if ($RandomizeDistribution -and $lastCheckpoint -lt 8) {
-            LogMessage -Message "Randomizing ALL files across all subfolders... (opt-in)"
-
-            RandomizeDistributionAcrossFolders -TargetFolder $TargetFolder `
-                -FilesPerFolderLimit $FilesPerFolderLimit `
-                -ShowProgress:$ShowProgress `
-                -UpdateFrequency:$UpdateFrequency `
-                -DeleteMode $DeleteMode `
-                -FilesToDelete $FilesToDelete `
-                -GlobalFileCounter $GlobalFileCounter
-
-            # Save post-randomization state (Checkpoint 8)
-            $additionalVars = @{
-                totalSourceFiles       = $totalSourceFiles
-                totalSourceFilesAll    = $totalSourceFilesAll
-                totalTargetFilesBefore = $totalTargetFilesBefore
-                subfolders             = ConvertItemsToPaths( (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force | ForEach-Object { $_ }) )
-                deleteMode             = $DeleteMode
-                SourceFolder           = $SourceFolder
-                MaxFilesToCopy         = $MaxFilesToCopy
-            }
-            if ($DeleteMode -eq "EndOfScript") {
-                $additionalVars["FilesToDelete"] = ConvertFrom-FileQueue -Queue $FilesToDelete
-            }
-            SaveState -Checkpoint 8 -AdditionalVariables $additionalVars -fileLock $fileLockRef
-        }
-
-        if ($DeleteMode -eq "EndOfScript") {
-            # Use aggregated counters across restarts for safe evaluation
-            $effectiveWarnings = [Math]::Max($Warnings, $priorWarnings)
-            $effectiveErrors = [Math]::Max($Errors, $priorErrors)
-
-            if (Test-EndOfScriptCondition -Condition $EndOfScriptDeletionCondition -Warnings $effectiveWarnings -Errors $effectiveErrors) {
-
-                # Process deletion queue using FileQueue module
-                while ($FilesToDelete.Items.Count -gt 0) {
-                    $entry = Get-NextQueueItem -Queue $FilesToDelete -IncrementAttempts $false
-
-                    if ($null -eq $entry) {
-                        break
-                    }
-
-                    $entryPath = $entry.SourcePath
-                    $entrySession = $entry.SessionId
-                    $entrySize = $entry.Size
-                    $entryMtimeUtc = $entry.LastWriteTimeUtc
-
-                    if ($entrySession -ne $script:SessionId) {
-                        LogMessage -Message "Skipping deletion for '$entryPath' — queued by a different session ($entrySession)." -IsWarning
-                        continue
-                    }
-
-                    try {
-                        if (Test-Path -Path $entryPath) {
-                            # Verify unchanged if metadata exists
-                            $okToDelete = $true
-                            try {
-                                $fi = Get-Item -LiteralPath $entryPath -ErrorAction Stop
-                                if ($null -ne $entrySize -and $fi.Length -ne $entrySize) { $okToDelete = $false }
-                                if ($null -ne $entryMtimeUtc -and $fi.LastWriteTimeUtc -ne $entryMtimeUtc) { $okToDelete = $false }
-                            }
-                            catch {
-                                LogMessage -Message "Could not stat '$entryPath' prior to deletion: $($_.Exception.Message)" -IsWarning
-                            }
-
-                            if ($okToDelete) {
-                                Remove-File -FilePath $entryPath
-                                LogMessage -Message "Deleted file: $entryPath during EndOfScript cleanup."
-                            }
-                            else {
-                                LogMessage -Message "Skipped deletion for '$entryPath' due to metadata mismatch (size/time changed)." -IsWarning
-                            }
-                        }
-                        else {
-                            LogMessage -Message "File $entryPath not found during EndOfScript deletion." -IsWarning
-                        }
-                    }
-                    catch {
-                        # Log a warning for failure to delete
-                        LogMessage -Message "Failed to delete file $entryPath. Error: $($_.Exception.Message)" -IsWarning
-                    }
-                }
-            }
-            else {
-                # Log a message if conditions are not met
-                LogMessage -Message "End-of-script deletion skipped due to warnings or errors."
-            }
-        }
-
-        # Count files in the target folder after distribution
-        $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
-        $totalTargetFilesAfter = if ($null -eq $totalTargetFilesAfter) { 0 } else { $totalTargetFilesAfter }
-
-        # Log summary message - different format for rebalance-only mode
-        if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
-            # Rebalance-only mode summary
-            LogMessage -Message "===== File Rebalancing Summary =====" -ConsoleOutput
-            LogMessage -Message "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -ConsoleOutput
-            LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
-            LogMessage -Message "Total warnings: $script:Warnings" -ConsoleOutput
-            LogMessage -Message "Total errors: $script:Errors" -ConsoleOutput
-
-            if ($totalTargetFilesBefore -ne $totalTargetFilesAfter) {
-                LogMessage -Message "File count changed during rebalancing. Possible discrepancy detected." -IsWarning
-            }
-            else {
-                LogMessage -Message "File rebalancing completed successfully." -ConsoleOutput
-            }
-        }
-        else {
-            # Normal distribution mode summary
-            LogMessage -Message "===== File Distribution Summary =====" -ConsoleOutput
-            LogMessage -Message "Original number of files in the source folder (enumerated): $totalSourceFilesAll" -ConsoleOutput
-
-            # Display skipped file statistics
-            if ($totalSkippedFiles -gt 0) {
-                LogMessage -Message "Files skipped (non-compliant extensions): $totalSkippedFiles" -ConsoleOutput
-                foreach ($ext in ($skippedFilesByExtension.Keys | Sort-Object)) {
-                    $count = $skippedFilesByExtension[$ext]
-                    $extDisplay = if ([string]::IsNullOrEmpty($ext)) { "(no extension)" } else { $ext }
-                    LogMessage -Message "  $extDisplay : $count file(s)" -ConsoleOutput
-                }
-            }
-            else {
-                LogMessage -Message "Files skipped (non-compliant extensions): 0" -ConsoleOutput
-            }
-
-            LogMessage -Message "Files selected for copying this run: $totalSourceFiles" -ConsoleOutput
-            LogMessage -Message "Original number of files in the target folder hierarchy: $totalTargetFilesBefore" -ConsoleOutput
-            LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
-            LogMessage -Message "Total warnings: $script:Warnings" -ConsoleOutput
-            LogMessage -Message "Total errors: $script:Errors" -ConsoleOutput
-
-            if ($totalSourceFiles + $totalTargetFilesBefore -ne $totalTargetFilesAfter) {
-                LogMessage -Message "Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -IsWarning
-            }
-            else {
-                LogMessage -Message "File distribution and cleanup completed successfully." -ConsoleOutput
-            }
-        }
-
-        # Release the file lock before deleting state file
-        if ($fileLockRef -and ($fileLockRef.PSObject.Properties.Name -contains 'Value') -and $fileLockRef.Value) {
-            ReleaseFileLock -FileStream $fileLockRef.Value
-        }
-
-        Remove-Item -Path $StateFilePath -Force
-        LogMessage -Message "Deleted state file: $StateFilePath"
-
-        # Post-processing: Cleanup duplicates
-        if ($CleanupDuplicates) {
-            $dupScript = Join-Path -Path $script:ScriptRoot -ChildPath "Remove-DuplicateFiles.ps1"
-            if (Test-Path -LiteralPath $dupScript) {
-                LogMessage -Message "Invoking duplicate file cleanup script..."
-                & $dupScript -ParentDirectory $TargetFolder -LogFilePath $LogFilePath -DryRun:$false
-                LogMessage -Message "Duplicate file cleanup completed."
-            }
-            else {
-                LogMessage -Message "Duplicate cleanup helper not found at '$dupScript'. Skipping." -IsWarning
-            }
-        }
-        else {
-            LogMessage -Message "Skipping duplicate file cleanup."
-        }
-
-        # Post-processing: Cleanup empty folders
-        if ($CleanupEmptyFolders) {
-            $emptyScript = Join-Path -Path $script:ScriptRoot -ChildPath "Remove-EmptyFolders.ps1"
-            if (Test-Path -LiteralPath $emptyScript) {
-                LogMessage -Message "Invoking empty folder cleanup script..."
-                & $emptyScript -ParentDirectory $TargetFolder -LogFilePath $LogFilePath -DryRun:$false
-                LogMessage -Message "Empty folder cleanup completed."
-            }
-            else {
-                LogMessage -Message "Empty-folder cleanup helper not found at '$emptyScript'. Skipping." -IsWarning
-            }
-        }
-        else {
-            LogMessage -Message "Skipping empty folder cleanup."
-        }
+        Invoke-ParameterValidation -RunState $runState
+        Invoke-RestoreCheckpoint -RunState $runState -FileLockRef $fileLockRef -PriorWarnings ([ref]$priorWarnings) -PriorErrors ([ref]$priorErrors)
+        Invoke-DistributionPhase -RunState $runState -FileLockRef $fileLockRef
+        Invoke-PostProcessingPhase -RunState $runState -FileLockRef $fileLockRef
+        Invoke-EndOfScriptDeletion -RunState $runState -PriorWarnings $priorWarnings -PriorErrors $priorErrors
+        Invoke-PostRunCleanup -RunState $runState -FileLockRef $fileLockRef
 
         LogMessage -Message "File distribution and optional cleanup completed."
-
     }
     catch {
         LogMessage -Message "FATAL ERROR: $($_.Exception.Message)" -IsError -ConsoleOutput
