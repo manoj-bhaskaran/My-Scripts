@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-03-26
+
+### Changed
+
+- **FileDistributor.ps1 v4.6.2: shared move helper refactor**
+  - Extracted a private `Invoke-FileMove` helper in `FileDistributor.ps1` to unify file-name conflict resolution, retried copy, delete-mode handling (`RecycleBin` / `Immediate` / `EndOfScript` queue), global counter updates, and progress reporting
+  - Updated all five distribution algorithms (`DistributeFilesToSubfolders`, `RedistributeFilesInTarget` via `DistributeFilesToSubfolders`, `RebalanceSubfoldersByAverage`, `RandomizeDistributionAcrossFolders`, and `ConsolidateSubfoldersToMinimum`) to reuse the shared helper and remove duplicated move-loop logic
+
 ## [2.10.0] - 2026-03-26
 
 ### Changed
