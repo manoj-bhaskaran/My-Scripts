@@ -6,9 +6,10 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.0
+ 4.6.1
 
  CHANGELOG:
+   4.6.1 - Restored file-count integrity warnings in Invoke-PostRunCleanup (regression fix)
    4.6.0 - Decomposed Main into orchestration sub-functions for checkpointed phases and cleanup
    4.5.0 - Added .mp4 to allowed file extensions for distribution
    4.4.0 - Made SourceFolder optional; omitting it enables rebalance-only mode (no -MaxFilesToCopy 0 needed)
@@ -234,6 +235,21 @@ To display the script's help text:
 
 .NOTES
 # CHANGELOG
+## 4.6.1 — 2026-03-26
+### Fixed
+- **File-count integrity warnings restored:** `Invoke-PostRunCleanup` now validates before/after file counts and warns on discrepancies, restoring behaviour that was accidentally dropped during the 4.6.0 refactor.
+  - **Distribution mode:** warns if `totalSourceFiles + totalTargetFilesBefore ≠ totalTargetFilesAfter` ("Sum of original counts does not equal the final count in the target. Possible discrepancy detected.")
+  - **Rebalancing mode:** warns if `totalTargetFilesBefore ≠ totalTargetFilesAfter` ("File count changed during rebalancing. Possible discrepancy detected.")
+  - Both branches also log a success message when counts match, confirming a clean run.
+
+## 4.6.0 — 2026-03-26
+### Changed
+- **Orchestration refactor:** Split the monolithic `Main` function into discrete phase functions (`Invoke-ParameterValidation`, `Invoke-RestoreCheckpoint`, `Invoke-DistributionPhase`, `Invoke-PostProcessingPhase`, `Invoke-EndOfScriptDeletion`, `Invoke-PostRunCleanup`) for improved readability, testability, and checkpoint isolation.
+
+## 4.5.0 — 2026-03-25
+### Added
+- **`.mp4` file extension support:** Added `.mp4` to the list of allowed file extensions for distribution.
+
 ## 4.4.1 — 2026-01-05
 ### Fixed
 - **Console feedback for rebalancing operations:** Added console output for early exit conditions in `-RebalanceToAverage`, `-ConsolidateToMinimum`, and `-RandomizeDistribution` modes. Users now see clear messages when operations are skipped due to:
@@ -587,7 +603,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.0"
+$script:Version = "4.6.1"
 $script:Warnings = 0
 $script:Errors = 0
 $script:SessionId = $null
@@ -2963,6 +2979,12 @@ function Invoke-PostRunCleanup {
         LogMessage -Message "===== File Rebalancing Summary =====" -ConsoleOutput
         LogMessage -Message "Original number of files in the target folder hierarchy: $($RunState.totalTargetFilesBefore)" -ConsoleOutput
         LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
+        if ($RunState.totalTargetFilesBefore -ne $totalTargetFilesAfter) {
+            LogMessage -Message "File count changed during rebalancing. Possible discrepancy detected." -IsWarning
+        }
+        else {
+            LogMessage -Message "File rebalancing completed successfully." -ConsoleOutput
+        }
     }
     else {
         LogMessage -Message "===== File Distribution Summary =====" -ConsoleOutput
@@ -2970,6 +2992,12 @@ function Invoke-PostRunCleanup {
         LogMessage -Message "Files selected for copying this run: $($RunState.totalSourceFiles)" -ConsoleOutput
         LogMessage -Message "Original number of files in the target folder hierarchy: $($RunState.totalTargetFilesBefore)" -ConsoleOutput
         LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
+        if ($RunState.totalSourceFiles + $RunState.totalTargetFilesBefore -ne $totalTargetFilesAfter) {
+            LogMessage -Message "Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -IsWarning
+        }
+        else {
+            LogMessage -Message "File distribution and cleanup completed successfully." -ConsoleOutput
+        }
     }
     LogMessage -Message "Total warnings: $script:Warnings" -ConsoleOutput
     LogMessage -Message "Total errors: $script:Errors" -ConsoleOutput
