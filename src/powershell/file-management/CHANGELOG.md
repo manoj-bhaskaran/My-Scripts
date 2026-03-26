@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 4.6.9 — 2026-03-26
+### Changed
+- Reduced script-scope variable coupling in `FileDistributor.ps1` orchestration helpers by keeping effective runtime values on `RunState` and passing them explicitly to checkpoint/deletion flows.
+- `SaveState` now takes `SessionId` as an explicit parameter, and checkpoint payload construction receives `DeleteMode`, `SourceFolder`, and `MaxFilesToCopy` explicitly.
+- Distribution/post-processing phases now consume the effective `FilesPerFolderLimit` from validated runtime state instead of relying on script-scoped mutation.
+
 ## 4.6.8 — 2026-03-26
 ### Changed
 - Moved the detailed FileDistributor release history from the script header (`.NOTES`) into this standalone changelog file.
