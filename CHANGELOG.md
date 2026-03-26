@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.5] - 2026-03-26
+
+### Changed
+
+- **FileDistributor.ps1 v4.6.6: deduplicate checkpoint payload creation**
+  - Added `New-CheckpointPayload` to build standard checkpoint state keys (`totalSourceFiles`, `totalSourceFilesAll`, `totalTargetFilesBefore`, `subfolders`, `deleteMode`, `SourceFolder`, `MaxFilesToCopy`) with optional inclusion of `sourceFiles` and `FilesToDelete`
+  - Updated `Invoke-DistributionPhase` and `Invoke-PostProcessingPhase` to use the helper for checkpoints 2-8, removing repeated hashtable assembly logic
+
 ## [2.10.4] - 2026-03-26
 
 ### Fixed
