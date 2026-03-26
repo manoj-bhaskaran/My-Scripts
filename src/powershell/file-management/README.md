@@ -33,6 +33,8 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.6.8**
+  - Moved the full FileDistributor release history out of the script header into `src/powershell/file-management/CHANGELOG.md`, leaving a concise current-version summary in `.NOTES`.
 - **FileDistributor.ps1 v4.6.7**
   - Fixed `New-CheckpointPayload` parameter typing to accept scalar `sourceFiles`/`subfolders` values, preserving one-item checkpoint save scenarios.
 - **FileDistributor.ps1 v4.6.6**
