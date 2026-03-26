@@ -4,7 +4,7 @@
 Log file purging and retention management module implementing multiple cleanup strategies per [Logging Specification](../../../../../docs/specifications/logging_specification.md).
 
 ## Version
-Current version: **2.0.0**
+Current version: **2.1.0**
 
 ## Features
 
@@ -67,7 +67,9 @@ Clear-LogFile [-LogFilePath] <string> [[-RetentionDays] <int>] [[-MaxSizeMB] <in
 
 - **TruncateIfLarger** (string, optional)
   - Clear entire file if size exceeds threshold
-  - Human-readable format: "500MB", "1GB", "100KB"
+  - Human-readable format supports both single-letter and two-letter suffixes:
+    - K/KB, M/MB, G/GB (case-insensitive)
+  - Examples: "500M", "500MB", "1G", "1GB", "100K", "100KB"
   - Mutually exclusive with other strategies
   - Example: `"250MB"`
 
@@ -131,9 +133,9 @@ ConvertTo-Bytes [-Size] <string>
 
 - **Size** (string, mandatory)
   - Human-readable size string
-  - Supported units: KB, MB, GB, TB
+  - Supported units: K/KB, M/MB, G/GB
   - Case-insensitive
-  - Examples: "500MB", "1GB", "1024KB", "2.5GB"
+  - Examples: "500M", "500MB", "1G", "1GB", "1024K", "1024KB", "2.5G", "2.5GB"
 
 **Examples:**
 
@@ -141,13 +143,25 @@ ConvertTo-Bytes [-Size] <string>
 ConvertTo-Bytes "500MB"
 # Returns: 524288000
 
+ConvertTo-Bytes "500M"
+# Returns: 524288000
+
 ConvertTo-Bytes "1GB"
+# Returns: 1073741824
+
+ConvertTo-Bytes "1G"
 # Returns: 1073741824
 
 ConvertTo-Bytes "100KB"
 # Returns: 102400
 
+ConvertTo-Bytes "100K"
+# Returns: 102400
+
 ConvertTo-Bytes "2.5GB"
+# Returns: 2684354560
+
+ConvertTo-Bytes "2.5G"
 # Returns: 2684354560
 ```
 

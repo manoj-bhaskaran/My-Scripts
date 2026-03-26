@@ -6,6 +6,15 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.0] - 2026-03-26
+### Changed
+- Expanded `ConvertTo-Bytes` to accept both single-letter and two-letter size suffixes:
+  - `K` / `KB`
+  - `M` / `MB`
+  - `G` / `GB`
+- Preserved existing byte conversion behavior for current `KB`/`MB`/`GB` inputs while adding support for `K`/`M`/`G`.
+- Updated `ConvertTo-Bytes` help/examples and module README examples to document both accepted forms.
+
 ## [2.0.0] - 2024-11-19
 ### Added
 - Comprehensive module documentation (README.md, CHANGELOG.md)
