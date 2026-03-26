@@ -33,6 +33,10 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.6.7**
+  - Fixed `New-CheckpointPayload` parameter typing to accept scalar `sourceFiles`/`subfolders` values, preserving one-item checkpoint save scenarios.
+- **FileDistributor.ps1 v4.6.6**
+  - Extracted `New-CheckpointPayload` so distribution and post-processing checkpoints reuse one shared payload builder (including optional `sourceFiles` and `FilesToDelete`) instead of repeated near-identical hashtables.
 - **FileDistributor.ps1 v4.6.5**
   - Hardened shared subfolder helper safety: candidate destinations must stay under the target root, and fresh-scan failures now fall back to provided candidates (with emergency-folder fallback preserved).
 - **FileDistributor.ps1 v4.6.4**
