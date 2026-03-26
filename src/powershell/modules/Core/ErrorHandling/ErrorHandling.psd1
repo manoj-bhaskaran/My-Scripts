@@ -3,7 +3,7 @@
     RootModule = 'ErrorHandling.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.1'
+    ModuleVersion = '1.1.0'
 
     # ID used to uniquely identify this module
     GUID = '7f8e9a2b-3c4d-5e6f-7a8b-9c0d1e2f3a4b'
@@ -47,7 +47,7 @@
             Tags = @('ErrorHandling', 'Retry', 'Elevation', 'Utilities')
             LicenseUri = 'http://www.apache.org/licenses/LICENSE-2.0'
             ProjectUri = 'https://github.com/manoj-bhaskaran/My-Scripts'
-            ReleaseNotes = '1.0.1: Standardized module layout with Public/Private folders and loader.'
+            ReleaseNotes = '1.1.0: Added Invoke-WithRetry -IgnoreFileNotFound switch for warning-and-skip file-not-found handling.'
         }
     }
 }

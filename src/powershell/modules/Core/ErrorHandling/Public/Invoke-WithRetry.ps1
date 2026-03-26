@@ -27,6 +27,11 @@ function Invoke-WithRetry {
     .PARAMETER LogErrors
         Whether to log retry attempts and errors (default: $true).
 
+    .PARAMETER IgnoreFileNotFound
+        When set, treats file-not-found errors as warning-and-skip instead of retrying or throwing.
+        This applies to System.Management.Automation.ItemNotFoundException and
+        "Cannot find path ... does not exist" error messages.
+
     .EXAMPLE
         Invoke-WithRetry -Operation {
             Copy-Item $source $dest -Force
@@ -58,7 +63,10 @@ function Invoke-WithRetry {
         [int]$MaxBackoff = 60,
 
         [Parameter(Mandatory = $false)]
-        [bool]$LogErrors = $true
+        [bool]$LogErrors = $true,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$IgnoreFileNotFound
     )
 
     $attempt = 0
@@ -82,8 +90,24 @@ function Invoke-WithRetry {
             return $result
         }
         catch {
-            $attempt++
+            $exception = $_.Exception
             $err = $_.Exception.Message
+            $isFileNotFoundError = $exception -is [System.Management.Automation.ItemNotFoundException] -or
+                ($err -like '*Cannot find path*' -and $err -like '*does not exist*')
+
+            if ($IgnoreFileNotFound -and $isFileNotFoundError) {
+                $msg = "Skipping operation due to file-not-found condition: $Description. Error: $err"
+                if ($hasLogger) {
+                    Write-LogWarning $msg
+                }
+                else {
+                    Write-Warning $msg
+                }
+
+                return
+            }
+
+            $attempt++
 
             if ($RetryCount -ne 0 -and $attempt -ge $RetryCount) {
                 $msg = "Operation failed after $attempt attempt(s): $Description. Error: $err"

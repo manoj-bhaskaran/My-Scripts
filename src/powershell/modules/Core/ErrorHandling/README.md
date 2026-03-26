@@ -47,6 +47,7 @@ Executes a script block with automatic retry on failure using exponential backof
 - `RetryCount` - Maximum retry attempts (default: 3, 0 = unlimited)
 - `MaxBackoff` - Maximum backoff delay in seconds (default: 60)
 - `LogErrors` - Whether to log retry attempts (default: `$true`)
+- `IgnoreFileNotFound` - When set, treats file-not-found errors as warning-and-skip instead of retrying/throwing (default: not set)
 
 **Example:**
 ```powershell
@@ -57,6 +58,10 @@ Invoke-WithRetry -Operation {
 Invoke-WithRetry -Operation {
     Remove-Item $path -Force
 } -Description "Delete temporary file" -RetryDelay 1 -RetryCount 3
+
+Invoke-WithRetry -Operation {
+    Copy-Item $source $dest -Force
+} -Description "Copy optional file" -IgnoreFileNotFound
 ```
 
 ### Test-IsElevated
@@ -178,6 +183,9 @@ Assert-Elevated
 ```
 
 ## Version History
+
+### 1.1.0 (2026-03-26)
+- Added `IgnoreFileNotFound` switch to `Invoke-WithRetry` for warning-and-skip handling of file-not-found conditions.
 
 ### 1.0.0 (2025-11-20)
 - Initial release

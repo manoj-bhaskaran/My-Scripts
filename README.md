@@ -806,7 +806,7 @@ The repository uses a modern TOML-based configuration system for PowerShell modu
 
 This repository follows [Semantic Versioning](https://semver.org/):
 - **MAJOR.MINOR.PATCH** (e.g., 2.0.0)
-- Current Version: **2.10.6** (see [VERSION](VERSION) file)
+- Current Version: **2.11.0** (see [VERSION](VERSION) file)
 
 ### Release Process
 
