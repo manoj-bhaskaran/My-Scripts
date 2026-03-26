@@ -1,11 +1,16 @@
 <#
 .SYNOPSIS
-This PowerShell script selects and opens a random file from a random subfolder or the main target folder in the specified directory.
+This PowerShell script selects and opens a random media file (image or video) from a random subfolder or the main target folder in the specified directory.
 
 .VERSION
-2.2.0
+2.3.0
 
 # Changelog
+## [2.3.0] — 2026-03-26
+### Added
+- `.mp4` files are now included as valid candidates alongside `.jpg`, `.jpeg`, and `.png`.
+- All documentation, log messages, and inline comments updated to reflect "media" (image/video) scope.
+
 ## [2.2.0] — 2025-11-16
 ### Changed
 - Refactored to use PowerShellLoggingFramework for standardized logging
@@ -37,18 +42,18 @@ This PowerShell script selects and opens a random file from a random subfolder o
 - Initial release of `SelObj.ps1`: selects a random subfolder (or the main target folder if it has files) and then opens a random non-hidden, non-system file from that location.
 
 .DESCRIPTION
-The script first checks for subfolders in the specified target directory. If subfolders are found, it randomly selects one of them. If there are image files in the main target folder, it includes the main folder in the list of subfolders. It then randomly selects **an image file only** (`.jpg`, `.jpeg`, `.png`) from the chosen folder to open. Files of other types are ignored by design.
+The script first checks for subfolders in the specified target directory. If subfolders are found, it randomly selects one of them. If there are media files in the main target folder, it includes the main folder in the list of subfolders. It then randomly selects **a media file only** (`.jpg`, `.jpeg`, `.png`, `.mp4`) from the chosen folder to open. Files of other types are ignored by design.
 
 .PARAMETER FilePath
 Optional. Specifies the path to the target directory where the files are located. Defaults to "D:\users\Manoj\Documents\FIFA 07\elib".
 
 .EXAMPLE
-**All examples select only image files** (`.jpg`, `.jpeg`, `.png`):
+**All examples select only media files** (`.jpg`, `.jpeg`, `.png`, `.mp4`):
 
-1) Default run (images only):
+1) Default run (media files only):
    .\SelObj.ps1
 
-2) Custom path (images only):
+2) Custom path (media files only):
    .\SelObj.ps1 -FilePath "D:\Custom\Path"
 
 3) Handling invalid path (sample error output):
@@ -56,8 +61,8 @@ Optional. Specifies the path to the target directory where the files are located
    Target path not found or not a directory: D:\Does\Not\Exist
 
 4) Extending allowed extensions (snippet inside the script):
-   # Add more types (e.g., GIF, WEBP) by editing $allowedExt:
-   $allowedExt = '.jpg','.jpeg','.png','.gif','.webp'
+   # Add more types (e.g., GIF, WEBP, MKV) by editing $allowedExt:
+   $allowedExt = '.jpg','.jpeg','.png','.mp4','.gif','.webp','.mkv'
 
 .NOTES
 Script Workflow:
@@ -66,30 +71,30 @@ Script Workflow:
 
 2. **Subfolder Management**:
    - Gets all **visible** (non-hidden, non-system) subfolders in the target directory.
-   - Checks if there are **image files** in the main target folder and includes it in the list of subfolders if applicable.
+   - Checks if there are **media files** in the main target folder and includes it in the list of subfolders if applicable.
 
 3. **File Selection**:
-   - Selects a random folder from the list of subfolders (including the main target folder if it has image files).
-   - Selects a random **image file** from the chosen folder.
+   - Selects a random folder from the list of subfolders (including the main target folder if it has media files).
+   - Selects a random **media file** from the chosen folder.
 
 4. **Error Handling**:
-   - Logs a message if no image files are found in the selected folder or the target directory and surfaces a clear warning if opening fails.
+   - Logs a message if no media files are found in the selected folder or the target directory and surfaces a clear warning if opening fails.
 
 Setup/Configuration:
 - Default path: `D:\users\Manoj\Documents\FIFA 07\elib`.
-- Requires that suitable image viewers are installed and that the user has read/execute permissions on target files.
+- Requires that suitable image/video viewers are installed and that the user has read/execute permissions on target files.
 
 Troubleshooting:
 - **Path not found**: Ensure `-FilePath` exists and is a directory.
-- **No images found**: Confirm the folder(s) contain `.jpg/.jpeg/.png` files and are not hidden/system-only.
+- **No media found**: Confirm the folder(s) contain `.jpg/.jpeg/.png/.mp4` files and are not hidden/system-only.
 
 FAQ:
 - **How do I include more extensions?** Edit `$allowedExt` in the script (see example above).
-- **How is the file chosen?** A random eligible folder is selected, then a random eligible image file from within it.
+- **How is the file chosen?** A random eligible folder is selected, then a random eligible media file from within it.
 
 Limitations:
-- The script only processes top-level files and subfolders within the target directory, and **only image files** (`.jpg/.jpeg/.png`) are considered.
-- Large directories with many subfolders/images may impact performance; consider pre-indexing, sampling, or adding filters to narrow scope.
+- The script only processes top-level files and subfolders within the target directory, and **only media files** (`.jpg/.jpeg/.png/.mp4`) are considered.
+- Large directories with many subfolders/files may impact performance; consider pre-indexing, sampling, or adding filters to narrow scope.
 #>
 
 param(
@@ -98,7 +103,7 @@ param(
 
 # Script metadata
 # Expose version programmatically for logs/tests if needed.
-$Script:ScriptVersion = '2.2.0'
+$Script:ScriptVersion = '2.3.0'
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
@@ -106,7 +111,7 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 # Initialize logger
 Initialize-Logger -ScriptName "SelObj" -LogLevel 20
 
-Write-LogInfo "Starting random image file selection from: $FilePath"
+Write-LogInfo "Starting random media file selection from: $FilePath"
 
 # Get all subfolders
 # --- Hardening & image-only behavior (2.0.0) ---
@@ -116,9 +121,9 @@ if (-not (Test-Path -Path $FilePath -PathType Container)) {
     throw "Target path not found or not a directory: $FilePath"
 }
 
-# EXTENSION LIST (image-only): lower-case compare.
-# To include more types (e.g., .gif, .webp), append to this list.
-$allowedExt = '.jpg', '.jpeg', '.png'
+# EXTENSION LIST (image/video): lower-case compare.
+# To include more types (e.g., .gif, .webp, .mkv), append to this list.
+$allowedExt = '.jpg', '.jpeg', '.png', '.mp4'
 
 Write-LogDebug "Allowed extensions: $($allowedExt -join ', ')"
 
@@ -139,7 +144,7 @@ $mainFolderFiles = Get-ChildItem -Path $FilePath -File |
 if ($mainFolderFiles.Count -gt 0) {
     # Add the main target folder to the list of subfolders
     $subfolders += Get-Item -Path $FilePath
-    Write-LogDebug "Main folder contains $($mainFolderFiles.Count) image file(s), added to candidates"
+    Write-LogDebug "Main folder contains $($mainFolderFiles.Count) media file(s), added to candidates"
 }
 
 # Select a random folder (including the main target folder if applicable)
@@ -159,7 +164,7 @@ $files = Get-ChildItem -Path $randomFolder.FullName -File |
         ($allowedExt -contains $_.Extension.ToLower())
     }
 
-Write-LogDebug "Found $($files.Count) image file(s) in selected folder"
+Write-LogDebug "Found $($files.Count) media file(s) in selected folder"
 
 # Check if there are any files in the selected folder
 if ($files.Count -gt 0) {
@@ -167,7 +172,7 @@ if ($files.Count -gt 0) {
     $randomFile = $files | Get-Random
     Write-LogInfo "Opening file: $($randomFile.Name)"
 
-    # Opening the selected image; wrap in try/catch for user-friendly feedback
+    # Opening the selected media file; wrap in try/catch for user-friendly feedback
     try {
         Invoke-Item $randomFile.FullName
         Write-LogInfo "Successfully opened: $($randomFile.FullName)"
@@ -178,5 +183,5 @@ if ($files.Count -gt 0) {
     }
 }
 else {
-    Write-LogWarning "No image files found in the randomly selected folder: $($randomFolder.FullName)"
+    Write-LogWarning "No media files found in the randomly selected folder: $($randomFolder.FullName)"
 }
