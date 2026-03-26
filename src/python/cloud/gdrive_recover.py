@@ -14,7 +14,7 @@ Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`)
 """
 
-__version__ = “1.8.1”
+__version__ = “1.8.2”
 
 import os
 import io

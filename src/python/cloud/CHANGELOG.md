@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.8.2] - 2026-03-26
+
+### Changed
+- Moved embedded `CHANGELOG` block out of `gdrive_recover.py` into this `CHANGELOG.md` file. No logic changes.
+
 ## [1.8.1] - 2025-09-23
 
 ### Fixed
