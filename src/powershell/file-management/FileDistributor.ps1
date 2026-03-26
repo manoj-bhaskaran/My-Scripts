@@ -2963,6 +2963,12 @@ function Invoke-PostRunCleanup {
         LogMessage -Message "===== File Rebalancing Summary =====" -ConsoleOutput
         LogMessage -Message "Original number of files in the target folder hierarchy: $($RunState.totalTargetFilesBefore)" -ConsoleOutput
         LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
+        if ($RunState.totalTargetFilesBefore -ne $totalTargetFilesAfter) {
+            LogMessage -Message "File count changed during rebalancing. Possible discrepancy detected." -IsWarning
+        }
+        else {
+            LogMessage -Message "File rebalancing completed successfully." -ConsoleOutput
+        }
     }
     else {
         LogMessage -Message "===== File Distribution Summary =====" -ConsoleOutput
@@ -2970,6 +2976,12 @@ function Invoke-PostRunCleanup {
         LogMessage -Message "Files selected for copying this run: $($RunState.totalSourceFiles)" -ConsoleOutput
         LogMessage -Message "Original number of files in the target folder hierarchy: $($RunState.totalTargetFilesBefore)" -ConsoleOutput
         LogMessage -Message "Final number of files in the target folder hierarchy: $totalTargetFilesAfter" -ConsoleOutput
+        if ($RunState.totalSourceFiles + $RunState.totalTargetFilesBefore -ne $totalTargetFilesAfter) {
+            LogMessage -Message "Sum of original counts does not equal the final count in the target. Possible discrepancy detected." -IsWarning
+        }
+        else {
+            LogMessage -Message "File distribution and cleanup completed successfully." -ConsoleOutput
+        }
     }
     LogMessage -Message "Total warnings: $script:Warnings" -ConsoleOutput
     LogMessage -Message "Total errors: $script:Errors" -ConsoleOutput
