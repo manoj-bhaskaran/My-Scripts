@@ -6,9 +6,10 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.6
+ 4.6.7
 
  CHANGELOG:
+   4.6.7 - Broadened New-CheckpointPayload input typing to accept scalar checkpoint items
    4.6.6 - Extracted New-CheckpointPayload helper to deduplicate checkpoint state construction
    4.6.5 - Hardened Get-SubfolderFileCounts with target-root containment and scan-failure fallback
    4.6.4 - Extracted shared subfolder-enumeration/file-count helper across distribution algorithms
@@ -240,6 +241,10 @@ To display the script's help text:
 
 .NOTES
 # CHANGELOG
+## 4.6.7 — 2026-03-26
+### Fixed
+- **Single-item checkpoint payload inputs restored:** `New-CheckpointPayload` now accepts scalar `subfolders`/`sourceFiles` values (for example `MaxFilesToCopy=1` or a single existing target subfolder), preserving prior behavior where `ConvertItemsToPaths` wrapped single items.
+
 ## 4.6.6 — 2026-03-26
 ### Changed
 - **Checkpoint payload helper extracted:** Added `New-CheckpointPayload` to centralize common checkpoint state construction (`totalSourceFiles`, `totalSourceFilesAll`, `totalTargetFilesBefore`, `subfolders`, `deleteMode`, `SourceFolder`, `MaxFilesToCopy`) with optional `sourceFiles` and `FilesToDelete`.
@@ -632,7 +637,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.6"
+$script:Version = "4.6.7"
 $script:Warnings = 0
 $script:Errors = 0
 $script:SessionId = $null
@@ -2804,8 +2809,8 @@ function Invoke-RestoreCheckpoint {
 function New-CheckpointPayload {
     param(
         [hashtable]$RunState,
-        [System.Collections.IEnumerable]$Subfolders,
-        [System.Collections.IEnumerable]$SourceFiles,
+        [object]$Subfolders,
+        [object]$SourceFiles,
         [switch]$IncludeSourceFiles,
         [switch]$IncludeFilesToDelete
     )
