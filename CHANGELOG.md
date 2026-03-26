@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-03-26
+
+### Changed
+
+- **FileDistributor.ps1 v4.6.0: decomposed Main into orchestration sub-functions**
+  - Extracted Main into targeted phase functions to improve readability and maintainability:
+    - `Invoke-ParameterValidation`
+    - `Invoke-RestoreCheckpoint`
+    - `Invoke-DistributionPhase`
+    - `Invoke-PostProcessingPhase`
+    - `Invoke-EndOfScriptDeletion`
+    - `Invoke-PostRunCleanup`
+  - Main now acts as orchestration glue while checkpoint, restart, deletion-queue, and post-run cleanup behavior remains structured by phase
+
 ## [2.9.1] - 2026-03-25
 
 ### Fixed
