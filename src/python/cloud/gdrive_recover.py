@@ -12,9 +12,11 @@ This tool provides:
 
 Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`)
+
+See CHANGELOG.md in this directory for version history.
 """
 
-__version__ = “1.8.2”
+__version__ = “1.8.3”
 
 import os
 import io

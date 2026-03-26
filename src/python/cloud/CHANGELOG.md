@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.8.3] - 2026-03-26
+
+### Changed
+- Added pointer to `CHANGELOG.md` in the module docstring of `gdrive_recover.py`.
+
 ## [1.8.2] - 2026-03-26
 
 ### Changed
