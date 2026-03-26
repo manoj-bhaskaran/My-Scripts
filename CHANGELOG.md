@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.4] - 2026-03-26
+
+### Fixed
+
+- **FileDistributor.ps1 v4.6.5: restore containment and fallback safety in shared subfolder helper**
+  - `Get-SubfolderFileCounts` now enforces target-root containment for resolved candidate subfolders before they are used as destinations
+  - Fresh-scan enumeration failures no longer force an early empty return; the helper now continues with existing candidates and still allows emergency-subfolder fallback when requested
+
 ## [2.10.3] - 2026-03-26
 
 ### Changed

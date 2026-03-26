@@ -33,6 +33,8 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.6.5**
+  - Hardened shared subfolder helper safety: candidate destinations must stay under the target root, and fresh-scan failures now fall back to provided candidates (with emergency-folder fallback preserved).
 - **FileDistributor.ps1 v4.6.4**
   - Extracted shared `Get-SubfolderFileCounts` helper so distribution/rebalance algorithms reuse the same subfolder normalization, file-counting, and empty-candidate guard logic.
 - **FileDistributor.ps1 v4.6.3**

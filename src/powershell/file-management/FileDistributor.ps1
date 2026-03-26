@@ -6,9 +6,10 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.4
+ 4.6.5
 
  CHANGELOG:
+   4.6.5 - Hardened Get-SubfolderFileCounts with target-root containment and scan-failure fallback
    4.6.4 - Extracted shared subfolder-enumeration/file-count helper across distribution algorithms
    4.6.3 - Preserved EndOfScript queue-failure signal when reporting pending deletion
    4.6.2 - Refactored file-move workflow into shared Invoke-FileMove helper across distribution algorithms
@@ -238,6 +239,11 @@ To display the script's help text:
 
 .NOTES
 # CHANGELOG
+## 4.6.5 — 2026-03-26
+### Fixed
+- **Target-root safety restored:** `Get-SubfolderFileCounts` now validates that normalized candidate folders are rooted under `TargetFolder`, preventing escaped destinations from being selected by distribution algorithms.
+- **Fresh-scan fallback preserved:** if optional fresh subfolder enumeration fails, the helper now logs and continues with already supplied candidates instead of returning early; emergency-subfolder creation still applies when requested.
+
 ## 4.6.4 — 2026-03-26
 ### Changed
 - **Shared subfolder count helper extracted:** Added `Get-SubfolderFileCounts` to centralize subfolder normalization, per-folder file counting, empty-candidate handling, and count map construction for distribution/rebalance algorithms.
@@ -620,7 +626,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.4"
+$script:Version = "4.6.5"
 $script:Warnings = 0
 $script:Errors = 0
 $script:SessionId = $null
@@ -1276,6 +1282,7 @@ function Get-SubfolderFileCounts {
     )
 
     $normalizedSubfolders = @()
+    $targetNormalized = [IO.Path]::GetFullPath($TargetFolder)
 
     $candidatePaths = @()
     if ($Subfolders) {
@@ -1289,12 +1296,7 @@ function Get-SubfolderFileCounts {
                 ForEach-Object { $_.FullName }
         }
         catch {
-            LogMessage -Message ("{0}: failed to enumerate subfolders under '{1}': {2}" -f $OperationName, $TargetFolder, $_.Exception.Message) -IsError
-            return @{
-                Subfolders  = @()
-                FolderCounts = @{}
-                TotalFiles  = 0
-            }
+            LogMessage -Message ("{0}: failed to enumerate subfolders under '{1}'. Continuing with provided candidates only. Error: {2}" -f $OperationName, $TargetFolder, $_.Exception.Message) -IsWarning
         }
     }
 
@@ -1302,13 +1304,22 @@ function Get-SubfolderFileCounts {
         if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
 
         $resolved = Resolve-SubfolderPath -Path $candidate -TargetRoot $TargetFolder
-        if (-not $resolved -or $resolved -eq $TargetFolder) { continue }
+        if (-not $resolved) { continue }
 
-        if (-not (Test-Path -LiteralPath $resolved -PathType Container)) {
+        $resolvedNormalized = $null
+        try { $resolvedNormalized = [IO.Path]::GetFullPath($resolved) } catch { continue }
+
+        if ($resolvedNormalized -eq $targetNormalized) { continue }
+        if (-not $resolvedNormalized.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase)) {
+            LogMessage -Message ("{0}: skipping out-of-root candidate '{1}' (resolved: '{2}')." -f $OperationName, $candidate, $resolvedNormalized) -IsWarning
             continue
         }
 
-        $normalizedSubfolders += $resolved
+        if (-not (Test-Path -LiteralPath $resolvedNormalized -PathType Container)) {
+            continue
+        }
+
+        $normalizedSubfolders += $resolvedNormalized
     }
 
     $normalizedSubfolders = @($normalizedSubfolders | Select-Object -Unique)
