@@ -33,5 +33,5 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
-- **FileDistributor.ps1 v4.6.2**
-  - Extracted a shared `Invoke-FileMove` helper to centralize conflict-safe naming, retried copy, delete-mode dispatch, file-counter updates, and progress reporting across all distribution algorithms.
+- **FileDistributor.ps1 v4.6.3**
+  - Preserved EndOfScript queue-failure signaling: pending-deletion messages now appear only when queue insertion succeeds; queue failures are surfaced as warnings for easier troubleshooting.

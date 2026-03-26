@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.2] - 2026-03-26
+
+### Fixed
+
+- **FileDistributor.ps1 v4.6.3: preserve EndOfScript queue-failure signal**
+  - `Invoke-FileMove` now surfaces EndOfScript queue outcome and logs a warning when `Add-FileToQueue` fails
+  - `DistributeFilesToSubfolders` now emits "pending deletion" only when queue insertion succeeds; otherwise it logs a warning for easier troubleshooting
+
 ## [2.10.1] - 2026-03-26
 
 ### Changed

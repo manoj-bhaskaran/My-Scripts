@@ -6,9 +6,10 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.2
+ 4.6.3
 
  CHANGELOG:
+   4.6.3 - Preserved EndOfScript queue-failure signal when reporting pending deletion
    4.6.2 - Refactored file-move workflow into shared Invoke-FileMove helper across distribution algorithms
    4.6.1 - Restored file-count integrity warnings in Invoke-PostRunCleanup (regression fix)
    4.6.0 - Decomposed Main into orchestration sub-functions for checkpointed phases and cleanup
@@ -236,6 +237,10 @@ To display the script's help text:
 
 .NOTES
 # CHANGELOG
+## 4.6.3 — 2026-03-26
+### Fixed
+- **EndOfScript queue signal preserved:** `Invoke-FileMove` now returns queueing status and logs a warning when `Add-FileToQueue` fails, and `DistributeFilesToSubfolders` reports "pending deletion" only when queue insertion succeeds.
+
 ## 4.6.2 — 2026-03-26
 ### Changed
 - **Shared file-move helper extracted:** Added private `Invoke-FileMove` to centralize conflict-safe destination naming, retried copy, delete-mode dispatch (`RecycleBin` / `Immediate` / `EndOfScript` queue), global file-counter updates, and progress reporting.
@@ -609,7 +614,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.2"
+$script:Version = "4.6.3"
 $script:Warnings = 0
 $script:Errors = 0
 $script:SessionId = $null
@@ -1205,6 +1210,7 @@ function Invoke-FileMove {
     Copy-ItemWithRetry -Path $SourcePath -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount
 
     $copySucceeded = Test-Path -LiteralPath $destinationFile
+    $queuedForEndOfScriptDeletion = $null
     if ($copySucceeded) {
         try {
             if ($DeleteMode -eq "RecycleBin") {
@@ -1215,12 +1221,16 @@ function Invoke-FileMove {
             }
             elseif ($DeleteMode -eq "EndOfScript") {
                 $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $SourcePath -ValidateFile $false
-                if (-not $queueResult) {
-                    Write-LogDebug "Failed to queue file for deletion: $SourcePath"
+                $queuedForEndOfScriptDeletion = [bool]$queueResult
+                if (-not $queuedForEndOfScriptDeletion) {
+                    LogMessage -Message "Failed to queue file for deletion: $SourcePath" -IsWarning
                 }
             }
         }
         catch {
+            if ($DeleteMode -eq "EndOfScript") {
+                $queuedForEndOfScriptDeletion = $false
+            }
             LogMessage -Message ($PostCopyFailureMessageTemplate -f $SourcePath, $_.Exception.Message) -IsWarning
         }
     }
@@ -1246,6 +1256,7 @@ function Invoke-FileMove {
     return [pscustomobject]@{
         Success         = $copySucceeded
         DestinationFile = $destinationFile
+        QueueQueued     = $queuedForEndOfScriptDeletion
     }
 }
 
@@ -1449,7 +1460,12 @@ function DistributeFilesToSubfolders {
                 LogMessage -Message "Copied from $file to $destinationFile and immediately deleted original."
             }
             elseif ($DeleteMode -eq "EndOfScript") {
-                LogMessage -Message "Copied from $file to $destinationFile. Original pending deletion at end of script."
+                if ($moveResult.QueueQueued -eq $true) {
+                    LogMessage -Message "Copied from $file to $destinationFile. Original pending deletion at end of script."
+                }
+                else {
+                    LogMessage -Message "Copied from $file to $destinationFile, but original could not be queued for end-of-script deletion." -IsWarning
+                }
             }
         }
     }

@@ -7,7 +7,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Code Formatting](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml/badge.svg)](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml)
 
-**Version:** 2.10.1 | **Last Updated:** 2026-03-26
+**Version:** 2.10.2 | **Last Updated:** 2026-03-26
 
 ---
 
@@ -806,7 +806,7 @@ The repository uses a modern TOML-based configuration system for PowerShell modu
 
 This repository follows [Semantic Versioning](https://semver.org/):
 - **MAJOR.MINOR.PATCH** (e.g., 2.0.0)
-- Current Version: **2.10.1** (see [VERSION](VERSION) file)
+- Current Version: **2.10.2** (see [VERSION](VERSION) file)
 
 ### Release Process
 
