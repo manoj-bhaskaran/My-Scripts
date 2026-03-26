@@ -6,9 +6,10 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.3
+ 4.6.4
 
  CHANGELOG:
+   4.6.4 - Extracted shared subfolder-enumeration/file-count helper across distribution algorithms
    4.6.3 - Preserved EndOfScript queue-failure signal when reporting pending deletion
    4.6.2 - Refactored file-move workflow into shared Invoke-FileMove helper across distribution algorithms
    4.6.1 - Restored file-count integrity warnings in Invoke-PostRunCleanup (regression fix)
@@ -237,6 +238,11 @@ To display the script's help text:
 
 .NOTES
 # CHANGELOG
+## 4.6.4 — 2026-03-26
+### Changed
+- **Shared subfolder count helper extracted:** Added `Get-SubfolderFileCounts` to centralize subfolder normalization, per-folder file counting, empty-candidate handling, and count map construction for distribution/rebalance algorithms.
+- **Algorithm prologs deduplicated:** `DistributeFilesToSubfolders`, `RedistributeFilesInTarget`, `RebalanceSubfoldersByAverage`, `RandomizeDistributionAcrossFolders`, and `ConsolidateSubfoldersToMinimum` now reuse the shared helper for their enumerate-and-count setup sequence.
+
 ## 4.6.3 — 2026-03-26
 ### Fixed
 - **EndOfScript queue signal preserved:** `Invoke-FileMove` now returns queueing status and logs a warning when `Add-FileToQueue` fails, and `DistributeFilesToSubfolders` reports "pending deletion" only when queue insertion succeeds.
@@ -614,7 +620,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.3"
+$script:Version = "4.6.4"
 $script:Warnings = 0
 $script:Errors = 0
 $script:SessionId = $null
@@ -1260,6 +1266,81 @@ function Invoke-FileMove {
     }
 }
 
+function Get-SubfolderFileCounts {
+    param(
+        [Parameter(Mandatory = $true)][string]$TargetFolder,
+        [object[]]$Subfolders,
+        [string]$OperationName = "Operation",
+        [switch]$IncludeFreshScan,
+        [switch]$CreateEmergencySubfolder
+    )
+
+    $normalizedSubfolders = @()
+
+    $candidatePaths = @()
+    if ($Subfolders) {
+        $candidatePaths += $Subfolders | ForEach-Object {
+            if ($_ -is [IO.FileSystemInfo]) { $_.FullName } else { [string]$_ }
+        }
+    }
+    if ($IncludeFreshScan) {
+        try {
+            $candidatePaths += Get-ChildItem -LiteralPath $TargetFolder -Directory -Force -ErrorAction Stop |
+                ForEach-Object { $_.FullName }
+        }
+        catch {
+            LogMessage -Message ("{0}: failed to enumerate subfolders under '{1}': {2}" -f $OperationName, $TargetFolder, $_.Exception.Message) -IsError
+            return @{
+                Subfolders  = @()
+                FolderCounts = @{}
+                TotalFiles  = 0
+            }
+        }
+    }
+
+    foreach ($candidate in $candidatePaths) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+
+        $resolved = Resolve-SubfolderPath -Path $candidate -TargetRoot $TargetFolder
+        if (-not $resolved -or $resolved -eq $TargetFolder) { continue }
+
+        if (-not (Test-Path -LiteralPath $resolved -PathType Container)) {
+            continue
+        }
+
+        $normalizedSubfolders += $resolved
+    }
+
+    $normalizedSubfolders = @($normalizedSubfolders | Select-Object -Unique)
+
+    if ($normalizedSubfolders.Count -eq 0 -and $CreateEmergencySubfolder) {
+        $emergency = Join-Path -Path $TargetFolder -ChildPath (Get-RandomFileName)
+        New-Item -ItemType Directory -Path $emergency -Force | Out-Null
+        $normalizedSubfolders = @($emergency)
+        LogMessage -Message ("{0}: created emergency destination subfolder '{1}' (no valid candidates)." -f $OperationName, $emergency) -IsWarning
+    }
+
+    $folderCounts = @{}
+    $totalFiles = 0
+    foreach ($p in $normalizedSubfolders) {
+        try {
+            $count = (Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop | Measure-Object).Count
+            $folderCounts[$p] = [int]$count
+            $totalFiles += [int]$count
+        }
+        catch {
+            $folderCounts[$p] = 0
+            LogMessage -Message ("{0}: failed to count files in subfolder '{1}'. Defaulting count to 0. Error: {2}" -f $OperationName, $p, $_.Exception.Message) -IsWarning
+        }
+    }
+
+    return @{
+        Subfolders   = $normalizedSubfolders
+        FolderCounts = $folderCounts
+        TotalFiles   = [int]$totalFiles
+    }
+}
+
 function DistributeFilesToSubfolders {
     param (
         [string[]]$Files,
@@ -1274,52 +1355,14 @@ function DistributeFilesToSubfolders {
         [int]$TotalFiles
     )
 
-    # --- Build canonical candidate set strictly from the target root ---
     $targetNormalized = [IO.Path]::GetFullPath($TargetRoot)
-
-    $subfolderPaths =
-    @(
-        # 1) Whatever caller passed (normalize or discard)
-        $Subfolders | ForEach-Object {
-            if ($_ -is [IO.FileSystemInfo]) { $_.FullName } else { [string]$_ }
-        }
-        # 2) Always include a fresh scan of the actual target root
-        (Get-ChildItem -LiteralPath $TargetRoot -Directory -Force -ErrorAction SilentlyContinue |
-            ForEach-Object { $_.FullName })
-        ) |
-            Where-Object { $_ } |
-            ForEach-Object {
-                # Drop invalid/drive-relative, then canonicalize
-                $p = Resolve-SubfolderPath -Path $_ -TargetRoot $TargetRoot
-                if ([string]::IsNullOrWhiteSpace($p)) { return }
-                try { [IO.Path]::GetFullPath($p) } catch { return }
-            } |
-            Where-Object {
-                # Under target AND not the root itself
-                $_ -ne $TargetRoot -and
-                $_.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase) -and
-                (Test-Path -LiteralPath $_ -PathType Container)
-            } |
-            Select-Object -Unique
-
-    if (($subfolderPaths | Measure-Object).Count -eq 0) {
-        # Create a guaranteed-safe place to land
-        $emergency = Join-Path -Path $TargetRoot -ChildPath (Get-RandomFileName)
-        New-Item -ItemType Directory -Path $emergency -Force | Out-Null
-        $subfolderPaths = @($emergency)
-        LogMessage -Message "Created emergency destination subfolder '$emergency' (no valid candidates)." -IsWarning
-    }
-
-    $folderCounts = @{}
-    foreach ($p in $subfolderPaths) {
-        try {
-            $folderCounts[$p] = (Get-ChildItem -LiteralPath $p -File -Force | Measure-Object).Count
-        }
-        catch {
-            $folderCounts[$p] = 0
-            LogMessage -Message "Failed to count files in subfolder '$p'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
-        }
-    }
+    $subfolderCountData = Get-SubfolderFileCounts -TargetFolder $TargetRoot `
+        -Subfolders $Subfolders `
+        -OperationName "Distribution" `
+        -IncludeFreshScan `
+        -CreateEmergencySubfolder
+    $subfolderPaths = @($subfolderCountData.Subfolders)
+    $folderCounts = $subfolderCountData.FolderCounts
 
     LogMessage -Message ("DEBUG: Eligible subfolders ({0}): {1}" -f $subfolderPaths.Count, ($subfolderPaths -join ', ')) -IsDebug
 
@@ -1487,65 +1530,12 @@ function RedistributeFilesInTarget {
         [int]$TotalFiles
     )
 
-    # Build initial folder file count map from normalized full paths
-    $folderFilesMap = @{}
-    $normalizedSubfolders = @()
-
-    # FIXED: First, ensure we have actual DirectoryInfo objects
-    $validSubfolderObjects = @()
-    foreach ($sf in $Subfolders) {
-        if ($null -eq $sf) { continue }
-
-        # Convert to DirectoryInfo if it's a string
-        if ($sf -is [string]) {
-            if ([string]::IsNullOrWhiteSpace($sf)) { continue }
-            try {
-                $dirInfo = Get-Item -LiteralPath $sf -ErrorAction Stop
-                if ($dirInfo -is [System.IO.DirectoryInfo]) {
-                    $validSubfolderObjects += $dirInfo
-                }
-            }
-            catch {
-                LogMessage -Message "Failed to resolve subfolder path '$sf': $($_.Exception.Message)" -IsWarning
-            }
-        }
-        elseif ($sf -is [System.IO.FileSystemInfo]) {
-            $validSubfolderObjects += $sf
-        }
-    }
-
-    LogMessage -Message "DEBUG: Valid subfolder objects collected: $($validSubfolderObjects.Count)" -IsDebug
-
-    # Now process the validated objects
-    foreach ($dirInfo in $validSubfolderObjects) {
-        $sfPath = $dirInfo.FullName
-
-        if ([string]::IsNullOrWhiteSpace($sfPath)) { continue }
-
-        # Resolve to absolute path and verify it's under target root (but not the root itself)
-        $sfPath = Resolve-SubfolderPath -Path $sfPath -TargetRoot $TargetFolder
-        if (-not $sfPath -or $sfPath -eq $TargetFolder) { continue }
-
-        # Verify it still exists
-        if (-not (Test-Path -LiteralPath $sfPath -PathType Container)) {
-            LogMessage -Message "Subfolder no longer exists: '$sfPath'" -IsWarning
-            continue
-        }
-
-        # Add to collections
-        $normalizedSubfolders += $sfPath
-
-        try {
-            $folderFilesMap[$sfPath] = (Get-ChildItem -LiteralPath $sfPath -File -ErrorAction Stop).Count
-        }
-        catch {
-            $folderFilesMap[$sfPath] = 0
-            LogMessage -Message "Failed to count files in subfolder '$sfPath'. Defaulting count to 0. Error: $($_.Exception.Message)" -IsWarning
-        }
-    }
-
-    # Make unique
-    $normalizedSubfolders = $normalizedSubfolders | Select-Object -Unique
+    $subfolderCountData = Get-SubfolderFileCounts -TargetFolder $TargetFolder `
+        -Subfolders $Subfolders `
+        -OperationName "Redistribution" `
+        -CreateEmergencySubfolder
+    $normalizedSubfolders = @($subfolderCountData.Subfolders)
+    $folderFilesMap = $subfolderCountData.FolderCounts
 
     LogMessage -Message ("DEBUG: Normalized subfolders for redistribution ({0} items): {1}" -f $normalizedSubfolders.Count, ($normalizedSubfolders -join ', ')) -IsDebug
 
@@ -1672,36 +1662,23 @@ function RebalanceSubfoldersByAverage {
 
     LogMessage -Message ("Rebalance: computing average and deviation thresholds (±{0}%)..." -f $Tolerance)
 
-    # Enumerate subfolders and counts
-    $subfolders = @()
-    try {
-        $subfolders = Get-ChildItem -LiteralPath $TargetFolder -Directory -Force -ErrorAction Stop
-    }
-    catch {
-        LogMessage -Message "Rebalance: failed to enumerate subfolders under '$TargetFolder': $($_.Exception.Message)" -IsError
-        return
-    }
+    $subfolderCountData = Get-SubfolderFileCounts -TargetFolder $TargetFolder `
+        -OperationName "Rebalance" `
+        -IncludeFreshScan
+    $subfolderPaths = @($subfolderCountData.Subfolders)
+    $folderCounts = $subfolderCountData.FolderCounts
+    $totalFiles = [int]$subfolderCountData.TotalFiles
+    $subfolders = @($subfolderPaths | ForEach-Object { [pscustomobject]@{ FullName = $_ } })
+
     if (-not $subfolders -or $subfolders.Count -le 1) {
         LogMessage -Message "Rebalance: need at least two subfolders. Nothing to do." -ConsoleOutput
         return
     }
 
     LogMessage -Message ("Rebalance: enumerating files from {0} subfolder(s)..." -f $subfolders.Count)
-
-    $folderCounts = @{}
-    $totalFiles = 0
     foreach ($sf in $subfolders) {
         $p = $sf.FullName
-        $count = 0
-        try {
-            $count = (Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop | Measure-Object).Count
-            LogMessage -Message ("DEBUG: Folder '{0}' contains {1} file(s)" -f (Split-Path -Leaf $p), $count) -IsDebug
-        }
-        catch {
-            LogMessage -Message "Rebalance: failed to count files in '$p': $($_.Exception.Message)" -IsWarning
-        }
-        $folderCounts[$p] = [int]$count
-        $totalFiles += [int]$count
+        LogMessage -Message ("DEBUG: Folder '{0}' contains {1} file(s)" -f (Split-Path -Leaf $p), $folderCounts[$p]) -IsDebug
     }
 
     if ($totalFiles -le 0) {
@@ -1915,15 +1892,13 @@ function RandomizeDistributionAcrossFolders {
 
     LogMessage -Message "Randomize: redistributing ALL files randomly across all subfolders..."
 
-    # Enumerate subfolders
-    $subfolders = @()
-    try {
-        $subfolders = Get-ChildItem -LiteralPath $TargetFolder -Directory -Force -ErrorAction Stop
-    }
-    catch {
-        LogMessage -Message "Randomize: failed to enumerate subfolders under '$TargetFolder': $($_.Exception.Message)" -IsError
-        return
-    }
+    $subfolderCountData = Get-SubfolderFileCounts -TargetFolder $TargetFolder `
+        -OperationName "Randomize" `
+        -IncludeFreshScan
+    $subfolderPaths = @($subfolderCountData.Subfolders)
+    $currentCounts = $subfolderCountData.FolderCounts
+    $subfolders = @($subfolderPaths | ForEach-Object { [pscustomobject]@{ FullName = $_ } })
+
     if (-not $subfolders -or $subfolders.Count -eq 0) {
         LogMessage -Message "Randomize: no subfolders present; nothing to do." -ConsoleOutput
         return
@@ -1934,7 +1909,6 @@ function RandomizeDistributionAcrossFolders {
     # Enumerate all files in all subfolders and track current counts
     $allFiles = @()
     $totalFiles = 0
-    $currentCounts = @{}
 
     foreach ($sf in $subfolders) {
         $p = $sf.FullName
@@ -1942,12 +1916,10 @@ function RandomizeDistributionAcrossFolders {
             $files = @(Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop)
             $allFiles += $files
             $totalFiles += $files.Count
-            $currentCounts[$p] = $files.Count
             LogMessage -Message ("DEBUG: Folder '{0}' contains {1} file(s)" -f (Split-Path -Leaf $p), $files.Count) -IsDebug
         }
         catch {
             LogMessage -Message "Randomize: failed to enumerate files in '$p': $($_.Exception.Message)" -IsWarning
-            $currentCounts[$p] = 0
         }
     }
 
@@ -2142,33 +2114,17 @@ function ConsolidateSubfoldersToMinimum {
 
     LogMessage -Message "Consolidation: computing minimal subfolder set..."
 
-    # Enumerate subfolders and counts
-    $subfolders = @()
-    try {
-        $subfolders = Get-ChildItem -LiteralPath $TargetFolder -Directory -Force -ErrorAction Stop
-    }
-    catch {
-        LogMessage -Message "Consolidation: failed to enumerate subfolders under '$TargetFolder': $($_.Exception.Message)" -IsError
-        return
-    }
+    $subfolderCountData = Get-SubfolderFileCounts -TargetFolder $TargetFolder `
+        -OperationName "Consolidation" `
+        -IncludeFreshScan
+    $subfolderPaths = @($subfolderCountData.Subfolders)
+    $folderCounts = $subfolderCountData.FolderCounts
+    $totalFiles = [int]$subfolderCountData.TotalFiles
+    $subfolders = @($subfolderPaths | ForEach-Object { [pscustomobject]@{ FullName = $_ } })
+
     if (-not $subfolders -or $subfolders.Count -eq 0) {
         LogMessage -Message "Consolidation: no subfolders present; nothing to do." -ConsoleOutput
         return
-    }
-
-    $folderCounts = @{}
-    $totalFiles = 0
-    foreach ($sf in $subfolders) {
-        $p = $sf.FullName
-        $count = 0
-        try {
-            $count = (Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop | Measure-Object).Count
-        }
-        catch {
-            LogMessage -Message "Consolidation: failed to count files in '$p': $($_.Exception.Message)" -IsWarning
-        }
-        $folderCounts[$p] = [int]$count
-        $totalFiles += [int]$count
     }
 
     # If any files remain in the target root, include them in total (should be 0 after prior phases)

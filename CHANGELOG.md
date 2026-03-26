@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.3] - 2026-03-26
+
+### Changed
+
+- **FileDistributor.ps1 v4.6.4: shared subfolder enumerate/count helper refactor**
+  - Added `Get-SubfolderFileCounts` to centralize subfolder normalization, per-folder file counting, empty-candidate handling, and aggregate counting
+  - Updated all five distribution algorithms to consume the shared helper for their enumerate-and-count setup sequence, removing duplicated prolog logic
+
 ## [2.10.2] - 2026-03-26
 
 ### Fixed
