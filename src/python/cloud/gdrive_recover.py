@@ -16,7 +16,7 @@ Requirements:
 See CHANGELOG.md in this directory for version history.
 """
 
-__version__ = “1.8.3”
+__version__ = "1.8.3"
 
 import os
 import io
