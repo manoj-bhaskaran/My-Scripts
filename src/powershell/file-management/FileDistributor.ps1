@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.8
+ 4.6.9
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
@@ -226,10 +226,10 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
-## 4.6.8 — 2026-03-26
+## 4.6.9 — 2026-03-26
 ### Changed
-- Moved detailed version history from this script header into `CHANGELOG.md` in the same directory.
-- Kept this `.NOTES` block focused on the current release summary for easier maintenance.
+- Reduced script-scope variable coupling in orchestration/checkpoint helpers by storing effective runtime values in `RunState` and passing them explicitly.
+- Checkpoint save/payload flow now passes `SessionId`, `DeleteMode`, `SourceFolder`, `MaxFilesToCopy`, and effective `FilesPerFolderLimit` without relying on `$script:*`.
 - Full changelog: `./CHANGELOG.md`.
 
 Script Workflow:
@@ -385,10 +385,9 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.7"
+$script:Version = "4.6.9"
 $script:Warnings = 0
 $script:Errors = 0
-$script:SessionId = $null
 
 # ===== Windows path resolution helpers (executed before any logging) =====
 # Determine script root (works in PS 5.1+ when running as a script)
@@ -2064,13 +2063,9 @@ function SaveState {
     param (
         [int]$Checkpoint,
         [hashtable]$AdditionalVariables = @{ },
-        [ref]$fileLock
+        [ref]$fileLock,
+        [Parameter(Mandatory = $true)][string]$SessionId
     )
-
-    # Ensure a session id exists before persisting
-    if (-not $script:SessionId) {
-        $script:SessionId = [guid]::NewGuid().ToString()
-    }
 
     # Capture aggregated counters for restart safety
     $warningsSoFar = $script:Warnings
@@ -2088,7 +2083,7 @@ function SaveState {
     # Combine state information
     $state = @{
         Checkpoint    = $Checkpoint
-        SessionId     = $script:SessionId
+        SessionId     = $SessionId
         WarningsSoFar = $warningsSoFar
         ErrorsSoFar   = $errorsSoFar
         Timestamp     = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
@@ -2393,14 +2388,14 @@ function Invoke-ParameterValidation {
 
     LogMessage -Message "Validating parameters: SourceFolder - $SourceFolder, TargetFolder - $TargetFolder, FilesPerFolderLimit - $FilesPerFolderLimit, MaxFilesToCopy - $MaxFilesToCopy"
 
-    if (-not $script:SessionId) { $script:SessionId = [guid]::NewGuid().ToString() }
+    $RunState.SessionId = [guid]::NewGuid().ToString()
 
     if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
-        $script:MaxFilesToCopy = 0
+        $RunState.MaxFilesToCopy = 0
         LogMessage -Message "SourceFolder not specified. Running in rebalance-only mode (no files will be copied)." -ConsoleOutput
     }
     else {
-        $script:MaxFilesToCopy = $MaxFilesToCopy
+        $RunState.MaxFilesToCopy = $MaxFilesToCopy
     }
 
     if ([string]::IsNullOrWhiteSpace($TargetFolder)) {
@@ -2415,7 +2410,10 @@ function Invoke-ParameterValidation {
 
     if (!($FilesPerFolderLimit -gt 0)) {
         LogMessage -Message "Incorrect value for FilesPerFolderLimit. Resetting to default: 20000." -IsWarning
-        $script:FilesPerFolderLimit = 20000
+        $RunState.FilesPerFolderLimit = 20000
+    }
+    else {
+        $RunState.FilesPerFolderLimit = $FilesPerFolderLimit
     }
 
     if (!(Test-Path -Path $TargetFolder)) {
@@ -2440,12 +2438,12 @@ function Invoke-ParameterValidation {
         throw "Invalid EndOfScriptDeletionCondition."
     }
 
-    if ($script:MaxFilesToCopy -lt -1) {
-        LogMessage -Message "Invalid MaxFilesToCopy '$script:MaxFilesToCopy'. Using -1 (no limit)." -IsWarning
-        $script:MaxFilesToCopy = -1
+    if ($RunState.MaxFilesToCopy -lt -1) {
+        LogMessage -Message "Invalid MaxFilesToCopy '$($RunState.MaxFilesToCopy)'. Using -1 (no limit)." -IsWarning
+        $RunState.MaxFilesToCopy = -1
     }
 
-    $RunState.FilesToDelete = New-FileQueue -Name "FilesToDelete" -SessionId $script:SessionId -MaxSize -1
+    $RunState.FilesToDelete = New-FileQueue -Name "FilesToDelete" -SessionId $RunState.SessionId -MaxSize -1
     $RunState.GlobalFileCounter = New-Ref 0
     LogMessage -Message "Parameter validation completed"
 }
@@ -2470,10 +2468,10 @@ function Invoke-RestoreCheckpoint {
 
         if ($RunState.LastCheckpoint -gt 0) {
             if ($state.PSObject.Properties.Name -contains 'SessionId' -and $state.SessionId) {
-                $script:SessionId = [string]$state.SessionId
+                $RunState.SessionId = [string]$state.SessionId
             }
             else {
-                $script:SessionId = [guid]::NewGuid().ToString()
+                $RunState.SessionId = [guid]::NewGuid().ToString()
                 LogMessage -Message "Legacy state without SessionId; generated new SessionId for this resume." -IsWarning
             }
 
@@ -2491,7 +2489,6 @@ function Invoke-RestoreCheckpoint {
                 if ($SourceFolder -ne $savedSourceFolder) {
                     throw "SourceFolder mismatch: Restarted script must use the saved SourceFolder ('$savedSourceFolder'). Aborting."
                 }
-                $script:SourceFolder = $savedSourceFolder
             }
         }
         else {
@@ -2503,7 +2500,6 @@ function Invoke-RestoreCheckpoint {
             if ($DeleteMode -ne $savedDeleteMode) {
                 throw "DeleteMode mismatch: Restarted script must use the saved DeleteMode ('$savedDeleteMode'). Aborting."
             }
-            $script:DeleteMode = $savedDeleteMode
         }
         else {
             throw "State file does not contain DeleteMode. Unable to enforce."
@@ -2515,10 +2511,10 @@ function Invoke-RestoreCheckpoint {
             if ($state.ContainsKey('totalSourceFilesAll')) { $RunState.totalSourceFilesAll = [int]$state['totalSourceFilesAll'] }
             if ($state.ContainsKey('MaxFilesToCopy')) {
                 $savedMax = [int]$state['MaxFilesToCopy']
-                if ($script:MaxFilesToCopy -ne $savedMax) {
+                if ($RunState.MaxFilesToCopy -ne $savedMax) {
                     throw "MaxFilesToCopy mismatch: Restarted script must use the saved MaxFilesToCopy ($savedMax). Aborting."
                 }
-                $script:MaxFilesToCopy = $savedMax
+                $RunState.MaxFilesToCopy = $savedMax
             }
             if ($state.ContainsKey('subfolders')) { $RunState.subfolders = ConvertPathsToItems($state['subfolders']) }
             if ($RunState.LastCheckpoint -in 2, 3 -and $state.ContainsKey('sourceFiles')) { $RunState.sourceFiles = ConvertPathsToItems($state['sourceFiles']) }
@@ -2536,7 +2532,7 @@ function Invoke-RestoreCheckpoint {
                         Size             = $e.Size
                         LastWriteTimeUtc = $e.LastWriteTimeUtc
                         QueuedAtUtc      = if ($e.PSObject.Properties.Name -contains 'QueuedAtUtc') { $e.QueuedAtUtc } else { (Get-Date).ToUniversalTime() }
-                        SessionId        = if ($e.PSObject.Properties.Name -contains 'SessionId') { $e.SessionId } else { $script:SessionId }
+                        SessionId        = if ($e.PSObject.Properties.Name -contains 'SessionId') { $e.SessionId } else { $RunState.SessionId }
                         Attempts         = 0
                         Metadata         = @{}
                     })
@@ -2557,6 +2553,9 @@ function Invoke-RestoreCheckpoint {
 function New-CheckpointPayload {
     param(
         [hashtable]$RunState,
+        [Parameter(Mandatory = $true)][string]$DeleteMode,
+        [string]$SourceFolder,
+        [int]$MaxFilesToCopy,
         [object]$Subfolders,
         [object]$SourceFiles,
         [switch]$IncludeSourceFiles,
@@ -2569,7 +2568,7 @@ function New-CheckpointPayload {
         totalTargetFilesBefore = $RunState.totalTargetFilesBefore
         deleteMode             = $DeleteMode
         SourceFolder           = $SourceFolder
-        MaxFilesToCopy         = $script:MaxFilesToCopy
+        MaxFilesToCopy         = $MaxFilesToCopy
     }
 
     if ($null -ne $Subfolders) {
@@ -2593,7 +2592,7 @@ function Invoke-DistributionPhase {
         if (-not [string]::IsNullOrWhiteSpace($SourceFolder)) {
             LogMessage -Message "Preparing for distribution (no upfront renaming; rename occurs at copy time)." -ConsoleOutput
         }
-        SaveState -Checkpoint 1 -AdditionalVariables @{ deleteMode = $DeleteMode; SourceFolder = $SourceFolder } -fileLock $FileLockRef
+        SaveState -Checkpoint 1 -AdditionalVariables @{ deleteMode = $DeleteMode; SourceFolder = $SourceFolder } -fileLock $FileLockRef -SessionId $RunState.SessionId
     }
 
     if ($RunState.LastCheckpoint -lt 2) {
@@ -2616,8 +2615,8 @@ function Invoke-DistributionPhase {
                 }
             }
             $RunState.totalSourceFilesAll = $sourceFilesAll.Count
-            if ($script:MaxFilesToCopy -eq 0) { $RunState.sourceFiles = @() }
-            elseif ($script:MaxFilesToCopy -gt 0) { $RunState.sourceFiles = $sourceFilesAll | Select-Object -First $script:MaxFilesToCopy }
+            if ($RunState.MaxFilesToCopy -eq 0) { $RunState.sourceFiles = @() }
+            elseif ($RunState.MaxFilesToCopy -gt 0) { $RunState.sourceFiles = $sourceFilesAll | Select-Object -First $RunState.MaxFilesToCopy }
             else { $RunState.sourceFiles = $sourceFilesAll }
             $RunState.totalSourceFiles = $RunState.sourceFiles.Count
         }
@@ -2627,31 +2626,31 @@ function Invoke-DistributionPhase {
         $totalFiles = $RunState.totalSourceFiles + $RunState.totalTargetFilesBefore
 
         $RunState.subfolders = @(Get-ChildItem -LiteralPath $TargetFolder -Force | Where-Object { $_.PSIsContainer })
-        if ($totalFiles / $FilesPerFolderLimit -gt $RunState.subfolders.Count) {
-            $additionalFolders = [math]::Ceiling($totalFiles / $FilesPerFolderLimit) - $RunState.subfolders.Count
+        if ($totalFiles / $RunState.FilesPerFolderLimit -gt $RunState.subfolders.Count) {
+            $additionalFolders = [math]::Ceiling($totalFiles / $RunState.FilesPerFolderLimit) - $RunState.subfolders.Count
             $RunState.subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
         }
 
-        SaveState -Checkpoint 2 -AdditionalVariables (New-CheckpointPayload -RunState $RunState -Subfolders $RunState.subfolders -SourceFiles $RunState.sourceFiles -IncludeSourceFiles) -fileLock $FileLockRef
+        SaveState -Checkpoint 2 -AdditionalVariables (New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders $RunState.subfolders -SourceFiles $RunState.sourceFiles -IncludeSourceFiles) -fileLock $FileLockRef -SessionId $RunState.SessionId
     }
 
     if ($RunState.LastCheckpoint -lt 3) {
-        $cp3 = New-CheckpointPayload -RunState $RunState -Subfolders $RunState.subfolders -IncludeFilesToDelete
-        SaveState -Checkpoint 3 -AdditionalVariables $cp3 -fileLock $FileLockRef
+        $cp3 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders $RunState.subfolders -IncludeFilesToDelete
+        SaveState -Checkpoint 3 -AdditionalVariables $cp3 -fileLock $FileLockRef -SessionId $RunState.SessionId
     }
 
     if ($RunState.LastCheckpoint -lt 4) {
         if ($RunState.totalSourceFiles -gt 0 -and $RunState.sourceFiles.Count -gt 0) {
-            DistributeFilesToSubfolders -Files $RunState.sourceFiles -Subfolders $RunState.subfolders -TargetRoot $TargetFolder -Limit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles $RunState.totalSourceFiles
+            DistributeFilesToSubfolders -Files $RunState.sourceFiles -Subfolders $RunState.subfolders -TargetRoot $TargetFolder -Limit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles $RunState.totalSourceFiles
         }
-        $cp4 = New-CheckpointPayload -RunState $RunState -Subfolders $RunState.subfolders -SourceFiles $RunState.sourceFiles -IncludeSourceFiles -IncludeFilesToDelete
-        SaveState -Checkpoint 4 -AdditionalVariables $cp4 -fileLock $FileLockRef
+        $cp4 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders $RunState.subfolders -SourceFiles $RunState.sourceFiles -IncludeSourceFiles -IncludeFilesToDelete
+        SaveState -Checkpoint 4 -AdditionalVariables $cp4 -fileLock $FileLockRef -SessionId $RunState.SessionId
     }
 
     if ($RunState.LastCheckpoint -lt 5) {
-        RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $RunState.subfolders -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles 0
-        $cp5 = New-CheckpointPayload -RunState $RunState -IncludeFilesToDelete
-        SaveState -Checkpoint 5 -AdditionalVariables $cp5 -fileLock $FileLockRef
+        RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $RunState.subfolders -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles 0
+        $cp5 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -IncludeFilesToDelete
+        SaveState -Checkpoint 5 -AdditionalVariables $cp5 -fileLock $FileLockRef -SessionId $RunState.SessionId
     }
 }
 
@@ -2659,26 +2658,31 @@ function Invoke-PostProcessingPhase {
     param([hashtable]$RunState,[ref]$FileLockRef)
 
     if ($ConsolidateToMinimum -and $RunState.LastCheckpoint -lt 6) {
-        ConsolidateSubfoldersToMinimum -TargetFolder $TargetFolder -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
-        $cp6 = New-CheckpointPayload -RunState $RunState -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
-        SaveState -Checkpoint 6 -AdditionalVariables $cp6 -fileLock $FileLockRef
+        ConsolidateSubfoldersToMinimum -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
+        $cp6 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
+        SaveState -Checkpoint 6 -AdditionalVariables $cp6 -fileLock $FileLockRef -SessionId $RunState.SessionId
     }
 
     if ($RebalanceToAverage -and $RunState.LastCheckpoint -lt 7) {
-        RebalanceSubfoldersByAverage -TargetFolder $TargetFolder -FilesPerFolderLimit $FilesPerFolderLimit -Tolerance $RebalanceTolerance -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
-        $cp7 = New-CheckpointPayload -RunState $RunState -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
-        SaveState -Checkpoint 7 -AdditionalVariables $cp7 -fileLock $FileLockRef
+        RebalanceSubfoldersByAverage -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -Tolerance $RebalanceTolerance -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
+        $cp7 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
+        SaveState -Checkpoint 7 -AdditionalVariables $cp7 -fileLock $FileLockRef -SessionId $RunState.SessionId
     }
 
     if ($RandomizeDistribution -and $RunState.LastCheckpoint -lt 8) {
-        RandomizeDistributionAcrossFolders -TargetFolder $TargetFolder -FilesPerFolderLimit $FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
-        $cp8 = New-CheckpointPayload -RunState $RunState -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
-        SaveState -Checkpoint 8 -AdditionalVariables $cp8 -fileLock $FileLockRef
+        RandomizeDistributionAcrossFolders -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
+        $cp8 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
+        SaveState -Checkpoint 8 -AdditionalVariables $cp8 -fileLock $FileLockRef -SessionId $RunState.SessionId
     }
 }
 
 function Invoke-EndOfScriptDeletion {
-    param([hashtable]$RunState,[int]$PriorWarnings,[int]$PriorErrors)
+    param(
+        [hashtable]$RunState,
+        [int]$PriorWarnings,
+        [int]$PriorErrors,
+        [Parameter(Mandatory = $true)][string]$DeleteMode
+    )
 
     if ($DeleteMode -ne "EndOfScript") { return }
 
@@ -2693,7 +2697,7 @@ function Invoke-EndOfScriptDeletion {
     while ($RunState.FilesToDelete.Items.Count -gt 0) {
         $entry = Get-NextQueueItem -Queue $RunState.FilesToDelete -IncrementAttempts $false
         if ($null -eq $entry) { break }
-        if ($entry.SessionId -ne $script:SessionId) { continue }
+        if ($entry.SessionId -ne $RunState.SessionId) { continue }
         if (-not (Test-Path -Path $entry.SourcePath)) { continue }
 
         $okToDelete = $true
@@ -2805,7 +2809,7 @@ function Main {
         Invoke-RestoreCheckpoint -RunState $runState -FileLockRef $fileLockRef -PriorWarnings ([ref]$priorWarnings) -PriorErrors ([ref]$priorErrors)
         Invoke-DistributionPhase -RunState $runState -FileLockRef $fileLockRef
         Invoke-PostProcessingPhase -RunState $runState -FileLockRef $fileLockRef
-        Invoke-EndOfScriptDeletion -RunState $runState -PriorWarnings $priorWarnings -PriorErrors $priorErrors
+        Invoke-EndOfScriptDeletion -RunState $runState -PriorWarnings $priorWarnings -PriorErrors $priorErrors -DeleteMode $DeleteMode
         Invoke-PostRunCleanup -RunState $runState -FileLockRef $fileLockRef
 
         LogMessage -Message "File distribution and optional cleanup completed."

@@ -33,6 +33,8 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.6.9**
+  - Reduced script-scope variable coupling in orchestration/checkpoint flows by storing effective runtime values in `RunState` and passing `SessionId`, `DeleteMode`, `MaxFilesToCopy`, and `FilesPerFolderLimit` explicitly where used.
 - **FileDistributor.ps1 v4.6.8**
   - Moved the full FileDistributor release history out of the script header into `src/powershell/file-management/CHANGELOG.md`, leaving a concise current-version summary in `.NOTES`.
 - **FileDistributor.ps1 v4.6.7**
