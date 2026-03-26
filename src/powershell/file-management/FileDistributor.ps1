@@ -6,9 +6,11 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.1
+ 4.6.3
 
  CHANGELOG:
+   4.6.3 - Preserved EndOfScript queue-failure signal when reporting pending deletion
+   4.6.2 - Refactored file-move workflow into shared Invoke-FileMove helper across distribution algorithms
    4.6.1 - Restored file-count integrity warnings in Invoke-PostRunCleanup (regression fix)
    4.6.0 - Decomposed Main into orchestration sub-functions for checkpointed phases and cleanup
    4.5.0 - Added .mp4 to allowed file extensions for distribution
@@ -235,6 +237,15 @@ To display the script's help text:
 
 .NOTES
 # CHANGELOG
+## 4.6.3 — 2026-03-26
+### Fixed
+- **EndOfScript queue signal preserved:** `Invoke-FileMove` now returns queueing status and logs a warning when `Add-FileToQueue` fails, and `DistributeFilesToSubfolders` reports "pending deletion" only when queue insertion succeeds.
+
+## 4.6.2 — 2026-03-26
+### Changed
+- **Shared file-move helper extracted:** Added private `Invoke-FileMove` to centralize conflict-safe destination naming, retried copy, delete-mode dispatch (`RecycleBin` / `Immediate` / `EndOfScript` queue), global file-counter updates, and progress reporting.
+- **Distribution algorithms deduplicated:** `DistributeFilesToSubfolders`, `RedistributeFilesInTarget` (via `DistributeFilesToSubfolders`), `RebalanceSubfoldersByAverage`, `RandomizeDistributionAcrossFolders`, and `ConsolidateSubfoldersToMinimum` now reuse the shared helper instead of duplicating copy/delete/progress loop internals.
+
 ## 4.6.1 — 2026-03-26
 ### Fixed
 - **File-count integrity warnings restored:** `Invoke-PostRunCleanup` now validates before/after file counts and warns on discrepancies, restoring behaviour that was accidentally dropped during the 4.6.0 refactor.
@@ -603,7 +614,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.1"
+$script:Version = "4.6.3"
 $script:Warnings = 0
 $script:Errors = 0
 $script:SessionId = $null
@@ -1173,6 +1184,82 @@ function Remove-File {
     }
 }
 
+function Invoke-FileMove {
+    param (
+        [Parameter(Mandatory = $true)][string]$SourcePath,
+        [Parameter(Mandatory = $true)][string]$DestinationFolder,
+        [Parameter(Mandatory = $true)][string]$SourceDisplayName,
+        [Parameter(Mandatory = $true)][string]$DeleteMode,
+        [Parameter(Mandatory = $true)]$FilesToDelete,
+        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter,
+        [switch]$ShowProgress,
+        [int]$UpdateFrequency = 100,
+        [int]$TotalFiles = 0,
+        [string]$ProgressActivity = "Distributing Files",
+        [string]$ProgressStatusTemplate = "Processed {0} of {1} files",
+        [string]$CopyFailureMessageTemplate = "Failed to copy '{0}' to '{1}'.",
+        [string]$PostCopyFailureMessageTemplate = "Post-copy handling failed for '{0}': {1}",
+        [switch]$CopyFailureIsWarning,
+        [switch]$IncrementOnSuccessOnly
+    )
+
+    $originalFileName = [System.IO.Path]::GetFileName($SourcePath)
+    $newFileName = ResolveFileNameConflict -TargetFolder $DestinationFolder -OriginalFileName $originalFileName
+    $destinationFile = Join-Path -Path $DestinationFolder -ChildPath $newFileName
+
+    Copy-ItemWithRetry -Path $SourcePath -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount
+
+    $copySucceeded = Test-Path -LiteralPath $destinationFile
+    $queuedForEndOfScriptDeletion = $null
+    if ($copySucceeded) {
+        try {
+            if ($DeleteMode -eq "RecycleBin") {
+                Move-ToRecycleBin -FilePath $SourcePath
+            }
+            elseif ($DeleteMode -eq "Immediate") {
+                Remove-File -FilePath $SourcePath
+            }
+            elseif ($DeleteMode -eq "EndOfScript") {
+                $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $SourcePath -ValidateFile $false
+                $queuedForEndOfScriptDeletion = [bool]$queueResult
+                if (-not $queuedForEndOfScriptDeletion) {
+                    LogMessage -Message "Failed to queue file for deletion: $SourcePath" -IsWarning
+                }
+            }
+        }
+        catch {
+            if ($DeleteMode -eq "EndOfScript") {
+                $queuedForEndOfScriptDeletion = $false
+            }
+            LogMessage -Message ($PostCopyFailureMessageTemplate -f $SourcePath, $_.Exception.Message) -IsWarning
+        }
+    }
+    else {
+        if ($CopyFailureIsWarning) {
+            LogMessage -Message ($CopyFailureMessageTemplate -f $SourceDisplayName, $destinationFile) -IsWarning
+        }
+        else {
+            LogMessage -Message ($CopyFailureMessageTemplate -f $SourceDisplayName, $destinationFile) -IsError
+        }
+    }
+
+    if (-not $IncrementOnSuccessOnly -or $copySucceeded) {
+        $GlobalFileCounter.Value++
+    }
+
+    if ($ShowProgress -and $TotalFiles -gt 0 -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
+        $percentComplete = [math]::Floor(($GlobalFileCounter.Value / $TotalFiles) * 100)
+        $status = $ProgressStatusTemplate -f $GlobalFileCounter.Value, $TotalFiles
+        Write-Progress -Activity $ProgressActivity -Status $status -PercentComplete $percentComplete
+    }
+
+    return [pscustomobject]@{
+        Success         = $copySucceeded
+        DestinationFile = $destinationFile
+        QueueQueued     = $queuedForEndOfScriptDeletion
+    }
+}
+
 function DistributeFilesToSubfolders {
     param (
         [string[]]$Files,
@@ -1348,48 +1435,38 @@ function DistributeFilesToSubfolders {
         $startsWithTarget = if ($destNormalized) { $destNormalized.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase) } else { $false }
         LogMessage -Message ("DEBUG: destNormalized='{0}' targetRootNormalized='{1}' rooted={2} startsWithTarget={3}" -f $destNormalized, $targetNormalized, $rooted, $startsWithTarget) -IsDebug
 
-        # Randomized destination name (preserve extension)
-        $newFileName = ResolveFileNameConflict -TargetFolder $destinationFolder -OriginalFileName $originalName
-        $destinationFile = Join-Path -Path $destinationFolder -ChildPath $newFileName
-        LogMessage -Message "Assigning randomized destination name for '$filePath' -> '$destinationFile'."
+        $moveResult = Invoke-FileMove -SourcePath $filePath `
+            -DestinationFolder $destinationFolder `
+            -SourceDisplayName $file `
+            -DeleteMode $DeleteMode `
+            -FilesToDelete $FilesToDelete `
+            -GlobalFileCounter $GlobalFileCounter `
+            -ShowProgress:$ShowProgress `
+            -UpdateFrequency $UpdateFrequency `
+            -TotalFiles $TotalFiles `
+            -ProgressActivity "Distributing Files" `
+            -ProgressStatusTemplate "Processed {0} of {1} files" `
+            -CopyFailureMessageTemplate "Failed to copy '{0}' to '{1}'. Original file not moved." `
+            -PostCopyFailureMessageTemplate "Failed to process file '{0}' after copying. Error: {1}"
 
-        Copy-ItemWithRetry -Path $filePath -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount
-
-        if (Test-Path -LiteralPath $destinationFile) {
+        if ($moveResult.Success) {
+            $destinationFile = $moveResult.DestinationFile
+            LogMessage -Message "Assigning randomized destination name for '$filePath' -> '$destinationFile'."
             if ($folderCounts.ContainsKey($destinationFolder)) { $folderCounts[$destinationFolder]++ } else { $folderCounts[$destinationFolder] = 1 }
-            try {
-                if ($DeleteMode -eq "RecycleBin") {
-                    Move-ToRecycleBin -FilePath $filePath
-                    LogMessage -Message "Copied from $file to $destinationFile and moved original to Recycle Bin."
+            if ($DeleteMode -eq "RecycleBin") {
+                LogMessage -Message "Copied from $file to $destinationFile and moved original to Recycle Bin."
+            }
+            elseif ($DeleteMode -eq "Immediate") {
+                LogMessage -Message "Copied from $file to $destinationFile and immediately deleted original."
+            }
+            elseif ($DeleteMode -eq "EndOfScript") {
+                if ($moveResult.QueueQueued -eq $true) {
+                    LogMessage -Message "Copied from $file to $destinationFile. Original pending deletion at end of script."
                 }
-                elseif ($DeleteMode -eq "Immediate") {
-                    Remove-File -FilePath $filePath
-                    LogMessage -Message "Copied from $file to $destinationFile and immediately deleted original."
-                }
-                elseif ($DeleteMode -eq "EndOfScript") {
-                    # Use FileQueue module to add file to deletion queue
-                    $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $filePath -ValidateFile $false
-                    if ($queueResult) {
-                        LogMessage -Message "Copied from $file to $destinationFile. Original pending deletion at end of script."
-                    }
-                    else {
-                        LogMessage -Message "Failed to queue file for deletion: $filePath" -IsWarning
-                    }
+                else {
+                    LogMessage -Message "Copied from $file to $destinationFile, but original could not be queued for end-of-script deletion." -IsWarning
                 }
             }
-            catch {
-                LogMessage -Message "Failed to process file $file after copying to $destinationFile. Error: $($_.Exception.Message)" -IsWarning
-            }
-        }
-        else {
-            LogMessage -Message "Failed to copy $file to $destinationFile. Original file not moved." -IsError
-        }
-
-        $GlobalFileCounter.Value++
-
-        if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
-            $percentComplete = [math]::Floor(($GlobalFileCounter.Value / $TotalFiles) * 100)
-            Write-Progress -Activity "Distributing Files" -Status "Processed $($GlobalFileCounter.Value) of $TotalFiles files" -PercentComplete $percentComplete
         }
     }
 
@@ -1759,45 +1836,28 @@ function RebalanceSubfoldersByAverage {
 
             $destFolderName = Split-Path -Leaf $destFolder
 
-            # Prepare destination and copy
-            $newName = ResolveFileNameConflict -TargetFolder $destFolder -OriginalFileName $file.Name
-            $dest = Join-Path -Path $destFolder -ChildPath $newName
-
             LogMessage -Message ("DEBUG: Moving '{0}' from '{1}' to '{2}'" -f $file.Name, $srcFolderName, $destFolderName) -IsDebug
 
-            Copy-ItemWithRetry -Path $file.FullName -Destination $dest -RetryDelay $RetryDelay -RetryCount $RetryCount
-            if (Test-Path -LiteralPath $dest) {
+            $moveResult = Invoke-FileMove -SourcePath $file.FullName `
+                -DestinationFolder $destFolder `
+                -SourceDisplayName $file.FullName `
+                -DeleteMode $DeleteMode `
+                -FilesToDelete $FilesToDelete `
+                -GlobalFileCounter $GlobalFileCounter `
+                -ShowProgress:$ShowProgress `
+                -UpdateFrequency $UpdateFrequency `
+                -TotalFiles $plannedMoves `
+                -ProgressActivity "Rebalancing subfolders" `
+                -ProgressStatusTemplate "Moved {0} of {1}" `
+                -CopyFailureMessageTemplate "Rebalance: failed to copy '{0}' to '{1}'." `
+                -PostCopyFailureMessageTemplate "Rebalance: post-copy handling failed for '{0}': {1}" `
+                -IncrementOnSuccessOnly
+
+            if ($moveResult.Success) {
                 # Update receiver deficit and donor surplus
                 $receiverMap[$destFolder] = [Math]::Max(0, ([int]$receiverMap[$destFolder]) - 1)
                 if ($receiverMap[$destFolder] -le 0) { $receiverMap.Remove($destFolder) }
-
-                # Handle original via DeleteMode
-                try {
-                    if ($DeleteMode -eq "RecycleBin") {
-                        Move-ToRecycleBin -FilePath $file.FullName
-                    }
-                    elseif ($DeleteMode -eq "Immediate") {
-                        Remove-File -FilePath $file.FullName
-                    }
-                    elseif ($DeleteMode -eq "EndOfScript") {
-                        # Use FileQueue module to add file to deletion queue
-                        $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $file.FullName -ValidateFile $false
-                        if (-not $queueResult) {
-                            Write-LogDebug "Failed to queue file for deletion: $($file.FullName)"
-                        }
-                    }
-                }
-                catch {
-                    LogMessage -Message "Rebalance: post-copy handling failed for '$($file.FullName)': $($_.Exception.Message)" -IsWarning
-                }
                 $totalMoved++
-                $GlobalFileCounter.Value++
-
-                # Show progress (visual and logged)
-                if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
-                    $pct = [math]::Floor(($GlobalFileCounter.Value / $plannedMoves) * 100)
-                    Write-Progress -Activity "Rebalancing subfolders" -Status "Moved $($GlobalFileCounter.Value) of $plannedMoves" -PercentComplete $pct
-                }
 
                 # Log progress periodically
                 if ($GlobalFileCounter.Value - $lastLoggedProgress -ge ($plannedMoves / 10)) {
@@ -1808,7 +1868,6 @@ function RebalanceSubfoldersByAverage {
             }
             else {
                 $totalFailed++
-                LogMessage -Message "Rebalance: failed to copy '$($file.FullName)' to '$dest'." -IsError
             }
         }
     }
@@ -2008,42 +2067,26 @@ function RandomizeDistributionAcrossFolders {
                 continue
             }
 
-            # Resolve file name conflict
-            $newName = ResolveFileNameConflict -TargetFolder $destFolder -OriginalFileName $file.Name
-            $dest = Join-Path -Path $destFolder -ChildPath $newName
-
             LogMessage -Message ("DEBUG: Moving '{0}' from '{1}' to '{2}'" -f $file.Name, (Split-Path -Leaf $currentFolder), $destFolderName) -IsDebug
 
-            # Copy file to destination
-            Copy-ItemWithRetry -Path $file.FullName -Destination $dest -RetryDelay $RetryDelay -RetryCount $RetryCount
+            $moveResult = Invoke-FileMove -SourcePath $file.FullName `
+                -DestinationFolder $destFolder `
+                -SourceDisplayName $file.FullName `
+                -DeleteMode $DeleteMode `
+                -FilesToDelete $FilesToDelete `
+                -GlobalFileCounter $GlobalFileCounter `
+                -ShowProgress:$ShowProgress `
+                -UpdateFrequency $UpdateFrequency `
+                -TotalFiles $filesMoving `
+                -ProgressActivity "Randomizing distribution" `
+                -ProgressStatusTemplate "Moved {0} of {1} files" `
+                -CopyFailureMessageTemplate "Randomize: failed to copy '{0}' to '{1}'." `
+                -PostCopyFailureMessageTemplate "Randomize: failed to handle original file '{0}': {1}" `
+                -CopyFailureIsWarning `
+                -IncrementOnSuccessOnly
 
-            if (Test-Path -LiteralPath $dest) {
+            if ($moveResult.Success) {
                 $totalMoves++
-                $GlobalFileCounter.Value++
-
-                # Handle original via DeleteMode
-                try {
-                    if ($DeleteMode -eq "RecycleBin") {
-                        Move-ToRecycleBin -FilePath $file.FullName
-                    }
-                    elseif ($DeleteMode -eq "Immediate") {
-                        Remove-File -FilePath $file.FullName
-                    }
-                    elseif ($DeleteMode -eq "EndOfScript") {
-                        $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $file.FullName -ValidateFile $false
-                        if (-not $queueResult) {
-                            Write-LogDebug "Failed to queue file for deletion: $($file.FullName)"
-                        }
-                    }
-                }
-                catch {
-                    LogMessage -Message "Randomize: failed to handle original file '$($file.FullName)': $($_.Exception.Message)" -IsWarning
-                }
-
-                # Show progress (visual and logged)
-                if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
-                    Write-Progress -Activity "Randomizing distribution" -Status ("Moved {0} of {1} files" -f $GlobalFileCounter.Value, $filesMoving) -PercentComplete (($GlobalFileCounter.Value / $filesMoving) * 100)
-                }
 
                 # Log progress periodically
                 if ($GlobalFileCounter.Value - $lastLoggedProgress -ge ($filesMoving / 10)) {
@@ -2054,7 +2097,6 @@ function RandomizeDistributionAcrossFolders {
             }
             else {
                 $totalErrors++
-                LogMessage -Message "Randomize: failed to copy '$($file.FullName)' to '$dest'" -IsWarning
             }
         }
     }
@@ -2216,45 +2258,24 @@ function ConsolidateSubfoldersToMinimum {
             $cands = @($eligible | Where-Object { $liveCounts[$_] -eq $minCount })
             $destFolder = if ($cands.Count -gt 1) { $cands | Get-Random } else { $cands[0] }
 
-            $originalName = $file.Name
-            $newFileName = ResolveFileNameConflict -TargetFolder $destFolder -OriginalFileName $originalName
-            $destination = Join-Path -Path $destFolder -ChildPath $newFileName
+            $moveResult = Invoke-FileMove -SourcePath $file.FullName `
+                -DestinationFolder $destFolder `
+                -SourceDisplayName $file.FullName `
+                -DeleteMode $DeleteMode `
+                -FilesToDelete $FilesToDelete `
+                -GlobalFileCounter $GlobalFileCounter `
+                -ShowProgress:$ShowProgress `
+                -UpdateFrequency $UpdateFrequency `
+                -TotalFiles $totalMoves `
+                -ProgressActivity "Consolidating subfolders" `
+                -ProgressStatusTemplate "Moved {0} of {1}" `
+                -CopyFailureMessageTemplate "Consolidation: failed to copy '{0}' to '{1}'." `
+                -PostCopyFailureMessageTemplate "Consolidation: post-copy handling failed for '{0}': {1}"
 
-            Copy-ItemWithRetry -Path $file.FullName -Destination $destination -RetryDelay $RetryDelay -RetryCount $RetryCount
-
-            if (Test-Path -LiteralPath $destination) {
+            if ($moveResult.Success) {
                 # Update counts/capacity
                 $liveCounts[$destFolder]++
                 $capacity[$destFolder] = [Math]::Max(0, $FilesPerFolderLimit - $liveCounts[$destFolder])
-
-                # Handle the original per DeleteMode
-                try {
-                    if ($DeleteMode -eq "RecycleBin") {
-                        Move-ToRecycleBin -FilePath $file.FullName
-                    }
-                    elseif ($DeleteMode -eq "Immediate") {
-                        Remove-File -FilePath $file.FullName
-                    }
-                    elseif ($DeleteMode -eq "EndOfScript") {
-                        # Use FileQueue module to add file to deletion queue
-                        $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $file.FullName -ValidateFile $false
-                        if (-not $queueResult) {
-                            Write-LogDebug "Failed to queue file for deletion: $($file.FullName)"
-                        }
-                    }
-                }
-                catch {
-                    LogMessage -Message "Consolidation: post-copy handling failed for '$($file.FullName)': $($_.Exception.Message)" -IsWarning
-                }
-            }
-            else {
-                LogMessage -Message "Consolidation: failed to copy '$($file.FullName)' to '$destination'." -IsError
-            }
-
-            $GlobalFileCounter.Value++
-            if ($ShowProgress -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
-                $percent = [math]::Floor(($GlobalFileCounter.Value / $totalMoves) * 100)
-                Write-Progress -Activity "Consolidating subfolders" -Status "Moved $($GlobalFileCounter.Value) of $totalMoves" -PercentComplete $percent
             }
         }
         if ($ShowProgress) { Write-Progress -Activity "Consolidating subfolders" -Status "Complete" -Completed }

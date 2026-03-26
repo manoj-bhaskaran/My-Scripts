@@ -33,5 +33,5 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
-- **FileDistributor.ps1 v4.6.0**
-  - Refactored `Main` into dedicated orchestration sub-functions for parameter validation, restart restoration, distribution checkpoints, post-processing checkpoints, end-of-script deletion, and post-run cleanup.
+- **FileDistributor.ps1 v4.6.3**
+  - Preserved EndOfScript queue-failure signaling: pending-deletion messages now appear only when queue insertion succeeds; queue failures are surfaced as warnings for easier troubleshooting.
