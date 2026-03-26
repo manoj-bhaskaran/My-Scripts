@@ -1,6 +1,10 @@
 BeforeAll {
-    $script:ConvertToBytesPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'Core' 'Logging' 'PurgeLogs' 'Public' 'ConvertTo-Bytes.ps1'
-    . $script:ConvertToBytesPath
+    $script:ModuleManifestPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'Core' 'Logging' 'PurgeLogs.psd1'
+    Import-Module $script:ModuleManifestPath -Force
+}
+
+AfterAll {
+    Remove-Module PurgeLogs -ErrorAction SilentlyContinue
 }
 
 Describe "PurgeLogs ConvertTo-Bytes" {

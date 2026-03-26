@@ -6,6 +6,11 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.1] - 2026-03-26
+### Fixed
+- Updated the active module entrypoint (`src/powershell/modules/Core/Logging/PurgeLogs.psm1`) so exported `ConvertTo-Bytes` accepts both single-letter and two-letter suffixes (`K/KB`, `M/MB`, `G/GB`), matching documented 2.1.0 behavior.
+- Updated PurgeLogs tests to import via module manifest (`PurgeLogs.psd1`) so tests validate production import/export paths instead of dot-sourcing a standalone script.
+
 ## [2.1.0] - 2026-03-26
 ### Changed
 - Expanded `ConvertTo-Bytes` to accept both single-letter and two-letter size suffixes:

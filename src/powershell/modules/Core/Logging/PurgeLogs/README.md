@@ -4,7 +4,7 @@
 Log file purging and retention management module implementing multiple cleanup strategies per [Logging Specification](../../../../../docs/specifications/logging_specification.md).
 
 ## Version
-Current version: **2.1.0**
+Current version: **2.1.1**
 
 ## Features
 
