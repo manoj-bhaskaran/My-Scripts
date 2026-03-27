@@ -206,4 +206,3 @@ function Clear-LogFile {
         Write-LogMessage -Level 'INFO' -Message 'No strategy applied. No valid parameters specified.' -Metadata @{ FileName = $LogFilePath }
     }
 }
-
