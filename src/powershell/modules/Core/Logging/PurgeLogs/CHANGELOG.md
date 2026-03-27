@@ -6,6 +6,11 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.2.2] - 2026-03-27
+### Fixed
+- Corrected `Clear-LogFile` timestamp parsing to use explicit `TryParseExact`/`TryParse` overloads compatible across PowerShell/.NET runtime variants.
+- Resolved `MethodException` in tests when parsing log-line timestamps for `-BeforeTimestamp` and `-RetentionDays` filtering.
+
 ## [2.2.1] - 2026-03-27
 ### Fixed
 - Made `Clear-LogFile` resilient when `Initialize-Logger` is unavailable by conditionally invoking it only when present.

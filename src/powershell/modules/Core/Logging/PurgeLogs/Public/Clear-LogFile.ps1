@@ -98,13 +98,25 @@ function Clear-LogFile {
             $keepLine = $true
 
             if ($line -match $timestampRegex) {
-                $parsedTimestamp = $null
+                $parsedTimestamp = [datetime]::MinValue
                 $capturedTimestamp = $matches['timestamp']
-                if (-not [datetime]::TryParseExact($capturedTimestamp, $timestampFormats, $null, [System.Globalization.DateTimeStyles]::None, [ref]$parsedTimestamp)) {
-                    [void][datetime]::TryParse($capturedTimestamp, [ref]$parsedTimestamp)
+                $parseSuccess = [datetime]::TryParseExact(
+                    $capturedTimestamp,
+                    [string[]]$timestampFormats,
+                    [System.Globalization.CultureInfo]::InvariantCulture,
+                    [System.Globalization.DateTimeStyles]::None,
+                    [ref]$parsedTimestamp
+                )
+                if (-not $parseSuccess) {
+                    $parseSuccess = [datetime]::TryParse(
+                        $capturedTimestamp,
+                        [System.Globalization.CultureInfo]::InvariantCulture,
+                        [System.Globalization.DateTimeStyles]::None,
+                        [ref]$parsedTimestamp
+                    )
                 }
 
-                if ($null -ne $parsedTimestamp) {
+                if ($parseSuccess) {
                     if ($hasBeforeTimestamp -and $parsedTimestamp -ge $BeforeTimestamp) {
                         $keepLine = $true
                     }

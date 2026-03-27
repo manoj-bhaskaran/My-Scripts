@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.2] - 2026-03-27
+
+### Fixed
+
+- **PurgeLogs v2.2.2: cross-runtime timestamp parsing compatibility**
+  - Updated `Clear-LogFile` timestamp parsing to use explicit compatible `TryParseExact`/`TryParse` overloads
+  - Fixes `MethodException` seen in CI tests for `-BeforeTimestamp` and `-RetentionDays` log filtering paths
+
 ## [2.12.1] - 2026-03-27
 
 ### Fixed
