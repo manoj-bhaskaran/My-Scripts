@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 4.6.13 — 2026-03-27
+### Fixed
+- Restored fallback-candidate behavior in `Get-SubfolderFileCounts` for scan failures: when subfolder enumeration throws, the helper now attempts to continue with caller-provided candidates (after target-root normalization/validation) instead of unconditionally returning `$null`.
+- Updated distribution/redistribution call sites to pass known subfolder candidates to the helper so transient enumeration issues do not skip the phase when safe fallback inputs are available.
+
+## 4.6.12 — 2026-03-27
+### Changed
+- Refactored subfolder enumeration/counting into a streamlined private `Get-SubfolderFileCounts` helper with optional zero-file inclusion and shared error handling for all five algorithms (`DistributeFilesToSubfolders`, `RedistributeFilesInTarget`, `RebalanceSubfoldersByAverage`, `RandomizeDistributionAcrossFolders`, `ConsolidateSubfoldersToMinimum`).
+- Added private `Write-DistributionSummary` helper and wired it into rebalancing/randomization/consolidation flows for shared before/after distribution-table logging.
+- Updated algorithm call sites to derive total file counts by summing helper-returned hashtable values instead of maintaining duplicated inline counting blocks.
+
 ## 4.6.11 — 2026-03-27
 ### Changed
 - Refined private `Invoke-FileMove` to use explicit move inputs (`SourceFilePath`, `OriginalFileName`, `DestinationFolder`, `FolderCountRef`, delete mode, queue, counters, retry/progress settings) so algorithm helpers no longer rely on implicit state.

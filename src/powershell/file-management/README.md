@@ -33,6 +33,10 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.6.13**
+  - Restored safe fallback behavior for subfolder scan failures by allowing `Get-SubfolderFileCounts` to continue with caller-provided candidate folders (when available), preventing distribution/redistribution phases from being skipped on transient enumeration errors.
+- **FileDistributor.ps1 v4.6.12**
+  - Extracted shared `Get-SubfolderFileCounts` (all five algorithms) and `Write-DistributionSummary` (rebalance/randomize/consolidate before/after summaries) to remove duplicated counting and distribution-table logging blocks.
 - **FileDistributor.ps1 v4.6.11**
   - Refined shared move helper contracts so algorithms pass explicit source/destination/delete-mode/counter inputs to `Invoke-FileMove`, including per-folder count updates through a `[ref]` counter.
 - **FileDistributor.ps1 v4.6.10**
