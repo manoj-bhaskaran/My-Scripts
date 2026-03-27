@@ -385,7 +385,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.10"
+$script:Version = "4.6.11"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -956,15 +956,18 @@ function Remove-File {
 
 function Invoke-FileMove {
     param (
-        [Parameter(Mandatory = $true)][string]$SourcePath,
+        [Parameter(Mandatory = $true)][string]$SourceFilePath,
+        [Parameter(Mandatory = $true)][string]$OriginalFileName,
         [Parameter(Mandatory = $true)][string]$DestinationFolder,
-        [Parameter(Mandatory = $true)][string]$SourceDisplayName,
+        [Parameter(Mandatory = $true)][ref]$FolderCountRef,
         [Parameter(Mandatory = $true)][string]$DeleteMode,
         [Parameter(Mandatory = $true)]$FilesToDelete,
         [Parameter(Mandatory = $true)][ref]$GlobalFileCounter,
         [switch]$ShowProgress,
         [int]$UpdateFrequency = 100,
         [int]$TotalFiles = 0,
+        [int]$RetryDelay = 5,
+        [int]$RetryCount = 3,
         [string]$ProgressActivity = "Distributing Files",
         [string]$ProgressStatusTemplate = "Processed {0} of {1} files",
         [string]$CopyFailureMessageTemplate = "Failed to copy '{0}' to '{1}'.",
@@ -973,27 +976,27 @@ function Invoke-FileMove {
         [switch]$IncrementOnSuccessOnly
     )
 
-    $originalFileName = [System.IO.Path]::GetFileName($SourcePath)
-    $newFileName = ResolveFileNameConflict -TargetFolder $DestinationFolder -OriginalFileName $originalFileName
+    $newFileName = ResolveFileNameConflict -TargetFolder $DestinationFolder -OriginalFileName $OriginalFileName
     $destinationFile = Join-Path -Path $DestinationFolder -ChildPath $newFileName
 
-    Copy-ItemWithRetry -Path $SourcePath -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount
+    Copy-ItemWithRetry -Path $SourceFilePath -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount
 
     $copySucceeded = Test-Path -LiteralPath $destinationFile
     $queuedForEndOfScriptDeletion = $null
     if ($copySucceeded) {
+        $FolderCountRef.Value++
         try {
             if ($DeleteMode -eq "RecycleBin") {
-                Move-ToRecycleBin -FilePath $SourcePath
+                Move-ToRecycleBin -FilePath $SourceFilePath
             }
             elseif ($DeleteMode -eq "Immediate") {
-                Remove-File -FilePath $SourcePath
+                Remove-File -FilePath $SourceFilePath
             }
             elseif ($DeleteMode -eq "EndOfScript") {
-                $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $SourcePath -ValidateFile $false
+                $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $SourceFilePath -ValidateFile $false
                 $queuedForEndOfScriptDeletion = [bool]$queueResult
                 if (-not $queuedForEndOfScriptDeletion) {
-                    LogMessage -Message "Failed to queue file for deletion: $SourcePath" -IsWarning
+                    LogMessage -Message "Failed to queue file for deletion: $SourceFilePath" -IsWarning
                 }
             }
         }
@@ -1001,15 +1004,15 @@ function Invoke-FileMove {
             if ($DeleteMode -eq "EndOfScript") {
                 $queuedForEndOfScriptDeletion = $false
             }
-            LogMessage -Message ($PostCopyFailureMessageTemplate -f $SourcePath, $_.Exception.Message) -IsWarning
+            LogMessage -Message ($PostCopyFailureMessageTemplate -f $SourceFilePath, $_.Exception.Message) -IsWarning
         }
     }
     else {
         if ($CopyFailureIsWarning) {
-            LogMessage -Message ($CopyFailureMessageTemplate -f $SourceDisplayName, $destinationFile) -IsWarning
+            LogMessage -Message ($CopyFailureMessageTemplate -f $OriginalFileName, $destinationFile) -IsWarning
         }
         else {
-            LogMessage -Message ($CopyFailureMessageTemplate -f $SourceDisplayName, $destinationFile) -IsError
+            LogMessage -Message ($CopyFailureMessageTemplate -f $OriginalFileName, $destinationFile) -IsError
         }
     }
 
@@ -1247,15 +1250,20 @@ function DistributeFilesToSubfolders {
         $startsWithTarget = if ($destNormalized) { $destNormalized.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase) } else { $false }
         LogMessage -Message ("DEBUG: destNormalized='{0}' targetRootNormalized='{1}' rooted={2} startsWithTarget={3}" -f $destNormalized, $targetNormalized, $rooted, $startsWithTarget) -IsDebug
 
-        $moveResult = Invoke-FileMove -SourcePath $filePath `
+        $folderCount = if ($folderCounts.ContainsKey($destinationFolder)) { [int]$folderCounts[$destinationFolder] } else { 0 }
+        $folderCountRef = New-Ref -Initial $folderCount
+        $moveResult = Invoke-FileMove -SourceFilePath $filePath `
+            -OriginalFileName $originalName `
             -DestinationFolder $destinationFolder `
-            -SourceDisplayName $file `
+            -FolderCountRef $folderCountRef `
             -DeleteMode $DeleteMode `
             -FilesToDelete $FilesToDelete `
             -GlobalFileCounter $GlobalFileCounter `
             -ShowProgress:$ShowProgress `
             -UpdateFrequency $UpdateFrequency `
             -TotalFiles $TotalFiles `
+            -RetryDelay $RetryDelay `
+            -RetryCount $RetryCount `
             -ProgressActivity "Distributing Files" `
             -ProgressStatusTemplate "Processed {0} of {1} files" `
             -CopyFailureMessageTemplate "Failed to copy '{0}' to '{1}'. Original file not moved." `
@@ -1264,7 +1272,7 @@ function DistributeFilesToSubfolders {
         if ($moveResult.Success) {
             $destinationFile = $moveResult.DestinationFile
             LogMessage -Message "Assigning randomized destination name for '$filePath' -> '$destinationFile'."
-            if ($folderCounts.ContainsKey($destinationFolder)) { $folderCounts[$destinationFolder]++ } else { $folderCounts[$destinationFolder] = 1 }
+            $folderCounts[$destinationFolder] = $folderCountRef.Value
             if ($DeleteMode -eq "RecycleBin") {
                 LogMessage -Message "Copied from $file to $destinationFile and moved original to Recycle Bin."
             }
@@ -1584,15 +1592,19 @@ function RebalanceSubfoldersByAverage {
 
             LogMessage -Message ("DEBUG: Moving '{0}' from '{1}' to '{2}'" -f $file.Name, $srcFolderName, $destFolderName) -IsDebug
 
-            $moveResult = Invoke-FileMove -SourcePath $file.FullName `
+            $folderCountRef = New-Ref -Initial 0
+            $moveResult = Invoke-FileMove -SourceFilePath $file.FullName `
+                -OriginalFileName $file.Name `
                 -DestinationFolder $destFolder `
-                -SourceDisplayName $file.FullName `
+                -FolderCountRef $folderCountRef `
                 -DeleteMode $DeleteMode `
                 -FilesToDelete $FilesToDelete `
                 -GlobalFileCounter $GlobalFileCounter `
                 -ShowProgress:$ShowProgress `
                 -UpdateFrequency $UpdateFrequency `
                 -TotalFiles $plannedMoves `
+                -RetryDelay $RetryDelay `
+                -RetryCount $RetryCount `
                 -ProgressActivity "Rebalancing subfolders" `
                 -ProgressStatusTemplate "Moved {0} of {1}" `
                 -CopyFailureMessageTemplate "Rebalance: failed to copy '{0}' to '{1}'." `
@@ -1810,15 +1822,19 @@ function RandomizeDistributionAcrossFolders {
 
             LogMessage -Message ("DEBUG: Moving '{0}' from '{1}' to '{2}'" -f $file.Name, (Split-Path -Leaf $currentFolder), $destFolderName) -IsDebug
 
-            $moveResult = Invoke-FileMove -SourcePath $file.FullName `
+            $folderCountRef = New-Ref -Initial 0
+            $moveResult = Invoke-FileMove -SourceFilePath $file.FullName `
+                -OriginalFileName $file.Name `
                 -DestinationFolder $destFolder `
-                -SourceDisplayName $file.FullName `
+                -FolderCountRef $folderCountRef `
                 -DeleteMode $DeleteMode `
                 -FilesToDelete $FilesToDelete `
                 -GlobalFileCounter $GlobalFileCounter `
                 -ShowProgress:$ShowProgress `
                 -UpdateFrequency $UpdateFrequency `
                 -TotalFiles $filesMoving `
+                -RetryDelay $RetryDelay `
+                -RetryCount $RetryCount `
                 -ProgressActivity "Randomizing distribution" `
                 -ProgressStatusTemplate "Moved {0} of {1} files" `
                 -CopyFailureMessageTemplate "Randomize: failed to copy '{0}' to '{1}'." `
@@ -1983,15 +1999,20 @@ function ConsolidateSubfoldersToMinimum {
             $cands = @($eligible | Where-Object { $liveCounts[$_] -eq $minCount })
             $destFolder = if ($cands.Count -gt 1) { $cands | Get-Random } else { $cands[0] }
 
-            $moveResult = Invoke-FileMove -SourcePath $file.FullName `
+            $folderCount = if ($liveCounts.ContainsKey($destFolder)) { [int]$liveCounts[$destFolder] } else { 0 }
+            $folderCountRef = New-Ref -Initial $folderCount
+            $moveResult = Invoke-FileMove -SourceFilePath $file.FullName `
+                -OriginalFileName $file.Name `
                 -DestinationFolder $destFolder `
-                -SourceDisplayName $file.FullName `
+                -FolderCountRef $folderCountRef `
                 -DeleteMode $DeleteMode `
                 -FilesToDelete $FilesToDelete `
                 -GlobalFileCounter $GlobalFileCounter `
                 -ShowProgress:$ShowProgress `
                 -UpdateFrequency $UpdateFrequency `
                 -TotalFiles $totalMoves `
+                -RetryDelay $RetryDelay `
+                -RetryCount $RetryCount `
                 -ProgressActivity "Consolidating subfolders" `
                 -ProgressStatusTemplate "Moved {0} of {1}" `
                 -CopyFailureMessageTemplate "Consolidation: failed to copy '{0}' to '{1}'." `
@@ -1999,7 +2020,7 @@ function ConsolidateSubfoldersToMinimum {
 
             if ($moveResult.Success) {
                 # Update counts/capacity
-                $liveCounts[$destFolder]++
+                $liveCounts[$destFolder] = $folderCountRef.Value
                 $capacity[$destFolder] = [Math]::Max(0, $FilesPerFolderLimit - $liveCounts[$destFolder])
             }
         }

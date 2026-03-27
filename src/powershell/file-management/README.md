@@ -33,6 +33,8 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.6.11**
+  - Refined shared move helper contracts so algorithms pass explicit source/destination/delete-mode/counter inputs to `Invoke-FileMove`, including per-folder count updates through a `[ref]` counter.
 - **FileDistributor.ps1 v4.6.10**
   - Replaced inline startup log-cleanup helpers with a single `Clear-LogFile` invocation from the `PurgeLogs` module, including timestamp/retention filtering and truncation options.
 - **FileDistributor.ps1 v4.6.9**

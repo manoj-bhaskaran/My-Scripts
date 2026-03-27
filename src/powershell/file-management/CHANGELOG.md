@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 4.6.11 — 2026-03-27
+### Changed
+- Refined private `Invoke-FileMove` to use explicit move inputs (`SourceFilePath`, `OriginalFileName`, `DestinationFolder`, `FolderCountRef`, delete mode, queue, counters, retry/progress settings) so algorithm helpers no longer rely on implicit state.
+- Updated the shared move path so successful copy operations increment the caller-provided per-folder counter via `FolderCountRef`, keeping destination count tracking in one place.
+- Updated all algorithm call sites (`DistributeFilesToSubfolders`, `RebalanceSubfoldersByAverage`, `RandomizeDistributionAcrossFolders`, `ConsolidateSubfoldersToMinimum`, and redistribution flow via `DistributeFilesToSubfolders`) to pass explicit move context into `Invoke-FileMove`.
+
 ## 4.6.10 — 2026-03-27
 ### Changed
 - Removed inline `RemoveLogEntries` and inline log truncation (`ConvertToBytes` + direct `Clear-Content`) from `FileDistributor.ps1`.
