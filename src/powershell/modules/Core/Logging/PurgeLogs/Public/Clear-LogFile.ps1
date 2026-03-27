@@ -52,7 +52,9 @@ function Clear-LogFile {
     }
 
     $verboseSet = $PSCmdlet.MyInvocation.BoundParameters['Verbose']
-    Initialize-Logger -ScriptName "purge_logs.ps1" -Verbose:$verboseSet
+    if (Get-Command -Name Initialize-Logger -ErrorAction SilentlyContinue) {
+        Initialize-Logger -ScriptName "purge_logs.ps1" -Verbose:$verboseSet
+    }
 
     if ($PSBoundParameters.ContainsKey('RetentionDays') -and $RetentionDays -lt 0) {
         throw 'RetentionDays cannot be negative'

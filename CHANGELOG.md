@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.1] - 2026-03-27
+
+### Fixed
+
+- **PurgeLogs v2.2.1: standalone Clear-LogFile compatibility in tests/import-only contexts**
+  - `Clear-LogFile` now checks for `Initialize-Logger` before calling it, preventing `CommandNotFoundException` when PowerShellLoggingFramework is not preloaded
+  - Root `PurgeLogs` module entrypoint now provides a fallback `Write-LogMessage` implementation for isolated manifest imports
+
 ## [2.12.0] - 2026-03-27
 
 ### Changed

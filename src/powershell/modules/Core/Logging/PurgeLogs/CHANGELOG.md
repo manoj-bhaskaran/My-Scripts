@@ -6,6 +6,11 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.2.1] - 2026-03-27
+### Fixed
+- Made `Clear-LogFile` resilient when `Initialize-Logger` is unavailable by conditionally invoking it only when present.
+- Added a fallback `Write-LogMessage` implementation in the root module entrypoint so manifest-based imports work in isolated test environments.
+
 ## [2.2.0] - 2026-03-27
 ### Added
 - Added `-BeforeTimestamp` (`[datetime]`) to `Clear-LogFile` for explicit cutoff-based log entry filtering.

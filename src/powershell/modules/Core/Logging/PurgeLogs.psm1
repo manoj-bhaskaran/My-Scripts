@@ -31,6 +31,21 @@ function ConvertTo-Bytes {
     }
 }
 
+if (-not (Get-Command -Name Write-LogMessage -ErrorAction SilentlyContinue)) {
+    function Write-LogMessage {
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory)]
+            [string]$Level,
+            [Parameter(Mandatory)]
+            [string]$Message,
+            [hashtable]$Metadata = @{}
+        )
+
+        Write-Verbose "[$Level] $Message"
+    }
+}
+
 function Clear-LogFile {
     <#
 .SYNOPSIS
@@ -85,7 +100,9 @@ function Clear-LogFile {
     }
 
     $verboseSet = $PSCmdlet.MyInvocation.BoundParameters['Verbose']
-    Initialize-Logger -ScriptName "purge_logs.ps1" -Verbose:$verboseSet
+    if (Get-Command -Name Initialize-Logger -ErrorAction SilentlyContinue) {
+        Initialize-Logger -ScriptName "purge_logs.ps1" -Verbose:$verboseSet
+    }
 
     if ($PSBoundParameters.ContainsKey('RetentionDays') -and $RetentionDays -lt 0) {
         throw 'RetentionDays cannot be negative'
