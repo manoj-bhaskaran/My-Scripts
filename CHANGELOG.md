@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-03-27
+
+### Changed
+
+- **FileDistributor.ps1 v4.6.10: modularized startup log cleanup via PurgeLogs**
+  - Removed inline `RemoveLogEntries` and inline truncation logic from `FileDistributor.ps1`
+  - Imported `Core/Logging/PurgeLogs` and replaced startup cleanup paths with a single `Clear-LogFile` call
+  - Mapped existing script parameters to module equivalents (`RemoveEntriesOlderThan` -> `RetentionDays`, truncation switches pass-through)
+
+- **PurgeLogs v2.2.0: added explicit timestamp cutoff filtering**
+  - Added `-BeforeTimestamp` support to `Clear-LogFile`
+  - Updated filtering flow so timestamp filtering can be combined with truncation checks in one invocation
+
 ## [2.11.0] - 2026-03-26
 
 ### Added
