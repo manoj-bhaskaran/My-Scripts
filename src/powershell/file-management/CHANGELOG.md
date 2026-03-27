@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 4.6.10 — 2026-03-27
+### Changed
+- Removed inline `RemoveLogEntries` and inline log truncation (`ConvertToBytes` + direct `Clear-Content`) from `FileDistributor.ps1`.
+- Added `PurgeLogs` module import and consolidated startup log-management into one `Clear-LogFile` call using `-BeforeTimestamp`, `-RetentionDays`, `-TruncateIfLarger`, and `-TruncateLog` as applicable.
+- Preserved existing startup log-cleanup behavior while delegating implementation to the shared logging module.
+
 ## 4.6.9 — 2026-03-26
 ### Changed
 - Reduced script-scope variable coupling in `FileDistributor.ps1` orchestration helpers by keeping effective runtime values on `RunState` and passing them explicitly to checkpoint/deletion flows.

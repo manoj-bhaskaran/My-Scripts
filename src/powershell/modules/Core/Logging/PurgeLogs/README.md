@@ -4,7 +4,7 @@
 Log file purging and retention management module implementing multiple cleanup strategies per [Logging Specification](../../../../../docs/specifications/logging_specification.md).
 
 ## Version
-Current version: **2.1.1**
+Current version: **2.2.2**
 
 ## Features
 
@@ -43,7 +43,7 @@ Purges log file entries based on various retention strategies.
 
 **Syntax:**
 ```powershell
-Clear-LogFile [-LogFilePath] <string> [[-RetentionDays] <int>] [[-MaxSizeMB] <int>]
+Clear-LogFile [-LogFilePath] <string> [[-BeforeTimestamp] <datetime>] [[-RetentionDays] <int>] [[-MaxSizeMB] <int>]
     [[-TruncateIfLarger] <string>] [-TruncateLog] [-DryRun] [-Verbose]
 ```
 
@@ -54,9 +54,13 @@ Clear-LogFile [-LogFilePath] <string> [[-RetentionDays] <int>] [[-MaxSizeMB] <in
   - Can be relative or absolute
   - File must exist for retention/size operations
 
+- **BeforeTimestamp** (datetime, optional)
+  - Remove log entries before an explicit timestamp
+  - Supports values like `"2026-01-01 00:00:00"` and ISO 8601 datetimes
+
 - **RetentionDays** (int, optional)
   - Remove log entries older than N days
-  - Mutually exclusive with other strategies
+  - Can be combined with `BeforeTimestamp`
   - Example: `30` for 30-day retention
 
 - **MaxSizeMB** (int, optional)

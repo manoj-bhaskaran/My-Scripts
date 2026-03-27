@@ -33,3 +33,34 @@ Describe "PurgeLogs ConvertTo-Bytes" {
         { ConvertTo-Bytes -Size '10TB' } | Should -Throw
     }
 }
+
+Describe "PurgeLogs Clear-LogFile" {
+    It "supports BeforeTimestamp filtering" {
+        $logFile = Join-Path $TestDrive 'before-timestamp.log'
+        @(
+            '2026-01-01 00:00:00 [INFO] old entry'
+            '2026-03-20 12:00:00 [INFO] new entry'
+            'line without timestamp'
+        ) | Set-Content -Path $logFile -Encoding UTF8
+
+        Clear-LogFile -LogFilePath $logFile -BeforeTimestamp ([datetime]'2026-03-01 00:00:00')
+
+        $remaining = Get-Content -Path $logFile -Encoding UTF8
+        $remaining | Should -Contain '2026-03-20 12:00:00 [INFO] new entry'
+        $remaining | Should -Contain 'line without timestamp'
+        $remaining | Should -Not -Contain '2026-01-01 00:00:00 [INFO] old entry'
+    }
+
+    It "allows retention filtering and TruncateIfLarger in one call" {
+        $logFile = Join-Path $TestDrive 'retention-and-truncate.log'
+        @(
+            '2026-01-01 00:00:00 [INFO] old entry'
+            '2026-03-25 12:00:00 [INFO] recent entry'
+            ('x' * 4096)
+        ) | Set-Content -Path $logFile -Encoding UTF8
+
+        Clear-LogFile -LogFilePath $logFile -RetentionDays 30 -TruncateIfLarger '1K'
+
+        (Get-Item -Path $logFile).Length | Should -BeLessOrEqual 1024
+    }
+}

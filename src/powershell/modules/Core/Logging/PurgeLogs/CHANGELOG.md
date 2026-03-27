@@ -6,6 +6,25 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.2.2] - 2026-03-27
+### Fixed
+- Corrected `Clear-LogFile` timestamp parsing to use explicit `TryParseExact`/`TryParse` overloads compatible across PowerShell/.NET runtime variants.
+- Resolved `MethodException` in tests when parsing log-line timestamps for `-BeforeTimestamp` and `-RetentionDays` filtering.
+
+## [2.2.1] - 2026-03-27
+### Fixed
+- Made `Clear-LogFile` resilient when `Initialize-Logger` is unavailable by conditionally invoking it only when present.
+- Added a fallback `Write-LogMessage` implementation in the root module entrypoint so manifest-based imports work in isolated test environments.
+
+## [2.2.0] - 2026-03-27
+### Added
+- Added `-BeforeTimestamp` (`[datetime]`) to `Clear-LogFile` for explicit cutoff-based log entry filtering.
+
+### Changed
+- Updated `Clear-LogFile` execution flow so timestamp filtering (`-BeforeTimestamp` / `-RetentionDays`) can be combined with truncation options in a single call, preserving FileDistributor startup behavior while using shared module logic.
+- Expanded timestamp parsing for filter operations to handle both bracketed and plain leading timestamps.
+
+
 ## [2.1.1] - 2026-03-26
 ### Fixed
 - Updated the active module entrypoint (`src/powershell/modules/Core/Logging/PurgeLogs.psm1`) so exported `ConvertTo-Bytes` accepts both single-letter and two-letter suffixes (`K/KB`, `M/MB`, `G/GB`), matching documented 2.1.0 behavior.

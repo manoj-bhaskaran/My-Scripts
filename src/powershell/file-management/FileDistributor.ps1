@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.9
+ 4.6.10
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
@@ -226,10 +226,9 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
-## 4.6.9 — 2026-03-26
+## 4.6.10 — 2026-03-27
 ### Changed
-- Reduced script-scope variable coupling in orchestration/checkpoint helpers by storing effective runtime values in `RunState` and passing them explicitly.
-- Checkpoint save/payload flow now passes `SessionId`, `DeleteMode`, `SourceFolder`, `MaxFilesToCopy`, and effective `FilesPerFolderLimit` without relying on `$script:*`.
+- Replaced inline log-management helpers with `Clear-LogFile` from the `PurgeLogs` module and delegated retention/truncation handling to the shared implementation.
 - Full changelog: `./CHANGELOG.md`.
 
 Script Workflow:
@@ -307,6 +306,7 @@ param(
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\Core\Logging\PurgeLogs.psm1" -Force
 
 # Import FileQueue module for queue management
 Import-Module "$PSScriptRoot\..\modules\FileManagement\FileQueue\FileQueue.psd1" -Force
@@ -385,7 +385,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.9"
+$script:Version = "4.6.10"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -2320,67 +2320,6 @@ function ReleaseFileLock {
     LogMessage -Message "Released lock on $fileName"
 }
 
-# Function to convert size string to bytes
-function ConvertToBytes {
-    param (
-        [string]$Size
-    )
-    if ($Size -match '^(\d+)([KMG])$') {
-        $value = [int]$matches[1]
-        switch ($matches[2]) {
-            'K' { return $value * 1KB }
-            'M' { return $value * 1MB }
-            'G' { return $value * 1GB }
-        }
-    }
-    else {
-        throw "Invalid size format: $Size. Use formats like 1K, 2M, or 3G."
-    }
-}
-
-# Function to remove log entries based on timestamp or age
-function RemoveLogEntries {
-    param (
-        [string]$LogFilePath,
-        [datetime]$BeforeTimestamp,
-        [int]$OlderThanDays
-    )
-
-    try {
-        if (-not (Test-Path -Path $LogFilePath)) {
-            LogMessage -Message "Log file not found: $LogFilePath. Skipping log entry removal." -IsWarning
-            return
-        }
-
-        $logEntries = Get-Content -Path $LogFilePath
-        $filteredEntries = @()
-
-        foreach ($entry in $logEntries) {
-            if ($entry -match '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}') {
-                $entryTimestamp = [datetime]::ParseExact($matches[0], "yyyy-MM-dd HH:mm:ss", $null)
-
-                if ($BeforeTimestamp -and $entryTimestamp -ge $BeforeTimestamp) {
-                    $filteredEntries += $entry
-                }
-                elseif ($OlderThanDays -and $entryTimestamp -ge (Get-Date).AddDays(-$OlderThanDays)) {
-                    $filteredEntries += $entry
-                }
-            }
-            else {
-                # Preserve entries without a valid timestamp
-                $filteredEntries += $entry
-            }
-        }
-
-        # Overwrite the log file with filtered entries
-        $filteredEntries | Set-Content -Path $LogFilePath
-        LogMessage -Message "Log entries filtered successfully. Updated log file: $LogFilePath"
-    }
-    catch {
-        LogMessage -Message "Failed to filter log entries: $($_.Exception.Message)" -IsError
-    }
-}
-
 # Main script logic
 
 function Invoke-ParameterValidation {
@@ -2778,18 +2717,16 @@ function Main {
             catch { throw "Invalid timestamp format. Use 'YYYY-MM-DD HH:MM:SS' or ISO 8601." }
         }
         if ($RemoveEntriesOlderThan -lt 0) { throw "Invalid value for RemoveEntriesOlderThan. Must be a non-negative integer." }
-        if ($beforeTimestamp -or $RemoveEntriesOlderThan) {
-            RemoveLogEntries -LogFilePath $LogFilePath -BeforeTimestamp $beforeTimestamp -OlderThanDays $RemoveEntriesOlderThan
-        }
-        if ($TruncateIfLarger) {
-            try {
-                $thresholdBytes = ConvertToBytes -Size $TruncateIfLarger
-                if ((Test-Path -Path $LogFilePath) -and ((Get-Item -Path $LogFilePath).Length -gt $thresholdBytes)) { Clear-Content -Path $LogFilePath -Force }
-            }
-            catch { LogMessage -Message "Failed to evaluate or truncate log file based on size: $($_.Exception.Message)" -IsError }
-        }
-        elseif ($TruncateLog) {
-            try { Clear-Content -Path $LogFilePath -Force } catch { LogMessage -Message "Failed to truncate log file: $($_.Exception.Message)" -IsError }
+
+        $purgeParams = @{ LogFilePath = $LogFilePath }
+        if ($beforeTimestamp) { $purgeParams.BeforeTimestamp = $beforeTimestamp }
+        if ($RemoveEntriesOlderThan) { $purgeParams.RetentionDays = $RemoveEntriesOlderThan }
+        if ($TruncateIfLarger) { $purgeParams.TruncateIfLarger = $TruncateIfLarger }
+        if ($TruncateLog) { $purgeParams.TruncateLog = $true }
+
+        if ($purgeParams.Keys.Count -gt 1) {
+            try { Clear-LogFile @purgeParams }
+            catch { LogMessage -Message "Failed to apply log file cleanup policy: $($_.Exception.Message)" -IsError }
         }
     }
 
