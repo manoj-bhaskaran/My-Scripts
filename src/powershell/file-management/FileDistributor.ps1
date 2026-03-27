@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.12
+ 4.6.13
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
@@ -226,9 +226,9 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
-## 4.6.12 — 2026-03-27
+## 4.6.13 — 2026-03-27
 ### Changed
-- Extracted shared `Get-SubfolderFileCounts` and `Write-DistributionSummary` helpers to deduplicate repeated subfolder counting and distribution-table logging across file distribution algorithms.
+- Restored candidate-subfolder fallback when directory scans fail in `Get-SubfolderFileCounts`, so distribution/redistribution can continue with known candidates instead of aborting the phase.
 - Full changelog: `./CHANGELOG.md`.
 
 Script Workflow:
@@ -1036,21 +1036,50 @@ function Invoke-FileMove {
 function Get-SubfolderFileCounts {
     param(
         [Parameter(Mandatory)][string]$TargetFolder,
-        [switch]$IncludeEmpty
+        [switch]$IncludeEmpty,
+        [object[]]$FallbackSubfolders
     )
 
     $subfolders = $null
+    $scanFailed = $false
     try {
         $subfolders = @(Get-ChildItem -LiteralPath $TargetFolder -Directory -Force -ErrorAction Stop)
     }
     catch {
-        LogMessage -Message ("Failed to enumerate subfolders under '{0}': {1}" -f $TargetFolder, $_.Exception.Message) -IsError
-        return $null
+        $scanFailed = $true
+        LogMessage -Message ("Failed to enumerate subfolders under '{0}': {1}" -f $TargetFolder, $_.Exception.Message) -IsWarning
+        $subfolders = @()
+
+        if ($FallbackSubfolders -and $FallbackSubfolders.Count -gt 0) {
+            LogMessage -Message "Continuing with fallback subfolder candidates after scan failure." -IsWarning
+            foreach ($candidate in $FallbackSubfolders) {
+                $candidatePath = if ($candidate -is [IO.FileSystemInfo]) { $candidate.FullName } else { [string]$candidate }
+                if ([string]::IsNullOrWhiteSpace($candidatePath)) { continue }
+
+                $resolved = Resolve-SubfolderPath -Path $candidatePath -TargetRoot $TargetFolder
+                if (-not $resolved) { continue }
+                if (-not (Test-Path -LiteralPath $resolved -PathType Container)) { continue }
+
+                try {
+                    $normalized = [IO.Path]::GetFullPath($resolved)
+                    $subfolders += [pscustomobject]@{ FullName = $normalized }
+                }
+                catch {
+                    continue
+                }
+            }
+        }
     }
 
     if (-not $subfolders -or $subfolders.Count -eq 0) {
+        if ($scanFailed) {
+            LogMessage -Message "No usable fallback subfolders were available after scan failure." -IsError
+            return $null
+        }
         return @{}
     }
+
+    $subfolders = @($subfolders | Sort-Object FullName -Unique)
 
     $folderCounts = @{}
     $totalFiles = 0
@@ -1122,7 +1151,7 @@ function DistributeFilesToSubfolders {
     )
 
     $targetNormalized = [IO.Path]::GetFullPath($TargetRoot)
-    $folderCounts = Get-SubfolderFileCounts -TargetFolder $TargetRoot -IncludeEmpty
+    $folderCounts = Get-SubfolderFileCounts -TargetFolder $TargetRoot -IncludeEmpty -FallbackSubfolders $Subfolders
     if ($null -eq $folderCounts) {
         return
     }
@@ -1323,7 +1352,7 @@ function RedistributeFilesInTarget {
         [int]$TotalFiles
     )
 
-    $folderFilesMap = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty
+    $folderFilesMap = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty -FallbackSubfolders $Subfolders
     if ($null -eq $folderFilesMap) {
         return
     }
