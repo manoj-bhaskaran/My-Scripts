@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.9.0] - 2026-03-29
+
+### Changed
+- **Refactor:** Extracted all static configuration constants and the `EXTENSION_MIME_TYPES` lookup table from `gdrive_recover.py` into a new dedicated module `gdrive_constants.py`. `gdrive_recover.py` now imports these from `gdrive_constants`. No logic changes; existing behaviour is unchanged.
+
 ## [1.8.3] - 2026-03-26
 
 ### Changed
