@@ -33,6 +33,8 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.6.14**
+  - Created the new internal `FileManagement/FileDistributor` module scaffold and moved six private path helper functions (`New-Ref`, `New-Directory`, `Resolve-PathWithFallback`, `Resolve-FilePathIfDirectory`, `Initialize-FilePath`, `Resolve-SubfolderPath`) out of `FileDistributor.ps1` into `modules/FileManagement/FileDistributor/Private/PathHelpers.ps1`.
 - **FileDistributor.ps1 v4.6.13**
   - Restored safe fallback behavior for subfolder scan failures by allowing `Get-SubfolderFileCounts` to continue with caller-provided candidate folders (when available), preventing distribution/redistribution phases from being skipped on transient enumeration errors.
 - **FileDistributor.ps1 v4.6.12**

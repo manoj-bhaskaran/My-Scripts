@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 4.6.14 — 2026-03-29
+### Changed
+- Added a new internal `FileManagement/FileDistributor` support module scaffold (`FileDistributor.psd1`, `FileDistributor.psm1`, and `Private/PathHelpers.ps1`) as the first step of Proposal 6 module splitting.
+- Moved six low-risk path/filesystem helper functions from `FileDistributor.ps1` into `Private/PathHelpers.ps1`: `New-Ref`, `New-Directory`, `Resolve-PathWithFallback`, `Resolve-FilePathIfDirectory`, `Initialize-FilePath`, and `Resolve-SubfolderPath`.
+- Updated `FileDistributor.ps1` to import the new `FileDistributor` module alongside `FileQueue`, reducing script size and centralizing helper loading.
+
 ## 4.6.13 — 2026-03-27
 ### Fixed
 - Restored fallback-candidate behavior in `Get-SubfolderFileCounts` for scan failures: when subfolder enumeration throws, the helper now attempts to continue with caller-provided candidates (after target-root normalization/validation) instead of unconditionally returning `$null`.
