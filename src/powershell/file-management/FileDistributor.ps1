@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.14
+ 4.6.15
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
@@ -312,6 +312,8 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PurgeLogs.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\FileManagement\FileQueue\FileQueue.psd1" -Force
 Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistributor.psd1" -Force
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\PathHelpers.ps1"
+. "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\FileLock.ps1"
+. "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\State.ps1"
 
 # Note: Logger initialization moved to after LogFilePath resolution
 
@@ -387,7 +389,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.14"
+$script:Version = "4.6.15"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -496,115 +498,6 @@ function Test-EndOfScriptCondition {
     }
 }
 
-# --- Helpers for robust state-file handling ---
-function ConvertTo-Hashtable {
-    param([Parameter(Mandatory = $true)]$Object)
-    if ($null -eq $Object) { return $null }
-    if ($Object -is [hashtable]) { return $Object }
-    if ($Object -is [System.Collections.IDictionary]) { return @{} + $Object }
-    if ($Object -is [System.Management.Automation.PSCustomObject]) {
-        $ht = @{}
-        foreach ($p in $Object.PSObject.Properties) {
-            $ht[$p.Name] = ConvertTo-Hashtable -Object $p.Value
-        }
-        return $ht
-    }
-    if ($Object -is [System.Collections.IEnumerable] -and -not ($Object -is [string])) {
-        $list = @()
-        foreach ($i in $Object) { $list += , (ConvertTo-Hashtable -Object $i) }
-        return $list
-    }
-    return $Object
-}
-
-function Get-FileSha256Hex {
-    param([Parameter(Mandatory = $true)][string]$Path)
-    try {
-        $h = Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop
-        return $h.Hash.ToUpperInvariant()
-    }
-    catch {
-        LogMessage -Message "Failed to compute SHA256 for '$Path': $($_.Exception.Message)" -IsWarning
-        return $null
-    }
-}
-
-function Write-JsonAtomically {
-    param(
-        [Parameter(Mandatory = $true)][hashtable]$StateObject,
-        [Parameter(Mandatory = $true)][string]$Path
-    )
-    # Use -Path with -Parent to avoid parameter-set ambiguity on older PowerShell versions
-    $dir = Split-Path -Path $Path -Parent
-    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    $tmp = "$Path.tmp"
-    $bak = "$Path.bak"
-    $sha = "$Path.sha256"
-
-    # Backup existing file once per write (best-effort)
-    if (Test-Path -LiteralPath $Path) {
-        try { Copy-Item -LiteralPath $Path -Destination $bak -Force -ErrorAction Stop } catch { LogMessage -Message "Failed to update state backup '$bak': $($_.Exception.Message)" -IsWarning }
-    }
-
-    # Serialize and write to temp, then atomically move
-    $json = $StateObject | ConvertTo-Json -Depth 100
-    Set-Content -LiteralPath $tmp -Value $json -Encoding UTF8
-
-    # Compute hash on the temp bytes and persist sidecar after final move
-    $hash = Get-FileSha256Hex -Path $tmp
-    try {
-        Move-Item -LiteralPath $tmp -Destination $Path -Force
-    }
-    catch {
-        LogMessage -Message "Atomic move for state file failed: $($_.Exception.Message)" -IsError
-        throw
-    }
-    if ($hash) {
-        try {
-            # Use a shorter, lighter retry for the sidecar to avoid long stalls
-            $sidecarRetryDelay = 1
-            $sidecarMaxBackoff = [Math]::Min(5, $MaxBackoff)
-            # Preserve "unlimited" semantics if RetryCount==0; otherwise ensure at least one retry
-            $sidecarRetryCount = if ($RetryCount -eq 0) { 0 } else { [Math]::Max(1, $RetryCount) }
-            Invoke-WithRetry -Operation {
-                Set-Content -LiteralPath $sha -Value $hash -Encoding ASCII -ErrorAction Stop
-            } -Description "Write state sidecar '$sha'" `
-                -RetryDelay $sidecarRetryDelay `
-                -RetryCount $sidecarRetryCount `
-                -MaxBackoff $sidecarMaxBackoff
-        }
-        catch {
-            # best-effort: keep as warning
-            LogMessage -Message "Failed to write state sidecar '$sha': $($_.Exception.Message)" -IsWarning
-        }
-    }
-}
-
-function Get-StateFromPath {
-    param([Parameter(Mandatory = $true)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { return $null }
-    $sha = "$Path.sha256"
-    # Verify sidecar hash if present
-    if (Test-Path -LiteralPath $sha) {
-        $expected = (Get-Content -LiteralPath $sha -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-        $actual = Get-FileSha256Hex -Path $Path
-        if ($expected -and $actual -and ($expected -ne $actual)) {
-            LogMessage -Message "Checksum mismatch for '$Path' (expected $expected, got $actual). Treating as corrupt." -IsWarning
-            return $null
-        }
-    }
-    # Read and parse JSON safely
-    try {
-        $raw = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
-        $obj = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
-        $ht = ConvertTo-Hashtable -Object $obj
-        return $ht
-    }
-    catch {
-        LogMessage -Message "Failed to parse state file '$Path': $($_.Exception.Message)" -IsWarning
-        return $null
-    }
-}
 
 # ===== Resolve effective LogFilePath and StateFilePath (before first LogMessage call) =====
 # Parameter block (updated below) may set these to $null; compute effective paths now.
@@ -1952,148 +1845,6 @@ function ConsolidateSubfoldersToMinimum {
     }
 }
 
-function ConvertFrom-FileQueue {
-    <#
-    .SYNOPSIS
-        Converts a FileQueue to an array for state persistence.
-    #>
-    param (
-        [PSCustomObject]$Queue
-    )
-
-    $queueArray = @()
-    $tempQueue = [System.Collections.Generic.Queue[PSCustomObject]]::new()
-
-    while ($Queue.Items.Count -gt 0) {
-        $item = $Queue.Items.Dequeue()
-        $queueArray += [pscustomobject]@{
-            Path             = $item.SourcePath
-            Size             = $item.Size
-            LastWriteTimeUtc = $item.LastWriteTimeUtc
-            QueuedAtUtc      = $item.QueuedAtUtc
-            SessionId        = $item.SessionId
-        }
-        $tempQueue.Enqueue($item)
-    }
-
-    # Restore the queue
-    $Queue.Items = $tempQueue
-
-    return $queueArray
-}
-
-function SaveState {
-    param (
-        [int]$Checkpoint,
-        [hashtable]$AdditionalVariables = @{ },
-        [ref]$fileLock,
-        [Parameter(Mandatory = $true)][string]$SessionId
-    )
-
-    # Capture aggregated counters for restart safety
-    $warningsSoFar = $script:Warnings
-    $errorsSoFar = $script:Errors
-
-    # Release the file lock before saving state
-    ReleaseFileLock -FileStream $fileLock.Value
-
-    # Ensure the state file exists
-    if (-not (Test-Path -Path $StateFilePath)) {
-        New-Item -Path $StateFilePath -ItemType File -Force | Out-Null
-        LogMessage -Message "State file created at $StateFilePath"
-    }
-
-    # Combine state information
-    $state = @{
-        Checkpoint    = $Checkpoint
-        SessionId     = $SessionId
-        WarningsSoFar = $warningsSoFar
-        ErrorsSoFar   = $errorsSoFar
-        Timestamp     = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    }
-
-    # Merge additional variables into the state
-    foreach ($key in $AdditionalVariables.Keys) {
-        $state[$key] = $AdditionalVariables[$key]
-    }
-
-    # Save the state to the file in JSON format with appropriate depth
-    Write-JsonAtomically -StateObject $state -Path $StateFilePath
-
-    # Log the save operation
-    LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')"
-
-    # Reacquire the file lock after saving state
-    $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
-}
-
-# Function to load state
-function LoadState {
-    param (
-        [ref]$fileLock
-    )
-
-    # Release the file lock before loading state
-    ReleaseFileLock -FileStream $fileLock.Value
-
-    $state = $null
-    $primary = $StateFilePath
-    $backup = "$StateFilePath.bak"
-
-    # Try primary first
-    $state = Get-StateFromPath -Path $primary
-
-    # If primary fails, try backup, recover if successful, or quarantine the corrupt file
-    if (-not $state) {
-        $stateBak = Get-StateFromPath -Path $backup
-        if ($stateBak) {
-            try {
-                Copy-Item -LiteralPath $backup -Destination $primary -Force
-                # also refresh sidecar
-                $bakHashPath = "$backup.sha256"
-                $priHashPath = "$primary.sha256"
-                if (Test-Path -LiteralPath $bakHashPath) {
-                    Copy-Item -LiteralPath $bakHashPath -Destination $priHashPath -Force -ErrorAction SilentlyContinue
-                }
-                else {
-                    $rehash = Get-FileSha256Hex -Path $primary
-                    if ($rehash) { Set-Content -LiteralPath $priHashPath -Value $rehash -Encoding ASCII }
-                }
-                LogMessage -Message "Recovered state from backup '$backup'."
-            }
-            catch {
-                LogMessage -Message "Failed to restore state from backup '$backup': $($_.Exception.Message)" -IsWarning
-            }
-            $state = $stateBak
-        }
-        elseif (Test-Path -LiteralPath $primary) {
-            # Quarantine corrupt primary for diagnostics
-            try {
-                $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
-                $corruptName = "$primary.corrupt-$stamp.json"
-                Rename-Item -LiteralPath $primary -NewName (Split-Path -Leaf $corruptName) -ErrorAction Stop
-                # Sidecar too
-                $priHashPath = "$primary.sha256"
-                if (Test-Path -LiteralPath $priHashPath) {
-                    Rename-Item -LiteralPath $priHashPath -NewName ((Split-Path -Leaf $corruptName) + ".sha256") -ErrorAction SilentlyContinue
-                }
-                LogMessage -Message "Quarantined corrupt state file to '$corruptName'." -IsWarning
-            }
-            catch {
-                LogMessage -Message "Failed to quarantine corrupt state file '$primary': $($_.Exception.Message)" -IsWarning
-            }
-        }
-    }
-
-    # Fallback to default state if still not available
-    if (-not $state) { $state = @{ Checkpoint = 0 } }
-
-    # Reacquire the file lock after loading state
-    $fileLock.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
-
-    return $state
-}
-
 # Function to extract paths from items
 function ConvertItemsToPaths {
     param ([array]$Items)
@@ -2188,61 +1939,6 @@ function ConvertPathsToItems {
     return $out
 }
 
-# Function to acquire a lock on the state file
-function AcquireFileLock {
-    param (
-        [string]$FilePath,
-        [int]$RetryDelay,
-        [int]$RetryCount,
-        [int]$MaxBackoff
-    )
-
-    $attempts = 0
-    while ($true) {
-        try {
-            $fileStream = [System.IO.File]::Open($FilePath, 'OpenOrCreate', 'ReadWrite', 'None')
-            LogMessage -Message "Acquired lock on $FilePath"
-            return $fileStream
-        }
-        catch {
-            $attempts++
-            $lastErr = $_.Exception.Message
-            if ($RetryCount -ne 0 -and $attempts -ge $RetryCount) {
-                LogMessage -Message "Failed to acquire lock on $FilePath after $attempts attempt(s). Last error: $lastErr" -IsError
-                throw "Failed to acquire lock on $FilePath after $attempts attempt(s). Last error: $lastErr"
-            }
-            $delay = [Math]::Min([int]([Math]::Max(1, $RetryDelay) * [Math]::Pow(2, $attempts - 1)), [Math]::Max(1, $MaxBackoff))
-            $jitterMs = Get-Random -Minimum 50 -Maximum 250
-            LogMessage -Message "Attempt $attempts failed to lock '$FilePath'. Error: $lastErr. Retrying in ${delay}s (+${jitterMs}ms jitter)..." -IsWarning
-            Start-Sleep -Seconds $delay
-            Start-Sleep -Milliseconds $jitterMs
-        }
-    }
-}
-
-# Function to release the file lock
-function ReleaseFileLock {
-    param (
-        [System.IO.FileStream]$FileStream
-    )
-
-    if ($null -eq $FileStream) {
-        LogMessage -Message "ReleaseFileLock called with null stream; nothing to release."
-        return
-    }
-    $fileName = "<unknown>"
-    try { $fileName = $FileStream.Name } catch {
-        # Stream may not have a name if already disposed
-    }
-    try { $FileStream.Close() } catch {
-        # Stream may already be closed
-    }
-    try { $FileStream.Dispose() } catch {
-        # Stream may already be disposed
-    }
-    LogMessage -Message "Released lock on $fileName"
-}
-
 # Main script logic
 
 function Invoke-ParameterValidation {
@@ -2305,7 +2001,7 @@ function Invoke-ParameterValidation {
         $RunState.MaxFilesToCopy = -1
     }
 
-    $RunState.FilesToDelete = New-FileQueue -Name "FilesToDelete" -SessionId $RunState.SessionId -MaxSize -1
+    $RunState.FilesToDelete = New-FileQueue -Name "FilesToDelete" -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors -MaxSize -1
     $RunState.GlobalFileCounter = New-Ref 0
     LogMessage -Message "Parameter validation completed"
 }
@@ -2321,10 +2017,10 @@ function Invoke-RestoreCheckpoint {
     $RunState.LastCheckpoint = 0
 
     if ($Restart) {
-        $FileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+        $FileLockRef.Value = Lock-DistributionStateFile -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
         LogMessage -Message "Restart requested. Loading checkpoint..." -ConsoleOutput
 
-        $state = LoadState -fileLock $FileLockRef
+        $state = Restore-DistributionState -FileLock $FileLockRef
         $RunState.State = $state
         $RunState.LastCheckpoint = $state.Checkpoint
 
@@ -2407,7 +2103,7 @@ function Invoke-RestoreCheckpoint {
             LogMessage -Message "Restart state file found but restart not requested. Deleting state file..." -IsWarning
             Remove-Item -Path $StateFilePath -Force
         }
-        $FileLockRef.Value = AcquireFileLock -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+        $FileLockRef.Value = Lock-DistributionStateFile -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
     }
 }
 
@@ -2454,7 +2150,7 @@ function Invoke-DistributionPhase {
         if (-not [string]::IsNullOrWhiteSpace($SourceFolder)) {
             LogMessage -Message "Preparing for distribution (no upfront renaming; rename occurs at copy time)." -ConsoleOutput
         }
-        SaveState -Checkpoint 1 -AdditionalVariables @{ deleteMode = $DeleteMode; SourceFolder = $SourceFolder } -fileLock $FileLockRef -SessionId $RunState.SessionId
+        Save-DistributionState -Checkpoint 1 -AdditionalVariables @{ deleteMode = $DeleteMode; SourceFolder = $SourceFolder } -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 
     if ($RunState.LastCheckpoint -lt 2) {
@@ -2493,12 +2189,12 @@ function Invoke-DistributionPhase {
             $RunState.subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
         }
 
-        SaveState -Checkpoint 2 -AdditionalVariables (New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders $RunState.subfolders -SourceFiles $RunState.sourceFiles -IncludeSourceFiles) -fileLock $FileLockRef -SessionId $RunState.SessionId
+        Save-DistributionState -Checkpoint 2 -AdditionalVariables (New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders $RunState.subfolders -SourceFiles $RunState.sourceFiles -IncludeSourceFiles) -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 
     if ($RunState.LastCheckpoint -lt 3) {
         $cp3 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders $RunState.subfolders -IncludeFilesToDelete
-        SaveState -Checkpoint 3 -AdditionalVariables $cp3 -fileLock $FileLockRef -SessionId $RunState.SessionId
+        Save-DistributionState -Checkpoint 3 -AdditionalVariables $cp3 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 
     if ($RunState.LastCheckpoint -lt 4) {
@@ -2506,13 +2202,13 @@ function Invoke-DistributionPhase {
             DistributeFilesToSubfolders -Files $RunState.sourceFiles -Subfolders $RunState.subfolders -TargetRoot $TargetFolder -Limit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles $RunState.totalSourceFiles
         }
         $cp4 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders $RunState.subfolders -SourceFiles $RunState.sourceFiles -IncludeSourceFiles -IncludeFilesToDelete
-        SaveState -Checkpoint 4 -AdditionalVariables $cp4 -fileLock $FileLockRef -SessionId $RunState.SessionId
+        Save-DistributionState -Checkpoint 4 -AdditionalVariables $cp4 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 
     if ($RunState.LastCheckpoint -lt 5) {
         RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $RunState.subfolders -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles 0
         $cp5 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -IncludeFilesToDelete
-        SaveState -Checkpoint 5 -AdditionalVariables $cp5 -fileLock $FileLockRef -SessionId $RunState.SessionId
+        Save-DistributionState -Checkpoint 5 -AdditionalVariables $cp5 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 }
 
@@ -2522,19 +2218,19 @@ function Invoke-PostProcessingPhase {
     if ($ConsolidateToMinimum -and $RunState.LastCheckpoint -lt 6) {
         ConsolidateSubfoldersToMinimum -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
         $cp6 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
-        SaveState -Checkpoint 6 -AdditionalVariables $cp6 -fileLock $FileLockRef -SessionId $RunState.SessionId
+        Save-DistributionState -Checkpoint 6 -AdditionalVariables $cp6 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 
     if ($RebalanceToAverage -and $RunState.LastCheckpoint -lt 7) {
         RebalanceSubfoldersByAverage -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -Tolerance $RebalanceTolerance -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
         $cp7 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
-        SaveState -Checkpoint 7 -AdditionalVariables $cp7 -fileLock $FileLockRef -SessionId $RunState.SessionId
+        Save-DistributionState -Checkpoint 7 -AdditionalVariables $cp7 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 
     if ($RandomizeDistribution -and $RunState.LastCheckpoint -lt 8) {
         RandomizeDistributionAcrossFolders -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
         $cp8 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
-        SaveState -Checkpoint 8 -AdditionalVariables $cp8 -fileLock $FileLockRef -SessionId $RunState.SessionId
+        Save-DistributionState -Checkpoint 8 -AdditionalVariables $cp8 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 }
 
@@ -2609,7 +2305,7 @@ function Invoke-PostRunCleanup {
     LogMessage -Message "Total warnings: $script:Warnings" -ConsoleOutput
     LogMessage -Message "Total errors: $script:Errors" -ConsoleOutput
 
-    if ($FileLockRef.Value) { ReleaseFileLock -FileStream $FileLockRef.Value; $FileLockRef.Value = $null }
+    if ($FileLockRef.Value) { Unlock-DistributionStateFile -FileStream $FileLockRef.Value; $FileLockRef.Value = $null }
     Remove-Item -Path $StateFilePath -Force
 
     if ($CleanupDuplicates) {
@@ -2681,7 +2377,7 @@ function Main {
     }
     finally {
         if ($fileLockRef -and ($fileLockRef.PSObject.Properties.Name -contains 'Value') -and $fileLockRef.Value) {
-            ReleaseFileLock -FileStream $fileLockRef.Value
+            Unlock-DistributionStateFile -FileStream $fileLockRef.Value
         }
     }
 }
