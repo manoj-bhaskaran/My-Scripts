@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.4] - 2026-03-29
+
+### Fixed
+
+- **FileDistributor.ps1 v4.6.16: restore compatible New-FileQueue call signature**
+  - Removed unsupported `-WarningsSoFar` and `-ErrorsSoFar` arguments from `Invoke-ParameterValidation` when creating `FilesToDelete`
+  - Prevents startup parameter-binding failures by aligning the call with `New-FileQueue`'s supported parameters (`Name`, `SessionId`, `MaxSize`, `StatePath`)
+
+## [2.12.3] - 2026-03-29
+
+### Changed
+
+- **FileDistributor.ps1 v4.6.15: modularized state persistence and lock management**
+  - Moved state file helpers (`ConvertTo-Hashtable`, `Get-FileSha256Hex`, `Write-JsonAtomically`, `Get-StateFromPath`, `ConvertFrom-FileQueue`) into `FileManagement/FileDistributor/Private/State.ps1`
+  - Renamed checkpoint persistence functions to approved verbs (`Save-DistributionState`, `Restore-DistributionState`) and converted warnings/errors/session state inputs to explicit parameters at call sites
+  - Moved lock helpers into `FileManagement/FileDistributor/Private/FileLock.ps1` and renamed them to `Lock-DistributionStateFile` and `Unlock-DistributionStateFile`
+  - Updated orchestration call sites (`Invoke-RestoreCheckpoint`, `Invoke-DistributionPhase`, `Invoke-PostProcessingPhase`, `Invoke-PostRunCleanup`, and `Main` finally block) to use the new function names
+
+### Fixed
+
+- **FileDistributor module v1.0.1**
+  - Incremented module manifest version to include the new private state and lock modules as part of the modularization series
+
 ## [2.12.2] - 2026-03-27
 
 ### Fixed
