@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.13
+ 4.6.14
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
@@ -310,6 +310,8 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PurgeLogs.psm1" -Force
 
 # Import FileQueue module for queue management
 Import-Module "$PSScriptRoot\..\modules\FileManagement\FileQueue\FileQueue.psd1" -Force
+Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistributor.psd1" -Force
+. "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\PathHelpers.ps1"
 
 # Note: Logger initialization moved to after LogFilePath resolution
 
@@ -385,96 +387,13 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.11"
+$script:Version = "4.6.14"
 $script:Warnings = 0
 $script:Errors = 0
 
 # ===== Windows path resolution helpers (executed before any logging) =====
 # Determine script root (works in PS 5.1+ when running as a script)
 $script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Path $MyInvocation.MyCommand.Path -Parent }
-
-function New-Ref {
-    param($Initial = $null)
-    # Create a stable [ref] container and assign its initial value safely
-    $r = [ref]$null
-    $r.Value = $Initial
-    return $r
-}
-
-function New-Directory {
-    param([Parameter(Mandatory = $true)][string]$DirectoryPath)
-    if (-not (Test-Path -LiteralPath $DirectoryPath)) {
-        try { New-Item -ItemType Directory -Path $DirectoryPath -Force | Out-Null } catch {
-            Write-LogDebug "Failed to create directory ${DirectoryPath}: $_"
-        }
-    }
-    return (Test-Path -LiteralPath $DirectoryPath)
-}
-
-function Resolve-PathWithFallback {
-    param(
-        [string]$UserPath,
-        [Parameter(Mandatory = $true)][string]$ScriptRelativePath,
-        [Parameter(Mandatory = $true)][string]$WindowsDefaultPath,
-        [Parameter(Mandatory = $true)][string]$TempFallbackPath
-    )
-    # 1) User-provided
-    if ($UserPath) {
-        $parent = Split-Path -Path $UserPath -Parent
-        if (New-Directory -DirectoryPath $parent) { return $UserPath }
-    }
-    # 2) Script-root relative
-    $scriptCandidate = Join-Path -Path $script:ScriptRoot -ChildPath $ScriptRelativePath
-    $parent = Split-Path -Path $scriptCandidate -Parent
-    if (New-Directory -DirectoryPath $parent) { return $scriptCandidate }
-    # 3) Windows default (LOCALAPPDATA)
-    $winCandidate = $WindowsDefaultPath
-    $parent = Split-Path -Path $winCandidate -Parent
-    if (New-Directory -DirectoryPath $parent) { return $winCandidate }
-    # 4) TEMP fallback
-    $tempCandidate = $TempFallbackPath
-    $parent = Split-Path -Path $tempCandidate -Parent
-    if (New-Directory -DirectoryPath $parent) { return $tempCandidate }
-    # If all fail, return TEMP even if directory creation failed (subsequent operations will error & be logged)
-    return $TempFallbackPath
-}
-
-# Normalize a path that may actually be a directory; if it's a directory (or ends with a slash),
-# append the provided default filename. No-op if it's already a file path.
-function Resolve-FilePathIfDirectory {
-    param(
-        [Parameter(Mandatory = $true)][ref]$Path,
-        [Parameter(Mandatory = $true)][string]$DefaultFileName
-    )
-    $p = $Path.Value
-    if ([string]::IsNullOrWhiteSpace($p)) { return }
-    try {
-        if (Test-Path -LiteralPath $p -PathType Container) {
-            $Path.Value = (Join-Path -Path $p -ChildPath $DefaultFileName)
-            return
-        }
-    }
-    catch {
-        Write-LogDebug "Failed to test path ${p}: $_"
-    }
-    # If it doesn't exist but clearly looks like a directory (trailing slash), treat as directory
-    if ($p -match '[\\/]\s*$') {
-        $Path.Value = (Join-Path -Path $p -ChildPath $DefaultFileName)
-        return
-    }
-}
-
-# Ensure the parent directory exists; optionally "touch" the file so that subsequent Add-Content works.
-function Initialize-FilePath {
-    param(
-        [Parameter(Mandatory = $true)][string]$FilePath,
-        [switch]$CreateFile
-    )
-    # Use -Path with -Parent to avoid parameter-set ambiguity on older PowerShell versions
-    $dir = Split-Path -Path $FilePath -Parent
-    if ($dir) { [void][System.IO.Directory]::CreateDirectory($dir) }
-    if ($CreateFile -and -not (Test-Path -LiteralPath $FilePath -PathType Leaf)) { New-Item -ItemType File -Path $FilePath -Force | Out-Null }
-}
 
 # Function to log messages
 function LogMessage {
@@ -836,29 +755,6 @@ function ResolveFileNameConflict {
     } while (Test-Path -Path $newFilePath)
 
     return $newFileName
-}
-
-function Resolve-SubfolderPath {
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$TargetRoot
-    )
-    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
-    # Reject bare drive and drive-relative forms
-    if ($Path -match '^[A-Za-z]$' -or $Path -match '^[A-Za-z]:$' -or $Path -match '^[A-Za-z]:[^\\/].*') { return $null }
-    if ([System.IO.Path]::IsPathRooted($Path)) {
-        try {
-            # Add this before GetFullPath:
-            LogMessage -Message "DEBUG: Attempting GetFullPath for '$Path'" -IsDebug
-            return [IO.Path]::GetFullPath($Path)
-        }
-        catch {
-            # Add this in catch:
-            LogMessage -Message "DEBUG: GetFullPath threw for '$Path': $($_.Exception.Message)" -IsWarning
-            return $null
-        }
-    }
-    return (Join-Path -Path $TargetRoot -ChildPath $Path)
 }
 
 function CreateRandomSubfolders {
