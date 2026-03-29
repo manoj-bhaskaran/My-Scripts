@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.15
+ 4.6.16
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
@@ -389,7 +389,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.15"
+$script:Version = "4.6.16"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -2001,7 +2001,7 @@ function Invoke-ParameterValidation {
         $RunState.MaxFilesToCopy = -1
     }
 
-    $RunState.FilesToDelete = New-FileQueue -Name "FilesToDelete" -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors -MaxSize -1
+    $RunState.FilesToDelete = New-FileQueue -Name "FilesToDelete" -SessionId $RunState.SessionId -MaxSize -1
     $RunState.GlobalFileCounter = New-Ref 0
     LogMessage -Message "Parameter validation completed"
 }

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.4] - 2026-03-29
+
+### Fixed
+
+- **FileDistributor.ps1 v4.6.16: restore compatible New-FileQueue call signature**
+  - Removed unsupported `-WarningsSoFar` and `-ErrorsSoFar` arguments from `Invoke-ParameterValidation` when creating `FilesToDelete`
+  - Prevents startup parameter-binding failures by aligning the call with `New-FileQueue`'s supported parameters (`Name`, `SessionId`, `MaxSize`, `StatePath`)
+
 ## [2.12.3] - 2026-03-29
 
 ### Changed
