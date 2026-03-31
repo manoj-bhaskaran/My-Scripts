@@ -2085,15 +2085,15 @@ function Invoke-RestoreCheckpoint {
                 }
                 else {
                     $RunState.FilesToDelete.Items.Enqueue([pscustomobject]@{
-                        SourcePath       = $e.Path
-                        TargetPath       = $null
-                        Size             = $e.Size
-                        LastWriteTimeUtc = $e.LastWriteTimeUtc
-                        QueuedAtUtc      = if ($e.PSObject.Properties.Name -contains 'QueuedAtUtc') { $e.QueuedAtUtc } else { (Get-Date).ToUniversalTime() }
-                        SessionId        = if ($e.PSObject.Properties.Name -contains 'SessionId') { $e.SessionId } else { $RunState.SessionId }
-                        Attempts         = 0
-                        Metadata         = @{}
-                    })
+                            SourcePath       = $e.Path
+                            TargetPath       = $null
+                            Size             = $e.Size
+                            LastWriteTimeUtc = $e.LastWriteTimeUtc
+                            QueuedAtUtc      = if ($e.PSObject.Properties.Name -contains 'QueuedAtUtc') { $e.QueuedAtUtc } else { (Get-Date).ToUniversalTime() }
+                            SessionId        = if ($e.PSObject.Properties.Name -contains 'SessionId') { $e.SessionId } else { $RunState.SessionId }
+                            Attempts         = 0
+                            Metadata         = @{}
+                        })
                 }
             }
         }
@@ -2144,7 +2144,7 @@ function New-CheckpointPayload {
     return $payload
 }
 function Invoke-DistributionPhase {
-    param([hashtable]$RunState,[ref]$FileLockRef)
+    param([hashtable]$RunState, [ref]$FileLockRef)
 
     if ($RunState.LastCheckpoint -lt 1) {
         if (-not [string]::IsNullOrWhiteSpace($SourceFolder)) {
@@ -2213,7 +2213,7 @@ function Invoke-DistributionPhase {
 }
 
 function Invoke-PostProcessingPhase {
-    param([hashtable]$RunState,[ref]$FileLockRef)
+    param([hashtable]$RunState, [ref]$FileLockRef)
 
     if ($ConsolidateToMinimum -and $RunState.LastCheckpoint -lt 6) {
         ConsolidateSubfoldersToMinimum -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
@@ -2273,7 +2273,7 @@ function Invoke-EndOfScriptDeletion {
 }
 
 function Invoke-PostRunCleanup {
-    param([hashtable]$RunState,[ref]$FileLockRef)
+    param([hashtable]$RunState, [ref]$FileLockRef)
 
     $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
     $totalTargetFilesAfter = if ($null -eq $totalTargetFilesAfter) { 0 } else { $totalTargetFilesAfter }
@@ -2350,13 +2350,13 @@ function Main {
     }
 
     $runState = @{
-        totalSourceFilesAll = 0
-        totalSourceFiles = 0
-        totalTargetFilesBefore = 0
-        subfolders = @()
-        sourceFiles = @()
+        totalSourceFilesAll     = 0
+        totalSourceFiles        = 0
+        totalTargetFilesBefore  = 0
+        subfolders              = @()
+        sourceFiles             = @()
         skippedFilesByExtension = @{}
-        totalSkippedFiles = 0
+        totalSkippedFiles       = 0
     }
     $fileLockRef = [ref]$null
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.10.0] - 2026-03-31
+
+### Changed
+- **Refactor:** Extracted all data model types (`FileMeta`, `LockInfo`, `RecoveryItem`, `RecoveryState`, `PostRestorePolicy`) from `gdrive_recover.py` into a new dedicated module `gdrive_models.py`. `gdrive_recover.py` now imports these from `gdrive_models`. No logic changes; existing behaviour is unchanged.
+
 ## [1.9.0] - 2026-03-29
 
 ### Changed

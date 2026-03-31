@@ -439,7 +439,7 @@ Deploy-ModuleFromConfig -RepoPath $script:RepoPath -ConfigPath $configPath -Touc
 #    not affect the index because the script name and path remain the same.
 if ($baseRef) {
     $newOrRenamedPsFiles = @(git -C $script:RepoPath diff --name-only --diff-filter=ACR $baseRef HEAD |
-        Where-Object { $_ -match '\.(ps1|psm1|psd1)$' })
+            Where-Object { $_ -match '\.(ps1|psm1|psd1)$' })
 }
 else {
     $newOrRenamedPsFiles = @()

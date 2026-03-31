@@ -21,11 +21,13 @@ function New-VideoRunContext {
     $mod = Get-Module -Name 'Videoscreenshot'
     $version = if ($mod -and $mod.Version -ne [version]'0.0') {
         $mod.Version.ToString()
-    } else {
+    }
+    else {
         $manifestPath = Join-Path $PSScriptRoot '..' 'Videoscreenshot.psd1'
         try {
             (Import-PowerShellDataFile -Path $manifestPath -ErrorAction Stop).ModuleVersion
-        } catch {
+        }
+        catch {
             '3.0.5'
         }
     }

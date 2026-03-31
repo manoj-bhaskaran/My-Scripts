@@ -93,7 +93,7 @@ function Invoke-WithRetry {
             $exception = $_.Exception
             $err = $_.Exception.Message
             $isFileNotFoundError = $exception -is [System.Management.Automation.ItemNotFoundException] -or
-                ($err -like '*Cannot find path*' -and $err -like '*does not exist*')
+            ($err -like '*Cannot find path*' -and $err -like '*does not exist*')
 
             if ($IgnoreFileNotFound -and $isFileNotFoundError) {
                 $msg = "Skipping operation due to file-not-found condition: $Description. Error: $err"
