@@ -70,7 +70,6 @@ from gdrive_constants import (
     _PRINTED_REQUESTS_FALLBACK,
 )
 
-
 # v1.10.0: data model types extracted to dedicated module
 from gdrive_models import FileMeta, LockInfo, RecoveryItem, RecoveryState, PostRestorePolicy
 
