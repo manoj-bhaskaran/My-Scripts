@@ -82,7 +82,7 @@ New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null
 # Run this once after adding, renaming, or removing scripts or modules.
 # -------------------------------------------------------------------------
 function Update-RepoIndex {
-<#
+    <#
 .SYNOPSIS
     Rebuilds the repo script and module index cache files.
 
@@ -127,19 +127,19 @@ function Update-RepoIndex {
     # Split the full path into segments and reject any file whose path contains
     # an excluded directory at *any* depth, not just the immediate parent.
     $files =
-        Get-ChildItem -Path $Root -Recurse -File -ErrorAction SilentlyContinue |
+    Get-ChildItem -Path $Root -Recurse -File -ErrorAction SilentlyContinue |
         Where-Object {
             $_.Extension -in '.ps1', '.psm1', '.psd1' -and
             -not ($_.FullName.Split([IO.Path]::DirectorySeparatorChar) |
-                  Where-Object { $excludeDirs -contains $_ })
-        }
+                    Where-Object { $excludeDirs -contains $_ })
+            }
 
     # Build the script index from .ps1 files.
     # When the same base-name appears more than once (e.g. during a rename),
     # keep only the most recently modified copy to avoid ambiguity.
     $scripts =
-        $files |
-        Where-Object Extension -eq '.ps1' |
+    $files |
+        Where-Object Extension -EQ '.ps1' |
         ForEach-Object {
             [PSCustomObject]@{
                 Name = [IO.Path]::GetFileNameWithoutExtension($_.Name)
@@ -149,9 +149,9 @@ function Update-RepoIndex {
         Group-Object Name |
         ForEach-Object {
             $_.Group |
-            Sort-Object { (Get-Item $_.Path).LastWriteTimeUtc } -Descending |
-            Select-Object -First 1
-        }
+                Sort-Object { (Get-Item $_.Path).LastWriteTimeUtc } -Descending |
+                Select-Object -First 1
+            }
 
     # Persist the script index to disk.
     $scripts | ConvertTo-Json -Depth 4 | Set-Content -Path $ScriptCache -Encoding UTF8
@@ -167,7 +167,7 @@ function Update-RepoIndex {
 
     # Build the module index from .psm1 and .psd1 files.
     $modules =
-        $files |
+    $files |
         Where-Object { $_.Extension -in '.psd1', '.psm1' } |
         Sort-Object FullName -Unique |
         ForEach-Object { $_.FullName }
@@ -194,7 +194,8 @@ if (Test-Path $ScriptCache) {
                 $global:RepoScripts[$e.Name] = $e.Path
             }
         }
-    } catch {
+    }
+    catch {
         # Cache is corrupt or unreadable; start with an empty map.
         # Run Update-RepoIndex to rebuild.
         $global:RepoScripts = @{}
@@ -208,7 +209,7 @@ if (Test-Path $ScriptCache) {
 # the Enter-key handler is not active.
 # -------------------------------------------------------------------------
 function Run-RepoScript {
-<#
+    <#
 .SYNOPSIS
     Runs a repo script by name, passing through any additional arguments.
 
@@ -267,7 +268,7 @@ Register-ArgumentCompleter -CommandName Run-RepoScript -ParameterName Name -Scri
 # -------------------------------------------------------------------------
 $global:RepoModulesLoaded = $false
 function Ensure-RepoModulesLoaded {
-<#
+    <#
 .SYNOPSIS
     Imports all repo modules if they have not yet been loaded this session.
 
@@ -293,13 +294,14 @@ function Ensure-RepoModulesLoaded {
     # Filter to only the modules that live under the designated modules folder;
     # avoids accidentally importing test fixtures or vendored .psm1 files.
     $moduleFiles =
-        (Get-Content $ModuleCache -Raw) | ConvertFrom-Json |
+    (Get-Content $ModuleCache -Raw) | ConvertFrom-Json |
         Where-Object { $_ -like '*\powershell\modules\*' }
 
     foreach ($mf in $moduleFiles) {
         try {
             Import-Module $mf -Force -Global -ErrorAction Stop
-        } catch {
+        }
+        catch {
             # Import failures are silently swallowed to keep the session
             # usable. Uncomment the line below to diagnose problem modules:
             # Write-Warning ("Module import failed: {0} — {1}" -f $mf, $_.Exception.Message)
@@ -335,7 +337,7 @@ if (Get-Module -ListAvailable -Name PSReadLine) {
 
         $global:__RepoKeyHandlerBusy = $true
         try {
-            $line   = $null
+            $line = $null
             $cursor = 0
             [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
 
@@ -343,7 +345,7 @@ if (Get-Module -ListAvailable -Name PSReadLine) {
                 # Split the buffer into the leading command token and the rest.
                 $m = [regex]::Match($line, '^\s*(\S+)(.*)$')
                 if ($m.Success) {
-                    $cmd  = $m.Groups[1].Value
+                    $cmd = $m.Groups[1].Value
                     $rest = $m.Groups[2].Value
 
                     # Only expand if the token is not already a known command
@@ -355,14 +357,15 @@ if (Get-Module -ListAvailable -Name PSReadLine) {
                             Ensure-RepoModulesLoaded
 
                             # Rewrite the buffer to the explicit full-path form.
-                            $path    = $global:RepoScripts[$cmd]
+                            $path = $global:RepoScripts[$cmd]
                             $newLine = "& '$path'$rest"
                             [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, $line.Length, $newLine)
                         }
                     }
                 }
             }
-        } finally {
+        }
+        finally {
             $global:__RepoKeyHandlerBusy = $false
         }
 
@@ -376,7 +379,7 @@ if (Get-Module -ListAvailable -Name PSReadLine) {
 # the profile helpers. Useful after a fresh profile load or index rebuild.
 # -------------------------------------------------------------------------
 function Show-RepoProfileStatus {
-<#
+    <#
 .SYNOPSIS
     Displays the current state of the repo profile helpers.
 

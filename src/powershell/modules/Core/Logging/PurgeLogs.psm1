@@ -124,7 +124,7 @@ function Clear-LogFile {
     }
 
     $timestampRegex = '^\[?(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,7})?)'
-    $timestampFormats = @('yyyy-MM-dd HH:mm:ss','yyyy-MM-dd HH:mm:ss.fff','yyyy-MM-dd HH:mm:ss.fffffff')
+    $timestampFormats = @('yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd HH:mm:ss.fff', 'yyyy-MM-dd HH:mm:ss.fffffff')
 
     $applyTimestampFilter = $hasBeforeTimestamp -or $hasRetentionDays
     if ($applyTimestampFilter) {

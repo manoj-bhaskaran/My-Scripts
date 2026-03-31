@@ -46,7 +46,7 @@ $ErrorActionPreference = 'Stop'
 
 # Resolve defaults relative to the repository root (this script lives in /scripts/).
 $scriptDir = $PSScriptRoot
-$repoRoot  = Split-Path -Path $scriptDir -Parent
+$repoRoot = Split-Path -Path $scriptDir -Parent
 
 if (-not $PsRoot) {
     $PsRoot = Join-Path $repoRoot "src" "powershell"
