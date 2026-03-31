@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0] - 2026-03-31
+
+### Changed
+- **Refactor:** Extracted the CLI layer from `gdrive_recover.py` into a new module `gdrive_cli.py` (`create_parser()`, argument validation helpers, lock orchestration helpers, and `main()`).
+- **Entrypoint:** `gdrive_recover.py` now delegates script execution to `gdrive_cli.main()` via a thin `if __name__ == "__main__"` shim.
+- **Behavior:** No logic changes intended; this is a structural refactor to isolate CLI concerns from `DriveTrashRecoveryTool`.
+
 ## [1.10.0] - 2026-03-31
 
 ### Changed

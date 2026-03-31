@@ -5,6 +5,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 ## Scripts
 
 - **gdrive_recover.py** - Google Drive file recovery and restoration utilities
+- **gdrive_cli.py** - CLI entry layer for gdrive_recover (argument parsing, validation, and main entry point)
 - **gdrive_constants.py** - Static configuration constants shared by gdrive_recover.py and future sibling modules
 - **gdrive_models.py** - Data model types (TypedDicts, dataclasses, PostRestorePolicy) shared by gdrive_recover.py and future sibling modules
 - **google_drive_root_files_delete.py** - Cleans up files in Google Drive root directory
