@@ -463,24 +463,28 @@ class DriveTrashDiscovery:
         self._print_discover_id_summary(items, skipped_non_trashed[0], errors[0])
         return items
 
-    def _discover_via_query(self, query: str) -> List[RecoveryItem]:
-        items: List[RecoveryItem] = []
+    def _iter_query_pages(self, query: str):
         page_token: Optional[str] = None
         page_count = 0
+        while True:
+            page_count += 1
+            self.logger.debug(f"Fetching page {page_count}")
+            files, page_token = self._fetch_files_page(query, page_token)
+            yield page_count, files
+            if not page_token:
+                break
+
+    def _discover_via_query(self, query: str) -> List[RecoveryItem]:
+        items: List[RecoveryItem] = []
         try:
-            while True:
-                page_count += 1
-                self.logger.debug(f"Fetching page {page_count}")
-                files, page_token = self._fetch_files_page(query, page_token)
+            for page_count, files in self._iter_query_pages(query):
                 for file_data in files:
                     self._append_item_if_valid(items, file_data)
                     if self.args.limit and self.args.limit > 0 and len(items) >= self.args.limit:
                         break
                 if self.args.verbose >= 1:
                     print(f"Found {len(files)} files in page {page_count} (total: {len(items)})")
-                if (self.args.limit and self.args.limit > 0 and len(items) >= self.args.limit) or (
-                    not page_token
-                ):
+                if self.args.limit and self.args.limit > 0 and len(items) >= self.args.limit:
                     break
         except Exception as e:
             self.logger.error(f"Error discovering files: {e}")
@@ -504,15 +508,11 @@ class DriveTrashDiscovery:
 
     def _stream_stream_query(self, batch_n: int, start_time: float) -> bool:
         ok = True
-        page_token: Optional[str] = None
         query = self._build_query()
         self.logger.info(f"Using query (streaming): {query}")
         batch: List[RecoveryItem] = []
-        page_count = 0
         try:
-            while True:
-                page_count += 1
-                files, page_token = self._fetch_files_page(query, page_token)
+            for page_count, files in self._iter_query_pages(query):
                 for fd in files:
                     self._handle_streaming_file(fd, batch, batch_n, start_time)
                     if self._should_stop_for_limit():
@@ -521,7 +521,7 @@ class DriveTrashDiscovery:
                     print(
                         f"Found {len(files)} files in page {page_count} (streamed total: {self.tool._seen_total})"
                     )
-                if self._should_stop_for_limit() or not page_token:
+                if self._should_stop_for_limit():
                     break
         except Exception as e:
             ok = False
