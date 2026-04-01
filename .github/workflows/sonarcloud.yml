@@ -66,8 +66,7 @@ jobs:
           flags: python
           name: python-coverage
           fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload Python Test Coverage Artifact
         uses: actions/upload-artifact@v4
@@ -103,13 +102,10 @@ jobs:
       - name: Install Pester (PowerShell Testing Framework)
         shell: pwsh
         run: |
-          # Register PSGallery if not already registered
           if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
             Register-PSRepository -Default
           }
-          # Set PSGallery as trusted to avoid prompts
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          # Install Pester
           Install-Module -Name Pester -Force -Scope CurrentUser -SkipPublisherCheck
 
       - name: Run PowerShell Tests with Coverage
@@ -125,8 +121,7 @@ jobs:
           flags: powershell
           name: powershell-coverage
           fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload PowerShell Test Results Artifact
         uses: actions/upload-artifact@v4
@@ -205,7 +200,6 @@ jobs:
           name: SQL-Lint-Reports
           path: sqlfluff-report.txt
 
-      # --- Updated SonarScanner installation with cache ---
       - name: Cache Sonar Scanner
         id: cache-sonar
         uses: actions/cache@v4
@@ -227,37 +221,34 @@ jobs:
         run: |
           echo "${{ github.workspace }}/sonar-scanner/sonar-scanner-6.0.0.4432-linux/bin" >> $GITHUB_PATH
 
+      - name: Detect whether SonarCloud can run
+        id: sonar_guard
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.SONAR_TOKEN }}" ]; then
+            echo "can_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "can_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "event_name=${{ github.event_name }}"
+          echo "actor=${{ github.actor }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "head_repo=${{ github.event.pull_request.head.repo.full_name }}"
+            echo "is_fork=${{ github.event.pull_request.head.repo.fork }}"
+          fi
+
       - name: Check SonarCloud Token
+        if: steps.sonar_guard.outputs.can_run == 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        shell: bash
         run: |
           if [ -z "$SONAR_TOKEN" ]; then
             echo "::error::SONAR_TOKEN secret is not configured or is empty!"
-            echo "::error::"
-            echo "::error::Common causes:"
-            echo "::error::1. Running on a Pull Request from a FORK (secrets are not available for security)"
-            echo "::error::2. Secret exists but has an empty/whitespace value"
-            echo "::error::3. Token was revoked on SonarCloud"
-            echo "::error::4. Secret name mismatch (must be exactly 'SONAR_TOKEN')"
-            echo "::error::"
-            echo "::error::To configure SONAR_TOKEN in GitHub repository secrets:"
-            echo "::error::1. Go to https://sonarcloud.io"
-            echo "::error::2. Sign in with GitHub"
-            echo "::error::3. Go to My Account → Security"
-            echo "::error::4. Generate a new token (type: User Token)"
-            echo "::error::5. Add it as SONAR_TOKEN secret in GitHub repository settings:"
-            echo "::error::   → Repository → Settings → Secrets and variables → Actions → New repository secret"
-            echo "::error::6. Ensure the token value is NOT empty"
-            echo "::error::"
-            echo "::error::Context: github.event_name=${{ github.event_name }}, github.repository=${{ github.repository }}"
-            if [ "${{ github.event_name }}" = "pull_request" ]; then
-              echo "::warning::This is a pull request. If from a fork, secrets are not available for security reasons."
-              echo "::notice::Fork PR SonarCloud scans will only work after merging to main branch."
-            fi
             exit 1
           fi
 
-          # Validate token format (SonarCloud tokens start with 'squ_' for user tokens)
           if [[ ! "$SONAR_TOKEN" =~ ^squ_ ]]; then
             echo "::warning::SONAR_TOKEN does not appear to be a valid SonarCloud user token format (should start with 'squ_')"
             echo "::warning::This might be an old token format. Consider regenerating a new user token."
@@ -265,12 +256,20 @@ jobs:
 
           echo "✅ SonarCloud token is configured and appears valid"
 
+      - name: Skip SonarCloud
+        if: steps.sonar_guard.outputs.can_run != 'true'
+        shell: bash
+        run: |
+          echo "::notice::Skipping SonarCloud because SONAR_TOKEN is unavailable in this workflow context."
+          echo "::notice::This is expected for some contexts such as fork PRs or misconfigured secrets."
+
       - name: SonarCloud Scan
+        if: steps.sonar_guard.outputs.can_run == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        shell: bash
         run: |
-          # Verify coverage files exist before scanning
           echo "🔍 Checking coverage files..."
           if [ ! -f "coverage/python/coverage.xml" ]; then
             echo "::warning::Python coverage file not found: coverage/python/coverage.xml"
@@ -286,11 +285,9 @@ jobs:
 
           echo "🚀 Starting SonarCloud analysis..."
 
-          # Configuration is in sonar-project.properties
-          # Override coverage paths to use new locations
           sonar-scanner \
             -Dsonar.host.url=https://sonarcloud.io \
-            -Dsonar.token=$SONAR_TOKEN \
+            -Dsonar.token="$SONAR_TOKEN" \
             -Dsonar.python.coverage.reportPaths=coverage/python/coverage.xml \
             -Dsonar.coverage.jacoco.xmlReportPaths=coverage/powershell/coverage.xml \
             -Dsonar.verbose=false
