@@ -14,7 +14,9 @@ function Invoke-FileDistribution {
         [int]$TotalFiles,
         [int]$RetryDelay = 10,
         [int]$RetryCount = 3,
-        [int]$MaxBackoff = 60
+        [int]$MaxBackoff = 60,
+        [ref]$WarningCount,
+        [ref]$ErrorCount
     )
 
     $targetNormalized = [IO.Path]::GetFullPath($TargetRoot)
@@ -46,6 +48,7 @@ function Invoke-FileDistribution {
         $subfolderPaths = @($emergency)
         $folderCounts[$emergency] = 0
         Write-LogWarning ("Distribution: created emergency destination subfolder '{0}' (no valid candidates)." -f $emergency)
+        if ($WarningCount) { $WarningCount.Value++ }
     }
 
     Write-LogDebug ("DEBUG: Eligible subfolders ({0}): {1}" -f $subfolderPaths.Count, ($subfolderPaths -join ', '))
@@ -58,6 +61,7 @@ function Invoke-FileDistribution {
     catch {
         $filesToProcess = $Files
         Write-LogWarning "Could not shuffle file list due to: $($_.Exception.Message). Proceeding without shuffle."
+        if ($WarningCount) { $WarningCount.Value++ }
     }
 
     foreach ($file in $filesToProcess) {
@@ -72,6 +76,7 @@ function Invoke-FileDistribution {
         if ($eligible.Count -eq 0) {
             $eligible = $subfolderPaths
             Write-LogWarning "All subfolders appear at/over limit ($Limit). Selecting among all subfolders (best effort)."
+            if ($WarningCount) { $WarningCount.Value++ }
         }
 
         # Weighted random selection based on available capacity
@@ -132,6 +137,7 @@ function Invoke-FileDistribution {
                     $destDisplay = if ($destNormalized) { $destNormalized } else { '<null>' }
                     Write-LogWarning "Destination escaped target root ('$destDisplay'); forcing subfolder '$fallback'."
                 }
+                if ($WarningCount) { $WarningCount.Value++ }
                 $destinationFolder = $fallback
             }
             else {
@@ -139,6 +145,7 @@ function Invoke-FileDistribution {
                 New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
                 $folderCounts[$destinationFolder] = 0
                 Write-LogWarning "Created emergency destination subfolder '$destinationFolder' to avoid using target root."
+                if ($WarningCount) { $WarningCount.Value++ }
             }
         }
 
@@ -153,6 +160,7 @@ function Invoke-FileDistribution {
             }
             catch {
                 Write-LogError "Failed to ensure destination folder '$destinationFolder': $($_.Exception.Message)"
+                if ($ErrorCount) { $ErrorCount.Value++ }
                 continue
             }
         }
@@ -180,7 +188,9 @@ function Invoke-FileDistribution {
             -ProgressActivity "Distributing Files" `
             -ProgressStatusTemplate "Processed {0} of {1} files" `
             -CopyFailureMessageTemplate "Failed to copy '{0}' to '{1}'. Original file not moved." `
-            -PostCopyFailureMessageTemplate "Failed to process file '{0}' after copying. Error: {1}"
+            -PostCopyFailureMessageTemplate "Failed to process file '{0}' after copying. Error: {1}" `
+            -WarningCount $WarningCount `
+            -ErrorCount $ErrorCount
 
         if ($moveResult.Success) {
             $destinationFile = $moveResult.DestinationFile
@@ -198,6 +208,7 @@ function Invoke-FileDistribution {
                 }
                 else {
                     Write-LogWarning "Copied from $file to $destinationFile, but original could not be queued for end-of-script deletion."
+                    if ($WarningCount) { $WarningCount.Value++ }
                 }
             }
         }

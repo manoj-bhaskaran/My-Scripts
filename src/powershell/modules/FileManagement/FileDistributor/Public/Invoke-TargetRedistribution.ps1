@@ -13,7 +13,9 @@ function Invoke-TargetRedistribution {
         [int]$TotalFiles,
         [int]$RetryDelay = 10,
         [int]$RetryCount = 3,
-        [int]$MaxBackoff = 60
+        [int]$MaxBackoff = 60,
+        [ref]$WarningCount,
+        [ref]$ErrorCount
     )
 
     $folderFilesMap = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty -FallbackSubfolders $Subfolders
@@ -26,6 +28,7 @@ function Invoke-TargetRedistribution {
 
     if ($normalizedSubfolders.Count -eq 0) {
         Write-LogWarning "No valid subfolders available for redistribution. Creating emergency subfolder."
+        if ($WarningCount) { $WarningCount.Value++ }
         $randomName = Get-RandomFileName
         $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
         New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
@@ -68,7 +71,9 @@ function Invoke-TargetRedistribution {
             -TotalFiles $rootFiles.Count `
             -RetryDelay $RetryDelay `
             -RetryCount $RetryCount `
-            -MaxBackoff $MaxBackoff
+            -MaxBackoff $MaxBackoff `
+            -WarningCount $WarningCount `
+            -ErrorCount $ErrorCount
         $redistributionProcessed += $GlobalFileCounter.Value
     }
 
@@ -127,7 +132,9 @@ function Invoke-TargetRedistribution {
             -TotalFiles $sourceFiles.Count `
             -RetryDelay $RetryDelay `
             -RetryCount $RetryCount `
-            -MaxBackoff $MaxBackoff
+            -MaxBackoff $MaxBackoff `
+            -WarningCount $WarningCount `
+            -ErrorCount $ErrorCount
         $redistributionProcessed += $GlobalFileCounter.Value
     }
 

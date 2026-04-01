@@ -765,7 +765,8 @@ function RebalanceSubfoldersByAverage {
                 -ProgressStatusTemplate "Moved {0} of {1}" `
                 -CopyFailureMessageTemplate "Rebalance: failed to copy '{0}' to '{1}'." `
                 -PostCopyFailureMessageTemplate "Rebalance: post-copy handling failed for '{0}': {1}" `
-                -IncrementOnSuccessOnly
+                -IncrementOnSuccessOnly `
+                -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
 
             if ($moveResult.Success) {
                 # Update receiver deficit and donor surplus
@@ -972,7 +973,8 @@ function RandomizeDistributionAcrossFolders {
                 -CopyFailureMessageTemplate "Randomize: failed to copy '{0}' to '{1}'." `
                 -PostCopyFailureMessageTemplate "Randomize: failed to handle original file '{0}': {1}" `
                 -CopyFailureIsWarning `
-                -IncrementOnSuccessOnly
+                -IncrementOnSuccessOnly `
+                -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
 
             if ($moveResult.Success) {
                 $totalMoves++
@@ -1138,7 +1140,8 @@ function ConsolidateSubfoldersToMinimum {
                 -ProgressActivity "Consolidating subfolders" `
                 -ProgressStatusTemplate "Moved {0} of {1}" `
                 -CopyFailureMessageTemplate "Consolidation: failed to copy '{0}' to '{1}'." `
-                -PostCopyFailureMessageTemplate "Consolidation: post-copy handling failed for '{0}': {1}"
+                -PostCopyFailureMessageTemplate "Consolidation: post-copy handling failed for '{0}': {1}" `
+                -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
 
             if ($moveResult.Success) {
                 # Update counts/capacity
@@ -1440,14 +1443,14 @@ function Invoke-DistributionPhase {
 
     if ($RunState.LastCheckpoint -lt 4) {
         if ($RunState.totalSourceFiles -gt 0 -and $RunState.sourceFiles.Count -gt 0) {
-            Invoke-FileDistribution -Files $RunState.sourceFiles -Subfolders $RunState.subfolders -TargetRoot $TargetFolder -Limit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles $RunState.totalSourceFiles -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+            Invoke-FileDistribution -Files $RunState.sourceFiles -Subfolders $RunState.subfolders -TargetRoot $TargetFolder -Limit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles $RunState.totalSourceFiles -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
         }
         $cp4 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders $RunState.subfolders -SourceFiles $RunState.sourceFiles -IncludeSourceFiles -IncludeFilesToDelete
         Save-DistributionState -Checkpoint 4 -AdditionalVariables $cp4 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 
     if ($RunState.LastCheckpoint -lt 5) {
-        Invoke-TargetRedistribution -TargetFolder $TargetFolder -Subfolders $RunState.subfolders -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles 0 -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+        Invoke-TargetRedistribution -TargetFolder $TargetFolder -Subfolders $RunState.subfolders -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles 0 -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
         $cp5 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -IncludeFilesToDelete
         Save-DistributionState -Checkpoint 5 -AdditionalVariables $cp5 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
