@@ -48,9 +48,7 @@ class DriveTrashDiscovery:
         return re.match(r"[a-zA-Z0-9_-]{25,}$", file_id) is not None
 
     def _extract_status_from_http_error(self, e: Exception):
-        if isinstance(e, HttpError):
-            return getattr(getattr(e, "resp", None), "status", None)
-        return None
+        return getattr(getattr(e, "resp", None), "status", None)
 
     def _log_terminal_id_validation_error(self, e, file_id, status):
         if isinstance(e, HttpError):
@@ -134,9 +132,7 @@ class DriveTrashDiscovery:
             buckets["no_access"].append(fid)
             self._id_prefetch_errors[fid] = "HTTP 403"
             return True
-        should_retry = False
-        if isinstance(e, HttpError):
-            should_retry = status in (429, 500, 502, 503, 504)
+        should_retry = status in (429, 500, 502, 503, 504)
         if should_retry and attempt < MAX_RETRIES - 1:
             self._log_fetch_metadata_retry(fid, e, status, attempt)
             return False
@@ -375,7 +371,7 @@ class DriveTrashDiscovery:
                 return None, True, None
             except Exception as e:
                 status = getattr(getattr(e, "resp", None), "status", None)
-                retryable = isinstance(e, HttpError) and status in (429, 500, 502, 503, 504)
+                retryable = status in (429, 500, 502, 503, 504)
                 if retryable and attempt < MAX_RETRIES - 1:
                     self._log_fetch_metadata_retry(fid, e, status, attempt)
                     continue
