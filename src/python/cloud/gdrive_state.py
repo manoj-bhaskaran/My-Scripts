@@ -6,7 +6,7 @@ import json
 import os
 from dataclasses import asdict, fields
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Callable, Optional
 
 from gdrive_models import RecoveryState
 
@@ -14,9 +14,10 @@ from gdrive_models import RecoveryState
 class RecoveryStateManager:
     """Owns state load/save, schema handling, and lock file lifecycle."""
 
-    def __init__(self, args, logger):
+    def __init__(self, args, logger, on_state_load_error: Optional[Callable[[], None]] = None):
         self.args = args
         self.logger = logger
+        self.on_state_load_error = on_state_load_error
         self.state = RecoveryState()
         self._state_lock_path = f"{self.args.state_file}.lock"
         self._state_lock_fh = None
@@ -85,6 +86,11 @@ class RecoveryStateManager:
             return True
         except Exception:
             self.logger.exception(f"Unexpected error while loading state file '{self.args.state_file}'")
+            if self.on_state_load_error:
+                try:
+                    self.on_state_load_error()
+                except Exception:
+                    pass
         return False
 
     def _acquire_state_lock(self) -> bool:

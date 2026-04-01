@@ -75,3 +75,4 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
 - `gdrive_cli.py` owns CLI argument parsing, validation, and command routing.
 - `gdrive_state.py` owns persistent state and lock-file concerns.
   - Includes PID liveness checks used by lock diagnostics in `gdrive_cli.py`.
+  - Reports state-load failures back to `gdrive_recover.py` so execution error totals remain accurate.

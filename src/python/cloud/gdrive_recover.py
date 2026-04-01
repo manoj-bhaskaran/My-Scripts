@@ -16,7 +16,7 @@ Requirements:
 See CHANGELOG.md in this directory for version history.
 """
 
-__version__ = "1.11.1"
+__version__ = "1.11.2"
 
 import os
 import io
@@ -150,7 +150,9 @@ class DriveTrashRecoveryTool:
             "post_restore_deleted": 0,  # Files permanently deleted
         }
         self.stats_lock = Lock()
-        self.state_manager = RecoveryStateManager(args, self.logger)
+        self.state_manager = RecoveryStateManager(
+            args, self.logger, on_state_load_error=self._record_state_load_error
+        )
         self.state = self.state_manager.state
         self.items: List[RecoveryItem] = []
         # progress throttles
@@ -191,6 +193,10 @@ class DriveTrashRecoveryTool:
 
     def _print_info(self, msg: str) -> None:
         print(f"{self._sym_info()} {msg}")
+
+    def _record_state_load_error(self) -> None:
+        with self.stats_lock:
+            self.stats["errors"] += 1
 
     # --- HTTP transport construction (v1.6.0) ---
     class _RequestsHttpAdapter:

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.11.2] - 2026-04-01
+
+### Fixed
+- **Issue #788 follow-up:** Restored error accounting when recovery state loading fails (for example malformed/unreadable state file). `RecoveryStateManager._load_state()` now triggers the tool-level error counter callback so execution summaries continue to reflect state-load failures.
+
 ## [1.11.1] - 2026-04-01
 
 ### Changed
