@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.17
+ 4.7.0
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
@@ -226,9 +226,11 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
-## 4.6.13 — 2026-03-27
+## 4.7.0 — 2026-04-01
 ### Changed
-- Restored candidate-subfolder fallback when directory scans fail in `Get-SubfolderFileCounts`, so distribution/redistribution can continue with known candidates instead of aborting the phase.
+- Moved `DistributeFilesToSubfolders` → `Invoke-FileDistribution` and `RedistributeFilesInTarget` → `Invoke-TargetRedistribution` into `Public/` files of the `FileManagement/FileDistributor` module.
+- Moved `Get-SubfolderFileCounts` into `Private/Distribution.ps1` and retry helpers (`Invoke-WithRetry`, `Copy-ItemWithRetry`, `Remove-ItemWithRetry`, `Rename-ItemWithRetry`) into `Private/RetryOps.ps1`.
+- Updated `FolderOps.ps1` to call `Write-LogInfo`/`Write-LogWarning`/`Write-LogError` directly and accept retry params explicitly.
 - Full changelog: `./CHANGELOG.md`.
 
 Script Workflow:
@@ -312,10 +314,12 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PurgeLogs.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\FileManagement\FileQueue\FileQueue.psd1" -Force
 Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistributor.psd1" -Force
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\PathHelpers.ps1"
+. "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\RetryOps.ps1"
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\FileLock.ps1"
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\State.ps1"
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\Serialization.ps1"
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\FolderOps.ps1"
+. "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\Distribution.ps1"
 
 # Note: Logger initialization moved to after LogFilePath resolution
 
@@ -391,7 +395,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.6.16"
+$script:Version = "4.7.0"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -436,49 +440,6 @@ function LogMessage {
         Write-LogInfo $Message
         if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
             Write-Host $Message
-        }
-    }
-}
-
-# General-purpose retry helper with exponential backoff
-function Invoke-WithRetry {
-    param(
-        [Parameter(Mandatory = $true)][ScriptBlock]$Operation,
-        [Parameter(Mandatory = $true)][string]$Description,
-        [int]$RetryDelay = 10,
-        [int]$RetryCount = 3,
-        [int]$MaxBackoff = 60
-    )
-    $attempt = 0
-    while ($true) {
-        try {
-            & $Operation
-            if ($attempt -gt 0) {
-                LogMessage -Message "Succeeded after $attempt retry attempt(s): $Description"
-            }
-            return
-        }
-        catch {
-            $attempt++
-            $err = $_.Exception.Message
-
-            # Check if this is a "file not found" error - handle gracefully without crashing
-            $isFileNotFound = ($err -match "Cannot find path" -and $err -match "does not exist") -or
-            ($_.Exception -is [System.Management.Automation.ItemNotFoundException])
-
-            if ($isFileNotFound) {
-                # File doesn't exist - log as warning and skip this file instead of crashing
-                LogMessage -Message "File not found (skipping): $Description. Error: $err" -IsWarning
-                return
-            }
-
-            if ($RetryCount -ne 0 -and $attempt -ge $RetryCount) {
-                LogMessage -Message "Operation failed after $attempt attempt(s): $Description. Error: $err" -IsError
-                throw
-            }
-            $delay = [Math]::Min([int]($RetryDelay * [Math]::Pow(2, $attempt - 1)), $MaxBackoff)
-            LogMessage -Message "Attempt $attempt failed for $Description. Error: $err. Retrying in $delay second(s)..." -IsWarning
-            Start-Sleep -Seconds $delay
         }
     }
 }
@@ -596,114 +557,6 @@ function Import-RandomNameProvider {
     }
 }
 
-# I/O wrappers
-function Copy-ItemWithRetry {
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$Destination,
-        [int]$RetryDelay = 10,
-        [int]$RetryCount = 3
-    )
-    Invoke-WithRetry -Operation { Copy-Item -Path $Path -Destination $Destination -Force -ErrorAction Stop } `
-        -Description "Copy '$Path' -> '$Destination'" -MaxBackoff $MaxBackoff `
-        -RetryDelay $RetryDelay -RetryCount $RetryCount
-}
-
-function Remove-ItemWithRetry {
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [int]$RetryDelay = 10,
-        [int]$RetryCount = 3
-    )
-    Invoke-WithRetry -Operation { Remove-Item -Path $Path -Force -ErrorAction Stop } `
-        -Description "Delete '$Path'" -MaxBackoff $MaxBackoff `
-        -RetryDelay $RetryDelay -RetryCount $RetryCount
-}
-
-function Rename-ItemWithRetry {
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$NewName,
-        [int]$RetryDelay = 10,
-        [int]$RetryCount = 3
-    )
-    Invoke-WithRetry -Operation { Rename-Item -LiteralPath $Path -NewName $NewName -Force -ErrorAction Stop } `
-        -Description "Rename '$Path' -> '$NewName'" -MaxBackoff $MaxBackoff `
-        -RetryDelay $RetryDelay -RetryCount $RetryCount
-}
-
-function Get-SubfolderFileCounts {
-    param(
-        [Parameter(Mandatory)][string]$TargetFolder,
-        [switch]$IncludeEmpty,
-        [object[]]$FallbackSubfolders
-    )
-
-    $subfolders = $null
-    $scanFailed = $false
-    try {
-        $subfolders = @(Get-ChildItem -LiteralPath $TargetFolder -Directory -Force -ErrorAction Stop)
-    }
-    catch {
-        $scanFailed = $true
-        LogMessage -Message ("Failed to enumerate subfolders under '{0}': {1}" -f $TargetFolder, $_.Exception.Message) -IsWarning
-        $subfolders = @()
-
-        if ($FallbackSubfolders -and $FallbackSubfolders.Count -gt 0) {
-            LogMessage -Message "Continuing with fallback subfolder candidates after scan failure." -IsWarning
-            foreach ($candidate in $FallbackSubfolders) {
-                $candidatePath = if ($candidate -is [IO.FileSystemInfo]) { $candidate.FullName } else { [string]$candidate }
-                if ([string]::IsNullOrWhiteSpace($candidatePath)) { continue }
-
-                $resolved = Resolve-SubfolderPath -Path $candidatePath -TargetRoot $TargetFolder
-                if (-not $resolved) { continue }
-                if (-not (Test-Path -LiteralPath $resolved -PathType Container)) { continue }
-
-                try {
-                    $normalized = [IO.Path]::GetFullPath($resolved)
-                    $subfolders += [pscustomobject]@{ FullName = $normalized }
-                }
-                catch {
-                    continue
-                }
-            }
-        }
-    }
-
-    if (-not $subfolders -or $subfolders.Count -eq 0) {
-        if ($scanFailed) {
-            LogMessage -Message "No usable fallback subfolders were available after scan failure." -IsError
-            return $null
-        }
-        return @{}
-    }
-
-    $subfolders = @($subfolders | Sort-Object FullName -Unique)
-
-    $folderCounts = @{}
-    $totalFiles = 0
-    foreach ($sf in $subfolders) {
-        try {
-            $count = (Get-ChildItem -LiteralPath $sf.FullName -File -Force -ErrorAction Stop | Measure-Object).Count
-        }
-        catch {
-            LogMessage -Message ("Failed to count files in subfolder '{0}': {1}" -f $sf.FullName, $_.Exception.Message) -IsWarning
-            $count = 0
-        }
-
-        $totalFiles += [int]$count
-        if ($IncludeEmpty -or $count -gt 0) {
-            $folderCounts[$sf.FullName] = [int]$count
-        }
-    }
-
-    if ($totalFiles -eq 0) {
-        LogMessage -Message "No files found across target subfolders."
-    }
-
-    return $folderCounts
-}
-
 function Write-DistributionSummary {
     param(
         [Parameter(Mandatory)][hashtable]$FolderCounts,
@@ -733,334 +586,6 @@ function Write-DistributionSummary {
             LogMessage -Message ("  {0}: {1} files (avg {2:+0.0;-0.0;0}%, {3:+0;-0;0} files)" -f $folderName, $count, $deviationPct, $deviation)
         }
     }
-}
-
-function DistributeFilesToSubfolders {
-    param (
-        [string[]]$Files,
-        [object[]]$Subfolders,
-        [Parameter(Mandatory = $true)][string]$TargetRoot,
-        [int]$Limit,
-        [switch]$ShowProgress,
-        [int]$UpdateFrequency,
-        [string]$DeleteMode,
-        $FilesToDelete,  # FileQueue object (PSCustomObject) - reference type, no [ref] needed
-        [ref]$GlobalFileCounter,
-        [int]$TotalFiles
-    )
-
-    $targetNormalized = [IO.Path]::GetFullPath($TargetRoot)
-    $folderCounts = Get-SubfolderFileCounts -TargetFolder $TargetRoot -IncludeEmpty -FallbackSubfolders $Subfolders
-    if ($null -eq $folderCounts) {
-        return
-    }
-    $subfolderPaths = @($folderCounts.Keys)
-
-    if ($Subfolders) {
-        foreach ($candidate in $Subfolders) {
-            $pathCandidate = if ($candidate -is [IO.FileSystemInfo]) { $candidate.FullName } else { [string]$candidate }
-            if ([string]::IsNullOrWhiteSpace($pathCandidate)) { continue }
-
-            $resolved = Resolve-SubfolderPath -Path $pathCandidate -TargetRoot $TargetRoot
-            if (-not $resolved) { continue }
-            if (-not (Test-Path -LiteralPath $resolved -PathType Container)) { continue }
-            if (-not $folderCounts.ContainsKey($resolved)) {
-                $folderCounts[$resolved] = 0
-                $subfolderPaths += $resolved
-            }
-        }
-    }
-
-    $subfolderPaths = @($subfolderPaths | Select-Object -Unique)
-    if ($subfolderPaths.Count -eq 0) {
-        $emergency = Join-Path -Path $TargetRoot -ChildPath (Get-RandomFileName)
-        New-Item -ItemType Directory -Path $emergency -Force | Out-Null
-        $subfolderPaths = @($emergency)
-        $folderCounts[$emergency] = 0
-        LogMessage -Message ("Distribution: created emergency destination subfolder '{0}' (no valid candidates)." -f $emergency) -IsWarning
-    }
-
-    LogMessage -Message ("DEBUG: Eligible subfolders ({0}): {1}" -f $subfolderPaths.Count, ($subfolderPaths -join ', ')) -IsDebug
-
-    # --- Randomize processing order of files to reduce bias ---
-    $filesToProcess = $Files
-    try {
-        if ($Files.Count -gt 1) { $filesToProcess = $Files | Get-Random -Count $Files.Count }
-    }
-    catch {
-        $filesToProcess = $Files
-        LogMessage -Message "Could not shuffle file list due to: $($_.Exception.Message). Proceeding without shuffle." -IsWarning
-    }
-
-    foreach ($file in $filesToProcess) {
-        $filePath = if ($file -is [System.IO.FileSystemInfo]) { $file.FullName } else { [string]$file }
-        $originalName = if ($file -is [System.IO.FileSystemInfo]) { $file.Name } else { [System.IO.Path]::GetFileName($filePath) }
-
-        # Choose eligible targets (under limit) using weighted random selection
-        $eligible = @()
-        foreach ($p in $subfolderPaths) {
-            if ($folderCounts[$p] -lt $Limit) { $eligible += $p }
-        }
-        if ($eligible.Count -eq 0) {
-            $eligible = $subfolderPaths
-            LogMessage -Message "All subfolders appear at/over limit ($Limit). Selecting among all subfolders (best effort)." -IsWarning
-        }
-
-        # Weighted random selection based on available capacity
-        if ($eligible.Count -eq 1) {
-            $destinationFolder = $eligible[0]
-        }
-        else {
-            # Calculate weights based on available capacity (Limit - current count)
-            $weights = @{}
-            $totalWeight = 0
-            foreach ($p in $eligible) {
-                $availableCapacity = $Limit - $folderCounts[$p]
-                $weight = [Math]::Max(1, $availableCapacity)  # Ensure minimum weight of 1
-                $weights[$p] = $weight
-                $totalWeight += $weight
-            }
-
-            # Select folder using weighted random selection
-            $randomValue = Get-Random -Minimum 0 -Maximum $totalWeight
-            $cumulativeWeight = 0
-            $destinationFolder = $eligible[0]  # fallback
-            foreach ($p in $eligible) {
-                $cumulativeWeight += $weights[$p]
-                if ($randomValue -lt $cumulativeWeight) {
-                    $destinationFolder = $p
-                    break
-                }
-            }
-        }
-
-        LogMessage -Message "DEBUG: Eligible count: $($eligible.Count), Selected: $destinationFolder (count: $($folderCounts[$destinationFolder]))" -IsDebug
-        LogMessage -Message "Selected destination before resolve: '$destinationFolder'"
-
-        # Last-mile guards (never root, always under TargetRoot, must exist)
-        $destinationFolder = Resolve-SubfolderPath -Path $destinationFolder -TargetRoot $TargetRoot
-        $destNormalized = if ($destinationFolder) { [IO.Path]::GetFullPath($destinationFolder) } else { $null }
-        $targetNormalized = [IO.Path]::GetFullPath($TargetRoot)
-
-        $isBad = (
-            [string]::IsNullOrWhiteSpace($destNormalized) -or
-            $destNormalized -match '^[A-Za-z]$' -or
-            $destNormalized -match '^[A-Za-z]:$' -or
-            -not [System.IO.Path]::IsPathRooted($destNormalized) -or
-            (-not $destNormalized.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase))
-        )
-
-        if ($destNormalized -eq $targetNormalized -or $isBad) {
-            $safe = $subfolderPaths | Where-Object {
-                $_ -ne $TargetRoot -and (Test-Path -LiteralPath $_ -PathType Container) -and `
-                ([IO.Path]::GetFullPath($_)).StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase)
-            }
-            if ($safe.Count -gt 0) {
-                $fallback = $safe | Get-Random
-                if ($destNormalized -eq $targetNormalized) {
-                    LogMessage -Message "Destination resolved to the target ROOT; selecting a subfolder instead: '$fallback'." -IsWarning
-                }
-                else {
-                    $destDisplay = if ($destNormalized) { $destNormalized } else { '<null>' }
-                    LogMessage -Message "Destination escaped target root ('$destDisplay'); forcing subfolder '$fallback'." -IsWarning
-                }
-                $destinationFolder = $fallback
-            }
-            else {
-                $destinationFolder = Join-Path -Path $TargetRoot -ChildPath (Get-RandomFileName)
-                New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
-                $folderCounts[$destinationFolder] = 0
-                LogMessage -Message "Created emergency destination subfolder '$destinationFolder' to avoid using target root." -IsWarning
-            }
-        }
-
-        # Recompute normalized destination AFTER any fallback/emergency selection.
-        # (Fixes null dereference when logging/inspecting $destNormalized.)
-        $destNormalized = if ($destinationFolder) { [IO.Path]::GetFullPath($destinationFolder) } else { $null }
-
-        if (-not (Test-Path -LiteralPath $destinationFolder -PathType Container)) {
-            try {
-                New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
-                LogMessage -Message "Created missing destination folder: $destinationFolder"
-            }
-            catch {
-                LogMessage -Message "Failed to ensure destination folder '$destinationFolder': $($_.Exception.Message)" -IsError
-                continue
-            }
-        }
-
-        # Single, consistent DEBUG line using normalized paths (null-safe)
-        $rooted = if ($destNormalized) { [System.IO.Path]::IsPathRooted($destNormalized) } else { $false }
-        $startsWithTarget = if ($destNormalized) { $destNormalized.StartsWith($targetNormalized, [System.StringComparison]::OrdinalIgnoreCase) } else { $false }
-        LogMessage -Message ("DEBUG: destNormalized='{0}' targetRootNormalized='{1}' rooted={2} startsWithTarget={3}" -f $destNormalized, $targetNormalized, $rooted, $startsWithTarget) -IsDebug
-
-        $folderCount = if ($folderCounts.ContainsKey($destinationFolder)) { [int]$folderCounts[$destinationFolder] } else { 0 }
-        $folderCountRef = New-Ref -Initial $folderCount
-        $moveResult = Invoke-FileMove -SourceFilePath $filePath `
-            -OriginalFileName $originalName `
-            -DestinationFolder $destinationFolder `
-            -FolderCountRef $folderCountRef `
-            -DeleteMode $DeleteMode `
-            -FilesToDelete $FilesToDelete `
-            -GlobalFileCounter $GlobalFileCounter `
-            -ShowProgress:$ShowProgress `
-            -UpdateFrequency $UpdateFrequency `
-            -TotalFiles $TotalFiles `
-            -RetryDelay $RetryDelay `
-            -RetryCount $RetryCount `
-            -ProgressActivity "Distributing Files" `
-            -ProgressStatusTemplate "Processed {0} of {1} files" `
-            -CopyFailureMessageTemplate "Failed to copy '{0}' to '{1}'. Original file not moved." `
-            -PostCopyFailureMessageTemplate "Failed to process file '{0}' after copying. Error: {1}"
-
-        if ($moveResult.Success) {
-            $destinationFile = $moveResult.DestinationFile
-            LogMessage -Message "Assigning randomized destination name for '$filePath' -> '$destinationFile'."
-            $folderCounts[$destinationFolder] = $folderCountRef.Value
-            if ($DeleteMode -eq "RecycleBin") {
-                LogMessage -Message "Copied from $file to $destinationFile and moved original to Recycle Bin."
-            }
-            elseif ($DeleteMode -eq "Immediate") {
-                LogMessage -Message "Copied from $file to $destinationFile and immediately deleted original."
-            }
-            elseif ($DeleteMode -eq "EndOfScript") {
-                if ($moveResult.QueueQueued -eq $true) {
-                    LogMessage -Message "Copied from $file to $destinationFile. Original pending deletion at end of script."
-                }
-                else {
-                    LogMessage -Message "Copied from $file to $destinationFile, but original could not be queued for end-of-script deletion." -IsWarning
-                }
-            }
-        }
-    }
-
-    if ($ShowProgress) { Write-Progress -Activity "Distributing Files" -Status "Complete" -Completed }
-    LogMessage -Message "File distribution completed: Processed $($GlobalFileCounter.Value) of $TotalFiles files." -ConsoleOutput
-}
-
-function RedistributeFilesInTarget {
-    param (
-        [string]$TargetFolder,
-        [object[]]$Subfolders,
-        [int]$FilesPerFolderLimit,
-        [switch]$ShowProgress,
-        [int]$UpdateFrequency,
-        [string]$DeleteMode,
-        $FilesToDelete,  # FileQueue object (PSCustomObject) - reference type, no [ref] needed
-        [ref]$GlobalFileCounter,
-        [int]$TotalFiles
-    )
-
-    $folderFilesMap = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty -FallbackSubfolders $Subfolders
-    if ($null -eq $folderFilesMap) {
-        return
-    }
-    $normalizedSubfolders = @($folderFilesMap.Keys)
-
-    LogMessage -Message ("DEBUG: Normalized subfolders for redistribution ({0} items): {1}" -f $normalizedSubfolders.Count, ($normalizedSubfolders -join ', ')) -IsDebug
-
-    if ($normalizedSubfolders.Count -eq 0) {
-        LogMessage -Message "No valid subfolders available for redistribution. Creating emergency subfolder." -IsWarning
-        $randomName = Get-RandomFileName
-        $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
-        New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
-        $normalizedSubfolders = @($newFolder)
-        $folderFilesMap[$newFolder] = 0
-    }
-
-    # Step 2: Redistribute files from root of target folder (not subfolders)
-    LogMessage -Message "Redistributing files from target folder $TargetFolder to subfolders..."
-    $rootFiles = Get-ChildItem -LiteralPath $TargetFolder -File -ErrorAction Stop
-    $redistributionTotal = 0
-    $redistributionProcessed = 0
-
-    if ($rootFiles.Count -gt 0) {
-        # Use the already normalized subfolders directly
-        if ($normalizedSubfolders.Count -eq 0) {
-            # Create a new subfolder if none exist
-            $randomName = Get-RandomFileName
-            $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
-            New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
-            LogMessage -Message "Created new target subfolder: $newFolder for redistribution from root folder."
-            $normalizedSubfolders = @($newFolder)
-        }
-
-        # Reset phase counter and compute correct denominator
-        $GlobalFileCounter.Value = 0
-        $redistributionTotal += $rootFiles.Count
-
-        LogMessage -Message ("DEBUG (redistribute-root) candidates={0}" -f ($normalizedSubfolders -join '; ')) -IsDebug
-
-        DistributeFilesToSubfolders -Files $rootFiles `
-            -Subfolders $normalizedSubfolders `
-            -TargetRoot $TargetFolder `
-            -Limit $FilesPerFolderLimit `
-            -ShowProgress:$ShowProgress `
-            -UpdateFrequency:$UpdateFrequency `
-            -DeleteMode $DeleteMode `
-            -FilesToDelete $FilesToDelete `
-            -GlobalFileCounter $GlobalFileCounter `
-            -TotalFiles $rootFiles.Count
-        $redistributionProcessed += $GlobalFileCounter.Value
-    }
-
-    # Step 3: Identify overloaded folders and select random files for redistribution
-    $filesToRedistributeMap = @{}
-
-    foreach ($folder in $folderFilesMap.Keys) {
-        $fileCount = $folderFilesMap[$folder]
-        if ($fileCount -gt $FilesPerFolderLimit) {
-            $excess = $fileCount - $FilesPerFolderLimit
-            $overloadedFiles = Get-ChildItem -Path $folder -File | Get-Random -Count $excess
-            $filesToRedistributeMap[$folder] = $overloadedFiles
-            LogMessage -Message "Folder $folder is overloaded by $excess file(s), queuing for redistribution."
-            $redistributionTotal += $overloadedFiles.Count
-        }
-    }
-
-    # Step 4: Redistribute files from overloaded folders, excluding the source folder from targets
-    foreach ($sourceFolder in $filesToRedistributeMap.Keys) {
-        $sourceFiles = $filesToRedistributeMap[$sourceFolder]
-
-        $eligibleTargets = $folderFilesMap.GetEnumerator() |
-            Where-Object {
-                $_.Key -ne $TargetFolder -and $_.Key -ne $sourceFolder -and $_.Value -lt $FilesPerFolderLimit
-            } |
-            ForEach-Object { $_.Key } |
-            Select-Object -Unique
-
-        if ($eligibleTargets.Count -eq 0) {
-            # Create a new subfolder using Get-RandomFileName
-            $randomName = Get-RandomFileName
-            $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
-            New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
-            LogMessage -Message "Created new target subfolder: $newFolder for redistribution from overloaded folder $sourceFolder."
-
-            # Update maps
-            $eligibleTargets = @($newFolder)
-            $Subfolders += (Get-Item -LiteralPath $newFolder)
-            $folderFilesMap[$newFolder] = 0
-        }
-
-        # Reset phase counter and use per-batch denominator
-        LogMessage -Message ("DEBUG (redistribute-overload from '{0}') candidates={1}" -f `
-                $sourceFolder, ($eligibleTargets -join '; ')) -IsDebug
-
-        $GlobalFileCounter.Value = 0
-        DistributeFilesToSubfolders -Files $sourceFiles `
-            -Subfolders $eligibleTargets `
-            -TargetRoot $TargetFolder `
-            -Limit $FilesPerFolderLimit `
-            -ShowProgress:$ShowProgress `
-            -UpdateFrequency:$UpdateFrequency `
-            -DeleteMode $DeleteMode `
-            -FilesToDelete $FilesToDelete `
-            -GlobalFileCounter $GlobalFileCounter `
-            -TotalFiles $sourceFiles.Count
-        $redistributionProcessed += $GlobalFileCounter.Value
-    }
-
-    LogMessage -Message "File redistribution completed: Processed $redistributionProcessed of $redistributionTotal files in the target folder."
 }
 
 function RebalanceSubfoldersByAverage {
@@ -1240,7 +765,8 @@ function RebalanceSubfoldersByAverage {
                 -ProgressStatusTemplate "Moved {0} of {1}" `
                 -CopyFailureMessageTemplate "Rebalance: failed to copy '{0}' to '{1}'." `
                 -PostCopyFailureMessageTemplate "Rebalance: post-copy handling failed for '{0}': {1}" `
-                -IncrementOnSuccessOnly
+                -IncrementOnSuccessOnly `
+                -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
 
             if ($moveResult.Success) {
                 # Update receiver deficit and donor surplus
@@ -1447,7 +973,8 @@ function RandomizeDistributionAcrossFolders {
                 -CopyFailureMessageTemplate "Randomize: failed to copy '{0}' to '{1}'." `
                 -PostCopyFailureMessageTemplate "Randomize: failed to handle original file '{0}': {1}" `
                 -CopyFailureIsWarning `
-                -IncrementOnSuccessOnly
+                -IncrementOnSuccessOnly `
+                -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
 
             if ($moveResult.Success) {
                 $totalMoves++
@@ -1613,7 +1140,8 @@ function ConsolidateSubfoldersToMinimum {
                 -ProgressActivity "Consolidating subfolders" `
                 -ProgressStatusTemplate "Moved {0} of {1}" `
                 -CopyFailureMessageTemplate "Consolidation: failed to copy '{0}' to '{1}'." `
-                -PostCopyFailureMessageTemplate "Consolidation: post-copy handling failed for '{0}': {1}"
+                -PostCopyFailureMessageTemplate "Consolidation: post-copy handling failed for '{0}': {1}" `
+                -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
 
             if ($moveResult.Success) {
                 # Update counts/capacity
@@ -1915,14 +1443,14 @@ function Invoke-DistributionPhase {
 
     if ($RunState.LastCheckpoint -lt 4) {
         if ($RunState.totalSourceFiles -gt 0 -and $RunState.sourceFiles.Count -gt 0) {
-            DistributeFilesToSubfolders -Files $RunState.sourceFiles -Subfolders $RunState.subfolders -TargetRoot $TargetFolder -Limit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles $RunState.totalSourceFiles
+            Invoke-FileDistribution -Files $RunState.sourceFiles -Subfolders $RunState.subfolders -TargetRoot $TargetFolder -Limit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles $RunState.totalSourceFiles -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
         }
         $cp4 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders $RunState.subfolders -SourceFiles $RunState.sourceFiles -IncludeSourceFiles -IncludeFilesToDelete
         Save-DistributionState -Checkpoint 4 -AdditionalVariables $cp4 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 
     if ($RunState.LastCheckpoint -lt 5) {
-        RedistributeFilesInTarget -TargetFolder $TargetFolder -Subfolders $RunState.subfolders -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles 0
+        Invoke-TargetRedistribution -TargetFolder $TargetFolder -Subfolders $RunState.subfolders -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -TotalFiles 0 -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
         $cp5 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -IncludeFilesToDelete
         Save-DistributionState -Checkpoint 5 -AdditionalVariables $cp5 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
@@ -1983,7 +1511,7 @@ function Invoke-EndOfScriptDeletion {
         catch { LogMessage -Message "Could not stat queued file before deletion: $($_.Exception.Message)" -IsDebug }
 
         if ($okToDelete) {
-            try { Remove-DistributionFile -FilePath $entry.SourcePath } catch { LogMessage -Message "Failed to delete file $($entry.SourcePath). Error: $($_.Exception.Message)" -IsWarning }
+            try { Remove-DistributionFile -FilePath $entry.SourcePath -RetryDelay $RetryDelay -RetryCount $RetryCount } catch { LogMessage -Message "Failed to delete file $($entry.SourcePath). Error: $($_.Exception.Message)" -IsWarning }
         }
     }
 }
