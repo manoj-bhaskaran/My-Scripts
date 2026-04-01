@@ -16,7 +16,7 @@ Requirements:
 See CHANGELOG.md in this directory for version history.
 """
 
-__version__ = "1.12.2"
+__version__ = "1.12.3"
 
 import os
 import io
@@ -65,6 +65,7 @@ from gdrive_state import RecoveryStateManager
 # v1.12.0: authentication extracted to dedicated module (issue #789)
 from gdrive_auth import DriveAuthManager
 from gdrive_rate_limiter import RateLimiter
+from gdrive_discovery import DriveTrashDiscovery
 
 try:
     from googleapiclient.http import MediaIoBaseDownload
@@ -133,13 +134,14 @@ class DriveTrashRecoveryTool:
         self._seen_total: int = 0
         self._last_discover_progress_ts: Optional[float] = None
         self._last_exec_progress_ts: Optional[float] = None
-        # cache for merged ID validation+discovery
-        self._id_prefetch: Dict[str, Dict[str, Any]] = {}
-        self._id_prefetch_non_trashed: Dict[str, bool] = {}
-        self._id_prefetch_errors: Dict[str, str] = {}
         # v1.12.0: authentication delegated to DriveAuthManager (issue #789)
         self.rate_limiter = RateLimiter(args, self.logger)
         self.auth = DriveAuthManager(args, self.logger, execute_fn=self._execute)
+        # v1.12.2: discovery was extracted to gdrive_discovery.py (issue #791)
+        self.discovery = DriveTrashDiscovery(self)
+
+    def __getattr__(self, name: str):
+        return getattr(self.discovery, name)
 
     # --- Symbol / message helpers (emoji can be disabled via --no-emoji) ---
     def _use_emoji(self) -> bool:
@@ -715,24 +717,7 @@ class DriveTrashRecoveryTool:
         return items
 
     def discover_trashed_files(self) -> List[RecoveryItem]:
-        """
-        Non-streaming discovery used primarily by dry-run. For execution we prefer
-        streaming to bound memory. Callers that need bounded memory should use
-        `_process_streaming()` instead of filling `self.items`.
-        """
-        print("🔍 Discovering trashed files...")
-        if self.args.file_ids:
-            items = self._discover_via_ids()
-        else:
-            query = self._build_query()
-            self.logger.info(f"Using query: {query}")
-            items = self._discover_via_query(query)
-        if self.args.limit and self.args.limit > 0 and len(items) > self.args.limit:
-            items = items[: self.args.limit]
-            print(f"⛳ Limiting to first {self.args.limit} item(s) as requested.")
-        self.stats["found"] = len(items)
-        print(f"📊 Total files discovered: {len(items)}")
-        return items
+        return self.discovery.discover_trashed_files()
 
     def _matches_extension_filter(self, filename: str) -> bool:
         if not self.args.extensions or not filename:
@@ -1335,9 +1320,9 @@ class DriveTrashRecoveryTool:
         start_time = time.time()
         try:
             if self.args.file_ids:
-                ok = self._stream_stream_ids(batch_n, start_time)
+                ok = self.discovery._stream_stream_ids(batch_n, start_time)
             else:
-                ok = self._stream_stream_query(batch_n, start_time)
+                ok = self.discovery._stream_stream_query(batch_n, start_time)
         except KeyboardInterrupt:
             print("\n⚠️  Operation interrupted. State saved for resume.")
             self.state_manager._save_state()
