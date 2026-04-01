@@ -16,7 +16,7 @@ Requirements:
 See CHANGELOG.md in this directory for version history.
 """
 
-__version__ = "1.12.1"
+__version__ = "1.12.2"
 
 import os
 import io
@@ -169,6 +169,26 @@ class DriveTrashRecoveryTool:
     def _record_state_load_error(self) -> None:
         with self.stats_lock:
             self.stats["errors"] += 1
+
+    # Backward-compatibility shim for legacy tests/internals expecting the
+    # pre-1.12.1 in-class rate-limiter surface.
+    @property
+    def _tb_initialized(self):
+        return self.rate_limiter._tb_initialized
+
+    @property
+    def _rl_diag_enabled(self):
+        return self.rate_limiter._rl_diag_enabled
+
+    @_rl_diag_enabled.setter
+    def _rl_diag_enabled(self, value):
+        self.rate_limiter._rl_diag_enabled = value
+
+    def _rate_limit(self):
+        self.rate_limiter.wait()
+
+    def _rl_diag_tick(self, max_rps: float, tokens_snapshot: float, cap_snapshot: float) -> None:
+        self.rate_limiter._rl_diag_tick(max_rps, tokens_snapshot, cap_snapshot)
 
     def _execute(self, request):
         """Execute a googleapiclient request with rate limiting."""
