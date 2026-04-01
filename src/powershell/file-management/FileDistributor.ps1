@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.6.16
+ 4.6.17
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
@@ -314,6 +314,8 @@ Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistr
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\PathHelpers.ps1"
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\FileLock.ps1"
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\State.ps1"
+. "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\Serialization.ps1"
+. "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\FolderOps.ps1"
 
 # Note: Logger initialization moved to after LogFilePath resolution
 
@@ -628,198 +630,6 @@ function Rename-ItemWithRetry {
     Invoke-WithRetry -Operation { Rename-Item -LiteralPath $Path -NewName $NewName -Force -ErrorAction Stop } `
         -Description "Rename '$Path' -> '$NewName'" -MaxBackoff $MaxBackoff `
         -RetryDelay $RetryDelay -RetryCount $RetryCount
-}
-
-# (randomname.ps1 will be resolved and loaded inside Main via Initialize-RandomNameGenerator)
-
-function ResolveFileNameConflict {
-    param (
-        [string]$TargetFolder,
-        [string]$OriginalFileName
-    )
-
-    # Get the extension of the original file
-    $extension = [System.IO.Path]::GetExtension($OriginalFileName)
-
-    # Loop to generate a unique file name
-    do {
-        $newFileName = (Get-RandomFileName) + $extension
-        $newFilePath = Join-Path -Path $TargetFolder -ChildPath $newFileName
-    } while (Test-Path -Path $newFilePath)
-
-    return $newFileName
-}
-
-function CreateRandomSubfolders {
-    param (
-        [string]$TargetPath,
-        [int]$NumberOfFolders,
-        [switch]$ShowProgress,
-        [int]$UpdateFrequency
-    )
-
-    # Initialize an array to store created folder paths
-    $createdFolders = @()
-
-    for ($i = 1; $i -le $NumberOfFolders; $i++) {
-        do {
-            # Generate a random folder name
-            $randomFolderName = Get-RandomFileName
-            $folderPath = Join-Path -Path $TargetPath -ChildPath $randomFolderName
-        } while (Test-Path -Path $folderPath)
-
-        # Create the new directory and keep a DirectoryInfo so we retain FullName later
-        $dirInfo = New-Item -ItemType Directory -Path $folderPath -Force
-        $createdFolders += $dirInfo
-
-        # Log the creation of the folder
-        LogMessage -Message "Created folder: $folderPath"
-
-        # Show progress if enabled
-        if ($ShowProgress -and ($i % $UpdateFrequency -eq 0)) {
-            $percentComplete = [math]::Floor(($i / $NumberOfFolders) * 100)
-            Write-Progress -Activity "Creating Subfolders" `
-                -Status "Created $i of $NumberOfFolders folders" `
-                -PercentComplete $percentComplete
-        }
-    }
-
-    # Final progress message
-    if ($ShowProgress) {
-        Write-Progress -Activity "Creating Subfolders" -Status "Complete" -Completed
-    }
-
-    return $createdFolders
-}
-
-function Move-ToRecycleBin {
-    param (
-        [string]$FilePath
-    )
-
-    try {
-        # Create a new Shell.Application COM object
-        $shell = New-Object -ComObject Shell.Application
-
-        # 10 is the folder type for Recycle Bin
-        $recycleBin = $shell.NameSpace(10)
-
-        # Get the file to be moved to the Recycle Bin
-        $file = Get-Item $FilePath
-
-        # Move the file to the Recycle Bin with retry, suppressing confirmation (0x100)
-        Invoke-WithRetry -Operation { $recycleBin.MoveHere($file.FullName, 0x100) } -MaxBackoff $MaxBackoff `
-            -Description "Recycle '$($file.FullName)'" `
-            -RetryDelay $RetryDelay -RetryCount $RetryCount
-
-        # Log success
-        LogMessage -Message "Moved $FilePath to Recycle Bin."
-    }
-    catch {
-        # Log failure
-        LogMessage -Message "Failed to move $FilePath to Recycle Bin. Error: $($_.Exception.Message)" -IsWarning
-    }
-}
-
-# Function to delete files
-function Remove-File {
-    param (
-        [string]$FilePath
-    )
-
-    try {
-        # Check if the file exists before attempting deletion
-        if (Test-Path -Path $FilePath) {
-            Remove-ItemWithRetry -Path $FilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
-            LogMessage -Message "Deleted file: $FilePath."
-        }
-        else {
-            LogMessage -Message "File $FilePath not found. Skipping deletion." -IsWarning
-        }
-    }
-    catch {
-        # Log failure
-        LogMessage -Message "Failed to delete file $FilePath. Error: $($_.Exception.Message)" -IsWarning
-    }
-}
-
-function Invoke-FileMove {
-    param (
-        [Parameter(Mandatory = $true)][string]$SourceFilePath,
-        [Parameter(Mandatory = $true)][string]$OriginalFileName,
-        [Parameter(Mandatory = $true)][string]$DestinationFolder,
-        [Parameter(Mandatory = $true)][ref]$FolderCountRef,
-        [Parameter(Mandatory = $true)][string]$DeleteMode,
-        [Parameter(Mandatory = $true)]$FilesToDelete,
-        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter,
-        [switch]$ShowProgress,
-        [int]$UpdateFrequency = 100,
-        [int]$TotalFiles = 0,
-        [int]$RetryDelay = 5,
-        [int]$RetryCount = 3,
-        [string]$ProgressActivity = "Distributing Files",
-        [string]$ProgressStatusTemplate = "Processed {0} of {1} files",
-        [string]$CopyFailureMessageTemplate = "Failed to copy '{0}' to '{1}'.",
-        [string]$PostCopyFailureMessageTemplate = "Post-copy handling failed for '{0}': {1}",
-        [switch]$CopyFailureIsWarning,
-        [switch]$IncrementOnSuccessOnly
-    )
-
-    $newFileName = ResolveFileNameConflict -TargetFolder $DestinationFolder -OriginalFileName $OriginalFileName
-    $destinationFile = Join-Path -Path $DestinationFolder -ChildPath $newFileName
-
-    Copy-ItemWithRetry -Path $SourceFilePath -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount
-
-    $copySucceeded = Test-Path -LiteralPath $destinationFile
-    $queuedForEndOfScriptDeletion = $null
-    if ($copySucceeded) {
-        $FolderCountRef.Value++
-        try {
-            if ($DeleteMode -eq "RecycleBin") {
-                Move-ToRecycleBin -FilePath $SourceFilePath
-            }
-            elseif ($DeleteMode -eq "Immediate") {
-                Remove-File -FilePath $SourceFilePath
-            }
-            elseif ($DeleteMode -eq "EndOfScript") {
-                $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $SourceFilePath -ValidateFile $false
-                $queuedForEndOfScriptDeletion = [bool]$queueResult
-                if (-not $queuedForEndOfScriptDeletion) {
-                    LogMessage -Message "Failed to queue file for deletion: $SourceFilePath" -IsWarning
-                }
-            }
-        }
-        catch {
-            if ($DeleteMode -eq "EndOfScript") {
-                $queuedForEndOfScriptDeletion = $false
-            }
-            LogMessage -Message ($PostCopyFailureMessageTemplate -f $SourceFilePath, $_.Exception.Message) -IsWarning
-        }
-    }
-    else {
-        if ($CopyFailureIsWarning) {
-            LogMessage -Message ($CopyFailureMessageTemplate -f $OriginalFileName, $destinationFile) -IsWarning
-        }
-        else {
-            LogMessage -Message ($CopyFailureMessageTemplate -f $OriginalFileName, $destinationFile) -IsError
-        }
-    }
-
-    if (-not $IncrementOnSuccessOnly -or $copySucceeded) {
-        $GlobalFileCounter.Value++
-    }
-
-    if ($ShowProgress -and $TotalFiles -gt 0 -and ($GlobalFileCounter.Value % $UpdateFrequency -eq 0)) {
-        $percentComplete = [math]::Floor(($GlobalFileCounter.Value / $TotalFiles) * 100)
-        $status = $ProgressStatusTemplate -f $GlobalFileCounter.Value, $TotalFiles
-        Write-Progress -Activity $ProgressActivity -Status $status -PercentComplete $percentComplete
-    }
-
-    return [pscustomobject]@{
-        Success         = $copySucceeded
-        DestinationFile = $destinationFile
-        QueueQueued     = $queuedForEndOfScriptDeletion
-    }
 }
 
 function Get-SubfolderFileCounts {
@@ -1845,100 +1655,6 @@ function ConsolidateSubfoldersToMinimum {
     }
 }
 
-# Function to extract paths from items
-function ConvertItemsToPaths {
-    param ([array]$Items)
-
-    LogMessage -Message "DEBUG: ConvertItemsToPaths - Input count: $(if ($Items) { $Items.Count } else { '0 (null)' })" -IsDebug
-
-    if (-not $Items) {
-        LogMessage -Message "DEBUG: ConvertItemsToPaths - Returning empty array (null input)" -IsDebug
-        return @()
-    }
-
-    $out = @()
-    $index = 0
-    foreach ($i in $Items) {
-        $index++
-
-        if ($null -eq $i) {
-            LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is null, skipping" -IsDebug
-            continue
-        }
-
-        $itemType = $i.GetType().Name
-        LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index type is $itemType" -IsDebug
-
-        if ($i -is [System.IO.FileSystemInfo]) {
-            if ($i.FullName) {
-                $fullPath = $i.FullName
-                if (-not [string]::IsNullOrWhiteSpace($fullPath)) {
-                    LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index converting '$($i.Name)' to '$fullPath'" -IsDebug
-                    $out += $fullPath
-                }
-                else {
-                    LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has whitespace-only FullName for '$($i.Name)'" -IsDebug
-                }
-            }
-            else {
-                LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index has no FullName property for '$($i.Name)'"
-            }
-        }
-        elseif (-not [string]::IsNullOrWhiteSpace([string]$i)) {
-            LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index is string '$i'" -IsDebug
-            $out += [string]$i
-        }
-        else {
-            LogMessage -Message "DEBUG: ConvertItemsToPaths - Item $index skipped (empty/whitespace)"
-        }
-    }
-
-    LogMessage -Message "DEBUG: ConvertItemsToPaths - Output count: $($out.Count)" -IsDebug
-    return $out
-}
-
-# Function to convert paths to items
-function ConvertPathsToItems {
-    param ([array]$Paths)
-
-    LogMessage -Message "DEBUG: ConvertPathsToItems - Input count: $(if ($Paths) { $Paths.Count } else { '0 (null)' })" -IsDebug
-
-    if (-not $Paths) {
-        LogMessage -Message "DEBUG: ConvertPathsToItems - Returning empty array (null input)" -IsDebug
-        return @()
-    }
-
-    $out = @()
-    $index = 0
-    foreach ($path in $Paths) {
-        $index++
-
-        if ([string]::IsNullOrWhiteSpace($path)) {
-            LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index is null/whitespace, skipping" -IsDebug
-            continue
-        }
-
-        LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index processing path '$path'" -IsDebug
-
-        try {
-            $item = Get-Item -LiteralPath $path -ErrorAction Stop
-            if ($item -and $item.FullName -and -not [string]::IsNullOrWhiteSpace($item.FullName)) {
-                LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index successfully converted to $($item.GetType().Name)"
-                $out += $item
-            }
-            else {
-                LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index has invalid FullName after Get-Item"
-            }
-        }
-        catch {
-            LogMessage -Message "DEBUG: ConvertPathsToItems - Item $index failed to convert '$path' - $($_.Exception.Message)" -IsWarning
-        }
-    }
-
-    LogMessage -Message "DEBUG: ConvertPathsToItems - Output count: $($out.Count)"
-    return $out
-}
-
 # Main script logic
 
 function Invoke-ParameterValidation {
@@ -2186,7 +1902,7 @@ function Invoke-DistributionPhase {
         $RunState.subfolders = @(Get-ChildItem -LiteralPath $TargetFolder -Force | Where-Object { $_.PSIsContainer })
         if ($totalFiles / $RunState.FilesPerFolderLimit -gt $RunState.subfolders.Count) {
             $additionalFolders = [math]::Ceiling($totalFiles / $RunState.FilesPerFolderLimit) - $RunState.subfolders.Count
-            $RunState.subfolders += CreateRandomSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
+            $RunState.subfolders += New-DistributionSubfolders -TargetPath $TargetFolder -NumberOfFolders $additionalFolders -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency
         }
 
         Save-DistributionState -Checkpoint 2 -AdditionalVariables (New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders $RunState.subfolders -SourceFiles $RunState.sourceFiles -IncludeSourceFiles) -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
@@ -2267,7 +1983,7 @@ function Invoke-EndOfScriptDeletion {
         catch { LogMessage -Message "Could not stat queued file before deletion: $($_.Exception.Message)" -IsDebug }
 
         if ($okToDelete) {
-            try { Remove-File -FilePath $entry.SourcePath } catch { LogMessage -Message "Failed to delete file $($entry.SourcePath). Error: $($_.Exception.Message)" -IsWarning }
+            try { Remove-DistributionFile -FilePath $entry.SourcePath } catch { LogMessage -Message "Failed to delete file $($entry.SourcePath). Error: $($_.Exception.Message)" -IsWarning }
         }
     }
 }
