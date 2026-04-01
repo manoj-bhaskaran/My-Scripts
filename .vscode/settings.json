@@ -57,5 +57,9 @@
         "editor.tabSize": 2,
         "files.trimTrailingWhitespace": false
     },
-    "powershell.scriptAnalysis.settingsPath": "./config/PSScriptAnalyzerSettings.psd1"
+    "powershell.scriptAnalysis.settingsPath": "./config/PSScriptAnalyzerSettings.psd1",
+    "chat.tools.terminal.autoApprove": {
+        ".venv\\Scripts\\pre-commit.exe": true,
+        "pre-commit": true
+    }
 }
