@@ -41,7 +41,7 @@ function New-DistributionSubfolders {
         $createdFolders += $dirInfo
 
         # Log the creation of the folder
-        LogMessage -Message "Created folder: $folderPath"
+        Write-LogInfo "Created folder: $folderPath"
 
         # Show progress if enabled
         if ($ShowProgress -and ($i % $UpdateFrequency -eq 0)) {
@@ -63,7 +63,10 @@ function New-DistributionSubfolders {
 # NOTE: Move-ToRecycleBin uses Shell.Application COM object (namespace 10) — Windows-only.
 function Move-ToRecycleBin {
     param (
-        [string]$FilePath
+        [string]$FilePath,
+        [int]$RetryDelay = 10,
+        [int]$RetryCount = 3,
+        [int]$MaxBackoff = 60
     )
 
     try {
@@ -82,32 +85,34 @@ function Move-ToRecycleBin {
             -RetryDelay $RetryDelay -RetryCount $RetryCount
 
         # Log success
-        LogMessage -Message "Moved $FilePath to Recycle Bin."
+        Write-LogInfo "Moved $FilePath to Recycle Bin."
     }
     catch {
         # Log failure
-        LogMessage -Message "Failed to move $FilePath to Recycle Bin. Error: $($_.Exception.Message)" -IsWarning
+        Write-LogWarning "Failed to move $FilePath to Recycle Bin. Error: $($_.Exception.Message)"
     }
 }
 
 function Remove-DistributionFile {
     param (
-        [string]$FilePath
+        [string]$FilePath,
+        [int]$RetryDelay = 10,
+        [int]$RetryCount = 3
     )
 
     try {
         # Check if the file exists before attempting deletion
         if (Test-Path -Path $FilePath) {
             Remove-ItemWithRetry -Path $FilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
-            LogMessage -Message "Deleted file: $FilePath."
+            Write-LogInfo "Deleted file: $FilePath."
         }
         else {
-            LogMessage -Message "File $FilePath not found. Skipping deletion." -IsWarning
+            Write-LogWarning "File $FilePath not found. Skipping deletion."
         }
     }
     catch {
         # Log failure
-        LogMessage -Message "Failed to delete file $FilePath. Error: $($_.Exception.Message)" -IsWarning
+        Write-LogWarning "Failed to delete file $FilePath. Error: $($_.Exception.Message)"
     }
 }
 
@@ -125,6 +130,7 @@ function Invoke-FileMove {
         [int]$TotalFiles = 0,
         [int]$RetryDelay = 5,
         [int]$RetryCount = 3,
+        [int]$MaxBackoff = 60,
         [string]$ProgressActivity = "Distributing Files",
         [string]$ProgressStatusTemplate = "Processed {0} of {1} files",
         [string]$CopyFailureMessageTemplate = "Failed to copy '{0}' to '{1}'.",
@@ -136,7 +142,7 @@ function Invoke-FileMove {
     $newFileName = Resolve-DistributionFileName -TargetFolder $DestinationFolder -OriginalFileName $OriginalFileName
     $destinationFile = Join-Path -Path $DestinationFolder -ChildPath $newFileName
 
-    Copy-ItemWithRetry -Path $SourceFilePath -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount
+    Copy-ItemWithRetry -Path $SourceFilePath -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
 
     $copySucceeded = Test-Path -LiteralPath $destinationFile
     $queuedForEndOfScriptDeletion = $null
@@ -144,16 +150,16 @@ function Invoke-FileMove {
         $FolderCountRef.Value++
         try {
             if ($DeleteMode -eq "RecycleBin") {
-                Move-ToRecycleBin -FilePath $SourceFilePath
+                Move-ToRecycleBin -FilePath $SourceFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
             }
             elseif ($DeleteMode -eq "Immediate") {
-                Remove-DistributionFile -FilePath $SourceFilePath
+                Remove-DistributionFile -FilePath $SourceFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount
             }
             elseif ($DeleteMode -eq "EndOfScript") {
                 $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $SourceFilePath -ValidateFile $false
                 $queuedForEndOfScriptDeletion = [bool]$queueResult
                 if (-not $queuedForEndOfScriptDeletion) {
-                    LogMessage -Message "Failed to queue file for deletion: $SourceFilePath" -IsWarning
+                    Write-LogWarning "Failed to queue file for deletion: $SourceFilePath"
                 }
             }
         }
@@ -161,15 +167,15 @@ function Invoke-FileMove {
             if ($DeleteMode -eq "EndOfScript") {
                 $queuedForEndOfScriptDeletion = $false
             }
-            LogMessage -Message ($PostCopyFailureMessageTemplate -f $SourceFilePath, $_.Exception.Message) -IsWarning
+            Write-LogWarning ($PostCopyFailureMessageTemplate -f $SourceFilePath, $_.Exception.Message)
         }
     }
     else {
         if ($CopyFailureIsWarning) {
-            LogMessage -Message ($CopyFailureMessageTemplate -f $OriginalFileName, $destinationFile) -IsWarning
+            Write-LogWarning ($CopyFailureMessageTemplate -f $OriginalFileName, $destinationFile)
         }
         else {
-            LogMessage -Message ($CopyFailureMessageTemplate -f $OriginalFileName, $destinationFile) -IsError
+            Write-LogError ($CopyFailureMessageTemplate -f $OriginalFileName, $destinationFile)
         }
     }
 
