@@ -11,6 +11,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - **gdrive_auth.py** - OAuth credential management, token caching, HTTP transport construction, and Drive service initialisation for gdrive_recover.py
 - **gdrive_rate_limiter.py** - Thread-safe request pacing primitives (fixed-interval and token-bucket) used by gdrive_recover.py
 - **gdrive_state.py** - Recovery state persistence, schema handling, and lock file management for gdrive_recover.py
+- **gdrive_discovery.py** - Discovery and trashed file resolution helpers extracted from gdrive_recover.py (issue #791)
 - **google_drive_root_files_delete.py** - Cleans up files in Google Drive root directory
 - **drive_space_monitor.py** - Monitors Google Drive storage usage and sends alerts
 - **cloudconvert_utils.py** - CloudConvert API utilities for file conversion
@@ -18,10 +19,12 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 ## Dependencies
 
 ### Python Modules
+
 - **python_logging_framework** (`src/python/modules/logging/`) - Standardized logging
 - **google_drive_auth** (`src/python/modules/auth/`) - Google Drive authentication
 
 ### External Packages
+
 ```bash
 pip install google-auth google-auth-oauthlib google-auth-httplib2
 pip install google-api-python-client
@@ -47,6 +50,7 @@ Scripts using Google Drive require OAuth2 credentials:
 ### CloudConvert API
 
 CloudConvert scripts require an API key:
+
 - Set environment variable `CLOUDCONVERT_PROD`
 - Or configure in script parameters
 - Use `.env.example` and the validation scripts to confirm your configuration
@@ -54,17 +58,21 @@ CloudConvert scripts require an API key:
 ## Scheduling
 
 The Drive Space Monitor script can be scheduled via Windows Task Scheduler:
+
 - Task definition: `config/tasks/Drive Space Monitor.xml`
 
 ## Use Cases
 
 ### Drive Space Management
+
 Monitor storage usage and receive alerts before reaching quota limits.
 
 ### File Organization
+
 Move files out of Drive root into organized folders.
 
 ### File Recovery
+
 Recover deleted or lost files from Google Drive trash.
 
 ## Logging
