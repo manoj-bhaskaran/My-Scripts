@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.12.0] - 2026-04-01
+
+### Changed
+- **Refactor (Issue #789):** Extracted authentication logic from `DriveTrashRecoveryTool` into a new `gdrive_auth.py` module with a `DriveAuthManager` class.
+- Moved `authenticate()`, `_load_creds_from_token()`, `_refresh_or_flow_creds()`, `_build_and_test_service()`, `_get_service()`, `_build_http()`, `_RequestsHttpAdapter`, and `_harden_token_permissions_windows()` out of `DriveTrashRecoveryTool`.
+- `DriveTrashRecoveryTool.__init__` now creates `self.auth = DriveAuthManager(args, logger, execute_fn)` and all auth call sites delegate to `self.auth`.
+- Auth-related instance fields (`_service`, `_creds`, `_thread_local`, `_client_per_thread`, `_http_transport`, `_http_pool_maxsize`, `_authenticated`, `_credentials_file`, `_token_file`) moved to `DriveAuthManager`.
+- No logic changes; OAuth flow, token caching, HTTP transport, and Windows token hardening behaviour are unchanged.
+
 ## [1.11.2] - 2026-04-01
 
 ### Fixed
