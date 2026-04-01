@@ -85,7 +85,9 @@ class RecoveryStateManager:
             )
             return True
         except Exception:
-            self.logger.exception(f"Unexpected error while loading state file '{self.args.state_file}'")
+            self.logger.exception(
+                f"Unexpected error while loading state file '{self.args.state_file}'"
+            )
             if self.on_state_load_error:
                 try:
                     self.on_state_load_error()
