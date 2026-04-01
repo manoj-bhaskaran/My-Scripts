@@ -65,11 +65,13 @@ from gdrive_state import RecoveryStateManager
 # v1.12.0: authentication extracted to dedicated module (issue #789)
 from gdrive_auth import DriveAuthManager
 from gdrive_rate_limiter import RateLimiter
-from gdrive_discovery import DriveTrashDiscovery
 
 try:
     from googleapiclient.http import MediaIoBaseDownload
     from googleapiclient.errors import HttpError
+
+    # v1.12.3: discovery module uses googleapiclient.errors, so import under same guard.
+    from gdrive_discovery import DriveTrashDiscovery
 except ImportError:
     print("ERROR: Required Google API libraries not installed.")
     print(
