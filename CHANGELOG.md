@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **FileDistributor modularization: fixed parameter propagation in post-processing APIs**
+  - Added `WarningCount`, `ErrorCount`, `RetryDelay`, and `RetryCount` parameters to `Invoke-FolderRebalance`, `Invoke-DistributionRandomize`, and `Invoke-FolderConsolidation`
+  - Updated script calls to pass script-scoped warning/error counters and retry settings to prevent incorrect EndOfScript deletion decisions and retry behavior changes
+  - Ensures post-processing warnings/errors are properly tracked for `EndOfScript` deletion mode and retry parameters are correctly propagated from script to module functions
+
 ## [2.12.4] - 2026-03-29
 
 ### Fixed
@@ -354,7 +361,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **CI Checks Investigation Report** (#632)
-
   - Comprehensive analysis of GitHub Actions workflow configurations
   - Verified all CI workflows are correctly configured for pull requests
   - Root cause identified: Issue is in GitHub repository settings, not workflow files
@@ -491,13 +497,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Type Hints for Data Processing Scripts** (#005 Phase 3)
-
   - Added explicit type annotations to `src/python/data/csv_to_gpx.py`, `src/python/data/validators.py`, and `src/python/data/extract_timeline_locations.py`
   - Updated docstrings to reflect typed arguments and return values for CSV, GPX, and timeline data flows
   - Ensured mypy compatibility for critical data-processing paths
 
 - **Type Hints for Error Handling Module** (#596 Phase 2 of #005)
-
   - Added comprehensive type hints to `src/python/modules/utils/error_handling.py`
   - **New Functions with Full Type Support**:
     - `retry_on_exception()` decorator with generic type preservation using `TypeVar[T]`
@@ -532,7 +536,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - All 42 unit tests pass successfully
 
 - **Type Hints for Logging Framework Module** (#005b Phase 2 of #005)
-
   - Added comprehensive type hints to `src/python/modules/logging/python_logging_framework.py`
   - All public functions and classes now have complete type annotations
   - All internal functions have proper type hints
@@ -555,7 +558,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Maintained backward compatibility with all existing code
 
 - **Type Hints Infrastructure Setup** (#594 Phase 1 of #005)
-
   - Installed mypy 1.7.1 for static type checking
   - Added type stub packages: types-requests 2.31.0, types-tqdm 4.66.0
   - Configured mypy.ini with permissive settings (python 3.11)
@@ -570,7 +572,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Next Steps**: Phase 2 will add type hints to core modules
 
 - **Comprehensive Tests for Shared PowerShell Modules** (#003f Phase 2)
-
   - Added comprehensive unit tests for critical shared PowerShell infrastructure modules
   - **Priority**: HIGH - High reuse means high impact from bugs
   - **Coverage Achievements**:
@@ -608,7 +609,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Total**: 110 tests passing, 95 new tests added
 
 - **Comprehensive Tests for Shared Python Modules** (#003e Phase 2)
-
   - Added comprehensive unit tests for critical shared infrastructure modules
   - **Priority**: HIGH - High reuse means high impact from bugs
   - **Coverage Achievements**:
@@ -640,13 +640,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Total**: 76 tests passing, 17 new tests added
 
 - **Google Drive destructive-operation safeguards** (#003 Phase 1)
-
   - Added fully mocked unit tests for root-level deletion and trash recovery flows
   - Verifies folder exclusion, pagination, and API error handling to prevent accidental data loss
   - Recovery helper tests ensure trashed items are identified without calling live APIs
 
 - **Comprehensive PostgreSQL Backup Tests** (#003 Phase 1) - Expanded test coverage for database backup scripts
-
   - **Priority**: HIGH - Critical path testing for financial data (GnuCash) backups
   - **Impact**: Prevents data loss, validates backup reliability, enables confident refactoring
   - **Files Modified**:
@@ -677,7 +675,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - Backup creation when zero-byte cleanup fails
 
 - **Data transformation tests for GPS/timeline processing** (#003 Phase 1)
-
   - Added unit tests for CSV→GPX conversion, geospatial validators, and timeline extraction helpers
   - Validates elevation inclusion, malformed CSV handling, JSON parsing errors, and activity enrichment flows
   - **Test Statistics**:
@@ -694,7 +691,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - ✅ Validates retention policy in complex scenarios
 
 - **Re-enabled Bandit B113 Timeout Check** (#004c) - Enabled security enforcement for HTTP request timeouts
-
   - **Priority**: MEDIUM-HIGH - Security and code quality enforcement
   - **Impact**: Prevents new code from missing timeouts, enforced in CI/CD pipeline
   - **Files Modified**:
@@ -812,7 +808,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - ✅ Manual trigger support for ad-hoc scans
   - **Files Added**:
     - `.github/workflows/security-scan.yml` - Security scanning workflow
-
 
 ## [2.3.1] - 2024-06-07
 

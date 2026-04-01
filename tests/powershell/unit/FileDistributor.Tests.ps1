@@ -84,8 +84,7 @@ Describe "FileDistributor Business Logic Calculations" {
                 # Windows paths
                 $path = 'C:\Users\Test\Documents'
                 [System.IO.Path]::IsPathRooted($path) | Should -Be $true
-            }
-            else {
+            } else {
                 # Unix paths
                 $path = '/home/user/documents'
                 [System.IO.Path]::IsPathRooted($path) | Should -Be $true
@@ -96,8 +95,7 @@ Describe "FileDistributor Business Logic Calculations" {
             $path = '/home/user/documents'
             if (-not ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5)) {
                 [System.IO.Path]::IsPathRooted($path) | Should -Be $true
-            }
-            else {
+            } else {
                 # On Windows, Unix paths may not be recognized as rooted
                 $path | Should -Match '^/'
             }
@@ -251,5 +249,15 @@ Describe "FileDistributor Math Operations" {
         It "Should correctly compute maximum of two values" {
             [Math]::Max(100, 60) | Should -Be 100
         }
+    }
+}
+
+Describe 'FileDistributor Module Public API' {
+    It 'Should expose post-processing functions through module exports' {
+        $modPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'FileDistributor.psd1'
+        Import-Module -Name $modPath -Force | Out-Null
+        (Get-Command Invoke-FolderRebalance -ErrorAction Stop).Name | Should -Be 'Invoke-FolderRebalance'
+        (Get-Command Invoke-DistributionRandomize -ErrorAction Stop).Name | Should -Be 'Invoke-DistributionRandomize'
+        (Get-Command Invoke-FolderConsolidation -ErrorAction Stop).Name | Should -Be 'Invoke-FolderConsolidation'
     }
 }

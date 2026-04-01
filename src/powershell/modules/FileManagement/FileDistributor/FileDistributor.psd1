@@ -7,7 +7,13 @@
     Copyright = '(c) 2026. All rights reserved.'
     Description = 'Support module for FileDistributor.ps1 — path helpers, retry helpers, state management, and core distribution algorithms.'
     PowerShellVersion = '5.1'
-    FunctionsToExport = @('Invoke-FileDistribution', 'Invoke-TargetRedistribution')
+    FunctionsToExport = @(
+        'Invoke-FileDistribution',
+        'Invoke-TargetRedistribution',
+        'Invoke-FolderRebalance',
+        'Invoke-DistributionRandomize',
+        'Invoke-FolderConsolidation'
+    )
     CmdletsToExport = @()
     VariablesToExport = @()
     AliasesToExport = @()
