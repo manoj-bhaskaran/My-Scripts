@@ -61,6 +61,7 @@ from gdrive_constants import (
 # v1.10.0: data model types extracted to dedicated module
 from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
 from gdrive_state import RecoveryStateManager
+
 # v1.12.0: authentication extracted to dedicated module (issue #789)
 from gdrive_auth import DriveAuthManager
 
