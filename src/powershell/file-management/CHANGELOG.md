@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 4.6.17 — 2026-04-01
+### Changed
+- Moved serialization helpers `ConvertItemsToPaths` and `ConvertPathsToItems` from `FileDistributor.ps1` into `Private/Serialization.ps1` in the `FileManagement/FileDistributor` module.
+- Moved folder/file operation helpers from `FileDistributor.ps1` into `Private/FolderOps.ps1`: renamed `ResolveFileNameConflict` → `Resolve-DistributionFileName`, `CreateRandomSubfolders` → `New-DistributionSubfolders`, `Remove-File` → `Remove-DistributionFile`; retained `Move-ToRecycleBin` (added Windows-only guard comment) and `Invoke-FileMove` unchanged.
+- Updated `Invoke-FileMove` (now in `FolderOps.ps1`) to call `Resolve-DistributionFileName` and `Remove-DistributionFile` via the new approved names.
+- Updated `Invoke-DistributionPhase` call site to use `New-DistributionSubfolders` instead of `CreateRandomSubfolders`.
+- Updated `Invoke-EndOfScriptDeletion` call site to use `Remove-DistributionFile` instead of `Remove-File`.
+- Added dot-source imports for `Private/Serialization.ps1` and `Private/FolderOps.ps1` in `FileDistributor.ps1`.
+- Bumped `FileDistributor` module version to `1.0.2`.
+
 ## 4.6.14 — 2026-03-29
 ### Changed
 - Added a new internal `FileManagement/FileDistributor` support module scaffold (`FileDistributor.psd1`, `FileDistributor.psm1`, and `Private/PathHelpers.ps1`) as the first step of Proposal 6 module splitting.
