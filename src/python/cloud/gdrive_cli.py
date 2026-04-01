@@ -533,7 +533,7 @@ def _check_pid_alive(owner_pid, tool):
     pid_alive_note = ""
     try:
         pid_int = int(owner_pid)
-        alive = tool._pid_is_alive(pid_int)
+        alive = tool.state_manager._pid_is_alive(pid_int)
         if not alive:
             pid_alive_note = " (note: recorded PID not confirmed; may not be running)"
     except Exception:
@@ -546,7 +546,7 @@ def _acquire_or_bypass_lock(tool, args) -> Tuple[bool, int]:
         start_wait = time.time()
         timeout = float(getattr(args, "lock_timeout", 0.0) or 0.0)
         poll = 0.5
-        acquired = tool._acquire_state_lock()
+        acquired = tool.state_manager._acquire_state_lock()
         while (not acquired) and timeout > 0 and (time.time() - start_wait) < timeout:
             remaining = max(0.0, timeout - (time.time() - start_wait))
             if int(remaining) == remaining:
@@ -555,7 +555,7 @@ def _acquire_or_bypass_lock(tool, args) -> Tuple[bool, int]:
                 remaining_str = f"{remaining:.1f}s"
             print(f"Waiting for state lock (remaining {remaining_str})...", file=sys.stderr)
             time.sleep(poll)
-            acquired = tool._acquire_state_lock()
+            acquired = tool.state_manager._acquire_state_lock()
         if not acquired:
             lockfile_path = f"{args.state_file}.lock"
             owner_pid, run_id = _read_lockfile_metadata(lockfile_path)
@@ -588,7 +588,7 @@ def _run_and_release_lock(tool, args) -> int:
             ran_ok = tool.execute_recovery()
     finally:
         try:
-            tool._release_state_lock()
+            tool.state_manager._release_state_lock()
         except Exception:
             pass
     return 0 if ran_ok else 1

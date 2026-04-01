@@ -16,7 +16,7 @@ Requirements:
 See CHANGELOG.md in this directory for version history.
 """
 
-__version__ = "1.11.0"
+__version__ = "1.11.2"
 
 import os
 import io
@@ -29,7 +29,7 @@ import random
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple, Optional, TypedDict, Mapping, cast
 from pathlib import Path
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock, local
 import sys
@@ -67,7 +67,8 @@ from gdrive_constants import (
 )
 
 # v1.10.0: data model types extracted to dedicated module
-from gdrive_models import FileMeta, LockInfo, RecoveryItem, RecoveryState, PostRestorePolicy
+from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
+from gdrive_state import RecoveryStateManager
 
 try:
     from googleapiclient.discovery import build
@@ -149,7 +150,10 @@ class DriveTrashRecoveryTool:
             "post_restore_deleted": 0,  # Files permanently deleted
         }
         self.stats_lock = Lock()
-        self.state = RecoveryState()
+        self.state_manager = RecoveryStateManager(
+            args, self.logger, on_state_load_error=self._record_state_load_error
+        )
+        self.state = self.state_manager.state
         self.items: List[RecoveryItem] = []
         # progress throttles
         self._streaming: bool = False
@@ -189,6 +193,10 @@ class DriveTrashRecoveryTool:
 
     def _print_info(self, msg: str) -> None:
         print(f"{self._sym_info()} {msg}")
+
+    def _record_state_load_error(self) -> None:
+        with self.stats_lock:
+            self.stats["errors"] += 1
 
     # --- HTTP transport construction (v1.6.0) ---
     class _RequestsHttpAdapter:
@@ -553,35 +561,6 @@ class DriveTrashRecoveryTool:
             self.logger.debug(f"Could not mark token.json hidden on Windows: {e}")
 
     # -------------------- File-ID validation & merged discovery helpers --------------------
-    def _pid_is_alive(self, pid: int) -> bool:
-        """
-        Best-effort liveness check for a PID on Windows.
-        Returns True if a handle can be opened. Returns False otherwise,
-        but note this may be *inconclusive* due to limited query permissions
-        on some systems; callers should avoid hard “stale” claims solely
-        based on a False result.
-        """
-        try:
-            if pid is None or int(pid) <= 0:
-                # Could not open handle — treat as not alive but potentially inconclusive
-                return False
-            # Windows
-            try:
-                import ctypes
-
-                PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-                handle = ctypes.windll.kernel32.OpenProcess(
-                    PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid)
-                )
-                if handle:
-                    ctypes.windll.kernel32.CloseHandle(handle)
-                    return True
-                return False
-            except Exception:
-                return False
-        except Exception:
-            return False
-
     def _is_valid_file_id_format(self, file_id: str) -> bool:
         """Quick format check: Drive IDs are 25+ chars, [A-Za-z0-9_-]."""
         return re.match(r"[a-zA-Z0-9_-]{25,}$", file_id) is not None
@@ -1483,194 +1462,8 @@ class DriveTrashRecoveryTool:
         self._generate_execution_command()
         return True
 
-    @staticmethod
-    def _parse_schema_version(data) -> int:
-        """Extract schema_version from loaded state data, defaulting to 0."""
-        try:
-            return int(data.get("schema_version", 0) or 0)
-        except Exception:
-            return 0
-
-    def _assign_recovery_state_fields(self, data):
-        """Assign only known fields from data to the RecoveryState instance."""
-        rs_fields = {f.name for f in fields(RecoveryState)}
-        for k in rs_fields:
-            if k in data:
-                try:
-                    setattr(self, k, data[k])
-                except Exception:
-                    pass
-
-    def _handle_legacy_state_upgrade(self):
-        """Handle legacy (v0) state upgrade and logging."""
-        self.state.schema_version = 1
-        msg = (
-            "Loaded legacy state (schema v0). This will be upgraded to schema v1 "
-            "on next save for better compatibility."
-        )
-        print(f"ℹ️  {msg}")
-        try:
-            self.logger.warning("State schema v0 detected; promoting to v1 on next save.")
-        except Exception:
-            pass
-
-    def _handle_schema_version_mismatch(self, raw_version):
-        """Handle state file with a different schema version."""
-        try:
-            self.logger.info(
-                "Loaded state with schema v%d; proceeding with tolerant parsing.", raw_version
-            )
-        except Exception:
-            pass
-        self.state.schema_version = 1
-
-    def _load_state(self) -> bool:
-        if not os.path.exists(self.args.state_file):
-            return False
-        try:
-            with open(self.args.state_file, "r") as f:
-                data = json.load(f)
-
-            raw_version = self._parse_schema_version(data)
-            new_state = RecoveryState()
-            new_state._assign_recovery_state_fields(data)
-            self.state = new_state
-
-            if raw_version == 0:
-                self._handle_legacy_state_upgrade()
-            elif raw_version != self.state.schema_version:
-                self._handle_schema_version_mismatch(raw_version)
-
-            print(
-                f"📂 Loaded previous state: {len(self.state.processed_items)} items already processed"
-            )
-            return True
-        except HttpError as e:
-            self.logger.error(
-                f"API error while loading state file '{self.args.state_file}' "
-                f"(HTTP {getattr(e.resp, 'status', 'unknown')}): {e}",
-                exc_info=True,
-            )
-            with self.stats_lock:
-                self.stats["errors"] += 1
-        except Exception:
-            self.logger.exception(
-                f"Unexpected error while loading state file '{self.args.state_file}'"
-            )
-            with self.stats_lock:
-                self.stats["errors"] += 1
-        return False
-
-    # ---------- State file locking & atomic writes ----------
-    def _acquire_state_lock(self) -> bool:
-        """
-        Cross-platform advisory lock on <state>.lock.
-        Returns True on success; False if already locked by another process.
-        """
-        self._state_lock_path = f"{self.args.state_file}.lock"
-        self._state_lock_fh = open(self._state_lock_path, "a+")
-        try:
-            if os.name == "nt":
-                import msvcrt
-
-                try:
-                    msvcrt.locking(self._state_lock_fh.fileno(), msvcrt.LK_NBLCK, 1)
-                except OSError:
-                    return False
-            else:
-                import fcntl
-
-                try:
-                    fcntl.flock(self._state_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except OSError:
-                    return False
-            # write owner pid for diagnostics and run-id for correlation
-            try:
-                self._state_lock_fh.seek(0)
-                self._state_lock_fh.truncate(0)
-                rid = getattr(self.state, "run_id", "") or ""
-                pid = os.getpid()
-                self._state_lock_fh.write(f"pid={pid}\nrun_id={rid}\n")
-                self._state_lock_fh.flush()
-                try:
-                    os.fsync(self._state_lock_fh.fileno())
-                except Exception:
-                    # Best-effort; not fatal if fsync is unavailable
-                    pass
-                # Verify lock metadata was persisted as expected
-                try:
-                    self._state_lock_fh.seek(0)
-                    content = self._state_lock_fh.read()
-                except Exception:
-                    content = ""
-                expected_pid = f"pid={pid}"
-                expected_rid = f"run_id={rid}"
-                if (expected_pid not in content) or (expected_rid not in content):
-                    self.logger.error(
-                        "Lock verification failed: expected pid/run_id not present in lock file content."
-                    )
-                    return False
-            except Exception:
-                # If we cannot persist/verify lock metadata, fail closed
-                self.logger.error("Failed to write/verify lock metadata; refusing to proceed.")
-                return False
-            return True
-        except Exception as e:
-            # Fail-closed instead of best-effort success
-            try:
-                self.logger.error(f"State lock error: {e}")
-            except Exception:
-                pass
-            return False
-
-    def _release_state_lock(self) -> None:
-        try:
-            if not hasattr(self, "_state_lock_fh"):
-                return
-            if os.name == "nt":
-                import msvcrt
-
-                try:
-                    msvcrt.locking(self._state_lock_fh.fileno(), msvcrt.LK_UNLCK, 1)
-                except Exception:
-                    pass
-            else:
-                import fcntl
-
-                try:
-                    fcntl.flock(self._state_lock_fh.fileno(), fcntl.LOCK_UN)
-                except Exception:
-                    pass
-            self._state_lock_fh.close()
-        except Exception:
-            pass
-
-    def _save_state(self):
-        try:
-            tmp_path = f"{self.args.state_file}.tmp"
-            with open(tmp_path, "w") as f:
-                # v1.6.4: ensure schema version is present on save
-                try:
-                    self.state.schema_version = int(getattr(self.state, "schema_version", 0) or 1)
-                except Exception:  # best-effort guard
-                    self.state.schema_version = 1
-                json.dump(asdict(self.state), f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp_path, self.args.state_file)
-        except Exception as e:
-            self.logger.error(f"Failed to save state: {e}")
-
-    def _is_processed(self, item_id: str) -> bool:
-        return item_id in self.state.processed_items
-
-    def _mark_processed(self, item_id: str):
-        if item_id not in self.state.processed_items:
-            self.state.processed_items.append(item_id)
-            self.state.last_checkpoint = datetime.now(timezone.utc).isoformat()
-
     def _recover_file(self, item: RecoveryItem) -> bool:
-        if self._is_processed(item.id):
+        if self.state_manager._is_processed(item.id):
             with self.stats_lock:
                 self.stats["skipped"] += 1
             return True
@@ -1798,7 +1591,7 @@ class DriveTrashRecoveryTool:
         return False
 
     def _process_item(self, item: RecoveryItem) -> bool:
-        if self._is_processed(item.id):
+        if self.state_manager._is_processed(item.id):
             return True
         success = True
         if item.will_recover and not self._recover_file(item):
@@ -1807,7 +1600,7 @@ class DriveTrashRecoveryTool:
             success = False
         if success and item.will_download and item.status == "downloaded":
             self._apply_post_restore_policy(item)
-        self._mark_processed(item.id)
+        self.state_manager._mark_processed(item.id)
         return success
 
     def _prepare_recovery(self, streaming_mode: bool) -> Tuple[bool, bool]:
@@ -1818,7 +1611,8 @@ class DriveTrashRecoveryTool:
         """
         if not self.authenticate():
             return False, False
-        self._load_state()
+        self.state_manager._load_state()
+        self.state = self.state_manager.state
         if streaming_mode:
             # Ensure counters are clean for streaming; discovery will bump these.
             self.items = self.items or []
@@ -1873,9 +1667,9 @@ class DriveTrashRecoveryTool:
             self._run_parallel_processing(start_time)
         except KeyboardInterrupt:
             print("\n⚠️  Operation interrupted. State saved for resume.")
-            self._save_state()
+            self.state_manager._save_state()
             return False
-        self._save_state()
+        self.state_manager._save_state()
         self._print_summary(time.time() - start_time)
         return True
 
@@ -1896,9 +1690,9 @@ class DriveTrashRecoveryTool:
                 ok = self._stream_stream_query(batch_n, start_time)
         except KeyboardInterrupt:
             print("\n⚠️  Operation interrupted. State saved for resume.")
-            self._save_state()
+            self.state_manager._save_state()
             return False
-        self._save_state()
+        self.state_manager._save_state()
         self._print_summary(time.time() - start_time)
         return ok
 
@@ -1936,7 +1730,7 @@ class DriveTrashRecoveryTool:
                     self._print_stream_progress(start_time)
                     self._last_exec_progress_ts = now
             if self._processed_total % 100 == 0:
-                self._save_state()
+                self.state_manager._save_state()
         except Exception as e:
             self.logger.error(f"Unexpected error processing {item.name}: {e}")
             with self.stats_lock:
@@ -1971,7 +1765,7 @@ class DriveTrashRecoveryTool:
                     self._print_progress_update(processed_count, start_time)
                     self._last_exec_progress_ts = now
             if processed_count % 100 == 0:
-                self._save_state()
+                self.state_manager._save_state()
         except Exception as e:
             self.logger.error(f"Unexpected error processing {item.name}: {e}")
             with self.stats_lock:
@@ -2131,7 +1925,7 @@ class DriveTrashRecoveryTool:
             try:
                 return self._process_streaming()
             finally:
-                self._release_state_lock()
+                self.state_manager._release_state_lock()
         if not has_files:  # non-streaming (dry-run) path
             return False
         return True
