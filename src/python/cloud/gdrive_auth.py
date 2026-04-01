@@ -119,7 +119,6 @@ class DriveAuthManager:
                         pool_maxsize=self._http_pool_maxsize,
                     )
                     s.mount("https://", a)
-                    s.mount("http://", a)
                 except Exception:
                     pass
                 return self._RequestsHttpAdapter(s)
