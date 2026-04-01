@@ -9,7 +9,11 @@ function Invoke-FolderRebalance {
         [int]$UpdateFrequency = 100,
         [Parameter(Mandatory = $true)][string]$DeleteMode,
         [Parameter(Mandatory = $true)]$FilesToDelete,
-        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter
+        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter,
+        [Parameter(Mandatory = $true)][ref]$WarningCount,
+        [Parameter(Mandatory = $true)][ref]$ErrorCount,
+        [Parameter(Mandatory = $true)][int]$RetryDelay,
+        [Parameter(Mandatory = $true)][int]$RetryCount
     )
 
     # Calculate tolerance multipliers
@@ -172,7 +176,7 @@ function Invoke-FolderRebalance {
                 -CopyFailureMessageTemplate "Rebalance: failed to copy '{0}' to '{1}'." `
                 -PostCopyFailureMessageTemplate "Rebalance: post-copy handling failed for '{0}': {1}" `
                 -IncrementOnSuccessOnly `
-                -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
+                -WarningCount $WarningCount -ErrorCount $ErrorCount
 
             if ($moveResult.Success) {
                 $receiverMap[$destFolder] = [Math]::Max(0, ([int]$receiverMap[$destFolder]) - 1)

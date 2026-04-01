@@ -8,7 +8,11 @@ function Invoke-FolderConsolidation {
         [int]$UpdateFrequency = 100,
         [Parameter(Mandatory = $true)][string]$DeleteMode,
         [Parameter(Mandatory = $true)]$FilesToDelete,
-        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter
+        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter,
+        [Parameter(Mandatory = $true)][ref]$WarningCount,
+        [Parameter(Mandatory = $true)][ref]$ErrorCount,
+        [Parameter(Mandatory = $true)][int]$RetryDelay,
+        [Parameter(Mandatory = $true)][int]$RetryCount
     )
 
     LogMessage -Message "Consolidation: computing minimal subfolder set..."
@@ -30,8 +34,7 @@ function Invoke-FolderConsolidation {
             LogMessage -Message "Consolidation: found $rootResidual file(s) in target root. They will be moved during consolidation." -IsWarning
             $totalFiles += [int]$rootResidual
         }
-    }
-    catch {
+    } catch {
         LogMessage -Message "Consolidation: failed to check target root for residual files: $($_.Exception.Message)" -IsWarning
     }
 
@@ -76,8 +79,7 @@ function Invoke-FolderConsolidation {
 
     if (-not $filesToMove -or $filesToMove.Count -eq 0) {
         LogMessage -Message "Consolidation: nothing to move; proceeding to delete empty subfolders (if any)."
-    }
-    else {
+    } else {
         try { if ($filesToMove.Count -gt 1) { $filesToMove = $filesToMove | Get-Random -Count $filesToMove.Count } } catch {
             Write-LogDebug "Failed to shuffle files for consolidation: $_"
         }
@@ -123,7 +125,7 @@ function Invoke-FolderConsolidation {
                 -ProgressStatusTemplate "Moved {0} of {1}" `
                 -CopyFailureMessageTemplate "Consolidation: failed to copy '{0}' to '{1}'." `
                 -PostCopyFailureMessageTemplate "Consolidation: post-copy handling failed for '{0}': {1}" `
-                -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
+                -WarningCount $WarningCount -ErrorCount $ErrorCount
 
             if ($moveResult.Success) {
                 $liveCounts[$destFolder] = $folderCountRef.Value
@@ -141,13 +143,11 @@ function Invoke-FolderConsolidation {
                 Remove-ItemWithRetry -Path $o -RetryDelay $RetryDelay -RetryCount $RetryCount
                 LogMessage -Message "Consolidation: deleted empty subfolder '$o'."
                 $deleted++
-            }
-            else {
+            } else {
                 $skipped++
                 LogMessage -Message "Consolidation: subfolder '$o' not empty after move; skipping deletion." -IsWarning
             }
-        }
-        catch {
+        } catch {
             $skipped++
             LogMessage -Message "Consolidation: failed to delete subfolder '$o': $($_.Exception.Message)" -IsWarning
         }

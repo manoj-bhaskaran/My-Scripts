@@ -8,7 +8,11 @@ function Invoke-DistributionRandomize {
         [int]$UpdateFrequency = 100,
         [Parameter(Mandatory = $true)][string]$DeleteMode,
         [Parameter(Mandatory = $true)]$FilesToDelete,
-        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter
+        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter,
+        [Parameter(Mandatory = $true)][ref]$WarningCount,
+        [Parameter(Mandatory = $true)][ref]$ErrorCount,
+        [Parameter(Mandatory = $true)][int]$RetryDelay,
+        [Parameter(Mandatory = $true)][int]$RetryCount
     )
 
     LogMessage -Message "Randomize: redistributing ALL files randomly across all subfolders..."
@@ -35,8 +39,7 @@ function Invoke-DistributionRandomize {
             $allFiles += $files
             $totalFiles += $files.Count
             LogMessage -Message ("DEBUG: Folder '{0}' contains {1} file(s)" -f (Split-Path -Leaf $p), $files.Count) -IsDebug
-        }
-        catch {
+        } catch {
             LogMessage -Message "Randomize: failed to enumerate files in '$p': $($_.Exception.Message)" -IsWarning
         }
     }
@@ -58,8 +61,7 @@ function Invoke-DistributionRandomize {
             $allFiles = $allFiles | Get-Random -Count $allFiles.Count
             LogMessage -Message "Randomize: shuffle complete"
         }
-    }
-    catch {
+    } catch {
         LogMessage -Message "Randomize: failed to shuffle files: $($_.Exception.Message). Proceeding without shuffle." -IsWarning
     }
 
@@ -104,8 +106,7 @@ function Invoke-DistributionRandomize {
         }
         if ($currentFolder -eq $assignedFolder) {
             $filesStaying++
-        }
-        else {
+        } else {
             $filesMoving++
         }
     }
@@ -160,7 +161,7 @@ function Invoke-DistributionRandomize {
                 -PostCopyFailureMessageTemplate "Randomize: failed to handle original file '{0}': {1}" `
                 -CopyFailureIsWarning `
                 -IncrementOnSuccessOnly `
-                -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
+                -WarningCount $WarningCount -ErrorCount $ErrorCount
 
             if ($moveResult.Success) {
                 $totalMoves++
@@ -170,8 +171,7 @@ function Invoke-DistributionRandomize {
                     LogMessage -Message ("Randomize: progress - moved {0}/{1} files ({2:N1}%)" -f $GlobalFileCounter.Value, $filesMoving, $pct)
                     $lastLoggedProgress = $GlobalFileCounter.Value
                 }
-            }
-            else {
+            } else {
                 $totalErrors++
             }
         }
