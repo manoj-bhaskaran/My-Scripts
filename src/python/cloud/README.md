@@ -8,6 +8,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - **gdrive_cli.py** - CLI entry layer for gdrive_recover (argument parsing, validation, and main entry point)
 - **gdrive_constants.py** - Static configuration constants shared by gdrive_recover.py and future sibling modules
 - **gdrive_models.py** - Data model types (TypedDicts, dataclasses, PostRestorePolicy) shared by gdrive_recover.py and future sibling modules
+- **gdrive_state.py** - Recovery state persistence, schema handling, and lock file management for gdrive_recover.py
 - **google_drive_root_files_delete.py** - Cleans up files in Google Drive root directory
 - **drive_space_monitor.py** - Monitors Google Drive storage usage and sends alerts
 - **cloudconvert_utils.py** - CloudConvert API utilities for file conversion
@@ -67,3 +68,10 @@ Recover deleted or lost files from Google Drive trash.
 ## Logging
 
 All scripts use the Python Logging Framework located in `src/python/modules/logging/`.
+
+## Internal Module Boundaries
+
+- `gdrive_recover.py` owns discovery, recovery, download, and orchestration behavior.
+- `gdrive_cli.py` owns CLI argument parsing, validation, and command routing.
+- `gdrive_state.py` owns persistent state and lock-file concerns.
+  - Includes PID liveness checks used by lock diagnostics in `gdrive_cli.py`.
