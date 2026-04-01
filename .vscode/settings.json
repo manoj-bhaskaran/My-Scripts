@@ -60,6 +60,22 @@
     "powershell.scriptAnalysis.settingsPath": "./config/PSScriptAnalyzerSettings.psd1",
     "chat.tools.terminal.autoApprove": {
         ".venv\\Scripts\\pre-commit.exe": true,
-        "pre-commit": true
+        "pre-commit": true,
+        "from": true,
+        "path": true,
+        "text": true,
+        "lines": true,
+        "start": true,
+        "end": true,
+        "print('Removing": true,
+        "print('first": true,
+        "print('last": true,
+        "new_lines": true,
+        "path.write_text('\\n'.join(new_lines)": true,
+        "PY": true,
+        "/^cd \"d:\\\\My Scripts\"; powershell -NoProfile -Command \"\\$path='src/powershell/file-management/FileDistributor\\.ps1'; \\$text=Get-Content \\$path -Raw; \\$start=\\$text\\.IndexOf\\('function RebalanceSubfoldersByAverage \\{'\\); \\$end=\\$text\\.IndexOf\\('function Invoke-ParameterValidation \\{'\\); Write-Host 'start:' \\$start 'end:' \\$end;\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
     }
 }

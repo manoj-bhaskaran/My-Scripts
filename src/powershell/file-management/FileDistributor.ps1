@@ -11,7 +11,7 @@ The script ensures that files are evenly distributed across subfolders in the ta
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
 
-File name conflicts are resolved using the **RandomName** module’s `Get-RandomFileName`. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
+File name conflicts are resolved using the **RandomName** moduleâ€™s `Get-RandomFileName`. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
 
 - `RecycleBin`: Moves the files to the Recycle Bin.
 - `Immediate`: Deletes the files immediately after successful copying.
@@ -110,19 +110,19 @@ Optional. Path to the **RandomName** module (either a `.psd1`/`.psm1` file or th
 The script errors out if the module cannot be located.
 
 .PARAMETER ConsolidateToMinimum
-Optional. **Opt-in** consolidation phase. When specified, after Source→Target distribution and target-root redistribution, pack all files into the **minimum number of subfolders** allowed by `FilesPerFolderLimit`. Randomly selects the required number of *keeper* subfolders, moves files from the others, and deletes any subfolders that become empty.
+Optional. **Opt-in** consolidation phase. When specified, after Sourceâ†’Target distribution and target-root redistribution, pack all files into the **minimum number of subfolders** allowed by `FilesPerFolderLimit`. Randomly selects the required number of *keeper* subfolders, moves files from the others, and deletes any subfolders that become empty.
 
 .PARAMETER RebalanceToAverage
-Optional. **Opt-in** *rebalancing* phase. When specified, after Source→Target distribution and target-root redistribution, compute the **average files per existing subfolder** and move files **among existing subfolders only** so that no subfolder deviates by more than the specified tolerance from that average.
+Optional. **Opt-in** *rebalancing* phase. When specified, after Sourceâ†’Target distribution and target-root redistribution, compute the **average files per existing subfolder** and move files **among existing subfolders only** so that no subfolder deviates by more than the specified tolerance from that average.
 - Does **not** create or delete subfolders.
 - Always honors `FilesPerFolderLimit`.
 - Incompatible with `-ConsolidateToMinimum`; both switches **cannot** be used together (the script will error).
 
 .PARAMETER RebalanceTolerance
-Optional. Specifies the tolerance percentage for rebalancing when using `-RebalanceToAverage`. Defaults to 10, meaning folders are rebalanced to be within ±10% of the average. For example, if the tolerance is 15, folders will be rebalanced to be within ±15% of the average file count.
+Optional. Specifies the tolerance percentage for rebalancing when using `-RebalanceToAverage`. Defaults to 10, meaning folders are rebalanced to be within Â±10% of the average. For example, if the tolerance is 15, folders will be rebalanced to be within Â±15% of the average file count.
 
 .PARAMETER RandomizeDistribution
-Optional. **Opt-in** *full randomization* phase. When specified, after Source→Target distribution and target-root redistribution, redistributes **ALL files** across **ALL existing subfolders** from scratch, ignoring current distribution. Files are randomly shuffled and evenly redistributed to achieve balanced distribution.
+Optional. **Opt-in** *full randomization* phase. When specified, after Sourceâ†’Target distribution and target-root redistribution, redistributes **ALL files** across **ALL existing subfolders** from scratch, ignoring current distribution. Files are randomly shuffled and evenly redistributed to achieve balanced distribution.
 - Does **not** create or delete subfolders.
 - Always honors `FilesPerFolderLimit`.
 - Incompatible with `-ConsolidateToMinimum` and `-RebalanceToAverage`; cannot be used together with either (the script will error).
@@ -186,11 +186,11 @@ To truncate the log file and start afresh:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateLog
 
 .EXAMPLE
-Pack existing files into the minimum required subfolders (e.g., 168,869 files at limit 20,000 → 9 keepers):
+Pack existing files into the minimum required subfolders (e.g., 168,869 files at limit 20,000 â†’ 9 keepers):
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -ConsolidateToMinimum
 
 .EXAMPLE
-Rebalance existing subfolders to within ±10% of the current average (no new folders, no deletions):
+Rebalance existing subfolders to within Â±10% of the current average (no new folders, no deletions):
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -RebalanceToAverage
 
 .EXAMPLE
@@ -198,7 +198,7 @@ Rebalance-only mode: rebalance existing files without copying any new files (no 
 .\FileDistributor.ps1 -TargetFolder "C:\Target" -RebalanceToAverage
 
 .EXAMPLE
-Rebalance-only mode with custom tolerance: rebalance to within ±15% without copying:
+Rebalance-only mode with custom tolerance: rebalance to within Â±15% without copying:
 .\FileDistributor.ps1 -TargetFolder "C:\Target" -RebalanceToAverage -RebalanceTolerance 15
 
 .EXAMPLE
@@ -226,9 +226,9 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
-## 4.7.0 — 2026-04-01
+## 4.7.0 â€” 2026-04-01
 ### Changed
-- Moved `DistributeFilesToSubfolders` → `Invoke-FileDistribution` and `RedistributeFilesInTarget` → `Invoke-TargetRedistribution` into `Public/` files of the `FileManagement/FileDistributor` module.
+- Moved `DistributeFilesToSubfolders` â†’ `Invoke-FileDistribution` and `RedistributeFilesInTarget` â†’ `Invoke-TargetRedistribution` into `Public/` files of the `FileManagement/FileDistributor` module.
 - Moved `Get-SubfolderFileCounts` into `Private/Distribution.ps1` and retry helpers (`Invoke-WithRetry`, `Copy-ItemWithRetry`, `Remove-ItemWithRetry`, `Rename-ItemWithRetry`) into `Private/RetryOps.ps1`.
 - Updated `FolderOps.ps1` to call `Write-LogInfo`/`Write-LogWarning`/`Write-LogError` directly and accept retry params explicitly.
 - Full changelog: `./CHANGELOG.md`.
@@ -588,603 +588,6 @@ function Write-DistributionSummary {
     }
 }
 
-function RebalanceSubfoldersByAverage {
-    param (
-        [Parameter(Mandatory = $true)][string]$TargetFolder,
-        [Parameter(Mandatory = $true)][int]$FilesPerFolderLimit,
-        [int]$Tolerance = 10,
-        [switch]$ShowProgress,
-        [int]$UpdateFrequency = 100,
-        [Parameter(Mandatory = $true)][string]$DeleteMode,
-        [Parameter(Mandatory = $true)]$FilesToDelete,  # FileQueue object (PSCustomObject) - reference type, no [ref] needed
-        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter
-    )
-
-    # Calculate tolerance multipliers
-    $toleranceDecimal = [double]$Tolerance / 100.0
-    $lowerMultiplier = 1.0 - $toleranceDecimal
-    $upperMultiplier = 1.0 + $toleranceDecimal
-
-    LogMessage -Message ("Rebalance: computing average and deviation thresholds (±{0}%)..." -f $Tolerance)
-
-    $folderCounts = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty
-    if ($null -eq $folderCounts) { return }
-    $subfolderPaths = @($folderCounts.Keys)
-    $subfolders = @($subfolderPaths | ForEach-Object { [pscustomobject]@{ FullName = $_ } })
-    $totalFiles = [int](($folderCounts.Values | Measure-Object -Sum).Sum)
-
-    if (-not $subfolders -or $subfolders.Count -le 1) {
-        LogMessage -Message "Rebalance: need at least two subfolders. Nothing to do." -ConsoleOutput
-        return
-    }
-
-    LogMessage -Message ("Rebalance: enumerating files from {0} subfolder(s)..." -f $subfolders.Count)
-    foreach ($sf in $subfolders) {
-        $p = $sf.FullName
-        LogMessage -Message ("DEBUG: Folder '{0}' contains {1} file(s)" -f (Split-Path -Leaf $p), $folderCounts[$p]) -IsDebug
-    }
-
-    if ($totalFiles -le 0) {
-        LogMessage -Message "Rebalance: no files to rebalance." -ConsoleOutput
-        return
-    }
-
-    $avg = [double]$totalFiles / [double]$subfolders.Count
-    $low = [int][math]::Floor($avg * $lowerMultiplier)
-    $high = [int][math]::Ceiling($avg * $upperMultiplier)
-
-    LogMessage -Message ("Rebalance: totalFiles={0}, subfolders={1}, avg={2:N2}, lowerBound={3}, upperBound={4} (limit={5}, tolerance=±{6}%)" -f $totalFiles, $subfolders.Count, $avg, $low, $high, $FilesPerFolderLimit, $Tolerance)
-
-    Write-DistributionSummary -FolderCounts $folderCounts -Average $avg -Label "Rebalance: === CURRENT DISTRIBUTION ===" -UpperBound $high -LowerBound $low
-
-    # Classify donors and receivers
-    $donors = @()
-    $receivers = @()
-    foreach ($sf in $subfolders) {
-        $p = $sf.FullName
-        $c = [int]$folderCounts[$p]
-        $surplus = $c - $high
-        $deficit = $low - $c
-        if ($surplus -gt 0) {
-            $donors += [pscustomobject]@{ Path = $p; Surplus = $surplus }
-        }
-        elseif ($deficit -gt 0) {
-            $receivers += [pscustomobject]@{ Path = $p; Deficit = $deficit }
-        }
-    }
-
-    if (-not $donors -and -not $receivers) {
-        LogMessage -Message ("Rebalance: all subfolders already within ±{0}% of average. Nothing to do." -f $Tolerance) -ConsoleOutput
-        return
-    }
-    if (-not $receivers) {
-        LogMessage -Message "Rebalance: no receivers below lower bound; cannot reduce above-average folders without capacity. Nothing to do." -ConsoleOutput
-        return
-    }
-
-    $totalSurplus = ($donors   | Measure-Object -Property Surplus -Sum).Sum
-    $totalDeficit = ($receivers | Measure-Object -Property Deficit -Sum).Sum
-    $plannedMoves = [int][Math]::Min([int]$totalSurplus, [int]$totalDeficit)
-
-    LogMessage -Message ("Rebalance: donors={0} (surplus={1}), receivers={2} (deficit={3}), plannedMoves={4}" -f $donors.Count, $totalSurplus, $receivers.Count, $totalDeficit, $plannedMoves)
-
-    # Log detailed donor/receiver breakdown
-    if ($donors.Count -gt 0) {
-        LogMessage -Message "Rebalance: === DONORS (above upper bound) ==="
-        foreach ($d in ($donors | Sort-Object -Property Surplus -Descending)) {
-            $folderName = Split-Path -Leaf $d.Path
-            $currentCount = $folderCounts[$d.Path]
-            LogMessage -Message ("  {0}: {1} files (surplus: {2})" -f $folderName, $currentCount, $d.Surplus)
-        }
-    }
-
-    if ($receivers.Count -gt 0) {
-        LogMessage -Message "Rebalance: === RECEIVERS (below lower bound) ==="
-        foreach ($r in ($receivers | Sort-Object -Property Deficit -Descending)) {
-            $folderName = Split-Path -Leaf $r.Path
-            $currentCount = $folderCounts[$r.Path]
-            LogMessage -Message ("  {0}: {1} files (deficit: {2})" -f $folderName, $currentCount, $r.Deficit)
-        }
-    }
-
-    LogMessage -Message ("Rebalance: beginning file transfers ({0} files to move)..." -f $plannedMoves)
-
-    if ($plannedMoves -le 0) {
-        LogMessage -Message "Rebalance: no feasible moves. Nothing to do." -ConsoleOutput
-        return
-    }
-
-    # Sort donors by largest surplus first; receivers tracked by mutable deficits
-    $donors = $donors | Sort-Object -Property Surplus -Descending
-    $receiverMap = @{}
-    foreach ($r in $receivers) { $receiverMap[$r.Path] = [int]$r.Deficit }
-
-    # Build a helper to pick the receiver with the largest remaining deficit
-    function Get-BestReceiver([hashtable]$map) {
-        if ($map.Keys.Count -eq 0) { return $null }
-        $bestKey = $null; $bestVal = -1
-        foreach ($k in $map.Keys) {
-            $v = [int]$map[$k]
-            if ($v -gt $bestVal) { $bestVal = $v; $bestKey = $k }
-        }
-        if ($bestVal -le 0) { return $null }
-        return $bestKey
-    }
-
-    $GlobalFileCounter.Value = 0
-    $totalMoved = 0
-    $totalFailed = 0
-    $lastLoggedProgress = 0
-
-    foreach ($d in $donors) {
-        if ($GlobalFileCounter.Value -ge $plannedMoves) { break }
-        $src = $d.Path
-        $srcFolderName = Split-Path -Leaf $src
-        $moveCount = [int][Math]::Min([int]$d.Surplus, [int]($plannedMoves - $GlobalFileCounter.Value))
-        if ($moveCount -le 0) { continue }
-
-        # Randomly choose exactly what we need from this donor
-        $candidates = @()
-        try {
-            $allFiles = Get-ChildItem -LiteralPath $src -File -Force -ErrorAction Stop
-            if ($allFiles.Count -gt 0) {
-                $moveCount = [Math]::Min($moveCount, $allFiles.Count)
-                $candidates = if ($moveCount -lt $allFiles.Count) { $allFiles | Get-Random -Count $moveCount } else { $allFiles }
-                LogMessage -Message ("DEBUG: Selected {0} file(s) from donor '{1}'" -f $candidates.Count, $srcFolderName) -IsDebug
-            }
-        }
-        catch {
-            LogMessage -Message "Rebalance: failed to enumerate files in donor '$src': $($_.Exception.Message)" -IsWarning
-            continue
-        }
-        if (-not $candidates) { continue }
-
-        foreach ($file in $candidates) {
-            if ($GlobalFileCounter.Value -ge $plannedMoves) { break }
-            $destFolder = Get-BestReceiver $receiverMap
-            if (-not $destFolder) { break } # no more capacity anywhere
-
-            $destFolderName = Split-Path -Leaf $destFolder
-
-            LogMessage -Message ("DEBUG: Moving '{0}' from '{1}' to '{2}'" -f $file.Name, $srcFolderName, $destFolderName) -IsDebug
-
-            $folderCountRef = New-Ref -Initial 0
-            $moveResult = Invoke-FileMove -SourceFilePath $file.FullName `
-                -OriginalFileName $file.Name `
-                -DestinationFolder $destFolder `
-                -FolderCountRef $folderCountRef `
-                -DeleteMode $DeleteMode `
-                -FilesToDelete $FilesToDelete `
-                -GlobalFileCounter $GlobalFileCounter `
-                -ShowProgress:$ShowProgress `
-                -UpdateFrequency $UpdateFrequency `
-                -TotalFiles $plannedMoves `
-                -RetryDelay $RetryDelay `
-                -RetryCount $RetryCount `
-                -ProgressActivity "Rebalancing subfolders" `
-                -ProgressStatusTemplate "Moved {0} of {1}" `
-                -CopyFailureMessageTemplate "Rebalance: failed to copy '{0}' to '{1}'." `
-                -PostCopyFailureMessageTemplate "Rebalance: post-copy handling failed for '{0}': {1}" `
-                -IncrementOnSuccessOnly `
-                -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
-
-            if ($moveResult.Success) {
-                # Update receiver deficit and donor surplus
-                $receiverMap[$destFolder] = [Math]::Max(0, ([int]$receiverMap[$destFolder]) - 1)
-                if ($receiverMap[$destFolder] -le 0) { $receiverMap.Remove($destFolder) }
-                $totalMoved++
-
-                # Log progress periodically
-                if ($GlobalFileCounter.Value - $lastLoggedProgress -ge ($plannedMoves / 10)) {
-                    $pct = if ($plannedMoves -gt 0) { ($GlobalFileCounter.Value / $plannedMoves) * 100 } else { 0 }
-                    LogMessage -Message ("Rebalance: progress - moved {0}/{1} files ({2:N1}%)" -f $GlobalFileCounter.Value, $plannedMoves, $pct)
-                    $lastLoggedProgress = $GlobalFileCounter.Value
-                }
-            }
-            else {
-                $totalFailed++
-            }
-        }
-    }
-
-    if ($ShowProgress) { Write-Progress -Activity "Rebalancing subfolders" -Status "Complete" -Completed }
-
-    # Log final results
-    LogMessage -Message "Rebalance: === FINAL RESULTS ==="
-    LogMessage -Message ("  Files moved successfully: {0}" -f $totalMoved)
-    if ($totalFailed -gt 0) {
-        LogMessage -Message ("  Files failed to move: {0}" -f $totalFailed) -IsWarning
-    }
-    LogMessage -Message ("Rebalance: redistribution complete - moved {0} of {1} planned file(s)" -f $totalMoved, $plannedMoves)
-
-    # Log final distribution (verify)
-    $finalCounts = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty
-    if ($null -ne $finalCounts) {
-        Write-DistributionSummary -FolderCounts $finalCounts -Average $avg -Label "Rebalance: === FINAL DISTRIBUTION (verification) ===" -UpperBound $high -LowerBound $low
-    }
-}
-
-function RandomizeDistributionAcrossFolders {
-    param (
-        [Parameter(Mandatory = $true)][string]$TargetFolder,
-        [Parameter(Mandatory = $true)][int]$FilesPerFolderLimit,
-        [switch]$ShowProgress,
-        [int]$UpdateFrequency = 100,
-        [Parameter(Mandatory = $true)][string]$DeleteMode,
-        [Parameter(Mandatory = $true)]$FilesToDelete,  # FileQueue object (PSCustomObject) - reference type, no [ref] needed
-        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter
-    )
-
-    LogMessage -Message "Randomize: redistributing ALL files randomly across all subfolders..."
-
-    $currentCounts = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty
-    if ($null -eq $currentCounts) { return }
-    $subfolderPaths = @($currentCounts.Keys)
-    $subfolders = @($subfolderPaths | ForEach-Object { [pscustomobject]@{ FullName = $_ } })
-
-    if (-not $subfolders -or $subfolders.Count -eq 0) {
-        LogMessage -Message "Randomize: no subfolders present; nothing to do." -ConsoleOutput
-        return
-    }
-
-    LogMessage -Message ("Randomize: enumerating files from {0} subfolder(s)..." -f $subfolders.Count)
-
-    # Enumerate all files in all subfolders and track current counts
-    $allFiles = @()
-    $totalFiles = 0
-
-    foreach ($sf in $subfolders) {
-        $p = $sf.FullName
-        try {
-            $files = @(Get-ChildItem -LiteralPath $p -File -Force -ErrorAction Stop)
-            $allFiles += $files
-            $totalFiles += $files.Count
-            LogMessage -Message ("DEBUG: Folder '{0}' contains {1} file(s)" -f (Split-Path -Leaf $p), $files.Count) -IsDebug
-        }
-        catch {
-            LogMessage -Message "Randomize: failed to enumerate files in '$p': $($_.Exception.Message)" -IsWarning
-        }
-    }
-
-    if ($totalFiles -le 0) {
-        LogMessage -Message "Randomize: no files to redistribute." -ConsoleOutput
-        return
-    }
-
-    LogMessage -Message ("Randomize: found {0} file(s) total across {1} subfolder(s)" -f $totalFiles, $subfolders.Count)
-
-    $avg = [double]$totalFiles / [double]$subfolders.Count
-    Write-DistributionSummary -FolderCounts $currentCounts -Average $avg -Label "Randomize: === CURRENT DISTRIBUTION ==="
-    LogMessage -Message ("Randomize: average = {0:N2} files per folder" -f $avg)
-
-    # Shuffle files randomly
-    LogMessage -Message "Randomize: shuffling file list randomly..."
-    try {
-        if ($allFiles.Count -gt 1) {
-            $allFiles = $allFiles | Get-Random -Count $allFiles.Count
-            LogMessage -Message "Randomize: shuffle complete"
-        }
-    }
-    catch {
-        LogMessage -Message "Randomize: failed to shuffle files: $($_.Exception.Message). Proceeding without shuffle." -IsWarning
-    }
-
-    # Calculate target files per folder (even distribution)
-    $targetPerFolder = [int][Math]::Ceiling([double]$totalFiles / [double]$subfolders.Count)
-    LogMessage -Message ("Randomize: target = {0} files per folder (ceiling of {1} total / {2} folders)" -f $targetPerFolder, $totalFiles, $subfolders.Count)
-
-    # Assign files to folders using round-robin
-    LogMessage -Message "Randomize: assigning files to folders using round-robin through shuffled list..."
-    $assignments = @{}
-    foreach ($sf in $subfolders) {
-        $assignments[$sf.FullName] = @()
-    }
-
-    $folderIndex = 0
-    $subfolderPaths = @($subfolders | ForEach-Object { $_.FullName })
-
-    foreach ($file in $allFiles) {
-        $targetFolderPath = $subfolderPaths[$folderIndex]
-        $assignments[$targetFolderPath] += $file
-
-        # Move to next folder (round-robin)
-        $folderIndex = ($folderIndex + 1) % $subfolderPaths.Count
-    }
-
-    # Log planned distribution summary
-    LogMessage -Message "Randomize: === PLANNED DISTRIBUTION ==="
-    foreach ($sf in ($subfolders | Sort-Object { $assignments[$_.FullName].Count } -Descending)) {
-        $p = $sf.FullName
-        $plannedCount = $assignments[$p].Count
-        $currentCount = $currentCounts[$p]
-        $delta = $plannedCount - $currentCount
-        $folderName = Split-Path -Leaf $p
-        LogMessage -Message ("  {0}: {1} files (currently {2}, {3:+0;-0;0})" -f $folderName, $plannedCount, $currentCount, $delta)
-    }
-
-    # Calculate move statistics
-    $filesStaying = 0
-    $filesMoving = 0
-    foreach ($file in $allFiles) {
-        $currentFolder = Split-Path -Path $file.FullName -Parent
-        $assignedFolder = $null
-        foreach ($p in $subfolderPaths) {
-            if ($assignments[$p] -contains $file) {
-                $assignedFolder = $p
-                break
-            }
-        }
-        if ($currentFolder -eq $assignedFolder) {
-            $filesStaying++
-        }
-        else {
-            $filesMoving++
-        }
-    }
-
-    $stayingPct = if ($totalFiles -gt 0) { ($filesStaying / $totalFiles) * 100 } else { 0 }
-    $movingPct = if ($totalFiles -gt 0) { ($filesMoving / $totalFiles) * 100 } else { 0 }
-
-    LogMessage -Message "Randomize: === MOVE STATISTICS ==="
-    LogMessage -Message ("  Files staying in current folder: {0} ({1:N1}%)" -f $filesStaying, $stayingPct)
-    LogMessage -Message ("  Files moving to different folder: {0} ({1:N1}%)" -f $filesMoving, $movingPct)
-    LogMessage -Message ("Randomize: beginning file redistribution ({0} files to move)..." -f $filesMoving)
-
-    # Move files to their assigned destinations
-    $GlobalFileCounter.Value = 0
-    $totalMoves = 0
-    $totalSkipped = 0
-    $totalErrors = 0
-    $lastLoggedProgress = 0
-
-    foreach ($destFolder in $subfolderPaths) {
-        $filesToMove = $assignments[$destFolder]
-        if ($filesToMove.Count -eq 0) { continue }
-
-        $destFolderName = Split-Path -Leaf $destFolder
-        LogMessage -Message ("DEBUG: Processing {0} file(s) assigned to folder '{1}'" -f $filesToMove.Count, $destFolderName) -IsDebug
-
-        foreach ($file in $filesToMove) {
-            # Skip if file is already in the target folder
-            $currentFolder = Split-Path -Path $file.FullName -Parent
-            if ($currentFolder -eq $destFolder) {
-                $totalSkipped++
-                LogMessage -Message ("DEBUG: Skipping '{0}' - already in assigned folder" -f $file.Name) -IsDebug
-                continue
-            }
-
-            LogMessage -Message ("DEBUG: Moving '{0}' from '{1}' to '{2}'" -f $file.Name, (Split-Path -Leaf $currentFolder), $destFolderName) -IsDebug
-
-            $folderCountRef = New-Ref -Initial 0
-            $moveResult = Invoke-FileMove -SourceFilePath $file.FullName `
-                -OriginalFileName $file.Name `
-                -DestinationFolder $destFolder `
-                -FolderCountRef $folderCountRef `
-                -DeleteMode $DeleteMode `
-                -FilesToDelete $FilesToDelete `
-                -GlobalFileCounter $GlobalFileCounter `
-                -ShowProgress:$ShowProgress `
-                -UpdateFrequency $UpdateFrequency `
-                -TotalFiles $filesMoving `
-                -RetryDelay $RetryDelay `
-                -RetryCount $RetryCount `
-                -ProgressActivity "Randomizing distribution" `
-                -ProgressStatusTemplate "Moved {0} of {1} files" `
-                -CopyFailureMessageTemplate "Randomize: failed to copy '{0}' to '{1}'." `
-                -PostCopyFailureMessageTemplate "Randomize: failed to handle original file '{0}': {1}" `
-                -CopyFailureIsWarning `
-                -IncrementOnSuccessOnly `
-                -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
-
-            if ($moveResult.Success) {
-                $totalMoves++
-
-                # Log progress periodically
-                if ($GlobalFileCounter.Value - $lastLoggedProgress -ge ($filesMoving / 10)) {
-                    $pct = if ($filesMoving -gt 0) { ($GlobalFileCounter.Value / $filesMoving) * 100 } else { 0 }
-                    LogMessage -Message ("Randomize: progress - moved {0}/{1} files ({2:N1}%)" -f $GlobalFileCounter.Value, $filesMoving, $pct)
-                    $lastLoggedProgress = $GlobalFileCounter.Value
-                }
-            }
-            else {
-                $totalErrors++
-            }
-        }
-    }
-
-    if ($ShowProgress) { Write-Progress -Activity "Randomizing distribution" -Status "Complete" -Completed }
-
-    # Log final results
-    LogMessage -Message "Randomize: === FINAL RESULTS ==="
-    LogMessage -Message ("  Files moved successfully: {0}" -f $totalMoves)
-    LogMessage -Message ("  Files skipped (already in assigned folder): {0}" -f $totalSkipped)
-    if ($totalErrors -gt 0) {
-        LogMessage -Message ("  Files failed to move: {0}" -f $totalErrors) -IsWarning
-    }
-    LogMessage -Message ("Randomize: redistribution complete - moved {0} file(s) to achieve random even distribution" -f $totalMoves)
-
-    # Log final distribution (verify)
-    $finalCounts = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty
-    if ($null -ne $finalCounts) {
-        Write-DistributionSummary -FolderCounts $finalCounts -Average $avg -Label "Randomize: === FINAL DISTRIBUTION (verification) ==="
-    }
-}
-
-function ConsolidateSubfoldersToMinimum {
-    param (
-        [Parameter(Mandatory = $true)][string]$TargetFolder,
-        [Parameter(Mandatory = $true)][int]$FilesPerFolderLimit,
-        [switch]$ShowProgress,
-        [int]$UpdateFrequency = 100,
-        [Parameter(Mandatory = $true)][string]$DeleteMode,
-        [Parameter(Mandatory = $true)]$FilesToDelete,  # FileQueue object (PSCustomObject) - reference type, no [ref] needed
-        [Parameter(Mandatory = $true)][ref]$GlobalFileCounter
-    )
-
-    LogMessage -Message "Consolidation: computing minimal subfolder set..."
-
-    $folderCounts = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty
-    if ($null -eq $folderCounts) { return }
-    $subfolderPaths = @($folderCounts.Keys)
-    $totalFiles = [int](($folderCounts.Values | Measure-Object -Sum).Sum)
-    $subfolders = @($subfolderPaths | ForEach-Object { [pscustomobject]@{ FullName = $_ } })
-
-    if (-not $subfolders -or $subfolders.Count -eq 0) {
-        LogMessage -Message "Consolidation: no subfolders present; nothing to do." -ConsoleOutput
-        return
-    }
-
-    # If any files remain in the target root, include them in total (should be 0 after prior phases)
-    try {
-        $rootResidual = (Get-ChildItem -LiteralPath $TargetFolder -File -Force -ErrorAction Stop | Measure-Object).Count
-        if ($rootResidual -gt 0) {
-            LogMessage -Message "Consolidation: found $rootResidual file(s) in target root. They will be moved during consolidation." -IsWarning
-            $totalFiles += [int]$rootResidual
-        }
-    }
-    catch {
-        LogMessage -Message "Consolidation: failed to check target root for residual files: $($_.Exception.Message)" -IsWarning
-    }
-
-    if ($totalFiles -le 0) {
-        LogMessage -Message "Consolidation: no files to consolidate." -ConsoleOutput
-        return
-    }
-
-    $needed = [Math]::Ceiling([double]$totalFiles / [double]$FilesPerFolderLimit)
-    if ($needed -lt 1) { $needed = 1 }
-
-    $existingCount = $subfolders.Count
-    LogMessage -Message ("Consolidation: totalFiles={0}, limit={1}, existingSubfolders={2}, needed={3}" -f $totalFiles, $FilesPerFolderLimit, $existingCount, $needed)
-    $avgBefore = if ($existingCount -gt 0) { [double]$totalFiles / [double]$existingCount } else { 0.0 }
-    Write-DistributionSummary -FolderCounts $folderCounts -Average $avgBefore -Label "Consolidation: === CURRENT DISTRIBUTION ==="
-
-    if ($existingCount -le $needed) {
-        LogMessage -Message "Consolidation: already at or below minimal subfolder count ($existingCount ≤ $needed). Nothing to do." -ConsoleOutput
-        return
-    }
-
-    # Choose keepers randomly
-    $keepers = @($subfolders | Get-Random -Count $needed | ForEach-Object { $_.FullName })
-    $others = @($subfolders | Where-Object { $keepers -notcontains $_.FullName } | ForEach-Object { $_.FullName })
-    LogMessage -Message ("Consolidation: selected {0} keeper(s), {1} to drain." -f $keepers.Count, $others.Count)
-
-    # Capacity and live counts for keepers
-    $liveCounts = @{}; $capacity = @{}
-    foreach ($k in $keepers) {
-        $c = if ($folderCounts.ContainsKey($k)) { [int]$folderCounts[$k] } else { 0 }
-        $liveCounts[$k] = $c
-        $capacity[$k] = [Math]::Max(0, $FilesPerFolderLimit - $c)
-    }
-
-    # Collect files to move from non-keepers (and optionally root residuals)
-    $filesToMove = @()
-    foreach ($o in $others) {
-        try { $filesToMove += (Get-ChildItem -LiteralPath $o -File -Force -ErrorAction Stop) } catch {
-            LogMessage -Message "Consolidation: failed enumerating files in '$o': $($_.Exception.Message)" -IsWarning
-        }
-    }
-    try { $filesToMove += (Get-ChildItem -LiteralPath $TargetFolder -File -Force -ErrorAction Stop) } catch {
-        Write-LogDebug "Failed to enumerate files in target folder root: $_"
-    }
-
-    if (-not $filesToMove -or $filesToMove.Count -eq 0) {
-        LogMessage -Message "Consolidation: nothing to move; proceeding to delete empty subfolders (if any)."
-    }
-    else {
-        # Shuffle to reduce bias
-        try { if ($filesToMove.Count -gt 1) { $filesToMove = $filesToMove | Get-Random -Count $filesToMove.Count } } catch {
-            Write-LogDebug "Failed to shuffle files for consolidation: $_"
-        }
-
-        $totalMoves = $filesToMove.Count
-        $GlobalFileCounter.Value = 0
-        LogMessage -Message ("Consolidation: moving {0} file(s) into {1} keeper(s)..." -f $totalMoves, $keepers.Count)
-
-        foreach ($file in $filesToMove) {
-            # Find eligible keepers with remaining capacity
-            $eligible = @()
-            foreach ($k in $keepers) { if ($capacity[$k] -gt 0) { $eligible += $k } }
-            if ($eligible.Count -eq 0) {
-                # Safety: all keepers exhausted; create a new keeper (rare unless counts changed concurrently)
-                $newK = Join-Path -Path $TargetFolder -ChildPath (Get-RandomFileName)
-                try { New-Item -ItemType Directory -Path $newK -Force | Out-Null } catch {
-                    Write-LogDebug "Failed to create new keeper directory ${newK}: $_"
-                }
-                $keepers += $newK
-                $liveCounts[$newK] = 0
-                $capacity[$newK] = $FilesPerFolderLimit
-                $eligible = @($newK)
-                LogMessage -Message "Consolidation: keeper capacity exhausted; created additional keeper '$newK'." -IsWarning
-            }
-
-            # Choose destination: among eligible, pick those with minimum current count to balance
-            $minCount = ($eligible | ForEach-Object { $liveCounts[$_] } | Measure-Object -Minimum).Minimum
-            $cands = @($eligible | Where-Object { $liveCounts[$_] -eq $minCount })
-            $destFolder = if ($cands.Count -gt 1) { $cands | Get-Random } else { $cands[0] }
-
-            $folderCount = if ($liveCounts.ContainsKey($destFolder)) { [int]$liveCounts[$destFolder] } else { 0 }
-            $folderCountRef = New-Ref -Initial $folderCount
-            $moveResult = Invoke-FileMove -SourceFilePath $file.FullName `
-                -OriginalFileName $file.Name `
-                -DestinationFolder $destFolder `
-                -FolderCountRef $folderCountRef `
-                -DeleteMode $DeleteMode `
-                -FilesToDelete $FilesToDelete `
-                -GlobalFileCounter $GlobalFileCounter `
-                -ShowProgress:$ShowProgress `
-                -UpdateFrequency $UpdateFrequency `
-                -TotalFiles $totalMoves `
-                -RetryDelay $RetryDelay `
-                -RetryCount $RetryCount `
-                -ProgressActivity "Consolidating subfolders" `
-                -ProgressStatusTemplate "Moved {0} of {1}" `
-                -CopyFailureMessageTemplate "Consolidation: failed to copy '{0}' to '{1}'." `
-                -PostCopyFailureMessageTemplate "Consolidation: post-copy handling failed for '{0}': {1}" `
-                -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
-
-            if ($moveResult.Success) {
-                # Update counts/capacity
-                $liveCounts[$destFolder] = $folderCountRef.Value
-                $capacity[$destFolder] = [Math]::Max(0, $FilesPerFolderLimit - $liveCounts[$destFolder])
-            }
-        }
-        if ($ShowProgress) { Write-Progress -Activity "Consolidating subfolders" -Status "Complete" -Completed }
-    }
-
-    # Delete empty non-keeper subfolders
-    $deleted = 0; $skipped = 0
-    foreach ($o in $others) {
-        try {
-            $entries = (Get-ChildItem -LiteralPath $o -Force -ErrorAction Stop | Measure-Object).Count
-            if ($entries -eq 0) {
-                Remove-ItemWithRetry -Path $o -RetryDelay $RetryDelay -RetryCount $RetryCount
-                LogMessage -Message "Consolidation: deleted empty subfolder '$o'."
-                $deleted++
-            }
-            else {
-                $skipped++
-                LogMessage -Message "Consolidation: subfolder '$o' not empty after move; skipping deletion." -IsWarning
-            }
-        }
-        catch {
-            $skipped++
-            LogMessage -Message "Consolidation: failed to delete su^bfolder '$o': $($_.Exception.Message)" -IsWarning
-        }
-    }
-    LogMessage -Message ("Consolidation: removed {0} empty subfolder(s); {1} skipped." -f $deleted, $skipped)
-
-    $finalCounts = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty
-    if ($null -ne $finalCounts) {
-        $finalFolderCount = @($finalCounts.Keys).Count
-        $finalTotalFiles = [int](($finalCounts.Values | Measure-Object -Sum).Sum)
-        $avgAfter = if ($finalFolderCount -gt 0) { [double]$finalTotalFiles / [double]$finalFolderCount } else { 0.0 }
-        Write-DistributionSummary -FolderCounts $finalCounts -Average $avgAfter -Label "Consolidation: === FINAL DISTRIBUTION (verification) ==="
-    }
-}
-
-# Main script logic
-
 function Invoke-ParameterValidation {
     param([hashtable]$RunState)
 
@@ -1460,19 +863,19 @@ function Invoke-PostProcessingPhase {
     param([hashtable]$RunState, [ref]$FileLockRef)
 
     if ($ConsolidateToMinimum -and $RunState.LastCheckpoint -lt 6) {
-        ConsolidateSubfoldersToMinimum -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
+        Invoke-FolderConsolidation -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
         $cp6 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
         Save-DistributionState -Checkpoint 6 -AdditionalVariables $cp6 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 
     if ($RebalanceToAverage -and $RunState.LastCheckpoint -lt 7) {
-        RebalanceSubfoldersByAverage -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -Tolerance $RebalanceTolerance -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
+        Invoke-FolderRebalance -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -Tolerance $RebalanceTolerance -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
         $cp7 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
         Save-DistributionState -Checkpoint 7 -AdditionalVariables $cp7 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 
     if ($RandomizeDistribution -and $RunState.LastCheckpoint -lt 8) {
-        RandomizeDistributionAcrossFolders -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
+        Invoke-DistributionRandomize -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency $UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter
         $cp8 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
         Save-DistributionState -Checkpoint 8 -AdditionalVariables $cp8 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
