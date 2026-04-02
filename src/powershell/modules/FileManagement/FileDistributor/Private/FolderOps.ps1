@@ -82,7 +82,7 @@ function Move-ToRecycleBin {
         # Move the file to the Recycle Bin with retry, suppressing confirmation (0x100)
         Invoke-WithRetry -Operation { $recycleBin.MoveHere($file.FullName, 0x100) } -MaxBackoff $MaxBackoff `
             -Description "Recycle '$($file.FullName)'" `
-            -RetryDelay $RetryDelay -RetryCount $RetryCount
+            -RetryDelay $RetryDelay -RetryCount $RetryCount -IgnoreFileNotFound
 
         # Log success
         Write-LogInfo "Moved $FilePath to Recycle Bin."
@@ -104,7 +104,7 @@ function Remove-DistributionFile {
     try {
         # Check if the file exists before attempting deletion
         if (Test-Path -Path $FilePath) {
-            Remove-ItemWithRetry -Path $FilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+            Remove-FileWithRetry -Path $FilePath -RetryDelay $RetryDelay -MaxRetries $RetryCount -MaxBackoff $MaxBackoff | Out-Null
             Write-LogInfo "Deleted file: $FilePath."
         }
         else {
@@ -145,9 +145,34 @@ function Invoke-FileMove {
     $newFileName = Resolve-DistributionFileName -TargetFolder $DestinationFolder -OriginalFileName $OriginalFileName
     $destinationFile = Join-Path -Path $DestinationFolder -ChildPath $newFileName
 
-    Copy-ItemWithRetry -Path $SourceFilePath -Destination $destinationFile -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+    $copySucceeded = $false
+    $copyFailureHandled = $false
+    if (-not (Test-Path -LiteralPath $SourceFilePath)) {
+        Write-LogWarning "Source file disappeared before copy: $SourceFilePath"
+        if ($WarningCount) { $WarningCount.Value++ }
+        $copyFailureHandled = $true
+    }
+    else {
+        try {
+            Copy-FileWithRetry -Source $SourceFilePath -Destination $destinationFile -RetryDelay $RetryDelay -MaxRetries $RetryCount -MaxBackoff $MaxBackoff | Out-Null
+            $copySucceeded = Test-Path -LiteralPath $destinationFile
+        }
+        catch {
+            $isSourceMissing = $_.Exception -is [System.Management.Automation.ItemNotFoundException] -or
+                $_.Exception.Message -like 'Source file not found:*' -or
+                ($_.Exception.Message -like '*Cannot find path*' -and $_.Exception.Message -like '*does not exist*')
 
-    $copySucceeded = Test-Path -LiteralPath $destinationFile
+            if ($isSourceMissing) {
+                Write-LogWarning "Source file disappeared during copy: $SourceFilePath"
+                if ($WarningCount) { $WarningCount.Value++ }
+                $copyFailureHandled = $true
+            }
+            else {
+                throw
+            }
+        }
+    }
+
     $queuedForEndOfScriptDeletion = $null
     if ($copySucceeded) {
         $FolderCountRef.Value++
@@ -176,13 +201,15 @@ function Invoke-FileMove {
         }
     }
     else {
-        if ($CopyFailureIsWarning) {
-            Write-LogWarning ($CopyFailureMessageTemplate -f $OriginalFileName, $destinationFile)
-            if ($WarningCount) { $WarningCount.Value++ }
-        }
-        else {
-            Write-LogError ($CopyFailureMessageTemplate -f $OriginalFileName, $destinationFile)
-            if ($ErrorCount) { $ErrorCount.Value++ }
+        if (-not $copyFailureHandled) {
+            if ($CopyFailureIsWarning) {
+                Write-LogWarning ($CopyFailureMessageTemplate -f $OriginalFileName, $destinationFile)
+                if ($WarningCount) { $WarningCount.Value++ }
+            }
+            else {
+                Write-LogError ($CopyFailureMessageTemplate -f $OriginalFileName, $destinationFile)
+                if ($ErrorCount) { $ErrorCount.Value++ }
+            }
         }
     }
 

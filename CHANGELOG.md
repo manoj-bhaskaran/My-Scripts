@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **FileDistributor retry/file-operation modularization cleanup (issue #779)**
+  - Replaced remaining FileDistributor helper calls with shared Core modules: `Copy-FileWithRetry`, `Remove-FileWithRetry`, and `Invoke-WithRetry` from `Core/ErrorHandling`/`Core/FileOperations`
+  - Updated recycle-bin and folder cleanup retry paths to use `Invoke-WithRetry -IgnoreFileNotFound` for file-not-found warning-and-skip behavior
+  - Removed `Private/RetryOps.ps1` from FileDistributor loading path and imported Core dependencies directly in `FileDistributor.ps1` and `FileManagement/FileDistributor` module entrypoint
+  - Bumped versions: `FileDistributor.ps1` to `4.7.1` and `FileManagement/FileDistributor` module to `1.1.1`
+
 ### Fixed
+
+- **FileDistributor race regression: missing source files no longer abort distribution (issue #779 review)**
+  - Updated `Invoke-FileMove` to detect source disappearance before/during `Copy-FileWithRetry` and treat it as warning-and-skip behavior
+  - Prevents normal concurrent file churn from terminating an otherwise healthy distribution pass
+  - Bumped versions: `FileDistributor.ps1` to `4.7.2` and `FileManagement/FileDistributor` module to `1.1.2`
+
 
 - **FileDistributor modularization: fixed parameter propagation in post-processing APIs**
   - Added `WarningCount`, `ErrorCount`, `RetryDelay`, and `RetryCount` parameters to `Invoke-FolderRebalance`, `Invoke-DistributionRandomize`, and `Invoke-FolderConsolidation`
