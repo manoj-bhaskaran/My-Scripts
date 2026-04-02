@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 4.7.3 — 2026-04-02
+
+### Fixed
+
+- Added `-IncludeSourceFiles` and `-SourceFiles $RunState.sourceFiles` to the CP3 `New-CheckpointPayload` call in `Invoke-DistributionPhase`. Previously the CP3 payload omitted `sourceFiles`, so restarting from CP3 left `$RunState.sourceFiles` empty and silently skipped the entire source-to-target distribution phase.
+
 ## 4.7.1 — 2026-04-01
 
 ### Fixed
