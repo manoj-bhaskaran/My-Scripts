@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.7.3
+ 4.7.4
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
@@ -405,7 +405,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.7.3"
+$script:Version = "4.7.4"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -856,19 +856,19 @@ function Invoke-PostProcessingPhase {
     param([hashtable]$RunState, [ref]$FileLockRef)
 
     if ($ConsolidateToMinimum -and $RunState.LastCheckpoint -lt 6) {
-        Invoke-FolderConsolidation -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors) -RetryDelay $RetryDelay -RetryCount $RetryCount
+        Invoke-FolderConsolidation -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors) -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
         $cp6 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
         Save-DistributionState -Checkpoint 6 -AdditionalVariables $cp6 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 
     if ($RebalanceToAverage -and $RunState.LastCheckpoint -lt 7) {
-        Invoke-FolderRebalance -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -Tolerance $RebalanceTolerance -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors) -RetryDelay $RetryDelay -RetryCount $RetryCount
+        Invoke-FolderRebalance -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -Tolerance $RebalanceTolerance -ShowProgress:$ShowProgress -UpdateFrequency:$UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors) -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
         $cp7 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
         Save-DistributionState -Checkpoint 7 -AdditionalVariables $cp7 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
 
     if ($RandomizeDistribution -and $RunState.LastCheckpoint -lt 8) {
-        Invoke-DistributionRandomize -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency $UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors) -RetryDelay $RetryDelay -RetryCount $RetryCount
+        Invoke-DistributionRandomize -TargetFolder $TargetFolder -FilesPerFolderLimit $RunState.FilesPerFolderLimit -ShowProgress:$ShowProgress -UpdateFrequency $UpdateFrequency -DeleteMode $DeleteMode -FilesToDelete $RunState.FilesToDelete -GlobalFileCounter $RunState.GlobalFileCounter -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors) -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
         $cp8 = New-CheckpointPayload -RunState $RunState -DeleteMode $DeleteMode -SourceFolder $SourceFolder -MaxFilesToCopy $RunState.MaxFilesToCopy -Subfolders (Get-ChildItem -LiteralPath $TargetFolder -Directory -Force) -IncludeFilesToDelete
         Save-DistributionState -Checkpoint 8 -AdditionalVariables $cp8 -FileLock $FileLockRef -SessionId $RunState.SessionId -WarningsSoFar $script:Warnings -ErrorsSoFar $script:Errors
     }
