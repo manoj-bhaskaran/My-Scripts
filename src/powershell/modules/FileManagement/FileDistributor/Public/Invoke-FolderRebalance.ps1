@@ -128,6 +128,7 @@ function Invoke-FolderRebalance {
     $totalMoved = 0
     $totalFailed = 0
     $lastLoggedProgress = 0
+    $threshold = if ($plannedMoves -gt 0) { [Math]::Max(1, [int]($plannedMoves / 10)) } else { [int]::MaxValue }
 
     foreach ($d in $donors) {
         if ($GlobalFileCounter.Value -ge $plannedMoves) { break }
@@ -185,7 +186,7 @@ function Invoke-FolderRebalance {
                 if ($receiverMap[$destFolder] -le 0) { $receiverMap.Remove($destFolder) }
                 $totalMoved++
 
-                if ($GlobalFileCounter.Value - $lastLoggedProgress -ge ($plannedMoves / 10)) {
+                if ($GlobalFileCounter.Value - $lastLoggedProgress -ge $threshold) {
                     $pct = if ($plannedMoves -gt 0) { ($GlobalFileCounter.Value / $plannedMoves) * 100 } else { 0 }
                     LogMessage -Message ("Rebalance: progress - moved {0}/{1} files ({2:N1}%)" -f $GlobalFileCounter.Value, $plannedMoves, $pct)
                     $lastLoggedProgress = $GlobalFileCounter.Value
