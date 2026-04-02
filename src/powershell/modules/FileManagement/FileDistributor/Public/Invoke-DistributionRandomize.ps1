@@ -125,6 +125,7 @@ function Invoke-DistributionRandomize {
     $totalSkipped = 0
     $totalErrors = 0
     $lastLoggedProgress = 0
+    $threshold = if ($filesMoving -gt 0) { [Math]::Max(1, [int]($filesMoving / 10)) } else { [int]::MaxValue }
 
     foreach ($destFolder in $subfolderPaths) {
         $filesToMove = $assignments[$destFolder]
@@ -168,7 +169,7 @@ function Invoke-DistributionRandomize {
             if ($moveResult.Success) {
                 $totalMoves++
 
-                if ($GlobalFileCounter.Value - $lastLoggedProgress -ge ($filesMoving / 10)) {
+                if ($GlobalFileCounter.Value - $lastLoggedProgress -ge $threshold) {
                     $pct = if ($filesMoving -gt 0) { ($GlobalFileCounter.Value / $filesMoving) * 100 } else { 0 }
                     LogMessage -Message ("Randomize: progress - moved {0}/{1} files ({2:N1}%)" -f $GlobalFileCounter.Value, $filesMoving, $pct)
                     $lastLoggedProgress = $GlobalFileCounter.Value

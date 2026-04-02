@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 4.7.6 — 2026-04-02
+
+### Fixed
+
+- Fixed division-by-zero / flood logging in `Invoke-FolderRebalance` and `Invoke-DistributionRandomize`: replaced the inline `($plannedMoves / 10)` and `($filesMoving / 10)` expressions in the progress-log guard with a pre-computed `$threshold` that is set to `[int]::MaxValue` when the denominator is 0. This prevents the condition from becoming `0 -ge 0.0` (always true) and flooding the log with a progress line on every loop iteration when there is nothing to move. Bumped `FileDistributor` module version to `1.1.6`.
+
 ## 4.7.5 — 2026-04-02
 
 ### Fixed

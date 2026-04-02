@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Division-by-zero / flood logging when `plannedMoves` or `filesMoving` is 0 in `Invoke-FolderRebalance` and `Invoke-DistributionRandomize`**
+  - Replaced `($plannedMoves / 10)` and `($filesMoving / 10)` progress-log thresholds with a pre-computed `$threshold` variable that evaluates to `[int]::MaxValue` when the denominator is 0, preventing a flood of log output on every loop iteration
+  - Bumped `FileManagement/FileDistributor` module version to `1.1.6`
+
 - **FolderOps.ps1: use `-LiteralPath` in `Move-ToRecycleBin` and `Remove-DistributionFile` (issue #BUG)**
   - Changed `Get-Item $FilePath` to `Get-Item -LiteralPath $FilePath` in `Move-ToRecycleBin` to prevent wildcard expansion silently failing for file names containing `[`, `]`, `*`, or `?`
   - Changed `Test-Path -Path $FilePath` to `Test-Path -LiteralPath $FilePath` in `Remove-DistributionFile` for the same reason
