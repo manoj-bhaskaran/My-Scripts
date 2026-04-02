@@ -77,7 +77,7 @@ function Move-ToRecycleBin {
         $recycleBin = $shell.NameSpace(10)
 
         # Get the file to be moved to the Recycle Bin
-        $file = Get-Item $FilePath
+        $file = Get-Item -LiteralPath $FilePath
 
         # Move the file to the Recycle Bin with retry, suppressing confirmation (0x100)
         Invoke-WithRetry -Operation { $recycleBin.MoveHere($file.FullName, 0x100) } -MaxBackoff $MaxBackoff `
@@ -103,7 +103,7 @@ function Remove-DistributionFile {
 
     try {
         # Check if the file exists before attempting deletion
-        if (Test-Path -Path $FilePath) {
+        if (Test-Path -LiteralPath $FilePath) {
             Remove-FileWithRetry -Path $FilePath -RetryDelay $RetryDelay -MaxRetries $RetryCount -MaxBackoff $MaxBackoff | Out-Null
             Write-LogInfo "Deleted file: $FilePath."
         }

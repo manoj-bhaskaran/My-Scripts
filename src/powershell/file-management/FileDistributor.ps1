@@ -405,7 +405,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.7.4"
+$script:Version = "4.7.5"
 $script:Warnings = 0
 $script:Errors = 0
 

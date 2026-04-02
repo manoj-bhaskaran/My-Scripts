@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **FolderOps.ps1: use `-LiteralPath` in `Move-ToRecycleBin` and `Remove-DistributionFile` (issue #BUG)**
+  - Changed `Get-Item $FilePath` to `Get-Item -LiteralPath $FilePath` in `Move-ToRecycleBin` to prevent wildcard expansion silently failing for file names containing `[`, `]`, `*`, or `?`
+  - Changed `Test-Path -Path $FilePath` to `Test-Path -LiteralPath $FilePath` in `Remove-DistributionFile` for the same reason
+  - Bumped versions: `FileDistributor.ps1` to `4.7.5` and `FileManagement/FileDistributor` module to `1.1.4`
+
 - **FileDistributor.ps1 v4.7.3: CP3 checkpoint now saves source files**
   - Added `-IncludeSourceFiles` and `-SourceFiles $RunState.sourceFiles` to the CP3 `New-CheckpointPayload` call in `Invoke-DistributionPhase`
   - Previously the CP3 payload omitted `sourceFiles`, so restarting from CP3 left `$RunState.sourceFiles` empty and the CP4 guard evaluated to `$false`, silently skipping the entire source-to-target distribution phase
