@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **FileDistributor.ps1 v4.7.3: CP3 checkpoint now saves source files**
+  - Added `-IncludeSourceFiles` and `-SourceFiles $RunState.sourceFiles` to the CP3 `New-CheckpointPayload` call in `Invoke-DistributionPhase`
+  - Previously the CP3 payload omitted `sourceFiles`, so restarting from CP3 left `$RunState.sourceFiles` empty and the CP4 guard evaluated to `$false`, silently skipping the entire source-to-target distribution phase
+
 ### Changed
 
 - **FileDistributor retry/file-operation modularization cleanup (issue #779)**
