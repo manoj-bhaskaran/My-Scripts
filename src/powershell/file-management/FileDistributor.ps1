@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.7.1
+ 4.7.2
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
@@ -226,6 +226,10 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
+## 4.7.2 — 2026-04-02
+
+- Fixed race handling in `Invoke-FileMove` so missing source files are logged and skipped instead of aborting the run.
+
 ## 4.7.1 — 2026-04-02
 
 - Replaced script-local retry/file-operation utilities with shared Core modules (`ErrorHandling` + `FileOperations`) and removed direct `Private/RetryOps.ps1` loading.
@@ -401,7 +405,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.7.1"
+$script:Version = "4.7.2"
 $script:Warnings = 0
 $script:Errors = 0
 

@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **FileDistributor race regression: missing source files no longer abort distribution (issue #779 review)**
+  - Updated `Invoke-FileMove` to detect source disappearance before/during `Copy-FileWithRetry` and treat it as warning-and-skip behavior
+  - Prevents normal concurrent file churn from terminating an otherwise healthy distribution pass
+  - Bumped versions: `FileDistributor.ps1` to `4.7.2` and `FileManagement/FileDistributor` module to `1.1.2`
+
+
 - **FileDistributor modularization: fixed parameter propagation in post-processing APIs**
   - Added `WarningCount`, `ErrorCount`, `RetryDelay`, and `RetryCount` parameters to `Invoke-FolderRebalance`, `Invoke-DistributionRandomize`, and `Invoke-FolderConsolidation`
   - Updated script calls to pass script-scoped warning/error counters and retry settings to prevent incorrect EndOfScript deletion decisions and retry behavior changes
