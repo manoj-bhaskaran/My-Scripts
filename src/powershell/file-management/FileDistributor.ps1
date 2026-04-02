@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.7.4
+ 4.7.7
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
@@ -405,7 +405,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.7.5"
+$script:Version = "4.7.7"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -884,8 +884,8 @@ function Invoke-EndOfScriptDeletion {
 
     if ($DeleteMode -ne "EndOfScript") { return }
 
-    $effectiveWarnings = [Math]::Max($Warnings, $PriorWarnings)
-    $effectiveErrors = [Math]::Max($Errors, $PriorErrors)
+    $effectiveWarnings = [Math]::Max($script:Warnings, $PriorWarnings)
+    $effectiveErrors = [Math]::Max($script:Errors, $PriorErrors)
 
     if (-not (Test-EndOfScriptCondition -Condition $EndOfScriptDeletionCondition -Warnings $effectiveWarnings -Errors $effectiveErrors)) {
         LogMessage -Message "End-of-script deletion skipped due to warnings or errors."

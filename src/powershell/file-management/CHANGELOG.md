@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 4.7.7 — 2026-04-02
+
+### Fixed
+
+- Fixed `Invoke-EndOfScriptDeletion` using unqualified `$Warnings` and `$Errors` instead of `$script:Warnings` and `$script:Errors` when computing the effective warning/error counts for the deletion gate. The unqualified references relied on PowerShell's implicit scope-chain resolution, which is inconsistent with every other reference to these accumulators in the script and could silently yield `0` in edge-case execution contexts, causing `EndOfScript` deletion to proceed even when the current session had accumulated warnings or errors. Fixed by qualifying both references with the explicit `$script:` prefix.
+
 ## 4.7.6 — 2026-04-02
 
 ### Fixed
@@ -10,7 +16,7 @@
 
 ### Fixed
 
-- Fixed a race condition in `Invoke-TargetRedistribution` where `Get-Random -Count $excess` could throw *"Cannot process argument because the value of argument 'Count' is not valid"* if another process deleted files from an overloaded folder between the cached file-count snapshot and the actual `Get-ChildItem` enumeration. The fix collects all current files into a variable first, then clamps the excess count to the actual file count using `[Math]::Min()`, and skips `Get-Random` entirely when all files need to be redistributed. Bumped `FileDistributor` module version to `1.1.5`.
+- Fixed a race condition in `Invoke-TargetRedistribution` where `Get-Random -Count $excess` could throw _"Cannot process argument because the value of argument 'Count' is not valid"_ if another process deleted files from an overloaded folder between the cached file-count snapshot and the actual `Get-ChildItem` enumeration. The fix collects all current files into a variable first, then clamps the excess count to the actual file count using `[Math]::Min()`, and skips `Get-Random` entirely when all files need to be redistributed. Bumped `FileDistributor` module version to `1.1.5`.
 
 ## 4.7.4 — 2026-04-02
 
