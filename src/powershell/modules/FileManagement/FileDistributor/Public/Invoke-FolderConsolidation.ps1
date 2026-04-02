@@ -12,7 +12,8 @@ function Invoke-FolderConsolidation {
         [Parameter(Mandatory = $true)][ref]$WarningCount,
         [Parameter(Mandatory = $true)][ref]$ErrorCount,
         [Parameter(Mandatory = $true)][int]$RetryDelay,
-        [Parameter(Mandatory = $true)][int]$RetryCount
+        [Parameter(Mandatory = $true)][int]$RetryCount,
+        [int]$MaxBackoff = 60
     )
 
     LogMessage -Message "Consolidation: computing minimal subfolder set..."
@@ -121,6 +122,7 @@ function Invoke-FolderConsolidation {
                 -TotalFiles $totalMoves `
                 -RetryDelay $RetryDelay `
                 -RetryCount $RetryCount `
+                -MaxBackoff $MaxBackoff `
                 -ProgressActivity "Consolidating subfolders" `
                 -ProgressStatusTemplate "Moved {0} of {1}" `
                 -CopyFailureMessageTemplate "Consolidation: failed to copy '{0}' to '{1}'." `
@@ -142,7 +144,7 @@ function Invoke-FolderConsolidation {
             if ($entries -eq 0) {
                 Invoke-WithRetry -Operation { Remove-Item -LiteralPath $o -Force -ErrorAction Stop } `
                     -Description "Consolidation: delete empty subfolder '$o'" `
-                    -RetryDelay $RetryDelay -RetryCount $RetryCount -IgnoreFileNotFound
+                    -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff -IgnoreFileNotFound
                 LogMessage -Message "Consolidation: deleted empty subfolder '$o'."
                 $deleted++
             } else {

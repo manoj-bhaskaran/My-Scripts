@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 4.7.4 — 2026-04-02
+
+### Fixed
+
+- Propagated `$MaxBackoff` to `Invoke-FolderRebalance`, `Invoke-FolderConsolidation`, and `Invoke-DistributionRandomize`: added `[int]$MaxBackoff = 60` parameter to each function and threaded it through to every `Invoke-FileMove` call (and the `Invoke-WithRetry` subfolder-deletion call in `Invoke-FolderConsolidation`). Updated the three call sites in `Invoke-PostProcessingPhase` to pass `-MaxBackoff $MaxBackoff`, ensuring a user-supplied `-MaxBackoff` value is no longer silently ignored during post-processing.
+- Bumped `FileDistributor` module version to `1.1.3`.
+
 ## 4.7.3 — 2026-04-02
 
 ### Fixed

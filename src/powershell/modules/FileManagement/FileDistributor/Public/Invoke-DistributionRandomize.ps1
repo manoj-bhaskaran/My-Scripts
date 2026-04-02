@@ -12,7 +12,8 @@ function Invoke-DistributionRandomize {
         [Parameter(Mandatory = $true)][ref]$WarningCount,
         [Parameter(Mandatory = $true)][ref]$ErrorCount,
         [Parameter(Mandatory = $true)][int]$RetryDelay,
-        [Parameter(Mandatory = $true)][int]$RetryCount
+        [Parameter(Mandatory = $true)][int]$RetryCount,
+        [int]$MaxBackoff = 60
     )
 
     LogMessage -Message "Randomize: redistributing ALL files randomly across all subfolders..."
@@ -155,6 +156,7 @@ function Invoke-DistributionRandomize {
                 -TotalFiles $filesMoving `
                 -RetryDelay $RetryDelay `
                 -RetryCount $RetryCount `
+                -MaxBackoff $MaxBackoff `
                 -ProgressActivity "Randomizing distribution" `
                 -ProgressStatusTemplate "Moved {0} of {1} files" `
                 -CopyFailureMessageTemplate "Randomize: failed to copy '{0}' to '{1}'." `

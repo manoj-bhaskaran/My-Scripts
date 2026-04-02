@@ -13,7 +13,8 @@ function Invoke-FolderRebalance {
         [Parameter(Mandatory = $true)][ref]$WarningCount,
         [Parameter(Mandatory = $true)][ref]$ErrorCount,
         [Parameter(Mandatory = $true)][int]$RetryDelay,
-        [Parameter(Mandatory = $true)][int]$RetryCount
+        [Parameter(Mandatory = $true)][int]$RetryCount,
+        [int]$MaxBackoff = 60
     )
 
     # Calculate tolerance multipliers
@@ -171,6 +172,7 @@ function Invoke-FolderRebalance {
                 -TotalFiles $plannedMoves `
                 -RetryDelay $RetryDelay `
                 -RetryCount $RetryCount `
+                -MaxBackoff $MaxBackoff `
                 -ProgressActivity "Rebalancing subfolders" `
                 -ProgressStatusTemplate "Moved {0} of {1}" `
                 -CopyFailureMessageTemplate "Rebalance: failed to copy '{0}' to '{1}'." `
