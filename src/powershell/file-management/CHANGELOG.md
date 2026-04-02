@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 4.7.5 — 2026-04-02
+
+### Fixed
+
+- Fixed a race condition in `Invoke-TargetRedistribution` where `Get-Random -Count $excess` could throw *"Cannot process argument because the value of argument 'Count' is not valid"* if another process deleted files from an overloaded folder between the cached file-count snapshot and the actual `Get-ChildItem` enumeration. The fix collects all current files into a variable first, then clamps the excess count to the actual file count using `[Math]::Min()`, and skips `Get-Random` entirely when all files need to be redistributed. Bumped `FileDistributor` module version to `1.1.5`.
+
 ## 4.7.4 — 2026-04-02
 
 ### Fixed

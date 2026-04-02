@@ -84,7 +84,13 @@ function Invoke-TargetRedistribution {
         $fileCount = $folderFilesMap[$folder]
         if ($fileCount -gt $FilesPerFolderLimit) {
             $excess = $fileCount - $FilesPerFolderLimit
-            $overloadedFiles = Get-ChildItem -Path $folder -File | Get-Random -Count $excess
+            $allFolderFiles = @(Get-ChildItem -Path $folder -File)
+            $safeExcess = [Math]::Min($excess, $allFolderFiles.Count)
+            $overloadedFiles = if ($safeExcess -lt $allFolderFiles.Count) {
+                $allFolderFiles | Get-Random -Count $safeExcess
+            } else {
+                $allFolderFiles
+            }
             $filesToRedistributeMap[$folder] = $overloadedFiles
             Write-LogInfo "Folder $folder is overloaded by $excess file(s), queuing for redistribution."
             $redistributionTotal += $overloadedFiles.Count
