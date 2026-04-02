@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.7.0
+ 4.7.1
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
@@ -50,7 +50,7 @@ Optional. If specified, the script will restart from the last checkpoint, resumi
 .PARAMETER MaxBackoff
 Optional. Maximum backoff (in seconds) used by the exponential retry helper when `-RetryCount` is non-zero.
 Defaults to 60 seconds. Applies to state-file locking and all file operations that use the retry helper
-(`Copy-ItemWithRetry`, `Remove-ItemWithRetry`, `Rename-ItemWithRetry`, Recycle Bin moves).
+(`Copy-FileWithRetry`, `Remove-FileWithRetry`, module `Invoke-WithRetry`, Recycle Bin moves).
 
 .PARAMETER ShowProgress
 Optional. Displays progress updates during the script's execution. Use this parameter to enable progress reporting.
@@ -226,6 +226,11 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
+## 4.7.1 — 2026-04-02
+
+- Replaced script-local retry/file-operation utilities with shared Core modules (`ErrorHandling` + `FileOperations`) and removed direct `Private/RetryOps.ps1` loading.
+- Updated call paths to use `Copy-FileWithRetry`, `Remove-FileWithRetry`, and module `Invoke-WithRetry -IgnoreFileNotFound` semantics.
+
 ## 4.7.0 â€” 2026-04-01
 ### Changed
 - Moved `DistributeFilesToSubfolders` â†’ `Invoke-FileDistribution` and `RedistributeFilesInTarget` â†’ `Invoke-TargetRedistribution` into `Public/` files of the `FileManagement/FileDistributor` module.
@@ -309,12 +314,13 @@ param(
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PurgeLogs.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\Core\ErrorHandling\ErrorHandling.psd1" -Force
+Import-Module "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1" -Force
 
 # Import FileQueue module for queue management
 Import-Module "$PSScriptRoot\..\modules\FileManagement\FileQueue\FileQueue.psd1" -Force
 Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistributor.psd1" -Force
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\PathHelpers.ps1"
-. "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\RetryOps.ps1"
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\FileLock.ps1"
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\State.ps1"
 . "$PSScriptRoot\..\modules\FileManagement\FileDistributor\Private\Serialization.ps1"
@@ -395,7 +401,7 @@ if ($Help) {
 }
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.7.0"
+$script:Version = "4.7.1"
 $script:Warnings = 0
 $script:Errors = 0
 

@@ -140,7 +140,9 @@ function Invoke-FolderConsolidation {
         try {
             $entries = (Get-ChildItem -LiteralPath $o -Force -ErrorAction Stop | Measure-Object).Count
             if ($entries -eq 0) {
-                Remove-ItemWithRetry -Path $o -RetryDelay $RetryDelay -RetryCount $RetryCount
+                Invoke-WithRetry -Operation { Remove-Item -LiteralPath $o -Force -ErrorAction Stop } `
+                    -Description "Consolidation: delete empty subfolder '$o'" `
+                    -RetryDelay $RetryDelay -RetryCount $RetryCount -IgnoreFileNotFound
                 LogMessage -Message "Consolidation: deleted empty subfolder '$o'."
                 $deleted++
             } else {
