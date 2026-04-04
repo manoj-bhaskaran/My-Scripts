@@ -31,7 +31,7 @@ function Invoke-FileDistribution {
             $pathCandidate = if ($candidate -is [IO.FileSystemInfo]) { $candidate.FullName } else { [string]$candidate }
             if ([string]::IsNullOrWhiteSpace($pathCandidate)) { continue }
 
-            $resolved = Resolve-SubfolderPath -Path $pathCandidate -TargetRoot $TargetRoot
+            $resolved = Resolve-SubfolderPath -Path $pathCandidate -TargetRoot $TargetRoot -WarningCount $WarningCount
             if (-not $resolved) { continue }
             if (-not (Test-Path -LiteralPath $resolved -PathType Container)) { continue }
             if (-not $folderCounts.ContainsKey($resolved)) {
@@ -111,7 +111,7 @@ function Invoke-FileDistribution {
         Write-LogInfo "Selected destination before resolve: '$destinationFolder'"
 
         # Last-mile guards (never root, always under TargetRoot, must exist)
-        $destinationFolder = Resolve-SubfolderPath -Path $destinationFolder -TargetRoot $TargetRoot
+        $destinationFolder = Resolve-SubfolderPath -Path $destinationFolder -TargetRoot $TargetRoot -WarningCount $WarningCount
         $destNormalized = if ($destinationFolder) { [IO.Path]::GetFullPath($destinationFolder) } else { $null }
         $targetNormalized = [IO.Path]::GetFullPath($TargetRoot)
 

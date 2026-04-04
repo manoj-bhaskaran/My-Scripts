@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 4.7.9 — 2026-04-04
+
+### Fixed
+
+- Fixed `Resolve-SubfolderPath` in `Private/PathHelpers.ps1` silently dropping the warning counter increment when `[IO.Path]::GetFullPath` throws for a malformed rooted path. The original `LogMessage -IsWarning` call both logged and incremented `$script:Warnings`; the replacement `Write-LogWarning` only logs. Added an optional `[ref]$WarningCount` parameter to `Resolve-SubfolderPath` and increment it in the catch block. Threaded `-WarningCount $WarningCount` through both call sites in `Invoke-FileDistribution.ps1` so that `GetFullPath` failures are correctly reflected in the run's warning totals and the `-DeleteMode EndOfScript -EndOfScriptDeletionCondition NoWarnings` gate behaves as expected. Bumped `FileDistributor` module version to `1.1.8`.
+
+## 4.7.8 — 2026-04-04
+
+### Fixed
+
+- Fixed `Resolve-SubfolderPath` in `Private/PathHelpers.ps1` calling the non-existent `LogMessage` function (a script-scope helper defined only in `FileDistributor.ps1`) from inside the module. Replaced the two `LogMessage` calls with `Write-LogDebug` and `Write-LogWarning`, consistent with every other logging call in the module. This caused a fatal `"LogMessage is not recognized"` error whenever `Resolve-SubfolderPath` was invoked during distribution. Bumped `FileDistributor` module version to `1.1.7`.
+
 ## 4.7.7 — 2026-04-02
 
 ### Fixed
