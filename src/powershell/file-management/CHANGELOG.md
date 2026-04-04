@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 4.7.8 — 2026-04-04
+
+### Fixed
+
+- Fixed `Resolve-SubfolderPath` in `Private/PathHelpers.ps1` calling the non-existent `LogMessage` function (a script-scope helper defined only in `FileDistributor.ps1`) from inside the module. Replaced the two `LogMessage` calls with `Write-LogDebug` and `Write-LogWarning`, consistent with every other logging call in the module. This caused a fatal `"LogMessage is not recognized"` error whenever `Resolve-SubfolderPath` was invoked during distribution. Bumped `FileDistributor` module version to `1.1.7`.
+
 ## 4.7.7 — 2026-04-02
 
 ### Fixed

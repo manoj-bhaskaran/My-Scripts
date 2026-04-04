@@ -1,6 +1,6 @@
 @{
     RootModule = 'FileDistributor.psm1'
-    ModuleVersion = '1.1.6'
+    ModuleVersion = '1.1.7'
     GUID = '7ce4ef6c-cc9f-4c89-a0d9-6c2751f4f0df'
     Author = 'Manoj Bhaskaran'
     CompanyName = 'Unknown'
