@@ -85,11 +85,11 @@ function Resolve-SubfolderPath {
     if ($Path -match '^[A-Za-z]$' -or $Path -match '^[A-Za-z]:$' -or $Path -match '^[A-Za-z]:[^\\/].*') { return $null }
     if ([System.IO.Path]::IsPathRooted($Path)) {
         try {
-            LogMessage -Message "DEBUG: Attempting GetFullPath for '$Path'" -IsDebug
+            Write-LogDebug "DEBUG: Attempting GetFullPath for '$Path'"
             return [IO.Path]::GetFullPath($Path)
         }
         catch {
-            LogMessage -Message "DEBUG: GetFullPath threw for '$Path': $($_.Exception.Message)" -IsWarning
+            Write-LogWarning "DEBUG: GetFullPath threw for '$Path': $($_.Exception.Message)"
             return $null
         }
     }
