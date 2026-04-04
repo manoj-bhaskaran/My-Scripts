@@ -79,7 +79,8 @@ function Initialize-FilePath {
 function Resolve-SubfolderPath {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$TargetRoot
+        [Parameter(Mandatory = $true)][string]$TargetRoot,
+        [ref]$WarningCount = $null
     )
     if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
     if ($Path -match '^[A-Za-z]$' -or $Path -match '^[A-Za-z]:$' -or $Path -match '^[A-Za-z]:[^\\/].*') { return $null }
@@ -90,6 +91,7 @@ function Resolve-SubfolderPath {
         }
         catch {
             Write-LogWarning "DEBUG: GetFullPath threw for '$Path': $($_.Exception.Message)"
+            if ($WarningCount) { $WarningCount.Value++ }
             return $null
         }
     }
