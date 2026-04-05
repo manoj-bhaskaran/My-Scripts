@@ -1,7 +1,5 @@
 """CLI layer for Google Drive Trash Recovery Tool."""
 
-__version__ = "1.11.0"
-
 import argparse
 import json
 import logging
@@ -16,6 +14,7 @@ from dateutil import parser as date_parser
 
 from validators import validate_extensions, normalize_policy_token
 from gdrive_constants import (
+    VERSION,
     EXTENSION_MIME_TYPES,
     DEFAULT_BURST,
     DEFAULT_HTTP_POOL_MAXSIZE,
@@ -29,6 +28,8 @@ from gdrive_constants import (
 )
 from gdrive_models import PostRestorePolicy
 from gdrive_recover import DriveTrashRecoveryTool
+
+__version__ = VERSION
 
 
 def create_parser():

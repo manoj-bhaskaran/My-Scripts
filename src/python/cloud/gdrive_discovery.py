@@ -72,7 +72,7 @@ class DriveTrashDiscovery:
         if buckets["not_found"]:
             joined = ", ".join(buckets["not_found"])
             self.logger.error(f"File IDs not found: {joined}")
-            self._print_err(f"Invalid file ID format: {joined}")
+            self._print_err(f"File IDs not found: {joined}")
         if buckets["no_access"]:
             joined = ", ".join(buckets["no_access"])
             self.logger.error(f"Insufficient permissions for file IDs: {joined}")
@@ -474,6 +474,23 @@ class DriveTrashDiscovery:
             if not page_token:
                 break
 
+    def _fetch_files_page(
+        self, query: str, page_token: Optional[str]
+    ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+        """Fetch one Drive files.list page for discovery paths."""
+        service = self.auth._get_service()
+        fields = self._id_discovery_fields()
+        response = self._execute(
+            service.files().list(
+                q=query,
+                spaces="drive",
+                fields=f"nextPageToken, files({fields})",
+                pageToken=page_token,
+                pageSize=PAGE_SIZE,
+            )
+        )
+        return response.get("files", []), response.get("nextPageToken")
+
     def _discover_via_query(self, query: str) -> List[RecoveryItem]:
         items: List[RecoveryItem] = []
         try:
@@ -553,8 +570,9 @@ class DriveTrashDiscovery:
             if self.args.mode == "recover_and_download" and not item.target_path:
                 item.target_path = self.tool._generate_target_path(item)
             batch.append(item)
-            self.tool._seen_total += 1
-            self.tool.stats["found"] += 1
+            with self.tool.stats_lock:
+                self.tool._seen_total += 1
+                self.tool.stats["found"] += 1
             if self._should_flush_streaming_batch(batch, batch_n):
                 self.tool._run_parallel_processing_for_batch(batch, start_time)
 

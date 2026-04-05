@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.12.4] - 2026-04-05
+
+### Fixed
+
+- **Issue #849:** Added `DriveTrashDiscovery._fetch_files_page(query, page_token)` and wired query discovery/streaming paths to the real implementation so non-ID discovery no longer crashes with `AttributeError`.
+- Corrected validation output for HTTP 404 file-ID checks from `"Invalid file ID format"` to `"File IDs not found"`.
+- Guarded streaming `stats["found"]` updates with `stats_lock` in both streaming item handlers to keep stats mutation consistent and thread-safe.
+- Eliminated version drift by moving the authoritative module version to `gdrive_constants.VERSION` and importing it from both `gdrive_recover.py` and `gdrive_cli.py`.
+- Updated unit coverage to exercise the real `_fetch_files_page()` path instead of mocking the method directly.
+- Applied Black formatting to `gdrive_recover.py` so Python formatting checks pass in CI.
+
 ## [1.12.3] - 2026-04-01
 
 ### Changed

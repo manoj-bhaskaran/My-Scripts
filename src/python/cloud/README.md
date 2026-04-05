@@ -6,7 +6,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 
 - **gdrive_recover.py** - Google Drive file recovery and restoration utilities
 - **gdrive_cli.py** - CLI entry layer for gdrive_recover (argument parsing, validation, and main entry point)
-- **gdrive_constants.py** - Static configuration constants shared by gdrive_recover.py and future sibling modules
+- **gdrive_constants.py** - Static configuration constants (including authoritative `VERSION`) shared by gdrive_recover.py and sibling modules
 - **gdrive_models.py** - Data model types (TypedDicts, dataclasses, PostRestorePolicy) shared by gdrive_recover.py and future sibling modules
 - **gdrive_auth.py** - OAuth credential management, token caching, HTTP transport construction, and Drive service initialisation for gdrive_recover.py
 - **gdrive_rate_limiter.py** - Thread-safe request pacing primitives (fixed-interval and token-bucket) used by gdrive_recover.py
@@ -83,6 +83,7 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
 
 - `gdrive_recover.py` owns discovery, recovery, download, and orchestration behavior.
 - `gdrive_cli.py` owns CLI argument parsing, validation, and command routing.
+- `gdrive_constants.py` owns dependency-free constants and the shared `VERSION` string used by both `gdrive_recover.py` and `gdrive_cli.py`.
 - `gdrive_auth.py` owns OAuth credential management, token caching, HTTP transport construction, and Drive service initialisation.
   - Exposes `DriveAuthManager`; used by `DriveTrashRecoveryTool` via `self.auth`.
 - `gdrive_rate_limiter.py` owns request pacing mechanics (`RateLimiter.wait()`), including fixed-interval mode and token-bucket mode with diagnostics.
