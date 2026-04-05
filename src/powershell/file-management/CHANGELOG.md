@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 4.7.11 — 2026-04-05
+
+### Fixed
+
+- Fixed an input-type mismatch in `Invoke-FileDistribution`: the `-Files` parameter was typed as `[string[]]` while the function body contains an explicit `[System.IO.FileSystemInfo]` branch for `$file.FullName` and `$file.Name`. PowerShell converted incoming `FileSystemInfo` objects to strings at parameter binding time, making the `FileSystemInfo` branch effectively unreachable dead code and potentially losing object metadata. Updated the parameter type to `[object[]]` so both string paths and `FileSystemInfo` inputs are handled as intended. Added a unit test in `tests/powershell/unit/FileDistributor.Tests.ps1` to assert `Invoke-FileDistribution` exposes `System.Object[]` for `-Files`. Bumped `FileDistributor` module version to `1.1.11`.
+
 ## 4.7.10 — 2026-04-05
 
 ### Fixed

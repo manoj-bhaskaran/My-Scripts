@@ -33,6 +33,9 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.7.11**
+  - Fixed `Invoke-FileDistribution` parameter typing for `-Files`: changed `[string[]]` to `[object[]]` so `System.IO.FileSystemInfo` inputs are not coerced to strings during parameter binding and the in-function `FileSystemInfo` handling branch remains reachable.
+  - Bumped internal `FileManagement/FileDistributor` module version to `v1.1.11` and added regression coverage for the `-Files` parameter type.
 - **FileDistributor.ps1 v4.6.14**
   - Created the new internal `FileManagement/FileDistributor` module scaffold and moved six private path helper functions (`New-Ref`, `New-Directory`, `Resolve-PathWithFallback`, `Resolve-FilePathIfDirectory`, `Initialize-FilePath`, `Resolve-SubfolderPath`) out of `FileDistributor.ps1` into `modules/FileManagement/FileDistributor/Private/PathHelpers.ps1`.
 - **FileDistributor.ps1 v4.6.13**
