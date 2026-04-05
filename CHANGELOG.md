@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.9] - 2026-04-05
+
 ### Fixed
+
+- **FileDistributor state helpers now use explicit state/retry parameters instead of script-scope free variables (issue #817)**
+  - Added explicit `StateFilePath`, `RetryDelay`, `RetryCount`, and `MaxBackoff` parameters to `Save-DistributionState` and `Restore-DistributionState` in `Private/State.ps1`
+  - Added explicit `RetryCount` and `MaxBackoff` parameters to `Write-JsonAtomically` so checksum sidecar writes no longer depend on outer script scope
+  - Updated `FileDistributor.ps1` checkpoint and restore call sites to pass the current state path and retry settings explicitly, making the state helpers safe in module/test contexts
+  - Added regression coverage for the state helpers to confirm they persist and re-lock using only passed parameters
+  - Bumped versions: `FileDistributor.ps1` to `4.7.10` and `FileManagement/FileDistributor` module to `1.1.10`
 
 - **Post-processing module functions used script-scope `LogMessage` and `Write-DistributionSummary` instead of `Write-Log*` (issue #816)**
   - Replaced all `LogMessage` calls in `Invoke-FolderConsolidation`, `Invoke-FolderRebalance`, and `Invoke-DistributionRandomize` with the appropriate `Write-LogInfo`, `Write-LogWarning`, `Write-LogError`, or `Write-LogDebug` framework calls; warning/error ref-counter increments previously implicit in `LogMessage` are now applied directly to `$WarningCount`/`$ErrorCount`
@@ -35,13 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed `Private/RetryOps.ps1` from FileDistributor loading path and imported Core dependencies directly in `FileDistributor.ps1` and `FileManagement/FileDistributor` module entrypoint
   - Bumped versions: `FileDistributor.ps1` to `4.7.1` and `FileManagement/FileDistributor` module to `1.1.1`
 
-### Fixed
-
 - **FileDistributor race regression: missing source files no longer abort distribution (issue #779 review)**
   - Updated `Invoke-FileMove` to detect source disappearance before/during `Copy-FileWithRetry` and treat it as warning-and-skip behavior
   - Prevents normal concurrent file churn from terminating an otherwise healthy distribution pass
   - Bumped versions: `FileDistributor.ps1` to `4.7.2` and `FileManagement/FileDistributor` module to `1.1.2`
-
 
 - **FileDistributor modularization: fixed parameter propagation in post-processing APIs**
   - Added `WarningCount`, `ErrorCount`, `RetryDelay`, and `RetryCount` parameters to `Invoke-FolderRebalance`, `Invoke-DistributionRandomize`, and `Invoke-FolderConsolidation`

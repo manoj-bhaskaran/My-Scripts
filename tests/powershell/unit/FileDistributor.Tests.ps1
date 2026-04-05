@@ -18,6 +18,7 @@ BeforeAll {
 
     # Path to FileDistributor script
     $script:ScriptPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'file-management' 'FileDistributor.ps1'
+    $script:StateHelpersPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'Private' 'State.ps1'
 }
 
 Describe "FileDistributor Script Existence" {
@@ -259,5 +260,110 @@ Describe 'FileDistributor Module Public API' {
         (Get-Command Invoke-FolderRebalance -ErrorAction Stop).Name | Should -Be 'Invoke-FolderRebalance'
         (Get-Command Invoke-DistributionRandomize -ErrorAction Stop).Name | Should -Be 'Invoke-DistributionRandomize'
         (Get-Command Invoke-FolderConsolidation -ErrorAction Stop).Name | Should -Be 'Invoke-FolderConsolidation'
+    }
+}
+
+Describe 'FileDistributor State Helpers' -Tag 'StateHelpers' {
+    BeforeAll {
+        $script:InvokeWithRetryCalls = @()
+
+        function LogMessage {
+            param(
+                [string]$Message,
+                [switch]$IsWarning,
+                [switch]$IsError
+            )
+        }
+
+        function Invoke-WithRetry {
+            param(
+                [scriptblock]$Operation,
+                [string]$Description,
+                [int]$RetryDelay,
+                [int]$RetryCount,
+                [int]$MaxBackoff
+            )
+
+            $script:InvokeWithRetryCalls += [pscustomobject]@{
+                Description = $Description
+                RetryDelay  = $RetryDelay
+                RetryCount  = $RetryCount
+                MaxBackoff  = $MaxBackoff
+            }
+
+            & $Operation
+        }
+
+        function Lock-DistributionStateFile {
+            param(
+                [string]$FilePath,
+                [int]$RetryDelay,
+                [int]$RetryCount,
+                [int]$MaxBackoff
+            )
+
+            return [pscustomobject]@{
+                FilePath   = $FilePath
+                RetryDelay = $RetryDelay
+                RetryCount = $RetryCount
+                MaxBackoff = $MaxBackoff
+            }
+        }
+
+        function Unlock-DistributionStateFile {
+            param([object]$FileStream)
+        }
+
+        . $script:StateHelpersPath
+    }
+
+    BeforeEach {
+        $script:InvokeWithRetryCalls = @()
+    }
+
+    It 'Write-JsonAtomically uses explicit retry parameters for the checksum sidecar' {
+        $statePath = Join-Path $TestDrive 'state' 'write-json.json'
+
+        Write-JsonAtomically -StateObject @{ Checkpoint = 1 } -Path $statePath -RetryCount 0 -MaxBackoff 3
+
+        (Test-Path $statePath) | Should -Be $true
+        (Test-Path "$statePath.sha256") | Should -Be $true
+        $script:InvokeWithRetryCalls.Count | Should -Be 1
+        $script:InvokeWithRetryCalls[0].RetryDelay | Should -Be 1
+        $script:InvokeWithRetryCalls[0].RetryCount | Should -Be 0
+        $script:InvokeWithRetryCalls[0].MaxBackoff | Should -Be 3
+    }
+
+    It 'Save-DistributionState persists state and re-locks using passed parameters' {
+        $statePath = Join-Path $TestDrive 'state' 'save-state.json'
+        $fileLock = [ref]([pscustomobject]@{ Existing = $true })
+
+        Save-DistributionState -Checkpoint 4 -AdditionalVariables @{ Mode = 'Test' } -FileLock $fileLock -SessionId 'session-123' -WarningsSoFar 2 -ErrorsSoFar 1 -StateFilePath $statePath -RetryDelay 4 -RetryCount 5 -MaxBackoff 6
+
+        $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+        $state.Checkpoint | Should -Be 4
+        $state.SessionId | Should -Be 'session-123'
+        $state.WarningsSoFar | Should -Be 2
+        $state.ErrorsSoFar | Should -Be 1
+        $state.Mode | Should -Be 'Test'
+        $fileLock.Value.FilePath | Should -Be $statePath
+        $fileLock.Value.RetryDelay | Should -Be 4
+        $fileLock.Value.RetryCount | Should -Be 5
+        $fileLock.Value.MaxBackoff | Should -Be 6
+    }
+
+    It 'Restore-DistributionState reads the requested file path and re-locks with passed retry settings' {
+        $statePath = Join-Path $TestDrive 'state' 'restore-state.json'
+        $fileLock = [ref]([pscustomobject]@{ Existing = $true })
+        Write-JsonAtomically -StateObject @{ Checkpoint = 7; SessionId = 'resume-1' } -Path $statePath -RetryCount 2 -MaxBackoff 8
+
+        $state = Restore-DistributionState -FileLock $fileLock -StateFilePath $statePath -RetryDelay 9 -RetryCount 10 -MaxBackoff 11
+
+        $state.Checkpoint | Should -Be 7
+        $state.SessionId | Should -Be 'resume-1'
+        $fileLock.Value.FilePath | Should -Be $statePath
+        $fileLock.Value.RetryDelay | Should -Be 9
+        $fileLock.Value.RetryCount | Should -Be 10
+        $fileLock.Value.MaxBackoff | Should -Be 11
     }
 }
