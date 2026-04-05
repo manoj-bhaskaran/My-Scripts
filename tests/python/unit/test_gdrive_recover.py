@@ -346,3 +346,31 @@ def test_privilege_checks_and_file_info(tmp_path, monkeypatch):
 
     # ensure _test_operation_privileges handles empty input quietly
     assert tool._test_operation_privileges([])["untrash"]["status"] == "unknown"
+
+
+def test_check_privileges_samples_single_item(tmp_path, monkeypatch):
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+
+    args = _build_dummy_args(tmp_path)
+    tool = DriveTrashRecoveryTool(args)
+
+    fake_service = MagicMock()
+    fake_service.files.return_value.list.return_value.execute.return_value = {"files": []}
+    tool.auth._get_service = MagicMock(return_value=fake_service)
+
+    tool.items = [MagicMock(id="one"), MagicMock(id="two"), MagicMock(id="three")]
+    captured = {}
+
+    def fake_test_operation_privileges(items):
+        captured["items"] = items
+        return {}
+
+    tool._test_operation_privileges = fake_test_operation_privileges
+
+    checks = tool._check_privileges()
+
+    assert checks["drive_access"] is True
+    assert len(captured["items"]) == 1
+    assert captured["items"][0].id == "one"

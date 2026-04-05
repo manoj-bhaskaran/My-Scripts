@@ -389,7 +389,7 @@ class DriveTrashRecoveryTool:
             service = self.auth._get_service()
             service.files().list(pageSize=1).execute()
             checks["drive_access"] = True
-            sample_items = self.items[:3] if self.items else []
+            sample_items = self.items[:1] if self.items else []
             checks["operation_privileges"] = self._test_operation_privileges(sample_items)
         except Exception as e:
             checks["drive_error"] = str(e)

@@ -20,7 +20,6 @@ from gdrive_constants import (
     DEFAULT_HTTP_POOL_MAXSIZE,
     CREDENTIALS_FILE,
     TOKEN_FILE,
-    _PRINTED_REQUESTS_FALLBACK,
 )
 
 try:
@@ -97,6 +96,7 @@ class DriveAuthManager:
         self._http_transport = getattr(args, "http_transport", DEFAULT_HTTP_TRANSPORT)
         self._http_pool_maxsize = int(getattr(args, "http_pool_maxsize", DEFAULT_HTTP_POOL_MAXSIZE))
         self._authenticated = False
+        self._printed_requests_fallback = False
         # credential paths (may be absolute)
         self._credentials_file = CREDENTIALS_FILE
         self._token_file = TOKEN_FILE
@@ -127,9 +127,8 @@ class DriveAuthManager:
                     f"Requests transport unavailable ({e}); falling back to httplib2."
                 )
                 # One-time console note so users understand how to enable pooling.
-                global _PRINTED_REQUESTS_FALLBACK
-                if not _PRINTED_REQUESTS_FALLBACK:
-                    _PRINTED_REQUESTS_FALLBACK = True
+                if not self._printed_requests_fallback:
+                    self._printed_requests_fallback = True
                     print(
                         "ℹ️  Requests transport could not be enabled; falling back to httplib2.\n"
                         "   To enable connection pooling, install:  pip install requests google-auth[requests]\n"
@@ -210,16 +209,16 @@ class DriveAuthManager:
             f"Authenticated as: {about.get('user', {}).get('emailAddress', 'Unknown')}"
         )
         # Best-effort adapter smoke tests: small list + tiny media read (first byte)
-        try:
-            self._execute(test_service.files().list(pageSize=1, fields="files(id, size, mimeType)"))
-        except Exception:
-            # Some environments might fail list if Drive is empty; ignore.
-            pass
+        files = None
         try:
             files = self._execute(
                 test_service.files().list(pageSize=1, fields="files(id, size, mimeType)")
             )
-            f = next((x for x in files.get("files", []) if "size" in x), None)
+        except Exception:
+            # Some environments might fail list if Drive is empty; ignore.
+            pass
+        try:
+            f = next((x for x in (files or {}).get("files", []) if "size" in x), None)
             if f:
                 # Try to fetch a single byte using the underlying HTTP object to validate `get_media` path.
                 req = test_service.files().get_media(fileId=f["id"])

@@ -12,7 +12,7 @@ import os
 # ---------------------------------------------------------------------------
 # Version
 # ---------------------------------------------------------------------------
-VERSION = "1.12.4"
+VERSION = "1.12.5"
 
 # ---------------------------------------------------------------------------
 # API / OAuth
@@ -51,12 +51,6 @@ DEFAULT_CREDENTIALS_FILE = os.getenv("GDRIVE_CREDENTIALS_PATH", "credentials.jso
 DEFAULT_TOKEN_FILE = os.getenv("GDRIVE_TOKEN_PATH", "token.json")
 CREDENTIALS_FILE = os.getenv("GDRT_CREDENTIALS_FILE", DEFAULT_CREDENTIALS_FILE)
 TOKEN_FILE = os.getenv("GDRT_TOKEN_FILE", DEFAULT_TOKEN_FILE)
-
-# ---------------------------------------------------------------------------
-# Module-level guard flags
-# ---------------------------------------------------------------------------
-# One-time console note guard for requests→httplib2 fallback
-_PRINTED_REQUESTS_FALLBACK = False
 
 # ---------------------------------------------------------------------------
 # Extension → MIME-type mapping for robust server-side filtering
