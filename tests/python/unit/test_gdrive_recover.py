@@ -1,28 +1,6 @@
 """Tests for Google Drive recovery helpers."""
 
 from unittest.mock import MagicMock
-from gdrive_recover import get_recoverable_files
-
-
-def test_identify_recoverable_files(mocker):
-    """Only trashed files should be identified for recovery."""
-
-    service = mocker.Mock()
-    files_resource = mocker.Mock()
-    service.files.return_value = files_resource
-
-    files_resource.list.return_value.execute.return_value = {
-        "files": [
-            {"id": "1", "name": "deleted.txt", "trashed": True},
-            {"id": "2", "name": "normal.txt", "trashed": False},
-        ],
-        "nextPageToken": None,
-    }
-
-    recoverable = get_recoverable_files(service)
-
-    assert len(recoverable) == 1
-    assert recoverable[0]["name"] == "deleted.txt"
 
 
 def _build_dummy_args(tmp_path):
@@ -123,21 +101,6 @@ def test_report_validation_outcome(monkeypatch, tmp_path):
 
     buckets2 = {"ok": [], "invalid": ["bad"], "not_found": [], "no_access": []}
     assert tool._report_validation_outcome(buckets2, 1, ["1"]) is False
-
-
-def test_get_recoverable_files_pagination():
-    from gdrive_recover import get_recoverable_files
-
-    service = MagicMock()
-    files_resource = MagicMock()
-    service.files.return_value = files_resource
-    files_resource.list.return_value.execute.side_effect = [
-        {"files": [{"id": "1", "name": "deleted1", "trashed": True}], "nextPageToken": "t1"},
-        {"files": [{"id": "2", "name": "deleted2", "trashed": True}], "nextPageToken": None},
-    ]
-
-    recoverable = get_recoverable_files(service)
-    assert len(recoverable) == 2
 
 
 def test_handle_prefetch_error_retry_and_terminal(tmp_path, monkeypatch):
@@ -248,31 +211,6 @@ def test_discover_via_query_limit(tmp_path, monkeypatch):
     assert len(items) == 1
 
 
-def test_rate_limit_and_rl_diag(tmp_path, monkeypatch):
-    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
-    from gdrive_recover import DriveTrashRecoveryTool
-
-    args = _build_dummy_args(tmp_path)
-    args.max_rps = 1
-    args.burst = 1
-    args.rl_diagnostics = True
-    args.verbose = 2
-    tool = DriveTrashRecoveryTool(args)
-
-    # Force token bucket mode path.
-    tool._rl_diag_enabled = True
-    # first call initializes bucket and consumes token
-    tool._rate_limit()
-    assert tool._tb_initialized is True
-
-    # test legacy pacing path with burst disabled
-    args.burst = 0
-    tool._rate_limit()
-
-    # explicit rl_diag_tick call for formatting
-    tool._rl_diag_tick(1.0, 0.5, 1.0)
-
-
 def test_error_formatting_and_status_extract(tmp_path, monkeypatch):
     monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
     from gdrive_recover import DriveTrashRecoveryTool
@@ -299,6 +237,34 @@ def test_error_formatting_and_status_extract(tmp_path, monkeypatch):
     assert "HTTP 503" in tool._format_fetch_metadata_error_with_context(
         ValueError("bad"), 503, "f1"
     )
+
+
+def test_execute_uses_rate_limiter_wait(tmp_path, monkeypatch):
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    tool = DriveTrashRecoveryTool(_build_dummy_args(tmp_path))
+    tool.rate_limiter = MagicMock()
+    req = MagicMock()
+    req.execute.return_value = {"ok": True}
+
+    out = tool._execute(req)
+
+    assert out == {"ok": True}
+    tool.rate_limiter.wait.assert_called_once_with()
+    req.execute.assert_called_once_with()
+
+
+def test_discovery_owns_streaming_helpers(tmp_path, monkeypatch):
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    tool = DriveTrashRecoveryTool(_build_dummy_args(tmp_path))
+
+    assert hasattr(type(tool.discovery), "_handle_streaming_file")
+    assert hasattr(type(tool.discovery), "_should_stop_for_limit")
+    assert hasattr(type(tool.discovery), "_process_streaming_batch")
+    assert hasattr(type(tool.discovery), "_should_flush_streaming_batch")
 
 
 def test_privilege_checks_and_file_info(tmp_path, monkeypatch):

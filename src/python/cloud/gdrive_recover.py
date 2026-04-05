@@ -81,34 +81,6 @@ except ImportError:
     sys.exit(1)
 
 
-def get_recoverable_files(service):
-    """Return trashed Google Drive files that can be restored."""
-
-    trashed_files: List[Dict[str, Any]] = []
-    page_token: Optional[str] = None
-
-    while True:
-        response = (
-            service.files()
-            .list(
-                q="trashed = true",
-                spaces="drive",
-                fields="nextPageToken, files(id, name, trashed)",
-                pageToken=page_token,
-                pageSize=PAGE_SIZE,
-            )
-            .execute()
-        )
-
-        trashed_files.extend(file for file in response.get("files", []) if file.get("trashed"))
-
-        page_token = response.get("nextPageToken")
-        if not page_token:
-            break
-
-    return trashed_files
-
-
 class DriveTrashRecoveryTool:
     """Main recovery tool class."""
 
@@ -174,26 +146,6 @@ class DriveTrashRecoveryTool:
     def _record_state_load_error(self) -> None:
         with self.stats_lock:
             self.stats["errors"] += 1
-
-    # Backward-compatibility shim for legacy tests/internals expecting the
-    # pre-1.12.1 in-class rate-limiter surface.
-    @property
-    def _tb_initialized(self):
-        return self.rate_limiter._tb_initialized
-
-    @property
-    def _rl_diag_enabled(self):
-        return self.rate_limiter._rl_diag_enabled
-
-    @_rl_diag_enabled.setter
-    def _rl_diag_enabled(self, value):
-        self.rate_limiter._rl_diag_enabled = value
-
-    def _rate_limit(self):
-        self.rate_limiter.wait()
-
-    def _rl_diag_tick(self, max_rps: float, tokens_snapshot: float, cap_snapshot: float) -> None:
-        self.rate_limiter._rl_diag_tick(max_rps, tokens_snapshot, cap_snapshot)
 
     def _execute(self, request):
         """Execute a googleapiclient request with rate limiting."""
@@ -919,124 +871,6 @@ class DriveTrashRecoveryTool:
             f"({pct:.1f}%) "
             f"Rate: {rate:.1f}/sec ETA: {eta:.0f}s"
         )
-
-    # ---- Streaming discovery helpers ----
-    def _should_stop_streaming(self, batch, batch_n):
-        """Return True if batch is full and should be processed."""
-        return len(batch) >= batch_n
-
-    def _should_stop_for_limit(self):
-        """Return True if the seen total has reached the user-specified limit."""
-        return self.args.limit and self.args.limit > 0 and self._seen_total >= self.args.limit
-
-    def _process_streaming_batch(self, batch, start_time):
-        """Process the current batch and clear it."""
-        self._run_parallel_processing_for_batch(batch, start_time)
-        batch.clear()
-
-    def _handle_streaming_file(self, fd, batch, batch_n, start_time):
-        """Process a single file data entry in streaming mode."""
-        item = self._process_file_data(fd)
-        if item:
-            if self.args.mode == "recover_and_download" and not item.target_path:
-                item.target_path = self._generate_target_path(item)
-            batch.append(item)
-            with self.stats_lock:
-                self._seen_total += 1
-                self.stats["found"] += 1
-            if self._should_stop_streaming(batch, batch_n):
-                self._process_streaming_batch(batch, start_time)
-
-    def _stream_stream_query(self, batch_n: int, start_time: float) -> bool:
-        """Paginate Drive query, process items in rolling batches, and release memory."""
-        ok = True
-        page_token: Optional[str] = None
-        query = self._build_query()
-        self.logger.info(f"Using query (streaming): {query}")
-        batch: List[RecoveryItem] = []
-        page_count = 0
-        try:
-            while True:
-                page_count += 1
-                files, page_token = self._fetch_files_page(query, page_token)
-                for fd in files:
-                    self._handle_streaming_file(fd, batch, batch_n, start_time)
-                    if self._should_stop_for_limit():
-                        break
-                if self.args.verbose >= 1:
-                    print(
-                        f"Found {len(files)} files in page {page_count} (streamed total: {self._seen_total})"
-                    )
-                if self._should_stop_for_limit() or not page_token:
-                    break
-        except Exception as e:
-            ok = False
-            self.logger.error(f"Error in streaming discovery: {e}")
-        # flush tail
-        if batch:
-            self._process_streaming_batch(batch, start_time)
-        return ok
-
-    def _should_flush_streaming_batch(self, batch, batch_n):
-        """Return True if the batch should be flushed (processed)."""
-        return len(batch) >= batch_n
-
-    def _handle_streaming_id_fetch(self, fid, fields, service):
-        """Fetch file metadata for a given ID, using cache if available."""
-        data = self._id_prefetch.get(fid)
-        if data is None:
-            try:
-                data = self._execute(service.files().get(fileId=fid, fields=fields))
-            except Exception as e:
-                self.logger.error(f"Error fetching metadata for {fid}: {e}")
-                with self.stats_lock:
-                    self.stats["errors"] += 1
-                return None
-        return data
-
-    def _handle_streaming_id_item(
-        self,
-        item: Optional[RecoveryItem],
-        batch: List[RecoveryItem],
-        batch_n: int,
-        start_time: float,
-    ) -> None:
-        """Handle a single RecoveryItem in streaming ID mode."""
-        if item:
-            if self.args.mode == "recover_and_download" and not item.target_path:
-                item.target_path = self._generate_target_path(item)
-            batch.append(item)
-            with self.stats_lock:
-                self._seen_total += 1
-                self.stats["found"] += 1
-            if self._should_flush_streaming_batch(batch, batch_n):
-                self._run_parallel_processing_for_batch(batch, start_time)
-
-    def _maybe_print_streaming_id_progress(self, idx, total_ids, start_ts):
-        """Print streaming progress for IDs every 10 seconds."""
-        if self.args.verbose >= 1:
-            now = time.time()
-            if (now - start_ts) >= 10:
-                print(f"Processing IDs: {idx}/{total_ids} (streamed total: {self._seen_total})")
-                return now
-        return start_ts
-
-    def _stream_stream_ids(self, batch_n: int, start_time: float) -> bool:
-        """Stream over provided file IDs, fetch minimal metadata, and process in batches."""
-        ok = True
-        batch: List[RecoveryItem] = []
-        fields = self._id_discovery_fields()
-        service = self.auth._get_service()
-        total_ids = len(self.args.file_ids or [])
-        start_ts = time.time()
-        for idx, fid in enumerate(self.args.file_ids, start=1):
-            data = self._handle_streaming_id_fetch(fid, fields, service)
-            item = self._process_file_data(data) if data else None
-            self._handle_streaming_id_item(item, batch, batch_n, start_time)
-            start_ts = self._maybe_print_streaming_id_progress(idx, total_ids, start_ts)
-        if batch:
-            self._run_parallel_processing_for_batch(batch, start_time)
-        return ok
 
     def _progress_interval(self, total: int) -> int:
         if total <= 0:
