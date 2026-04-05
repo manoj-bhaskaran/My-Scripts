@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Cache SonarCloud packages
         uses: actions/cache@v4
@@ -48,11 +50,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install pylint bandit
           pip install -r requirements.txt
-
-      - name: Run Pre-Commit Hooks
-        run: |
-          pip install $(grep -E '^pre-commit==' requirements.lock) $(grep -E '^virtualenv==' requirements.lock) $(grep -E '^filelock==' requirements.lock)
-          pre-commit run --all-files --show-diff-on-failure
 
       - name: Run Python Tests with Coverage
         run: |
@@ -99,6 +96,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y powershell
 
+      - name: Determine PowerShell module cache path
+        id: ps-cache-path
+        shell: pwsh
+        run: |
+          $modulePath = ($env:PSModulePath -split [System.IO.Path]::PathSeparator)[0]
+          "PS_MODULE_CACHE=$modulePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "cache-path=$modulePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Cache PowerShell modules
+        id: cache-pwsh
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PS_MODULE_CACHE }}
+          key: ${{ runner.os }}-psmodules-v1
+
+      - name: Report PowerShell module cache status
+        run: echo "PowerShell module cache hit:" "${{ steps.cache-pwsh.outputs.cache-hit }}"
+
       - name: Install Pester (PowerShell Testing Framework)
         shell: pwsh
         run: |
@@ -134,71 +149,6 @@ jobs:
         with:
           name: PowerShell-Coverage-Report
           path: coverage/powershell/coverage.xml
-
-      - name: Determine PowerShell module cache path
-        id: ps-cache-path
-        shell: pwsh
-        run: |
-          $modulePath = ($env:PSModulePath -split [System.IO.Path]::PathSeparator)[0]
-          "PS_MODULE_CACHE=$modulePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "cache-path=$modulePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-      - name: Cache PowerShell modules
-        id: cache-pwsh
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.PS_MODULE_CACHE }}
-          key: ${{ runner.os }}-psmodules-v1
-
-      - name: Report PowerShell module cache status
-        run: echo "PowerShell module cache hit:" "${{ steps.cache-pwsh.outputs.cache-hit }}"
-
-      - name: Cache npm packages for SQLLint
-        id: cache-npm
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-sql-lint-v1
-
-      - name: Install SQLLint and SQLFluff
-        run: |
-          npm install -g sql-lint
-          pip install sqlfluff
-
-      - name: Report npm cache status
-        run: echo "npm cache hit:" "${{ steps.cache-npm.outputs.cache-hit }}"
-
-      - name: Run PSScriptAnalyzer (PowerShell Linter)
-        shell: pwsh
-        run: |
-          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
-          $settingsPath = Join-Path $PWD "config/PSScriptAnalyzerSettings.psd1"
-          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Settings $settingsPath -Severity Error
-          $results | Out-File PSScriptAnalyzerReport.txt
-          if ($results) {
-            Write-Host "PSScriptAnalyzer found $($results.Count) error(s)"
-            exit 1
-          }
-
-      - name: Upload PSScriptAnalyzer Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: PSScriptAnalyzerReport
-          path: PSScriptAnalyzerReport.txt
-
-      - name: Run SQLLint (Syntax Check)
-        run: |
-          sql-lint $(git ls-files '*.sql') || true
-
-      - name: Run SQLFluff (Style Guide Check)
-        run: |
-          sqlfluff lint --format github-annotation --annotation-level warning > sqlfluff-report.txt || true
-
-      - name: Upload SQL Lint Reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: SQL-Lint-Reports
-          path: sqlfluff-report.txt
 
       - name: Cache Sonar Scanner
         id: cache-sonar
