@@ -1,4 +1,4 @@
-“””
+"""
 Frame cropper for image folders.
 
 Version: 4.0.2
@@ -47,7 +47,7 @@ USAGE
 SEE ALSO
     - Troubleshooting & FAQs:  src/python/media/README.md
     - Version history:         src/python/media/CHANGELOG.md
-“””
+"""
 
 from __future__ import annotations
 
