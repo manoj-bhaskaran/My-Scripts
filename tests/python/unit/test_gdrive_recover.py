@@ -33,8 +33,8 @@ def test_is_valid_file_id_format(tmp_path, monkeypatch):
     from gdrive_recover import DriveTrashRecoveryTool
 
     tool = DriveTrashRecoveryTool(_build_dummy_args(tmp_path))
-    assert tool._is_valid_file_id_format("1a2b3c4d5e6f7g8h9i0j1k2l3") is True
-    assert tool._is_valid_file_id_format("short") is False
+    assert tool.discovery._is_valid_file_id_format("1a2b3c4d5e6f7g8h9i0j1k2l3") is True
+    assert tool.discovery._is_valid_file_id_format("short") is False
 
 
 def test_build_query_with_extensions(tmp_path, monkeypatch):
@@ -45,7 +45,7 @@ def test_build_query_with_extensions(tmp_path, monkeypatch):
     args.extensions = ["jpg", ".tar.gz", "UNKNOWN"]
     tool = DriveTrashRecoveryTool(args)
 
-    q = tool._build_query()
+    q = tool.discovery._build_query()
     assert "trashed=true" in q
     assert "mimeType" in q
 
@@ -59,13 +59,13 @@ def test_matches_extension_filter_and_time_filter(tmp_path, monkeypatch):
     args.after_date = "2020-01-01T00:00:00Z"
     tool = DriveTrashRecoveryTool(args)
 
-    assert tool._matches_extension_filter("document.txt") is True
-    assert tool._matches_extension_filter("document.pdf") is False
+    assert tool.discovery._matches_extension_filter("document.txt") is True
+    assert tool.discovery._matches_extension_filter("document.pdf") is False
 
     item = {"modifiedTime": "2021-01-01T00:00:00Z"}
-    assert tool._matches_time_filter(item) is True
+    assert tool.discovery._matches_time_filter(item) is True
     item_bad = {"modifiedTime": "not-a-date"}
-    assert tool._matches_time_filter(item_bad) is True
+    assert tool.discovery._matches_time_filter(item_bad) is True
 
 
 def test_generate_target_path(tmp_path, monkeypatch):
@@ -97,10 +97,10 @@ def test_report_validation_outcome(monkeypatch, tmp_path):
     tool = DriveTrashRecoveryTool(args)
 
     buckets = {"ok": ["1"], "invalid": [], "not_found": [], "no_access": []}
-    assert tool._report_validation_outcome(buckets, 0, []) is True
+    assert tool.discovery._report_validation_outcome(buckets, 0, []) is True
 
     buckets2 = {"ok": [], "invalid": ["bad"], "not_found": [], "no_access": []}
-    assert tool._report_validation_outcome(buckets2, 1, ["1"]) is False
+    assert tool.discovery._report_validation_outcome(buckets2, 1, ["1"]) is False
 
 
 def test_handle_prefetch_error_retry_and_terminal(tmp_path, monkeypatch):
@@ -115,15 +115,13 @@ def test_handle_prefetch_error_retry_and_terminal(tmp_path, monkeypatch):
     fake_error = FakeHttpError("oops")
     fake_error.resp = MagicMock(status=429)
 
-    monkeypatch.setattr("gdrive_recover.HttpError", FakeHttpError)
-
     buckets = {"ok": [], "invalid": [], "not_found": [], "no_access": []}
     transient_errors = [0]
     transient_ids = []
     err_count = [0]
 
     # first attempt should request retry
-    should_retry = tool._handle_prefetch_error(
+    should_retry = tool.discovery._handle_prefetch_error(
         "fid", 429, fake_error, 0, buckets, transient_errors, transient_ids, err_count
     )
     assert should_retry is False
@@ -132,7 +130,7 @@ def test_handle_prefetch_error_retry_and_terminal(tmp_path, monkeypatch):
     fake_error2 = FakeHttpError("no")
     fake_error2.resp = MagicMock(status=404)
     assert (
-        tool._handle_prefetch_error(
+        tool.discovery._handle_prefetch_error(
             "fid", 404, fake_error2, 0, buckets, transient_errors, transient_ids, err_count
         )
         is True
@@ -146,19 +144,14 @@ def test_fetch_file_metadata_error_path(tmp_path, monkeypatch):
     monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
     tool = DriveTrashRecoveryTool(_build_dummy_args(tmp_path))
 
-    class FakeHttpError(Exception):
-        pass
-
-    monkeypatch.setattr("gdrive_recover.HttpError", FakeHttpError)
-
     class FakeRequest:
         def execute(self):
-            raise FakeHttpError("bad request")
+            raise Exception("bad request")
 
     service = MagicMock()
     service.files.return_value.get.return_value = FakeRequest()
 
-    data, non_trashed, err = tool._fetch_file_metadata(service, "fid", "id")
+    data, non_trashed, err = tool.discovery._fetch_file_metadata(service, "fid", "id")
     assert data is None
     assert non_trashed is False
     assert err and "files.get(fileId=fid) failed" in err
@@ -205,9 +198,9 @@ def test_discover_via_query_limit(tmp_path, monkeypatch):
         {"files": first_page[0], "nextPageToken": first_page[1]},
         {"files": second_page[0], "nextPageToken": second_page[1]},
     ]
-    tool.auth._get_service.return_value = service
+    tool.discovery.auth._get_service.return_value = service
 
-    items = tool._discover_via_query("trashed=true")
+    items = tool.discovery._discover_via_query("trashed=true")
     assert len(items) == 1
 
 
@@ -223,18 +216,16 @@ def test_error_formatting_and_status_extract(tmp_path, monkeypatch):
             self.resp = MagicMock(status=502)
             self.content = b"bad"
 
-    monkeypatch.setattr("gdrive_recover.HttpError", FakeHttpError)
-
     e = FakeHttpError()
     # Ensure resp path is used for status extraction
-    assert tool._extract_status_from_http_error(e) == 502
-    assert tool._extract_status_from_http_error(ValueError("x")) is None
+    assert tool.discovery._extract_status_from_http_error(e) == 502
+    assert tool.discovery._extract_status_from_http_error(ValueError("x")) is None
 
     assert (
-        tool._format_fetch_metadata_error_with_context(ValueError("bad"), None, "f1")
+        tool.discovery._format_fetch_metadata_error_with_context(ValueError("bad"), None, "f1")
         == "files.get(fileId=f1) failed: bad"
     )
-    assert "HTTP 503" in tool._format_fetch_metadata_error_with_context(
+    assert "HTTP 503" in tool.discovery._format_fetch_metadata_error_with_context(
         ValueError("bad"), 503, "f1"
     )
 

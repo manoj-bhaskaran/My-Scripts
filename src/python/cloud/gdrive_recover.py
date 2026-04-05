@@ -106,17 +106,34 @@ class DriveTrashRecoveryTool:
         # progress throttles
         self._streaming: bool = False
         self._processed_total: int = 0
-        self._seen_total: int = 0
+        self._seen_total_ref: List[int] = [0]
         self._last_discover_progress_ts: Optional[float] = None
         self._last_exec_progress_ts: Optional[float] = None
         # v1.12.0: authentication delegated to DriveAuthManager (issue #789)
         self.rate_limiter = RateLimiter(args, self.logger)
         self.auth = DriveAuthManager(args, self.logger, execute_fn=self._execute)
         # v1.12.2: discovery was extracted to gdrive_discovery.py (issue #791)
-        self.discovery = DriveTrashDiscovery(self)
+        # v1.13.0: DriveTrashDiscovery no longer holds a self.tool reference;
+        #          all dependencies are injected explicitly (issue #852).
+        self.discovery = DriveTrashDiscovery(
+            self.args,
+            self.logger,
+            self.auth,
+            self._execute,
+            stats=self.stats,
+            stats_lock=self.stats_lock,
+            seen_total_ref=self._seen_total_ref,
+            generate_target_path=self._generate_target_path,
+            run_parallel_processing_for_batch=self._run_parallel_processing_for_batch,
+        )
 
-    def __getattr__(self, name: str):
-        return getattr(self.discovery, name)
+    @property
+    def _seen_total(self) -> int:
+        return self._seen_total_ref[0]
+
+    @_seen_total.setter
+    def _seen_total(self, value: int) -> None:
+        self._seen_total_ref[0] = value
 
     # --- Symbol / message helpers (emoji can be disabled via --no-emoji) ---
     def _use_emoji(self) -> bool:
@@ -168,8 +185,8 @@ class DriveTrashRecoveryTool:
         return logging.getLogger(__name__)
 
     # -------------------- Discovery helpers delegated to DriveTrashDiscovery --------------------
-    # All methods in this section are intentionally delegated via __getattr__ to
-    # DriveTrashDiscovery to avoid code duplication and keep discovery logic in one location.
+    # discover_trashed_files is the public entry point; all other discovery internals
+    # live in DriveTrashDiscovery and are accessed directly via self.discovery.
 
     def discover_trashed_files(self) -> List[RecoveryItem]:
         return self.discovery.discover_trashed_files()
