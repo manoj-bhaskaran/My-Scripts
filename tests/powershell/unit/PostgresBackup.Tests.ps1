@@ -50,6 +50,21 @@ BeforeAll {
 
 Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
+    BeforeEach {
+        $script:capturedCommand = ""
+        Mock -CommandName 'Invoke-Expression' -MockWith {
+            param($Command)
+            if ($Command -match 'pg_dump') {
+                $script:capturedCommand = $Command
+                if ($Command -match '--file=([^\s]+)') {
+                    $backupPath = $matches[1]
+                    "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                }
+                $global:LASTEXITCODE = 0
+            }
+        }
+    }
+
     Context "Successful Backup Creation" {
         BeforeEach {
             # Clean up test directory before each test
@@ -85,18 +100,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                         $backupPath = $matches[1]
                         "Mock backup data" | Out-File -FilePath $backupPath -Force
                     }
-                }
-            }
-
-            # Use & to mock external command execution
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    # Extract file path and create mock backup
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
                     $global:LASTEXITCODE = 0
                 }
             }
@@ -119,17 +122,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         It "Creates backup directory if it doesn't exist" {
             $newBackupFolder = Join-Path $script:testDir "new_backups"
 
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
-
             Backup-PostgresDatabase `
                 -dbname "testdb" `
                 -backup_folder $newBackupFolder `
@@ -143,17 +135,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             $newLogFolder = Join-Path $script:testDir "logs"
             $newLogFile = Join-Path $newLogFolder "test.log"
 
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
-
             Backup-PostgresDatabase `
                 -dbname "testdb" `
                 -backup_folder $script:testBackupFolder `
@@ -165,16 +146,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Logs backup start with timestamp" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -187,16 +158,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Logs successful backup completion" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -247,17 +208,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                 }
             }
 
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
-
             Backup-PostgresDatabase `
                 -dbname "testdb" `
                 -backup_folder $script:testBackupFolder `
@@ -295,17 +245,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             Mock Start-Service { }
             Mock Stop-Service { }
 
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
-
             Backup-PostgresDatabase `
                 -dbname "testdb" `
                 -backup_folder $script:testBackupFolder `
@@ -324,17 +263,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             }
 
             Mock Stop-Service { }
-
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -382,16 +310,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Deletes backups older than retention period when min_backups threshold is met" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             # Count files before
             $filesBefore = (Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup").Count
@@ -414,16 +332,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Does not delete recent backups below min_backups threshold" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             # Remove some recent backups to go below threshold
             Get-ChildItem -Path $script:testBackupFolder | Select-Object -Last 2 | Remove-Item -Force
@@ -468,16 +376,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Deletes zero-byte backup files" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             # Count zero-byte files before
             $zeroByteFilesBefore = (Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
@@ -502,16 +400,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Does not delete valid backup files" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -601,16 +489,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
         It "Logs cleanup failures" {
             # Create a backup file first
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             # Create an old backup file
             $oldFile = Join-Path $script:testBackupFolder "testdb_backup_2024-01-15_10-00-00.backup"
@@ -648,18 +526,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Uses .pgpass authentication when password is not provided" {
-            $script:capturedCommand = ""
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $script:capturedCommand = $Command
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -676,19 +542,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
         It "Uses provided password when specified" {
             $securePassword = ConvertTo-SecureString "test_password" -AsPlainText -Force
-            $script:capturedCommand = ""
-
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $script:capturedCommand = $Command
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -713,18 +566,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Uses custom format for pg_dump" {
-            $script:capturedCommand = ""
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $script:capturedCommand = $Command
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -736,16 +577,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Backup file has .backup extension" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -870,17 +701,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                 (Get-Item $file).LastWriteTime = $now.AddDays(-$_)
             }
 
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
-
             Backup-PostgresDatabase `
                 -dbname "testdb" `
                 -backup_folder $script:testBackupFolder `
@@ -901,17 +721,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             $oldFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-10).ToString('yyyy-MM-dd'))_10-00-00.backup"
             "Mock data" | Out-File -FilePath $oldFile -Force
             (Get-Item $oldFile).LastWriteTime = $now.AddDays(-10)
-
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -934,17 +743,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             $recentFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-5).ToString('yyyy-MM-dd'))_10-00-00.backup"
             "Mock data" | Out-File -FilePath $recentFile -Force
             (Get-Item $recentFile).LastWriteTime = $now.AddDays(-5)
-
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -969,17 +767,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             "Mock data" | Out-File -FilePath $db2File -Force
             (Get-Item $db1File).LastWriteTime = $now.AddDays(-100)
             (Get-Item $db2File).LastWriteTime = $now.AddDays(-100)
-
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -1009,17 +796,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                 $file = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-$_).ToString('yyyy-MM-dd'))_10-00-00.backup"
                 "Mock data" | Out-File -FilePath $file -Force
                 (Get-Item $file).LastWriteTime = $now.AddDays(-$_)
-            }
-
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
             }
 
             Backup-PostgresDatabase `
@@ -1053,19 +829,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
         It "Properly encodes password with special characters" {
             $securePassword = ConvertTo-SecureString "p@ssw0rd!#$%&*" -AsPlainText -Force
-            $script:capturedCommand = ""
-
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $script:capturedCommand = $Command
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -1080,19 +843,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
         It "Handles password with spaces" {
             $securePassword = ConvertTo-SecureString "my password 123" -AsPlainText -Force
-            $script:capturedCommand = ""
-
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $script:capturedCommand = $Command
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -1106,16 +856,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Handles database name with underscores and numbers" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "test_db_123" `
@@ -1128,19 +868,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Handles username with special characters" {
-            $script:capturedCommand = ""
-
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $script:capturedCommand = $Command
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -1268,17 +995,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                 throw "Failed to stop service"
             }
 
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
-
             # Service stop failure should cause the function to throw
             {
                 Backup-PostgresDatabase `
@@ -1293,17 +1009,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             # Create a zero-byte file that can't be deleted
             $zeroByteFile = Join-Path $script:testBackupFolder "testdb_backup_2024-01-01_10-00-00.backup"
             New-Item -Path $zeroByteFile -ItemType File -Force | Out-Null
-
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
 
             Mock Remove-Item {
                 throw "Access denied"
