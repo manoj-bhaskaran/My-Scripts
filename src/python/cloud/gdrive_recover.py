@@ -33,13 +33,6 @@ from threading import Lock
 import sys
 import uuid
 
-try:
-    from dateutil import parser as date_parser
-except ImportError:
-    print("ERROR: Missing optional dependency 'python-dateutil' required for --after-date parsing.")
-    print("Install with: pip install python-dateutil")
-    sys.exit(1)
-
 # v1.9.0: static configuration constants extracted to dedicated module
 from gdrive_constants import (
     VERSION,
@@ -190,30 +183,6 @@ class DriveTrashRecoveryTool:
 
     def discover_trashed_files(self) -> List[RecoveryItem]:
         return self.discovery.discover_trashed_files()
-
-    def _matches_extension_filter(self, filename: str) -> bool:
-        if not self.args.extensions or not filename:
-            return True
-        filename_lower = filename.lower()
-        for ext in self.args.extensions:
-            if filename_lower.endswith(f'.{ext.lower().strip(".")}'):
-                return True
-        return False
-
-    def _matches_time_filter(self, item_data: Dict[str, Any]) -> bool:
-        if not self.args.after_date:
-            return True
-        try:
-            modified_dt = date_parser.parse(item_data.get("modifiedTime", ""))
-            after_dt = date_parser.parse(self.args.after_date)
-            if modified_dt.tzinfo is None:
-                modified_dt = modified_dt.replace(tzinfo=timezone.utc)
-            if after_dt.tzinfo is None:
-                after_dt = after_dt.replace(tzinfo=timezone.utc)
-            return modified_dt > after_dt
-        except Exception as e:
-            self.logger.warning(f"Error applying time filter: {e}")
-            return True  # Include item if filter fails
 
     def _generate_target_path(self, item: Mapping[str, Any] | RecoveryItem) -> str:
         if not self.args.download_dir:

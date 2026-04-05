@@ -21,7 +21,12 @@ from typing import (
     TYPE_CHECKING,
 )
 
-from dateutil import parser as date_parser
+try:
+    from dateutil import parser as date_parser
+except ImportError:
+    print("ERROR: Missing optional dependency 'python-dateutil' required for --after-date parsing.")
+    print("Install with: pip install python-dateutil")
+    sys.exit(1)
 
 from gdrive_constants import EXTENSION_MIME_TYPES, MAX_RETRIES, PAGE_SIZE, RETRY_DELAY
 from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
