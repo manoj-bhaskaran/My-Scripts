@@ -1,7 +1,7 @@
 """
 Frame cropper for image folders.
 
-Version: 4.0.0
+Version: 4.0.1
 Author: Manoj Bhaskaran
 
 DESCRIPTION
@@ -108,6 +108,15 @@ FAQS
        A: Yes. Pass --resume-file <an existing image filename>. Processing starts after that file.
 
 CHANGELOG
+    ## 4.0.1
+    **Improve**
+    - `_validate_parameters()` no longer creates a throwaway `ArgumentParser`; validation errors
+      are reported via `logger.error` + `raise SystemExit(2)`.
+    - `import glob` and `import platform` promoted from function bodies to the top-level import
+      block.
+    - `_save_failure_guidance_shown` global removed; save-failure guidance is now emitted once
+      from `_process_batch()` after the worker loop completes, conditioned on `failures > 0`.
+
     ## 4.0.0
     **Breaking**
     - Remove `--ignore-processed`. Default behavior now explicitly skips previously cropped images using `.processed_images` tracking and/or existing output detection.
@@ -182,7 +191,9 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures as fut
+import glob
 import os
+import platform
 import sys
 import threading
 import time
@@ -257,33 +268,33 @@ def _validate_parameters(args) -> None:
     Validate command-line parameters with meaningful error messages.
     Extracted to reduce cognitive complexity of parse_args.
     """
-    import argparse
-
-    # Create a dummy parser for error reporting
-    p = argparse.ArgumentParser()
-
     if args.low_threshold < 0 or args.low_threshold > 255:
-        p.error("--low-threshold must be between 0-255")
+        logger.error("--low-threshold must be between 0-255")
+        raise SystemExit(2)
     if args.high_threshold < 0 or args.high_threshold > 255:
-        p.error("--high-threshold must be between 0-255")
+        logger.error("--high-threshold must be between 0-255")
+        raise SystemExit(2)
     if args.low_threshold >= args.high_threshold:
-        p.error("--low-threshold must be less than --high-threshold")
+        logger.error("--low-threshold must be less than --high-threshold")
+        raise SystemExit(2)
     if args.min_area <= 0:
-        p.error("--min-area must be positive")
+        logger.error("--min-area must be positive")
+        raise SystemExit(2)
     if args.padding < 0:
-        p.error("--padding cannot be negative")
+        logger.error("--padding cannot be negative")
+        raise SystemExit(2)
     if args.alpha_threshold < 0 or args.alpha_threshold > 255:
-        p.error("--alpha-threshold must be between 0-255")
+        logger.error("--alpha-threshold must be between 0-255")
+        raise SystemExit(2)
     if args.max_workers <= 0:
-        p.error("--max-workers must be positive")
+        logger.error("--max-workers must be positive")
+        raise SystemExit(2)
     if args.retry_writes <= 0:
-        p.error("--retry-writes must be positive")
+        logger.error("--retry-writes must be positive")
+        raise SystemExit(2)
     if args.progress_interval < 0:
-        p.error("--progress-interval cannot be negative")
-
-
-# Global flag to track if we've shown save failure guidance this run
-_save_failure_guidance_shown = False
+        logger.error("--progress-interval cannot be negative")
+        raise SystemExit(2)
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -803,16 +814,10 @@ def process_one(
                 return (in_path, False, f"Atomic replace failed: {e}")
         else:
             if not imwrite_retry(out_path, cropped, attempts=config.retry_writes):
-                # Add actionable guidance for save failures (once per run)
-                global _save_failure_guidance_shown
-                guidance = ""
-                if not _save_failure_guidance_shown:
-                    guidance = " Check write permissions and free disk space."
-                    _save_failure_guidance_shown = True
                 return (
                     in_path,
                     False,
-                    f"Failed to save image to '{out_path}' after {config.retry_writes} attempts.{guidance}",
+                    f"Failed to save image to '{out_path}' after {config.retry_writes} attempts.",
                 )
 
         # Mark as successfully processed for future run tracking
@@ -933,7 +938,6 @@ def _delete_existing_crops_for_image(
             os.path.join(out_dir, f"{stem}{mid}_*{ext}"),
         ]
         deleted = 0
-        import glob
 
         for pat in patterns:
             for fp in glob.glob(pat):
@@ -961,8 +965,6 @@ def _resolve_resume_index(
     resume_abs = validate_resume_file(folder, resume_file)  # may SystemExit(2)
 
     # Case-insensitive path comparison for Windows compatibility
-    import platform
-
     is_case_insensitive = platform.system().lower() == "windows"
 
     if is_case_insensitive:
@@ -1110,6 +1112,8 @@ def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, in
                 last_progress_time = current_time
 
     elapsed_total = time.time() - start_time
+    if failures > 0:
+        logger.info("Some images failed to save. Check write permissions and free disk space.")
     return processed, skipped, failures, elapsed_total
 
 
