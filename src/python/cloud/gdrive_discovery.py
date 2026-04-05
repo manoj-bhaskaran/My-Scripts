@@ -2,46 +2,112 @@
 
 import io
 import json
+import logging
 import random
 import re
 import sys
 import time
 from datetime import timezone
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from threading import Lock
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    TYPE_CHECKING,
+)
 
-from dateutil import parser as date_parser
+try:
+    from dateutil import parser as date_parser
+except ImportError:
+    print("ERROR: Missing optional dependency 'python-dateutil' required for --after-date parsing.")
+    print("Install with: pip install python-dateutil")
+    sys.exit(1)
 
 from gdrive_constants import EXTENSION_MIME_TYPES, MAX_RETRIES, PAGE_SIZE, RETRY_DELAY
 from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
 from googleapiclient.errors import HttpError
 
+if TYPE_CHECKING:
+    from gdrive_auth import DriveAuthManager
+
 
 class DriveTrashDiscovery:
-    """Extracted discovery helper class for DriveTrashRecoveryTool."""
+    """Extracted discovery helper class for DriveTrashRecoveryTool.
 
-    def __init__(self, tool):
-        self.tool = tool
-        self.args = tool.args
-        self.logger = tool.logger
-        self.auth = tool.auth
-        self._execute = tool._execute
+    All dependencies on :class:`DriveTrashRecoveryTool` are injected at
+    construction time so that neither class needs to define ``__getattr__``
+    fallback delegation.
+    """
+
+    def __init__(
+        self,
+        args,
+        logger: logging.Logger,
+        auth: "DriveAuthManager",
+        execute_fn: Callable[..., Any],
+        *,
+        stats: Dict[str, Any],
+        stats_lock: Lock,
+        seen_total_ref: List[int],
+        generate_target_path: Callable[..., str],
+        run_parallel_processing_for_batch: Callable[..., None],
+    ) -> None:
+        self.args = args
+        self.logger = logger
+        self.auth = auth
+        self._execute = execute_fn
+        self._stats = stats
+        self._stats_lock = stats_lock
+        self._seen_total_ref = seen_total_ref
+        self._generate_target_path = generate_target_path
+        self._run_parallel_processing_for_batch = run_parallel_processing_for_batch
         self._id_prefetch: Dict[str, Dict[str, Any]] = {}
         self._id_prefetch_non_trashed: Dict[str, bool] = {}
         self._id_prefetch_errors: Dict[str, str] = {}
         self._last_discover_progress_ts: Optional[float] = None
 
-    def __getattr__(self, name: str):
-        return getattr(self.tool, name)
-
     def _print_err(self, msg: str) -> None:
-        self.tool._print_err(msg)
+        print(f"❌ {msg}", file=sys.stderr)
 
     def _print_warn(self, msg: str) -> None:
-        self.tool._print_warn(msg)
+        print(f"⚠️ {msg}", file=sys.stderr)
 
     def _print_info(self, msg: str) -> None:
-        self.tool._print_info(msg)
+        print(f"ℹ️ {msg}")
+
+    def _matches_extension_filter(self, filename: str) -> bool:
+        if not self.args.extensions or not filename:
+            return True
+        filename_lower = filename.lower()
+        for ext in self.args.extensions:
+            if filename_lower.endswith(f'.{ext.lower().strip(".")}'):
+                return True
+        return False
+
+    def _matches_time_filter(self, item_data: Dict[str, Any]) -> bool:
+        if not self.args.after_date:
+            return True
+        try:
+            modified_dt = date_parser.parse(item_data.get("modifiedTime", ""))
+            after_dt = date_parser.parse(self.args.after_date)
+            if modified_dt.tzinfo is None:
+                modified_dt = modified_dt.replace(tzinfo=timezone.utc)
+            if after_dt.tzinfo is None:
+                after_dt = after_dt.replace(tzinfo=timezone.utc)
+            return modified_dt > after_dt
+        except Exception as e:
+            self.logger.warning(f"Error applying time filter: {e}")
+            return True
+
+    def _progress_interval(self, total: int) -> int:
+        if total <= 0:
+            return 5
+        return max(5, min(500, max(1, round(total * 0.02))))
 
     def _is_valid_file_id_format(self, file_id: str) -> bool:
         """Quick format check: Drive IDs are 25+ chars, [A-Za-z0-9_-]."""
@@ -319,7 +385,7 @@ class DriveTrashDiscovery:
         )
 
         if self.args.mode == "recover_and_download":
-            item.target_path = self.tool._generate_target_path(item)
+            item.target_path = self._generate_target_path(item)
 
         return item
 
@@ -519,7 +585,7 @@ class DriveTrashDiscovery:
         if self.args.limit and self.args.limit > 0 and len(items) > self.args.limit:
             items = items[: self.args.limit]
             print(f"⛳ Limiting to first {self.args.limit} item(s) as requested.")
-        self.tool.stats["found"] = len(items)
+        self._stats["found"] = len(items)
         print(f"📊 Total files discovered: {len(items)}")
         return items
 
@@ -536,7 +602,7 @@ class DriveTrashDiscovery:
                         break
                 if self.args.verbose >= 1:
                     print(
-                        f"Found {len(files)} files in page {page_count} (streamed total: {self.tool._seen_total})"
+                        f"Found {len(files)} files in page {page_count} (streamed total: {self._seen_total_ref[0]})"
                     )
                 if self._should_stop_for_limit():
                     break
@@ -547,17 +613,15 @@ class DriveTrashDiscovery:
             self._process_streaming_batch(batch, start_time)
         return ok
 
-    def _should_stop_streaming(self, batch: List[RecoveryItem], batch_n: int) -> bool:
-        """Return True when the current streaming batch reached processing size."""
-        return len(batch) >= batch_n
-
     def _should_stop_for_limit(self) -> bool:
         """Return True if the user-provided --limit has been reached."""
-        return self.args.limit and self.args.limit > 0 and self.tool._seen_total >= self.args.limit
+        return (
+            self.args.limit and self.args.limit > 0 and self._seen_total_ref[0] >= self.args.limit
+        )
 
     def _process_streaming_batch(self, batch: List[RecoveryItem], start_time: float) -> None:
         """Process the current streaming batch and clear in-memory references."""
-        self.tool._run_parallel_processing_for_batch(batch, start_time)
+        self._run_parallel_processing_for_batch(batch, start_time)
         batch.clear()
 
     def _handle_streaming_file(
@@ -566,18 +630,28 @@ class DriveTrashDiscovery:
         """Process a single files.list item during streaming query discovery."""
         item = self._process_file_data(fd)
         if item:
-            if self.args.mode == "recover_and_download" and not item.target_path:
-                item.target_path = self.tool._generate_target_path(item)
-            batch.append(item)
-            with self.tool.stats_lock:
-                self.tool._seen_total += 1
-                self.tool.stats["found"] += 1
-            if self._should_stop_streaming(batch, batch_n):
-                self._process_streaming_batch(batch, start_time)
+            self._enqueue_streaming_item(item, batch, batch_n, start_time)
 
     def _should_flush_streaming_batch(self, batch: List[RecoveryItem], batch_n: int) -> bool:
-        """Return True if the ID streaming batch should be processed now."""
+        """Return True if the streaming batch should be processed now."""
         return len(batch) >= batch_n
+
+    def _enqueue_streaming_item(
+        self,
+        item: RecoveryItem,
+        batch: List[RecoveryItem],
+        batch_n: int,
+        start_time: float,
+    ) -> None:
+        """Append a validated item to the streaming batch and flush when ready."""
+        if self.args.mode == "recover_and_download" and not item.target_path:
+            item.target_path = self._generate_target_path(item)
+        batch.append(item)
+        with self._stats_lock:
+            self._seen_total_ref[0] += 1
+            self._stats["found"] += 1
+        if self._should_flush_streaming_batch(batch, batch_n):
+            self._process_streaming_batch(batch, start_time)
 
     def _handle_streaming_id_fetch(self, fid, fields, service):
         data = self._id_prefetch.get(fid)
@@ -586,8 +660,8 @@ class DriveTrashDiscovery:
                 data = self._execute(service.files().get(fileId=fid, fields=fields))
             except Exception as e:
                 self.logger.error(f"Error fetching metadata for {fid}: {e}")
-                with self.tool.stats_lock:
-                    self.tool.stats["errors"] += 1
+                with self._stats_lock:
+                    self._stats["errors"] += 1
                 return None
         return data
 
@@ -599,21 +673,14 @@ class DriveTrashDiscovery:
         start_time: float,
     ) -> None:
         if item:
-            if self.args.mode == "recover_and_download" and not item.target_path:
-                item.target_path = self.tool._generate_target_path(item)
-            batch.append(item)
-            with self.tool.stats_lock:
-                self.tool._seen_total += 1
-                self.tool.stats["found"] += 1
-            if self._should_flush_streaming_batch(batch, batch_n):
-                self.tool._run_parallel_processing_for_batch(batch, start_time)
+            self._enqueue_streaming_item(item, batch, batch_n, start_time)
 
     def _maybe_print_streaming_id_progress(self, idx, total_ids, start_ts):
         if self.args.verbose >= 1:
             now = time.time()
             if (now - start_ts) >= 10:
                 print(
-                    f"Processing IDs: {idx}/{total_ids} (streamed total: {self.tool._seen_total})"
+                    f"Processing IDs: {idx}/{total_ids} (streamed total: {self._seen_total_ref[0]})"
                 )
                 return now
         return start_ts
@@ -631,5 +698,5 @@ class DriveTrashDiscovery:
             self._handle_streaming_id_item(item, batch, batch_n, start_time)
             start_ts = self._maybe_print_streaming_id_progress(idx, total_ids, start_ts)
         if batch:
-            self.tool._run_parallel_processing_for_batch(batch, start_time)
+            self._run_parallel_processing_for_batch(batch, start_time)
         return ok

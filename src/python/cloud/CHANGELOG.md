@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.13.0] - 2026-04-05
+
+### Changed
+
+- **Refactor (Issue #852):** Eliminated bidirectional `__getattr__` coupling between `DriveTrashRecoveryTool` and `DriveTrashDiscovery`.
+  - `DriveTrashDiscovery.__init__` now accepts all tool-side dependencies explicitly: `stats`, `stats_lock`, `seen_total_ref`, `generate_target_path`, and `run_parallel_processing_for_batch`.
+  - Added `_matches_extension_filter`, `_matches_time_filter`, and `_progress_interval` as direct methods on `DriveTrashDiscovery` (only use `self.args` / `self.logger`, no back-reference needed).
+  - Removed `DriveTrashDiscovery.__getattr__` and `self.tool` from `DriveTrashDiscovery` entirely.
+  - Removed `DriveTrashRecoveryTool.__getattr__`; `discover_trashed_files` remains an explicit delegation method; all other discovery internals are accessed via `self.discovery.*`.
+  - `DriveTrashRecoveryTool._seen_total` is now backed by an injected `List[int]` reference (`_seen_total_ref`) shared with `DriveTrashDiscovery`, preserving atomic updates under `stats_lock`.
+  - Added full type annotations to `DriveTrashDiscovery.__init__` parameters.
+- Updated unit tests to invoke discovery-specific methods via `tool.discovery.*` rather than through the tool proxy.
+
 ## [1.12.7] - 2026-04-05
 
 ### Fixed

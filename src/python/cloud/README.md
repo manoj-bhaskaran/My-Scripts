@@ -92,4 +92,6 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
   - Includes PID liveness checks used by lock diagnostics in `gdrive_cli.py`.
   - Reports state-load failures back to `gdrive_recover.py` so execution error totals remain accurate.
 - `gdrive_discovery.py` owns query/file-ID discovery, validation, and streaming discovery helpers used by `DriveTrashRecoveryTool`.
+  - `DriveTrashDiscovery` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`stats`, `stats_lock`, `seen_total_ref`, `generate_target_path`, `run_parallel_processing_for_batch`) are injected at construction time.
+  - Neither `DriveTrashRecoveryTool` nor `DriveTrashDiscovery` defines `__getattr__`; all inter-class wiring is explicit.
   - Streaming helper methods required by discovery paths are implemented in this module (not delegated back to `gdrive_recover.py`).
