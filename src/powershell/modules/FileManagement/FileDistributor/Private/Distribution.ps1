@@ -71,3 +71,32 @@ function Get-SubfolderFileCounts {
 
     return $folderCounts
 }
+
+function Write-DistributionSummary {
+    param(
+        [Parameter(Mandatory)][hashtable]$FolderCounts,
+        [Parameter(Mandatory)][double]$Average,
+        [string]$Label = "CURRENT DISTRIBUTION",
+        [int]$UpperBound = -1,
+        [int]$LowerBound = -1
+    )
+
+    if ($Label -match '===') {
+        Write-LogInfo $Label
+    } else {
+        Write-LogInfo "=== $Label ==="
+    }
+    foreach ($folderPath in ($FolderCounts.Keys | Sort-Object { [int]$FolderCounts[$_] } -Descending)) {
+        $count = [int]$FolderCounts[$folderPath]
+        $folderName = Split-Path -Leaf $folderPath
+        $deviation = $count - $Average
+        $deviationPct = if ($Average -gt 0) { ($deviation / $Average) * 100 } else { 0 }
+
+        if ($UpperBound -ge 0 -and $LowerBound -ge 0) {
+            $status = if ($count -gt $UpperBound) { "DONOR" } elseif ($count -lt $LowerBound) { "RECEIVER" } else { "BALANCED" }
+            Write-LogInfo ("  {0}: {1} files (avg {2:+0.0;-0.0;0}%, {3:+0;-0;0} files) [{4}]" -f $folderName, $count, $deviationPct, $deviation, $status)
+        } else {
+            Write-LogInfo ("  {0}: {1} files (avg {2:+0.0;-0.0;0}%, {3:+0;-0;0} files)" -f $folderName, $count, $deviationPct, $deviation)
+        }
+    }
+}

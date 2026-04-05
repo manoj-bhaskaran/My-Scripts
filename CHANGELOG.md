@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Post-processing module functions used script-scope `LogMessage` and `Write-DistributionSummary` instead of `Write-Log*` (issue #816)**
+  - Replaced all `LogMessage` calls in `Invoke-FolderConsolidation`, `Invoke-FolderRebalance`, and `Invoke-DistributionRandomize` with the appropriate `Write-LogInfo`, `Write-LogWarning`, `Write-LogError`, or `Write-LogDebug` framework calls; warning/error ref-counter increments previously implicit in `LogMessage` are now applied directly to `$WarningCount`/`$ErrorCount`
+  - Added `Write-DistributionSummary` as a private module function in `Private/Distribution.ps1` (replacing `LogMessage` calls inside it with `Write-LogInfo`), making it available to all three post-processing public functions without depending on the script-scope definition in `FileDistributor.ps1`
+  - Bumped `FileManagement/FileDistributor` module version to `1.1.9`
+
 - **Division-by-zero / flood logging when `plannedMoves` or `filesMoving` is 0 in `Invoke-FolderRebalance` and `Invoke-DistributionRandomize`**
   - Replaced `($plannedMoves / 10)` and `($filesMoving / 10)` progress-log thresholds with a pre-computed `$threshold` variable that evaluates to `[int]::MaxValue` when the denominator is 0, preventing a flood of log output on every loop iteration
   - Bumped `FileManagement/FileDistributor` module version to `1.1.6`
