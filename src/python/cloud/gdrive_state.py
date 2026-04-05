@@ -217,7 +217,9 @@ class RecoveryStateManager:
                     return True
                 return False
             try:
-                os.kill(int(pid), 0)
+                os.kill(
+                    int(pid), 0
+                )  # NOSONAR (python:S4818) - signal 0 is a POSIX existence probe; no signal is delivered
                 return True
             except ProcessLookupError:
                 return False
