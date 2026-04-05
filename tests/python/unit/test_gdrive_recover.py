@@ -236,7 +236,13 @@ def test_discover_via_query_limit(tmp_path, monkeypatch):
         ],
         None,
     )
-    tool._fetch_files_page = MagicMock(side_effect=[first_page, second_page])
+
+    service = MagicMock()
+    service.files.return_value.list.return_value.execute.side_effect = [
+        {"files": first_page[0], "nextPageToken": first_page[1]},
+        {"files": second_page[0], "nextPageToken": second_page[1]},
+    ]
+    tool.auth._get_service.return_value = service
 
     items = tool._discover_via_query("trashed=true")
     assert len(items) == 1

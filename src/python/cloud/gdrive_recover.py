@@ -16,8 +16,6 @@ Requirements:
 See CHANGELOG.md in this directory for version history.
 """
 
-__version__ = "1.12.3"
-
 import os
 import io
 import json
@@ -44,6 +42,7 @@ except ImportError:
 
 # v1.9.0: static configuration constants extracted to dedicated module
 from gdrive_constants import (
+    VERSION,
     EXTENSION_MIME_TYPES,
     DEFAULT_STATE_FILE,
     DEFAULT_LOG_FILE,
@@ -57,6 +56,7 @@ from gdrive_constants import (
     DEFAULT_BURST,
     DOWNLOAD_CHUNK_BYTES,
 )
+__version__ = VERSION
 
 # v1.10.0: data model types extracted to dedicated module
 from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
@@ -940,8 +940,9 @@ class DriveTrashRecoveryTool:
             if self.args.mode == "recover_and_download" and not item.target_path:
                 item.target_path = self._generate_target_path(item)
             batch.append(item)
-            self._seen_total += 1
-            self.stats["found"] += 1
+            with self.stats_lock:
+                self._seen_total += 1
+                self.stats["found"] += 1
             if self._should_stop_streaming(batch, batch_n):
                 self._process_streaming_batch(batch, start_time)
 
@@ -1004,8 +1005,9 @@ class DriveTrashRecoveryTool:
             if self.args.mode == "recover_and_download" and not item.target_path:
                 item.target_path = self._generate_target_path(item)
             batch.append(item)
-            self._seen_total += 1
-            self.stats["found"] += 1
+            with self.stats_lock:
+                self._seen_total += 1
+                self.stats["found"] += 1
             if self._should_flush_streaming_batch(batch, batch_n):
                 self._run_parallel_processing_for_batch(batch, start_time)
 
