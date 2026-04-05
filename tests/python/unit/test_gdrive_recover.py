@@ -255,6 +255,18 @@ def test_execute_uses_rate_limiter_wait(tmp_path, monkeypatch):
     req.execute.assert_called_once_with()
 
 
+def test_discovery_owns_streaming_helpers(tmp_path, monkeypatch):
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    tool = DriveTrashRecoveryTool(_build_dummy_args(tmp_path))
+
+    assert hasattr(type(tool.discovery), "_handle_streaming_file")
+    assert hasattr(type(tool.discovery), "_should_stop_for_limit")
+    assert hasattr(type(tool.discovery), "_process_streaming_batch")
+    assert hasattr(type(tool.discovery), "_should_flush_streaming_batch")
+
+
 def test_privilege_checks_and_file_info(tmp_path, monkeypatch):
     from gdrive_recover import DriveTrashRecoveryTool
 

@@ -547,6 +547,38 @@ class DriveTrashDiscovery:
             self._process_streaming_batch(batch, start_time)
         return ok
 
+    def _should_stop_streaming(self, batch: List[RecoveryItem], batch_n: int) -> bool:
+        """Return True when the current streaming batch reached processing size."""
+        return len(batch) >= batch_n
+
+    def _should_stop_for_limit(self) -> bool:
+        """Return True if the user-provided --limit has been reached."""
+        return self.args.limit and self.args.limit > 0 and self.tool._seen_total >= self.args.limit
+
+    def _process_streaming_batch(self, batch: List[RecoveryItem], start_time: float) -> None:
+        """Process the current streaming batch and clear in-memory references."""
+        self.tool._run_parallel_processing_for_batch(batch, start_time)
+        batch.clear()
+
+    def _handle_streaming_file(
+        self, fd: Dict[str, Any], batch: List[RecoveryItem], batch_n: int, start_time: float
+    ) -> None:
+        """Process a single files.list item during streaming query discovery."""
+        item = self._process_file_data(fd)
+        if item:
+            if self.args.mode == "recover_and_download" and not item.target_path:
+                item.target_path = self.tool._generate_target_path(item)
+            batch.append(item)
+            with self.tool.stats_lock:
+                self.tool._seen_total += 1
+                self.tool.stats["found"] += 1
+            if self._should_stop_streaming(batch, batch_n):
+                self._process_streaming_batch(batch, start_time)
+
+    def _should_flush_streaming_batch(self, batch: List[RecoveryItem], batch_n: int) -> bool:
+        """Return True if the ID streaming batch should be processed now."""
+        return len(batch) >= batch_n
+
     def _handle_streaming_id_fetch(self, fid, fields, service):
         data = self._id_prefetch.get(fid)
         if data is None:

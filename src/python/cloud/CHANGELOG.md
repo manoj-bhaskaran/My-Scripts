@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.12.7] - 2026-04-05
+
+### Fixed
+
+- **Issue #851 follow-up:** Restored required streaming helper methods in `DriveTrashDiscovery` (`_handle_streaming_file`, `_should_stop_for_limit`, `_process_streaming_batch`, `_should_flush_streaming_batch`) so streaming query/ID execution no longer relies on cross-class fallback lookups.
+- Prevented runtime delegation recursion/missing-attribute failures in non-`dry_run` streaming modes by keeping helper ownership co-located with discovery streaming paths.
+- Added unit coverage asserting `DriveTrashDiscovery` owns the required streaming helper methods.
+
 ## [1.12.6] - 2026-04-05
 
 ### Changed
