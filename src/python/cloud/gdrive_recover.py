@@ -56,6 +56,7 @@ from gdrive_constants import (
     DEFAULT_BURST,
     DOWNLOAD_CHUNK_BYTES,
 )
+
 __version__ = VERSION
 
 # v1.10.0: data model types extracted to dedicated module

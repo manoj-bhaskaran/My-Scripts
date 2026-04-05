@@ -9,6 +9,7 @@
 - Guarded streaming `stats["found"]` updates with `stats_lock` in both streaming item handlers to keep stats mutation consistent and thread-safe.
 - Eliminated version drift by moving the authoritative module version to `gdrive_constants.VERSION` and importing it from both `gdrive_recover.py` and `gdrive_cli.py`.
 - Updated unit coverage to exercise the real `_fetch_files_page()` path instead of mocking the method directly.
+- Applied Black formatting to `gdrive_recover.py` so Python formatting checks pass in CI.
 
 ## [1.12.3] - 2026-04-01
 
