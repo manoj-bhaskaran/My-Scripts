@@ -2,10 +2,6 @@
 
 $ModuleRoot = $PSScriptRoot
 
-# Import shared Core dependencies used by private/public FileDistributor functions
-Import-Module (Join-Path -Path $ModuleRoot -ChildPath '..\..\Core\ErrorHandling\ErrorHandling.psd1') -Force
-Import-Module (Join-Path -Path $ModuleRoot -ChildPath '..\..\Core\FileOperations\FileOperations.psd1') -Force
-
 $privateFunctions = @(Get-ChildItem -Path "$ModuleRoot\Private\*.ps1" -ErrorAction SilentlyContinue)
 foreach ($import in $privateFunctions) {
     try {

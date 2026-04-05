@@ -33,6 +33,12 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.8.0** (module v1.2.0)
+  - **Option A: module consolidation** — eliminated double-loading of all six private `FileManagement/FileDistributor` module files. The six dot-source lines previously in `FileDistributor.ps1` have been removed; private functions now live exclusively in module scope, loaded once by the module loader.
+  - Removed duplicate `Import-Module` calls for `ErrorHandling` and `FileOperations` from `FileDistributor.psm1`; both Core modules are now imported once by the script before the `FileDistributor` module is loaded.
+  - Promoted orchestration functions (`Initialize-FileDistributorPaths`, `Invoke-ParameterValidation`, `Invoke-RestoreCheckpoint`, `New-CheckpointPayload`, `Invoke-DistributionPhase`, `Invoke-PostProcessingPhase`, `Invoke-EndOfScriptDeletion`, `Invoke-PostRunCleanup`, `Invoke-DistributionLockRelease`) to the module's `Public/` folder and exported them.
+  - Fixed remaining `LogMessage` calls in private module files (`FileLock.ps1`, `State.ps1`, `Serialization.ps1`) that caused `CommandNotFoundException` when those functions were invoked from module scope; replaced with `Write-Log*` framework calls.
+  - Removed dead `Write-DistributionSummary` duplicate from `FileDistributor.ps1`; the canonical version lives in `Private/Distribution.ps1`.
 - **FileDistributor.ps1 v4.7.13**
   - Removed a vestigial, unused `-TotalFiles` parameter from module function `Invoke-TargetRedistribution` and updated the script call site accordingly.
   - Removed a dead inner `if ($normalizedSubfolders.Count -eq 0)` guard in `Invoke-TargetRedistribution`; this branch was unreachable because an earlier guard already creates an emergency subfolder whenever no valid subfolders exist.

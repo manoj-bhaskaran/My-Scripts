@@ -283,13 +283,10 @@ Describe 'FileDistributor State Helpers' -Tag 'StateHelpers' {
     BeforeAll {
         $script:InvokeWithRetryCalls = @()
 
-        function LogMessage {
-            param(
-                [string]$Message,
-                [switch]$IsWarning,
-                [switch]$IsError
-            )
-        }
+        function Write-LogInfo    { param([string]$Message) }
+        function Write-LogWarning { param([string]$Message) }
+        function Write-LogError   { param([string]$Message) }
+        function Write-LogDebug   { param([string]$Message) }
 
         function Invoke-WithRetry {
             param(
