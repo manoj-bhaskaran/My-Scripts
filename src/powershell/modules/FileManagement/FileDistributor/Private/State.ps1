@@ -31,7 +31,7 @@ function Get-FileSha256Hex {
         $h = Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop
         return $h.Hash.ToUpperInvariant()
     } catch {
-        LogMessage -Message "Failed to compute SHA256 for '$Path': $($_.Exception.Message)" -IsWarning
+        Write-LogWarning "Failed to compute SHA256 for '$Path': $($_.Exception.Message)"
         return $null
     }
 }
@@ -57,7 +57,7 @@ function Write-JsonAtomically {
         try {
             Copy-Item -LiteralPath $Path -Destination $bak -Force -ErrorAction Stop
         } catch {
-            LogMessage -Message "Failed to update state backup '$bak': $($_.Exception.Message)" -IsWarning
+            Write-LogWarning "Failed to update state backup '$bak': $($_.Exception.Message)"
         }
     }
 
@@ -68,7 +68,7 @@ function Write-JsonAtomically {
     try {
         Move-Item -LiteralPath $tmp -Destination $Path -Force
     } catch {
-        LogMessage -Message "Atomic move for state file failed: $($_.Exception.Message)" -IsError
+        Write-LogError "Atomic move for state file failed: $($_.Exception.Message)"
         throw
     }
 
@@ -84,7 +84,7 @@ function Write-JsonAtomically {
                 -RetryCount $sidecarRetryCount `
                 -MaxBackoff $sidecarMaxBackoff
         } catch {
-            LogMessage -Message "Failed to write state sidecar '$sha': $($_.Exception.Message)" -IsWarning
+            Write-LogWarning "Failed to write state sidecar '$sha': $($_.Exception.Message)"
         }
     }
 }
@@ -99,7 +99,7 @@ function Get-StateFromPath {
         $expected = (Get-Content -LiteralPath $sha -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
         $actual = Get-FileSha256Hex -Path $Path
         if ($expected -and $actual -and ($expected -ne $actual)) {
-            LogMessage -Message "Checksum mismatch for '$Path' (expected $expected, got $actual). Treating as corrupt." -IsWarning
+            Write-LogWarning "Checksum mismatch for '$Path' (expected $expected, got $actual). Treating as corrupt."
             return $null
         }
     }
@@ -110,7 +110,7 @@ function Get-StateFromPath {
         $ht = ConvertTo-Hashtable -Object $obj
         return $ht
     } catch {
-        LogMessage -Message "Failed to parse state file '$Path': $($_.Exception.Message)" -IsWarning
+        Write-LogWarning "Failed to parse state file '$Path': $($_.Exception.Message)"
         return $null
     }
 }
@@ -162,7 +162,7 @@ function Save-DistributionState {
 
     if (-not (Test-Path -Path $StateFilePath)) {
         New-Item -Path $StateFilePath -ItemType File -Force | Out-Null
-        LogMessage -Message "State file created at $StateFilePath"
+        Write-LogInfo "State file created at $StateFilePath"
     }
 
     $state = @{
@@ -179,7 +179,7 @@ function Save-DistributionState {
 
     Write-JsonAtomically -StateObject $state -Path $StateFilePath -RetryCount $RetryCount -MaxBackoff $MaxBackoff
 
-    LogMessage -Message "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')"
+    Write-LogInfo "Saved state: Checkpoint $Checkpoint and additional variables: $($AdditionalVariables.Keys -join ', ')"
 
     $FileLock.Value = Lock-DistributionStateFile -FilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
 }
@@ -214,9 +214,9 @@ function Restore-DistributionState {
                     $rehash = Get-FileSha256Hex -Path $primary
                     if ($rehash) { Set-Content -LiteralPath $priHashPath -Value $rehash -Encoding ASCII }
                 }
-                LogMessage -Message "Recovered state from backup '$backup'."
+                Write-LogInfo "Recovered state from backup '$backup'."
             } catch {
-                LogMessage -Message "Failed to restore state from backup '$backup': $($_.Exception.Message)" -IsWarning
+                Write-LogWarning "Failed to restore state from backup '$backup': $($_.Exception.Message)"
             }
             $state = $stateBak
         } elseif (Test-Path -LiteralPath $primary) {
@@ -228,9 +228,9 @@ function Restore-DistributionState {
                 if (Test-Path -LiteralPath $priHashPath) {
                     Rename-Item -LiteralPath $priHashPath -NewName ((Split-Path -Leaf $corruptName) + ".sha256") -ErrorAction SilentlyContinue
                 }
-                LogMessage -Message "Quarantined corrupt state file to '$corruptName'." -IsWarning
+                Write-LogWarning "Quarantined corrupt state file to '$corruptName'."
             } catch {
-                LogMessage -Message "Failed to quarantine corrupt state file '$primary': $($_.Exception.Message)" -IsWarning
+                Write-LogWarning "Failed to quarantine corrupt state file '$primary': $($_.Exception.Message)"
             }
         }
     }

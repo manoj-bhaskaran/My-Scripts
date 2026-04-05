@@ -10,19 +10,19 @@ function Lock-DistributionStateFile {
     while ($true) {
         try {
             $fileStream = [System.IO.File]::Open($FilePath, 'OpenOrCreate', 'ReadWrite', 'None')
-            LogMessage -Message "Acquired lock on $FilePath"
+            Write-LogInfo "Acquired lock on $FilePath"
             return $fileStream
         }
         catch {
             $attempts++
             $lastErr = $_.Exception.Message
             if ($RetryCount -ne 0 -and $attempts -ge $RetryCount) {
-                LogMessage -Message "Failed to acquire lock on $FilePath after $attempts attempt(s). Last error: $lastErr" -IsError
+                Write-LogError "Failed to acquire lock on $FilePath after $attempts attempt(s). Last error: $lastErr"
                 throw "Failed to acquire lock on $FilePath after $attempts attempt(s). Last error: $lastErr"
             }
             $delay = [Math]::Min([int]([Math]::Max(1, $RetryDelay) * [Math]::Pow(2, $attempts - 1)), [Math]::Max(1, $MaxBackoff))
             $jitterMs = Get-Random -Minimum 50 -Maximum 250
-            LogMessage -Message "Attempt $attempts failed to lock '$FilePath'. Error: $lastErr. Retrying in ${delay}s (+${jitterMs}ms jitter)..." -IsWarning
+            Write-LogWarning "Attempt $attempts failed to lock '$FilePath'. Error: $lastErr. Retrying in ${delay}s (+${jitterMs}ms jitter)..."
             Start-Sleep -Seconds $delay
             Start-Sleep -Milliseconds $jitterMs
         }
@@ -35,7 +35,7 @@ function Unlock-DistributionStateFile {
     )
 
     if ($null -eq $FileStream) {
-        LogMessage -Message "Unlock-DistributionStateFile called with null stream; nothing to release."
+        Write-LogInfo "Unlock-DistributionStateFile called with null stream; nothing to release."
         return
     }
 
@@ -52,5 +52,5 @@ function Unlock-DistributionStateFile {
         # Stream may already be disposed
     }
 
-    LogMessage -Message "Released lock on $fileName"
+    Write-LogInfo "Released lock on $fileName"
 }

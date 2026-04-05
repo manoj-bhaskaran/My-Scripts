@@ -1,6 +1,19 @@
 # CHANGELOG
 
-## 4.7.13 — 2026-04-05
+## 4.8.0 — 2026-04-05
+
+### Changed (Option A — module consolidation)
+
+- **Eliminated double-loading of private module files.** `FileDistributor.ps1` previously dot-sourced all six `Private/*.ps1` files after importing the module, causing each private function to be defined twice (once in module scope, once in script scope). The script-scope copies shadowed the module-scope copies for script-level callers.
+- **Eliminated duplicate `ErrorHandling`/`FileOperations` imports from `FileDistributor.psm1`.** Both Core modules are now imported once, by `FileDistributor.ps1`, before the `FileDistributor.psd1` module is loaded. Removed the redundant `Import-Module` calls from the module loader.
+- **Moved orchestration functions to the module as public functions.** The following functions, which previously existed only in `FileDistributor.ps1` and depended on private module helpers, have been promoted to `Public/` files in `FileManagement/FileDistributor` and exported by the module: `Initialize-FileDistributorPaths`, `Invoke-ParameterValidation`, `Invoke-RestoreCheckpoint`, `New-CheckpointPayload`, `Invoke-DistributionPhase`, `Invoke-PostProcessingPhase`, `Invoke-EndOfScriptDeletion`, `Invoke-PostRunCleanup`, `Invoke-DistributionLockRelease`.
+- **Fixed `LogMessage` calls in private module files.** `Private/FileLock.ps1`, `Private/State.ps1`, and `Private/Serialization.ps1` called `LogMessage` (a script-scope function defined only in `FileDistributor.ps1`), causing `CommandNotFoundException` when those private functions were invoked from module scope. All `LogMessage` calls have been replaced with the appropriate `Write-Log*` framework calls (`Write-LogInfo`, `Write-LogWarning`, `Write-LogError`, `Write-LogDebug`).
+- **Moved `Test-EndOfScriptCondition` to `Private/OrchestratorHelpers.ps1`** so it is available to the module-scope `Invoke-EndOfScriptDeletion`.
+- **Removed dead `Write-DistributionSummary` duplicate** from `FileDistributor.ps1`. The function was never called from the script; the canonical version lives in `Private/Distribution.ps1`.
+- Bumped `FileDistributor` module version to `1.2.0`.
+- Bumped script version to `4.8.0`.
+
+
 
 ### Fixed
 
