@@ -100,6 +100,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                         $backupPath = $matches[1]
                         "Mock backup data" | Out-File -FilePath $backupPath -Force
                     }
+                    $global:LASTEXITCODE = 0
                 }
             }
 
