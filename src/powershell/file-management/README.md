@@ -33,6 +33,9 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.7.12**
+  - Removed direct `Write-Host` completion output from module function `Invoke-FileDistribution`; completion is now logged via `Write-LogInfo` only for consistent framework-managed logging behavior.
+  - Bumped internal `FileManagement/FileDistributor` module version to `v1.1.12`.
 - **FileDistributor.ps1 v4.7.11**
   - Fixed `Invoke-FileDistribution` parameter typing for `-Files`: changed `[string[]]` to `[object[]]` so `System.IO.FileSystemInfo` inputs are not coerced to strings during parameter binding and the in-function `FileSystemInfo` handling branch remains reachable.
   - Bumped internal `FileManagement/FileDistributor` module version to `v1.1.11` and added regression coverage for the `-Files` parameter type.
