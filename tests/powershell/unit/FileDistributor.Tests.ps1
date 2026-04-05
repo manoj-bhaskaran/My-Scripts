@@ -254,6 +254,14 @@ Describe "FileDistributor Math Operations" {
 }
 
 Describe 'FileDistributor Module Public API' {
+    It 'Invoke-FileDistribution accepts FileSystemInfo inputs for -Files' {
+        $modPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'FileDistributor.psd1'
+        Import-Module -Name $modPath -Force | Out-Null
+        $filesParam = (Get-Command Invoke-FileDistribution -ErrorAction Stop).Parameters['Files']
+
+        $filesParam.ParameterType.FullName | Should -Be 'System.Object[]'
+    }
+
     It 'Should expose post-processing functions through module exports' {
         $modPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'FileDistributor.psd1'
         Import-Module -Name $modPath -Force | Out-Null

@@ -2,7 +2,7 @@
 
 function Invoke-FileDistribution {
     param (
-        [string[]]$Files,
+        [object[]]$Files,
         [object[]]$Subfolders,
         [Parameter(Mandatory = $true)][string]$TargetRoot,
         [int]$Limit,
