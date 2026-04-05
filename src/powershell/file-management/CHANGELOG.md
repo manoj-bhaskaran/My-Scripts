@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 4.7.12 — 2026-04-05
+
+### Fixed
+
+- Removed the direct `Write-Host` completion line from `Invoke-FileDistribution` in `src/powershell/modules/FileManagement/FileDistributor/Public/Invoke-FileDistribution.ps1`. The completion message is now emitted only through `Write-LogInfo`, keeping output consistent with the logging framework and avoiding unredirectable host-only output. Bumped `FileDistributor` module version to `1.1.12`.
+
 ## 4.7.11 — 2026-04-05
 
 ### Fixed

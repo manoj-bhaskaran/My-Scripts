@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.10] - 2026-04-05
+
+### Fixed
+
+- **FileDistributor logging consistency (issue #819)**
+  - Removed the direct `Write-Host` completion output from `Invoke-FileDistribution` so completion messages flow exclusively through `Write-LogInfo` and the central logging framework
+  - Bumped versions: `FileDistributor.ps1` to `4.7.12` and `FileManagement/FileDistributor` module to `1.1.12`
+
 ## [2.12.9] - 2026-04-05
 
 ### Fixed

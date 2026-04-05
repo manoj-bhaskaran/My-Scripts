@@ -217,5 +217,4 @@ function Invoke-FileDistribution {
     if ($ShowProgress) { Write-Progress -Activity "Distributing Files" -Status "Complete" -Completed }
     $completionMsg = "File distribution completed: Processed $($GlobalFileCounter.Value) of $TotalFiles files."
     Write-LogInfo $completionMsg
-    Write-Host $completionMsg
 }

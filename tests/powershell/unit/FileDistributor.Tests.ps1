@@ -254,6 +254,14 @@ Describe "FileDistributor Math Operations" {
 }
 
 Describe 'FileDistributor Module Public API' {
+
+    It 'Invoke-FileDistribution completion path avoids Write-Host output' {
+        $functionPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'Public' 'Invoke-FileDistribution.ps1'
+        $functionContent = Get-Content -LiteralPath $functionPath -Raw
+
+        $functionContent | Should -Not -Match 'Write-Host\s+\$completionMsg'
+    }
+
     It 'Invoke-FileDistribution accepts FileSystemInfo inputs for -Files' {
         $modPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'FileDistributor.psd1'
         Import-Module -Name $modPath -Force | Out-Null
