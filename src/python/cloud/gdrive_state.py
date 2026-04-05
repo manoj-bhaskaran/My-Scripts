@@ -199,13 +199,13 @@ class RecoveryStateManager:
 
     def _pid_is_alive(self, pid: int) -> bool:
         """
-        Best-effort liveness check for a PID on Windows.
-        Returns True if a handle can be opened. Returns False otherwise.
+        Best-effort liveness check for a PID on the current platform.
+        Returns True if the process exists or access is denied. Returns False otherwise.
         """
         try:
             if pid is None or int(pid) <= 0:
                 return False
-            try:
+            if os.name == "nt":
                 import ctypes
 
                 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
@@ -216,7 +216,15 @@ class RecoveryStateManager:
                     ctypes.windll.kernel32.CloseHandle(handle)
                     return True
                 return False
-            except Exception:
+            try:
+                # Signal 0 is a POSIX existence probe; it does not deliver a signal.
+                os.kill(int(pid), 0)  # NOSONAR(S4818)
+                return True
+            except ProcessLookupError:
+                return False
+            except PermissionError:
+                return True
+            except OSError:
                 return False
         except Exception:
             return False

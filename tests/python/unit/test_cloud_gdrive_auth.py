@@ -116,3 +116,96 @@ def test_get_service_builds_service_with_http_when_configured(monkeypatch):
     assert svc["credentials"] is None
     assert svc["http"] == "dummy_http"
     assert manager._thread_local.service == svc
+
+
+def test_build_http_prints_fallback_once_per_manager(monkeypatch, capsys):
+    class FailingSession:
+        def __init__(self, creds):
+            raise RuntimeError("boom")
+
+    _patch_google_auth_transport_requests(monkeypatch, FailingSession)
+
+    manager_one = gdrive_auth.DriveAuthManager(
+        DummyArgs(), logger=MagicMock(), execute_fn=lambda x: x
+    )
+    manager_one._http_transport = "requests"
+
+    manager_two = gdrive_auth.DriveAuthManager(
+        DummyArgs(), logger=MagicMock(), execute_fn=lambda x: x
+    )
+    manager_two._http_transport = "requests"
+
+    assert manager_one._build_http(creds=MagicMock()) is None
+    assert manager_one._build_http(creds=MagicMock()) is None
+    assert manager_two._build_http(creds=MagicMock()) is None
+
+    output = capsys.readouterr().out
+    assert output.count("Requests transport could not be enabled") == 2
+
+
+def test_build_and_test_service_uses_single_list_call(monkeypatch):
+    class FakeRequest:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def execute(self):
+            return self._payload
+
+    class FakeFilesResource:
+        def __init__(self):
+            self.list_calls = 0
+            self.media_calls = 0
+
+        def list(self, **kwargs):
+            self.list_calls += 1
+            return FakeRequest({"files": [{"id": "file-1", "size": "1", "mimeType": "text/plain"}]})
+
+        def get_media(self, fileId):
+            self.media_calls += 1
+            return types.SimpleNamespace(uri=f"https://example.invalid/{fileId}")
+
+    class FakeAboutResource:
+        @staticmethod
+        def get(**kwargs):
+            return FakeRequest({"user": {"emailAddress": "user@example.com"}})
+
+    class FakeHttp:
+        def __init__(self):
+            self.calls = []
+            self.timeout = 5
+
+        def request(self, uri, method="GET", headers=None, timeout=None, **kwargs):
+            self.calls.append(
+                {
+                    "uri": uri,
+                    "method": method,
+                    "headers": headers,
+                    "timeout": timeout,
+                }
+            )
+            return {}, b""
+
+    class FakeService:
+        def __init__(self, http):
+            self._http = http
+            self._files = FakeFilesResource()
+
+        def about(self):
+            return FakeAboutResource()
+
+        def files(self):
+            return self._files
+
+    fake_http = FakeHttp()
+    fake_service = FakeService(fake_http)
+    manager = gdrive_auth.DriveAuthManager(
+        DummyArgs(), logger=MagicMock(), execute_fn=lambda request: request.execute()
+    )
+
+    monkeypatch.setattr(gdrive_auth, "build", lambda *args, **kwargs: fake_service)
+    monkeypatch.setattr(manager, "_build_http", lambda creds: fake_http)
+
+    assert manager._build_and_test_service(creds=MagicMock()) is True
+    assert fake_service._files.list_calls == 1
+    assert fake_service._files.media_calls == 1
+    assert len(fake_http.calls) == 1
