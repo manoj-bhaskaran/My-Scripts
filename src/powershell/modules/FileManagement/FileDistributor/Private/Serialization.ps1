@@ -34,7 +34,7 @@ function ConvertItemsToPaths {
                 }
             }
             else {
-                Write-LogInfo "DEBUG: ConvertItemsToPaths - Item $index has no FullName property for '$($i.Name)'"
+                Write-LogDebug "DEBUG: ConvertItemsToPaths - Item $index has no FullName property for '$($i.Name)'"
             }
         }
         elseif (-not [string]::IsNullOrWhiteSpace([string]$i)) {
@@ -42,7 +42,7 @@ function ConvertItemsToPaths {
             $out += [string]$i
         }
         else {
-            Write-LogInfo "DEBUG: ConvertItemsToPaths - Item $index skipped (empty/whitespace)"
+            Write-LogDebug "DEBUG: ConvertItemsToPaths - Item $index skipped (empty/whitespace)"
         }
     }
 
@@ -76,11 +76,11 @@ function ConvertPathsToItems {
         try {
             $item = Get-Item -LiteralPath $path -ErrorAction Stop
             if ($item -and $item.FullName -and -not [string]::IsNullOrWhiteSpace($item.FullName)) {
-                Write-LogInfo "DEBUG: ConvertPathsToItems - Item $index successfully converted to $($item.GetType().Name)"
+                Write-LogDebug "DEBUG: ConvertPathsToItems - Item $index successfully converted to $($item.GetType().Name)"
                 $out += $item
             }
             else {
-                Write-LogInfo "DEBUG: ConvertPathsToItems - Item $index has invalid FullName after Get-Item"
+                Write-LogDebug "DEBUG: ConvertPathsToItems - Item $index has invalid FullName after Get-Item"
             }
         }
         catch {
@@ -88,6 +88,6 @@ function ConvertPathsToItems {
         }
     }
 
-    Write-LogInfo "DEBUG: ConvertPathsToItems - Output count: $($out.Count)"
+    Write-LogDebug "DEBUG: ConvertPathsToItems - Output count: $($out.Count)"
     return $out
 }
