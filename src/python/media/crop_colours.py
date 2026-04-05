@@ -1113,7 +1113,7 @@ def _process_batch(to_process: list[str], args, root: str) -> tuple[int, int, in
 
     elapsed_total = time.time() - start_time
     if failures > 0:
-        logger.info("Check write permissions and free disk space.")
+        logger.info("Some images failed to save. Check write permissions and free disk space.")
     return processed, skipped, failures, elapsed_total
 
 
