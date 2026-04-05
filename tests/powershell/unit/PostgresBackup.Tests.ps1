@@ -121,7 +121,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         It "Creates backup directory if it doesn't exist" {
             $newBackupFolder = Join-Path $script:testDir "new_backups"
 
-
             Backup-PostgresDatabase `
                 -dbname "testdb" `
                 -backup_folder $newBackupFolder `
@@ -134,7 +133,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         It "Creates log file directory if it doesn't exist" {
             $newLogFolder = Join-Path $script:testDir "logs"
             $newLogFile = Join-Path $newLogFolder "test.log"
-
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -209,7 +207,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                 }
             }
 
-
             Backup-PostgresDatabase `
                 -dbname "testdb" `
                 -backup_folder $script:testBackupFolder `
@@ -247,7 +244,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             Mock Start-Service { }
             Mock Stop-Service { }
 
-
             Backup-PostgresDatabase `
                 -dbname "testdb" `
                 -backup_folder $script:testBackupFolder `
@@ -266,7 +262,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             }
 
             Mock Stop-Service { }
-
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -547,7 +542,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         It "Uses provided password when specified" {
             $securePassword = ConvertTo-SecureString "test_password" -AsPlainText -Force
 
-
             Backup-PostgresDatabase `
                 -dbname "testdb" `
                 -backup_folder $script:testBackupFolder `
@@ -706,7 +700,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                 (Get-Item $file).LastWriteTime = $now.AddDays(-$_)
             }
 
-
             Backup-PostgresDatabase `
                 -dbname "testdb" `
                 -backup_folder $script:testBackupFolder `
@@ -727,7 +720,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             $oldFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-10).ToString('yyyy-MM-dd'))_10-00-00.backup"
             "Mock data" | Out-File -FilePath $oldFile -Force
             (Get-Item $oldFile).LastWriteTime = $now.AddDays(-10)
-
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -750,7 +742,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             $recentFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-5).ToString('yyyy-MM-dd'))_10-00-00.backup"
             "Mock data" | Out-File -FilePath $recentFile -Force
             (Get-Item $recentFile).LastWriteTime = $now.AddDays(-5)
-
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -775,7 +766,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             "Mock data" | Out-File -FilePath $db2File -Force
             (Get-Item $db1File).LastWriteTime = $now.AddDays(-100)
             (Get-Item $db2File).LastWriteTime = $now.AddDays(-100)
-
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -806,7 +796,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                 "Mock data" | Out-File -FilePath $file -Force
                 (Get-Item $file).LastWriteTime = $now.AddDays(-$_)
             }
-
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -840,7 +829,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         It "Properly encodes password with special characters" {
             $securePassword = ConvertTo-SecureString "p@ssw0rd!#$%&*" -AsPlainText -Force
 
-
             Backup-PostgresDatabase `
                 -dbname "testdb" `
                 -backup_folder $script:testBackupFolder `
@@ -854,7 +842,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
         It "Handles password with spaces" {
             $securePassword = ConvertTo-SecureString "my password 123" -AsPlainText -Force
-
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -880,7 +867,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Handles username with special characters" {
-
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -1008,7 +994,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                 throw "Failed to stop service"
             }
 
-
             # Service stop failure should cause the function to throw
             {
                 Backup-PostgresDatabase `
@@ -1023,7 +1008,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             # Create a zero-byte file that can't be deleted
             $zeroByteFile = Join-Path $script:testBackupFolder "testdb_backup_2024-01-01_10-00-00.backup"
             New-Item -Path $zeroByteFile -ItemType File -Force | Out-Null
-
 
             Mock Remove-Item {
                 throw "Access denied"
