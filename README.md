@@ -860,7 +860,7 @@ Releases are automated using GitHub Actions:
    ./scripts/bump-version.sh [major|minor|patch]
    ```
 
-2. **Update CHANGELOG.md** with release notes
+2. **Update CHANGELOG.md** with release notes in concise Keep a Changelog style (focus on architectural/user impact, avoid file-by-file implementation dumps)
 
 3. **Create and push tag** to trigger release:
    ```bash
