@@ -33,6 +33,10 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.7.13**
+  - Removed a vestigial, unused `-TotalFiles` parameter from module function `Invoke-TargetRedistribution` and updated the script call site accordingly.
+  - Removed a dead inner `if ($normalizedSubfolders.Count -eq 0)` guard in `Invoke-TargetRedistribution`; this branch was unreachable because an earlier guard already creates an emergency subfolder whenever no valid subfolders exist.
+  - Bumped internal `FileManagement/FileDistributor` module version to `v1.1.13`.
 - **FileDistributor.ps1 v4.7.12**
   - Removed direct `Write-Host` completion output from module function `Invoke-FileDistribution`; completion is now logged via `Write-LogInfo` only for consistent framework-managed logging behavior.
   - Bumped internal `FileManagement/FileDistributor` module version to `v1.1.12`.

@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 4.7.13 — 2026-04-05
+
+### Fixed
+
+- Removed a vestigial `[int]$TotalFiles` parameter from `Invoke-TargetRedistribution` in `src/powershell/modules/FileManagement/FileDistributor/Public/Invoke-TargetRedistribution.ps1`. The parameter was not used anywhere in the function body and had become stale after redistribution progress was refactored to use per-phase totals. Updated the `FileDistributor.ps1` call site in `Invoke-DistributionPhase` to stop passing `-TotalFiles 0`.
+- Removed a dead inner null-subfolder guard inside the root-redistribution block of `Invoke-TargetRedistribution` (`if ($normalizedSubfolders.Count -eq 0) { ... }`). This branch was unreachable because the earlier normalization guard already guarantees at least one destination subfolder by creating an emergency subfolder when needed.
+- Bumped `FileDistributor` module version to `1.1.13`.
+
 ## 4.7.12 — 2026-04-05
 
 ### Fixed

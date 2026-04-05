@@ -10,7 +10,6 @@ function Invoke-TargetRedistribution {
         [string]$DeleteMode,
         $FilesToDelete,  # FileQueue object (PSCustomObject) - reference type, no [ref] needed
         [ref]$GlobalFileCounter,
-        [int]$TotalFiles,
         [int]$RetryDelay = 10,
         [int]$RetryCount = 3,
         [int]$MaxBackoff = 60,
@@ -43,16 +42,6 @@ function Invoke-TargetRedistribution {
     $redistributionProcessed = 0
 
     if ($rootFiles.Count -gt 0) {
-        # Use the already normalized subfolders directly
-        if ($normalizedSubfolders.Count -eq 0) {
-            # Create a new subfolder if none exist
-            $randomName = Get-RandomFileName
-            $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
-            New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
-            Write-LogInfo "Created new target subfolder: $newFolder for redistribution from root folder."
-            $normalizedSubfolders = @($newFolder)
-        }
-
         # Reset phase counter and compute correct denominator
         $GlobalFileCounter.Value = 0
         $redistributionTotal += $rootFiles.Count
