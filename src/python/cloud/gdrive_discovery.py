@@ -608,10 +608,6 @@ class DriveTrashDiscovery:
             self._process_streaming_batch(batch, start_time)
         return ok
 
-    def _should_stop_streaming(self, batch: List[RecoveryItem], batch_n: int) -> bool:
-        """Return True when the current streaming batch reached processing size."""
-        return len(batch) >= batch_n
-
     def _should_stop_for_limit(self) -> bool:
         """Return True if the user-provided --limit has been reached."""
         return (
@@ -629,18 +625,28 @@ class DriveTrashDiscovery:
         """Process a single files.list item during streaming query discovery."""
         item = self._process_file_data(fd)
         if item:
-            if self.args.mode == "recover_and_download" and not item.target_path:
-                item.target_path = self._generate_target_path(item)
-            batch.append(item)
-            with self._stats_lock:
-                self._seen_total_ref[0] += 1
-                self._stats["found"] += 1
-            if self._should_stop_streaming(batch, batch_n):
-                self._process_streaming_batch(batch, start_time)
+            self._enqueue_streaming_item(item, batch, batch_n, start_time)
 
     def _should_flush_streaming_batch(self, batch: List[RecoveryItem], batch_n: int) -> bool:
-        """Return True if the ID streaming batch should be processed now."""
+        """Return True if the streaming batch should be processed now."""
         return len(batch) >= batch_n
+
+    def _enqueue_streaming_item(
+        self,
+        item: RecoveryItem,
+        batch: List[RecoveryItem],
+        batch_n: int,
+        start_time: float,
+    ) -> None:
+        """Append a validated item to the streaming batch and flush when ready."""
+        if self.args.mode == "recover_and_download" and not item.target_path:
+            item.target_path = self._generate_target_path(item)
+        batch.append(item)
+        with self._stats_lock:
+            self._seen_total_ref[0] += 1
+            self._stats["found"] += 1
+        if self._should_flush_streaming_batch(batch, batch_n):
+            self._process_streaming_batch(batch, start_time)
 
     def _handle_streaming_id_fetch(self, fid, fields, service):
         data = self._id_prefetch.get(fid)
@@ -662,14 +668,7 @@ class DriveTrashDiscovery:
         start_time: float,
     ) -> None:
         if item:
-            if self.args.mode == "recover_and_download" and not item.target_path:
-                item.target_path = self._generate_target_path(item)
-            batch.append(item)
-            with self._stats_lock:
-                self._seen_total_ref[0] += 1
-                self._stats["found"] += 1
-            if self._should_flush_streaming_batch(batch, batch_n):
-                self._run_parallel_processing_for_batch(batch, start_time)
+            self._enqueue_streaming_item(item, batch, batch_n, start_time)
 
     def _maybe_print_streaming_id_progress(self, idx, total_ids, start_ts):
         if self.args.verbose >= 1:
