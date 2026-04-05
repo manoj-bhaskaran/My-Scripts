@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 4.8.0 — 2026-04-05
+
+### Fixed
+
+- Fixed `Invoke-FolderConsolidation`, `Invoke-FolderRebalance`, and `Invoke-DistributionRandomize` in the `FileManagement/FileDistributor` module calling the script-scope helper `LogMessage` (defined only in `FileDistributor.ps1`) and the script-scope helper `Write-DistributionSummary` (also defined only in `FileDistributor.ps1`) instead of the framework-native `Write-Log*` functions. When called as standalone module functions these calls resolved to nothing (or threw `CommandNotFoundException`), silently suppressing all log output and distribution-summary tables from post-processing operations. All `LogMessage` calls have been replaced with the appropriate `Write-LogInfo`, `Write-LogWarning`, `Write-LogError`, or `Write-LogDebug` call; warning and error increments that `LogMessage` provided via `$script:Warnings`/`$script:Errors` are now applied directly to the passed `$WarningCount`/`$ErrorCount` refs. `Write-DistributionSummary` has been added as a private module function in `Private/Distribution.ps1`, replacing its `LogMessage` calls with `Write-LogInfo`. Bumped `FileDistributor` module version to `1.1.9`.
+
 ## 4.7.9 — 2026-04-04
 
 ### Fixed

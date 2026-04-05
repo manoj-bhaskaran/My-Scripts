@@ -22,7 +22,7 @@ function Invoke-FolderRebalance {
     $lowerMultiplier = 1.0 - $toleranceDecimal
     $upperMultiplier = 1.0 + $toleranceDecimal
 
-    LogMessage -Message ("Rebalance: computing average and deviation thresholds (±{0}%)..." -f $Tolerance)
+    Write-LogInfo ("Rebalance: computing average and deviation thresholds (±{0}%)..." -f $Tolerance)
 
     $folderCounts = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty
     if ($null -eq $folderCounts) { return }
@@ -31,18 +31,18 @@ function Invoke-FolderRebalance {
     $totalFiles = [int](($folderCounts.Values | Measure-Object -Sum).Sum)
 
     if (-not $subfolders -or $subfolders.Count -le 1) {
-        LogMessage -Message "Rebalance: need at least two subfolders. Nothing to do." -ConsoleOutput
+        Write-LogInfo "Rebalance: need at least two subfolders. Nothing to do."
         return
     }
 
-    LogMessage -Message ("Rebalance: enumerating files from {0} subfolder(s)..." -f $subfolders.Count)
+    Write-LogInfo ("Rebalance: enumerating files from {0} subfolder(s)..." -f $subfolders.Count)
     foreach ($sf in $subfolders) {
         $p = $sf.FullName
-        LogMessage -Message ("DEBUG: Folder '{0}' contains {1} file(s)" -f (Split-Path -Leaf $p), $folderCounts[$p]) -IsDebug
+        Write-LogDebug ("DEBUG: Folder '{0}' contains {1} file(s)" -f (Split-Path -Leaf $p), $folderCounts[$p])
     }
 
     if ($totalFiles -le 0) {
-        LogMessage -Message "Rebalance: no files to rebalance." -ConsoleOutput
+        Write-LogInfo "Rebalance: no files to rebalance."
         return
     }
 
@@ -50,7 +50,7 @@ function Invoke-FolderRebalance {
     $low = [int][math]::Floor($avg * $lowerMultiplier)
     $high = [int][math]::Ceiling($avg * $upperMultiplier)
 
-    LogMessage -Message ("Rebalance: totalFiles={0}, subfolders={1}, avg={2:N2}, lowerBound={3}, upperBound={4} (limit={5}, tolerance=±{6}%)" -f $totalFiles, $subfolders.Count, $avg, $low, $high, $FilesPerFolderLimit, $Tolerance)
+    Write-LogInfo ("Rebalance: totalFiles={0}, subfolders={1}, avg={2:N2}, lowerBound={3}, upperBound={4} (limit={5}, tolerance=±{6}%)" -f $totalFiles, $subfolders.Count, $avg, $low, $high, $FilesPerFolderLimit, $Tolerance)
 
     Write-DistributionSummary -FolderCounts $folderCounts -Average $avg -Label "Rebalance: === CURRENT DISTRIBUTION ===" -UpperBound $high -LowerBound $low
 
@@ -70,11 +70,11 @@ function Invoke-FolderRebalance {
     }
 
     if (-not $donors -and -not $receivers) {
-        LogMessage -Message ("Rebalance: all subfolders already within ±{0}% of average. Nothing to do." -f $Tolerance) -ConsoleOutput
+        Write-LogInfo ("Rebalance: all subfolders already within ±{0}% of average. Nothing to do." -f $Tolerance)
         return
     }
     if (-not $receivers) {
-        LogMessage -Message "Rebalance: no receivers below lower bound; cannot reduce above-average folders without capacity. Nothing to do." -ConsoleOutput
+        Write-LogInfo "Rebalance: no receivers below lower bound; cannot reduce above-average folders without capacity. Nothing to do."
         return
     }
 
@@ -82,30 +82,30 @@ function Invoke-FolderRebalance {
     $totalDeficit = ($receivers | Measure-Object -Property Deficit -Sum).Sum
     $plannedMoves = [int][Math]::Min([int]$totalSurplus, [int]$totalDeficit)
 
-    LogMessage -Message ("Rebalance: donors={0} (surplus={1}), receivers={2} (deficit={3}), plannedMoves={4}" -f $donors.Count, $totalSurplus, $receivers.Count, $totalDeficit, $plannedMoves)
+    Write-LogInfo ("Rebalance: donors={0} (surplus={1}), receivers={2} (deficit={3}), plannedMoves={4}" -f $donors.Count, $totalSurplus, $receivers.Count, $totalDeficit, $plannedMoves)
 
     if ($donors.Count -gt 0) {
-        LogMessage -Message "Rebalance: === DONORS (above upper bound) ==="
+        Write-LogInfo "Rebalance: === DONORS (above upper bound) ==="
         foreach ($d in ($donors | Sort-Object -Property Surplus -Descending)) {
             $folderName = Split-Path -Leaf $d.Path
             $currentCount = $folderCounts[$d.Path]
-            LogMessage -Message ("  {0}: {1} files (surplus: {2})" -f $folderName, $currentCount, $d.Surplus)
+            Write-LogInfo ("  {0}: {1} files (surplus: {2})" -f $folderName, $currentCount, $d.Surplus)
         }
     }
 
     if ($receivers.Count -gt 0) {
-        LogMessage -Message "Rebalance: === RECEIVERS (below lower bound) ==="
+        Write-LogInfo "Rebalance: === RECEIVERS (below lower bound) ==="
         foreach ($r in ($receivers | Sort-Object -Property Deficit -Descending)) {
             $folderName = Split-Path -Leaf $r.Path
             $currentCount = $folderCounts[$r.Path]
-            LogMessage -Message ("  {0}: {1} files (deficit: {2})" -f $folderName, $currentCount, $r.Deficit)
+            Write-LogInfo ("  {0}: {1} files (deficit: {2})" -f $folderName, $currentCount, $r.Deficit)
         }
     }
 
-    LogMessage -Message ("Rebalance: beginning file transfers ({0} files to move)..." -f $plannedMoves)
+    Write-LogInfo ("Rebalance: beginning file transfers ({0} files to move)..." -f $plannedMoves)
 
     if ($plannedMoves -le 0) {
-        LogMessage -Message "Rebalance: no feasible moves. Nothing to do." -ConsoleOutput
+        Write-LogInfo "Rebalance: no feasible moves. Nothing to do."
         return
     }
 
@@ -143,10 +143,11 @@ function Invoke-FolderRebalance {
             if ($allFiles.Count -gt 0) {
                 $moveCount = [Math]::Min($moveCount, $allFiles.Count)
                 $candidates = if ($moveCount -lt $allFiles.Count) { $allFiles | Get-Random -Count $moveCount } else { $allFiles }
-                LogMessage -Message ("DEBUG: Selected {0} file(s) from donor '{1}'" -f $candidates.Count, $srcFolderName) -IsDebug
+                Write-LogDebug ("DEBUG: Selected {0} file(s) from donor '{1}'" -f $candidates.Count, $srcFolderName)
             }
         } catch {
-            LogMessage -Message "Rebalance: failed to enumerate files in donor '$src': $($_.Exception.Message)" -IsWarning
+            Write-LogWarning "Rebalance: failed to enumerate files in donor '$src': $($_.Exception.Message)"
+            $WarningCount.Value++
             continue
         }
         if (-not $candidates) { continue }
@@ -158,7 +159,7 @@ function Invoke-FolderRebalance {
 
             $destFolderName = Split-Path -Leaf $destFolder
 
-            LogMessage -Message ("DEBUG: Moving '{0}' from '{1}' to '{2}'" -f $file.Name, $srcFolderName, $destFolderName) -IsDebug
+            Write-LogDebug ("DEBUG: Moving '{0}' from '{1}' to '{2}'" -f $file.Name, $srcFolderName, $destFolderName)
 
             $folderCountRef = New-Ref -Initial 0
             $moveResult = Invoke-FileMove -SourceFilePath $file.FullName `
@@ -188,7 +189,7 @@ function Invoke-FolderRebalance {
 
                 if ($GlobalFileCounter.Value - $lastLoggedProgress -ge $threshold) {
                     $pct = if ($plannedMoves -gt 0) { ($GlobalFileCounter.Value / $plannedMoves) * 100 } else { 0 }
-                    LogMessage -Message ("Rebalance: progress - moved {0}/{1} files ({2:N1}%)" -f $GlobalFileCounter.Value, $plannedMoves, $pct)
+                    Write-LogInfo ("Rebalance: progress - moved {0}/{1} files ({2:N1}%)" -f $GlobalFileCounter.Value, $plannedMoves, $pct)
                     $lastLoggedProgress = $GlobalFileCounter.Value
                 }
             } else {
@@ -199,12 +200,13 @@ function Invoke-FolderRebalance {
 
     if ($ShowProgress) { Write-Progress -Activity "Rebalancing subfolders" -Status "Complete" -Completed }
 
-    LogMessage -Message "Rebalance: === FINAL RESULTS ==="
-    LogMessage -Message ("  Files moved successfully: {0}" -f $totalMoved)
+    Write-LogInfo "Rebalance: === FINAL RESULTS ==="
+    Write-LogInfo ("  Files moved successfully: {0}" -f $totalMoved)
     if ($totalFailed -gt 0) {
-        LogMessage -Message ("  Files failed to move: {0}" -f $totalFailed) -IsWarning
+        Write-LogWarning ("  Files failed to move: {0}" -f $totalFailed)
+        $WarningCount.Value++
     }
-    LogMessage -Message ("Rebalance: redistribution complete - moved {0} of {1} planned file(s)" -f $totalMoved, $plannedMoves)
+    Write-LogInfo ("Rebalance: redistribution complete - moved {0} of {1} planned file(s)" -f $totalMoved, $plannedMoves)
 
     $finalCounts = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty
     if ($null -ne $finalCounts) {

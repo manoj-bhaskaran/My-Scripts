@@ -16,7 +16,7 @@ function Invoke-FolderConsolidation {
         [int]$MaxBackoff = 60
     )
 
-    LogMessage -Message "Consolidation: computing minimal subfolder set..."
+    Write-LogInfo "Consolidation: computing minimal subfolder set..."
 
     $folderCounts = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty
     if ($null -eq $folderCounts) { return }
@@ -25,22 +25,24 @@ function Invoke-FolderConsolidation {
     $subfolders = @($subfolderPaths | ForEach-Object { [pscustomobject]@{ FullName = $_ } })
 
     if (-not $subfolders -or $subfolders.Count -eq 0) {
-        LogMessage -Message "Consolidation: no subfolders present; nothing to do." -ConsoleOutput
+        Write-LogInfo "Consolidation: no subfolders present; nothing to do."
         return
     }
 
     try {
         $rootResidual = (Get-ChildItem -LiteralPath $TargetFolder -File -Force -ErrorAction Stop | Measure-Object).Count
         if ($rootResidual -gt 0) {
-            LogMessage -Message "Consolidation: found $rootResidual file(s) in target root. They will be moved during consolidation." -IsWarning
+            Write-LogWarning "Consolidation: found $rootResidual file(s) in target root. They will be moved during consolidation."
+            $WarningCount.Value++
             $totalFiles += [int]$rootResidual
         }
     } catch {
-        LogMessage -Message "Consolidation: failed to check target root for residual files: $($_.Exception.Message)" -IsWarning
+        Write-LogWarning "Consolidation: failed to check target root for residual files: $($_.Exception.Message)"
+        $WarningCount.Value++
     }
 
     if ($totalFiles -le 0) {
-        LogMessage -Message "Consolidation: no files to consolidate." -ConsoleOutput
+        Write-LogInfo "Consolidation: no files to consolidate."
         return
     }
 
@@ -48,18 +50,18 @@ function Invoke-FolderConsolidation {
     if ($needed -lt 1) { $needed = 1 }
 
     $existingCount = $subfolders.Count
-    LogMessage -Message ("Consolidation: totalFiles={0}, limit={1}, existingSubfolders={2}, needed={3}" -f $totalFiles, $FilesPerFolderLimit, $existingCount, $needed)
+    Write-LogInfo ("Consolidation: totalFiles={0}, limit={1}, existingSubfolders={2}, needed={3}" -f $totalFiles, $FilesPerFolderLimit, $existingCount, $needed)
     $avgBefore = if ($existingCount -gt 0) { [double]$totalFiles / [double]$existingCount } else { 0.0 }
     Write-DistributionSummary -FolderCounts $folderCounts -Average $avgBefore -Label "Consolidation: === CURRENT DISTRIBUTION ==="
 
     if ($existingCount -le $needed) {
-        LogMessage -Message "Consolidation: already at or below minimal subfolder count ($existingCount ≤ $needed). Nothing to do." -ConsoleOutput
+        Write-LogInfo "Consolidation: already at or below minimal subfolder count ($existingCount ≤ $needed). Nothing to do."
         return
     }
 
     $keepers = @($subfolders | Get-Random -Count $needed | ForEach-Object { $_.FullName })
     $others = @($subfolders | Where-Object { $keepers -notcontains $_.FullName } | ForEach-Object { $_.FullName })
-    LogMessage -Message ("Consolidation: selected {0} keeper(s), {1} to drain." -f $keepers.Count, $others.Count)
+    Write-LogInfo ("Consolidation: selected {0} keeper(s), {1} to drain." -f $keepers.Count, $others.Count)
 
     $liveCounts = @{}; $capacity = @{}
     foreach ($k in $keepers) {
@@ -71,7 +73,8 @@ function Invoke-FolderConsolidation {
     $filesToMove = @()
     foreach ($o in $others) {
         try { $filesToMove += (Get-ChildItem -LiteralPath $o -File -Force -ErrorAction Stop) } catch {
-            LogMessage -Message "Consolidation: failed enumerating files in '$o': $($_.Exception.Message)" -IsWarning
+            Write-LogWarning "Consolidation: failed enumerating files in '$o': $($_.Exception.Message)"
+            $WarningCount.Value++
         }
     }
     try { $filesToMove += (Get-ChildItem -LiteralPath $TargetFolder -File -Force -ErrorAction Stop) } catch {
@@ -79,7 +82,7 @@ function Invoke-FolderConsolidation {
     }
 
     if (-not $filesToMove -or $filesToMove.Count -eq 0) {
-        LogMessage -Message "Consolidation: nothing to move; proceeding to delete empty subfolders (if any)."
+        Write-LogInfo "Consolidation: nothing to move; proceeding to delete empty subfolders (if any)."
     } else {
         try { if ($filesToMove.Count -gt 1) { $filesToMove = $filesToMove | Get-Random -Count $filesToMove.Count } } catch {
             Write-LogDebug "Failed to shuffle files for consolidation: $_"
@@ -87,7 +90,7 @@ function Invoke-FolderConsolidation {
 
         $totalMoves = $filesToMove.Count
         $GlobalFileCounter.Value = 0
-        LogMessage -Message ("Consolidation: moving {0} file(s) into {1} keeper(s)..." -f $totalMoves, $keepers.Count)
+        Write-LogInfo ("Consolidation: moving {0} file(s) into {1} keeper(s)..." -f $totalMoves, $keepers.Count)
 
         foreach ($file in $filesToMove) {
             $eligible = @()
@@ -101,7 +104,8 @@ function Invoke-FolderConsolidation {
                 $liveCounts[$newK] = 0
                 $capacity[$newK] = $FilesPerFolderLimit
                 $eligible = @($newK)
-                LogMessage -Message "Consolidation: keeper capacity exhausted; created additional keeper '$newK'." -IsWarning
+                Write-LogWarning "Consolidation: keeper capacity exhausted; created additional keeper '$newK'."
+                $WarningCount.Value++
             }
 
             $minCount = ($eligible | ForEach-Object { $liveCounts[$_] } | Measure-Object -Minimum).Minimum
@@ -145,18 +149,20 @@ function Invoke-FolderConsolidation {
                 Invoke-WithRetry -Operation { Remove-Item -LiteralPath $o -Force -ErrorAction Stop } `
                     -Description "Consolidation: delete empty subfolder '$o'" `
                     -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff -IgnoreFileNotFound
-                LogMessage -Message "Consolidation: deleted empty subfolder '$o'."
+                Write-LogInfo "Consolidation: deleted empty subfolder '$o'."
                 $deleted++
             } else {
                 $skipped++
-                LogMessage -Message "Consolidation: subfolder '$o' not empty after move; skipping deletion." -IsWarning
+                Write-LogWarning "Consolidation: subfolder '$o' not empty after move; skipping deletion."
+                $WarningCount.Value++
             }
         } catch {
             $skipped++
-            LogMessage -Message "Consolidation: failed to delete subfolder '$o': $($_.Exception.Message)" -IsWarning
+            Write-LogWarning "Consolidation: failed to delete subfolder '$o': $($_.Exception.Message)"
+            $WarningCount.Value++
         }
     }
-    LogMessage -Message ("Consolidation: removed {0} empty subfolder(s); {1} skipped." -f $deleted, $skipped)
+    Write-LogInfo ("Consolidation: removed {0} empty subfolder(s); {1} skipped." -f $deleted, $skipped)
 
     $finalCounts = Get-SubfolderFileCounts -TargetFolder $TargetFolder -IncludeEmpty
     if ($null -ne $finalCounts) {
