@@ -1,52 +1,30 @@
 """
 Frame cropper for image folders.
 
-Version: 4.0.1
+Version: 4.0.2
 Author: Manoj Bhaskaran
 
 DESCRIPTION
     Batch-crops images in a folder, trimming uniform borders (e.g., black/white)
     and writing the results back. Designed to be invoked by the Videoscreenshot
-    module (formerly videoscreenshot.ps1) but usable standalone.
-
-    Safe defaults:
-      - Writes to <input>/Cropped by default (non-destructive)
-      - Appends a filename suffix (default: "_cropped")
-      - Preserves subfolder structure with --recurse
-      - Never overwrites outputs (auto de-duplicates if needed)
-      - Tracks processed files to avoid reprocessing on reruns (via .processed_images using absolute paths)
-        Note: Moving input directories invalidates tracking (absolute paths); remove .processed_images to reset.
-
-    Opt-in overwrite:
-      - Use --in-place to overwrite originals in-place (atomic temp->replace)
-
-    Features:
-      - Parallel processing via ThreadPoolExecutor (configurable --max-workers)
-      - Periodic progress logs (--progress-interval, default 100 images)
-      - Real-time progress with ETA estimates and processing rate
-      - Strict validation & clear exit codes
-      - Resume-from-image support (--resume-file)
-      - Save retries for transient I/O issues (--retry-writes)
-      - Optionally skip corrupt images instead of failing the run (--skip-bad-images)
-      - Optional recursion into subfolders (--recurse)
-      - Automatic reprocessing protection via .processed_images tracking and existing output detection
-      - Comprehensive summary statistics with timing and success rates
-      - Thread-safe processed file tracking with cross-process coordination
-      - Alpha channel support for transparent border detection
-      - Strict resume file validation with image readability checks
+    module but usable standalone. Non-destructive by default (writes to
+    <input>/Cropped/ with suffix _cropped); use --in-place to overwrite originals
+    atomically. Supports parallel processing, periodic progress logs with ETA,
+    resume-from-image, save retries, optional recursion, alpha/transparency border
+    detection, and reprocessing protection via .processed_images tracking.
 
 EXIT CODES
     0  Success
     1  Runtime error (some or all images failed to process after starting work)
     2  Usage/validation error (empty input without --allow-empty, invalid resume file, etc.)
 
-    Exit code policy: Partial success (some images processed, some failed) returns 1 to alert automation.
+    Exit code policy: Partial success (some images processed, some failed) returns 1.
 
 DEPENDENCIES
     - OpenCV:      pip install opencv-python
     - NumPy:       pip install numpy
-    - (Optional) python-logging-framework (plog): pip install python-logging-framework
-      If not installed, the script automatically falls back to Python’s built-in logging.
+    - (Optional) python-logging-framework: pip install python-logging-framework
+      Falls back to Python’s built-in logging if not installed.
 
 USAGE
     # Safe default (non-destructive): Cropped/ + suffix
@@ -66,125 +44,9 @@ USAGE
     # Overwrite originals (opt-in)
     python crop_colours.py --input /path/to/images --in-place
 
-TROUBLESHOOTING
-    - "No valid images found":
-        Ensure --input has .png/.jpg/.jpeg files. Use --recurse to include subfolders.
-        Use --allow-empty to treat empty input as success.
-    - "Already processed / already cropped":
-        By default, images that were successfully processed before are skipped on rerun.
-        Use --reprocess-cropped to force reprocessing; by default, this deletes any existing
-        crops before regenerating them. To keep existing crops and add new de-duplicated
-        outputs alongside, add --keep-existing-crops.
-    - "Failed to load image":
-        The file may be corrupt/unsupported. Use --skip-bad-images to continue.
-    - "Transparent images not cropping properly":
-        Use --preserve-alpha to detect transparent borders instead of treating
-        them as solid colors. Requires images with alpha channels.
-        For images with anti-aliased transparent edges, also tune --alpha-threshold
-        to ignore semi-transparent pixels (e.g. --alpha-threshold 10 to ignore
-        alpha values <= 10).
-    - "Saves failing on network drive":
-        Increase --retry-writes, reduce --max-workers, and check disk permissions/space.
-    - "Too slow or too CPU-heavy":
-        Tune --max-workers (I/O-bound default is 2×CPU, capped at 64). Try smaller values.
-
-FAQS
-    Q: Where are outputs written?
-       A: By default, images are written to <input>/Cropped/, preserving subfolders
-          when --recurse is used, with a filename suffix (e.g., _cropped).
-
-    Q: What if the crop finds nothing to trim?
-       A: The original image is written as-is (no-op crop).
-
-    Q: How does reprocessing protection work?
-       A: Successfully processed files are recorded in <input>/.processed_images (absolute paths).
-          Existing crops are also detected when determining whether work is needed.
-          Delete .processed_images to reset tracking or pass --reprocess-cropped to redo work.
-
-    Q: How do I handle images with transparent backgrounds?
-       A: Use --preserve-alpha to detect borders based on alpha transparency.
-
-    Q: Can I resume after a partial run?
-       A: Yes. Pass --resume-file <an existing image filename>. Processing starts after that file.
-
-CHANGELOG
-    ## 4.0.1
-    **Improve**
-    - `_validate_parameters()` no longer creates a throwaway `ArgumentParser`; validation errors
-      are reported via `logger.error` + `raise SystemExit(2)`.
-    - `import glob` and `import platform` promoted from function bodies to the top-level import
-      block.
-    - `_save_failure_guidance_shown` global removed; save-failure guidance is now emitted once
-      from `_process_batch()` after the worker loop completes, conditioned on `failures > 0`.
-
-    ## 4.0.0
-    **Breaking**
-    - Remove `--ignore-processed`. Default behavior now explicitly skips previously cropped images using `.processed_images` tracking and/or existing output detection.
-    **Add**
-    - `--reprocess-cropped` to force a full re-crop.
-    - `--keep-existing-crops` to retain existing crops when reprocessing (new outputs are de-duplicated alongside).
-    **Improve**
-    - Documentation and help text updated to reflect reprocessing semantics and defaults.
-    **Refactor**
-    - Split monolithic `main()` into focused helpers (`_resolve_work_items`, `_maybe_handle_reprocessing`, `_emit_summary`) to reduce cognitive complexity and improve readability/testability without changing behavior.
-
-    ## 3.x
-    **Breaking / Behavior**
-    - Default is now **non-destructive**: outputs are written to `<input>/Cropped` with suffix `_cropped` (no overwrite).
-    - Exit semantics refined: when all images are already processed, return **0** (success) instead of **2**.
-    - Stricter parameter validation across thresholds, padding, min-area, etc.
-
-    **Add**
-    - `--in-place` to overwrite originals atomically (temp→replace).
-    - Naming controls: `--suffix` (default `_cropped`) and `--no-suffix`.
-    - Progress controls: `--progress-interval` (default 100) with ETA/rate; end-of-run summary stats.
-    - Reprocessing protection via `.processed_images` tracking to avoid redundant work.
-    - `--ignore-processed` to override tracking when needed.
-    - Transparency handling: `--preserve-alpha` plus `--alpha-threshold` for tuning semi-transparent edges.
-    - Consistent logger naming and compatibility with both stdlib logging and `python-logging-framework`.
-
-    **Fix**
-    - Robust file tracking: add thread-safe/cross-process coordination to prevent `.processed_images` corruption.
-    - Windows compatibility: make `fcntl` import conditional; fall back to Windows locking.
-    - Resume robustness: validate that `--resume-file` is a real, readable image; use case-insensitive path matching on Windows; clearer errors when not found.
-    - Exit codes: ensure **1** is returned when any image processing failures occur.
-    - Eliminate duplicate `start_time` initialization in `_process_batch`.
-    - Alpha crash fix: guard dimensions when using `--preserve-alpha` on grayscale images.
-    - Return type/flow bugs addressed to avoid unintended `sys.exit()` errors.
-    - Diagnostics: include target output path in save-failure messages.
-
-    **Improve**
-    - Cognitive complexity reduced by decomposing large routines into focused helpers (image collection, progress gating, stats, resume resolution).
-    - Parameter bounds checks with clearer, actionable error messages.
-    - Progress visibility: richer periodic logs with rate and ETA; more actionable end-of-run summary (success/failure/skip counts, success rate).
-    - Documentation: clarify file locking as “cross-process coordination”; document absolute-path behavior in reprocessing protection and Windows path matching.
-    - Type annotations modernized (built-in `tuple`, `list`); style improvements (use `np.nonzero`).
-    - Debug logging made consistent across stdlib and third-party logging backends; debug builds emit environment/version diagnostics (Python/OpenCV/NumPy).
-
-    **Keep**
-    - Core 2.x capabilities: `--recurse`, `--max-workers`, retries, strict validation, non-clobbering writes with auto de-duplication when needed.
-
-    ## 2.x
-    **Breaking**
-    - Empty folder exits with code **2** unless `--allow-empty`.
-    - `--resume-file` must exist and be a valid, readable image; otherwise exit **2**.
-    - Corrupt images fail the run by default; use `--skip-bad-images` to continue.
-
-    **Add**
-    - `--recurse` for recursive image discovery (`os.walk`).
-    - Preserve relative subfolder structure under `--output`.
-    - `--max-workers`, `--retry-writes`, `--skip-bad-images`, `--allow-empty`.
-    - Expanded docstring with Version/Author, Troubleshooting, FAQs, and dependencies.
-
-    **Fix**
-    - Explicit `None`-check on `cv2.imread` with clearer error messages.
-
-    **Docs**
-    - Clarify that `python-logging-framework` is optional (falls back to stdlib logging).
-
-    **Style**
-    - Use `np.nonzero` over `np.where(condition)`.
-
+SEE ALSO
+    - Troubleshooting & FAQs:  src/python/media/README.md
+    - Version history:         src/python/media/CHANGELOG.md
 """
 
 from __future__ import annotations
