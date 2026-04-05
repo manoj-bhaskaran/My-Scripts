@@ -80,6 +80,7 @@ except ImportError:
     )
     sys.exit(1)
 
+
 class DriveTrashRecoveryTool:
     """Main recovery tool class."""
 
