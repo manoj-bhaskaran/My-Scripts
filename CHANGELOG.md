@@ -249,7 +249,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added FileQueue module and integrated it into FileDistributor Phase 2 refactoring to improve queue/state management architecture. (#602, #008)
 - Added repository environment-variable reference documentation (`docs/ENVIRONMENT.md`) and linked onboarding/security guidance. (#606, #010)
 - Added CI checks investigation report documenting that missing PR checks were caused by repository settings rather than workflow definitions. (#632)
 
