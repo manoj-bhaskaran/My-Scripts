@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.12.6] - 2026-04-05
+
+### Changed
+
+- **Issue #851:** Removed stale duplicated streaming helper implementations from `DriveTrashRecoveryTool`; streaming discovery now lives only in `DriveTrashDiscovery`.
+- Removed an unused module-level helper (`get_recoverable_files`) from `gdrive_recover.py`.
+- Removed temporary back-compat rate-limiter shim members from `DriveTrashRecoveryTool` (`_rate_limit`, `_rl_diag_tick`, `_tb_initialized`, `_rl_diag_enabled`) so request pacing is accessed through `self.rate_limiter`.
+- Updated unit tests to stop depending on removed shims/helpers and to assert that `DriveTrashRecoveryTool._execute()` delegates pacing to `RateLimiter.wait()`.
+
 ## [1.12.5] - 2026-04-05
 
 ### Fixed

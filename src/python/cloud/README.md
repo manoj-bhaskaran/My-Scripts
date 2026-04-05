@@ -81,13 +81,14 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
 
 ## Internal Module Boundaries
 
-- `gdrive_recover.py` owns discovery, recovery, download, and orchestration behavior.
+- `gdrive_recover.py` owns recovery/download orchestration and execution flow.
 - `gdrive_cli.py` owns CLI argument parsing, validation, and command routing.
 - `gdrive_constants.py` owns dependency-free constants and the shared `VERSION` string used by both `gdrive_recover.py` and `gdrive_cli.py`.
 - `gdrive_auth.py` owns OAuth credential management, token caching, HTTP transport construction, and Drive service initialisation.
   - Exposes `DriveAuthManager`; used by `DriveTrashRecoveryTool` via `self.auth`.
 - `gdrive_rate_limiter.py` owns request pacing mechanics (`RateLimiter.wait()`), including fixed-interval mode and token-bucket mode with diagnostics.
-  - Exposes `RateLimiter`; used by `DriveTrashRecoveryTool` via `self.rate_limiter`.
+  - Exposes `RateLimiter`; used by `DriveTrashRecoveryTool` via `self.rate_limiter` (no back-compat shim methods on the tool class).
 - `gdrive_state.py` owns persistent state and lock-file concerns.
   - Includes PID liveness checks used by lock diagnostics in `gdrive_cli.py`.
   - Reports state-load failures back to `gdrive_recover.py` so execution error totals remain accurate.
+- `gdrive_discovery.py` owns query/file-ID discovery, validation, and streaming discovery helpers used by `DriveTrashRecoveryTool`.
