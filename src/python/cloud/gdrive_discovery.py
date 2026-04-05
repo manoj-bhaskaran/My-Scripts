@@ -614,7 +614,9 @@ class DriveTrashDiscovery:
 
     def _should_stop_for_limit(self) -> bool:
         """Return True if the user-provided --limit has been reached."""
-        return self.args.limit and self.args.limit > 0 and self._seen_total_ref[0] >= self.args.limit
+        return (
+            self.args.limit and self.args.limit > 0 and self._seen_total_ref[0] >= self.args.limit
+        )
 
     def _process_streaming_batch(self, batch: List[RecoveryItem], start_time: float) -> None:
         """Process the current streaming batch and clear in-memory references."""
