@@ -47,7 +47,6 @@ from gdrive_constants import (
     INFERRED_MODIFY_ERROR,
     DEFAULT_MAX_RPS,
     DEFAULT_BURST,
-    DOWNLOAD_CHUNK_BYTES,
 )
 
 __version__ = VERSION
@@ -61,11 +60,13 @@ from gdrive_auth import DriveAuthManager
 from gdrive_rate_limiter import RateLimiter
 
 try:
-    from googleapiclient.http import MediaIoBaseDownload
     from googleapiclient.errors import HttpError
 
     # v1.12.3: discovery module uses googleapiclient.errors, so import under same guard.
     from gdrive_discovery import DriveTrashDiscovery
+
+    # v1.14.0: download subsystem extracted to gdrive_download.py (issue #853).
+    from gdrive_download import DriveDownloader
 except ImportError:
     print("ERROR: Required Google API libraries not installed.")
     print(
@@ -118,6 +119,15 @@ class DriveTrashRecoveryTool:
             seen_total_ref=self._seen_total_ref,
             generate_target_path=self._generate_target_path,
             run_parallel_processing_for_batch=self._run_parallel_processing_for_batch,
+        )
+        # v1.14.0: download subsystem extracted to DriveDownloader (issue #853).
+        self.downloader = DriveDownloader(
+            self.args,
+            self.logger,
+            self.rate_limiter,
+            self.auth,
+            self.stats,
+            self.stats_lock,
         )
 
     @property
@@ -672,7 +682,7 @@ class DriveTrashRecoveryTool:
         success = True
         if item.will_recover and not self._recover_file(item):
             success = False
-        if success and item.will_download and not self._download_file(item):
+        if success and item.will_download and not self.downloader.download(item):
             success = False
         if success and item.will_download and item.status == "downloaded":
             self._apply_post_restore_policy(item)
@@ -919,132 +929,6 @@ class DriveTrashRecoveryTool:
             (self.stats["recovered"] / self.stats["found"] * 100) if self.stats["found"] > 0 else 0
         )
         print(f"\n✅ Success rate: {success_rate:.1f}%")
-
-    # --- Streaming download implementation (rate-limit aware) ---
-    def _atomic_replace_with_retry(
-        self, src: Path, dst: Path, attempts: int = 60, sleep_s: float = 0.5
-    ) -> bool:
-        """
-        Windows/OneDrive-safe replace with retries.
-        Retries when the destination (or source) is temporarily locked by another process.
-        """
-        last_err = None
-        for _ in range(max(1, attempts)):
-            try:
-                # Best-effort: if dst exists, try to remove it first (it may be a 0-byte OneDrive stub)
-                if dst.exists():
-                    try:
-                        dst.unlink()
-                    except Exception:
-                        pass
-                os.replace(src, dst)  # atomic on same volume
-                return True
-            except PermissionError as e:
-                # Windows/OneDrive often yields WinError 32 here; back off and retry
-                last_err = e
-            except OSError as e:
-                # Treat sharing violations the same way
-                if getattr(e, "winerror", None) == 32:
-                    last_err = e
-                else:
-                    raise
-            time.sleep(sleep_s)
-        if last_err:
-            self.logger.error(f"Atomic replace failed after retries: {last_err}")
-        return False
-
-    def _download_with_downloader(self, downloader, item, show_progress=True):
-        """Download using MediaIoBaseDownload, with optional progress printing."""
-        done = False
-        last_print = 0.0
-        while not done:
-            self.rate_limiter.wait()
-            status, done = downloader.next_chunk()
-            now = time.time()
-            if (
-                show_progress
-                and status
-                and (self.args.verbose > 0)
-                and (now - last_print > 1.0 or done)
-            ):
-                pct = int(status.progress() * 100)
-                print(f"  ↳ downloading {item.name[:40]} … {pct}%")
-                last_print = now
-
-    def _handle_download_success(self, item):
-        item.status = "downloaded"
-        with self.stats_lock:
-            self.stats["downloaded"] += 1
-
-    def _handle_download_failure(self, item, msg):
-        item.status = "failed"
-        item.error_message = msg
-        with self.stats_lock:
-            self.stats["errors"] += 1
-        self.logger.error(msg)
-
-    def _cleanup_partial_file(self, partial):
-        try:
-            if partial.exists():
-                partial.unlink()
-        except Exception:
-            pass
-
-    def _download_file(self, item: RecoveryItem) -> bool:
-        success = False
-        try:
-            service = self.auth._get_service()
-            request = service.files().get_media(fileId=item.id)
-            target = Path(item.target_path)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if getattr(self.args, "direct_download", False):
-                with open(target, "wb") as fh:
-                    try:
-                        downloader = MediaIoBaseDownload(
-                            fh, request, chunksize=DOWNLOAD_CHUNK_BYTES
-                        )
-                        self._download_with_downloader(downloader, item)
-                        self._handle_download_success(item)
-                        success = True
-                    except Exception as e:
-                        self._handle_download_failure(item, f"Download error: {e}")
-                        success = False
-            else:
-                partial = Path(str(target) + ".partial")
-                with open(partial, "wb") as fh:
-                    try:
-                        downloader = MediaIoBaseDownload(
-                            fh, request, chunksize=DOWNLOAD_CHUNK_BYTES
-                        )
-                        self._download_with_downloader(downloader, item)
-                        self._handle_download_success(item)
-                        # Atomic move into place
-                        if not self._atomic_replace_with_retry(partial, target):
-                            raise PermissionError(
-                                f"Could not move '{partial}' to '{target}' "
-                                f"(destination locked by another process)"
-                            )
-                        success = True
-                    except Exception as e:
-                        self._handle_download_failure(item, f"Download error: {e}")
-                        success = False
-        except HttpError as e:
-            status = getattr(e.resp, "status", None)
-            detail = getattr(e, "content", b"")
-            detail = detail.decode(errors="ignore") if hasattr(detail, "decode") else str(e)
-            self._handle_download_failure(
-                item, f"files.get_media(fileId={item.id}) failed: HTTP {status}: {detail}"
-            )
-            success = False
-        except Exception as e:
-            self._handle_download_failure(item, f"Download error: {e}")
-            success = False
-        finally:
-            if not getattr(self.args, "direct_download", False):
-                partial = Path(str(Path(item.target_path)) + ".partial")
-                if not success:
-                    self._cleanup_partial_file(partial)
-        return success
 
 
 if __name__ == "__main__":
