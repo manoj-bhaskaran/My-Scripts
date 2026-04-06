@@ -107,3 +107,4 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
   - `DriveOperations` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`args`, `logger`, `auth`, `downloader`, `state_manager`, `stats`, `stats_lock`) are injected at construction time.
 - `gdrive_retry.py` owns shared `with_retries(...)` backoff logic used by both recovery and discovery modules to avoid copy-pasted retry loops.
   - `with_retries(...)` returns `(result, error_message, http_status)` so callers can branch on status code without parsing formatted message text.
+  - Internal planning/logging helpers keep retry flow explicit while reducing function complexity for static analysis.

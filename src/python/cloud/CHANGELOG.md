@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.15.4] - 2026-04-06
+
+### Fixed
+
+- Refactored `gdrive_retry.with_retries(...)` into smaller helper steps (`_plan_http_error`, `_plan_generic_error`, and retry-log helpers) to reduce cognitive complexity for static analysis while preserving behavior.
+
 ## [1.15.3] - 2026-04-06
 
 ### Fixed
