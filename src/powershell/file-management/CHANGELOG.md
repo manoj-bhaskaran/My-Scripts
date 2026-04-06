@@ -21,76 +21,35 @@
 - Removed a dead inner null-subfolder guard inside the root-redistribution block of `Invoke-TargetRedistribution` (`if ($normalizedSubfolders.Count -eq 0) { ... }`). This branch was unreachable because the earlier normalization guard already guarantees at least one destination subfolder by creating an emergency subfolder when needed.
 - Bumped `FileDistributor` module version to `1.1.13`.
 
-## 4.7.12 — 2026-04-05
+## 4.7.x (rollup) — 2026-04-01 to 2026-04-05
 
-### Fixed
+Addresses script-scope coupling issues that surfaced after functions were moved into the `FileDistributor` module in 4.7.0. Module versions advanced from `1.1.0` to `1.1.12`.
 
-- Removed the direct `Write-Host` completion line from `Invoke-FileDistribution` in `src/powershell/modules/FileManagement/FileDistributor/Public/Invoke-FileDistribution.ps1`. The completion message is now emitted only through `Write-LogInfo`, keeping output consistent with the logging framework and avoiding unredirectable host-only output. Bumped `FileDistributor` module version to `1.1.12`.
+### Logging replacement
 
-## 4.7.11 — 2026-04-05
+- Replaced all `LogMessage` calls (a script-scope helper defined only in `FileDistributor.ps1`) with framework-native `Write-Log*` functions (`Write-LogInfo`, `Write-LogWarning`, `Write-LogError`, `Write-LogDebug`) in `Private/PathHelpers.ps1` (`Resolve-SubfolderPath`), `Private/Distribution.ps1` (`Write-DistributionSummary`), and the post-processing functions `Invoke-FolderConsolidation`, `Invoke-FolderRebalance`, and `Invoke-DistributionRandomize`. Removed the stale `Write-Host` completion line from `Invoke-FileDistribution` in favour of `Write-LogInfo`.
 
-### Fixed
+### State persistence fixes
 
-- Fixed an input-type mismatch in `Invoke-FileDistribution`: the `-Files` parameter was typed as `[string[]]` while the function body contains an explicit `[System.IO.FileSystemInfo]` branch for `$file.FullName` and `$file.Name`. PowerShell converted incoming `FileSystemInfo` objects to strings at parameter binding time, making the `FileSystemInfo` branch effectively unreachable dead code and potentially losing object metadata. Updated the parameter type to `[object[]]` so both string paths and `FileSystemInfo` inputs are handled as intended. Added a unit test in `tests/powershell/unit/FileDistributor.Tests.ps1` to assert `Invoke-FileDistribution` exposes `System.Object[]` for `-Files`. Bumped `FileDistributor` module version to `1.1.11`.
+- Refactored `Save-DistributionState`, `Restore-DistributionState`, and `Write-JsonAtomically` in `Private/State.ps1` to accept `$StateFilePath`, `$RetryDelay`, `$RetryCount`, and `$MaxBackoff` as explicit parameters instead of reading from outer script scope. Updated checkpoint/restart call sites in `FileDistributor.ps1` accordingly.
+- Fixed CP3 `New-CheckpointPayload` call in `Invoke-DistributionPhase` to include `-IncludeSourceFiles` and `-SourceFiles $RunState.sourceFiles`, preventing a restart from CP3 from silently skipping the distribution phase.
+- Fixed `Invoke-EndOfScriptDeletion` using unqualified `$Warnings`/`$Errors` instead of `$script:Warnings`/`$script:Errors`, which could silently yield `0` and allow deletion to proceed despite accumulated warnings or errors.
 
-## 4.7.10 — 2026-04-05
+### Reference counting
 
-### Fixed
+- Restored warning/error accounting for module-scope functions: added optional `[ref]$WarningCount` and `[ref]$ErrorCount` parameters to `Invoke-FileMove`, `Invoke-FileDistribution`, `Invoke-TargetRedistribution`, and `Resolve-SubfolderPath`; all `Write-LogWarning`/`Write-LogError` call sites now increment the provided counter refs. Call sites in `Invoke-DistributionPhase` and post-processing functions pass `([ref]$script:Warnings)` / `([ref]$script:Errors)`, preserving the `EndOfScriptDeletionCondition` gate.
+- Propagated `$MaxBackoff` to `Remove-DistributionFile` and to `Invoke-FolderRebalance`, `Invoke-FolderConsolidation`, and `Invoke-DistributionRandomize`, threading it through to every `Invoke-FileMove` and `Invoke-WithRetry` call site so a user-supplied value is no longer silently ignored during post-processing.
 
-- Fixed `Invoke-FolderConsolidation`, `Invoke-FolderRebalance`, and `Invoke-DistributionRandomize` in the `FileManagement/FileDistributor` module calling the script-scope helper `LogMessage` (defined only in `FileDistributor.ps1`) and the script-scope helper `Write-DistributionSummary` (also defined only in `FileDistributor.ps1`) instead of the framework-native `Write-Log*` functions. When called as standalone module functions these calls resolved to nothing (or threw `CommandNotFoundException`), silently suppressing all log output and distribution-summary tables from post-processing operations. All `LogMessage` calls have been replaced with the appropriate `Write-LogInfo`, `Write-LogWarning`, `Write-LogError`, or `Write-LogDebug` call; warning and error increments that `LogMessage` provided via `$script:Warnings`/`$script:Errors` are now applied directly to the passed `$WarningCount`/`$ErrorCount` refs. `Write-DistributionSummary` has been added as a private module function in `Private/Distribution.ps1`, replacing its `LogMessage` calls with `Write-LogInfo`. Bumped `FileDistributor` module version to `1.1.9`.
+### Algorithm fixes
 
-- Fixed `Save-DistributionState`, `Restore-DistributionState`, and `Write-JsonAtomically` in `Private/State.ps1` reading `$StateFilePath`, `$RetryDelay`, `$RetryCount`, and `$MaxBackoff` from outer script scope instead of explicit parameters. Added the missing parameters, updated checkpoint/restart call sites in `FileDistributor.ps1`, and added regression coverage so state persistence now behaves correctly in module and test contexts. Bumped `FileDistributor` module version to `1.1.10`.
+- Moved post-processing algorithms `RebalanceSubfoldersByAverage`, `RandomizeDistributionAcrossFolders`, and `ConsolidateSubfoldersToMinimum` into `FileManagement/FileDistributor/Public` as `Invoke-FolderRebalance`, `Invoke-DistributionRandomize`, and `Invoke-FolderConsolidation`; updated `Invoke-PostProcessingPhase` accordingly.
+- Fixed division-by-zero / flood logging in `Invoke-FolderRebalance` and `Invoke-DistributionRandomize`: replaced inline division expressions in progress-log guards with a pre-computed `$threshold` set to `[int]::MaxValue` when the denominator is 0.
+- Fixed a race condition in `Invoke-TargetRedistribution` where `Get-Random -Count $excess` could throw if files were deleted between the cached snapshot and the actual enumeration; excess count is now clamped with `[Math]::Min()`.
 
-## 4.7.9 — 2026-04-04
+### Minor corrections
 
-### Fixed
-
-- Fixed `Resolve-SubfolderPath` in `Private/PathHelpers.ps1` silently dropping the warning counter increment when `[IO.Path]::GetFullPath` throws for a malformed rooted path. The original `LogMessage -IsWarning` call both logged and incremented `$script:Warnings`; the replacement `Write-LogWarning` only logs. Added an optional `[ref]$WarningCount` parameter to `Resolve-SubfolderPath` and increment it in the catch block. Threaded `-WarningCount $WarningCount` through both call sites in `Invoke-FileDistribution.ps1` so that `GetFullPath` failures are correctly reflected in the run's warning totals and the `-DeleteMode EndOfScript -EndOfScriptDeletionCondition NoWarnings` gate behaves as expected. Bumped `FileDistributor` module version to `1.1.8`.
-
-## 4.7.8 — 2026-04-04
-
-### Fixed
-
-- Fixed `Resolve-SubfolderPath` in `Private/PathHelpers.ps1` calling the non-existent `LogMessage` function (a script-scope helper defined only in `FileDistributor.ps1`) from inside the module. Replaced the two `LogMessage` calls with `Write-LogDebug` and `Write-LogWarning`, consistent with every other logging call in the module. This caused a fatal `"LogMessage is not recognized"` error whenever `Resolve-SubfolderPath` was invoked during distribution. Bumped `FileDistributor` module version to `1.1.7`.
-
-## 4.7.7 — 2026-04-02
-
-### Fixed
-
-- Fixed `Invoke-EndOfScriptDeletion` using unqualified `$Warnings` and `$Errors` instead of `$script:Warnings` and `$script:Errors` when computing the effective warning/error counts for the deletion gate. The unqualified references relied on PowerShell's implicit scope-chain resolution, which is inconsistent with every other reference to these accumulators in the script and could silently yield `0` in edge-case execution contexts, causing `EndOfScript` deletion to proceed even when the current session had accumulated warnings or errors. Fixed by qualifying both references with the explicit `$script:` prefix.
-
-## 4.7.6 — 2026-04-02
-
-### Fixed
-
-- Fixed division-by-zero / flood logging in `Invoke-FolderRebalance` and `Invoke-DistributionRandomize`: replaced the inline `($plannedMoves / 10)` and `($filesMoving / 10)` expressions in the progress-log guard with a pre-computed `$threshold` that is set to `[int]::MaxValue` when the denominator is 0. This prevents the condition from becoming `0 -ge 0.0` (always true) and flooding the log with a progress line on every loop iteration when there is nothing to move. Bumped `FileDistributor` module version to `1.1.6`.
-
-## 4.7.5 — 2026-04-02
-
-### Fixed
-
-- Fixed a race condition in `Invoke-TargetRedistribution` where `Get-Random -Count $excess` could throw _"Cannot process argument because the value of argument 'Count' is not valid"_ if another process deleted files from an overloaded folder between the cached file-count snapshot and the actual `Get-ChildItem` enumeration. The fix collects all current files into a variable first, then clamps the excess count to the actual file count using `[Math]::Min()`, and skips `Get-Random` entirely when all files need to be redistributed. Bumped `FileDistributor` module version to `1.1.5`.
-
-## 4.7.4 — 2026-04-02
-
-### Fixed
-
-- Propagated `$MaxBackoff` to `Invoke-FolderRebalance`, `Invoke-FolderConsolidation`, and `Invoke-DistributionRandomize`: added `[int]$MaxBackoff = 60` parameter to each function and threaded it through to every `Invoke-FileMove` call (and the `Invoke-WithRetry` subfolder-deletion call in `Invoke-FolderConsolidation`). Updated the three call sites in `Invoke-PostProcessingPhase` to pass `-MaxBackoff $MaxBackoff`, ensuring a user-supplied `-MaxBackoff` value is no longer silently ignored during post-processing.
-- Bumped `FileDistributor` module version to `1.1.3`.
-
-## 4.7.3 — 2026-04-02
-
-### Fixed
-
-- Added `-IncludeSourceFiles` and `-SourceFiles $RunState.sourceFiles` to the CP3 `New-CheckpointPayload` call in `Invoke-DistributionPhase`. Previously the CP3 payload omitted `sourceFiles`, so restarting from CP3 left `$RunState.sourceFiles` empty and silently skipped the entire source-to-target distribution phase.
-
-## 4.7.1 — 2026-04-01
-
-### Fixed
-
-- Restored warning/error accounting for module-scope distribution functions: added optional `[ref]$WarningCount` and `[ref]$ErrorCount` parameters to `Invoke-FileMove`, `Invoke-FileDistribution`, and `Invoke-TargetRedistribution`; all `Write-LogWarning`/`Write-LogError` call sites now increment the provided counter refs. Call sites in `Invoke-DistributionPhase` and the three remaining script-level algorithms pass `([ref]$script:Warnings)` / `([ref]$script:Errors)`, preserving the `EndOfScriptDeletionCondition` gate.
-- Propagated `$MaxBackoff` to `Remove-DistributionFile` (added parameter with default 60) and threaded it through from `Invoke-FileMove`'s immediate-delete path, matching the recycle-bin and copy paths for consistent backoff behaviour.
-- Modularised post-processing algorithms: moved `RebalanceSubfoldersByAverage`, `RandomizeDistributionAcrossFolders`, and `ConsolidateSubfoldersToMinimum` into `FileManagement/FileDistributor/Public` as `Invoke-FolderRebalance`, `Invoke-DistributionRandomize`, and `Invoke-FolderConsolidation`, and updated `Invoke-PostProcessingPhase` accordingly.
+- Fixed `-Files` parameter type in `Invoke-FileDistribution` from `[string[]]` to `[object[]]` so `FileSystemInfo` inputs are not silently coerced to strings at binding time.
+- Added a unit test asserting `Invoke-FileDistribution` exposes `System.Object[]` for `-Files`.
 
 ## 4.7.0 — 2026-04-01
 
