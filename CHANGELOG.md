@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Python data smoke import stability:** `src/python/data/seat_assignment.py` now lazy-loads `pandas` and `networkx` via `_get_pandas()` / `_get_networkx()` instead of importing them at module import time, preventing CI smoke-import failures in minimal dependency environments.
+
 ## [2.12.10] - 2026-04-05
 
 ### Fixed

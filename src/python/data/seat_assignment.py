@@ -1,4 +1,3 @@
-import pandas as pd
 import sys
 import os
 from pathlib import Path
@@ -12,7 +11,6 @@ modules_logging = repo_root / "src" / "python" / "modules" / "logging"
 sys.path.insert(0, str(modules_logging))
 
 import python_logging_framework as plog
-import networkx as nx
 
 # Initialize logger for this module
 # Use Path(__file__).name to get just the filename for proper log file naming
@@ -24,6 +22,42 @@ ADJACENCY_SHEET = "Adjacency"
 TEAMS_SHEET = "Teams"
 FIXED_SHEET = "Fixed"
 AssignedDetails = namedtuple("AssignedDetails", ["subteam", "technology"])
+_PANDAS = None
+_NETWORKX = None
+
+
+def _get_pandas():
+    """Lazily import pandas to keep module import-safe in minimal environments."""
+    global _PANDAS
+    if _PANDAS is not None:
+        return _PANDAS
+    try:
+        import pandas as pandas_module
+
+        _PANDAS = pandas_module
+        return _PANDAS
+    except Exception as exc:
+        raise RuntimeError(
+            "pandas is required for seat_assignment runtime operations. "
+            "Install with: pip install pandas"
+        ) from exc
+
+
+def _get_networkx():
+    """Lazily import networkx to keep module import-safe in minimal environments."""
+    global _NETWORKX
+    if _NETWORKX is not None:
+        return _NETWORKX
+    try:
+        import networkx as networkx_module
+
+        _NETWORKX = networkx_module
+        return _NETWORKX
+    except Exception as exc:
+        raise RuntimeError(
+            "networkx is required for seat_assignment runtime operations. "
+            "Install with: pip install networkx"
+        ) from exc
 
 
 def allocate_seats(excel_path):
@@ -58,6 +92,7 @@ def load_input_data(excel_path):
         "Teams": ["Subteam", "Technology", "Count"],
         "Fixed": [SEAT_NO_COL, "Subteam", "Technology"],
     }
+    pd = _get_pandas()
     adj_df = pd.read_excel(excel_path, sheet_name=ADJACENCY_SHEET)
     teams_df = pd.read_excel(excel_path, sheet_name=TEAMS_SHEET)
     fixed_df = pd.read_excel(excel_path, sheet_name=FIXED_SHEET, dtype=str)
@@ -78,6 +113,7 @@ def build_seat_graph(adj_df):
     Returns:
         networkx.Graph: Graph of seat connections.
     """
+    nx = _get_networkx()
     G = nx.Graph()
     for _, row in adj_df.iterrows():
         seat = parse_seat(row[SEAT_NO_COL])
@@ -99,6 +135,7 @@ def parse_seat(value):
     Returns:
         str or None: Parsed seat number or None if invalid.
     """
+    pd = _get_pandas()
     if pd.isna(value) or not str(value).strip():
         return None
     try:
@@ -143,6 +180,7 @@ def get_seat_clusters(graph):
     Returns:
         list: Sorted list of connected components.
     """
+    nx = _get_networkx()
     return sorted(nx.connected_components(graph), key=len, reverse=True)
 
 
@@ -235,6 +273,7 @@ def export_seat_allocation(excel_path, graph, assigned):
     """
     Writes the final seat allocation to a new Excel file.
     """
+    pd = _get_pandas()
     output = [
         (int(seat), *assigned.get(seat, ("Unassigned", "")))
         for seat in graph.nodes

@@ -19,6 +19,9 @@ Python scripts for data processing, transformation, and validation.
 Check individual scripts for specific requirements. Common dependencies include:
 - pandas (data manipulation)
 - numpy (numerical operations)
+- networkx (graph-based seat adjacency)
+
+> Note: `seat_assignment.py` now imports `pandas` and `networkx` lazily at runtime so module import checks can pass in minimal CI environments without those packages preloaded.
 
 ## Use Cases
 
