@@ -68,6 +68,7 @@ def test_recover_file_terminal_error(monkeypatch):
         lambda *args, **kwargs: (
             None,
             "files.update(fileId=id-1, trashed=False) failed: HTTP 404: no",
+            404,
         ),
     )
 
@@ -109,7 +110,11 @@ def test_apply_post_restore_policy_terminal_failure(monkeypatch):
 
     monkeypatch.setattr(
         "gdrive_operations.with_retries",
-        lambda *args, **kwargs: (None, "files.delete(fileId=id-1) failed: HTTP 403: forbidden"),
+        lambda *args, **kwargs: (
+            None,
+            "files.delete(fileId=id-1) failed: HTTP 403: forbidden",
+            403,
+        ),
     )
 
     ok = ops._apply_post_restore_policy(item)

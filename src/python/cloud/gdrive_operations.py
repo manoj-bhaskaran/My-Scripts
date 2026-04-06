@@ -31,7 +31,7 @@ class DriveOperations:
 
         service = self.auth._get_service()
         api_ctx = f"files.update(fileId={item.id}, trashed=False)"
-        result, error = with_retries(
+        result, error, _ = with_retries(
             lambda: self._execute(service.files().update(fileId=item.id, body={"trashed": False})),
             terminal_statuses=(403, 404),
             logger=self.logger,
@@ -126,7 +126,7 @@ class DriveOperations:
             self._log_post_restore_success(item, action)
             return True
 
-        _, error = with_retries(
+        _, error, status = with_retries(
             lambda: self._do_post_restore_action(service, item, action),
             terminal_statuses=(403, 404),
             logger=self.logger,
@@ -136,13 +136,6 @@ class DriveOperations:
         if error is None:
             self._log_post_restore_success(item, action)
             return True
-
-        status = None
-        if "HTTP " in error:
-            try:
-                status = int(error.split("HTTP ", 1)[1].split(":", 1)[0])
-            except Exception:
-                status = None
 
         detail = self._extract_http_error_detail(error)
         if self._is_terminal_post_restore_error(status):

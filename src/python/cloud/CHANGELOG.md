@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.15.2] - 2026-04-06
+
+### Fixed
+
+- Updated `gdrive_retry.with_retries(...)` to return HTTP status alongside result/error so callers can branch on status without parsing message text.
+- Fixed ID prefetch error classification in `gdrive_discovery._fetch_and_handle_metadata()` to route on returned status code (`403`/`404`) instead of substring matching.
+- Added regression test `tests/python/unit/test_gdrive_discovery_retry_classification.py` to ensure `HTTP 500` payload text containing `HTTP 404` is still classified as transient.
+
 ## [1.15.1] - 2026-04-06
 
 ### Fixed

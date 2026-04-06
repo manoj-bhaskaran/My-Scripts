@@ -227,7 +227,7 @@ class DriveTrashDiscovery:
         transient_ids,
         err_count,
     ):
-        data, error = with_retries(
+        data, error, status = with_retries(
             lambda: self._execute(service.files().get(fileId=fid, fields=fields)),
             terminal_statuses=(403, 404),
             logger=self.logger,
@@ -237,11 +237,11 @@ class DriveTrashDiscovery:
             self._handle_prefetch_success(fid, data, buckets, skipped_non_trashed)
             return
 
-        if "HTTP 404" in error:
+        if status == 404:
             buckets["not_found"].append(fid)
             self._id_prefetch_errors[fid] = "HTTP 404"
             return
-        if "HTTP 403" in error:
+        if status == 403:
             buckets["no_access"].append(fid)
             self._id_prefetch_errors[fid] = "HTTP 403"
             return
@@ -431,7 +431,7 @@ class DriveTrashDiscovery:
     def _fetch_file_metadata(
         self, service, fid: str, fields: str
     ) -> Tuple[Optional[Dict[str, Any]], bool, Optional[str]]:
-        data, error = with_retries(
+        data, error, _ = with_retries(
             lambda: self._execute(service.files().get(fileId=fid, fields=fields)),
             logger=self.logger,
             ctx=f"files.get(fileId={fid})",

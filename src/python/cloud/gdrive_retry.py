@@ -31,17 +31,17 @@ def with_retries(
     retryable_statuses: Collection[int] = (429, 500, 502, 503, 504),
     logger=None,
     ctx: str = "operation",
-) -> Tuple[Any, Optional[str]]:
-    """Execute ``op`` with retry/backoff and return ``(result, error_message)``."""
+) -> Tuple[Any, Optional[str], Optional[int]]:
+    """Execute ``op`` with retry/backoff and return ``(result, error_message, http_status)``."""
     for attempt in range(max_retries):
         try:
-            return op(), None
+            return op(), None, None
         except HttpError as e:
             status = getattr(getattr(e, "resp", None), "status", None)
             detail = getattr(e, "content", b"")
             detail_str = detail.decode(errors="ignore") if hasattr(detail, "decode") else str(e)
             if status in terminal_statuses:
-                return None, f"{ctx} failed: HTTP {status}: {detail_str}"
+                return None, f"{ctx} failed: HTTP {status}: {detail_str}", status
             retryable = status in retryable_statuses
             if retryable and attempt < max_retries - 1:
                 delay = (base_delay**attempt) * random.uniform(0.5, 1.5)
@@ -56,7 +56,7 @@ def with_retries(
                     )
                 time.sleep(delay)
                 continue
-            return None, f"{ctx} failed: HTTP {status}: {detail_str}"
+            return None, f"{ctx} failed: HTTP {status}: {detail_str}", status
         except Exception as e:
             if attempt < max_retries - 1:
                 delay = (base_delay**attempt) * random.uniform(0.5, 1.5)
@@ -71,5 +71,5 @@ def with_retries(
                     )
                 time.sleep(delay)
                 continue
-            return None, f"{ctx} failed: {e}"
-    return None, f"{ctx} failed: Max retries exceeded"
+            return None, f"{ctx} failed: {e}", None
+    return None, f"{ctx} failed: Max retries exceeded", None
