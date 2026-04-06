@@ -75,33 +75,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
     Context "Successful Backup Creation" {
 
         It "Creates backup file with correct naming convention" {
-            Mock Invoke-Command {
-                # Create a dummy backup file
-                $backupFile = Get-ChildItem -Path $script:testBackupFolder -Filter "*.backup" | Select-Object -First 1
-                if (-not $backupFile) {
-                    $files = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup"
-                    if ($files.Count -gt 0) {
-                        $backupFile = $files[0]
-                    }
-                }
-                if ($backupFile) {
-                    "Mock backup data" | Out-File -FilePath $backupFile.FullName
-                }
-            }
-
-            # Mock pg_dump execution to create the backup file
-            Mock Invoke-Expression {
-                param($Command)
-                if ($Command -like "*pg_dump*") {
-                    # Extract the backup file path from the command
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    $global:LASTEXITCODE = 0
-                }
-            }
-
             # Execute backup
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -393,7 +366,12 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
     }
 
-    Context "Error Handling" {
+    Context "Error Scenarios" {
+        BeforeEach {
+            $script:getServiceCallCount = 0
+        }
+
+        # --- pg_dump failures ---
 
         It "Exits with code 1 when pg_dump fails" {
             Mock -CommandName 'Invoke-Expression' -MockWith {
@@ -478,6 +456,147 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                     -user "test_user" `
                     -retention_days 30 `
                     -min_backups 1
+            } | Should -Throw
+
+            $logContent = Get-Content -Path $script:testLogFile -Raw
+            $logContent | Should -Match "Backup file cleanup failed"
+        }
+
+        # --- Additional pg_dump error scenarios ---
+
+        It "Handles disk full error during backup" {
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    $global:LASTEXITCODE = 1
+                    throw "pg_dump: error: could not write to output file: No space left on device"
+                }
+            }
+
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $script:testBackupFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+
+            $logContent = Get-Content -Path $script:testLogFile -Raw
+            $logContent | Should -Match "Backup failed"
+        }
+
+        It "Handles permission denied on backup folder" {
+            $restrictedFolder = Join-Path $script:testDir "restricted"
+            New-Item -Path $restrictedFolder -ItemType Directory -Force | Out-Null
+
+            # Mock New-Item to fail
+            Mock New-Item {
+                throw "Access to the path is denied"
+            } -ParameterFilter { $ItemType -eq "Directory" }
+
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $restrictedFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+        }
+
+        It "Handles pg_dump executable not found" {
+            # This would normally be caught at the Config level, but test the scenario
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    throw "The term 'pg_dump' is not recognized as the name of a cmdlet, function, script file, or operable program"
+                }
+            }
+
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $script:testBackupFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+        }
+
+        It "Logs all pg_dump output including warnings" {
+            Mock -CommandName 'Invoke-Expression' -MockWith {
+                param($Command)
+                if ($Command -match 'pg_dump') {
+                    if ($Command -match '--file=([^\s]+)') {
+                        $backupPath = $matches[1]
+                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
+                    }
+                    # Simulate pg_dump warnings
+                    Write-Warning "pg_dump: warning: some deprecated features used"
+                    $global:LASTEXITCODE = 0
+                }
+            }
+
+            Backup-PostgresDatabase `
+                -dbname "testdb" `
+                -backup_folder $script:testBackupFolder `
+                -log_file $script:testLogFile `
+                -user "test_user"
+
+            Test-Path $script:testLogFile | Should -Be $true
+            $logContent = Get-Content -Path $script:testLogFile -Raw
+            $logContent | Should -Match "Backup completed successfully"
+        }
+
+        # --- Service management errors ---
+
+        It "Handles service stop failure after successful backup" {
+            Mock Get-Service {
+                $script:getServiceCallCount++
+                if ($script:getServiceCallCount -eq 1) {
+                    return [PSCustomObject]@{
+                        Name   = "postgresql-x64-17"
+                        Status = "Stopped"
+                    }
+                }
+                else {
+                    return [PSCustomObject]@{
+                        Name   = "postgresql-x64-17"
+                        Status = "Running"
+                    }
+                }
+            }
+
+            Mock Start-Service { }
+            Mock Stop-Service {
+                throw "Failed to stop service"
+            }
+
+            # Service stop failure should cause the function to throw
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $script:testBackupFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
+            } | Should -Throw
+        }
+
+        # --- Zero-byte cleanup failures ---
+
+        It "Creates backup even when zero-byte cleanup fails" {
+            # Create a zero-byte file that can't be deleted
+            $zeroByteFile = Join-Path $script:testBackupFolder "testdb_backup_2024-01-01_10-00-00.backup"
+            New-Item -Path $zeroByteFile -ItemType File -Force | Out-Null
+
+            Mock Remove-Item {
+                throw "Access denied"
+            } -ParameterFilter { $Path -like "*testdb_backup_*.backup" }
+
+            {
+                Backup-PostgresDatabase `
+                    -dbname "testdb" `
+                    -backup_folder $script:testBackupFolder `
+                    -log_file $script:testLogFile `
+                    -user "test_user"
             } | Should -Throw
 
             $logContent = Get-Content -Path $script:testLogFile -Raw
@@ -585,6 +704,8 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             } | Should -Throw
 
             Test-Path $script:testLogFile | Should -Be $true
+            $logContent = Get-Content -Path $script:testLogFile -Raw
+            $logContent | Should -Match "Backup failed"
         }
 
         It "Handles authentication failure" {
@@ -624,6 +745,9 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                     -log_file $script:testLogFile `
                     -user "test_user"
             } | Should -Throw
+
+            $logContent = Get-Content -Path $script:testLogFile -Raw
+            $logContent | Should -Match "Backup failed"
         }
     }
 
@@ -810,146 +934,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
     }
 
-    Context "Additional Error Scenarios" {
-        BeforeEach {
-            $script:getServiceCallCount = 0
-        }
-
-        It "Handles disk full error during backup" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $global:LASTEXITCODE = 1
-                    throw "pg_dump: error: could not write to output file: No space left on device"
-                }
-            }
-
-            {
-                Backup-PostgresDatabase `
-                    -dbname "testdb" `
-                    -backup_folder $script:testBackupFolder `
-                    -log_file $script:testLogFile `
-                    -user "test_user"
-            } | Should -Throw
-
-            $logContent = Get-Content -Path $script:testLogFile -Raw
-            $logContent | Should -Match "Backup failed"
-        }
-
-        It "Handles permission denied on backup folder" {
-            $restrictedFolder = Join-Path $script:testDir "restricted"
-            New-Item -Path $restrictedFolder -ItemType Directory -Force | Out-Null
-
-            # Mock New-Item to fail
-            Mock New-Item {
-                throw "Access to the path is denied"
-            } -ParameterFilter { $ItemType -eq "Directory" }
-
-            {
-                Backup-PostgresDatabase `
-                    -dbname "testdb" `
-                    -backup_folder $restrictedFolder `
-                    -log_file $script:testLogFile `
-                    -user "test_user"
-            } | Should -Throw
-        }
-
-        It "Handles pg_dump executable not found" {
-            # This would normally be caught at the Config level, but test the scenario
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    throw "The term 'pg_dump' is not recognized as the name of a cmdlet, function, script file, or operable program"
-                }
-            }
-
-            {
-                Backup-PostgresDatabase `
-                    -dbname "testdb" `
-                    -backup_folder $script:testBackupFolder `
-                    -log_file $script:testLogFile `
-                    -user "test_user"
-            } | Should -Throw
-        }
-
-        It "Logs all pg_dump output including warnings" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    # Simulate pg_dump warnings
-                    Write-Warning "pg_dump: warning: some deprecated features used"
-                    $global:LASTEXITCODE = 0
-                }
-            }
-
-            Backup-PostgresDatabase `
-                -dbname "testdb" `
-                -backup_folder $script:testBackupFolder `
-                -log_file $script:testLogFile `
-                -user "test_user"
-
-            Test-Path $script:testLogFile | Should -Be $true
-            $logContent = Get-Content -Path $script:testLogFile -Raw
-            $logContent | Should -Match "Backup completed successfully"
-        }
-
-        It "Handles service stop failure after successful backup" {
-            Mock Get-Service {
-                $script:getServiceCallCount++
-                if ($script:getServiceCallCount -eq 1) {
-                    return [PSCustomObject]@{
-                        Name   = "postgresql-x64-17"
-                        Status = "Stopped"
-                    }
-                }
-                else {
-                    return [PSCustomObject]@{
-                        Name   = "postgresql-x64-17"
-                        Status = "Running"
-                    }
-                }
-            }
-
-            Mock Start-Service { }
-            Mock Stop-Service {
-                throw "Failed to stop service"
-            }
-
-            # Service stop failure should cause the function to throw
-            {
-                Backup-PostgresDatabase `
-                    -dbname "testdb" `
-                    -backup_folder $script:testBackupFolder `
-                    -log_file $script:testLogFile `
-                    -user "test_user"
-            } | Should -Throw
-        }
-
-        It "Creates backup even when zero-byte cleanup fails" {
-            # Create a zero-byte file that can't be deleted
-            $zeroByteFile = Join-Path $script:testBackupFolder "testdb_backup_2024-01-01_10-00-00.backup"
-            New-Item -Path $zeroByteFile -ItemType File -Force | Out-Null
-
-            Mock Remove-Item {
-                throw "Access denied"
-            } -ParameterFilter { $Path -like "*testdb_backup_*.backup" }
-
-            {
-                Backup-PostgresDatabase `
-                    -dbname "testdb" `
-                    -backup_folder $script:testBackupFolder `
-                    -log_file $script:testLogFile `
-                    -user "test_user"
-            } | Should -Throw
-
-            $logContent = Get-Content -Path $script:testLogFile -Raw
-            $logContent | Should -Match "Backup file cleanup failed"
-        }
-    }
 }
 
 AfterAll {
