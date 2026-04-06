@@ -48,6 +48,7 @@ def _make_item(tmp_path, name="file.txt"):
 # Success path (default: partial → atomic replace)
 # ---------------------------------------------------------------------------
 
+
 def test_download_success_path(tmp_path, monkeypatch):
     """download() returns True and sets status='downloaded' on success."""
     downloader = _make_downloader()
@@ -78,6 +79,7 @@ def test_download_success_path(tmp_path, monkeypatch):
 # direct_download flag
 # ---------------------------------------------------------------------------
 
+
 def test_download_direct_download_flag(tmp_path, monkeypatch):
     """With direct_download=True the file is written directly (no .partial)."""
     downloader = _make_downloader(direct_download=True)
@@ -103,6 +105,7 @@ def test_download_direct_download_flag(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # Partial cleanup on failure
 # ---------------------------------------------------------------------------
+
 
 def test_partial_cleanup_on_failure(tmp_path, monkeypatch):
     """On download failure the .partial file is removed."""
@@ -132,6 +135,7 @@ def test_partial_cleanup_on_failure(tmp_path, monkeypatch):
 # HttpError during download
 # ---------------------------------------------------------------------------
 
+
 def test_http_error_during_download(tmp_path, monkeypatch):
     """HttpError raised by get_media is caught and treated as failure."""
     from googleapiclient.errors import HttpError
@@ -159,6 +163,7 @@ def test_http_error_during_download(tmp_path, monkeypatch):
 # Atomic replace with retry
 # ---------------------------------------------------------------------------
 
+
 def test_atomic_replace_with_retry_success(tmp_path):
     """_atomic_replace_with_retry returns True when os.replace succeeds."""
     downloader = _make_downloader()
@@ -180,7 +185,9 @@ def test_atomic_replace_with_retry_permission_error(tmp_path, monkeypatch):
     dst = tmp_path / "dst.txt"
     src.write_bytes(b"x")
 
-    monkeypatch.setattr(gdrive_download.os, "replace", MagicMock(side_effect=PermissionError("locked")))
+    monkeypatch.setattr(
+        gdrive_download.os, "replace", MagicMock(side_effect=PermissionError("locked"))
+    )
     monkeypatch.setattr(gdrive_download.time, "sleep", MagicMock())
 
     result = downloader._atomic_replace_with_retry(src, dst, attempts=3, sleep_s=0)
@@ -206,6 +213,7 @@ def test_atomic_replace_with_retry_existing_dst_removed(tmp_path):
 # ---------------------------------------------------------------------------
 # DriveDownloader is independently importable
 # ---------------------------------------------------------------------------
+
 
 def test_drive_downloader_independent_import(tmp_path):
     """DriveDownloader can be constructed without DriveTrashRecoveryTool."""
