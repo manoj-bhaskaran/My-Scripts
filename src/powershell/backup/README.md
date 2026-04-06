@@ -22,6 +22,7 @@ Scripts for automated database backups and synchronization.
 ### PowerShell Modules
 - **PostgresBackup** (`src/powershell/modules/Database/PostgresBackup/`) - Provides core PostgreSQL backup functionality
 - **PowerShellLoggingFramework** (`src/powershell/modules/Core/Logging/`) - Structured logging
+- **BackupState** (`src/powershell/modules/Backup/BackupState.psm1`) - State management for `Sync-MacriumBackups.ps1` (run tracking, auto-resume logic, atomic state file I/O)
 
 ### External Tools
 - PostgreSQL client tools (pg_dump)
