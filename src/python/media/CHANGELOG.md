@@ -8,6 +8,26 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-04-06
+### Added
+- `src/python/media/_tracking.py`: new module containing the processed-file
+  tracking subsystem (platform-specific file locking, `_processed_file_lock`,
+  `get_processed_set`, `mark_processed`). Extracted from `crop_colours.py` to
+  improve separation of concerns and enable independent unit testing.
+
+### Changed
+- `crop_colours.py` now imports `get_processed_set` and `mark_processed` from
+  `._tracking` instead of defining them inline. The platform-specific locking
+  imports (`fcntl`, `msvcrt`) and `threading.Lock` have been removed from
+  `crop_colours.py`; they now live exclusively in `_tracking.py`.
+- `src/python/media/__init__.py` version bumped to `4.1.0`.
+
+### Tests
+- Added `tests/python/unit/test_tracking.py` with unit tests covering empty
+  folder, existing tracking file, stale-path exclusion, thread-safety, and
+  corrupt/unreadable tracking file scenarios.
+- Smoke test updated to also import `src.python.media._tracking`.
+
 ## [4.0.2] - 2026-04-05
 ### Changed
 - Slimmed module docstring: migrated TROUBLESHOOTING and FAQ sections to `README.md`

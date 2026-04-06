@@ -22,6 +22,7 @@ SCRIPTS = [
     "src.python.data.seat_assignment",
     "src.python.media.find_duplicate_images",
     "src.python.media.crop_colours",
+    "src.python.media._tracking",
     "src.python.media.recover_extensions",
 ]
 
