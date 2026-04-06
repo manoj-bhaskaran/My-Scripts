@@ -61,9 +61,21 @@
     Forces a sync run regardless of the previous run's status.
 
 .NOTES
-    Version: 2.6.6
+    Version: 2.7.0
 
     CHANGELOG
+    ## 2.7.0 - 2026-04-06
+    ### Changed
+    - Extracted all eight state management functions into the new BackupState module
+      (src/powershell/modules/Backup/BackupState.psm1).
+    - State file is now read once at startup and passed through the call chain,
+      eliminating redundant disk reads in Update-StateStep, Complete-StateFile,
+      Initialize-StateFile, and Sync-Backups.
+    - Test-BackupPath, Test-Rclone, Test-Network, and Sync-Backups now accept an
+      explicit $State parameter.
+    - Invoke-AutoResumeLogic now accepts $PreviousState, $AutoResume, and $Force
+      parameters instead of reading from script scope.
+
     ## 2.6.6 - 2026-01-15
     ### Fixed
     - Added missing 'reason' property to state object initialization to fix AutoResume functionality
@@ -227,10 +239,13 @@ param(
 )
 
 # Script Version (extracted from .NOTES for programmatic access)
-$ScriptVersion = "2.6.6"
+$ScriptVersion = "2.7.0"
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
+
+# Import BackupState module
+Import-Module "$PSScriptRoot\..\modules\Backup\BackupState.psm1" -Force
 
 # Initialize logger with custom log directory at script root
 # PSScriptRoot is at: Scripts\src\powershell\backup
@@ -264,318 +279,6 @@ Add-Type -Namespace SleepControl -Name PowerMgmt -MemberDefinition @"
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern uint SetThreadExecutionState(uint esFlags);
 "@ -Language CSharp
-
-#region State Management Functions
-
-function Format-Duration {
-    <#
-    .SYNOPSIS
-        Formats a duration in seconds to a human-readable string.
-    #>
-    param(
-        [Parameter(Mandatory = $true)]
-        [double]$Seconds
-    )
-
-    $timeSpan = [TimeSpan]::FromSeconds($Seconds)
-
-    if ($timeSpan.TotalHours -ge 1) {
-        return "{0:N0}h {1:N0}m {2:N0}s" -f $timeSpan.Hours, $timeSpan.Minutes, $timeSpan.Seconds
-    }
-    elseif ($timeSpan.TotalMinutes -ge 1) {
-        return "{0:N0}m {1:N0}s" -f $timeSpan.Minutes, $timeSpan.Seconds
-    }
-    else {
-        return "{0:N2}s" -f $timeSpan.TotalSeconds
-    }
-}
-
-function Read-StateFile {
-    <#
-    .SYNOPSIS
-        Reads the state file if it exists and returns the state object.
-    .DESCRIPTION
-        If the state file is corrupt or unreadable, it will be renamed with a timestamp
-        to preserve it for debugging, and the function will return null to allow the script
-        to continue with a fresh state.
-    #>
-    if (Test-Path $StateFile) {
-        try {
-            $stateJson = Get-Content -Path $StateFile -Raw -ErrorAction Stop
-            return ($stateJson | ConvertFrom-Json)
-        }
-        catch {
-            # State file is corrupt - rename it with timestamp and continue safely
-            $timestamp = (Get-Date).ToString("yyyyMMdd_HHmmss")
-            $corruptFile = "$StateFile.corrupt_$timestamp"
-
-            Write-LogWarning "State file is corrupt or unreadable: $_"
-            Write-LogInfo "Renaming corrupt state file to: $corruptFile"
-
-            try {
-                Move-Item -Path $StateFile -Destination $corruptFile -Force -ErrorAction Stop
-                Write-LogInfo "Corrupt state file preserved for debugging. Continuing with fresh state."
-            }
-            catch {
-                Write-LogWarning "Failed to rename corrupt state file: $_. Attempting to delete it."
-                Remove-Item -Path $StateFile -Force -ErrorAction SilentlyContinue
-            }
-
-            return $null
-        }
-    }
-    return $null
-}
-
-function Write-StateFile {
-    <#
-    .SYNOPSIS
-        Atomically writes the state object to the state file.
-    .DESCRIPTION
-        Writes to a temporary file first, then renames it to ensure atomic writes.
-    #>
-    param(
-        [Parameter(Mandatory = $true)]
-        [object]$State
-    )
-
-    try {
-        # Convert hashtable to JSON
-        $stateJson = $State | ConvertTo-Json -Depth 10
-
-        # Write to temporary file
-        $tempFile = "$StateFile.tmp"
-        $stateJson | Set-Content -Path $tempFile -Force -ErrorAction Stop
-
-        # Atomic rename
-        Move-Item -Path $tempFile -Destination $StateFile -Force -ErrorAction Stop
-    }
-    catch {
-        Write-LogError "Failed to write state file: $_"
-        # Clean up temp file if it exists
-        if (Test-Path $tempFile) {
-            Remove-Item -Path $tempFile -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
-function Mark-InterruptedState {
-    <#
-    .SYNOPSIS
-        Helper function to mark a previous state as interrupted and persist it.
-    .DESCRIPTION
-        Centralizes the logic for marking an interrupted run, logging the details,
-        and writing the updated state to the state file.
-    .PARAMETER State
-        The state object to mark as interrupted.
-    #>
-    param(
-        [Parameter(Mandatory = $true)]
-        [object]$State
-    )
-
-    Write-LogWarning "Previous run was interrupted (possible reboot/crash)"
-    Write-LogInfo "Previous run details - Run ID: $($State.lastRunId), Started: $($State.startTime), Last step: $($State.lastStep)"
-
-    # Mark the state as Interrupted
-    $State.status = "Interrupted"
-    $State.endTime = (Get-Date).ToString("o")
-    $State.reason = "Previous run ended without completion (possible reboot/crash)"
-    Write-StateFile -State $State
-    Write-LogInfo "Previous state marked as Interrupted"
-}
-
-function Initialize-StateFile {
-    <#
-    .SYNOPSIS
-        Initializes the state file at script start and checks for interrupted runs.
-    .DESCRIPTION
-        Creates a new run ID and sets status to InProgress.
-
-        Behavior depends on AutoResume flag:
-        - Without AutoResume: Performs clean start, removes any existing state
-        - With AutoResume: Previous state has already been evaluated by Invoke-AutoResumeLogic
-    .PARAMETER CleanStart
-        When true, explicitly removes existing state file before creating new one (default behavior without AutoResume).
-    #>
-    param(
-        [bool]$CleanStart = $false
-    )
-
-    # Check previous state
-    $previousState = Read-StateFile
-
-    # Handle interrupted state first (applies to both clean start and resume scenarios)
-    if ($null -ne $previousState -and $previousState.status -eq "InProgress") {
-        Mark-InterruptedState -State $previousState
-    }
-
-    # Handle clean start (default behavior without AutoResume)
-    if ($CleanStart) {
-        if ($null -ne $previousState) {
-            Write-LogInfo "Clean start requested. Removing previous state file."
-            if (Test-Path $StateFile) {
-                Remove-Item -Path $StateFile -Force -ErrorAction SilentlyContinue
-            }
-        }
-    }
-    else {
-        # With AutoResume, log context if retrying after failure
-        if ($null -ne $previousState -and $previousState.status -eq "Failed") {
-            Write-LogInfo "Retrying after failed run (ID: $($previousState.lastRunId))."
-        }
-    }
-
-    # Create new state
-    $newRunId = [guid]::NewGuid().ToString()
-    $newState = @{
-        lastRunId           = $newRunId
-        scriptVersion       = $ScriptVersion
-        status              = "InProgress"
-        startTime           = (Get-Date).ToString("o")
-        endTime             = $null
-        lastExitCode        = $null
-        lastStep            = "Initialize"
-        syncStartTime       = $null
-        syncDurationSeconds = $null
-        reason              = $null
-    }
-
-    Write-StateFile -State $newState
-    Write-LogInfo "State tracking initialized. Run ID: $newRunId, Script version: $ScriptVersion"
-
-    return $newState
-}
-
-function Update-StateStep {
-    <#
-    .SYNOPSIS
-        Updates the lastStep field in the state file.
-    #>
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$StepName
-    )
-
-    $currentState = Read-StateFile
-    if ($null -ne $currentState) {
-        $currentState.lastStep = $StepName
-        Write-StateFile -State $currentState
-    }
-}
-
-function Complete-StateFile {
-    <#
-    .SYNOPSIS
-        Marks the state as completed (Succeeded or Failed) with end time, exit code, and sync duration.
-    #>
-    param(
-        [Parameter(Mandatory = $true)]
-        [ValidateSet("Succeeded", "Failed")]
-        [string]$Status,
-
-        [Parameter(Mandatory = $false)]
-        [int]$ExitCode = 0,
-
-        [Parameter(Mandatory = $false)]
-        [double]$SyncDurationSeconds = $null
-    )
-
-    $currentState = Read-StateFile
-    if ($null -ne $currentState) {
-        $currentState.status = $Status
-        $currentState.endTime = (Get-Date).ToString("o")
-        $currentState.lastExitCode = $ExitCode
-
-        if ($null -ne $SyncDurationSeconds) {
-            $currentState.syncDurationSeconds = [math]::Round($SyncDurationSeconds, 2)
-        }
-
-        Write-StateFile -State $currentState
-
-        # Log finalization with duration if available
-        if ($null -ne $SyncDurationSeconds) {
-            $durationFormatted = Format-Duration -Seconds $SyncDurationSeconds
-            Write-LogInfo "State finalized: $Status (Exit code: $ExitCode, Sync duration: $durationFormatted)"
-        }
-        else {
-            Write-LogInfo "State finalized: $Status (Exit code: $ExitCode)"
-        }
-    }
-}
-
-function Invoke-AutoResumeLogic {
-    <#
-    .SYNOPSIS
-        Evaluates whether the script should proceed based on AutoResume and Force flags.
-    .DESCRIPTION
-        When AutoResume is enabled, this function checks the previous run state and determines
-        if the sync should run. Returns $true if sync should proceed, $false if it should skip.
-
-        Decision logic:
-        - If AutoResume not set: Always return $true (fresh run, handled by caller)
-        - If AutoResume set:
-          - No state file: Return $true (first run)
-          - Last status "Succeeded" + Force not set: Return $false (skip)
-          - Last status "Succeeded" + Force set: Return $true (forced run)
-          - Last status "Failed" or "InProgress": Return $true (resume/retry)
-    #>
-
-    # If AutoResume is not set, the caller will handle fresh run initialization
-    if (-not $AutoResume) {
-        Write-LogInfo "AutoResume not enabled. Proceeding with fresh run."
-        return $true
-    }
-
-    Write-LogInfo "AutoResume enabled. Checking previous run status..."
-
-    # Read previous state
-    $previousState = Read-StateFile
-
-    # No state file exists - treat as first run
-    if ($null -eq $previousState) {
-        Write-LogInfo "No previous state file found. Treating as first run."
-        return $true
-    }
-
-    $lastStatus = $previousState.status
-    $lastRunId = $previousState.lastRunId
-    $lastStartTime = $previousState.startTime
-
-    Write-LogInfo "Previous run status: $lastStatus (Run ID: $lastRunId, Started: $lastStartTime)"
-
-    # Decision tree based on last status
-    switch ($lastStatus) {
-        "Succeeded" {
-            if ($Force) {
-                Write-LogInfo "Previous run succeeded, but -Force flag is set. Proceeding with sync."
-                return $true
-            }
-            else {
-                Write-LogInfo "Previous run succeeded. No action required. Use -Force to override."
-                # Exit gracefully without running sync
-                return $false
-            }
-        }
-
-        "Failed" {
-            Write-LogInfo "Previous run failed. Proceeding with sync to retry."
-            return $true
-        }
-
-        "InProgress" {
-            Write-LogWarning "Previous run was interrupted (status: InProgress). Proceeding with sync to complete."
-            return $true
-        }
-
-        default {
-            Write-LogWarning "Unknown previous status '$lastStatus'. Proceeding with sync."
-            return $true
-        }
-    }
-}
-
-#endregion
 
 #region Instance Locking Functions
 
@@ -653,21 +356,23 @@ function Release-ScriptMutex {
 #endregion
 
 function Test-BackupPath {
-    Update-StateStep -StepName "Test-BackupPath"
+    param([Parameter(Mandatory = $true)][object]$State)
+    Update-StateStep -StateFile $StateFile -State $State -StepName "Test-BackupPath"
     if (-not (Test-Path $SourcePath)) {
         Write-LogError "Backup source path '$SourcePath' is not accessible."
-        Complete-StateFile -Status "Failed" -ExitCode 1
+        Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
         exit 1
     }
     Write-LogInfo "Validated source path '$SourcePath'"
 }
 
 function Test-Rclone {
-    Update-StateStep -StepName "Test-Rclone"
+    param([Parameter(Mandatory = $true)][object]$State)
+    Update-StateStep -StateFile $StateFile -State $State -StepName "Test-Rclone"
     $rcloneCheck = & rclone about $RcloneRemote 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-LogError "Rclone Google Drive validation failed: $rcloneCheck"
-        Complete-StateFile -Status "Failed" -ExitCode 1
+        Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
         exit 1
     }
     Write-LogInfo "Validated Google Drive remote `"$RcloneRemote`""
@@ -752,14 +457,15 @@ function Get-CurrentSSID {
 }
 
 function Test-Network {
-    Update-StateStep -StepName "Test-Network"
+    param([Parameter(Mandatory = $true)][object]$State)
+    Update-StateStep -StateFile $StateFile -State $State -StepName "Test-Network"
     # Use Google's public DNS for internet connectivity test
     $connectivityTestTarget = "8.8.8.8"
 
     # Step 0: Pre-check Wi-Fi adapter presence
     if (-not (Test-WifiAdapter)) {
         Write-LogError "Wi-Fi adapter validation failed. Cannot proceed with network connectivity test."
-        Complete-StateFile -Status "Failed" -ExitCode 1
+        Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
         exit 1
     }
 
@@ -815,7 +521,7 @@ function Test-Network {
         }
         else {
             Write-LogError "Neither '$PreferredSSID' nor '$FallbackSSID' WiFi networks are available."
-            Complete-StateFile -Status "Failed" -ExitCode 1
+            Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
             exit 1
         }
 
@@ -824,13 +530,13 @@ function Test-Network {
         $currentSSID = Get-CurrentSSID
         if ($null -eq $currentSSID) {
             Write-LogError "Unable to verify SSID after connection attempt. Connection likely failed."
-            Complete-StateFile -Status "Failed" -ExitCode 1
+            Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
             exit 1
         }
 
         if ($currentSSID -ne $PreferredSSID -and $currentSSID -ne $FallbackSSID) {
             Write-LogError "Failed to connect to preferred or fallback WiFi networks. Connected to: '$currentSSID'"
-            Complete-StateFile -Status "Failed" -ExitCode 1
+            Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
             exit 1
         }
 
@@ -840,7 +546,7 @@ function Test-Network {
     # Step 2: Internet test
     if (-not (Test-Connection -ComputerName $connectivityTestTarget -Count 2 -Quiet)) {
         Write-LogError "No internet connection. Sync aborted."
-        Complete-StateFile -Status "Failed" -ExitCode 1
+        Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
         exit 1
     }
 
@@ -923,7 +629,8 @@ function Format-RcloneCommandLine {
 }
 
 function Sync-Backups {
-    Update-StateStep -StepName "Sync-Backups"
+    param([Parameter(Mandatory = $true)][object]$State)
+    Update-StateStep -StateFile $StateFile -State $State -StepName "Sync-Backups"
     $chunkSize = Get-ChunkSize
     $rcloneArgs = @(
         "sync", $SourcePath, $RcloneRemote,
@@ -964,11 +671,8 @@ function Sync-Backups {
 
     # Capture sync start time and persist to state
     $syncStartTime = Get-Date
-    $currentState = Read-StateFile
-    if ($null -ne $currentState) {
-        $currentState.syncStartTime = $syncStartTime.ToString("o")
-        Write-StateFile -State $currentState
-    }
+    $State.syncStartTime = $syncStartTime.ToString("o")
+    Write-StateFile -StateFile $StateFile -State $State
 
     # Run rclone and capture duration
     & rclone @rcloneArgs
@@ -984,11 +688,11 @@ function Sync-Backups {
 
     if ($rcloneExitCode -eq 0) {
         Write-LogInfo "Sync completed successfully"
-        Complete-StateFile -Status "Succeeded" -ExitCode $rcloneExitCode -SyncDurationSeconds $syncDuration
+        Complete-StateFile -StateFile $StateFile -State $State -Status "Succeeded" -ExitCode $rcloneExitCode -SyncDurationSeconds $syncDuration
     }
     else {
         Write-LogError "Sync failed with exit code $rcloneExitCode"
-        Complete-StateFile -Status "Failed" -ExitCode $rcloneExitCode -SyncDurationSeconds $syncDuration
+        Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode $rcloneExitCode -SyncDurationSeconds $syncDuration
         exit $rcloneExitCode
     }
 }
@@ -997,8 +701,11 @@ function Sync-Backups {
 try {
     Write-LogInfo "Starting Macrium backup sync script (version $ScriptVersion)"
 
+    # Read previous state once; pass through to avoid redundant disk reads
+    $previousState = Read-StateFile -StateFile $StateFile
+
     # Check auto-resume logic to determine if sync should run
-    $shouldProceed = Invoke-AutoResumeLogic
+    $shouldProceed = Invoke-AutoResumeLogic -PreviousState $previousState -AutoResume ([bool]$AutoResume) -Force ([bool]$Force)
 
     if (-not $shouldProceed) {
         # Previous run succeeded and Force not set - exit gracefully
@@ -1009,13 +716,13 @@ try {
     # Initialize state tracking
     # Use CleanStart when AutoResume is NOT set (default behavior)
     $cleanStart = -not $AutoResume
-    $script:currentState = Initialize-StateFile -CleanStart $cleanStart
+    $script:currentState = Initialize-StateFile -StateFile $StateFile -ScriptVersion $ScriptVersion -CleanStart $cleanStart -PreviousState $previousState
 
     # Acquire instance lock to prevent concurrent runs
     $script:instanceMutex = New-ScriptMutex -TimeoutSeconds 120
     if ($null -eq $script:instanceMutex) {
         Write-LogWarning "Skipping sync run - another instance is already running"
-        Complete-StateFile -Status "Failed" -ExitCode 2
+        Complete-StateFile -StateFile $StateFile -State $script:currentState -Status "Failed" -ExitCode 2
         exit 2
     }
 
@@ -1024,14 +731,16 @@ try {
     Write-LogInfo "System sleep and display timeout temporarily disabled"
 
     # Main execution
-    Test-BackupPath
-    Test-Rclone
-    Test-Network
-    Sync-Backups
+    Test-BackupPath -State $script:currentState
+    Test-Rclone -State $script:currentState
+    Test-Network -State $script:currentState
+    Sync-Backups -State $script:currentState
 }
 catch {
     Write-LogError "Unhandled exception: $_"
-    Complete-StateFile -Status "Failed" -ExitCode 1
+    if ($null -ne $script:currentState) {
+        Complete-StateFile -StateFile $StateFile -State $script:currentState -Status "Failed" -ExitCode 1
+    }
     throw
 }
 finally {

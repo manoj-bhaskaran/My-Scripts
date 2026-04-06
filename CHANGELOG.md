@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **BackupState module** (`src/powershell/modules/Backup/BackupState.psm1`, v1.0.0)
+  - New module extracted from `Sync-MacriumBackups.ps1` containing all eight state
+    management functions: `Format-Duration`, `Read-StateFile`, `Write-StateFile`,
+    `Mark-InterruptedState`, `Initialize-StateFile`, `Update-StateStep`,
+    `Complete-StateFile`, and `Invoke-AutoResumeLogic`.
+  - All functions accept explicit parameters (`StateFile`, `State`, `AutoResume`,
+    `Force`, etc.) so the state object is initialised once and passed through the
+    call chain, eliminating redundant disk reads.
+  - `Export-ModuleMember` explicitly lists all eight public functions.
+
+### Changed
+
+- **Sync-MacriumBackups.ps1** bumped to v2.7.0
+  - Imports `BackupState.psm1`; eight state management functions removed from the script.
+  - State file is read once at startup and the resulting object is passed to
+    `Invoke-AutoResumeLogic`, `Initialize-StateFile`, and all downstream step
+    functions, eliminating repeated disk reads within a single run.
+  - `Test-BackupPath`, `Test-Rclone`, `Test-Network`, and `Sync-Backups` now accept
+    an explicit `$State` parameter.
+  - `README.md` updated to document the new `BackupState` module dependency.
+
 ### Fixed
 
 - **Python data smoke import stability:** `src/python/data/seat_assignment.py` now lazy-loads `pandas` and `networkx` via `_get_pandas()` / `_get_networkx()` instead of importing them at module import time, preventing CI smoke-import failures in minimal dependency environments.
