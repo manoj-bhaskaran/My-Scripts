@@ -13,6 +13,8 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - **gdrive_state.py** - Recovery state persistence, schema handling, and lock file management for gdrive_recover.py
 - **gdrive_discovery.py** - Discovery and trashed file resolution helpers extracted from gdrive_recover.py (issue #791)
 - **gdrive_download.py** - File download subsystem (chunked streaming, atomic placement, Windows/OneDrive retry, partial cleanup) extracted from gdrive_recover.py (issue #853)
+- **gdrive_operations.py** - Recovery and post-restore execution helpers extracted from gdrive_recover.py (issue #854)
+- **gdrive_retry.py** - Shared retry/backoff utility used across recovery/discovery operations
 - **google_drive_root_files_delete.py** - Cleans up files in Google Drive root directory
 - **drive_space_monitor.py** - Monitors Google Drive storage usage and sends alerts
 - **cloudconvert_utils.py** - CloudConvert API utilities for file conversion
@@ -100,3 +102,7 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
   - Exposes `DriveDownloader`; used by `DriveTrashRecoveryTool` via `self.downloader`.
   - `DriveDownloader` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`args`, `logger`, `rate_limiter`, `auth`, `stats`, `stats_lock`) are injected at construction time.
   - `MediaIoBaseDownload` and `DOWNLOAD_CHUNK_BYTES` are imported only in this module.
+- `gdrive_operations.py` owns per-item recovery execution (`_recover_file`, `_apply_post_restore_policy`, and `_process_item`) plus post-restore helper logic.
+  - Exposes `DriveOperations`; used by `DriveTrashRecoveryTool` via `self.ops`.
+  - `DriveOperations` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`args`, `logger`, `auth`, `downloader`, `state_manager`, `stats`, `stats_lock`) are injected at construction time.
+- `gdrive_retry.py` owns shared `with_retries(...)` backoff logic used by both recovery and discovery modules to avoid copy-pasted retry loops.

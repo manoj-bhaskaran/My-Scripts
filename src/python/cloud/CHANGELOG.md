@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.15.0] - 2026-04-06
+
+### Changed
+
+- **Refactor (Issue #854):** Extracted recovery operations into a new `gdrive_operations.py` module with a `DriveOperations` class.
+  - Moved `_recover_file`, `_apply_post_restore_policy`, and post-restore helper methods out of `gdrive_recover.py`.
+  - `DriveTrashRecoveryTool` now creates `self.ops = DriveOperations(...)` and delegates `_process_item()` plus operation helpers through this object.
+- Added shared retry utility `gdrive_retry.py` with `with_retries(...)` and replaced duplicated retry loops in recovery/discovery call sites.
+  - `gdrive_discovery.py` now uses `with_retries(...)` in `_fetch_file_metadata()` and `_fetch_and_handle_metadata()`.
+- Added unit tests:
+  - `tests/python/unit/test_gdrive_retry.py` for success, retry-then-succeed, terminal failure, and max-retries paths.
+  - `tests/python/unit/test_gdrive_operations.py` for recovery and post-restore policy behaviors.
+
 ## [1.14.0] - 2026-04-06
 
 ### Changed
