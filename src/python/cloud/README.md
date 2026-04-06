@@ -12,6 +12,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - **gdrive_rate_limiter.py** - Thread-safe request pacing primitives (fixed-interval and token-bucket) used by gdrive_recover.py
 - **gdrive_state.py** - Recovery state persistence, schema handling, and lock file management for gdrive_recover.py
 - **gdrive_discovery.py** - Discovery and trashed file resolution helpers extracted from gdrive_recover.py (issue #791)
+- **gdrive_download.py** - File download subsystem (chunked streaming, atomic placement, Windows/OneDrive retry, partial cleanup) extracted from gdrive_recover.py (issue #853)
 - **google_drive_root_files_delete.py** - Cleans up files in Google Drive root directory
 - **drive_space_monitor.py** - Monitors Google Drive storage usage and sends alerts
 - **cloudconvert_utils.py** - CloudConvert API utilities for file conversion
@@ -81,7 +82,7 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
 
 ## Internal Module Boundaries
 
-- `gdrive_recover.py` owns recovery/download orchestration and execution flow.
+- `gdrive_recover.py` owns recovery orchestration and execution flow; download calls are delegated to `self.downloader`.
 - `gdrive_cli.py` owns CLI argument parsing, validation, and command routing.
 - `gdrive_constants.py` owns dependency-free constants and the shared `VERSION` string used by both `gdrive_recover.py` and `gdrive_cli.py`.
 - `gdrive_auth.py` owns OAuth credential management, token caching, HTTP transport construction, and Drive service initialisation.
@@ -95,3 +96,7 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
   - `DriveTrashDiscovery` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`stats`, `stats_lock`, `seen_total_ref`, `generate_target_path`, `run_parallel_processing_for_batch`) are injected at construction time.
   - Neither `DriveTrashRecoveryTool` nor `DriveTrashDiscovery` defines `__getattr__`; all inter-class wiring is explicit.
   - Streaming helper methods required by discovery paths are implemented in this module (not delegated back to `gdrive_recover.py`).
+- `gdrive_download.py` owns the file download subsystem: chunked streaming via `MediaIoBaseDownload`, atomic placement, Windows/OneDrive retry, and partial-file cleanup.
+  - Exposes `DriveDownloader`; used by `DriveTrashRecoveryTool` via `self.downloader`.
+  - `DriveDownloader` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`args`, `logger`, `rate_limiter`, `auth`, `stats`, `stats_lock`) are injected at construction time.
+  - `MediaIoBaseDownload` and `DOWNLOAD_CHUNK_BYTES` are imported only in this module.
