@@ -51,6 +51,13 @@ BeforeAll {
 Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
     BeforeEach {
+        # Clean up test directory before each test
+        if (Test-Path $script:testBackupFolder) {
+            Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
+        }
+        if (Test-Path $script:testLogFile) {
+            Remove-Item -Path $script:testLogFile -Force
+        }
         $script:capturedCommand = ""
         Mock -CommandName 'Invoke-Expression' -MockWith {
             param($Command)
@@ -66,15 +73,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
     }
 
     Context "Successful Backup Creation" {
-        BeforeEach {
-            # Clean up test directory before each test
-            if (Test-Path $script:testBackupFolder) {
-                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
-            }
-            if (Test-Path $script:testLogFile) {
-                Remove-Item -Path $script:testLogFile -Force
-            }
-        }
 
         It "Creates backup file with correct naming convention" {
             Mock Invoke-Command {
@@ -172,12 +170,8 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
     Context "Service Management" {
         BeforeEach {
-            if (Test-Path $script:testBackupFolder) {
-                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
-            }
-            if (Test-Path $script:testLogFile) {
-                Remove-Item -Path $script:testLogFile -Force
-            }
+            $script:serviceCallCount = 0
+            $script:getServiceCallCount = 0
         }
 
         It "Starts PostgreSQL service if not running" {
@@ -191,7 +185,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             Mock Start-Service { }
 
             # Mock the service status change after start
-            $script:serviceCallCount = 0
             Mock Get-Service {
                 $script:serviceCallCount++
                 if ($script:serviceCallCount -le 1) {
@@ -218,7 +211,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Stops PostgreSQL service after backup if it was stopped initially" {
-            $script:getServiceCallCount = 0
             Mock Get-Service {
                 $script:getServiceCallCount++
                 # First call returns Stopped, subsequent calls return Running, then Stopped after stop
@@ -276,13 +268,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
     Context "Retention Policy - Old Backups" {
         BeforeEach {
-            if (Test-Path $script:testBackupFolder) {
-                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
-            }
-            if (Test-Path $script:testLogFile) {
-                Remove-Item -Path $script:testLogFile -Force
-            }
-
             # Create mock backup files with different ages
             $now = Get-Date
 
@@ -356,13 +341,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
     Context "Retention Policy - Zero-Byte Backups" {
         BeforeEach {
-            if (Test-Path $script:testBackupFolder) {
-                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
-            }
-            if (Test-Path $script:testLogFile) {
-                Remove-Item -Path $script:testLogFile -Force
-            }
-
             # Create zero-byte backup files
             $zeroByteFile1 = Join-Path $script:testBackupFolder "testdb_backup_2025-11-20_10-00-00.backup"
             $zeroByteFile2 = Join-Path $script:testBackupFolder "testdb_backup_2025-11-21_10-00-00.backup"
@@ -416,14 +394,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
     }
 
     Context "Error Handling" {
-        BeforeEach {
-            if (Test-Path $script:testBackupFolder) {
-                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
-            }
-            if (Test-Path $script:testLogFile) {
-                Remove-Item -Path $script:testLogFile -Force
-            }
-        }
 
         It "Exits with code 1 when pg_dump fails" {
             Mock -CommandName 'Invoke-Expression' -MockWith {
@@ -516,14 +486,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
     }
 
     Context "Password Handling" {
-        BeforeEach {
-            if (Test-Path $script:testBackupFolder) {
-                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
-            }
-            if (Test-Path $script:testLogFile) {
-                Remove-Item -Path $script:testLogFile -Force
-            }
-        }
 
         It "Uses .pgpass authentication when password is not provided" {
 
@@ -556,14 +518,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
     }
 
     Context "Custom Format Backup" {
-        BeforeEach {
-            if (Test-Path $script:testBackupFolder) {
-                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
-            }
-            if (Test-Path $script:testLogFile) {
-                Remove-Item -Path $script:testLogFile -Force
-            }
-        }
 
         It "Uses custom format for pg_dump" {
 
@@ -591,14 +545,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
     }
 
     Context "Invalid Database Scenarios" {
-        BeforeEach {
-            if (Test-Path $script:testBackupFolder) {
-                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
-            }
-            if (Test-Path $script:testLogFile) {
-                Remove-Item -Path $script:testLogFile -Force
-            }
-        }
 
         It "Handles non-existent database gracefully" {
             Mock -CommandName 'Invoke-Expression' -MockWith {
@@ -682,14 +628,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
     }
 
     Context "Retention Policy Edge Cases" {
-        BeforeEach {
-            if (Test-Path $script:testBackupFolder) {
-                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
-            }
-            if (Test-Path $script:testLogFile) {
-                Remove-Item -Path $script:testLogFile -Force
-            }
-        }
 
         It "Handles retention with exactly min_backups count" {
             $now = Get-Date
@@ -818,14 +756,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
     }
 
     Context "Special Characters and URL Encoding" {
-        BeforeEach {
-            if (Test-Path $script:testBackupFolder) {
-                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
-            }
-            if (Test-Path $script:testLogFile) {
-                Remove-Item -Path $script:testLogFile -Force
-            }
-        }
 
         It "Properly encodes password with special characters" {
             $securePassword = ConvertTo-SecureString "p@ssw0rd!#$%&*" -AsPlainText -Force
@@ -882,12 +812,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
     Context "Additional Error Scenarios" {
         BeforeEach {
-            if (Test-Path $script:testBackupFolder) {
-                Get-ChildItem -Path $script:testBackupFolder | Remove-Item -Force
-            }
-            if (Test-Path $script:testLogFile) {
-                Remove-Item -Path $script:testLogFile -Force
-            }
+            $script:getServiceCallCount = 0
         }
 
         It "Handles disk full error during backup" {
@@ -973,7 +898,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
         }
 
         It "Handles service stop failure after successful backup" {
-            $script:getServiceCallCount = 0
             Mock Get-Service {
                 $script:getServiceCallCount++
                 if ($script:getServiceCallCount -eq 1) {
