@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.15.3] - 2026-04-06
+
+### Fixed
+
+- Reduced cognitive complexity of `gdrive_retry.with_retries(...)` by extracting internal helper functions for retry gating, error parsing, and delay computation.
+- Replaced duplicated `"HTTP 404"` / `"HTTP 403"` string literals in `gdrive_discovery.py` with module-level constants to satisfy static-analysis duplication checks.
+- Expanded unit coverage for the retry/discovery changes:
+  - Added additional `gdrive_retry` tests for non-HTTP failures and retry logging path.
+  - Added additional discovery classification tests for explicit 404 and 403 routing.
+
 ## [1.15.2] - 2026-04-06
 
 ### Fixed

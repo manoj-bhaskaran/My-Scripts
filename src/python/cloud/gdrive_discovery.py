@@ -35,6 +35,9 @@ from googleapiclient.errors import HttpError
 if TYPE_CHECKING:
     from gdrive_auth import DriveAuthManager
 
+HTTP_404_LABEL = "HTTP 404"
+HTTP_403_LABEL = "HTTP 403"
+
 
 class DriveTrashDiscovery:
     """Extracted discovery helper class for DriveTrashRecoveryTool.
@@ -192,11 +195,11 @@ class DriveTrashDiscovery:
     ):
         if status == 404:
             buckets["not_found"].append(fid)
-            self._id_prefetch_errors[fid] = "HTTP 404"
+            self._id_prefetch_errors[fid] = HTTP_404_LABEL
             return True
         if status == 403:
             buckets["no_access"].append(fid)
-            self._id_prefetch_errors[fid] = "HTTP 403"
+            self._id_prefetch_errors[fid] = HTTP_403_LABEL
             return True
         should_retry = status in (429, 500, 502, 503, 504)
         if should_retry and attempt < MAX_RETRIES - 1:
@@ -239,11 +242,11 @@ class DriveTrashDiscovery:
 
         if status == 404:
             buckets["not_found"].append(fid)
-            self._id_prefetch_errors[fid] = "HTTP 404"
+            self._id_prefetch_errors[fid] = HTTP_404_LABEL
             return
         if status == 403:
             buckets["no_access"].append(fid)
-            self._id_prefetch_errors[fid] = "HTTP 403"
+            self._id_prefetch_errors[fid] = HTTP_403_LABEL
             return
 
         transient_errors[0] += 1

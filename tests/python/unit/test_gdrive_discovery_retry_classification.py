@@ -101,3 +101,49 @@ def test_fetch_and_handle_metadata_routes_using_status_not_message(monkeypatch):
     assert transient_errors[0] == 1
     assert transient_ids == ["fid"]
     assert err_count[0] == 1
+
+
+def test_fetch_and_handle_metadata_routes_not_found_by_status(monkeypatch):
+    discovery = _make_discovery()
+
+    monkeypatch.setattr(
+        "gdrive_discovery.with_retries",
+        lambda *args, **kwargs: (None, "files.get(fileId=fid) failed: HTTP 404: missing", 404),
+    )
+
+    buckets = {"ok": [], "invalid": [], "not_found": [], "no_access": []}
+    discovery._fetch_and_handle_metadata(
+        service=MagicMock(),
+        fid="fid",
+        fields="id",
+        buckets=buckets,
+        skipped_non_trashed=[0],
+        transient_errors=[0],
+        transient_ids=[],
+        err_count=[0],
+    )
+
+    assert buckets["not_found"] == ["fid"]
+
+
+def test_fetch_and_handle_metadata_routes_no_access_by_status(monkeypatch):
+    discovery = _make_discovery()
+
+    monkeypatch.setattr(
+        "gdrive_discovery.with_retries",
+        lambda *args, **kwargs: (None, "files.get(fileId=fid) failed: HTTP 403: denied", 403),
+    )
+
+    buckets = {"ok": [], "invalid": [], "not_found": [], "no_access": []}
+    discovery._fetch_and_handle_metadata(
+        service=MagicMock(),
+        fid="fid",
+        fields="id",
+        buckets=buckets,
+        skipped_non_trashed=[0],
+        transient_errors=[0],
+        transient_ids=[],
+        err_count=[0],
+    )
+
+    assert buckets["no_access"] == ["fid"]

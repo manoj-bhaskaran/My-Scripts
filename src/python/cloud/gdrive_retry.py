@@ -22,6 +22,25 @@ except Exception:
 from gdrive_constants import MAX_RETRIES, RETRY_DELAY
 
 
+def _can_retry(attempt: int, max_retries: int) -> bool:
+    return attempt < max_retries - 1
+
+
+def _extract_http_error_parts(e: HttpError) -> Tuple[Optional[int], str]:
+    status = getattr(getattr(e, "resp", None), "status", None)
+    detail = getattr(e, "content", b"")
+    detail_str = detail.decode(errors="ignore") if hasattr(detail, "decode") else str(e)
+    return status, detail_str
+
+
+def _compute_backoff_delay(base_delay: float, attempt: int) -> float:
+    return (base_delay**attempt) * random.uniform(0.5, 1.5)
+
+
+def _format_http_failure(ctx: str, status: Optional[int], detail: str) -> str:
+    return f"{ctx} failed: HTTP {status}: {detail}"
+
+
 def with_retries(
     op: Callable[[], Any],
     *,
@@ -37,14 +56,11 @@ def with_retries(
         try:
             return op(), None, None
         except HttpError as e:
-            status = getattr(getattr(e, "resp", None), "status", None)
-            detail = getattr(e, "content", b"")
-            detail_str = detail.decode(errors="ignore") if hasattr(detail, "decode") else str(e)
+            status, detail_str = _extract_http_error_parts(e)
             if status in terminal_statuses:
-                return None, f"{ctx} failed: HTTP {status}: {detail_str}", status
-            retryable = status in retryable_statuses
-            if retryable and attempt < max_retries - 1:
-                delay = (base_delay**attempt) * random.uniform(0.5, 1.5)
+                return None, _format_http_failure(ctx, status, detail_str), status
+            if status in retryable_statuses and _can_retry(attempt, max_retries):
+                delay = _compute_backoff_delay(base_delay, attempt)
                 if logger:
                     logger.warning(
                         "%s failed with HTTP %s (attempt %d/%d). Retrying in %.2fs.",
@@ -56,10 +72,10 @@ def with_retries(
                     )
                 time.sleep(delay)
                 continue
-            return None, f"{ctx} failed: HTTP {status}: {detail_str}", status
+            return None, _format_http_failure(ctx, status, detail_str), status
         except Exception as e:
-            if attempt < max_retries - 1:
-                delay = (base_delay**attempt) * random.uniform(0.5, 1.5)
+            if _can_retry(attempt, max_retries):
+                delay = _compute_backoff_delay(base_delay, attempt)
                 if logger:
                     logger.warning(
                         "%s failed (attempt %d/%d): %s. Retrying in %.2fs.",

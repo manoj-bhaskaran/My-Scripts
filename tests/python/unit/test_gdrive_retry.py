@@ -79,3 +79,39 @@ def test_with_retries_max_retries_exhausted(monkeypatch):
     assert "HTTP 500" in (error or "")
     assert status == 500
     assert sleep_mock.call_count == 2
+
+
+def test_with_retries_non_http_error_returns_no_status(monkeypatch):
+    sleep_mock = MagicMock()
+    monkeypatch.setattr("gdrive_retry.time.sleep", sleep_mock)
+
+    result, error, status = with_retries(
+        lambda: (_ for _ in ()).throw(ValueError("bad value")),
+        max_retries=1,
+    )
+
+    assert result is None
+    assert error == "operation failed: bad value"
+    assert status is None
+    sleep_mock.assert_not_called()
+
+
+def test_with_retries_logs_retry_warning(monkeypatch):
+    logger = MagicMock()
+    sleep_mock = MagicMock()
+    monkeypatch.setattr("gdrive_retry.time.sleep", sleep_mock)
+
+    calls = {"n": 0}
+
+    def op():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _http_error(500, b"server")
+        return "ok"
+
+    result, error, status = with_retries(op, logger=logger)
+
+    assert result == "ok"
+    assert error is None
+    assert status is None
+    logger.warning.assert_called_once()
