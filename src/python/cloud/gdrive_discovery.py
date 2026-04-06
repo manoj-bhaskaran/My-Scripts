@@ -3,7 +3,6 @@
 import io
 import json
 import logging
-import random
 import re
 import sys
 import time
@@ -28,12 +27,16 @@ except ImportError:
     print("Install with: pip install python-dateutil")
     sys.exit(1)
 
-from gdrive_constants import EXTENSION_MIME_TYPES, MAX_RETRIES, PAGE_SIZE, RETRY_DELAY
+from gdrive_constants import EXTENSION_MIME_TYPES, MAX_RETRIES, PAGE_SIZE
 from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
+from gdrive_retry import with_retries
 from googleapiclient.errors import HttpError
 
 if TYPE_CHECKING:
     from gdrive_auth import DriveAuthManager
+
+HTTP_404_LABEL = "HTTP 404"
+HTTP_403_LABEL = "HTTP 403"
 
 
 class DriveTrashDiscovery:
@@ -192,11 +195,11 @@ class DriveTrashDiscovery:
     ):
         if status == 404:
             buckets["not_found"].append(fid)
-            self._id_prefetch_errors[fid] = "HTTP 404"
+            self._id_prefetch_errors[fid] = HTTP_404_LABEL
             return True
         if status == 403:
             buckets["no_access"].append(fid)
-            self._id_prefetch_errors[fid] = "HTTP 403"
+            self._id_prefetch_errors[fid] = HTTP_403_LABEL
             return True
         should_retry = status in (429, 500, 502, 503, 504)
         if should_retry and attempt < MAX_RETRIES - 1:
@@ -227,26 +230,29 @@ class DriveTrashDiscovery:
         transient_ids,
         err_count,
     ):
-        for attempt in range(MAX_RETRIES):
-            try:
-                data = self._execute(service.files().get(fileId=fid, fields=fields))
-                self._handle_prefetch_success(fid, data, buckets, skipped_non_trashed)
-                return
-            except Exception as e:
-                status = getattr(e, "resp", None)
-                status = getattr(status, "status", None) if status else None
-                handled = self._handle_prefetch_error(
-                    fid,
-                    status,
-                    e,
-                    attempt,
-                    buckets,
-                    transient_errors,
-                    transient_ids,
-                    err_count,
-                )
-                if handled:
-                    return
+        data, error, status = with_retries(
+            lambda: self._execute(service.files().get(fileId=fid, fields=fields)),
+            terminal_statuses=(403, 404),
+            logger=self.logger,
+            ctx=f"files.get(fileId={fid})",
+        )
+        if error is None:
+            self._handle_prefetch_success(fid, data, buckets, skipped_non_trashed)
+            return
+
+        if status == 404:
+            buckets["not_found"].append(fid)
+            self._id_prefetch_errors[fid] = HTTP_404_LABEL
+            return
+        if status == 403:
+            buckets["no_access"].append(fid)
+            self._id_prefetch_errors[fid] = HTTP_403_LABEL
+            return
+
+        transient_errors[0] += 1
+        transient_ids.append(fid)
+        self._id_prefetch_errors[fid] = error
+        err_count[0] += 1
 
     def _prefetch_ids_metadata(
         self, fids: List[str]
@@ -417,36 +423,27 @@ class DriveTrashDiscovery:
     def _log_fetch_metadata_retry(
         self, fid: str, e: Exception, status: Optional[int], attempt: int
     ):
-        delay = (RETRY_DELAY**attempt) * random.uniform(0.5, 1.5)
-        if status is not None:
-            self.logger.warning(
-                f"Rate/Server error for {fid} (HTTP {status}). Retrying in {delay:.2f}s..."
-            )
-        else:
-            self.logger.warning(f"Error fetching file {fid} ({e}). Retrying in {delay:.2f}s...")
-        time.sleep(delay)
+        self.logger.warning(
+            "Retry helper superseded this path for %s (HTTP %s, attempt %d): %s",
+            fid,
+            status,
+            attempt + 1,
+            e,
+        )
 
     def _fetch_file_metadata(
         self, service, fid: str, fields: str
     ) -> Tuple[Optional[Dict[str, Any]], bool, Optional[str]]:
-        for attempt in range(MAX_RETRIES):
-            try:
-                data = self._execute(service.files().get(fileId=fid, fields=fields))
-                if data.get("trashed", False):
-                    return data, False, None
-                return None, True, None
-            except Exception as e:
-                status = getattr(getattr(e, "resp", None), "status", None)
-                retryable = status in (429, 500, 502, 503, 504)
-                if retryable and attempt < MAX_RETRIES - 1:
-                    self._log_fetch_metadata_retry(fid, e, status, attempt)
-                    continue
-                return (
-                    None,
-                    False,
-                    self._format_fetch_metadata_error_with_context(e, status, fid),
-                )
-        return None, False, "Unknown error"
+        data, error, _ = with_retries(
+            lambda: self._execute(service.files().get(fileId=fid, fields=fields)),
+            logger=self.logger,
+            ctx=f"files.get(fileId={fid})",
+        )
+        if error is not None:
+            return None, False, error
+        if data.get("trashed", False):
+            return data, False, None
+        return None, True, None
 
     def _handle_discover_id_result(
         self, items, data, non_trashed, err, fid, skipped_non_trashed_ref, errors_ref

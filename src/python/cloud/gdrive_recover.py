@@ -23,7 +23,6 @@ import time
 import logging
 import shutil
 import re
-import random
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple, Optional, TypedDict, Mapping, cast
 from pathlib import Path
@@ -40,8 +39,6 @@ from gdrive_constants import (
     DEFAULT_STATE_FILE,
     DEFAULT_LOG_FILE,
     DEFAULT_PROCESS_BATCH,
-    MAX_RETRIES,
-    RETRY_DELAY,
     PAGE_SIZE,
     DEFAULT_WORKERS,
     INFERRED_MODIFY_ERROR,
@@ -58,6 +55,7 @@ from gdrive_state import RecoveryStateManager
 # v1.12.0: authentication extracted to dedicated module (issue #789)
 from gdrive_auth import DriveAuthManager
 from gdrive_rate_limiter import RateLimiter
+from gdrive_operations import DriveOperations
 
 try:
     from googleapiclient.errors import HttpError
@@ -126,6 +124,16 @@ class DriveTrashRecoveryTool:
             self.logger,
             self.rate_limiter,
             self.auth,
+            self.stats,
+            self.stats_lock,
+        )
+        # v1.15.0: recovery operations extracted to DriveOperations (issue #854).
+        self.ops = DriveOperations(
+            self.args,
+            self.logger,
+            self.auth,
+            self.downloader,
+            self.state_manager,
             self.stats,
             self.stats_lock,
         )
@@ -549,145 +557,37 @@ class DriveTrashRecoveryTool:
         return True
 
     def _recover_file(self, item: RecoveryItem) -> bool:
-        if self.state_manager._is_processed(item.id):
-            with self.stats_lock:
-                self.stats["skipped"] += 1
-            return True
-        service = self.auth._get_service()
-        api_ctx = f"files.update(fileId={item.id}, trashed=False)"
-        for attempt in range(MAX_RETRIES):
-            try:
-                self._execute(service.files().update(fileId=item.id, body={"trashed": False}))
-                item.status = "recovered"
-                with self.stats_lock:
-                    self.stats["recovered"] += 1
-                self.logger.info(f"Recovered: {item.name}")
-                return True
-            except HttpError as e:
-                status = getattr(e.resp, "status", None)
-                payload = getattr(e, "content", b"")
-                detail = payload.decode(errors="ignore") if hasattr(payload, "decode") else str(e)
-                if status in (403, 404):
-                    item.status = "failed"
-                    item.error_message = f"{api_ctx} failed: HTTP {status}: {detail}"
-                    with self.stats_lock:
-                        self.stats["errors"] += 1
-                    self.logger.error(f"Failed to recover {item.name}: {item.error_message}")
-                    return False
-                else:
-                    self.logger.warning(f"Retrying recovery of {item.name} (attempt {attempt + 1})")
-                    delay = (RETRY_DELAY**attempt) * random.uniform(0.5, 1.5)
-                    time.sleep(delay)
-            except Exception as e:
-                self.logger.warning(
-                    f"Retrying recovery of {item.name} (attempt {attempt + 1}): {e}"
-                )
-                delay = (RETRY_DELAY**attempt) * random.uniform(0.5, 1.5)
-                time.sleep(delay)
-        item.status = "failed"
-        item.error_message = "Max retries exceeded"
-        with self.stats_lock:
-            self.stats["errors"] += 1
-        return False
+        return self.ops._recover_file(item)
 
     def _get_post_restore_action_and_ctx(self, item: RecoveryItem) -> Tuple[str, Optional[str]]:
-        action = PostRestorePolicy.normalize(item.post_restore_action)
-        if action == PostRestorePolicy.RETAIN:
-            return "retain", None
-        if action == PostRestorePolicy.TRASH:
-            return "trashed", f"files.update(fileId={item.id}, trashed=True)"
-        if action == PostRestorePolicy.DELETE:
-            return "deleted", f"files.delete(fileId={item.id})"
-        return "retain", None
+        return self.ops._get_post_restore_action_and_ctx(item)
 
     def _do_post_restore_action(self, service, item: RecoveryItem, action: str):
-        if action == "trashed":
-            self._execute(service.files().update(fileId=item.id, body={"trashed": True}))
-        elif action == "deleted":
-            self._execute(service.files().delete(fileId=item.id))
-        # "retain" does nothing
+        return self.ops._do_post_restore_action(service, item, action)
 
     def _log_post_restore_success(self, item: RecoveryItem, action: str):
-        if action == "retain":
-            with self.stats_lock:
-                self.stats["post_restore_retained"] += 1
-        elif action == "trashed":
-            self.logger.info(f"Moved to trash: {item.name}")
-            with self.stats_lock:
-                self.stats["post_restore_trashed"] += 1
-        elif action == "deleted":
-            self.logger.info(f"Permanently deleted: {item.name}")
-            with self.stats_lock:
-                self.stats["post_restore_deleted"] += 1
+        return self.ops._log_post_restore_success(item, action)
 
-    def _is_terminal_post_restore_error(self, e):
-        status = getattr(e.resp, "status", None)
-        return status in (403, 404)
+    def _is_terminal_post_restore_error(self, status):
+        return self.ops._is_terminal_post_restore_error(status)
 
-    def _handle_post_restore_retry(self, item, e, attempt):
-        status = getattr(e.resp, "status", None)
-        self._log_fetch_metadata_retry(item.id, e, status, attempt)
+    def _handle_post_restore_retry(self, item, status, attempt):
+        return self.ops._handle_post_restore_retry(item, status, attempt)
 
-    def _extract_http_error_detail(self, e):
-        detail = getattr(e, "content", b"")
-        return detail.decode(errors="ignore") if hasattr(detail, "decode") else str(e)
+    def _extract_http_error_detail(self, error_message: str):
+        return self.ops._extract_http_error_detail(error_message)
 
-    def _log_post_restore_terminal_error(self, item, e, api_ctx):
-        status = getattr(e.resp, "status", None)
-        detail = self._extract_http_error_detail(e)
-        self.logger.error(
-            f"Post-restore action failed for {item.name} via {api_ctx or 'N/A'}: "
-            f"HTTP {status}: {detail}"
-        )
+    def _log_post_restore_terminal_error(self, item, detail, api_ctx):
+        return self.ops._log_post_restore_terminal_error(item, detail, api_ctx)
 
-    def _log_post_restore_final_error(self, item, e, api_ctx):
-        detail = self._extract_http_error_detail(e)
-        self.logger.error(
-            f"Post-restore action failed after retries for {item.name} via {api_ctx or 'N/A'}: {detail}"
-        )
+    def _log_post_restore_final_error(self, item, detail, api_ctx):
+        return self.ops._log_post_restore_final_error(item, detail, api_ctx)
 
     def _apply_post_restore_policy(self, item: RecoveryItem) -> bool:
-        service = self.auth._get_service()
-        action, api_ctx = self._get_post_restore_action_and_ctx(item)
-        for attempt in range(MAX_RETRIES):
-            try:
-                if action != "retain":
-                    self._do_post_restore_action(service, item, action)
-                self._log_post_restore_success(item, action)
-                return True
-            except HttpError as e:
-                if self._is_terminal_post_restore_error(e):
-                    self._log_post_restore_terminal_error(item, e, api_ctx)
-                    return False
-                if attempt < MAX_RETRIES - 1:
-                    self._handle_post_restore_retry(item, e, attempt)
-                    continue
-                self._log_post_restore_final_error(item, e, api_ctx)
-                return False
-            except Exception as e:
-                self.logger.warning(
-                    f"Error during post-restore for {item.name} via {api_ctx or 'N/A'} "
-                    f"(attempt {attempt + 1}): {e}"
-                )
-                delay = (RETRY_DELAY**attempt) * random.uniform(0.5, 1.5)
-                time.sleep(delay)
-        self.logger.error(
-            f"Post-restore action failed after retries for {item.name} via {api_ctx or 'N/A'}"
-        )
-        return False
+        return self.ops._apply_post_restore_policy(item)
 
     def _process_item(self, item: RecoveryItem) -> bool:
-        if self.state_manager._is_processed(item.id):
-            return True
-        success = True
-        if item.will_recover and not self._recover_file(item):
-            success = False
-        if success and item.will_download and not self.downloader.download(item):
-            success = False
-        if success and item.will_download and item.status == "downloaded":
-            self._apply_post_restore_policy(item)
-        self.state_manager._mark_processed(item.id)
-        return success
+        return self.ops._process_item(item)
 
     def _prepare_recovery(self, streaming_mode: bool) -> Tuple[bool, bool]:
         """

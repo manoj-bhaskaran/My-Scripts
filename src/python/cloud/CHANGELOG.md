@@ -1,5 +1,52 @@
 # Changelog
 
+## [1.15.4] - 2026-04-06
+
+### Fixed
+
+- Refactored `gdrive_retry.with_retries(...)` into smaller helper steps (`_plan_http_error`, `_plan_generic_error`, and retry-log helpers) to reduce cognitive complexity for static analysis while preserving behavior.
+
+## [1.15.3] - 2026-04-06
+
+### Fixed
+
+- Reduced cognitive complexity of `gdrive_retry.with_retries(...)` by extracting internal helper functions for retry gating, error parsing, and delay computation.
+- Replaced duplicated `"HTTP 404"` / `"HTTP 403"` string literals in `gdrive_discovery.py` with module-level constants to satisfy static-analysis duplication checks.
+- Expanded unit coverage for the retry/discovery changes:
+  - Added additional `gdrive_retry` tests for non-HTTP failures and retry logging path.
+  - Added additional discovery classification tests for explicit 404 and 403 routing.
+
+## [1.15.2] - 2026-04-06
+
+### Fixed
+
+- Updated `gdrive_retry.with_retries(...)` to return HTTP status alongside result/error so callers can branch on status without parsing message text.
+- Fixed ID prefetch error classification in `gdrive_discovery._fetch_and_handle_metadata()` to route on returned status code (`403`/`404`) instead of substring matching.
+- Added regression test `tests/python/unit/test_gdrive_discovery_retry_classification.py` to ensure `HTTP 500` payload text containing `HTTP 404` is still classified as transient.
+
+## [1.15.1] - 2026-04-06
+
+### Fixed
+
+- Fixed lint/runtime regression in `gdrive_discovery.py` by restoring the required `time` import used by progress and streaming timers.
+- Applied formatting fixes (Black) for:
+  - `src/python/cloud/gdrive_retry.py`
+  - `src/python/cloud/gdrive_operations.py`
+  - `tests/python/unit/test_gdrive_operations.py`
+
+## [1.15.0] - 2026-04-06
+
+### Changed
+
+- **Refactor (Issue #854):** Extracted recovery operations into a new `gdrive_operations.py` module with a `DriveOperations` class.
+  - Moved `_recover_file`, `_apply_post_restore_policy`, and post-restore helper methods out of `gdrive_recover.py`.
+  - `DriveTrashRecoveryTool` now creates `self.ops = DriveOperations(...)` and delegates `_process_item()` plus operation helpers through this object.
+- Added shared retry utility `gdrive_retry.py` with `with_retries(...)` and replaced duplicated retry loops in recovery/discovery call sites.
+  - `gdrive_discovery.py` now uses `with_retries(...)` in `_fetch_file_metadata()` and `_fetch_and_handle_metadata()`.
+- Added unit tests:
+  - `tests/python/unit/test_gdrive_retry.py` for success, retry-then-succeed, terminal failure, and max-retries paths.
+  - `tests/python/unit/test_gdrive_operations.py` for recovery and post-restore policy behaviors.
+
 ## [1.14.0] - 2026-04-06
 
 ### Changed
