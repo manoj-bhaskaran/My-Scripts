@@ -98,7 +98,9 @@ class DriveOperations:
             return error_message
         return error_message.split(": ", 1)[1]
 
-    def _log_post_restore_terminal_error(self, item: RecoveryItem, detail: str, api_ctx: Optional[str]):
+    def _log_post_restore_terminal_error(
+        self, item: RecoveryItem, detail: str, api_ctx: Optional[str]
+    ):
         self.logger.error(
             "Post-restore action failed for %s via %s: %s",
             item.name,
@@ -106,7 +108,9 @@ class DriveOperations:
             detail,
         )
 
-    def _log_post_restore_final_error(self, item: RecoveryItem, detail: str, api_ctx: Optional[str]):
+    def _log_post_restore_final_error(
+        self, item: RecoveryItem, detail: str, api_ctx: Optional[str]
+    ):
         self.logger.error(
             "Post-restore action failed after retries for %s via %s: %s",
             item.name,

@@ -9,6 +9,7 @@ from typing import Any, Callable, Collection, Optional, Tuple
 try:
     from googleapiclient.errors import HttpError
 except Exception:
+
     class HttpError(Exception):
         """Fallback HttpError for test environments without googleapiclient."""
 
@@ -16,6 +17,7 @@ except Exception:
             super().__init__(*args)
             self.resp = resp
             self.content = content
+
 
 from gdrive_constants import MAX_RETRIES, RETRY_DELAY
 

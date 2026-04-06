@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.15.1] - 2026-04-06
+
+### Fixed
+
+- Fixed lint/runtime regression in `gdrive_discovery.py` by restoring the required `time` import used by progress and streaming timers.
+- Applied formatting fixes (Black) for:
+  - `src/python/cloud/gdrive_retry.py`
+  - `src/python/cloud/gdrive_operations.py`
+  - `tests/python/unit/test_gdrive_operations.py`
+
 ## [1.15.0] - 2026-04-06
 
 ### Changed

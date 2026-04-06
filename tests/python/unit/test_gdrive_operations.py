@@ -65,7 +65,10 @@ def test_recover_file_terminal_error(monkeypatch):
 
     monkeypatch.setattr(
         "gdrive_operations.with_retries",
-        lambda *args, **kwargs: (None, "files.update(fileId=id-1, trashed=False) failed: HTTP 404: no"),
+        lambda *args, **kwargs: (
+            None,
+            "files.update(fileId=id-1, trashed=False) failed: HTTP 404: no",
+        ),
     )
 
     ok = ops._recover_file(item)
