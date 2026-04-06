@@ -6,6 +6,7 @@ Python scripts for image and media file processing.
 
 - **find_duplicate_images.py** - Identifies duplicate images using perceptual hashing
 - **crop_colours.py** - Crops colored borders from images (removes black bars, etc.)
+- **_tracking.py** - Processed-file tracking subsystem used by crop_colours (not a standalone script)
 - **recover_extensions.py** - Recovers or fixes file extensions based on content analysis
 
 ## Dependencies
