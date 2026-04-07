@@ -108,9 +108,17 @@
 
 .NOTES
     VERSION
-      2.0.0
+      2.1.0
 
     CHANGELOG
+        2.1.0
+        - Extracted Write-VerifySummary helper: eliminated ~95 lines of duplicated post-transfer
+          verify logic that was copy-pasted across all four transfer modes (resume pull, pull,
+          stream-tar, tar-to-file).
+        - Fixed Write-Warning logging bug: the TAR-to-file verify path called Write-Warning
+          instead of Write-LogWarning, causing warnings to appear on-screen only and not be
+          persisted to log files. The extracted helper always uses Write-LogWarning.
+
         2.0.0
         - Refactored to use PowerShellLoggingFramework.psm1 for standardized logging
         - Replaced Write-Host with Write-LogInfo for informational messages
@@ -607,6 +615,72 @@ fi
     }
 }
 
+function Write-VerifySummary {
+    <#
+.SYNOPSIS
+    Prints a post-transfer verification summary table and warns if local count is below remote.
+.DESCRIPTION
+    Calculates post-transfer local file counts and sizes, retrieves remote file counts,
+    displays comparative statistics in table format, and emits a properly-logged warning
+    when the local count falls below the remote count.
+.PARAMETER LocalRoot
+    Local directory to measure after transfer.
+.PARAMETER FilesBefore
+    Local file count captured before transfer.
+.PARAMETER BytesBefore
+    Local byte total captured before transfer.
+.PARAMETER RemoteParent
+    Parent directory on the device (POSIX).
+.PARAMETER RemoteLeaf
+    Leaf (file or directory) name on the device.
+.PARAMETER TotalBytes
+    Pre-transfer remote size in bytes (used to derive SizeMB for Remote row).
+.PARAMETER WarnMessage
+    Warning text emitted via Write-LogWarning if local count < remote count.
+.OUTPUTS
+    None. Writes a formatted table to the host and optionally a warning to the log.
+#>
+    param(
+        [string]$LocalRoot,
+        [int64]$FilesBefore,
+        [int64]$BytesBefore,
+        [string]$RemoteParent,
+        [string]$RemoteLeaf,
+        [int64]$TotalBytes,
+        [string]$WarnMessage
+    )
+
+    $localCount   = Get-LocalFileCount  -Path $LocalRoot
+    $localBytes   = Get-LocalDirSize    -Path $LocalRoot
+    $remoteCount  = Get-RemoteFileCount -RemoteParent $RemoteParent -RemoteLeaf $RemoteLeaf
+    $remoteSizeMB = if ($TotalBytes -gt 0) { [math]::Round($TotalBytes / 1MB) } else { $null }
+
+    $afterFiles = $localCount
+    $deltaFiles = $afterFiles - $FilesBefore
+
+    $beforeMB = [math]::Round($BytesBefore / 1MB)
+    $afterMB  = [math]::Round($localBytes / 1MB)
+    $deltaMB  = $afterMB - $beforeMB
+
+    $rows = @(
+        [pscustomobject]@{
+            Scope  = 'Local'
+            Files  = ("{0} → {1} (+{2})" -f $FilesBefore, $afterFiles, $deltaFiles)
+            SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
+        }
+        [pscustomobject]@{
+            Scope  = 'Remote'
+            Files  = $remoteCount
+            SizeMB = $remoteSizeMB
+        }
+    )
+    $rows | Format-Table -AutoSize | Out-String | Write-Host
+
+    if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
+        Write-LogWarning $WarnMessage
+    }
+}
+
 Write-LogDebug "Destination: $Dest"
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 
@@ -679,37 +753,10 @@ if ($Mode -eq 'pull') {
         Write-LogInfo "Resume pull complete. Files processed: $count, newly copied: $copied."
 
         if ($Verify) {
-            $localRootAfter = $Dest
-            $localCount = Get-LocalFileCount -Path $localRootAfter
-            $localBytes = Get-LocalDirSize  -Path $localRootAfter
-            $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
-            $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes / 1MB) } else { $null }
-
-            $beforeFiles = $LocalFilesBefore
-            $afterFiles = $localCount
-            $deltaFiles = $afterFiles - $beforeFiles
-
-            $beforeMB = [math]::Round($LocalBytesBefore / 1MB)
-            $afterMB = [math]::Round($localBytes / 1MB)
-            $deltaMB = $afterMB - $beforeMB
-
-            $rows = @(
-                [pscustomobject]@{
-                    Scope  = 'Local'
-                    Files  = ("{0} → {1} (+{2})" -f $beforeFiles, $afterFiles, $deltaFiles)
-                    SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
-                }
-                [pscustomobject]@{
-                    Scope  = 'Remote'
-                    Files  = $remoteCount
-                    SizeMB = $remoteSizeMB
-                }
-            )
-            $rows | Format-Table -AutoSize | Out-String | Write-Host
-
-            if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
-                Write-LogWarning "Local file count < remote file count. Some files may be missing."
-            }
+            Write-VerifySummary -LocalRoot $Dest `
+                -FilesBefore $LocalFilesBefore -BytesBefore $LocalBytesBefore `
+                -RemoteParent $parent -RemoteLeaf $leaf -TotalBytes $totalBytes `
+                -WarnMessage "Local file count < remote file count. Some files may be missing."
         }
     }
     else {
@@ -752,37 +799,10 @@ if ($Mode -eq 'pull') {
             # adb pull usually creates a subfolder under Dest named $leaf
             $verifyRoot = Join-Path $Dest $leaf
             $localRootAfter = (Test-Path $verifyRoot) ? $verifyRoot : $Dest
-
-            $localCount = Get-LocalFileCount -Path $localRootAfter
-            $localBytes = Get-LocalDirSize  -Path $localRootAfter
-            $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
-            $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes / 1MB) } else { $null }
-
-            $beforeFiles = $LocalFilesBefore
-            $afterFiles = $localCount
-            $deltaFiles = $afterFiles - $beforeFiles
-
-            $beforeMB = [math]::Round($LocalBytesBefore / 1MB)
-            $afterMB = [math]::Round($localBytes / 1MB)
-            $deltaMB = $afterMB - $beforeMB
-
-            $rows = @(
-                [pscustomobject]@{
-                    Scope  = 'Local'
-                    Files  = ("{0} → {1} (+{2})" -f $beforeFiles, $afterFiles, $deltaFiles)
-                    SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
-                }
-                [pscustomobject]@{
-                    Scope  = 'Remote'
-                    Files  = $remoteCount
-                    SizeMB = $remoteSizeMB
-                }
-            )
-            $rows | Format-Table -AutoSize | Out-String | Write-Host
-
-            if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
-                Write-LogWarning "Local file count < remote file count. Some files may be missing."
-            }
+            Write-VerifySummary -LocalRoot $localRootAfter `
+                -FilesBefore $LocalFilesBefore -BytesBefore $LocalBytesBefore `
+                -RemoteParent $parent -RemoteLeaf $leaf -TotalBytes $totalBytes `
+                -WarnMessage "Local file count < remote file count. Some files may be missing."
         }
     }
 }
@@ -799,37 +819,10 @@ else {
         Write-LogInfo "Streaming tar extraction finished. Verify contents."
 
         if ($Verify) {
-            $localRootAfter = $Dest
-            $localCount = Get-LocalFileCount -Path $localRootAfter
-            $localBytes = Get-LocalDirSize  -Path $localRootAfter
-            $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
-            $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes / 1MB) } else { $null }
-
-            $beforeFiles = $LocalFilesBefore
-            $afterFiles = $localCount
-            $deltaFiles = $afterFiles - $beforeFiles
-
-            $beforeMB = [math]::Round($LocalBytesBefore / 1MB)
-            $afterMB = [math]::Round($localBytes / 1MB)
-            $deltaMB = $afterMB - $beforeMB
-
-            $rows = @(
-                [pscustomobject]@{
-                    Scope  = 'Local'
-                    Files  = ("{0} → {1} (+{2})" -f $beforeFiles, $afterFiles, $deltaFiles)
-                    SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
-                }
-                [pscustomobject]@{
-                    Scope  = 'Remote'
-                    Files  = $remoteCount
-                    SizeMB = $remoteSizeMB
-                }
-            )
-            $rows | Format-Table -AutoSize | Out-String | Write-Host
-
-            if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
-                Write-LogWarning "Extracted count < remote count. Some files may be missing."
-            }
+            Write-VerifySummary -LocalRoot $Dest `
+                -FilesBefore $LocalFilesBefore -BytesBefore $LocalBytesBefore `
+                -RemoteParent $parent -RemoteLeaf $leaf -TotalBytes $totalBytes `
+                -WarnMessage "Extracted count < remote count. Some files may be missing."
         }
     }
     else {
@@ -880,37 +873,10 @@ else {
                 tar -xf $tarFile -C $Dest
 
                 if ($Verify) {
-                    $localRootAfter = $Dest
-                    $localCount = Get-LocalFileCount -Path $localRootAfter
-                    $localBytes = Get-LocalDirSize  -Path $localRootAfter
-                    $remoteCount = Get-RemoteFileCount -RemoteParent $parent -RemoteLeaf $leaf
-                    $remoteSizeMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes / 1MB) } else { $null }
-
-                    $beforeFiles = $LocalFilesBefore
-                    $afterFiles = $localCount
-                    $deltaFiles = $afterFiles - $beforeFiles
-
-                    $beforeMB = [math]::Round($LocalBytesBefore / 1MB)
-                    $afterMB = [math]::Round($localBytes / 1MB)
-                    $deltaMB = $afterMB - $beforeMB
-
-                    $rows = @(
-                        [pscustomobject]@{
-                            Scope  = 'Local'
-                            Files  = ("{0} → {1} (+{2})" -f $beforeFiles, $afterFiles, $deltaFiles)
-                            SizeMB = ("{0} → {1} (+{2})" -f $beforeMB, $afterMB, $deltaMB)
-                        }
-                        [pscustomobject]@{
-                            Scope  = 'Remote'
-                            Files  = $remoteCount
-                            SizeMB = $remoteSizeMB
-                        }
-                    )
-                    $rows | Format-Table -AutoSize | Out-String | Write-Host
-
-                    if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
-                        Write-Warning "Extracted count < remote count. Some files may be missing."
-                    }
+                    Write-VerifySummary -LocalRoot $Dest `
+                        -FilesBefore $LocalFilesBefore -BytesBefore $LocalBytesBefore `
+                        -RemoteParent $parent -RemoteLeaf $leaf -TotalBytes $totalBytes `
+                        -WarnMessage "Extracted count < remote count. Some files may be missing."
                 }
 
                 # Cleanup
