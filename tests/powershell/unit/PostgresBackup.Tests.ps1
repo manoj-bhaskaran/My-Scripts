@@ -57,16 +57,15 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
             Remove-Item -Path $script:testLogFile -Force
         }
         $script:capturedCommand = ""
-        Mock -CommandName 'Invoke-Expression' -MockWith {
-            param($Command)
-            if ($Command -match 'pg_dump') {
-                $script:capturedCommand = $Command
-                if ($Command -match '--file=([^\s]+)') {
-                    $backupPath = $matches[1]
-                    "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                }
-                $global:LASTEXITCODE = 0
+        Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
+            param($ArgumentList, $LogFilePath)
+            $script:capturedCommand = $ArgumentList -join ' '
+            $fileArg = $ArgumentList | Where-Object { $_ -like '--file=*' }
+            if ($fileArg) {
+                $backupPath = $fileArg -replace '^--file=', ''
+                "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
             }
+            $global:LASTEXITCODE = 0
         }
     }
 
@@ -533,12 +532,9 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
         # --- pg_dump failures ---
 
         It "Exits with code 1 when pg_dump fails" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $global:LASTEXITCODE = 1
-                    throw "pg_dump failed"
-                }
+            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
+                $global:LASTEXITCODE = 1
+                throw "pg_dump failed"
             }
 
             {
@@ -551,12 +547,9 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
         }
 
         It "Logs error when backup fails" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $global:LASTEXITCODE = 1
-                    throw "Connection to database failed"
-                }
+            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
+                $global:LASTEXITCODE = 1
+                throw "Connection to database failed"
             }
 
             try {
@@ -623,12 +616,9 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
         # --- Additional pg_dump error scenarios ---
 
         It "Handles disk full error during backup" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $global:LASTEXITCODE = 1
-                    throw "pg_dump: error: could not write to output file: No space left on device"
-                }
+            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
+                $global:LASTEXITCODE = 1
+                throw "pg_dump: error: could not write to output file: No space left on device"
             }
 
             {
@@ -663,11 +653,8 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
 
         It "Handles pg_dump executable not found" {
             # This would normally be caught at the Config level, but test the scenario
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    throw "The term 'pg_dump' is not recognized as the name of a cmdlet, function, script file, or operable program"
-                }
+            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
+                throw "The term 'pg_dump' is not recognized as the name of a cmdlet, function, script file, or operable program"
             }
 
             {
@@ -680,17 +667,16 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
         }
 
         It "Logs all pg_dump output including warnings" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    if ($Command -match '--file=([^\s]+)') {
-                        $backupPath = $matches[1]
-                        "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
-                    }
-                    # Simulate pg_dump warnings
-                    Write-Warning "pg_dump: warning: some deprecated features used"
-                    $global:LASTEXITCODE = 0
+            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
+                param($ArgumentList, $LogFilePath)
+                $fileArg = $ArgumentList | Where-Object { $_ -like '--file=*' }
+                if ($fileArg) {
+                    $backupPath = $fileArg -replace '^--file=', ''
+                    "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
                 }
+                # Simulate pg_dump warnings
+                Write-Warning "pg_dump: warning: some deprecated features used"
+                $global:LASTEXITCODE = 0
             }
 
             Backup-PostgresDatabase `
@@ -796,12 +782,9 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
     Context "Invalid Database Scenarios" {
 
         It "Handles non-existent database gracefully" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $global:LASTEXITCODE = 1
-                    throw "pg_dump: error: connection to server at localhost, port 5432 failed: FATAL: database 'nonexistent_db' does not exist"
-                }
+            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
+                $global:LASTEXITCODE = 1
+                throw "pg_dump: error: connection to server at localhost, port 5432 failed: FATAL: database 'nonexistent_db' does not exist"
             }
 
             {
@@ -817,12 +800,9 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
         }
 
         It "Handles database connection timeout" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $global:LASTEXITCODE = 1
-                    throw "pg_dump: error: connection to server timed out"
-                }
+            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
+                $global:LASTEXITCODE = 1
+                throw "pg_dump: error: connection to server timed out"
             }
 
             {
@@ -839,12 +819,9 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
         }
 
         It "Handles authentication failure" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $global:LASTEXITCODE = 1
-                    throw "pg_dump: error: connection to server failed: FATAL: password authentication failed for user 'test_user'"
-                }
+            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
+                $global:LASTEXITCODE = 1
+                throw "pg_dump: error: connection to server failed: FATAL: password authentication failed for user 'test_user'"
             }
 
             {
@@ -860,12 +837,9 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
         }
 
         It "Handles insufficient permissions on database" {
-            Mock -CommandName 'Invoke-Expression' -MockWith {
-                param($Command)
-                if ($Command -match 'pg_dump') {
-                    $global:LASTEXITCODE = 1
-                    throw "pg_dump: error: permission denied for database"
-                }
+            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
+                $global:LASTEXITCODE = 1
+                throw "pg_dump: error: permission denied for database"
             }
 
             {
