@@ -17,9 +17,7 @@ param()
 
 BeforeAll {
     # Check if running on Windows
-    $script:isWindows = $PSVersionTable.PSVersion.Major -le 5 -or $IsWindows
-
-    if (-not $script:isWindows) {
+    if ($env:OS -ne 'Windows_NT') {
         Write-Warning "PostgresBackup tests require Windows platform. Skipping tests on $($PSVersionTable.Platform)."
         return
     }
@@ -48,7 +46,7 @@ BeforeAll {
     Mock Start-Sleep { }
 }
 
-Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
+Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
 
     BeforeEach {
         # Clean up test directory before each test
@@ -189,8 +187,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                         Name   = "postgresql-x64-17"
                         Status = "Stopped"
                     }
-                }
-                else {
+                } else {
                     return [PSCustomObject]@{
                         Name   = "postgresql-x64-17"
                         Status = "Running"
@@ -216,14 +213,12 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                         Name   = "postgresql-x64-17"
                         Status = "Stopped"
                     }
-                }
-                elseif ($script:getServiceCallCount -le 3) {
+                } elseif ($script:getServiceCallCount -le 3) {
                     return [PSCustomObject]@{
                         Name   = "postgresql-x64-17"
                         Status = "Running"
                     }
-                }
-                else {
+                } else {
                     return [PSCustomObject]@{
                         Name   = "postgresql-x64-17"
                         Status = "Stopped"
@@ -276,7 +271,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
             # Count zero-byte files before
             $zeroByteFilesBefore = (Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-                    Where-Object { $_.Length -eq 0 }).Count
+                Where-Object { $_.Length -eq 0 }).Count
 
             $zeroByteFilesBefore | Should -Be 2
 
@@ -288,7 +283,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
             # Zero-byte files should be deleted
             $zeroByteFilesAfter = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-                Where-Object { $_.Length -eq 0 }
+            Where-Object { $_.Length -eq 0 }
 
             $zeroByteFilesAfter.Count | Should -Be 0
 
@@ -313,7 +308,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
             # Valid files should still exist
             $validFiles = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-                Where-Object { $_.Length -gt 0 }
+            Where-Object { $_.Length -gt 0 }
 
             $validFiles.Count | Should -BeGreaterThan 0
         }
@@ -344,8 +339,6 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             (Get-Item $recentFile3).LastWriteTime = $now.AddDays(-15)
 
             # Count files before
-            $filesBefore = (Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup").Count
-
             Backup-PostgresDatabase `
                 -dbname "testdb" `
                 -backup_folder $script:testBackupFolder `
@@ -401,7 +394,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
             # Should not delete old backups because we don't have enough recent ones
             $oldBackups = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-                Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) }
+            Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) }
 
             $oldBackups.Count | Should -BeGreaterThan 0
         }
@@ -447,7 +440,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
             # Old file should be deleted (retention 0 days means delete everything older than today)
             $remainingOld = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-                Where-Object { $_.LastWriteTime -lt $now.AddDays(-1) }
+            Where-Object { $_.LastWriteTime -lt $now.AddDays(-1) }
             $remainingOld.Count | Should -Be 0
         }
 
@@ -496,7 +489,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
             Test-Path $db2File | Should -Be $true
         }
 
-        It "Handles very large number of old backups efficiently" {
+        It "Deletes all old backups when old backup count greatly exceeds min_backups" {
             $now = Get-Date
 
             # Create 50 old backups
@@ -523,7 +516,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
             # All 50 old backups should be deleted
             $oldBackups = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-                Where-Object { $_.LastWriteTime -lt $now.AddDays(-30) }
+            Where-Object { $_.LastWriteTime -lt $now.AddDays(-30) }
             $oldBackups.Count | Should -Be 0
 
             # Recent backups plus new one should remain
@@ -572,9 +565,8 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                     -backup_folder $script:testBackupFolder `
                     -log_file $script:testLogFile `
                     -user "test_user"
-            }
-            catch {
-                # Expected to throw
+            } catch {
+                $null = $_
             }
 
             Test-Path $script:testLogFile | Should -Be $true
@@ -722,8 +714,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
                         Name   = "postgresql-x64-17"
                         Status = "Stopped"
                     }
-                }
-                else {
+                } else {
                     return [PSCustomObject]@{
                         Name   = "postgresql-x64-17"
                         Status = "Running"
@@ -748,7 +739,7 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
         # --- Zero-byte cleanup failures ---
 
-        It "Creates backup even when zero-byte cleanup fails" {
+        It "Throws when zero-byte cleanup fails after backup creation" {
             # Create a zero-byte file that can't be deleted
             $zeroByteFile = Join-Path $script:testBackupFolder "testdb_backup_2024-01-01_10-00-00.backup"
             New-Item -Path $zeroByteFile -ItemType File -Force | Out-Null
@@ -949,12 +940,12 @@ Describe "Backup-PostgresDatabase" -Skip:(-not $script:isWindows) {
 
 AfterAll {
     # Clean up test directory (only if tests ran on Windows)
-    if ($script:isWindows -and $script:testDir -and (Test-Path $script:testDir)) {
+    if ($env:OS -eq 'Windows_NT' -and $script:testDir -and (Test-Path $script:testDir)) {
         Remove-Item -Path $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     # Remove imported module
-    if ($script:isWindows) {
+    if ($env:OS -eq 'Windows_NT') {
         Remove-Module PostgresBackup -ErrorAction SilentlyContinue
     }
 }
