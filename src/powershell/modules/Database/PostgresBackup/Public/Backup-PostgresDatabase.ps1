@@ -53,11 +53,11 @@ function Backup-PostgresDatabase {
             # Password provided explicitly - use connection string format
             $PlainPassword = (New-Object System.Management.Automation.PSCredential($user, $password)).GetNetworkCredential().Password
             $EscapedPassword = [System.Net.WebUtility]::UrlEncode($PlainPassword)
-            & $pg_dump_path --dbname="postgresql://${user}:${EscapedPassword}@localhost/${dbname}" --file=$backup_file --format=custom *>&1 | Add-Content -Path $log_file -Encoding utf8
+            Invoke-PgDump -ArgumentList @("--dbname=postgresql://${user}:${EscapedPassword}@localhost/${dbname}", "--file=$backup_file", "--format=custom") -LogFilePath $log_file
         }
         else {
             # No password provided - use standard options to allow .pgpass lookup
-            & $pg_dump_path -U $user -d $dbname -h localhost --file=$backup_file --format=custom *>&1 | Add-Content -Path $log_file -Encoding utf8
+            Invoke-PgDump -ArgumentList @("-U", $user, "-d", $dbname, "-h", "localhost", "--file=$backup_file", "--format=custom") -LogFilePath $log_file
         }
         if ($LASTEXITCODE -eq 0) {
             $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
