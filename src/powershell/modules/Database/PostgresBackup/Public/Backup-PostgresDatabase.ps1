@@ -79,7 +79,7 @@ function Backup-PostgresDatabase {
     catch {
         $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
         Add-Content -Path $log_file -Value "[$timestamp] ${dbname}: Backup failed: $_" -Encoding utf8
-        exit 1
+        throw
     }
 
     try {
@@ -94,6 +94,6 @@ function Backup-PostgresDatabase {
     catch {
         $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
         Add-Content -Path $log_file -Value "[$timestamp] ${dbname}: Backup file cleanup failed: $_" -Encoding utf8
-        exit 1
+        throw
     }
 }
