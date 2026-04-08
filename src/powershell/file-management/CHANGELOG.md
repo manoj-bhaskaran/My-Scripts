@@ -1,5 +1,36 @@
 # CHANGELOG
 
+---
+
+## Copy-AndroidFiles
+
+---
+
+### 2.1.0 — 2026-04-07
+
+#### Changed
+
+- **Extracted `Write-VerifySummary` helper function** from `Copy-AndroidFiles.ps1`. The
+  post-transfer verification output block was copy-pasted across all four transfer modes
+  (resume pull, pull, stream-tar, tar-to-file), totalling ~95 redundant lines. A single
+  parameterised helper now handles all modes: it accepts `LocalRoot`, `FilesBefore`,
+  `BytesBefore`, `RemoteParent`, `RemoteLeaf`, `TotalBytes`, and `WarnMessage`, calculates
+  post-transfer local counts/sizes, retrieves the remote file count, renders the comparison
+  table, and emits any warning via `Write-LogWarning`.
+
+#### Fixed
+
+- **`Write-Warning` logging bug in TAR-to-file mode.** The verify path for tar-to-file
+  called `Write-Warning` (built-in) instead of `Write-LogWarning` (framework). Warnings
+  were displayed on-screen but not written to log files. The extracted `Write-VerifySummary`
+  helper always uses `Write-LogWarning`, fixing the bug for all modes.
+
+---
+
+## FileDistributor
+
+---
+
 ## 4.8.0 — 2026-04-05
 
 ### Changed (Option A — module consolidation)
