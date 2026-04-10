@@ -108,9 +108,17 @@
 
 .NOTES
     VERSION
-      2.1.0
+      2.2.0
 
     CHANGELOG
+        2.2.0
+        - Extracted Invoke-ProgressWhileProcess helper: eliminated duplicated while
+          (-not $proc.HasExited) progress-polling loop that was replicated across pull mode
+          and tar-to-file mode. A single parameterised helper now drives both progress bars;
+          accepts Process, Activity, GetCurrentBytes (scriptblock), TotalBytes, and
+          IntervalSeconds. Hard-coded 1-second sleep in tar mode replaced by the explicit
+          -IntervalSeconds 1 argument, making the interval visible and documentable.
+
         2.1.0
         - Extracted Write-VerifySummary helper: eliminated ~95 lines of duplicated post-transfer
           verify logic that was copy-pasted across all four transfer modes (resume pull, pull,
@@ -353,8 +361,7 @@ function Invoke-AdbSh {
                 # If current starts with a control token OR previous ended with one, keep newline
                 if ($currStartsCtl -or $prevEndsCtl) {
                     [void]$out.Append("`n")
-                }
-                else {
+                } else {
                     [void]$out.Append("; ")
                 }
             }
@@ -377,8 +384,7 @@ function Invoke-AdbSh {
         }
 
         return $result
-    }
-    catch {
+    } catch {
         if ($DebugMode -and $DebugLog) {
             Add-Content -Path $DebugLog -Value ("[{0}] ERROR: {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $_)
         }
@@ -492,8 +498,7 @@ echo 0
         $bytes = 0L
         [void][int64]::TryParse($bytesText.Trim(), [ref]$bytes)
         return $bytes
-    }
-    catch {
+    } catch {
         return 0
     }
 }
@@ -512,10 +517,9 @@ function Get-LocalDirSize {
     param([string]$Path)
     try {
         $sum = (Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
-                Measure-Object -Property Length -Sum).Sum
+            Measure-Object -Property Length -Sum).Sum
         [int64]($sum ? $sum : 0)
-    }
-    catch { 0 }
+    } catch { 0 }
 }
 
 function Get-DriveFreeBytes {
@@ -567,9 +571,8 @@ function Get-LocalFileCount {
     param([string]$Path)
     try {
         [int64]((Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
-                    Measure-Object).Count)
-    }
-    catch { 0 }
+                Measure-Object).Count)
+    } catch { 0 }
 }
 
 function Get-RemoteFileCount {
@@ -609,8 +612,7 @@ fi
         $n = 0L
         [void][int64]::TryParse($out.Trim(), [ref]$n)
         return $n
-    }
-    catch {
+    } catch {
         return 0
     }
 }
@@ -650,17 +652,17 @@ function Write-VerifySummary {
         [string]$WarnMessage
     )
 
-    $localCount   = Get-LocalFileCount  -Path $LocalRoot
-    $localBytes   = Get-LocalDirSize    -Path $LocalRoot
-    $remoteCount  = Get-RemoteFileCount -RemoteParent $RemoteParent -RemoteLeaf $RemoteLeaf
+    $localCount = Get-LocalFileCount  -Path $LocalRoot
+    $localBytes = Get-LocalDirSize    -Path $LocalRoot
+    $remoteCount = Get-RemoteFileCount -RemoteParent $RemoteParent -RemoteLeaf $RemoteLeaf
     $remoteSizeMB = if ($TotalBytes -gt 0) { [math]::Round($TotalBytes / 1MB) } else { $null }
 
     $afterFiles = $localCount
     $deltaFiles = $afterFiles - $FilesBefore
 
     $beforeMB = [math]::Round($BytesBefore / 1MB)
-    $afterMB  = [math]::Round($localBytes / 1MB)
-    $deltaMB  = $afterMB - $beforeMB
+    $afterMB = [math]::Round($localBytes / 1MB)
+    $deltaMB = $afterMB - $beforeMB
 
     $rows = @(
         [pscustomobject]@{
@@ -679,6 +681,47 @@ function Write-VerifySummary {
     if ($remoteCount -gt 0 -and $localCount -lt $remoteCount) {
         Write-LogWarning $WarnMessage
     }
+}
+
+function Invoke-ProgressWhileProcess {
+    <#
+.SYNOPSIS
+    Polls a running process and writes a progress bar until the process exits.
+.DESCRIPTION
+    Loops while the process has not exited, invoking $GetCurrentBytes on each iteration to
+    obtain an up-to-date byte count. When $TotalBytes is known (> 0), shows a percentage bar;
+    otherwise shows MB written only. Calls Write-Progress -Completed before returning.
+.PARAMETER Process
+    The System.Diagnostics.Process object to monitor.
+.PARAMETER Activity
+    Activity label passed to Write-Progress.
+.PARAMETER GetCurrentBytes
+    Scriptblock that returns the current byte count ([Int64]) relevant to this transfer.
+.PARAMETER TotalBytes
+    Expected total bytes. When > 0, enables percentage display.
+.PARAMETER IntervalSeconds
+    Polling interval in seconds (default 1).
+.OUTPUTS
+    None. Writes progress to the console via Write-Progress.
+#>
+    param(
+        [System.Diagnostics.Process]$Process,
+        [string]$Activity,
+        [scriptblock]$GetCurrentBytes,
+        [int64]$TotalBytes,
+        [int]$IntervalSeconds = 1
+    )
+    while (-not $Process.HasExited) {
+        Start-Sleep -Seconds $IntervalSeconds
+        $cur = & $GetCurrentBytes
+        if ($TotalBytes -gt 0) {
+            $pct = [int](($cur * 100.0) / $TotalBytes)
+            Write-Progress -Activity $Activity -Status "$pct% ($([math]::Round($cur/1MB)) / $([math]::Round($TotalBytes/1MB)) MB)" -PercentComplete $pct
+        } else {
+            Write-Progress -Activity $Activity -Status "$([math]::Round($cur/1MB)) MB written" -PercentComplete 0
+        }
+    }
+    Write-Progress -Activity $Activity -Completed
 }
 
 Write-LogDebug "Destination: $Dest"
@@ -758,8 +801,7 @@ if ($Mode -eq 'pull') {
                 -RemoteParent $parent -RemoteLeaf $leaf -TotalBytes $totalBytes `
                 -WarnMessage "Local file count < remote file count. Some files may be missing."
         }
-    }
-    else {
+    } else {
         Write-LogInfo "ADB pull `"$PhonePath`" → `"$Dest`""
         if ($ShowProgress) {
             $destBefore = Get-LocalDirSize -Path $Dest
@@ -774,23 +816,11 @@ if ($Mode -eq 'pull') {
                 $sp.RedirectStandardOutput = $DebugLog
             }
             $proc = Start-Process @sp
-
-            while (-not $proc.HasExited) {
-                Start-Sleep -Seconds $ProgressIntervalSeconds
-                $cur = Get-LocalDirSize -Path $Dest
-                $written = [math]::Max(0, $cur - $destBefore)
-                if ($totalBytes -gt 0) {
-                    $pct = [int](($written * 100.0) / $totalBytes)
-                    Write-Progress -Activity "adb pull" -Status "$pct% ($([math]::Round($written/1MB)) / $([math]::Round($totalBytes/1MB)) MB)" -PercentComplete $pct
-                }
-                else {
-                    Write-Progress -Activity "adb pull" -Status "$([math]::Round($written/1MB)) MB copied (approx)" -PercentComplete 0
-                }
-            }
-            Write-Progress -Activity "adb pull" -Completed
+            Invoke-ProgressWhileProcess -Process $proc -Activity "adb pull" `
+                -GetCurrentBytes { [math]::Max(0, (Get-LocalDirSize $Dest) - $destBefore) } `
+                -TotalBytes $totalBytes -IntervalSeconds $ProgressIntervalSeconds
             if ($proc.ExitCode -ne 0) { throw "adb pull failed with exit code $($proc.ExitCode)." }
-        }
-        else {
+        } else {
             adb pull "$PhonePath" "$Dest"
         }
         Write-LogInfo "Pull complete."
@@ -805,8 +835,7 @@ if ($Mode -eq 'pull') {
                 -WarnMessage "Local file count < remote file count. Some files may be missing."
         }
     }
-}
-else {
+} else {
     # TAR mode
     if ($StreamTar) {
         Write-LogInfo "Streaming TAR directly to extractor (no temp .tar): `"$PhonePath`" → `"$Dest`""
@@ -824,8 +853,7 @@ else {
                 -RemoteParent $parent -RemoteLeaf $leaf -TotalBytes $totalBytes `
                 -WarnMessage "Extracted count < remote count. Some files may be missing."
         }
-    }
-    else {
+    } else {
         $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
         $tarFile = Join-Path $Dest ("android_{0}.tar" -f $timestamp)
 
@@ -847,20 +875,10 @@ else {
                 $proc = Start-Process @sp
 
                 if ($ShowProgress) {
-                    while (-not $proc.HasExited) {
-                        Start-Sleep -Seconds 1
-                        $cur = (Test-Path $tarFile) ? ((Get-Item $tarFile).Length) : 0
-                        if ($totalBytes -gt 0) {
-                            $pct = [int](($cur * 100.0) / $totalBytes)
-                            Write-Progress -Activity "Streaming TAR" -Status "$pct% ($([math]::Round($cur/1MB)) / $([math]::Round($totalBytes/1MB)) MB)" -PercentComplete $pct
-                        }
-                        else {
-                            Write-Progress -Activity "Streaming TAR" -Status "$([math]::Round($cur/1MB)) MB written" -PercentComplete 0
-                        }
-                    }
-                    Write-Progress -Activity "Streaming TAR" -Completed
-                }
-                else {
+                    Invoke-ProgressWhileProcess -Process $proc -Activity "Streaming TAR" `
+                        -GetCurrentBytes { if (Test-Path $tarFile) { (Get-Item $tarFile).Length } else { 0 } } `
+                        -TotalBytes $totalBytes -IntervalSeconds 1
+                } else {
                     $proc.WaitForExit()
                 }
 
@@ -883,8 +901,7 @@ else {
                 Remove-Item $tarFile -Force
                 Write-LogInfo "Done."
                 break
-            }
-            catch {
+            } catch {
                 $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
                 Write-LogWarning ("{0}: {1}" -f $ts, $_)
                 if (Test-Path $tarFile) { Remove-Item $tarFile -Force -ErrorAction SilentlyContinue }
