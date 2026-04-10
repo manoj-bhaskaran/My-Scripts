@@ -6,11 +6,15 @@
 .DESCRIPTION
     Copies files/folders from an Android phone (e.g., Samsung S23) to a Windows PC using ADB.
 
-    Modes:
-      - pull : Uses 'adb pull' to mirror the folder. Optional approximate progress; optional -Resume
-               to skip existing files. Best option if you need best-effort resumption on interruption.
-      - tar  : Uses 'adb exec-out tar' to stream contents as a single archive (to file or directly
-               to extractor), then extracts on the PC. This is usually faster for many small files.
+    Modes (selected via parameter set):
+      - Pull (parameter set 'Pull'): Uses 'adb pull' to mirror the folder. Optional approximate
+               progress; optional -Resume to skip existing files. Best option if you need
+               best-effort resumption on interruption. Activated by passing -Resume or
+               -ProgressIntervalSeconds.
+      - Tar  (parameter set 'Tar', default): Uses 'adb exec-out tar' to stream contents as a
+               single archive (to file or directly to extractor), then extracts on the PC.
+               This is usually faster for many small files. Activated by passing -StreamTar or
+               -MaxRetries, or when no mode-specific parameters are specified.
                **Important:** TAR mode is **not resumable**. If interrupted, re-run the transfer.
                For best-effort resume, use pull mode with -Resume.
 
@@ -34,7 +38,11 @@
     PC destination folder (created if missing).
 
 .PARAMETER Mode
-    'pull' or 'tar'.
+    Determines the transfer mode. This parameter has been retired; the mode is now selected
+    implicitly by the parameter set:
+      - Use pull-mode parameters (-Resume, -ProgressIntervalSeconds) to activate pull mode.
+      - Use tar-mode parameters (-StreamTar, -MaxRetries) to activate tar mode.
+      - When no mode-specific parameters are provided, tar mode is used by default.
 
 .PARAMETER ShowProgress
     If set:
@@ -49,14 +57,17 @@
 
 .PARAMETER Resume
     Pull mode only: per-file copy and **skip** existing files with identical size.
+    Selecting this parameter activates pull mode (parameter set 'Pull').
 
 .PARAMETER MaxRetries
     Tar-to-file mode: retry count for tar stream (default 2).
+    Only valid in tar mode (parameter set 'Tar').
 
 .PARAMETER StreamTar
     Tar mode: stream directly to extractor (adb exec-out ... | tar -xf -) to avoid creating
     a temporary .tar. Reduces disk space requirement (no ~2x footprint). **Not resumable**
     if interrupted.
+    Selecting this parameter activates tar mode (parameter set 'Tar').
 
 .PARAMETER Verify
     If set, prints a summary table of file counts/sizes after transfer:
@@ -69,6 +80,7 @@
 
 .PARAMETER ProgressIntervalSeconds
     Polling interval (seconds) for pull mode progress (default 5). Higher values reduce I/O overhead.
+    Only valid in pull mode (parameter set 'Pull').
 
 .PARAMETER DebugMode
     Enables lightweight diagnostics for adb interactions:
@@ -87,15 +99,15 @@
     None. Writes status/progress to the console. When -Verify is used, writes a summary table.
 
 .EXAMPLE
-    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/DCIM/Camera" -Dest "D:\Phone\Camera" -Mode tar `
+    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/DCIM/Camera" -Dest "D:\Phone\Camera" `
       -ShowProgress -PrecheckSpace -StreamTar -Verify
 
 .EXAMPLE
-    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/Download" -Dest "C:\Phone\Download" -Mode pull `
+    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/Download" -Dest "C:\Phone\Download" `
       -Resume -ShowProgress -Verify
 
 .EXAMPLE
-    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/DCIM/Camera" -Dest "D:\Phone\Camera" -Mode pull -Verify
+    .\Copy-AndroidFiles.ps1 -PhonePath "/sdcard/DCIM/Camera" -Dest "D:\Phone\Camera" -Resume -Verify
 
     # Example Verify output (values illustrative):
     Scope  Files                          SizeMB
@@ -108,9 +120,20 @@
 
 .NOTES
     VERSION
-      2.2.0
+      2.3.0
 
     CHANGELOG
+        2.3.0
+        - Implemented PowerShell parameter sets 'Pull' and 'Tar'. Mode-specific parameters are
+          now restricted to their respective sets: -Resume and -ProgressIntervalSeconds belong
+          to 'Pull'; -StreamTar and -MaxRetries belong to 'Tar'. PowerShell rejects invalid
+          combinations (e.g., -Resume with tar-only parameters) at binding time.
+        - Removed the -Mode parameter. The active mode is now determined by
+          $PSCmdlet.ParameterSetName (defaulting to 'Tar'). All internal $Mode checks have
+          been replaced with $PSCmdlet.ParameterSetName comparisons.
+        - Made -PhonePath and -Dest mandatory; removed personal hard-coded default values.
+          Users must supply both paths explicitly on every invocation.
+
         2.2.0
         - Extracted Invoke-ProgressWhileProcess helper: eliminated duplicated while
           (-not $proc.HasExited) progress-polling loop that was replicated across pull mode
@@ -218,9 +241,9 @@
            - Verify:
                adb devices
              Expected: <serial>    device
-      5) Windows tar (for -Mode tar)
+      5) Windows tar (for tar mode)
            - Windows 10/11 include tar.exe.
-           - If missing, install a compatible tar or use -Mode pull.
+           - If missing, install a compatible tar or use pull mode (pass -Resume).
       6) Optional drivers
            - If Device Manager shows issues, install the Samsung USB driver (or OEM driver).
       7) Storage & space
@@ -235,7 +258,8 @@
       - Ensure adb.exe is installed and in PATH (install Android SDK Platform-Tools).
       - Ensure the phone is connected, unlocked, and USB debugging is enabled/authorized.
       - If tar mode fails due to missing phone-side tar, switch to pull mode or install tar on the device.
-      - If adb pull is very slow, try tar mode (if phone-side tar is available).
+        To use pull mode, pass -Resume or -ProgressIntervalSeconds (pull-only parameters).
+      - If adb pull is very slow, try tar mode (omit pull-only parameters, or pass -StreamTar).
       - If interrupted during tar mode, re-run the transfer (not resumable). For resumable transfers, use pull mode with -Resume.
       - Use -DebugMode to log adb interactions for troubleshooting.
           * TAR mode: only stderr is logged (stdout is the binary .tar).
@@ -244,19 +268,26 @@
           * Ensure you are on ≥ 1.3.5. The script uses Invoke-AdbSh to normalize line endings and flatten scripts.
 #>
 
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Tar')]
 param(
-    [Parameter()] [string]$PhonePath = "/sdcard/Pictures/A_DownloaderForInstagram",
-    [Parameter()] [string]$Dest = "C:\Users\manoj\OneDrive\Desktop\New folder",
-    [Parameter()] [ValidateSet('pull', 'tar')] [string]$Mode = 'tar',
+    [Parameter(Mandatory, ParameterSetName = 'Pull')]
+    [Parameter(Mandatory, ParameterSetName = 'Tar')]
+    [string]$PhonePath,
+
+    [Parameter(Mandatory, ParameterSetName = 'Pull')]
+    [Parameter(Mandatory, ParameterSetName = 'Tar')]
+    [string]$Dest,
+
+    [Parameter(ParameterSetName = 'Pull')] [switch]$Resume,
+    [Parameter(ParameterSetName = 'Pull')] [int]$ProgressIntervalSeconds = 5,
+
+    [Parameter(ParameterSetName = 'Tar')]  [switch]$StreamTar,
+    [Parameter(ParameterSetName = 'Tar')]  [int]$MaxRetries = 2,
+
     [Parameter()] [switch]$ShowProgress,
     [Parameter()] [switch]$PrecheckSpace,
     [Parameter()] [int]$SpaceMarginPercent = 10,
-    [Parameter()] [switch]$Resume,
-    [Parameter()] [int]$MaxRetries = 2,
-    [Parameter()] [switch]$StreamTar,
     [Parameter()] [switch]$Verify,
-    [Parameter()] [int]$ProgressIntervalSeconds = 5,
     [Parameter()] [switch]$DebugMode
 )
 
@@ -309,16 +340,16 @@ function Confirm-Device {
 function Test-HostTar {
     <#
 .SYNOPSIS
-    Verifies tar.exe is available on Windows when Mode = tar.
+    Verifies tar.exe is available on Windows when using tar mode.
 .DESCRIPTION
     Ensures 'tar' can be invoked from PATH; otherwise suggests switching to pull mode or installing tar.
 .OUTPUTS
-    None. Throws on failure if Mode = tar.
+    None. Throws on failure if using tar mode.
 #>
-    if ($Mode -eq 'tar') {
+    if ($PSCmdlet.ParameterSetName -eq 'Tar') {
         $tar = Get-Command tar -ErrorAction SilentlyContinue
         if (-not $tar) {
-            throw "Windows tar.exe not found. Use -Mode pull or install tar and add to PATH."
+            throw "Windows tar.exe not found. Use pull mode (-Resume) or install tar and add to PATH."
         }
     }
 }
@@ -401,9 +432,9 @@ function Test-PhoneTar {
     Prefers `command -v tar` (accepting --help if --version is unsupported),
     then falls back to `toybox tar` and `busybox tar`.
 .OUTPUTS
-    None. Throws on failure if Mode = tar.
+    None. Throws on failure if using tar mode.
 #>
-    if ($Mode -ne 'tar') { return }
+    if ($PSCmdlet.ParameterSetName -ne 'Tar') { return }
 
     $script = @'
 if command -v tar >/dev/null 2>&1; then
@@ -423,7 +454,7 @@ fi
         throw "Phone-side tar check failed (no response). Reconnect the device and try again."
     }
     if ($rc -ne '0') {
-        throw "Phone-side tar not found. Switch to -Mode pull."
+        throw "Phone-side tar not found. Switch to pull mode (use -Resume instead of tar-mode parameters)."
     }
 }
 
@@ -740,14 +771,14 @@ $totalBytes = Get-RemoteSize -RemoteParent $parent -RemoteLeaf $leaf
 # Baseline local stats for Verify deltas
 # For non-resume pull, adb creates a subfolder ($leaf) under $Dest → baseline that path.
 # For resume pull and tar modes, we write directly under $Dest → baseline $Dest.
-$localRootBaseline = if ($Mode -eq 'pull' -and -not $Resume) { Join-Path $Dest $leaf } else { $Dest }
+$localRootBaseline = if ($PSCmdlet.ParameterSetName -eq 'Pull' -and -not $Resume) { Join-Path $Dest $leaf } else { $Dest }
 $LocalFilesBefore = Get-LocalFileCount -Path $localRootBaseline
 $LocalBytesBefore = Get-LocalDirSize  -Path $localRootBaseline
 
 # Optional disk space precheck
 if ($PrecheckSpace.IsPresent -and $totalBytes -gt 0) {
     $freeBytes = Get-DriveFreeBytes -Path $Dest
-    $needed = if ($Mode -eq 'tar' -and -not $StreamTar) { $totalBytes * 2 } else { $totalBytes }
+    $needed = if ($PSCmdlet.ParameterSetName -eq 'Tar' -and -not $StreamTar) { $totalBytes * 2 } else { $totalBytes }
     $needed = [int64]([math]::Ceiling($needed * (1 + ($SpaceMarginPercent / 100.0))))
     if ($freeBytes -lt $needed) {
         throw ("Insufficient disk space. Need ~{0} MB (incl. margin), have ~{1} MB. " +
@@ -756,7 +787,7 @@ if ($PrecheckSpace.IsPresent -and $totalBytes -gt 0) {
     }
 }
 
-if ($Mode -eq 'pull') {
+if ($PSCmdlet.ParameterSetName -eq 'Pull') {
 
     if ($Resume) {
         Write-LogInfo "Resumable pull (skip existing): `"$PhonePath`" → `"$Dest`""

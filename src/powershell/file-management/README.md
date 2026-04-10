@@ -33,6 +33,14 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **Copy-AndroidFiles.ps1 v2.3.0**
+  - Implemented PowerShell parameter sets `Pull` and `Tar`. Mode-specific parameters are now
+    restricted to their respective sets: `-Resume` and `-ProgressIntervalSeconds` are `Pull`-only;
+    `-StreamTar` and `-MaxRetries` are `Tar`-only. PowerShell rejects invalid combinations at
+    binding time. Default parameter set is `Tar`.
+  - Retired the `-Mode` parameter. The transfer mode is now selected implicitly by the parameter
+    set. Pass pull-only parameters to use pull mode; pass tar-only parameters (or none) for tar mode.
+  - Made `-PhonePath` and `-Dest` mandatory; personal hard-coded default values removed.
 - **FileDistributor.ps1 v4.8.0** (module v1.2.0)
   - **Option A: module consolidation** — eliminated double-loading of all six private `FileManagement/FileDistributor` module files. The six dot-source lines previously in `FileDistributor.ps1` have been removed; private functions now live exclusively in module scope, loaded once by the module loader.
   - Removed duplicate `Import-Module` calls for `ErrorHandling` and `FileOperations` from `FileDistributor.psm1`; both Core modules are now imported once by the script before the `FileDistributor` module is loaded.
