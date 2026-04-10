@@ -8,14 +8,42 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
-## [4.1.0] - 2026-04-06
+## [4.2.0] - 2026-04-10
+
 ### Added
+
+- `src/python/media/_image_ops.py`: new module containing the core image-processing
+  functions extracted from `crop_colours.py` — `VALID_EXTS`, `list_images`,
+  `load_image`, `detect_content_bbox`, `imwrite_retry`, `_dedupe_path`,
+  `ensure_output_path`, `crop_image`, and `ProcessingConfig`. Extracted to improve
+  separation of concerns and enable independent unit testing and reuse.
+
+### Changed
+
+- `crop_colours.py` now imports image-ops items from `._image_ops` instead of
+  defining them inline. All extracted definitions removed from `crop_colours.py`,
+  reducing it from 1008 to 812 lines.
+- `src/python/media/__init__.py` version bumped to `4.2.0`; docstring updated to
+  reference `_image_ops`.
+
+### Tests
+
+- Added `tests/python/unit/test_image_ops.py` with unit tests covering
+  `detect_content_bbox`, `imwrite_retry`, `ensure_output_path`, `crop_image`,
+  `list_images`, `VALID_EXTS`, and `ProcessingConfig`.
+- Smoke test updated to also import `src.python.media._image_ops`.
+
+## [4.1.0] - 2026-04-06
+
+### Added
+
 - `src/python/media/_tracking.py`: new module containing the processed-file
   tracking subsystem (platform-specific file locking, `_processed_file_lock`,
   `get_processed_set`, `mark_processed`). Extracted from `crop_colours.py` to
   improve separation of concerns and enable independent unit testing.
 
 ### Changed
+
 - `crop_colours.py` now imports `get_processed_set` and `mark_processed` from
   `._tracking` instead of defining them inline. The platform-specific locking
   imports (`fcntl`, `msvcrt`) and `threading.Lock` have been removed from
@@ -23,18 +51,23 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 - `src/python/media/__init__.py` version bumped to `4.1.0`.
 
 ### Tests
+
 - Added `tests/python/unit/test_tracking.py` with unit tests covering empty
   folder, existing tracking file, stale-path exclusion, thread-safety, and
   corrupt/unreadable tracking file scenarios.
 - Smoke test updated to also import `src.python.media._tracking`.
 
 ## [4.0.2] - 2026-04-05
+
 ### Changed
+
 - Slimmed module docstring: migrated TROUBLESHOOTING and FAQ sections to `README.md`
   and version history to `CHANGELOG.md`. Docstring now references both external files.
 
 ## [4.0.1]
+
 ### Improved
+
 - `_validate_parameters()` no longer creates a throwaway `ArgumentParser`; validation errors
   are reported via `logger.error` + `raise SystemExit(2)`.
 - `import glob` and `import platform` promoted from function bodies to the top-level import block.
@@ -42,25 +75,32 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
   from `_process_batch()` after the worker loop completes, conditioned on `failures > 0`.
 
 ## [4.0.0]
+
 ### Breaking
+
 - Remove `--ignore-processed`. Default behavior now explicitly skips previously cropped images
   using `.processed_images` tracking and/or existing output detection.
 
 ### Added
+
 - `--reprocess-cropped` to force a full re-crop.
 - `--keep-existing-crops` to retain existing crops when reprocessing (new outputs are
   de-duplicated alongside).
 
 ### Improved
+
 - Documentation and help text updated to reflect reprocessing semantics and defaults.
 
 ### Refactored
+
 - Split monolithic `main()` into focused helpers (`_resolve_work_items`,
   `_maybe_handle_reprocessing`, `_emit_summary`) to reduce cognitive complexity and improve
   readability/testability without changing behavior.
 
 ## [3.x]
+
 ### Breaking / Behavior
+
 - Default is now **non-destructive**: outputs are written to `<input>/Cropped` with suffix
   `_cropped` (no overwrite).
 - Exit semantics refined: when all images are already processed, return **0** (success)
@@ -68,6 +108,7 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 - Stricter parameter validation across thresholds, padding, min-area, etc.
 
 ### Added
+
 - `--in-place` to overwrite originals atomically (temp→replace).
 - Naming controls: `--suffix` (default `_cropped`) and `--no-suffix`.
 - Progress controls: `--progress-interval` (default 100) with ETA/rate; end-of-run summary stats.
@@ -77,6 +118,7 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 - Consistent logger naming and compatibility with both stdlib logging and `python-logging-framework`.
 
 ### Fixed
+
 - Robust file tracking: thread-safe/cross-process coordination to prevent `.processed_images`
   corruption.
 - Windows compatibility: make `fcntl` import conditional; fall back to Windows locking.
@@ -89,6 +131,7 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 - Diagnostics: include target output path in save-failure messages.
 
 ### Improved
+
 - Cognitive complexity reduced by decomposing large routines into focused helpers (image
   collection, progress gating, stats, resume resolution).
 - Parameter bounds checks with clearer, actionable error messages.
@@ -101,26 +144,33 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
   emit environment/version diagnostics (Python/OpenCV/NumPy).
 
 ### Kept
+
 - Core 2.x capabilities: `--recurse`, `--max-workers`, retries, strict validation,
   non-clobbering writes with auto de-duplication when needed.
 
 ## [2.x]
+
 ### Breaking
+
 - Empty folder exits with code **2** unless `--allow-empty`.
 - `--resume-file` must exist and be a valid, readable image; otherwise exit **2**.
 - Corrupt images fail the run by default; use `--skip-bad-images` to continue.
 
 ### Added
+
 - `--recurse` for recursive image discovery (`os.walk`).
 - Preserve relative subfolder structure under `--output`.
 - `--max-workers`, `--retry-writes`, `--skip-bad-images`, `--allow-empty`.
 - Expanded docstring with Version/Author, Troubleshooting, FAQs, and dependencies.
 
 ### Fixed
+
 - Explicit `None`-check on `cv2.imread` with clearer error messages.
 
 ### Docs
+
 - Clarify that `python-logging-framework` is optional (falls back to stdlib logging).
 
 ### Style
+
 - Use `np.nonzero` over `np.where(condition)`.
