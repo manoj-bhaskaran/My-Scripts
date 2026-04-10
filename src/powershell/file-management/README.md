@@ -6,6 +6,7 @@ Scripts for file operations, distribution, copying, and archiving.
 
 - **FileDistributor.ps1** - Distributes files across directories based on rules
 - **Copy-AndroidFiles.ps1** - Copies files from Android devices to local storage
+  - Version history: `src/powershell/file-management/CHANGELOG.md` (see **Copy-AndroidFiles** section).
 - **Expand-ZipsAndClean.ps1** - Extracts ZIP archives and performs cleanup
 - **SyncRepoToTarget.ps1** - Synchronizes repository contents to target locations
 - **Get-FileHandle.ps1** - Inspects and displays file handles for troubleshooting locked files
@@ -33,6 +34,9 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **Copy-AndroidFiles.ps1 v2.3.1**
+  - Script header `.NOTES` now keeps only the current version and points to `CHANGELOG.md` for full version history.
+  - Historical entries previously kept in the script header are now consolidated in `CHANGELOG.md` (including `1.2.x` through `2.x` milestones).
 - **Copy-AndroidFiles.ps1 v2.3.0**
   - Implemented PowerShell parameter sets `Pull` and `Tar`. Mode-specific parameters are now
     restricted to their respective sets: `-Resume` and `-ProgressIntervalSeconds` are `Pull`-only;
