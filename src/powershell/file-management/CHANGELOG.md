@@ -6,6 +6,22 @@
 
 ---
 
+### 2.2.0 — 2026-04-10
+
+#### Changed
+
+- **Extracted `Invoke-ProgressWhileProcess` helper function** from `Copy-AndroidFiles.ps1`.
+  The progress-polling loop (`while (-not $proc.HasExited) { ... Write-Progress ... }`) was
+  duplicated across the pull-mode `$ShowProgress` block (lines 731–743) and the tar-to-file
+  `$ShowProgress` block (lines 857–868). A single parameterised helper now handles both call
+  sites: it accepts `Process`, `Activity`, `GetCurrentBytes` (scriptblock), `TotalBytes`, and
+  `IntervalSeconds`, covers both the known-size (percentage) and unknown-size (MB-only) display
+  branches, and calls `Write-Progress -Completed` before returning. The hard-coded `Start-Sleep 1`
+  in tar mode is replaced by the explicit `-IntervalSeconds 1` argument, making the interval
+  visible and documentable.
+
+---
+
 ### 2.1.0 — 2026-04-07
 
 #### Changed
@@ -43,8 +59,6 @@
 - **Removed dead `Write-DistributionSummary` duplicate** from `FileDistributor.ps1`. The function was never called from the script; the canonical version lives in `Private/Distribution.ps1`.
 - Bumped `FileDistributor` module version to `1.2.0`.
 - Bumped script version to `4.8.0`.
-
-
 
 ### Fixed
 
