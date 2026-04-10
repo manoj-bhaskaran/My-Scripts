@@ -49,27 +49,9 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 - **FileDistributor.ps1 v4.7.11**
   - Fixed `Invoke-FileDistribution` parameter typing for `-Files`: changed `[string[]]` to `[object[]]` so `System.IO.FileSystemInfo` inputs are not coerced to strings during parameter binding and the in-function `FileSystemInfo` handling branch remains reachable.
   - Bumped internal `FileManagement/FileDistributor` module version to `v1.1.11` and added regression coverage for the `-Files` parameter type.
-- **FileDistributor.ps1 v4.6.14**
-  - Created the new internal `FileManagement/FileDistributor` module scaffold and moved six private path helper functions (`New-Ref`, `New-Directory`, `Resolve-PathWithFallback`, `Resolve-FilePathIfDirectory`, `Initialize-FilePath`, `Resolve-SubfolderPath`) out of `FileDistributor.ps1` into `modules/FileManagement/FileDistributor/Private/PathHelpers.ps1`.
-- **FileDistributor.ps1 v4.6.13**
-  - Restored safe fallback behavior for subfolder scan failures by allowing `Get-SubfolderFileCounts` to continue with caller-provided candidate folders (when available), preventing distribution/redistribution phases from being skipped on transient enumeration errors.
-- **FileDistributor.ps1 v4.6.12**
-  - Extracted shared `Get-SubfolderFileCounts` (all five algorithms) and `Write-DistributionSummary` (rebalance/randomize/consolidate before/after summaries) to remove duplicated counting and distribution-table logging blocks.
-- **FileDistributor.ps1 v4.6.11**
-  - Refined shared move helper contracts so algorithms pass explicit source/destination/delete-mode/counter inputs to `Invoke-FileMove`, including per-folder count updates through a `[ref]` counter.
-- **FileDistributor.ps1 v4.6.10**
-  - Replaced inline startup log-cleanup helpers with a single `Clear-LogFile` invocation from the `PurgeLogs` module, including timestamp/retention filtering and truncation options.
-- **FileDistributor.ps1 v4.6.9**
-  - Reduced script-scope variable coupling in orchestration/checkpoint flows by storing effective runtime values in `RunState` and passing `SessionId`, `DeleteMode`, `MaxFilesToCopy`, and `FilesPerFolderLimit` explicitly where used.
-- **FileDistributor.ps1 v4.6.8**
-  - Moved the full FileDistributor release history out of the script header into `src/powershell/file-management/CHANGELOG.md`, leaving a concise current-version summary in `.NOTES`.
-- **FileDistributor.ps1 v4.6.7**
-  - Fixed `New-CheckpointPayload` parameter typing to accept scalar `sourceFiles`/`subfolders` values, preserving one-item checkpoint save scenarios.
-- **FileDistributor.ps1 v4.6.6**
-  - Extracted `New-CheckpointPayload` so distribution and post-processing checkpoints reuse one shared payload builder (including optional `sourceFiles` and `FilesToDelete`) instead of repeated near-identical hashtables.
-- **FileDistributor.ps1 v4.6.5**
-  - Hardened shared subfolder helper safety: candidate destinations must stay under the target root, and fresh-scan failures now fall back to provided candidates (with emergency-folder fallback preserved).
-- **FileDistributor.ps1 v4.6.4**
-  - Extracted shared `Get-SubfolderFileCounts` helper so distribution/rebalance algorithms reuse the same subfolder normalization, file-counting, and empty-candidate guard logic.
-- **FileDistributor.ps1 v4.6.3**
-  - Preserved EndOfScript queue-failure signaling: pending-deletion messages now appear only when queue insertion succeeds; queue failures are surfaced as warnings for easier troubleshooting.
+- **FileDistributor.ps1 v4.6.x module-extraction sprint (v4.6.0–v4.6.17)**
+  - Broke monolithic orchestration into reusable phase helpers and extracted shared move/subfolder/checkpoint helpers to reduce duplicated algorithm logic.
+  - Introduced and expanded the internal `FileManagement/FileDistributor` module by moving path/serialization/folder operation helpers out of script scope.
+  - Delegated startup log cleanup to `PurgeLogs` (`Clear-LogFile`) and tightened checkpoint/state parameter flow by passing runtime values explicitly.
+  - Shipped safety fixes during the extraction series: target-root containment/fallback handling, single-item checkpoint payload support, EndOfScript queue failure signaling, and restored post-run count-integrity warnings.
+  - See `src/powershell/file-management/CHANGELOG.md` for the full 4.6.x sprint rollup.

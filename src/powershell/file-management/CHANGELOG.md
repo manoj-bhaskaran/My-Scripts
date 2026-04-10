@@ -94,126 +94,20 @@ Addresses script-scope coupling issues that surfaced after functions were moved 
 - Bumped `FileDistributor` module version to `1.1.0`; updated `FunctionsToExport` in `FileDistributor.psd1` to include `Invoke-FileDistribution` and `Invoke-TargetRedistribution`.
 - Script reduces by ~475 lines (2102 → 1627).
 
-## 4.6.17 — 2026-04-01
+## 4.6.x (module-extraction sprint rollup) — 2026-03-26 to 2026-04-01
 
 ### Changed
 
-- Moved serialization helpers `ConvertItemsToPaths` and `ConvertPathsToItems` from `FileDistributor.ps1` into `Private/Serialization.ps1` in the `FileManagement/FileDistributor` module.
-- Moved folder/file operation helpers from `FileDistributor.ps1` into `Private/FolderOps.ps1`: renamed `ResolveFileNameConflict` → `Resolve-DistributionFileName`, `CreateRandomSubfolders` → `New-DistributionSubfolders`, `Remove-File` → `Remove-DistributionFile`; retained `Move-ToRecycleBin` (added Windows-only guard comment) and `Invoke-FileMove` unchanged.
-- Updated `Invoke-FileMove` (now in `FolderOps.ps1`) to call `Resolve-DistributionFileName` and `Remove-DistributionFile` via the new approved names.
-- Updated `Invoke-DistributionPhase` call site to use `New-DistributionSubfolders` instead of `CreateRandomSubfolders`.
-- Updated `Invoke-EndOfScriptDeletion` call site to use `Remove-DistributionFile` instead of `Remove-File`.
-- Added dot-source imports for `Private/Serialization.ps1` and `Private/FolderOps.ps1` in `FileDistributor.ps1`.
-- Bumped `FileDistributor` module version to `1.0.2`.
-
-## 4.6.14 — 2026-03-29
-
-### Changed
-
-- Added a new internal `FileManagement/FileDistributor` support module scaffold (`FileDistributor.psd1`, `FileDistributor.psm1`, and `Private/PathHelpers.ps1`) as the first step of Proposal 6 module splitting.
-- Moved six low-risk path/filesystem helper functions from `FileDistributor.ps1` into `Private/PathHelpers.ps1`: `New-Ref`, `New-Directory`, `Resolve-PathWithFallback`, `Resolve-FilePathIfDirectory`, `Initialize-FilePath`, and `Resolve-SubfolderPath`.
-- Updated `FileDistributor.ps1` to import the new `FileDistributor` module alongside `FileQueue`, reducing script size and centralizing helper loading.
-
-## 4.6.13 — 2026-03-27
+- Split `FileDistributor.ps1` orchestration into phase functions and extracted shared algorithm helpers (including `Invoke-FileMove`, `Get-SubfolderFileCounts`, and `New-CheckpointPayload`) to remove duplicated copy/move/checkpoint/counting logic across distribution and post-processing flows.
+- Introduced the internal `FileManagement/FileDistributor` module scaffold and migrated serialization, path, file/folder operation, and state-adjacent helper functions out of script scope into module private files with approved PowerShell verb naming.
+- Consolidated startup log cleanup by delegating inline log-trimming logic to `Core/Logging/PurgeLogs` (`Clear-LogFile`), while preserving retention, timestamp filtering, and truncation behavior.
+- Reduced script-scope coupling by threading runtime values explicitly through checkpoint/orchestration paths (`SessionId`, `DeleteMode`, `SourceFolder`, `MaxFilesToCopy`, `FilesPerFolderLimit`) and by standardizing helper contracts around explicit parameters.
+- Moved detailed FileDistributor release notes from script `.NOTES` to this standalone changelog and kept script header notes concise with a direct changelog pointer.
 
 ### Fixed
 
-- Restored fallback-candidate behavior in `Get-SubfolderFileCounts` for scan failures: when subfolder enumeration throws, the helper now attempts to continue with caller-provided candidates (after target-root normalization/validation) instead of unconditionally returning `$null`.
-- Updated distribution/redistribution call sites to pass known subfolder candidates to the helper so transient enumeration issues do not skip the phase when safe fallback inputs are available.
-
-## 4.6.12 — 2026-03-27
-
-### Changed
-
-- Refactored subfolder enumeration/counting into a streamlined private `Get-SubfolderFileCounts` helper with optional zero-file inclusion and shared error handling for all five algorithms (`DistributeFilesToSubfolders`, `RedistributeFilesInTarget`, `RebalanceSubfoldersByAverage`, `RandomizeDistributionAcrossFolders`, `ConsolidateSubfoldersToMinimum`).
-- Added private `Write-DistributionSummary` helper and wired it into rebalancing/randomization/consolidation flows for shared before/after distribution-table logging.
-- Updated algorithm call sites to derive total file counts by summing helper-returned hashtable values instead of maintaining duplicated inline counting blocks.
-
-## 4.6.11 — 2026-03-27
-
-### Changed
-
-- Refined private `Invoke-FileMove` to use explicit move inputs (`SourceFilePath`, `OriginalFileName`, `DestinationFolder`, `FolderCountRef`, delete mode, queue, counters, retry/progress settings) so algorithm helpers no longer rely on implicit state.
-- Updated the shared move path so successful copy operations increment the caller-provided per-folder counter via `FolderCountRef`, keeping destination count tracking in one place.
-- Updated all algorithm call sites (`DistributeFilesToSubfolders`, `RebalanceSubfoldersByAverage`, `RandomizeDistributionAcrossFolders`, `ConsolidateSubfoldersToMinimum`, and redistribution flow via `DistributeFilesToSubfolders`) to pass explicit move context into `Invoke-FileMove`.
-
-## 4.6.10 — 2026-03-27
-
-### Changed
-
-- Removed inline `RemoveLogEntries` and inline log truncation (`ConvertToBytes` + direct `Clear-Content`) from `FileDistributor.ps1`.
-- Added `PurgeLogs` module import and consolidated startup log-management into one `Clear-LogFile` call using `-BeforeTimestamp`, `-RetentionDays`, `-TruncateIfLarger`, and `-TruncateLog` as applicable.
-- Preserved existing startup log-cleanup behavior while delegating implementation to the shared logging module.
-
-## 4.6.9 — 2026-03-26
-
-### Changed
-
-- Reduced script-scope variable coupling in `FileDistributor.ps1` orchestration helpers by keeping effective runtime values on `RunState` and passing them explicitly to checkpoint/deletion flows.
-- `SaveState` now takes `SessionId` as an explicit parameter, and checkpoint payload construction receives `DeleteMode`, `SourceFolder`, and `MaxFilesToCopy` explicitly.
-- Distribution/post-processing phases now consume the effective `FilesPerFolderLimit` from validated runtime state instead of relying on script-scoped mutation.
-
-## 4.6.8 — 2026-03-26
-
-### Changed
-
-- Moved the detailed FileDistributor release history from the script header (`.NOTES`) into this standalone changelog file.
-- Kept only the current-version summary in `FileDistributor.ps1` and added a direct pointer to `./CHANGELOG.md`.
-
-## 4.6.7 — 2026-03-26
-
-### Fixed
-
-- **Single-item checkpoint payload inputs restored:** `New-CheckpointPayload` now accepts scalar `subfolders`/`sourceFiles` values (for example `MaxFilesToCopy=1` or a single existing target subfolder), preserving prior behavior where `ConvertItemsToPaths` wrapped single items.
-
-## 4.6.6 — 2026-03-26
-
-### Changed
-
-- **Checkpoint payload helper extracted:** Added `New-CheckpointPayload` to centralize common checkpoint state construction (`totalSourceFiles`, `totalSourceFilesAll`, `totalTargetFilesBefore`, `subfolders`, `deleteMode`, `SourceFolder`, `MaxFilesToCopy`) with optional `sourceFiles` and `FilesToDelete`.
-- **Phase checkpoints deduplicated:** `Invoke-DistributionPhase` and `Invoke-PostProcessingPhase` now call the shared helper for checkpoints 2–8 instead of manually rebuilding near-identical hashtables.
-
-## 4.6.5 — 2026-03-26
-
-### Fixed
-
-- **Target-root safety restored:** `Get-SubfolderFileCounts` now validates that normalized candidate folders are rooted under `TargetFolder`, preventing escaped destinations from being selected by distribution algorithms.
-- **Fresh-scan fallback preserved:** if optional fresh subfolder enumeration fails, the helper now logs and continues with already supplied candidates instead of returning early; emergency-subfolder creation still applies when requested.
-
-## 4.6.4 — 2026-03-26
-
-### Changed
-
-- **Shared subfolder count helper extracted:** Added `Get-SubfolderFileCounts` to centralize subfolder normalization, per-folder file counting, empty-candidate handling, and count map construction for distribution/rebalance algorithms.
-- **Algorithm prologs deduplicated:** `DistributeFilesToSubfolders`, `RedistributeFilesInTarget`, `RebalanceSubfoldersByAverage`, `RandomizeDistributionAcrossFolders`, and `ConsolidateSubfoldersToMinimum` now reuse the shared helper for their enumerate-and-count setup sequence.
-
-## 4.6.3 — 2026-03-26
-
-### Fixed
-
-- **EndOfScript queue signal preserved:** `Invoke-FileMove` now returns queueing status and logs a warning when `Add-FileToQueue` fails, and `DistributeFilesToSubfolders` reports "pending deletion" only when queue insertion succeeds.
-
-## 4.6.2 — 2026-03-26
-
-### Changed
-
-- **Shared file-move helper extracted:** Added private `Invoke-FileMove` to centralize conflict-safe destination naming, retried copy, delete-mode dispatch (`RecycleBin` / `Immediate` / `EndOfScript` queue), global file-counter updates, and progress reporting.
-- **Distribution algorithms deduplicated:** `DistributeFilesToSubfolders`, `RedistributeFilesInTarget` (via `DistributeFilesToSubfolders`), `RebalanceSubfoldersByAverage`, `RandomizeDistributionAcrossFolders`, and `ConsolidateSubfoldersToMinimum` now reuse the shared helper instead of duplicating copy/delete/progress loop internals.
-
-## 4.6.1 — 2026-03-26
-
-### Fixed
-
-- **File-count integrity warnings restored:** `Invoke-PostRunCleanup` now validates before/after file counts and warns on discrepancies, restoring behaviour that was accidentally dropped during the 4.6.0 refactor.
-  - **Distribution mode:** warns if `totalSourceFiles + totalTargetFilesBefore ≠ totalTargetFilesAfter` ("Sum of original counts does not equal the final count in the target. Possible discrepancy detected.")
-  - **Rebalancing mode:** warns if `totalTargetFilesBefore ≠ totalTargetFilesAfter` ("File count changed during rebalancing. Possible discrepancy detected.")
-  - Both branches also log a success message when counts match, confirming a clean run.
-
-## 4.6.0 — 2026-03-26
-
-### Changed
-
-- **Orchestration refactor:** Split the monolithic `Main` function into discrete phase functions (`Invoke-ParameterValidation`, `Invoke-RestoreCheckpoint`, `Invoke-DistributionPhase`, `Invoke-PostProcessingPhase`, `Invoke-EndOfScriptDeletion`, `Invoke-PostRunCleanup`) for improved readability, testability, and checkpoint isolation.
+- Restored queue-signal integrity and safety checks during modularization: EndOfScript queue failures are surfaced as warnings, single-item checkpoint payloads are accepted, and subfolder candidate normalization enforces target-root containment with fallback candidate handling on scan failures.
+- Restored post-run file-count integrity validation/warnings for both distribution and rebalance-only modes, preserving discrepancy detection that regressed during early 4.6 refactors.
 
 ## 4.5.0 — 2026-03-25
 
