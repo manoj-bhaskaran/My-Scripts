@@ -6,6 +6,26 @@
 
 ---
 
+### 2.3.0 — 2026-04-10
+
+#### Changed
+
+- **Implemented PowerShell parameter sets `Pull` and `Tar`.** Mode-specific parameters are now
+  restricted to their respective parameter sets: `-Resume` and `-ProgressIntervalSeconds` belong
+  to the `Pull` set; `-StreamTar` and `-MaxRetries` belong to the `Tar` set. PowerShell now
+  rejects invalid combinations at binding time (e.g., `-Resume` with `-StreamTar`). The default
+  parameter set is `Tar`, preserving existing default behaviour.
+
+- **Retired the `-Mode` parameter.** The active transfer mode is now determined implicitly by
+  `$PSCmdlet.ParameterSetName`. All internal `$Mode -eq 'tar'` / `$Mode -eq 'pull'` checks
+  have been replaced with `$PSCmdlet.ParameterSetName -eq 'Tar'` / `'Pull'` comparisons. This
+  eliminates the possibility of conflicting mode signals (e.g., `-Mode tar -Resume`).
+
+- **Made `-PhonePath` and `-Dest` mandatory.** Personal hard-coded default values for both
+  parameters have been removed. Both paths must be supplied explicitly on every invocation.
+
+---
+
 ### 2.2.0 — 2026-04-10
 
 #### Changed
