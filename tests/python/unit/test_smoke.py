@@ -23,6 +23,7 @@ SCRIPTS = [
     "src.python.media.find_duplicate_images",
     "src.python.media.crop_colours",
     "src.python.media._tracking",
+    "src.python.media._image_ops",
     "src.python.media.recover_extensions",
 ]
 
