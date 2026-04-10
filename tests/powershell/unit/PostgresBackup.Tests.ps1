@@ -16,12 +16,6 @@
 param()
 
 BeforeAll {
-    # Check if running on Windows
-    if ($env:OS -ne 'Windows_NT') {
-        Write-Warning "PostgresBackup tests require Windows platform. Skipping tests on $($PSVersionTable.Platform)."
-        return
-    }
-
     # Import the module
     $modulePath = Join-Path $PSScriptRoot "..\..\..\src\powershell\modules\Database\PostgresBackup\PostgresBackup.psm1"
     Import-Module $modulePath -Force
@@ -32,21 +26,23 @@ BeforeAll {
     $script:testLogFile = Join-Path $script:testDir "test.log"
     New-Item -Path $script:testDir -ItemType Directory -Force | Out-Null
     New-Item -Path $script:testBackupFolder -ItemType Directory -Force | Out-Null
-
-    # Mock external dependencies
-    Mock Get-Service {
-        return [PSCustomObject]@{
-            Name   = "postgresql-x64-17"
-            Status = "Running"
-        }
-    }
-
-    Mock Start-Service { }
-    Mock Stop-Service { }
-    Mock Start-Sleep { }
 }
 
 Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
+
+    BeforeAll {
+        # Mock external dependencies
+        Mock Get-Service {
+            return [PSCustomObject]@{
+                Name   = "postgresql-x64-17"
+                Status = "Running"
+            }
+        }
+
+        Mock Start-Service { }
+        Mock Stop-Service { }
+        Mock Start-Sleep { }
+    }
 
     BeforeEach {
         # Clean up test directory before each test
@@ -169,15 +165,6 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
         }
 
         It "Starts PostgreSQL service if not running" {
-            Mock Get-Service {
-                return [PSCustomObject]@{
-                    Name   = "postgresql-x64-17"
-                    Status = "Stopped"
-                }
-            } -ParameterFilter { $Name -eq "postgresql-x64-17" }
-
-            Mock Start-Service { }
-
             # Mock the service status change after start
             Mock Get-Service {
                 $script:serviceCallCount++
