@@ -430,13 +430,13 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
             $remainingOld.Count | Should -Be 0
         }
 
-        It "Preserves backups when min_backups is 0 but retention not met" {
+        It "Deletes old backups when min_backups is 0" {
             $now = Get-Date
 
-            # Create only recent backups
-            $recentFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-5).ToString('yyyy-MM-dd'))_10-00-00.backup"
-            "Mock data" | Out-File -FilePath $recentFile -Force
-            (Get-Item $recentFile).LastWriteTime = $now.AddDays(-5)
+            # Create an old backup that is past retention
+            $oldFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-45).ToString('yyyy-MM-dd'))_10-00-00.backup"
+            "Mock data" | Out-File -FilePath $oldFile -Force
+            (Get-Item $oldFile).LastWriteTime = $now.AddDays(-45)
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -446,8 +446,8 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
                 -retention_days 30 `
                 -min_backups 0
 
-            # Recent file should still exist
-            Test-Path $recentFile | Should -Be $true
+            # Old file should be deleted because min_backups=0 always satisfies threshold
+            Test-Path $oldFile | Should -Be $false
         }
 
         It "Handles multiple database backups in same folder" {
@@ -622,12 +622,14 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
 
         It "Handles permission denied on backup folder" {
             $restrictedFolder = Join-Path $script:testDir "restricted"
-            New-Item -Path $restrictedFolder -ItemType Directory -Force | Out-Null
+            if (Test-Path $restrictedFolder) {
+                Remove-Item -Path $restrictedFolder -Recurse -Force
+            }
 
             # Mock New-Item to fail
             Mock New-Item {
                 throw "Access to the path is denied"
-            } -ParameterFilter { $ItemType -eq "Directory" }
+            } -ModuleName 'PostgresBackup' -ParameterFilter { $Path -eq $restrictedFolder -and $ItemType -eq "Directory" }
 
             {
                 Backup-PostgresDatabase `
@@ -653,7 +655,7 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
             } | Should -Throw
         }
 
-        It "Logs all pg_dump output including warnings" {
+        It "Logs pg_dump warning output" {
             Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
                 param($ArgumentList, $LogFilePath)
                 $fileArg = $ArgumentList | Where-Object { $_ -like '--file=*' }
@@ -661,8 +663,8 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
                     $backupPath = $fileArg -replace '^--file=', ''
                     "Mock PostgreSQL backup data" | Out-File -FilePath $backupPath -Force
                 }
-                # Simulate pg_dump warnings
-                Write-Warning "pg_dump: warning: some deprecated features used"
+                # Simulate pg_dump warning output being captured to log
+                Add-Content -Path $LogFilePath -Value "pg_dump: warning: some deprecated features used" -Encoding utf8
                 $global:LASTEXITCODE = 0
             }
 
@@ -674,6 +676,7 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
 
             Test-Path $script:testLogFile | Should -Be $true
             $logContent = Get-Content -Path $script:testLogFile -Raw
+            $logContent | Should -Match "pg_dump: warning: some deprecated features used"
             $logContent | Should -Match "Backup completed successfully"
         }
 
@@ -884,7 +887,7 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
             $backupFiles.Count | Should -BeGreaterThan 0
         }
 
-        It "Handles username with special characters" {
+        It "Passes username through in no-password mode" {
 
             Backup-PostgresDatabase `
                 -dbname "testdb" `
@@ -892,7 +895,7 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
                 -log_file $script:testLogFile `
                 -user "test.user@domain"
 
-            # Username should appear in connection string
+            # No-password mode uses separate CLI args, so username should be passed as-is
             $script:capturedCommand | Should -Match "test\.user@domain"
         }
     }
