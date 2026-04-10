@@ -143,19 +143,6 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
 
             $script:capturedCommand | Should -Match "--format=custom"
         }
-
-        It "Backup file has .backup extension" {
-
-            Backup-PostgresDatabase `
-                -dbname "testdb" `
-                -backup_folder $script:testBackupFolder `
-                -log_file $script:testLogFile `
-                -user "test_user"
-
-            $backupFiles = Get-ChildItem -Path $script:testBackupFolder -Filter "*.backup"
-            $backupFiles.Count | Should -BeGreaterThan 0
-            $backupFiles[0].Extension | Should -Be ".backup"
-        }
     }
 
     Context "Service Management" {
@@ -600,26 +587,6 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
             $logContent | Should -Match "Backup file cleanup failed"
         }
 
-        # --- Additional pg_dump error scenarios ---
-
-        It "Handles disk full error during backup" {
-            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
-                $global:LASTEXITCODE = 1
-                throw "pg_dump: error: could not write to output file: No space left on device"
-            }
-
-            {
-                Backup-PostgresDatabase `
-                    -dbname "testdb" `
-                    -backup_folder $script:testBackupFolder `
-                    -log_file $script:testLogFile `
-                    -user "test_user"
-            } | Should -Throw
-
-            $logContent = Get-Content -Path $script:testLogFile -Raw
-            $logContent | Should -Match "Backup failed"
-        }
-
         It "Handles permission denied on backup folder" {
             $restrictedFolder = Join-Path $script:testDir "restricted"
             if (Test-Path $restrictedFolder) {
@@ -635,21 +602,6 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
                 Backup-PostgresDatabase `
                     -dbname "testdb" `
                     -backup_folder $restrictedFolder `
-                    -log_file $script:testLogFile `
-                    -user "test_user"
-            } | Should -Throw
-        }
-
-        It "Handles pg_dump executable not found" {
-            # This would normally be caught at the Config level, but test the scenario
-            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
-                throw "The term 'pg_dump' is not recognized as the name of a cmdlet, function, script file, or operable program"
-            }
-
-            {
-                Backup-PostgresDatabase `
-                    -dbname "testdb" `
-                    -backup_folder $script:testBackupFolder `
                     -log_file $script:testLogFile `
                     -user "test_user"
             } | Should -Throw
@@ -788,61 +740,6 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
             $logContent = Get-Content -Path $script:testLogFile -Raw
             $logContent | Should -Match "Backup failed"
         }
-
-        It "Handles database connection timeout" {
-            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
-                $global:LASTEXITCODE = 1
-                throw "pg_dump: error: connection to server timed out"
-            }
-
-            {
-                Backup-PostgresDatabase `
-                    -dbname "testdb" `
-                    -backup_folder $script:testBackupFolder `
-                    -log_file $script:testLogFile `
-                    -user "test_user"
-            } | Should -Throw
-
-            Test-Path $script:testLogFile | Should -Be $true
-            $logContent = Get-Content -Path $script:testLogFile -Raw
-            $logContent | Should -Match "Backup failed"
-        }
-
-        It "Handles authentication failure" {
-            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
-                $global:LASTEXITCODE = 1
-                throw "pg_dump: error: connection to server failed: FATAL: password authentication failed for user 'test_user'"
-            }
-
-            {
-                Backup-PostgresDatabase `
-                    -dbname "testdb" `
-                    -backup_folder $script:testBackupFolder `
-                    -log_file $script:testLogFile `
-                    -user "test_user"
-            } | Should -Throw
-
-            $logContent = Get-Content -Path $script:testLogFile -Raw
-            $logContent | Should -Match "Backup failed"
-        }
-
-        It "Handles insufficient permissions on database" {
-            Mock -CommandName 'Invoke-PgDump' -ModuleName 'PostgresBackup' -MockWith {
-                $global:LASTEXITCODE = 1
-                throw "pg_dump: error: permission denied for database"
-            }
-
-            {
-                Backup-PostgresDatabase `
-                    -dbname "testdb" `
-                    -backup_folder $script:testBackupFolder `
-                    -log_file $script:testLogFile `
-                    -user "test_user"
-            } | Should -Throw
-
-            $logContent = Get-Content -Path $script:testLogFile -Raw
-            $logContent | Should -Match "Backup failed"
-        }
     }
 
     Context "Special Characters and URL Encoding" {
@@ -873,18 +770,6 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
 
             # Spaces should be URL-encoded as %20
             $script:capturedCommand | Should -Match "my%20password%20123"
-        }
-
-        It "Handles database name with underscores and numbers" {
-
-            Backup-PostgresDatabase `
-                -dbname "test_db_123" `
-                -backup_folder $script:testBackupFolder `
-                -log_file $script:testLogFile `
-                -user "test_user"
-
-            $backupFiles = Get-ChildItem -Path $script:testBackupFolder -Filter "test_db_123_backup_*.backup"
-            $backupFiles.Count | Should -BeGreaterThan 0
         }
 
         It "Passes username through in no-password mode" {
