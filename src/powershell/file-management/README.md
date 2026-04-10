@@ -34,10 +34,10 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
-- **Copy-AndroidFiles.ps1 v2.3.1**
+- **Copy-AndroidFiles.ps1 v2.3.1** (2026-04-10)
   - Script header `.NOTES` now keeps only the current version and points to `CHANGELOG.md` for full version history.
   - Historical entries previously kept in the script header are now consolidated in `CHANGELOG.md` (including `1.2.x` through `2.x` milestones).
-- **Copy-AndroidFiles.ps1 v2.3.0**
+- **Copy-AndroidFiles.ps1 v2.3.0** (2026-04-10)
   - Implemented PowerShell parameter sets `Pull` and `Tar`. Mode-specific parameters are now
     restricted to their respective sets: `-Resume` and `-ProgressIntervalSeconds` are `Pull`-only;
     `-StreamTar` and `-MaxRetries` are `Tar`-only. PowerShell rejects invalid combinations at
