@@ -34,6 +34,11 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **Documentation (2026-04-10)**
+  - Normalized `src/powershell/file-management/CHANGELOG.md` structure across **Copy-AndroidFiles** and **FileDistributor** sections.
+  - Added a short changelog table of contents for faster navigation.
+  - Standardized FileDistributor release/category heading hierarchy and category naming for consistency.
+  - Standardized horizontal-rule usage to a single section separator between the two script sections.
 - **Copy-AndroidFiles.ps1 v2.3.1** (2026-04-10)
   - Script header `.NOTES` now keeps only the current version and points to `CHANGELOG.md` for full version history.
   - Historical entries previously kept in the script header are now consolidated in `CHANGELOG.md` (including `1.2.x` through `2.x` milestones).
