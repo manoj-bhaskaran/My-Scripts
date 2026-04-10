@@ -199,26 +199,18 @@
 
 #### Changed
 
-- **Option A — module consolidation.**
-
-- **Eliminated double-loading of private module files.** `FileDistributor.ps1` previously dot-sourced all six `Private/*.ps1` files after importing the module, causing each private function to be defined twice (once in module scope, once in script scope). The script-scope copies shadowed the module-scope copies for script-level callers.
-- **Eliminated duplicate `ErrorHandling`/`FileOperations` imports from `FileDistributor.psm1`.** Both Core modules are now imported once, by `FileDistributor.ps1`, before the `FileDistributor.psd1` module is loaded. Removed the redundant `Import-Module` calls from the module loader.
-- **Moved orchestration functions to the module as public functions.** The following functions, which previously existed only in `FileDistributor.ps1` and depended on private module helpers, have been promoted to `Public/` files in `FileManagement/FileDistributor` and exported by the module: `Initialize-FileDistributorPaths`, `Invoke-ParameterValidation`, `Invoke-RestoreCheckpoint`, `New-CheckpointPayload`, `Invoke-DistributionPhase`, `Invoke-PostProcessingPhase`, `Invoke-EndOfScriptDeletion`, `Invoke-PostRunCleanup`, `Invoke-DistributionLockRelease`.
-- **Fixed `LogMessage` calls in private module files.** `Private/FileLock.ps1`, `Private/State.ps1`, and `Private/Serialization.ps1` called `LogMessage` (a script-scope function defined only in `FileDistributor.ps1`), causing `CommandNotFoundException` when those private functions were invoked from module scope. All `LogMessage` calls have been replaced with the appropriate `Write-Log*` framework calls (`Write-LogInfo`, `Write-LogWarning`, `Write-LogError`, `Write-LogDebug`).
-- **Moved `Test-EndOfScriptCondition` to `Private/OrchestratorHelpers.ps1`** so it is available to the module-scope `Invoke-EndOfScriptDeletion`.
-- **Removed dead `Write-DistributionSummary` duplicate** from `FileDistributor.ps1`. The function was never called from the script; the canonical version lives in `Private/Distribution.ps1`.
+- Consolidated `FileDistributor` module loading so private helpers are loaded once in module scope instead of being re-dot-sourced in `FileDistributor.ps1`.
+- Removed redundant `ErrorHandling` and `FileOperations` imports from `FileDistributor.psm1`; these Core modules are now imported once in `FileDistributor.ps1` before loading `FileDistributor.psd1`.
+- Promoted orchestration functions to module `Public/` exports: `Initialize-FileDistributorPaths`, `Invoke-ParameterValidation`, `Invoke-RestoreCheckpoint`, `New-CheckpointPayload`, `Invoke-DistributionPhase`, `Invoke-PostProcessingPhase`, `Invoke-EndOfScriptDeletion`, `Invoke-PostRunCleanup`, and `Invoke-DistributionLockRelease`.
+- Replaced remaining private-module `LogMessage` calls with framework-native `Write-Log*` functions in `Private/FileLock.ps1`, `Private/State.ps1`, and `Private/Serialization.ps1`.
+- Moved `Test-EndOfScriptCondition` to `Private/OrchestratorHelpers.ps1` to support module-scope `Invoke-EndOfScriptDeletion`.
+- Removed the dead `Write-DistributionSummary` duplicate from `FileDistributor.ps1`; the canonical implementation remains in `Private/Distribution.ps1`.
 - Bumped `FileDistributor` module version to `1.2.0`.
 - Bumped script version to `4.8.0`.
 
-#### Fixed
-
-- Removed a vestigial `[int]$TotalFiles` parameter from `Invoke-TargetRedistribution` in `src/powershell/modules/FileManagement/FileDistributor/Public/Invoke-TargetRedistribution.ps1`. The parameter was not used anywhere in the function body and had become stale after redistribution progress was refactored to use per-phase totals. Updated the `FileDistributor.ps1` call site in `Invoke-DistributionPhase` to stop passing `-TotalFiles 0`.
-- Removed a dead inner null-subfolder guard inside the root-redistribution block of `Invoke-TargetRedistribution` (`if ($normalizedSubfolders.Count -eq 0) { ... }`). This branch was unreachable because the earlier normalization guard already guarantees at least one destination subfolder by creating an emergency subfolder when needed.
-- Bumped `FileDistributor` module version to `1.1.13`.
-
 ### 4.7.x (rollup) — 2026-04-01 to 2026-04-05
 
-Addresses script-scope coupling issues that surfaced after functions were moved into the `FileDistributor` module in 4.7.0. Module versions advanced from `1.1.0` to `1.1.12`.
+Addresses script-scope coupling issues that surfaced after functions were moved into the `FileDistributor` module in 4.7.0. Module versions advanced from `1.1.0` to `1.1.13`.
 
 #### Changed
 
@@ -250,6 +242,8 @@ Addresses script-scope coupling issues that surfaced after functions were moved 
 #### Fixed
 
 - Fixed `-Files` parameter type in `Invoke-FileDistribution` from `[string[]]` to `[object[]]` so `FileSystemInfo` inputs are not silently coerced to strings at binding time.
+- Removed vestigial `[int]$TotalFiles` from `Invoke-TargetRedistribution` and updated `Invoke-DistributionPhase` call sites to stop passing `-TotalFiles 0`.
+- Removed an unreachable inner `if ($normalizedSubfolders.Count -eq 0)` guard in `Invoke-TargetRedistribution`; the earlier normalization guard already ensures at least one valid destination subfolder.
 
 #### Added
 

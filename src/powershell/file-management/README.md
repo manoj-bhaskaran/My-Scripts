@@ -51,21 +51,12 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
     set. Pass pull-only parameters to use pull mode; pass tar-only parameters (or none) for tar mode.
   - Made `-PhonePath` and `-Dest` mandatory; personal hard-coded default values removed.
 - **FileDistributor.ps1 v4.8.0** (module v1.2.0)
-  - **Option A: module consolidation** — eliminated double-loading of all six private `FileManagement/FileDistributor` module files. The six dot-source lines previously in `FileDistributor.ps1` have been removed; private functions now live exclusively in module scope, loaded once by the module loader.
-  - Removed duplicate `Import-Module` calls for `ErrorHandling` and `FileOperations` from `FileDistributor.psm1`; both Core modules are now imported once by the script before the `FileDistributor` module is loaded.
-  - Promoted orchestration functions (`Initialize-FileDistributorPaths`, `Invoke-ParameterValidation`, `Invoke-RestoreCheckpoint`, `New-CheckpointPayload`, `Invoke-DistributionPhase`, `Invoke-PostProcessingPhase`, `Invoke-EndOfScriptDeletion`, `Invoke-PostRunCleanup`, `Invoke-DistributionLockRelease`) to the module's `Public/` folder and exported them.
-  - Fixed remaining `LogMessage` calls in private module files (`FileLock.ps1`, `State.ps1`, `Serialization.ps1`) that caused `CommandNotFoundException` when those functions were invoked from module scope; replaced with `Write-Log*` framework calls.
-  - Removed dead `Write-DistributionSummary` duplicate from `FileDistributor.ps1`; the canonical version lives in `Private/Distribution.ps1`.
-- **FileDistributor.ps1 v4.7.13**
-  - Removed a vestigial, unused `-TotalFiles` parameter from module function `Invoke-TargetRedistribution` and updated the script call site accordingly.
-  - Removed a dead inner `if ($normalizedSubfolders.Count -eq 0)` guard in `Invoke-TargetRedistribution`; this branch was unreachable because an earlier guard already creates an emergency subfolder whenever no valid subfolders exist.
-  - Bumped internal `FileManagement/FileDistributor` module version to `v1.1.13`.
-- **FileDistributor.ps1 v4.7.12**
-  - Removed direct `Write-Host` completion output from module function `Invoke-FileDistribution`; completion is now logged via `Write-LogInfo` only for consistent framework-managed logging behavior.
-  - Bumped internal `FileManagement/FileDistributor` module version to `v1.1.12`.
-- **FileDistributor.ps1 v4.7.11**
-  - Fixed `Invoke-FileDistribution` parameter typing for `-Files`: changed `[string[]]` to `[object[]]` so `System.IO.FileSystemInfo` inputs are not coerced to strings during parameter binding and the in-function `FileSystemInfo` handling branch remains reachable.
-  - Bumped internal `FileManagement/FileDistributor` module version to `v1.1.11` and added regression coverage for the `-Files` parameter type.
+  - Consolidated module/script loading boundaries: private helpers are now loaded once in module scope, redundant Core module imports were removed, and orchestration helpers were promoted to module `Public/` exports.
+  - Replaced remaining private-module `LogMessage` calls with framework-native `Write-Log*` functions to avoid module-scope `CommandNotFoundException`.
+  - Removed dead script-local duplication (`Write-DistributionSummary`) and aligned helper placement (`Test-EndOfScriptCondition`) with module-scope orchestration.
+- **FileDistributor.ps1 v4.7.x rollup** (v4.7.0–v4.7.13; module v1.1.0→v1.1.13)
+  - Hardened moduleized distribution/post-processing flows by fixing script-scope coupling (`LogMessage` migration, explicit state/retry parameters, warning/error counter propagation, and restart/checkpoint wiring).
+  - Landed stability fixes across redistribution and rebalance logic (`-Files` parameter typing, random-selection race clamp, divide-by-zero logging guards, unused `-TotalFiles` removal, and unreachable normalized-subfolder guard removal).
 - **FileDistributor.ps1 v4.6.x module-extraction sprint (v4.6.0–v4.6.17)**
   - Broke monolithic orchestration into reusable phase helpers and extracted shared move/subfolder/checkpoint helpers to reduce duplicated algorithm logic.
   - Introduced and expanded the internal `FileManagement/FileDistributor` module by moving path/serialization/folder operation helpers out of script scope.
