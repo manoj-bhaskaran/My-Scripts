@@ -192,6 +192,19 @@
 
 ## FileDistributor
 
+### 4.8.1 — 2026-04-11
+
+#### Changed
+
+- Moved `Get-BestReceiver` helper out of the nested function definition inside `Invoke-FolderRebalance`
+  and into module-private scope (`Private/Distribution.ps1`), alongside the other distribution
+  helpers. The function is no longer re-defined on every call to `Invoke-FolderRebalance` and can
+  now be unit-tested in isolation.
+- Changed `Remove-Item -Path $StateFilePath -Force` in `Invoke-PostRunCleanup` to use
+  `-LiteralPath` and `-ErrorAction SilentlyContinue` so a missing or already-removed state file
+  no longer emits a spurious non-terminating error on clean first runs.
+- Bumped `FileDistributor` module version to `1.2.1`.
+
 ### 4.8.0 — 2026-04-05
 
 #### Changed

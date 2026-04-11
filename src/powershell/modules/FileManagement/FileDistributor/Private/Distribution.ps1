@@ -72,6 +72,17 @@ function Get-SubfolderFileCounts {
     return $folderCounts
 }
 
+function Get-BestReceiver([hashtable]$map) {
+    if ($map.Keys.Count -eq 0) { return $null }
+    $bestKey = $null; $bestVal = -1
+    foreach ($k in $map.Keys) {
+        $v = [int]$map[$k]
+        if ($v -gt $bestVal) { $bestVal = $v; $bestKey = $k }
+    }
+    if ($bestVal -le 0) { return $null }
+    return $bestKey
+}
+
 function Write-DistributionSummary {
     param(
         [Parameter(Mandatory)][hashtable]$FolderCounts,
