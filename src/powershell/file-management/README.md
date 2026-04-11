@@ -6,7 +6,7 @@ Scripts for file operations, distribution, copying, and archiving.
 
 - **FileDistributor.ps1** - Distributes files across directories based on rules
 - **Copy-AndroidFiles.ps1** - Copies files from Android devices to local storage
-  - Version history: `src/powershell/file-management/CHANGELOG.md` (see **Copy-AndroidFiles** section).
+  - Version history: [Copy-AndroidFiles.CHANGELOG.md](Copy-AndroidFiles.CHANGELOG.md)
 - **Expand-ZipsAndClean.ps1** - Extracts ZIP archives and performs cleanup
 - **SyncRepoToTarget.ps1** - Synchronizes repository contents to target locations
 - **Get-FileHandle.ps1** - Inspects and displays file handles for troubleshooting locked files
@@ -75,4 +75,4 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
   - Introduced and expanded the internal `FileManagement/FileDistributor` module by moving path/serialization/folder operation helpers out of script scope.
   - Delegated startup log cleanup to `PurgeLogs` (`Clear-LogFile`) and tightened checkpoint/state parameter flow by passing runtime values explicitly.
   - Shipped safety fixes during the extraction series: target-root containment/fallback handling, single-item checkpoint payload support, EndOfScript queue failure signaling, and restored post-run count-integrity warnings.
-  - See `src/powershell/file-management/CHANGELOG.md` for the full 4.6.x sprint rollup.
+  - See `src/powershell/file-management/FileDistributor.CHANGELOG.md` for the full 4.6.x sprint rollup.

@@ -120,7 +120,7 @@
 
 .NOTES
     Version: 2.3.2
-    See CHANGELOG.md in this directory for full version history.
+    See Copy-AndroidFiles.CHANGELOG.md in this directory for full version history.
 
     PREREQUISITES
       1) Enable Developer Options on the phone

@@ -8,8 +8,8 @@ The script ensures that files are evenly distributed across subfolders in the ta
  .VERSION
  4.8.2
 
- CHANGELOG:
-   See CHANGELOG.md in this directory for full release history.
+  CHANGELOG:
+    See FileDistributor.CHANGELOG.md in this directory for full release history.
 
 File name conflicts are resolved using the **RandomName** module’s `Get-RandomFileName`. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
 
@@ -229,7 +229,7 @@ To display the script's help text:
 Version: 4.8.2 (2026-04-11).
 
 For full release history (including v4.7.1 and v4.7.2), see:
-- ./CHANGELOG.md (FileDistributor section)
+- ./FileDistributor.CHANGELOG.md
 
 Script Workflow:
 
