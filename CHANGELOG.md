@@ -245,7 +245,7 @@ Entries older than the current minor release line are condensed to architectural
 - Includes internal v2.7.3–v2.7.5 iterations.
 - Removed Safety from repository security tooling due to a vulnerable transitive `nltk` chain; standardized dependency scanning on `pip-audit` in pre-commit and CI.
 - Resolved lockfile and resolver issues across follow-up fixes (v2.7.5/v2.7.4), including compatible `virtualenv`/`filelock` pins and lockfile-aligned scanning.
-- Sync-MacriumBackups fixes from v2.6.1-v2.6.5: corrected `MaxChunkMB` handling, improved rclone flag compatibility, and aligned sanitized/logged command output with documented formats.
+- Sync-MacriumBackups fixes from v2.6.1-v2.6.6: corrected `MaxChunkMB` handling, improved rclone flag compatibility, refined sanitised/logged command output, and fixed AutoResume `reason` state handling (see archived pre-2.7.6 script history below).
 - Remove-MergedGitBranch fix (v2.7.3): dry-run no longer prunes remote-tracking refs, and `-LogFile` output routing was corrected.
 - FileDistributor v4.4.1 output fixes: clearer rebalance skip reasons and reduced console noise in rebalance-only mode.
 - Repository maintenance fixes tracked in this cycle: duplicate commit-validation cleanup (#653) and hook-permission cleanup completed through pre-commit migration (#648, #655, #647).
@@ -328,143 +328,18 @@ Entries older than the current minor release line are condensed to architectural
 
 ---
 
-## Sync-MacriumBackups.ps1 — Script Version History (Historical / Archived)
+## Sync-MacriumBackups.ps1 — Pre-2.7.6 Script Version History (archived)
 
-The entries below document `Sync-MacriumBackups.ps1` script versions that pre-date
-the numbered project releases above. They were previously kept as an inline CHANGELOG
-inside the script's `.NOTES` block and have been moved here for centralised tracking.
-Current consolidated tracking appears under [2.7.6] and [Unreleased].
+Archived script-only history from before numbered project releases. For consolidated release tracking, see [2.7.6] and [Unreleased].
 
-### v2.6.6 — 2026-01-15
-
-#### Fixed
-- Added missing `reason` property to state object initialisation to fix AutoResume functionality.
-- Resolved "property 'reason' cannot be found" error in `Mark-InterruptedState` function.
-
-### v2.6.5 — 2026-01-15
-
-#### Fixed
-- Aligned rclone log formatting with supported `--log-format` options (`date,time,microseconds`).
-- Removed unsupported log time format detection logic to match rclone documentation.
-
-### v2.6.4 — 2026-01-15
-
-#### Fixed
-- Avoided unsupported rclone log date flags by detecting available options before adding them.
-- Ensured sanitised rclone command logging always includes arguments by avoiding `$Args` parameter collisions.
-
-### v2.6.3 — 2026-01-15
-
-#### Fixed
-- Added single-line and multi-line sanitised rclone command output for easier reconstruction and debugging.
-- Avoided logging a dangling rclone backslash line without arguments.
-
-### v2.6.2 — 2026-01-15
-
-#### Fixed
-- Enhanced rclone command logging to display each argument on a separate line for better debugging.
-- Ensures full command can be reconstructed even when rclone fails with syntax errors.
-
-### v2.6.1 — 2026-01-15
-
-#### Fixed
-- Allowed 4096 MB rclone chunk size when `MaxChunkMB` is set to the documented maximum.
-
-### v2.6.0 — 2026-01-15
-
-#### Changed
-- Refactored `Initialize-StateFile` to eliminate duplicated interrupted state handling logic.
-- Added `Mark-InterruptedState` helper function to consolidate state marking logic.
-- Extracted script version from `.NOTES` into dedicated `$ScriptVersion` variable for programmatic access.
-- Enhanced state file to include `scriptVersion` field for version tracking.
-- Improved logging to include script version at startup and state initialisation.
-
-### v2.5.1 — 2026-01-15
-
-#### Added
-- Sanitised rclone command line logging for auditability.
-- Framework log entries for framework, rclone, and state file paths.
-- Consistent rclone log timestamp formatting aligned with framework logs.
-
-### v2.5.0 — 2026-01-14
-
-#### Added
-- Post-run verification summary showing exit code and sync duration after rclone completes.
-- Sync duration tracking: captures `syncStartTime` and `syncDurationSeconds` in state file.
-- `Format-Duration` helper function for human-readable duration formatting (e.g., "5h 23m 15s").
-- Startup sanity check: corrupt/unreadable state files are renamed with timestamp instead of deleted.
-- Corrupt state files preserved for debugging with `.corrupt_TIMESTAMP` suffix.
-
-#### Changed
-- `Complete-StateFile` now accepts and persists `SyncDurationSeconds` parameter.
-- State structure includes `syncStartTime` and `syncDurationSeconds` fields.
-- `Read-StateFile` handles corrupt files gracefully by renaming them before continuing.
-- Enhanced state finalisation logging includes formatted sync duration when available.
-
-#### Fixed
-- Improved state consistency: all error paths guaranteed to update state to Failed before exit.
-- State file corruption no longer blocks script execution.
-
-### v2.4.0 — 2026-01-13
-
-#### Added
-- Auto-resume behaviour with `-AutoResume` flag to intelligently restart sync based on previous run status.
-- `-Force` flag to override auto-resume logic and run sync regardless of previous success.
-- `Invoke-AutoResumeLogic` function to evaluate previous run state and determine if sync should proceed.
-- Clean start behaviour (default) that removes existing state file when AutoResume is not set.
-- Enhanced logging for resume/retry scenarios showing previous run context.
-- Exit code 0 when previous run succeeded and `-Force` not set (with AutoResume).
-- Decision path logging clearly showing why sync is running or being skipped.
-
-#### Changed
-- `Initialize-StateFile` now accepts `CleanStart` parameter for explicit state cleanup.
-- Modified state initialisation to log different messages for resume vs retry scenarios.
-- Updated parameter documentation with AutoResume and Force usage examples.
-
-### v2.3.0 — 2026-01-13
-
-#### Added
-- Single-instance locking using named mutex to prevent concurrent runs.
-- Mutex-based lock with 120-second timeout when another instance is running.
-- Graceful exit with exit code 2 when lock cannot be acquired.
-- Automatic lock release in `finally` block to ensure cleanup.
-- Detailed logging for lock acquisition, waiting, and release.
-
-#### Fixed
-- Handle `AbandonedMutexException` from crashed previous instances as successful lock acquisition.
-- Prevent false-positive concurrent instance detection when previous run crashed unexpectedly.
-
-### v2.2.0 — 2026-01-13
-
-#### Added
-- Persistent state tracking with JSON state file (`Sync-MacriumBackups_state.json`).
-- State file records: `lastRunId` (GUID), `status`, `startTime`, `endTime`, `lastExitCode`, `lastStep`.
-- Atomic state file writes using temporary file and rename.
-- Detection and warning for interrupted runs (`status=InProgress` from previous run).
-- State updates at each major step: Initialize, Test-BackupPath, Test-Rclone, Test-Network, Sync-Backups.
-- State finalisation on success (`Succeeded`) and failure (`Failed`) with exit codes.
-- Exception handling to mark state as Failed on unhandled errors.
-
-### v2.1.0 — 2026-01-13
-
-#### Changed
-- Configure logging to centralised `Scripts\logs` directory.
-- Removed `LogFile` parameter (now automatically set to logs directory).
-- Framework logs: `Sync-MacriumBackups.ps1_powershell_YYYY-MM-DD.log`.
-- Rclone logs: `Sync-MacriumBackups_rclone.log`.
-- Added log path output on script start for verification.
-
-#### Fixed
-- Use rclone's `--log-file` parameter instead of PowerShell redirection.
-- Eliminates PowerShell stderr errors when rclone writes INFO messages.
-- Cleaner log output without `RemoteException` errors.
-
-### v2.0.0 — 2025-11-16
-
-#### Changed
-- Migrated to `PowerShellLoggingFramework.psm1` for standardised logging.
-- Removed custom `Write-Log` function.
-- Replaced `Write-Log` calls with `Write-LogInfo`, `Write-LogError`, `Write-LogWarning`.
+- **v2.6.0** (2026-01-15) - Refactored `Initialize-StateFile`; introduced `$ScriptVersion` and state file `scriptVersion` tracking.
+- **v2.5.0** (2026-01-14) - Added sync duration tracking and corrupt state file recovery.
+- **v2.4.0** (2026-01-13) - Added `-AutoResume` / `-Force` flags and `Invoke-AutoResumeLogic`.
+- **v2.3.0** (2026-01-13) - Added named-mutex single-instance locking with `AbandonedMutexException` handling.
+- **v2.2.0** (2026-01-13) - Added persistent JSON state tracking (`Sync-MacriumBackups_state.json`).
+- **v2.1.0** (2026-01-13) - Centralised logging in `Scripts\\logs` and switched rclone logging to `--log-file`.
+- **v2.0.0** (2025-11-16) - Migrated logging to `PowerShellLoggingFramework.psm1`.
+- **v2.6.1-v2.6.6** (2026-01-15) - rclone flag compatibility, sanitised command logging refinements, and AutoResume `reason` property bug fix.
 
 ---
 
