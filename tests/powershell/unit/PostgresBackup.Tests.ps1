@@ -352,11 +352,12 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
             It "Handles retention_days set to 0" {
                 $now = Get-Date
                 $oldFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-10).ToString('yyyy-MM-dd'))_10-00-00.backup"
-                # Anchor one file with a timestamp slightly ahead of now so it registers as recent
+                # Anchor one file 1 day in the future so it is always newer than Remove-OldBackups'
+                # internal (Get-Date) cutoff, regardless of how long execution takes
                 $recentFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.ToString('yyyy-MM-dd'))_23-59-59.backup"
                 New-TestBackupFile -Path $oldFile -AgeDays 10
                 New-TestBackupFile -Path $recentFile
-                (Get-Item $recentFile).LastWriteTime = $now.AddSeconds(2)
+                (Get-Item $recentFile).LastWriteTime = $now.AddDays(1)
 
                 InModuleScope 'PostgresBackup' -Parameters @{ Folder = $script:testBackupFolder; Log = $script:testLogFile } {
                     param($Folder, $Log)
