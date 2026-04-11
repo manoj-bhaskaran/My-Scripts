@@ -53,7 +53,7 @@ function Invoke-AdbSh {
             Add-Content -Path $DebugLog -Value ("[{0}] adb shell << {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $one)
         }
 
-        $result = adb shell $one
+        $result = Invoke-AdbCommand shell $one
 
         if ($DebugMode -and $DebugLog) {
             $len = if ($result) { $result.Length } else { 0 }

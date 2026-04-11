@@ -54,7 +54,7 @@ Describe 'Invoke-AdbSh' {
     }
 
     It 'preserves control-structure newlines when flattening the shell script' {
-        Mock adb {
+        Mock Invoke-AdbCommand {
             param([Parameter(ValueFromRemainingArguments = $true)] $Arguments)
             $script:lastAdbArgs = $Arguments
             'ok'
@@ -68,7 +68,7 @@ Describe 'Invoke-AdbSh' {
     }
 
     It 'writes debug log entries when debug logging is enabled' {
-        Mock adb { 'payload' } -ModuleName AdbHelpers
+        Mock Invoke-AdbCommand { 'payload' } -ModuleName AdbHelpers
         Mock Add-Content { } -ModuleName AdbHelpers -ParameterFilter { $Path -eq 'TestDrive:/adb-debug.log' }
 
         Invoke-AdbSh -Script 'echo hi' -DebugMode -DebugLog 'TestDrive:/adb-debug.log' | Out-Null
