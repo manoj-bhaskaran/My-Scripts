@@ -364,47 +364,27 @@ Addresses script-scope coupling issues that surfaced after functions were moved 
 
 #### Added
 
-- **Conditional debug logging:** Debug messages ("DEBUG:") are now only written to the log file and console (via Write-Debug) when the script is run with the built-in -Debug switch. Added [CmdletBinding()] to enable common parameters, $script:DebugMode to detect mode, [switch]$IsDebug to LogMessage, and conditioned logging/output accordingly. This reduces log clutter in normal runs.
+- Conditional debug logging: `DEBUG:` messages are emitted only when running with the `-Debug` switch.
 
 ### 3.1.0–3.1.26 (rollup) — 2025-09-28 → 2025-09-30
 
 #### Added
 
-- **`-MaxFilesToCopy`:** Cap per-run copies (`-1` all, `0` none, `N` first N); persisted and restart-aware.
-- **Deeper diagnostics:** DEBUG tracing across enumeration, conversions, state I/O, candidate counts (eligible/min/candidates), and pre-normalization destination selection. `Resolve-SubfolderPath` logs `GetFullPath` attempts/exceptions.
-- **Defensive last-mile checks:** Re-validate final destination; if invalid or the target root, auto-select a safe validated subfolder (create an emergency one if needed).
+- **`-MaxFilesToCopy`:** Cap per-run copies (`-1` = all, `0` = none, `N` = first N); persisted and restart-aware.
 
 #### Changed
 
-- **Chooser hardening:** `DistributeFilesToSubfolders` builds candidates from a fresh enumeration of the target root plus caller input; canonicalizes with `GetFullPath`, enforces “under target root & not the root,” and dedupes. Wildcard tests removed.
-- **State & restarts:** Persist enumeration totals and deterministic _selected_ files; restarts must match.
-- **Enumeration:** Prefer `Get-ChildItem -LiteralPath -Force` with `.PSIsContainer`.
-- **Progress/noise:** Separate **enumerated** vs **selected**; keep one consolidated DEBUG line per decision; drop verbose/duplicate logs.
-- **Locking/backoff:** State-file locking now uses capped exponential backoff + small jitter and logs the last exception on failure; sidecar contention wait reduced 10s → 1s (still honors max-attempt backoff).
-- **Typo fix:** Log label now prints `FilesPerFolderLimit`.
+- Chooser hardening: candidates built from fresh target enumeration, canonicalized with `GetFullPath`, deduplicated, and validated against target root; state persists selected files for restart-matching; locking uses capped exponential backoff with jitter.
 
 #### Fixed
 
-- **Root safety:** Block writes to the target **root** even if “under target”; reroute to a validated subfolder.
-- **Normalization & escapes:** Replace wildcard checks with `[IO.Path]::GetFullPath(...)` + case-insensitive `StartsWith(...)` against a normalized target root; prevent root escapes, mixed-case false positives, and accidental root placement.
-- **False “escaped target root ('')” warnings:** Recompute `targetRootNormalized` at function entry (or pass explicitly). Guard triggers only when `startsWithTarget` is false, destination equals root, or normalization fails.
-- **Null-safe debug logging:** Recompute `$destNormalized` after fallback/emergency creation; warnings print `<null>` when unknown; all `StartsWith`/`IsPathRooted` calls are null-safe.
-- **Candidate selection (scalar pipeline):** Wrap `$candidates` in `@()` to force array semantics; prevents string indexing that yielded drive letter `D` for single-item sets and eliminated “Destination escaped target root ('<null>')” during single-min-count redistribution.
-- **Input/path hygiene:** Early-reject `C`, `C:`, `C:foo` forms; anchor relatives under `TargetRoot`; preserve special chars `()!@$~`.
-- **Stability:** `ReleaseFileLock` is null-safe; enumeration filter no longer zeroes valid directories; sidecar writes (`FileDistributor-State.json.sha256`) are retried with clearer errors.
-
-#### Notes
-
-- Eliminates spurious warnings like “Sanitizing non-rooted destination folder ''” and “using subfolder 'D'.”
-- No breaking parameter/state changes beyond persisting `MaxFilesToCopy`; behavior is stricter and diagnostics clearer.
+- Hardened destination path normalization to prevent root-landing, drive-letter collapses, and mixed-case escapes.
 
 ### 3.0.0–3.0.9 (rollup) — 2025-09-18 → 2025-09-25
 
 #### Changed
 
-- **⚠️ Breaking.**
-
-- **Random name provider is module-only.** Removed legacy `randomname.ps1` and `-RandomNameScriptPath`. Import order: `-RandomNameModulePath` → script-root `powershell\module\RandomName\RandomName.psd1/.psm1` → `Import-Module RandomName` from `$env:PSModulePath`.
+- **⚠️ Breaking:** Random name provider is module-only; `-RandomNameScriptPath` removed. Import order: `-RandomNameModulePath` → script-root module → `Import-Module RandomName` from `$env:PSModulePath`.
 
 #### Added
 
@@ -412,29 +392,7 @@ Addresses script-scope coupling issues that surfaced after functions were moved 
 
 #### Fixed
 
-- **Path safety & normalization**
-  - Block **relative/drive-like destinations** (e.g., `D\file.jpg`, `D`, `D:`). Non-absolute subfolder strings are remapped under **-TargetFolder**; chosen destinations are verified to be rooted and existing before copy.
-  - Prevent destination collapsing to drive letters due to implicit `DirectoryInfo` casts. `DistributeFilesToSubfolders`/`RedistributeFilesInTarget` accept object arrays and normalize to `.FullName`; `CreateRandomSubfolders` returns `DirectoryInfo`. Consistent normalization when building subfolder lists.
-
-- **Root-landing & restart hygiene (3.0.7–3.0.9)**
-  - Avoid placing files in target **root** during source distribution; if a sanitized destination resolves to root while subfolders exist, re-select the least-filled subfolder.
-  - On restart, **malformed subfolder entries** in state (e.g., `''`, `D`, `D:`, relative) no longer collapse to root. We filter out target root and non-folders; if none remain, create an **emergency** subfolder to avoid root placement.
-  - Hardened `ConvertItemsToPaths` to handle `DirectoryInfo`/string mixes and skip empty values.
-  - `RedistributeFilesInTarget` excludes the target root from its subfolder map and validates existence.
-
-- **Deletion safety**
-  - Prevent **double deletion** when `-DeleteMode EndOfScript`: target-root redistribution no longer queues root copies alongside sources in a way that removes both.
-
-- **Progress & reliability**
-  - Phase-aware progress denominators (source distribution, root redistribution, per-folder redistribution).
-  - Fixed missing backticks in calls (including `Copy-ItemWithRetry` and a `DistributeFilesToSubfolders` invocation) that could mis-parse parameters.
-  - Consistently pass `-RetryCount $RetryCount` when (re)acquiring the state lock; corrected a variable name in `LoadState`.
-
-- **PowerShell 5.1 compatibility**
-  - Replaced `Split-Path -LiteralPath ... -Parent` usages to avoid “Parameter set cannot be resolved…” errors.
-
-- **Log/State path handling**
-  - If `-LogFilePath`/`-StateFilePath` points to an **existing directory**, automatically use `FileDistributor-log.txt` / `FileDistributor-State.json` inside it and ensure directories/files exist before first write.
+- Path-safety normalization: block relative/drive-like destinations; normalize subfolder lists to `.FullName`; prevent root-landing during distribution and on restart (filter malformed state entries; create emergency subfolder if needed). Includes PowerShell 5.1 compatibility and auto-resolved log/state paths when pointing to an existing directory.
 
 #### Notes
 
@@ -444,37 +402,18 @@ Addresses script-scope coupling issues that surfaced after functions were moved 
 
 #### Changed
 
-- **⚠️ Breaking.**
-
-- **Source enumeration is now recursive by default (and only behavior):** All files under `-SourceFolder` (including nested subdirectories) are processed. Previously only top-level files were handled.
-- Help/description updated to reflect recursion.
-- Limitations updated (top-level only note removed).
+- **⚠️ Breaking:** Source enumeration is now recursive; all files under `-SourceFolder` (including nested subdirectories) are processed. Previously only top-level files were handled.
 
 ### 1.0.0–1.7.0 (rollup) — 2025-09-14
 
 #### Added
 
-- Exponential I/O retry wrappers (copy/delete/Recycle Bin moves) with `-ErrorAction Stop` and backoff.
-- `-MaxBackoff` parameter to cap exponential backoff (default 60s).
-- Windows-only dynamic path resolution for logs/state: user-provided → script-root → `%LOCALAPPDATA%` → `%TEMP%`.
-- `-RandomNameScriptPath` parameter; resolves `randomname.ps1` via parameter → script root → `%PATH%` (errors if not found).
-- Robust state-file handling: atomic write via same-directory `*.tmp` then replace, persistent `.bak`, `.sha256` integrity sidecar, auto-recovery from `.bak`, quarantine of corrupt primaries.
-- Script header `.VERSION` and `CHANGELOG` sections.
+- Exponential I/O retry wrappers with `-MaxBackoff` parameter to cap backoff (default 60 s).
+- Dynamic path resolution for logs/state: user-provided → script-root → `%LOCALAPPDATA%` → `%TEMP%`.
+- `-RandomNameScriptPath` parameter; resolves `randomname.ps1` via parameter → script root → `%PATH%`.
+- Atomic state-file I/O: `.tmp`-then-replace write, `.bak` fallback, `.sha256` integrity sidecar.
+- Session-scoped deletion queue using `SessionId` for end-of-script deletion hardening.
 
 #### Changed
 
-- **Distribution**: switched from round-robin to random-balanced placement biased to least-filled subfolders; applies to initial distribution and redistribution.
-- **Naming**: removed upfront renaming of sources; destination names always randomized at copy time while preserving extensions.
-- **End-of-script deletions hardened**:
-  - Session-scoped deletion queue using persisted `SessionId`; only deletes items queued by the same session (including `-Restart`).
-  - Aggregates warnings/errors across restarts when evaluating deletion conditions.
-  - Queue stores metadata (`Path`, `Size`, `LastWriteTimeUtc`, `QueuedAtUtc`, `SessionId`) and verifies unchanged files before deletion; mismatches are skipped with a warning.
-  - Back-compat: older string-only queues are wrapped with metadata on resume; persistence fixed to store the array (not a `[ref]`).
-- **State I/O**: `SaveState`/`LoadState` refactored to atomic/verified helpers with precise recovery logging; loader always returns a Hashtable to keep `.ContainsKey()` reliable on Windows PowerShell 5.1+ and PowerShell 7+.
-- **Paths & config**: removed user-specific defaults for `-SourceFolder`/`-TargetFolder` (must be provided); `LogFilePath`/`StateFilePath` now follow the dynamic resolution order; dropped hard-coded `$ScriptDirectory`.
-- **Logging & docs**: centralized error/warning counting via `LogMessage`; updated `RetryDelay`/`RetryCount` docs; expanded examples (retry tuning, restart, end-of-script deletion); fixed `-RetryCount` default doc drift to 3.
-
-#### Notes
-
-- State saves now include `WarningsSoFar`, `ErrorsSoFar`, and `SessionId` to enable safe resumptions.
-- No functional changes in the 1.0.x patch rollup; behavior remained identical to 1.0.0 aside from documentation and traceability improvements.
+- Distribution: switched from round-robin to random-balanced placement biased toward least-filled subfolders.
