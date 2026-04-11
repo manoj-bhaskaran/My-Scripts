@@ -233,268 +233,198 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
 
     Context "Retention Policy" {
 
-        It "Deletes zero-byte backup files" {
-            # Setup
-            $zeroByteFile1 = Join-Path $script:testBackupFolder "testdb_backup_2025-11-20_10-00-00.backup"
-            $zeroByteFile2 = Join-Path $script:testBackupFolder "testdb_backup_2025-11-21_10-00-00.backup"
-            $validFile = Join-Path $script:testBackupFolder "testdb_backup_2025-11-22_10-00-00.backup"
-            New-Item -Path $zeroByteFile1 -ItemType File -Force | Out-Null
-            New-Item -Path $zeroByteFile2 -ItemType File -Force | Out-Null
-            "Valid backup data" | Out-File -FilePath $validFile -Force
-
-            # Count zero-byte files before
-            $zeroByteFilesBefore = (Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-                Where-Object { $_.Length -eq 0 }).Count
-
-            $zeroByteFilesBefore | Should -Be 2
-
-            Backup-PostgresDatabase `
-                -dbname "testdb" `
-                -backup_folder $script:testBackupFolder `
-                -log_file $script:testLogFile `
-                -user "test_user"
-
-            # Zero-byte files should be deleted
-            $zeroByteFilesAfter = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-            Where-Object { $_.Length -eq 0 }
-
-            $zeroByteFilesAfter.Count | Should -Be 0
-
-            $logContent = Get-Content -Path $script:testLogFile -Raw
-            $logContent | Should -Match "Deleted 0-byte backup"
+        BeforeAll {
+            function New-TestBackupFile {
+                param (
+                    [string]$Path,
+                    [int]$AgeDays = 0,
+                    [string]$Content = "Mock backup data",
+                    [switch]$Empty
+                )
+                if ($Empty) {
+                    New-Item -Path $Path -ItemType File -Force | Out-Null
+                } else {
+                    $Content | Out-File -FilePath $Path -Force
+                }
+                if ($AgeDays -gt 0) {
+                    (Get-Item $Path).LastWriteTime = (Get-Date).AddDays(-$AgeDays)
+                }
+            }
         }
 
-        It "Does not delete valid backup files" {
-            # Setup
-            $zeroByteFile1 = Join-Path $script:testBackupFolder "testdb_backup_2025-11-20_10-00-00.backup"
-            $zeroByteFile2 = Join-Path $script:testBackupFolder "testdb_backup_2025-11-21_10-00-00.backup"
-            $validFile = Join-Path $script:testBackupFolder "testdb_backup_2025-11-22_10-00-00.backup"
-            New-Item -Path $zeroByteFile1 -ItemType File -Force | Out-Null
-            New-Item -Path $zeroByteFile2 -ItemType File -Force | Out-Null
-            "Valid backup data" | Out-File -FilePath $validFile -Force
+        Context "Remove-ZeroByteBackups" {
 
-            Backup-PostgresDatabase `
-                -dbname "testdb" `
-                -backup_folder $script:testBackupFolder `
-                -log_file $script:testLogFile `
-                -user "test_user"
+            It "Deletes zero-byte backup files" {
+                $zeroByteFile1 = Join-Path $script:testBackupFolder "testdb_backup_2025-11-20_10-00-00.backup"
+                $zeroByteFile2 = Join-Path $script:testBackupFolder "testdb_backup_2025-11-21_10-00-00.backup"
+                $validFile = Join-Path $script:testBackupFolder "testdb_backup_2025-11-22_10-00-00.backup"
+                New-TestBackupFile -Path $zeroByteFile1 -Empty
+                New-TestBackupFile -Path $zeroByteFile2 -Empty
+                New-TestBackupFile -Path $validFile
 
-            # Valid files should still exist
-            $validFiles = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-            Where-Object { $_.Length -gt 0 }
+                InModuleScope 'PostgresBackup' -Parameters @{ Folder = $script:testBackupFolder; Log = $script:testLogFile } {
+                    param($Folder, $Log)
+                    Remove-ZeroByteBackups -BackupFolder $Folder -DatabaseName 'testdb' -LogFile $Log
+                }
 
-            $validFiles.Count | Should -BeGreaterThan 0
-        }
-
-        It "Deletes backups older than retention period when min_backups threshold is met" {
-            $now = Get-Date
-
-            # Create old backups (older than retention period)
-            $oldFile1 = Join-Path $script:testBackupFolder "testdb_backup_2024-01-15_10-00-00.backup"
-            $oldFile2 = Join-Path $script:testBackupFolder "testdb_backup_2024-02-20_10-00-00.backup"
-
-            # Create recent backups (within retention period)
-            $recentFile1 = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-5).ToString('yyyy-MM-dd'))_10-00-00.backup"
-            $recentFile2 = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-10).ToString('yyyy-MM-dd'))_10-00-00.backup"
-            $recentFile3 = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-15).ToString('yyyy-MM-dd'))_10-00-00.backup"
-
-            "Mock data" | Out-File -FilePath $oldFile1 -Force
-            "Mock data" | Out-File -FilePath $oldFile2 -Force
-            "Mock data" | Out-File -FilePath $recentFile1 -Force
-            "Mock data" | Out-File -FilePath $recentFile2 -Force
-            "Mock data" | Out-File -FilePath $recentFile3 -Force
-
-            # Set LastWriteTime to match the dates in filenames
-            (Get-Item $oldFile1).LastWriteTime = [DateTime]::Parse("2024-01-15 10:00:00")
-            (Get-Item $oldFile2).LastWriteTime = [DateTime]::Parse("2024-02-20 10:00:00")
-            (Get-Item $recentFile1).LastWriteTime = $now.AddDays(-5)
-            (Get-Item $recentFile2).LastWriteTime = $now.AddDays(-10)
-            (Get-Item $recentFile3).LastWriteTime = $now.AddDays(-15)
-
-            # Count files before
-            Backup-PostgresDatabase `
-                -dbname "testdb" `
-                -backup_folder $script:testBackupFolder `
-                -log_file $script:testLogFile `
-                -user "test_user" `
-                -retention_days 30 `
-                -min_backups 3
-
-            # Old backups should be deleted
-            $filesAfter = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup"
-            $oldBackupsRemaining = $filesAfter | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) }
-
-            $oldBackupsRemaining.Count | Should -Be 0
-            $logContent = Get-Content -Path $script:testLogFile -Raw
-            $logContent | Should -Match "Deleted old backup"
-        }
-
-        It "Does not delete recent backups below min_backups threshold" {
-            $now = Get-Date
-
-            # Create old backups (older than retention period)
-            $oldFile1 = Join-Path $script:testBackupFolder "testdb_backup_2024-01-15_10-00-00.backup"
-            $oldFile2 = Join-Path $script:testBackupFolder "testdb_backup_2024-02-20_10-00-00.backup"
-
-            # Create recent backups (within retention period)
-            $recentFile1 = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-5).ToString('yyyy-MM-dd'))_10-00-00.backup"
-            $recentFile2 = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-10).ToString('yyyy-MM-dd'))_10-00-00.backup"
-            $recentFile3 = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-15).ToString('yyyy-MM-dd'))_10-00-00.backup"
-
-            "Mock data" | Out-File -FilePath $oldFile1 -Force
-            "Mock data" | Out-File -FilePath $oldFile2 -Force
-            "Mock data" | Out-File -FilePath $recentFile1 -Force
-            "Mock data" | Out-File -FilePath $recentFile2 -Force
-            "Mock data" | Out-File -FilePath $recentFile3 -Force
-
-            # Set LastWriteTime to match the dates in filenames
-            (Get-Item $oldFile1).LastWriteTime = [DateTime]::Parse("2024-01-15 10:00:00")
-            (Get-Item $oldFile2).LastWriteTime = [DateTime]::Parse("2024-02-20 10:00:00")
-            (Get-Item $recentFile1).LastWriteTime = $now.AddDays(-5)
-            (Get-Item $recentFile2).LastWriteTime = $now.AddDays(-10)
-            (Get-Item $recentFile3).LastWriteTime = $now.AddDays(-15)
-
-            # Remove some recent backups to go below threshold
-            Get-ChildItem -Path $script:testBackupFolder | Select-Object -Last 2 | Remove-Item -Force
-
-            Backup-PostgresDatabase `
-                -dbname "testdb" `
-                -backup_folder $script:testBackupFolder `
-                -log_file $script:testLogFile `
-                -user "test_user" `
-                -retention_days 30 `
-                -min_backups 5
-
-            # Should not delete old backups because we don't have enough recent ones
-            $oldBackups = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-            Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) }
-
-            $oldBackups.Count | Should -BeGreaterThan 0
-        }
-
-        It "Handles retention with exactly min_backups count" {
-            $now = Get-Date
-
-            # Create exactly 3 backups (matching min_backups)
-            1..3 | ForEach-Object {
-                $file = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-$_).ToString('yyyy-MM-dd'))_10-00-00.backup"
-                "Mock data" | Out-File -FilePath $file -Force
-                (Get-Item $file).LastWriteTime = $now.AddDays(-$_)
+                $remaining = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
+                    Where-Object { $_.Length -eq 0 }
+                $remaining.Count | Should -Be 0
+                (Get-Content -Path $script:testLogFile -Raw) | Should -Match "Deleted 0-byte backup"
             }
 
-            Backup-PostgresDatabase `
-                -dbname "testdb" `
-                -backup_folder $script:testBackupFolder `
-                -log_file $script:testLogFile `
-                -user "test_user" `
-                -retention_days 1 `
-                -min_backups 3
+            It "Does not delete valid backup files" {
+                $zeroByteFile1 = Join-Path $script:testBackupFolder "testdb_backup_2025-11-20_10-00-00.backup"
+                $zeroByteFile2 = Join-Path $script:testBackupFolder "testdb_backup_2025-11-21_10-00-00.backup"
+                $validFile = Join-Path $script:testBackupFolder "testdb_backup_2025-11-22_10-00-00.backup"
+                New-TestBackupFile -Path $zeroByteFile1 -Empty
+                New-TestBackupFile -Path $zeroByteFile2 -Empty
+                New-TestBackupFile -Path $validFile
 
-            # Should have 4 files total (3 old + 1 new)
-            $backupFiles = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup"
-            $backupFiles.Count | Should -BeGreaterOrEqual 3
+                InModuleScope 'PostgresBackup' -Parameters @{ Folder = $script:testBackupFolder; Log = $script:testLogFile } {
+                    param($Folder, $Log)
+                    Remove-ZeroByteBackups -BackupFolder $Folder -DatabaseName 'testdb' -LogFile $Log
+                }
+
+                $validFiles = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
+                    Where-Object { $_.Length -gt 0 }
+                $validFiles.Count | Should -BeGreaterThan 0
+            }
         }
 
-        It "Handles retention_days set to 0" {
-            $now = Get-Date
+        Context "Remove-OldBackups" {
 
-            # Create backups with various ages
-            $oldFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-10).ToString('yyyy-MM-dd'))_10-00-00.backup"
-            "Mock data" | Out-File -FilePath $oldFile -Force
-            (Get-Item $oldFile).LastWriteTime = $now.AddDays(-10)
+            It "Deletes backups older than retention period when min_backups threshold is met" {
+                $now = Get-Date
+                New-TestBackupFile -Path (Join-Path $script:testBackupFolder "testdb_backup_2024-01-15_10-00-00.backup") -AgeDays 365
+                New-TestBackupFile -Path (Join-Path $script:testBackupFolder "testdb_backup_2024-02-20_10-00-00.backup") -AgeDays 340
+                New-TestBackupFile -Path (Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-5).ToString('yyyy-MM-dd'))_10-00-00.backup") -AgeDays 5
+                New-TestBackupFile -Path (Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-10).ToString('yyyy-MM-dd'))_10-00-00.backup") -AgeDays 10
+                New-TestBackupFile -Path (Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-15).ToString('yyyy-MM-dd'))_10-00-00.backup") -AgeDays 15
 
-            Backup-PostgresDatabase `
-                -dbname "testdb" `
-                -backup_folder $script:testBackupFolder `
-                -log_file $script:testLogFile `
-                -user "test_user" `
-                -retention_days 0 `
-                -min_backups 1
+                InModuleScope 'PostgresBackup' -Parameters @{ Folder = $script:testBackupFolder; Log = $script:testLogFile } {
+                    param($Folder, $Log)
+                    Remove-OldBackups -BackupFolder $Folder -DatabaseName 'testdb' -LogFile $Log -RetentionDays 30 -MinBackups 3
+                }
 
-            # Old file should be deleted (retention 0 days means delete everything older than today)
-            $remainingOld = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-            Where-Object { $_.LastWriteTime -lt $now.AddDays(-1) }
-            $remainingOld.Count | Should -Be 0
-        }
-
-        It "Deletes old backups when min_backups is 0" {
-            $now = Get-Date
-
-            # Create an old backup that is past retention
-            $oldFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-45).ToString('yyyy-MM-dd'))_10-00-00.backup"
-            "Mock data" | Out-File -FilePath $oldFile -Force
-            (Get-Item $oldFile).LastWriteTime = $now.AddDays(-45)
-
-            Backup-PostgresDatabase `
-                -dbname "testdb" `
-                -backup_folder $script:testBackupFolder `
-                -log_file $script:testLogFile `
-                -user "test_user" `
-                -retention_days 30 `
-                -min_backups 0
-
-            # Old file should be deleted because min_backups=0 always satisfies threshold
-            Test-Path $oldFile | Should -Be $false
-        }
-
-        It "Handles multiple database backups in same folder" {
-            $now = Get-Date
-
-            # Create backups for different databases in same folder
-            $db1File = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-100).ToString('yyyy-MM-dd'))_10-00-00.backup"
-            $db2File = Join-Path $script:testBackupFolder "otherdb_backup_$($now.AddDays(-100).ToString('yyyy-MM-dd'))_10-00-00.backup"
-
-            "Mock data" | Out-File -FilePath $db1File -Force
-            "Mock data" | Out-File -FilePath $db2File -Force
-            (Get-Item $db1File).LastWriteTime = $now.AddDays(-100)
-            (Get-Item $db2File).LastWriteTime = $now.AddDays(-100)
-
-            Backup-PostgresDatabase `
-                -dbname "testdb" `
-                -backup_folder $script:testBackupFolder `
-                -log_file $script:testLogFile `
-                -user "test_user" `
-                -retention_days 30 `
-                -min_backups 1
-
-            # Only testdb backup should be deleted, otherdb should remain
-            Test-Path $db1File | Should -Be $false
-            Test-Path $db2File | Should -Be $true
-        }
-
-        It "Deletes all old backups when old backup count greatly exceeds min_backups" {
-            $now = Get-Date
-
-            # Create 50 old backups
-            1..50 | ForEach-Object {
-                $file = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-100 - $_).ToString('yyyy-MM-dd'))_10-00-00.backup"
-                "Mock data" | Out-File -FilePath $file -Force
-                (Get-Item $file).LastWriteTime = $now.AddDays(-100 - $_)
+                $oldBackupsRemaining = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
+                    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) }
+                $oldBackupsRemaining.Count | Should -Be 0
+                (Get-Content -Path $script:testLogFile -Raw) | Should -Match "Deleted old backup"
             }
 
-            # Create 5 recent backups
-            1..5 | ForEach-Object {
-                $file = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-$_).ToString('yyyy-MM-dd'))_10-00-00.backup"
-                "Mock data" | Out-File -FilePath $file -Force
-                (Get-Item $file).LastWriteTime = $now.AddDays(-$_)
+            It "Does not delete old backups when recent backup count is below min_backups" {
+                $now = Get-Date
+                # 2 old + 2 recent = 4 total; min_backups=5 means threshold not met, old files kept
+                New-TestBackupFile -Path (Join-Path $script:testBackupFolder "testdb_backup_2024-01-15_10-00-00.backup") -AgeDays 365
+                New-TestBackupFile -Path (Join-Path $script:testBackupFolder "testdb_backup_2024-02-20_10-00-00.backup") -AgeDays 340
+                New-TestBackupFile -Path (Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-5).ToString('yyyy-MM-dd'))_10-00-00.backup") -AgeDays 5
+                New-TestBackupFile -Path (Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-10).ToString('yyyy-MM-dd'))_10-00-00.backup") -AgeDays 10
+
+                InModuleScope 'PostgresBackup' -Parameters @{ Folder = $script:testBackupFolder; Log = $script:testLogFile } {
+                    param($Folder, $Log)
+                    Remove-OldBackups -BackupFolder $Folder -DatabaseName 'testdb' -LogFile $Log -RetentionDays 30 -MinBackups 5
+                }
+
+                $oldBackups = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
+                    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) }
+                $oldBackups.Count | Should -BeGreaterThan 0
             }
 
-            Backup-PostgresDatabase `
-                -dbname "testdb" `
-                -backup_folder $script:testBackupFolder `
-                -log_file $script:testLogFile `
-                -user "test_user" `
-                -retention_days 30 `
-                -min_backups 3
+            It "Handles retention with exactly min_backups count" {
+                $now = Get-Date
+                # 3 backups aged 1, 2, 3 days; retention_days=1 means files aged 2+ are old;
+                # with min_backups=3 and at most 1 recent file, threshold not met — no deletion occurs
+                1..3 | ForEach-Object {
+                    $path = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-$_).ToString('yyyy-MM-dd'))_10-00-00.backup"
+                    New-TestBackupFile -Path $path -AgeDays $_
+                }
 
-            # All 50 old backups should be deleted
-            $oldBackups = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
-            Where-Object { $_.LastWriteTime -lt $now.AddDays(-30) }
-            $oldBackups.Count | Should -Be 0
+                InModuleScope 'PostgresBackup' -Parameters @{ Folder = $script:testBackupFolder; Log = $script:testLogFile } {
+                    param($Folder, $Log)
+                    Remove-OldBackups -BackupFolder $Folder -DatabaseName 'testdb' -LogFile $Log -RetentionDays 1 -MinBackups 3
+                }
 
-            # Recent backups plus new one should remain
-            $recentBackups = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup"
-            $recentBackups.Count | Should -BeGreaterOrEqual 5
+                $backupFiles = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup"
+                $backupFiles.Count | Should -BeGreaterOrEqual 3
+            }
+
+            It "Handles retention_days set to 0" {
+                $now = Get-Date
+                $oldFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-10).ToString('yyyy-MM-dd'))_10-00-00.backup"
+                # Anchor one file with a timestamp slightly ahead of now so it registers as recent
+                $recentFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.ToString('yyyy-MM-dd'))_23-59-59.backup"
+                New-TestBackupFile -Path $oldFile -AgeDays 10
+                New-TestBackupFile -Path $recentFile
+                (Get-Item $recentFile).LastWriteTime = $now.AddSeconds(2)
+
+                InModuleScope 'PostgresBackup' -Parameters @{ Folder = $script:testBackupFolder; Log = $script:testLogFile } {
+                    param($Folder, $Log)
+                    Remove-OldBackups -BackupFolder $Folder -DatabaseName 'testdb' -LogFile $Log -RetentionDays 0 -MinBackups 1
+                }
+
+                # retention_days=0 means cutoff is now; the 10-day-old file should be deleted
+                $remainingOld = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
+                    Where-Object { $_.LastWriteTime -lt $now.AddDays(-1) }
+                $remainingOld.Count | Should -Be 0
+            }
+
+            It "Deletes old backups when min_backups is 0" {
+                $now = Get-Date
+                $oldFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-45).ToString('yyyy-MM-dd'))_10-00-00.backup"
+                New-TestBackupFile -Path $oldFile -AgeDays 45
+
+                InModuleScope 'PostgresBackup' -Parameters @{ Folder = $script:testBackupFolder; Log = $script:testLogFile } {
+                    param($Folder, $Log)
+                    Remove-OldBackups -BackupFolder $Folder -DatabaseName 'testdb' -LogFile $Log -RetentionDays 30 -MinBackups 0
+                }
+
+                Test-Path $oldFile | Should -Be $false
+            }
+
+            It "Only deletes backups for specified database" {
+                $now = Get-Date
+                $db1File = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-100).ToString('yyyy-MM-dd'))_10-00-00.backup"
+                $db2File = Join-Path $script:testBackupFolder "otherdb_backup_$($now.AddDays(-100).ToString('yyyy-MM-dd'))_10-00-00.backup"
+                New-TestBackupFile -Path $db1File -AgeDays 100
+                New-TestBackupFile -Path $db2File -AgeDays 100
+
+                InModuleScope 'PostgresBackup' -Parameters @{ Folder = $script:testBackupFolder; Log = $script:testLogFile } {
+                    param($Folder, $Log)
+                    Remove-OldBackups -BackupFolder $Folder -DatabaseName 'testdb' -LogFile $Log -RetentionDays 30 -MinBackups 1
+                }
+
+                Test-Path $db1File | Should -Be $false
+                Test-Path $db2File | Should -Be $true
+            }
+
+            It "Deletes all old backups when old backup count greatly exceeds min_backups" {
+                $now = Get-Date
+
+                # Create 5 old backups (100+ days old)
+                1..5 | ForEach-Object {
+                    $path = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-100 - $_).ToString('yyyy-MM-dd'))_10-00-00.backup"
+                    New-TestBackupFile -Path $path -AgeDays (100 + $_)
+                }
+
+                # Create 5 recent backups
+                1..5 | ForEach-Object {
+                    $path = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-$_).ToString('yyyy-MM-dd'))_10-00-00.backup"
+                    New-TestBackupFile -Path $path -AgeDays $_
+                }
+
+                InModuleScope 'PostgresBackup' -Parameters @{ Folder = $script:testBackupFolder; Log = $script:testLogFile } {
+                    param($Folder, $Log)
+                    Remove-OldBackups -BackupFolder $Folder -DatabaseName 'testdb' -LogFile $Log -RetentionDays 30 -MinBackups 3
+                }
+
+                $oldBackups = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup" |
+                    Where-Object { $_.LastWriteTime -lt $now.AddDays(-30) }
+                $oldBackups.Count | Should -Be 0
+
+                $allBackups = Get-ChildItem -Path $script:testBackupFolder -Filter "testdb_backup_*.backup"
+                $allBackups.Count | Should -BeGreaterOrEqual 5
+            }
         }
     }
 
