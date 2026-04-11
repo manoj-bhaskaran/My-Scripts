@@ -74,6 +74,14 @@ description = "Video frame capture via VLC or GDI+ with optional Python cropper 
 author = "Manoj Bhaskaran"
 dependencies = []
 [[modules]]
+name = "AdbHelpers"
+source = "src/powershell/modules/Android/AdbHelpers"
+auto-deploy = true
+test-on-deploy = true
+description = "Reusable Android Debug Bridge helpers for device validation, remote shell execution, and remote metadata queries"
+author = "Manoj Bhaskaran"
+dependencies = []
+[[modules]]
 name = "ErrorHandling"
 source = "src/powershell/modules/Core/ErrorHandling"
 auto-deploy = true

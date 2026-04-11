@@ -1,18 +1,30 @@
 # CHANGELOG
 
 ## Table of Contents
+
 - [Copy-AndroidFiles](#copy-androidfiles)
 - [FileDistributor](#filedistributor)
 
 ## Copy-AndroidFiles
 
+### 2.3.2 — 2026-04-11
+
+#### Changed
+
+- **Extracted reusable ADB helpers into a new `Android/AdbHelpers` PowerShell module.**
+  `Copy-AndroidFiles.ps1` now imports `src/powershell/modules/Android/AdbHelpers/AdbHelpers.psd1`
+  and consumes the shared `Test-Adb`, `Confirm-Device`, `Test-HostTar`, `Test-PhoneTar`,
+  `Invoke-AdbSh`, `Get-RemoteSize`, and `Get-RemoteFileCount` functions instead of defining them
+  inline.
+- **Made ADB helper state explicit at call sites.** `Invoke-AdbSh`, `Test-PhoneTar`,
+  `Get-RemoteSize`, and `Get-RemoteFileCount` now accept debug log inputs as parameters, and tar
+  prechecks accept the active transfer mode explicitly instead of relying on script scope.
 
 ### 2.3.1 — 2026-04-10
 
 #### Changed
 
 - **Consolidated `Copy-AndroidFiles.ps1` version history into this changelog.** Removed the long inline multi-version `CHANGELOG` block from the script's comment-based help `.NOTES` section and replaced it with a concise version stamp plus a pointer to `CHANGELOG.md`, while preserving the existing `PREREQUISITES` and `TROUBLESHOOTING` help content unchanged.
-
 
 ### 2.3.0 — 2026-04-10
 
@@ -32,7 +44,6 @@
 - **Made `-PhonePath` and `-Dest` mandatory.** Personal hard-coded default values for both
   parameters have been removed. Both paths must be supplied explicitly on every invocation.
 
-
 ### 2.2.0 — 2026-04-10
 
 #### Changed
@@ -46,7 +57,6 @@
   branches, and calls `Write-Progress -Completed` before returning. The hard-coded `Start-Sleep 1`
   in tar mode is replaced by the explicit `-IntervalSeconds 1` argument, making the interval
   visible and documentable.
-
 
 ### 2.1.0 — 2026-04-07
 
@@ -67,7 +77,6 @@
   were displayed on-screen but not written to log files. The extracted `Write-VerifySummary`
   helper always uses `Write-LogWarning`, fixing the bug for all modes.
 
-
 ### 2.0.0 — 2025-11-16
 
 #### Changed
@@ -79,7 +88,6 @@
 - Retained ADB-specific `DebugMode` for low-level adb diagnostics.
 - All log messages are now written to standardized log files.
 
-
 ### 1.3.9 — 2025-08-27
 
 #### Changed
@@ -89,7 +97,6 @@
   - pull (default): baseline = `$Dest\$leaf` if that subfolder is used by adb; otherwise `$Dest`
   - pull `-Resume`, tar (stream or file): baseline = `$Dest`
 - Remote values remain best-effort counts/sizes; no transfer-logic change.
-
 
 ### 1.3.8 — 2025-08-27
 
@@ -101,7 +108,6 @@
   - Now uses conditional splatting so redirection keys are set only when `DebugMode` is on.
 - Eliminates `RedirectStandardError` validation errors when running without `DebugMode`.
 
-
 ### 1.3.7 — 2025-08-27
 
 #### Changed
@@ -111,7 +117,6 @@
   - Added deduplication of whitespace-only lines.
   - Standardized left-hand-side `$null` comparisons.
 - Improves stability of phone-side script execution on toybox/busybox shells.
-
 
 ### 1.3.6 — 2025-08-27
 
@@ -126,7 +131,6 @@
 
 - Updated documentation for `DebugMode` behavior, log location, and sharing caveats.
 
-
 ### 1.3.5 — 2025-08-27
 
 #### Changed
@@ -137,7 +141,6 @@
 - `Test-PhoneTar` now prefers `command -v tar` with `--help` fallback, while keeping toybox/busybox fallback.
 - Hardened parsing of adb outputs to avoid null/empty `Trim()` crashes.
 
-
 ### 1.3.4 — 2025-08-27
 
 #### Fixed
@@ -146,7 +149,6 @@
   `tar --help` instead of requiring `tar --version`.
 - Maintains fallback to `toybox tar` / `busybox tar`.
 - Resolves false negatives introduced in 1.3.3 on devices where `--version` is unsupported.
-
 
 ### 1.3.3 — 2025-08-27
 
@@ -157,7 +159,6 @@
 - Restored full comment-based help for all functions.
 - Retained awk-free remote size logic (`du`/`stat`/`find` + shell arithmetic).
 
-
 ### 1.3.2 — 2025-08-27
 
 #### Changed
@@ -165,7 +166,6 @@
 - Removed awk usage from `Get-RemoteSize`; replaced with POSIX shell arithmetic using `du`/`stat`/`find`.
 - Hardened adb quoting and timestamped warnings (including `$ts:` parse fix).
 - Inlined remote path argument to satisfy analyzers.
-
 
 ### 1.3.1 — 2025-08-27
 
@@ -175,7 +175,6 @@
 - Added timestamped warnings/retries and verify summary table (Local vs Remote counts/sizes).
 - Reduced pull progress polling to 5 seconds (configurable).
 
-
 ### 1.3.0 — 2025-08-27
 
 #### Added
@@ -183,17 +182,15 @@
 - Added `-Verify` and local/remote file-count helpers.
 - Logged local/remote summaries after TAR extraction and after pull.
 
-
 ### 1.2.x — 2025-08-27
 
 #### Added
 
 - Added disk-space precheck, resumable pull, TAR retries/cleanup, and `-StreamTar`.
 
-
 ---
-## FileDistributor
 
+## FileDistributor
 
 ### 4.8.0 — 2026-04-05
 
@@ -234,7 +231,7 @@ Addresses script-scope coupling issues that surfaced after functions were moved 
 #### Changed
 
 - Refactored `Save-DistributionState`, `Restore-DistributionState`, and `Write-JsonAtomically` in `Private/State.ps1` to accept `$StateFilePath`, `$RetryDelay`, `$RetryCount`, and `$MaxBackoff` as explicit parameters instead of reading from outer script scope. Updated checkpoint/restart call sites in `FileDistributor.ps1` accordingly.
- 
+
 #### Fixed
 
 - Fixed CP3 `New-CheckpointPayload` call in `Invoke-DistributionPhase` to include `-IncludeSourceFiles` and `-SourceFiles $RunState.sourceFiles`, preventing a restart from CP3 from silently skipping the distribution phase.

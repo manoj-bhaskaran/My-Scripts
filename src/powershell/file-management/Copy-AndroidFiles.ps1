@@ -119,7 +119,7 @@
     Android Platform-Tools: https://developer.android.com/studio/releases/platform-tools
 
 .NOTES
-    Version: 2.3.1
+    Version: 2.3.2
     See CHANGELOG.md in this directory for full version history.
 
     PREREQUISITES
@@ -193,6 +193,7 @@ param(
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\Android\AdbHelpers\AdbHelpers.psd1" -Force
 
 # Initialize logger (script name will be extracted from the script file name)
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
@@ -203,235 +204,6 @@ $DebugLog = $null
 if ($DebugMode) {
     $DebugLog = Join-Path ($Dest) ("adb_debug_{0}.log" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
     Write-Host "Debug mode: logging to $DebugLog"
-}
-
-function Test-Adb {
-    <#
-.SYNOPSIS
-    Verifies adb.exe is available in PATH.
-.DESCRIPTION
-    Uses Get-Command to locate 'adb'. Throws a terminating error if not found.
-.OUTPUTS
-    None. Throws on failure.
-.NOTES
-    Install Android SDK Platform-Tools and add its folder to PATH.
-#>
-    $adb = Get-Command adb -ErrorAction SilentlyContinue
-    if (-not $adb) { throw "adb.exe not found. Install Platform-Tools and add to PATH." }
-}
-
-function Confirm-Device {
-    <#
-.SYNOPSIS
-    Confirms an authorized Android device is connected.
-.DESCRIPTION
-    Runs 'adb devices' and checks for a line ending with 'device'. If the device shows 'unauthorized' or nothing, throws guidance.
-.OUTPUTS
-    None. Throws on failure.
-.NOTES
-    Ensure the phone is unlocked and USB debugging is enabled/authorized.
-#>
-    $out = adb devices | Select-String "device`$"
-    if (-not $out) {
-        throw "No authorized device. Check cable, unlock phone, enable USB debugging, and allow this PC."
-    }
-}
-
-function Test-HostTar {
-    <#
-.SYNOPSIS
-    Verifies tar.exe is available on Windows when using tar mode.
-.DESCRIPTION
-    Ensures 'tar' can be invoked from PATH; otherwise suggests switching to pull mode or installing tar.
-.OUTPUTS
-    None. Throws on failure if using tar mode.
-#>
-    if ($PSCmdlet.ParameterSetName -eq 'Tar') {
-        $tar = Get-Command tar -ErrorAction SilentlyContinue
-        if (-not $tar) {
-            throw "Windows tar.exe not found. Use pull mode (-Resume) or install tar and add to PATH."
-        }
-    }
-}
-
-function Invoke-AdbSh {
-    <#
-.SYNOPSIS
-    Runs a shell script on the device safely from PowerShell.
-.DESCRIPTION
-    - Normalizes CRLF/CR to LF
-    - Filters blank lines
-    - Joins lines with token awareness:
-        * Keeps a newline between control-structure boundaries (if/then/elif/else/fi, for/do/done,
-          while/do/done, until/do/done, case...esac) to avoid "then;" style syntax errors on toybox sh
-        * Uses "; " between ordinary statement lines
-    - Returns raw stdout (or empty string on error)
-.PARAMETER Script
-    The shell script text to execute on the device.
-.OUTPUTS
-    [string] Raw stdout from the device (may be empty if the command produces no output).
-#>
-    param([Parameter(Mandatory = $true)][string]$Script)
-
-    try {
-        # Normalize EOLs and split
-        $norm = ($Script -replace "`r`n", "`n" -replace "`r", "`n").Trim()
-        $lines = $norm -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
-
-        # Build with awareness of POSIX sh control keywords
-        $out = New-Object System.Text.StringBuilder
-        $prev = $null
-        foreach ($l in $lines) {
-            $currStartsCtl = $l -match '^(elif|fi|done|esac|then|do|else)\b'
-            $prevEndsCtl = $false
-            if ($null -ne $prev) {
-                $prevEndsCtl = $prev -match '\b(then|do|else)$'
-            }
-
-            if ($null -ne $prev) {
-                # If current starts with a control token OR previous ended with one, keep newline
-                if ($currStartsCtl -or $prevEndsCtl) {
-                    [void]$out.Append("`n")
-                } else {
-                    [void]$out.Append("; ")
-                }
-            }
-            [void]$out.Append($l)
-            $prev = $l
-        }
-
-        $one = $out.ToString()
-
-        if ($DebugMode -and $DebugLog) {
-            Add-Content -Path $DebugLog -Value ("[{0}] adb shell << {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $one)
-        }
-
-        $result = adb shell $one
-
-        if ($DebugMode -and $DebugLog) {
-            $len = if ($result) { $result.Length } else { 0 }
-            $prefix = if ($result -and $result.Length -gt 1000) { $result.Substring(0, 1000) + '…' } else { $result }
-            Add-Content -Path $DebugLog -Value ("[{0}] stdout({1} chars): {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $len, $prefix)
-        }
-
-        return $result
-    } catch {
-        if ($DebugMode -and $DebugLog) {
-            Add-Content -Path $DebugLog -Value ("[{0}] ERROR: {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $_)
-        }
-        return ""
-    }
-}
-
-function Test-PhoneTar {
-    <#
-.SYNOPSIS
-    Verifies phone-side tar availability for TAR mode.
-.DESCRIPTION
-    Detects tar availability on the phone.
-    Prefers `command -v tar` (accepting --help if --version is unsupported),
-    then falls back to `toybox tar` and `busybox tar`.
-.OUTPUTS
-    None. Throws on failure if using tar mode.
-#>
-    if ($PSCmdlet.ParameterSetName -ne 'Tar') { return }
-
-    $script = @'
-if command -v tar >/dev/null 2>&1; then
-  tar --help >/dev/null 2>&1 || true
-  echo 0
-elif command -v toybox >/dev/null 2>&1 && toybox tar --help >/dev/null 2>&1; then
-  echo 0
-elif command -v busybox >/dev/null 2>&1 && busybox tar --help >/dev/null 2>&1; then
-  echo 0
-else
-  echo 1
-fi
-'@
-
-    $rc = (Invoke-AdbSh $script).Trim()
-    if ([string]::IsNullOrEmpty($rc)) {
-        throw "Phone-side tar check failed (no response). Reconnect the device and try again."
-    }
-    if ($rc -ne '0') {
-        throw "Phone-side tar not found. Switch to pull mode (use -Resume instead of tar-mode parameters)."
-    }
-}
-
-function Get-RemoteSize {
-    <#
-.SYNOPSIS
-    Returns total bytes for a remote (phone) path (best-effort, awk-free).
-.DESCRIPTION
-    Prefers 'du' (native/toybox/busybox). Falls back to summing file sizes via 'stat' in a find loop.
-    Avoids awk and avoids 'sh -lc' to prevent quoting issues on toybox shells.
-    Executed via Invoke-AdbSh to avoid line-ending parsing issues on toybox/busybox shells.
-.PARAMETER RemoteParent
-    Parent directory (POSIX path), e.g., /sdcard/DCIM.
-.PARAMETER RemoteLeaf
-    Leaf entry (file or directory), e.g., Camera.
-.OUTPUTS
-    [Int64] total size in bytes (0 if unknown/error).
-.NOTES
-    This may take time on very large trees when falling back to find+stat.
-#>
-    param([string]$RemoteParent, [string]$RemoteLeaf)
-
-    $remotePath = "$RemoteParent/$RemoteLeaf"
-    # Single-quoted here-string preserved; we inject the path by placeholder replacement to avoid escaping hell.
-    $script = @'
-path="__REMOTE_PATH__"
-
-# Prefer du; parse first field with "set --" to avoid awk dependency
-if du -sb "$path" >/dev/null 2>&1; then
-  set -- $(du -sb "$path"); echo "$1"; exit 0
-fi
-if command -v toybox >/dev/null 2>&1 && toybox du -b "$path" >/dev/null 2>&1; then
-  set -- $(toybox du -b "$path"); echo "$1"; exit 0
-fi
-if command -v busybox >/dev/null 2>&1 && busybox du -s "$path" >/dev/null 2>&1; then
-  set -- $(busybox du -s "$path"); echo $(( $1 * 1024 )); exit 0
-fi
-
-# Fall back: sum file sizes with stat
-sum=0
-if command -v stat >/dev/null 2>&1; then
-  find "$path" -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
-    sz=$(stat -c %s "$f" 2>/dev/null || echo 0)
-    sum=$(( sum + ${sz:-0} ))
-  done
-  echo "$sum"; exit 0
-fi
-
-if command -v toybox >/dev/null 2>&1; then
-  find "$path" -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
-    sz=$(toybox stat -c %s "$f" 2>/dev/null || echo 0)
-    sum=$(( sum + ${sz:-0} ))
-  done
-  echo "$sum"; exit 0
-fi
-
-if command -v busybox >/dev/null 2>&1; then
-  find "$path" -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
-    sz=$(busybox stat -c %s "$f" 2>/dev/null || echo 0)
-    sum=$(( sum + ${sz:-0} ))
-  done
-  echo "$sum"; exit 0
-fi
-
-echo 0
-'@
-    $cmd = $script.Replace('__REMOTE_PATH__', $remotePath)
-
-    try {
-        $bytesText = Invoke-AdbSh $cmd
-        if ([string]::IsNullOrWhiteSpace($bytesText)) { return 0 }
-        $bytes = 0L
-        [void][int64]::TryParse($bytesText.Trim(), [ref]$bytes)
-        return $bytes
-    } catch {
-        return 0
-    }
 }
 
 function Get-LocalDirSize {
@@ -506,48 +278,6 @@ function Get-LocalFileCount {
     } catch { 0 }
 }
 
-function Get-RemoteFileCount {
-    <#
-.SYNOPSIS
-    Best-effort count of remote (phone) files for a given path.
-.DESCRIPTION
-    Uses find | wc -l via toybox/busybox if needed. Returns 0 if unavailable.
-    Executed via Invoke-AdbSh to avoid line-ending parsing issues on toybox/busybox shells.
-.PARAMETER RemoteParent
-    Parent directory on the device (POSIX).
-.PARAMETER RemoteLeaf
-    Leaf (file or directory) name on the device.
-.OUTPUTS
-    [Int64] count (0 if unknown).
-#>
-    param([string]$RemoteParent, [string]$RemoteLeaf)
-
-    $remotePath = "$RemoteParent/$RemoteLeaf"
-    $script = @'
-path="__REMOTE_PATH__"
-if command -v find >/dev/null 2>&1; then
-  find "$path" -type f 2>/dev/null | wc -l
-elif command -v toybox >/dev/null 2>&1; then
-  toybox find "$path" -type f 2>/dev/null | wc -l
-elif command -v busybox >/dev/null 2>&1; then
-  busybox find "$path" -type f 2>/dev/null | wc -l
-else
-  echo 0
-fi
-'@
-    $cmd = $script.Replace('__REMOTE_PATH__', $remotePath)
-
-    try {
-        $out = Invoke-AdbSh $cmd
-        if ([string]::IsNullOrWhiteSpace($out)) { return 0 }
-        $n = 0L
-        [void][int64]::TryParse($out.Trim(), [ref]$n)
-        return $n
-    } catch {
-        return 0
-    }
-}
-
 function Write-VerifySummary {
     <#
 .SYNOPSIS
@@ -580,12 +310,14 @@ function Write-VerifySummary {
         [string]$RemoteParent,
         [string]$RemoteLeaf,
         [int64]$TotalBytes,
-        [string]$WarnMessage
+        [string]$WarnMessage,
+        [switch]$DebugMode,
+        [string]$DebugLog
     )
 
     $localCount = Get-LocalFileCount  -Path $LocalRoot
     $localBytes = Get-LocalDirSize    -Path $LocalRoot
-    $remoteCount = Get-RemoteFileCount -RemoteParent $RemoteParent -RemoteLeaf $RemoteLeaf
+    $remoteCount = Get-RemoteFileCount -RemoteParent $RemoteParent -RemoteLeaf $RemoteLeaf -DebugMode:$DebugMode -DebugLog $DebugLog
     $remoteSizeMB = if ($TotalBytes -gt 0) { [math]::Round($TotalBytes / 1MB) } else { $null }
 
     $afterFiles = $localCount
@@ -661,12 +393,12 @@ New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 # Pre-checks
 Test-Adb
 Confirm-Device
-Test-HostTar
-Test-PhoneTar
+Test-HostTar -Mode $PSCmdlet.ParameterSetName
+Test-PhoneTar -Mode $PSCmdlet.ParameterSetName -DebugMode:$DebugMode -DebugLog $DebugLog
 
 # Common path split & remote size (for progress/space checks)
 $parent, $leaf = Split-RemotePath -PosixPath $PhonePath
-$totalBytes = Get-RemoteSize -RemoteParent $parent -RemoteLeaf $leaf
+$totalBytes = Get-RemoteSize -RemoteParent $parent -RemoteLeaf $leaf -DebugMode:$DebugMode -DebugLog $DebugLog
 
 # Baseline local stats for Verify deltas
 # For non-resume pull, adb creates a subfolder ($leaf) under $Dest → baseline that path.
@@ -730,7 +462,8 @@ if ($PSCmdlet.ParameterSetName -eq 'Pull') {
             Write-VerifySummary -LocalRoot $Dest `
                 -FilesBefore $LocalFilesBefore -BytesBefore $LocalBytesBefore `
                 -RemoteParent $parent -RemoteLeaf $leaf -TotalBytes $totalBytes `
-                -WarnMessage "Local file count < remote file count. Some files may be missing."
+                -WarnMessage "Local file count < remote file count. Some files may be missing." `
+                -DebugMode:$DebugMode -DebugLog $DebugLog
         }
     } else {
         Write-LogInfo "ADB pull `"$PhonePath`" → `"$Dest`""
@@ -763,7 +496,8 @@ if ($PSCmdlet.ParameterSetName -eq 'Pull') {
             Write-VerifySummary -LocalRoot $localRootAfter `
                 -FilesBefore $LocalFilesBefore -BytesBefore $LocalBytesBefore `
                 -RemoteParent $parent -RemoteLeaf $leaf -TotalBytes $totalBytes `
-                -WarnMessage "Local file count < remote file count. Some files may be missing."
+                -WarnMessage "Local file count < remote file count. Some files may be missing." `
+                -DebugMode:$DebugMode -DebugLog $DebugLog
         }
     }
 } else {
@@ -782,7 +516,8 @@ if ($PSCmdlet.ParameterSetName -eq 'Pull') {
             Write-VerifySummary -LocalRoot $Dest `
                 -FilesBefore $LocalFilesBefore -BytesBefore $LocalBytesBefore `
                 -RemoteParent $parent -RemoteLeaf $leaf -TotalBytes $totalBytes `
-                -WarnMessage "Extracted count < remote count. Some files may be missing."
+                -WarnMessage "Extracted count < remote count. Some files may be missing." `
+                -DebugMode:$DebugMode -DebugLog $DebugLog
         }
     } else {
         $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -825,7 +560,8 @@ if ($PSCmdlet.ParameterSetName -eq 'Pull') {
                     Write-VerifySummary -LocalRoot $Dest `
                         -FilesBefore $LocalFilesBefore -BytesBefore $LocalBytesBefore `
                         -RemoteParent $parent -RemoteLeaf $leaf -TotalBytes $totalBytes `
-                        -WarnMessage "Extracted count < remote count. Some files may be missing."
+                        -WarnMessage "Extracted count < remote count. Some files may be missing." `
+                        -DebugMode:$DebugMode -DebugLog $DebugLog
                 }
 
                 # Cleanup
