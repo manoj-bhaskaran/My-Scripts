@@ -113,17 +113,6 @@ function Invoke-FolderRebalance {
     $receiverMap = @{}
     foreach ($r in $receivers) { $receiverMap[$r.Path] = [int]$r.Deficit }
 
-    function Get-BestReceiver([hashtable]$map) {
-        if ($map.Keys.Count -eq 0) { return $null }
-        $bestKey = $null; $bestVal = -1
-        foreach ($k in $map.Keys) {
-            $v = [int]$map[$k]
-            if ($v -gt $bestVal) { $bestVal = $v; $bestKey = $k }
-        }
-        if ($bestVal -le 0) { return $null }
-        return $bestKey
-    }
-
     $GlobalFileCounter.Value = 0
     $totalMoved = 0
     $totalFailed = 0

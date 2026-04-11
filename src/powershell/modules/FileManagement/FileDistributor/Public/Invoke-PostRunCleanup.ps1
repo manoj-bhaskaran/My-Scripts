@@ -44,7 +44,7 @@ function Invoke-PostRunCleanup {
     Write-LogInfo "Total errors: $($ErrorCount.Value)"
 
     if ($FileLockRef.Value) { Unlock-DistributionStateFile -FileStream $FileLockRef.Value; $FileLockRef.Value = $null }
-    Remove-Item -Path $StateFilePath -Force
+    Remove-Item -LiteralPath $StateFilePath -Force -ErrorAction SilentlyContinue
 
     if ($CleanupDuplicates -and $ScriptRoot) {
         $dupScript = Join-Path -Path $ScriptRoot -ChildPath "Remove-DuplicateFiles.ps1"
