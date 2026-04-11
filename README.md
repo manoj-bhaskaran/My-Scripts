@@ -133,12 +133,6 @@ The [INSTALLATION.md](INSTALLATION.md) guide includes:
 - Module installation and verification
 - Comprehensive troubleshooting guide
 
-The repository now ships with **dual dependency manifests**:
-
-- Use `requirements.lock` for deterministic, reproducible installs (CI, production machines).
-- Use `requirements.txt` for local development when you want the latest compatible releases within vetted version ranges.
-- The manifests explicitly pin `virtualenv` and `filelock` to patched versions because repository tooling such as `pre-commit` depends on them transitively. The lockfile uses `virtualenv==20.36.1`, which remains available on package indexes where `20.36.2` is missing. Security scanning now standardizes on `pip-audit`, removing the vulnerable transitive `nltk` dependency that arrived through Safety while preserving the patched `filelock==3.20.3` override for the `pre-commit` runtime stack.
-
 **Configuration Guide**: See [config/CONFIG_GUIDE.md](config/CONFIG_GUIDE.md) for detailed configuration instructions.
 
 ---
@@ -253,37 +247,6 @@ For detailed documentation on specific scripts, see the `docs/` directory or the
 
 ---
 
-## Repository Review
-
-A comprehensive review of this repository was conducted on **2025-11-16** using Claude.ai / code. The review assessed:
-
-- Repository organization and coherence
-- Folder structure and naming conventions
-- Documentation completeness
-- Test coverage and testing approach
-- Tooling and automation
-
-**Key Findings:**
-
-- ✅ **Verdict**: Remain as single monolithic repository (not split)
-- ✅ **Strengths**: Clear organization, sophisticated modules, exemplary logging specification, comprehensive CI/CD
-- ⚠️ **Areas for Improvement**: Test infrastructure (0% coverage), naming consistency, documentation gaps
-
-**Review Documents:**
-
-- [Comprehensive Review Report](analysis/my-scripts-claude-review.md) – Detailed analysis and recommendations
-- [Issue Drafts](analysis/my-scripts-issues/README.md) – 14 actionable improvement tasks
-
-**Roadmap:**
-The review generated a [prioritized roadmap](analysis/my-scripts-issues/README.md#recommended-implementation-order) with 4 phases:
-
-1. **Foundation** (Weeks 1-2): Testing infrastructure, versioning, git hooks
-2. **Standardization** (Weeks 3-4): Naming conventions, installation guide, module deployment
-3. **Organization** (Weeks 5-6): Folder restructuring, documentation, shared utilities
-4. **Polish** (Weeks 7-8): Architecture docs, code formatting, automated releases
-
----
-
 ## Versioning
 
 This repository follows [Semantic Versioning](https://semver.org/):
@@ -390,40 +353,9 @@ Coverage reports are automatically generated in CI/CD and uploaded to both Codec
 
 ### Type Checking (Python)
 
-This repository uses **mypy** for static type checking to improve code quality and catch type-related errors early.
-
-**Run Type Checking Locally:**
-
-```bash
-# Install dependencies (if not already installed)
-pip install -r requirements.txt
-
-# Run mypy on Python source
-mypy src/python --config-file=mypy.ini
-
-# Type errors are informational only - they don't block commits or CI
-```
-
-**Type Checking Configuration:**
-
-- Configuration file: `mypy.ini`
-- Python version: 3.11
-- Mode: Permissive (Phase 1 - Infrastructure)
-- Tests excluded initially
-
-**Integration:**
-
-- ✅ **Pre-commit hook** - Shows type errors locally (informational, non-blocking)
-- ✅ **CI/CD** - Runs on every push and PR (informational only)
-- ✅ **Type stubs** - Includes stubs for `requests` and `tqdm`
-
-**Current Status:**
-
-- Phase 1 (Infrastructure): ✅ Complete
-- Phase 2 (Type Hints): Planned - Will add type hints to core modules
-- 117 type errors identified across 10 files for future cleanup
-
-Type checking helps maintain code quality without disrupting the existing workflow.
+This repository uses **mypy** for static type checking to catch type-related issues early.
+Type checking runs in pre-commit and CI/CD as informational, non-blocking feedback.
+Configuration lives in [mypy.ini](mypy.ini), and you can run it locally with `mypy src/python --config-file=mypy.ini`.
 
 ---
 
@@ -515,59 +447,20 @@ For complete naming standards, examples, and migration guidance:
 
 ## Git Hooks
 
-This repository uses git hooks for quality enforcement to catch issues before they're committed or pushed.
+Git hooks provide lightweight quality and automation checks in your local workflow.
 
-### Active Hooks
+- **pre-commit**: Runs code-quality checks before commit.
+- **commit-msg**: Enforces [Conventional Commits](https://www.conventionalcommits.org/) message format.
+- **post-commit**: Runs repository automation after each commit.
+- **post-merge**: Runs repository automation after merges.
 
-- **pre-commit**: Validates code quality before commits
-  - Checks for debug statements
-  - Runs PowerShell linting (PSScriptAnalyzer)
-  - Runs Python linting (pylint)
-  - Warns about large files (>10MB)
-
-- **commit-msg**: Enforces [Conventional Commits](https://www.conventionalcommits.org/) format
-  - Required format: `type(scope): description`
-  - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`, `build`, `revert`
-  - Example: `feat(logging): add structured JSON output`
-
-- **post-commit**: Runs repository-specific automation
-  - Mirrors committed files to staging directory
-  - Deploys PowerShell modules per configuration
-  - Requires PowerShell 7+ (pwsh)
-
-- **post-merge**: Runs post-merge automation
-  - Updates staging directory with merged changes
-  - Deploys updated modules
-  - Handles dependency updates and log rotation
-- **Integration coverage**: `tests/integration/GitHooks.Integration.Tests.ps1` exercises staging mirror updates, deployment targets, and configuration handling to validate the end-to-end hook workflow.
-
-### Installation
-
-After cloning the repository, install the hooks:
+Install hooks after cloning:
 
 ```bash
 ./scripts/install-hooks.sh
 ```
 
-The hooks will be installed to `.git/hooks/` and will run automatically.
-
-### Bypassing Hooks
-
-To bypass hooks for emergency commits (use sparingly):
-
-```bash
-git commit --no-verify -m "fix: emergency hotfix"
-```
-
-### Documentation
-
-See [docs/guides/git-hooks.md](docs/guides/git-hooks.md) for complete documentation including:
-
-- Detailed hook behavior and requirements
-- Installation and troubleshooting
-- Testing procedures
-- When and how to bypass hooks safely
-- FAQ and common issues
+See [docs/guides/git-hooks.md](docs/guides/git-hooks.md) for full behavior, troubleshooting, and testing details.
 
 ---
 
@@ -660,51 +553,8 @@ For detailed code style guidelines, configuration, and troubleshooting:
 
 **Configuration Resources:**
 
-- **[Configuration Guide](config/CONFIG_GUIDE.md)** - Comprehensive configuration documentation
-  - Local deployment settings (git hooks)
-  - Module deployment configuration
-  - Environment variables
-  - Secrets management (database passwords)
-  - Platform-specific setup
-  - Troubleshooting guide
-- **[Environment Variables Reference](docs/ENVIRONMENT.md)** - Complete environment variable documentation
-  - All variables with descriptions and formats
-  - How to obtain API keys and credentials
-  - Security best practices
-  - Troubleshooting guide
-  - Quick reference tables
-
-**Module Deployment Configuration (TOML-based):**
-
-The repository uses a modern TOML-based configuration system for PowerShell module deployment:
-
-- **`psmodule.toml`** - Main module configuration (committed to git)
-  - Defines all 8 PowerShell modules and their deployment settings
-  - Single source of truth for module deployment
-  - Supports module dependencies, auto-deployment, and testing options
-
-- **`psmodule.local.toml`** - User-specific overrides (gitignored)
-  - Override deployment paths and settings per-user/per-machine
-  - Copy from `psmodule.local.toml.example` and customize
-  - Allows local development without modifying shared config
-
-**Migration from Legacy Configuration:**
-
-```powershell
-# Migrate from old deployment.txt to new psmodule.toml
-.\scripts\Migrate-ModuleConfig.ps1
-
-# Deploy modules using new configuration
-.\scripts\Deploy-Modules.ps1 -Force
-```
-
-**Benefits:**
-
-- ✅ Single configuration file (reduced from 3 files to 1)
-- ✅ Standard TOML format with comments support
-- ✅ Schema validation possible
-- ✅ Easier to edit and understand
-- ✅ Supports module dependencies
+- [Configuration Guide](config/CONFIG_GUIDE.md) - Setup, local deployment options, and troubleshooting.
+- [Environment Variables Reference](docs/ENVIRONMENT.md) - Variable definitions, credential guidance, and quick reference.
 
 ---
 
