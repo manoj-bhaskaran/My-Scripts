@@ -74,15 +74,17 @@ function Invoke-DistributionRandomize {
     Write-LogInfo "Randomize: assigning files to folders using round-robin through shuffled list..."
     $assignments = @{}
     foreach ($sf in $subfolders) {
-        $assignments[$sf.FullName] = @()
+        $assignments[$sf.FullName] = [System.Collections.Generic.List[object]]::new()
     }
 
     $folderIndex = 0
     $subfolderPaths = @($subfolders | ForEach-Object { $_.FullName })
+    $fileToFolder = @{}
 
     foreach ($file in $allFiles) {
         $targetFolderPath = $subfolderPaths[$folderIndex]
-        $assignments[$targetFolderPath] += $file
+        $assignments[$targetFolderPath].Add($file)
+        $fileToFolder[$file] = $targetFolderPath
         $folderIndex = ($folderIndex + 1) % $subfolderPaths.Count
     }
 
@@ -100,13 +102,7 @@ function Invoke-DistributionRandomize {
     $filesMoving = 0
     foreach ($file in $allFiles) {
         $currentFolder = Split-Path -Path $file.FullName -Parent
-        $assignedFolder = $null
-        foreach ($p in $subfolderPaths) {
-            if ($assignments[$p] -contains $file) {
-                $assignedFolder = $p
-                break
-            }
-        }
+        $assignedFolder = $fileToFolder[$file]
         if ($currentFolder -eq $assignedFolder) {
             $filesStaying++
         } else {
