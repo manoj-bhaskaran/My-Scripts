@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **FileSystem module** bumped to v1.1.0 (issue #937)
+  - New path utility functions extracted from `Expand-ZipsAndClean.ps1`:
+    - `Get-FullPath`: Normalize paths to absolute Windows paths
+    - `Format-Bytes`: Format byte counts into human-readable strings (B, KB, MB, GB, TB)
+    - `Resolve-UniquePath`: Generate unique file paths with timestamp suffixes
+    - `Resolve-UniqueDirectoryPath`: Generate unique directory paths with timestamp suffixes
+    - `Get-SafeName`: Sanitize filenames by removing invalid characters and optionally truncating
+    - `Test-LongPathsEnabled`: Check OS registry for Windows long paths support
+    - `Resolve-UniquePathCore` (private helper): Shared suffix logic for unique path generation
+  - Comprehensive Pester test coverage added for all new functions
+  - All functions follow module style conventions with comment-based help
+
 - **BackupState module** (`src/powershell/modules/Backup/BackupState.psm1`, v1.0.0)
   - New module extracted from `Sync-MacriumBackups.ps1` containing all eight state
     management functions: `Format-Duration`, `Read-StateFile`, `Write-StateFile`,
@@ -20,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Export-ModuleMember` explicitly lists all eight public functions.
 
 ### Changed
+
+- **Expand-ZipsAndClean.ps1** bumped to v2.0.1 (issue #937)
+  - Refactored: seven generic helper functions moved to `FileSystem.psm1` module
+    for reuse across other scripts (no behavioral changes to script)
+  - Removed from script: `Get-FullPath`, `Format-Bytes`, `Resolve-UniquePathCore`,
+    `Resolve-UniquePath`, `Resolve-UniqueDirectoryPath`, `Get-SafeName`,
+    `Test-LongPathsEnabled` (now imported via `FileSystem.psm1`)
 
 - **Sync-MacriumBackups.ps1** bumped to v2.7.0
   - Imports `BackupState.psm1`; eight state management functions removed from the script.
