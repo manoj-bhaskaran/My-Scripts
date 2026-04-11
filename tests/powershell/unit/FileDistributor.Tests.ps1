@@ -19,6 +19,18 @@ BeforeAll {
     # Path to FileDistributor script
     $script:ScriptPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'file-management' 'FileDistributor.ps1'
     $script:StateHelpersPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'Private' 'State.ps1'
+
+    # Prefer pwsh for cross-platform CI, fall back to Windows PowerShell when needed.
+    $runner = Get-Command -Name 'pwsh' -ErrorAction SilentlyContinue
+    if (-not $runner) {
+        $runner = Get-Command -Name 'powershell' -ErrorAction SilentlyContinue
+    }
+
+    if (-not $runner) {
+        throw 'Neither pwsh nor powershell executable is available for subprocess script invocation.'
+    }
+
+    $script:PowerShellRunner = $runner.Name
 }
 
 Describe "FileDistributor Script Existence" {
@@ -33,12 +45,12 @@ Describe "FileDistributor Script Existence" {
 
 Describe "FileDistributor Help" {
     It "Should display help when -Help parameter is provided" {
-        $result = & powershell -File $script:ScriptPath -Help 2>&1
+        $result = & $script:PowerShellRunner -File $script:ScriptPath -Help 2>&1
         $result | Should -Not -BeNullOrEmpty
     }
 
     It "Should not throw errors with valid parameters and -Help" {
-        { & powershell -File $script:ScriptPath -SourceFolder $script:SourceFolder -TargetFolder $script:TargetFolder -Help } | Should -Not -Throw
+        { & $script:PowerShellRunner -File $script:ScriptPath -SourceFolder $script:SourceFolder -TargetFolder $script:TargetFolder -Help } | Should -Not -Throw
     }
 }
 
