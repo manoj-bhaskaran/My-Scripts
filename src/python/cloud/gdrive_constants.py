@@ -12,7 +12,7 @@ import os
 # ---------------------------------------------------------------------------
 # Version
 # ---------------------------------------------------------------------------
-VERSION = "1.16.0"
+VERSION = "1.17.0"
 
 # ---------------------------------------------------------------------------
 # API / OAuth
@@ -28,7 +28,7 @@ DEFAULT_PROCESS_BATCH = 500
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
 PAGE_SIZE = 1000
-DEFAULT_WORKERS = 5
+DEFAULT_WORKERS = min(8, (os.cpu_count() or 1) * 2)
 INFERRED_MODIFY_ERROR = "Cannot modify file (inferred from untrash check)"
 
 # ---------------------------------------------------------------------------

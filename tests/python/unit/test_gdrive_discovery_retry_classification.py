@@ -21,6 +21,8 @@ if "dateutil" not in sys.modules:
 
 googleapiclient_module = ModuleType("googleapiclient")
 errors_module = ModuleType("googleapiclient.errors")
+discovery_module = ModuleType("googleapiclient.discovery")
+http_module = ModuleType("googleapiclient.http")
 
 
 class HttpError(Exception):
@@ -31,9 +33,22 @@ class HttpError(Exception):
 
 
 errors_module.HttpError = HttpError
+discovery_module.build = lambda *args, **kwargs: None
+
+
+class MediaIoBaseDownload:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+http_module.MediaIoBaseDownload = MediaIoBaseDownload
 googleapiclient_module.errors = errors_module
+googleapiclient_module.discovery = discovery_module
+googleapiclient_module.http = http_module
 sys.modules["googleapiclient"] = googleapiclient_module
 sys.modules["googleapiclient.errors"] = errors_module
+sys.modules["googleapiclient.discovery"] = discovery_module
+sys.modules["googleapiclient.http"] = http_module
 
 from gdrive_discovery import DriveTrashDiscovery
 
@@ -147,3 +162,59 @@ def test_fetch_and_handle_metadata_routes_no_access_by_status(monkeypatch):
     )
 
     assert buckets["no_access"] == ["fid"]
+
+
+def test_build_query_includes_server_side_after_date_filter():
+    discovery = _make_discovery()
+    discovery.args.after_date = "2026-01-01T00:00:00+00:00"
+
+    q = discovery._build_query()
+
+    assert "modifiedTime > '2026-01-01T00:00:00+00:00'" in q
+
+
+def test_prefetch_reuses_cached_metadata_without_second_api_call():
+    discovery = _make_discovery()
+    discovery.args.file_ids = ["abcdefghijklmnopqrstuvwxyz123"]
+
+    service = MagicMock()
+    service.files.return_value.get.return_value = object()
+    discovery.auth._get_service.return_value = service
+
+    calls = {"n": 0}
+
+    def _fake_with_retries(*args, **kwargs):
+        calls["n"] += 1
+        return ({"id": "fid", "trashed": True}, None, None)
+
+    from gdrive_discovery import with_retries as _orig_with_retries
+
+    try:
+        import gdrive_discovery as module
+
+        module.with_retries = _fake_with_retries
+        discovery._prefetch_ids_metadata(discovery.args.file_ids)
+        discovery._prefetch_ids_metadata(discovery.args.file_ids)
+    finally:
+        import gdrive_discovery as module
+
+        module.with_retries = _orig_with_retries
+
+    assert calls["n"] == 1
+
+
+def test_validate_file_ids_clear_cache_warns(monkeypatch):
+    discovery = _make_discovery()
+    discovery.args.file_ids = ["abcdefghijklmnopqrstuvwxyz123"]
+    discovery.args.clear_id_cache = True
+
+    monkeypatch.setattr(
+        discovery,
+        "_prefetch_ids_metadata",
+        lambda *_: ({"ok": [], "invalid": [], "not_found": [], "no_access": []}, 0, [], 0, 0),
+    )
+
+    discovery._print_warn = MagicMock()
+
+    assert discovery._validate_file_ids() is True
+    discovery._print_warn.assert_called_once()

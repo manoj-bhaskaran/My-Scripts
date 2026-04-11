@@ -113,7 +113,7 @@ class DriveTrashDiscovery:
                 return True
         return False
 
-    def _matches_time_filter(self, item_data: Dict[str, Any]) -> bool:
+    def _matches_time_filter(self, item_data: Mapping[str, Any]) -> bool:
         if not self.args.after_date:
             return True
         try:
@@ -289,6 +289,16 @@ class DriveTrashDiscovery:
         for fid in fids:
             if self._should_skip_invalid_id(fid, buckets):
                 continue
+            cached = self._classify_prefetched_id(
+                fid,
+                buckets,
+                transient_errors,
+                transient_ids,
+                skipped_non_trashed,
+                err_count,
+            )
+            if cached:
+                continue
             self._fetch_and_handle_metadata(
                 service,
                 fid,
@@ -307,6 +317,34 @@ class DriveTrashDiscovery:
             skipped_non_trashed[0],
             err_count[0],
         )
+
+    def _classify_prefetched_id(
+        self,
+        fid: str,
+        buckets: Dict[str, List[str]],
+        transient_errors: List[int],
+        transient_ids: List[str],
+        skipped_non_trashed: List[int],
+        err_count: List[int],
+    ) -> bool:
+        if fid in self._id_prefetch_errors:
+            err = self._id_prefetch_errors[fid]
+            if err == HTTP_404_LABEL:
+                buckets["not_found"].append(fid)
+            elif err == HTTP_403_LABEL:
+                buckets["no_access"].append(fid)
+            else:
+                transient_errors[0] += 1
+                transient_ids.append(fid)
+                err_count[0] += 1
+            return True
+        if self._id_prefetch_non_trashed.get(fid, False):
+            skipped_non_trashed[0] += 1
+            return True
+        if fid in self._id_prefetch:
+            buckets["ok"].append(fid)
+            return True
+        return False
 
     def _emit_parity_metrics(
         self, buckets: Dict[str, List[str]], skipped_non_trashed: int, err_count: int
@@ -364,6 +402,9 @@ class DriveTrashDiscovery:
                 )
                 return False
         if getattr(self.args, "clear_id_cache", False):
+            self._print_warn(
+                "--clear-id-cache enabled: metadata cache will be cleared and IDs re-fetched during discovery/streaming."
+            )
             self._clear_id_caches()
         return self._report_validation_outcome(buckets, transient_errors, transient_ids)
 
@@ -388,8 +429,9 @@ class DriveTrashDiscovery:
                 base_query += f" and {extensions_query}"
 
         if self.args.after_date:
-            self.logger.warning(
-                "Time-based filtering (--after-date) will be applied client-side due to Drive API limitations"
+            base_query += f" and modifiedTime > '{self.args.after_date}'"
+            self.logger.info(
+                "Time-based filtering (--after-date) is applied server-side and revalidated client-side as a safety guard"
             )
 
         return base_query
@@ -401,8 +443,13 @@ class DriveTrashDiscovery:
         if not self._matches_time_filter(file_data):
             return None
 
+        file_id = file_data.get("id")
+        if not file_id:
+            self.logger.debug("Skipping file metadata without id: %s", file_data)
+            return None
+
         item = RecoveryItem(
-            id=file_data["id"],
+            id=str(file_id),
             name=file_data.get("name", "Unknown"),
             size=int(file_data.get("size", 0)),
             mime_type=file_data.get("mimeType", ""),
@@ -563,6 +610,8 @@ class DriveTrashDiscovery:
     ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """Fetch one Drive files.list page for discovery paths."""
         service = self.auth._get_service()
+        if service is None:
+            raise RuntimeError("Drive service not initialized")
         fields = self._id_discovery_fields()
         response = self._execute(
             service.files().list(

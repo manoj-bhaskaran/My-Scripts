@@ -43,9 +43,13 @@ class RecoveryItem:
     will_recover: bool = True
     will_download: bool = False
     target_path: str = ""
-    post_restore_action: str = "trash"  # canonical default
+    post_restore_action: str = ""
     status: str = "pending"  # pending, recovered, downloaded, failed
     error_message: str = ""
+
+    def __post_init__(self):
+        if not self.post_restore_action:
+            self.post_restore_action = PostRestorePolicy.TRASH
 
 
 @dataclass
