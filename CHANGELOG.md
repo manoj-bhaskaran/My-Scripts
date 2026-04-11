@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Entries older than the current minor release line are condensed to architectural highlights. Full history is available in `git log` and release tags.
+
+### Legend
+
+- `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
+
 ## [Unreleased]
 
 ### Added
@@ -86,7 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Replaced `($plannedMoves / 10)` and `($filesMoving / 10)` progress-log thresholds with a pre-computed `$threshold` variable that evaluates to `[int]::MaxValue` when the denominator is 0, preventing a flood of log output on every loop iteration
   - Bumped `FileManagement/FileDistributor` module version to `1.1.6`
 
-- **FolderOps.ps1: use `-LiteralPath` in `Move-ToRecycleBin` and `Remove-DistributionFile` (issue #BUG)**
+- **FolderOps.ps1: use `-LiteralPath` in `Move-ToRecycleBin` and `Remove-DistributionFile`**
   - Changed `Get-Item $FilePath` to `Get-Item -LiteralPath $FilePath` in `Move-ToRecycleBin` to prevent wildcard expansion silently failing for file names containing `[`, `]`, `*`, or `?`
   - Changed `Test-Path -Path $FilePath` to `Test-Path -LiteralPath $FilePath` in `Remove-DistributionFile` for the same reason
   - Bumped versions: `FileDistributor.ps1` to `4.7.5` and `FileManagement/FileDistributor` module to `1.1.4`
@@ -113,57 +119,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated script calls to pass script-scoped warning/error counters and retry settings to prevent incorrect EndOfScript deletion decisions and retry behavior changes
   - Ensures post-processing warnings/errors are properly tracked for `EndOfScript` deletion mode and retry parameters are correctly propagated from script to module functions
 
-## [2.12.4] - 2026-03-29
+## [2.12.5]–[2.12.8]
 
-### Fixed
+- Internal iterations rolled into [2.12.9].
 
-- **FileDistributor.ps1 v4.6.16: restore compatible New-FileQueue call signature**
-  - Removed unsupported `-WarningsSoFar` and `-ErrorsSoFar` arguments from `Invoke-ParameterValidation` when creating `FilesToDelete`
-  - Prevents startup parameter-binding failures by aligning the call with `New-FileQueue`'s supported parameters (`Name`, `SessionId`, `MaxSize`, `StatePath`)
-
-## [2.12.3] - 2026-03-29
+## [2.12.0]–[2.12.4] - 2026-03-27 → 2026-03-29
 
 ### Changed
 
-- **FileDistributor.ps1 v4.6.15: modularized state persistence and lock management**
-  - Moved state file helpers (`ConvertTo-Hashtable`, `Get-FileSha256Hex`, `Write-JsonAtomically`, `Get-StateFromPath`, `ConvertFrom-FileQueue`) into `FileManagement/FileDistributor/Private/State.ps1`
-  - Renamed checkpoint persistence functions to approved verbs (`Save-DistributionState`, `Restore-DistributionState`) and converted warnings/errors/session state inputs to explicit parameters at call sites
-  - Moved lock helpers into `FileManagement/FileDistributor/Private/FileLock.ps1` and renamed them to `Lock-DistributionStateFile` and `Unlock-DistributionStateFile`
-  - Updated orchestration call sites (`Invoke-RestoreCheckpoint`, `Invoke-DistributionPhase`, `Invoke-PostProcessingPhase`, `Invoke-PostRunCleanup`, and `Main` finally block) to use the new function names
+- **FileDistributor state/lock modularization + PurgeLogs integration**
+  - Moved state helpers to `FileManagement/FileDistributor/Private/State.ps1` and lock helpers to `Private/FileLock.ps1`.
+  - Renamed persistence/locking to approved verbs (`Save-DistributionState`, `Restore-DistributionState`, `Lock-DistributionStateFile`, `Unlock-DistributionStateFile`) and updated orchestration call sites.
+  - Replaced inline startup log cleanup with `Core/Logging/PurgeLogs` `Clear-LogFile`.
+  - Added `Clear-LogFile -BeforeTimestamp` support and cross-runtime timestamp parsing compatibility for `-BeforeTimestamp` and `-RetentionDays`.
+  - Added standalone/import-only compatibility so `Clear-LogFile` safely runs when `Initialize-Logger` is unavailable.
 
 ### Fixed
 
-- **FileDistributor module v1.0.1**
-  - Incremented module manifest version to include the new private state and lock modules as part of the modularization series
+- **FileDistributor startup binding safety**
+  - Removed unsupported `-WarningsSoFar` / `-ErrorsSoFar` arguments from `New-FileQueue` calls in parameter validation.
 
-## [2.12.2] - 2026-03-27
+## [2.11.x]
 
-### Fixed
-
-- **PurgeLogs v2.2.2: cross-runtime timestamp parsing compatibility**
-  - Updated `Clear-LogFile` timestamp parsing to use explicit compatible `TryParseExact`/`TryParse` overloads
-  - Fixes `MethodException` seen in CI tests for `-BeforeTimestamp` and `-RetentionDays` log filtering paths
-
-## [2.12.1] - 2026-03-27
-
-### Fixed
-
-- **PurgeLogs v2.2.1: standalone Clear-LogFile compatibility in tests/import-only contexts**
-  - `Clear-LogFile` now checks for `Initialize-Logger` before calling it, preventing `CommandNotFoundException` when PowerShellLoggingFramework is not preloaded
-  - Root `PurgeLogs` module entrypoint now provides a fallback `Write-LogMessage` implementation for isolated manifest imports
-
-## [2.12.0] - 2026-03-27
-
-### Changed
-
-- **FileDistributor.ps1 v4.6.10: modularized startup log cleanup via PurgeLogs**
-  - Removed inline `RemoveLogEntries` and inline truncation logic from `FileDistributor.ps1`
-  - Imported `Core/Logging/PurgeLogs` and replaced startup cleanup paths with a single `Clear-LogFile` call
-  - Mapped existing script parameters to module equivalents (`RemoveEntriesOlderThan` -> `RetentionDays`, truncation switches pass-through)
-
-- **PurgeLogs v2.2.0: added explicit timestamp cutoff filtering**
-  - Added `-BeforeTimestamp` support to `Clear-LogFile`
-  - Updated filtering flow so timestamp filtering can be combined with truncation checks in one invocation
+- No 2.11.x patches — next release was [2.12.0].
 
 ## [2.11.0] - 2026-03-26
 
@@ -264,6 +242,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Includes internal v2.7.3–v2.7.5 iterations.
 - Removed Safety from repository security tooling due to a vulnerable transitive `nltk` chain; standardized dependency scanning on `pip-audit` in pre-commit and CI.
 - Resolved lockfile and resolver issues across follow-up fixes (v2.7.5/v2.7.4), including compatible `virtualenv`/`filelock` pins and lockfile-aligned scanning.
 - Sync-MacriumBackups fixes from v2.6.1-v2.6.5: corrected `MaxChunkMB` handling, improved rclone flag compatibility, and aligned sanitized/logged command output with documented formats.
@@ -327,6 +306,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded shared-infrastructure test coverage across Python and PowerShell modules, including logging, error handling, file operations, progress reporting, and backup workflows.
 - Added Google Drive destructive-operation safeguards and PostgreSQL backup reliability tests to reduce data-loss risk in critical automation paths.
 
+> **2026-04-11 note:** The release timeline gap between [2.4.1] (2025-12-06) and [2.3.1] (2024-06-07) reflects a project hiatus; regular development resumed in December 2025.
+
 ## [2.3.1] - 2024-06-07
 
 ### Added
@@ -347,11 +328,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Sync-MacriumBackups.ps1 — Script Version History
+## Sync-MacriumBackups.ps1 — Script Version History (Historical / Archived)
 
 The entries below document `Sync-MacriumBackups.ps1` script versions that pre-date
 the numbered project releases above. They were previously kept as an inline CHANGELOG
 inside the script's `.NOTES` block and have been moved here for centralised tracking.
+Current consolidated tracking appears under [2.7.6] and [Unreleased].
 
 ### v2.6.6 — 2026-01-15
 
