@@ -192,6 +192,22 @@
 
 ## FileDistributor
 
+### 4.8.2 — 2026-04-11
+
+#### Changed
+
+- Moved the `-Help` short-circuit check to immediately after the `param(...)` block, before any
+  `Import-Module` calls, so requesting help on a workstation with Core/FileManagement modules
+  uninstalled still prints help and exits 0 without import errors.
+- Replaced the ~70-line hardcoded `Write-Host` help block with a single
+  `Get-Help -Full $PSCommandPath` call; comment-based help is now the sole source of truth and
+  includes all parameters (`-MaxFilesToCopy`, `-StateFilePath`, `-RandomNameModulePath`,
+  `-ConsolidateToMinimum`, `-RebalanceToAverage`, `-RebalanceTolerance`, `-RandomizeDistribution`,
+  `-MaxBackoff`) that were absent from the old hardcoded block.
+- Changed bare `exit` in the help branch to `exit 0` for an explicit success exit code.
+- Repaired mojibake in comment-based help (`module's`, `Source→Target`, `±10%`) caused by a prior
+  Windows-1252 save; file is now saved as UTF-8 with BOM (PowerShell 5.1 compatible).
+
 ### 4.8.1 — 2026-04-11
 
 #### Changed
