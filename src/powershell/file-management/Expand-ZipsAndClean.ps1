@@ -93,12 +93,19 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.0.0
+    Version  : 2.0.1
     Author   : Manoj Bhaskaran
     Requires : PowerShell 5.1 or 7+, Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.0.1  Refactored: Moved generic helper functions to FileSystem.psm1 module
+           for shared reuse across scripts. Moved functions:
+           - Get-FullPath, Format-Bytes, Resolve-UniquePathCore
+           - Resolve-UniquePath, Resolve-UniqueDirectoryPath
+           - Get-SafeName, Test-LongPathsEnabled
+           Script behavior unchanged; all functions still available via module import.
+
     2.0.0  Refactored to use PowerShellLoggingFramework.psm1 for standardized logging:
            - Removed Write-Info helper function
            - Replaced Write-Info calls with Write-LogInfo
@@ -246,106 +253,6 @@ Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 
 <#
 .SYNOPSIS
-    Returns normalized absolute path (Windows backslashes).
-#>
-function Get-FullPath {
-    param([Parameter(Mandatory)][string]$Path)
-    try {
-        $normalized = $Path -replace '/', '\'
-        return [System.IO.Path]::GetFullPath($normalized)
-    }
-    catch {
-        return ($Path -replace '/', '\')
-    }
-}
-
-<#
-.SYNOPSIS
-    Formats a byte count into a human-readable string.
-#>
-function Format-Bytes {
-    param([Parameter(Mandatory)][int64]$Bytes)
-    if ($Bytes -lt 1KB) { return "$Bytes B" }
-    if ($Bytes -lt 1MB) { return "{0:N2} KB" -f ($Bytes / 1KB) }
-    if ($Bytes -lt 1GB) { return "{0:N2} MB" -f ($Bytes / 1MB) }
-    if ($Bytes -lt 1TB) { return "{0:N2} GB" -f ($Bytes / 1GB) }
-    return "{0:N2} TB" -f ($Bytes / 1TB)
-}
-
-# Shared unique-suffix helper (works for files or directories)
-function Resolve-UniquePathCore {
-    param(
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][bool]$IsDirectory
-    )
-    $parent = Split-Path -Path $Path -Parent
-    $leaf = Split-Path -Path $Path -Leaf
-    $base = if ($IsDirectory) { $leaf } else { [System.IO.Path]::GetFileNameWithoutExtension($leaf) }
-    $ext = if ($IsDirectory) { '' } else { [System.IO.Path]::GetExtension($leaf) }
-    $stamp = (Get-Date -Format 'yyyyMMddHHmmss')
-    $i = 0
-    do {
-        $suffix = if ($i -eq 0) { "_$stamp" } else { "_$stamp`_$i" }
-        $candidate = Join-Path $parent ($base + $suffix + $ext)
-        $i++
-    } while (Test-Path -LiteralPath $candidate)
-    return $candidate
-}
-
-function Resolve-UniquePath {
-    param([Parameter(Mandatory)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { return $Path }
-    return (Resolve-UniquePathCore -Path $Path -IsDirectory:$false)
-}
-
-function Resolve-UniqueDirectoryPath {
-    param([Parameter(Mandatory)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { return $Path }
-    return (Resolve-UniquePathCore -Path $Path -IsDirectory:$true)
-}
-
-<#
-.SYNOPSIS
-    Sanitizes a file/folder name; optionally truncates for defensive limits.
-.PARAMETER Name
-    The original name to sanitize.
-.PARAMETER MaxLength
-    0 to disable truncation; otherwise trims to MaxLength characters (255 aligns with NTFS limits).
-#>
-function Get-SafeName {
-    param(
-        [Parameter(Mandatory)][string]$Name,
-        [int]$MaxLength = 0
-    )
-    $invalid = [System.IO.Path]::GetInvalidFileNameChars()
-    $sb = [System.Text.StringBuilder]::new()
-    foreach ($ch in $Name.ToCharArray()) {
-        if ($invalid -contains $ch -or $ch -eq [char]':') { [void]$sb.Append('_') } else { [void]$sb.Append($ch) }
-    }
-    $san = $sb.ToString().TrimEnd('.', ' ')
-    if ([string]::IsNullOrWhiteSpace($san)) { $san = 'archive' }
-    if ($MaxLength -gt 0 -and $san.Length -gt $MaxLength) {
-        # Include original name length for debugging
-        Write-LogDebug ("Truncating name from {0} to {1} chars: '{2}'" -f $san.Length, $MaxLength, $san)
-        $san = $san.Substring(0, $MaxLength)
-    }
-    return $san
-}
-
-<#
-.SYNOPSIS
-    Checks whether LongPaths are enabled in the OS.
-#>
-function Test-LongPathsEnabled {
-    try {
-        $val = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction Stop
-        return ($val.LongPathsEnabled -eq 1)
-    }
-    catch { return $false }
-}
-
-<#
-.SYNOPSIS
     Returns quick stats for a zip (file count, uncompressed total, compressed bytes).
 .DESCRIPTION
     Caches the FileInfo once to avoid redundant Get-Item/Length calls in loops.
@@ -377,12 +284,10 @@ function Get-ZipFileStats {
                     $result.UncompressedBytes += [int64]$entry.Length
                 }
             }
-        }
-        finally {
+        } finally {
             $zip.Dispose()
         }
-    }
-    catch {
+    } catch {
         Write-LogDebug "Failed to read zip stats for: $ZipPath. $_"
     }
     return $result
@@ -477,8 +382,7 @@ function Expand-ZipSmart {
                     # Overwrite is true only if policy == Overwrite; otherwise false (Skip handled above; Rename changed path)
                     [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, ($CollisionPolicy -eq 'Overwrite'))
                     $written++
-                }
-                catch {
+                } catch {
                     $emsg = $_.Exception.Message
                     if ($emsg -imatch 'encrypt|password|protected') {
                         throw "Extraction failed for '$ZipPath' (zip may be encrypted): $emsg"
@@ -486,14 +390,12 @@ function Expand-ZipSmart {
                     throw
                 }
             }
-        }
-        finally {
+        } finally {
             $zip.Dispose()
         }
         return $written
 
-    }
-    catch {
+    } catch {
         $msg = $_.Exception.Message
         if ($msg -imatch 'encrypt|password|protected') {
             throw "Extraction failed for '$ZipPath' (zip may be encrypted): $msg"
@@ -523,8 +425,7 @@ function Move-Zips-ToParent {
         try {
             New-DirectoryIfMissing -Path $probe -Force | Out-Null
             Remove-Item -LiteralPath $probe -Recurse -Force
-        }
-        catch {
+        } catch {
             throw "Parent directory is not writable: $parent"
         }
     }
@@ -644,8 +545,7 @@ try {
                     $processedZips++
                     Write-LogDebug "Extracted '$($zip.Name)': files=$($stats.FileCount), uncompressed=$($stats.UncompressedBytes), compressed=$($stats.CompressedBytes)"
                 }
-            }
-            catch {
+            } catch {
                 $msg = $_.Exception.Message
                 $errors.Add("Extraction failed for '$($zip.FullName)': $msg") | Out-Null
                 Write-LogDebug $msg
@@ -662,8 +562,7 @@ try {
         if ($PSCmdlet.ShouldProcess($SourceDirectory, "Move .zip files to parent")) {
             $moveSummary = Move-Zips-ToParent -SourceDir $SourceDirectory
         }
-    }
-    catch {
+    } catch {
         $msg = "Moving .zip files to parent failed: $($_.Exception.Message)"
         Write-LogDebug $msg
         $errors.Add($msg) | Out-Null
@@ -679,8 +578,7 @@ try {
             if ($nonZips.Count -gt 0 -and -not $CleanNonZips) {
                 $errors.Add("DeleteSource skipped: non-zip items remain. Use -CleanNonZips to remove them.") | Out-Null
                 Write-LogDebug ("Remaining items: `n" + ($nonZips | Select-Object -ExpandProperty FullName | Out-String))
-            }
-            else {
+            } else {
                 if ($CleanNonZips -and $nonZips.Count -gt 0) {
                     if ($PSCmdlet.ShouldProcess($SourceDirectory, "Clean non-zip items before delete")) {
                         # Remove non-zip files and directories
@@ -693,19 +591,16 @@ try {
                     Remove-Item -LiteralPath $SourceDirectory -Recurse -Force
                 }
             }
-        }
-        catch {
+        } catch {
             $msg = "Failed to delete source directory '$SourceDirectory': $($_.Exception.Message)"
             Write-LogDebug $msg
             $errors.Add($msg) | Out-Null
         }
     }
 
-}
-catch {
+} catch {
     $errors.Add("Fatal error: $($_.Exception.Message)") | Out-Null
-}
-finally {
+} finally {
     $stopwatch.Stop()
 }
 
@@ -715,8 +610,7 @@ finally {
 $compressionRatio = if ($totalCompressedZipBytes -gt 0) {
     # Show as multiplier, one decimal (e.g., 3.3x). >1 means compression saved space.
     "{0:N1}x" -f ($totalUncompressedBytes / [double]$totalCompressedZipBytes)
-}
-else { "n/a" }
+} else { "n/a" }
 
 # Build a view with shorter column names to avoid wrapping on narrow consoles
 $summaryView = [pscustomobject]@{
@@ -748,8 +642,7 @@ try { $consoleWidth = $Host.UI.RawUI.WindowSize.Width } catch {
 
 if ($consoleWidth -lt 120) {
     $summaryView | Format-List
-}
-else {
+} else {
     $summaryView | Format-Table -AutoSize
 }
 
