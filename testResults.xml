@@ -1,0 +1,43 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<test-results xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="nunit_schema_2.5.xsd" name="Pester" total="10" errors="0" failures="0" not-run="0" inconclusive="0" ignored="0" skipped="0" invalid="0" date="2026-04-11" time="13:43:48">
+  <environment user-domain="LENOVOLAPTOP" clr-version="10.0.5" nunit-version="2.5.8.0" user="manoj" os-version="10.0.26200" machine-name="LENOVOLAPTOP" cwd="D:\My Scripts" platform="Microsoft Windows 11 Pro|C:\WINDOWS|\Device\Harddisk1\Partition3" />
+  <culture-info current-culture="en-IN" current-uiculture="en-GB" />
+  <test-suite type="TestFixture" name="Pester" executed="True" result="Success" success="True" time="6.1954" asserts="0" description="Pester">
+    <results>
+      <test-suite type="TestFixture" name="D:\My Scripts\tests\powershell\unit\AdbHelpers.Tests.ps1" executed="True" result="Success" success="True" time="6.1954" asserts="0" description="D:\My Scripts\tests\powershell\unit\AdbHelpers.Tests.ps1">
+        <results>
+          <test-suite type="TestFixture" name="AdbHelpers module exports" executed="True" result="Success" success="True" time="1.0215" asserts="0" description="AdbHelpers module exports">
+            <results>
+              <test-case description="exports the expected public commands" name="AdbHelpers module exports.exports the expected public commands" time="0.733" asserts="0" success="True" result="Success" executed="True" />
+            </results>
+          </test-suite>
+          <test-suite type="TestFixture" name="Test-HostTar" executed="True" result="Success" success="True" time="2.1708" asserts="0" description="Test-HostTar">
+            <results>
+              <test-case description="skips tar lookup in pull mode" name="Test-HostTar.skips tar lookup in pull mode" time="0.5279" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="throws when tar is unavailable in tar mode" name="Test-HostTar.throws when tar is unavailable in tar mode" time="0.6132" asserts="0" success="True" result="Success" executed="True" />
+            </results>
+          </test-suite>
+          <test-suite type="TestFixture" name="Test-PhoneTar" executed="True" result="Success" success="True" time="2.5164" asserts="0" description="Test-PhoneTar">
+            <results>
+              <test-case description="skips the adb probe in pull mode" name="Test-PhoneTar.skips the adb probe in pull mode" time="0.0546" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="passes debug parameters through to Invoke-AdbSh" name="Test-PhoneTar.passes debug parameters through to Invoke-AdbSh" time="0.2796" asserts="0" success="True" result="Success" executed="True" />
+            </results>
+          </test-suite>
+          <test-suite type="TestFixture" name="Invoke-AdbSh" executed="True" result="Success" success="True" time="3.179" asserts="0" description="Invoke-AdbSh">
+            <results>
+              <test-case description="preserves control-structure newlines when flattening the shell script" name="Invoke-AdbSh.preserves control-structure newlines when flattening the shell script" time="0.3672" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="writes debug log entries when debug logging is enabled" name="Invoke-AdbSh.writes debug log entries when debug logging is enabled" time="0.285" asserts="0" success="True" result="Success" executed="True" />
+            </results>
+          </test-suite>
+          <test-suite type="TestFixture" name="Remote metadata helpers" executed="True" result="Success" success="True" time="3.4427" asserts="0" description="Remote metadata helpers">
+            <results>
+              <test-case description="parses the remote byte count from Invoke-AdbSh output" name="Remote metadata helpers.parses the remote byte count from Invoke-AdbSh output" time="0.1054" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="returns zero for blank remote byte output" name="Remote metadata helpers.returns zero for blank remote byte output" time="0.0646" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="parses the remote file count from Invoke-AdbSh output" name="Remote metadata helpers.parses the remote file count from Invoke-AdbSh output" time="0.0796" asserts="0" success="True" result="Success" executed="True" />
+            </results>
+          </test-suite>
+        </results>
+      </test-suite>
+    </results>
+  </test-suite>
+</test-results>

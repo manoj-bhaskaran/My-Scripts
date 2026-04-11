@@ -27,6 +27,7 @@ graph TD
 
     subgraph "PowerShell Modules"
         LOG[PowerShellLoggingFramework<br/>v2.0.0]
+        ADBH[AdbHelpers<br/>v1.0.0]
         ERR[ErrorHandling<br/>v1.0.0]
         FOPS[FileOperations<br/>v1.0.0]
         PGBAK[PostgresBackup<br/>v2.0.0]
@@ -37,6 +38,7 @@ graph TD
     end
 
     subgraph "External Dependencies"
+        ADBCLI[Android Platform-Tools<br/>adb and device tar]
         PGCLIENT[PostgreSQL Client<br/>pg_dump]
         VLCPLAYER[VLC Media Player]
         PYCROP[Python Image Cropper]
@@ -45,6 +47,7 @@ graph TD
     %% Script to Module Dependencies
     BACKUP --> PGBAK
     BACKUP --> LOG
+    FILE --> ADBH
     FILE --> FOPS
     FILE --> LOG
     MEDIA --> VID
@@ -64,6 +67,7 @@ graph TD
 
     %% Module to External Dependencies
     PGBAK --> PGCLIENT
+    ADBH --> ADBCLI
     VID --> VLCPLAYER
     VID -.Optional.-> PYCROP
 
@@ -72,9 +76,9 @@ graph TD
     classDef script fill:#50C878,stroke:#2E7D4E,color:#fff
     classDef external fill:#F5A623,stroke:#D68910,color:#fff
 
-    class LOG,ERR,FOPS,PGBAK,PROG,PURGE,RND,VID module
+    class LOG,ADBH,ERR,FOPS,PGBAK,PROG,PURGE,RND,VID module
     class BACKUP,FILE,MEDIA,SYSTEM,CLOUD,GIT script
-    class PGCLIENT,VLCPLAYER,PYCROP external
+    class ADBCLI,PGCLIENT,VLCPLAYER,PYCROP external
 ```
 
 **Legend**:
@@ -287,6 +291,34 @@ Invoke-WithRetry -ScriptBlock { Copy-Item $src $dest } -MaxRetries 3
 ```powershell
 Remove-OldLogs -LogDirectory "C:\Logs" -RetentionDays 30
 ```
+
+---
+
+#### 9. AdbHelpers (v1.0.0)
+
+**Purpose**: Reusable Android Debug Bridge helpers for device validation, remote shell execution, and remote path metadata lookups.
+
+**Dependencies**:
+- Android Platform-Tools (`adb`) on PATH
+- Host `tar` and device-side `tar` only when tar workflows are requested
+
+**Dependents**:
+- `Copy-AndroidFiles.ps1`
+- Future Android device automation and backup scripts
+
+**Key Functions**:
+- `Test-Adb`: Verify `adb.exe` is available on the host
+- `Confirm-Device`: Verify an authorized Android device is connected
+- `Invoke-AdbSh`: Run normalized POSIX shell snippets on the device safely
+- `Get-RemoteSize`: Return best-effort remote byte counts for Android paths
+- `Get-RemoteFileCount`: Return best-effort remote file counts for Android paths
+- `Test-HostTar` and `Test-PhoneTar`: Validate tar support for tar-based transfer workflows
+
+**External Requirements**:
+- Android Platform-Tools installed and available on PATH
+- USB debugging enabled and authorized on the connected device
+
+**Location**: `src/powershell/modules/Android/AdbHelpers/`
 
 ---
 

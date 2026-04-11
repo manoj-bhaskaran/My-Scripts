@@ -7,9 +7,11 @@ Reusable PowerShell modules organized by functional category.
 Modules are organized into the following categories:
 
 ### Core Modules (`Core/`)
+
 Fundamental modules used across multiple scripts:
 
 #### Logging (`Core/Logging/`)
+
 - **PowerShellLoggingFramework** - Cross-platform structured logging framework
   - Multiple log levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
   - JSON output support
@@ -23,9 +25,11 @@ Fundamental modules used across multiple scripts:
   - Integration with PowerShellLoggingFramework
 
 ### Database Modules (`Database/`)
+
 Database-related functionality:
 
 #### PostgresBackup (`Database/PostgresBackup/`)
+
 - PostgreSQL database backup automation
 - Retention management
 - Service control integration
@@ -33,23 +37,38 @@ Database-related functionality:
 - Compression support
 
 ### Utility Modules (`Utilities/`)
+
 General-purpose utility modules:
 
 #### RandomName (`Utilities/RandomName/`)
+
 - Generates Windows-safe random file names
 - Conservative character allow-list
 - Collision detection
 - Configurable length and format
 
 ### Media Modules (`Media/`)
+
 Media processing functionality:
 
 #### Videoscreenshot (`Media/Videoscreenshot/`)
+
 - Video frame capture via VLC or GDI+
 - Batch processing support
 - Optional Python cropper integration
 - PID registry for process management
 - Configurable capture intervals
+
+### Android Modules (`Android/`)
+
+Android device integration helpers:
+
+#### AdbHelpers (`Android/AdbHelpers/`)
+
+- Shared Android Debug Bridge (ADB) validation helpers
+- Remote shell execution with safe POSIX control-structure flattening
+- Remote file count and size probes for Android device paths
+- Reusable tar capability checks for host and device workflows
 
 ## Module Deployment
 
@@ -60,6 +79,7 @@ Configuration file: `config/modules/deployment.txt`
 ### Deployment Targets
 
 Modules can be deployed to:
+
 - **System**: `C:\Program Files\WindowsPowerShell\Modules\`
 - **User**: `%USERPROFILE%\Documents\WindowsPowerShell\Modules\`
 - **Custom**: Alternate paths as configured
@@ -82,6 +102,7 @@ Import-Module "$PSScriptRoot\modules\Core\Logging\PowerShellLoggingFramework.psm
 ### Directory Structure
 
 Each module should follow PowerShell module conventions:
+
 ```
 ModuleName/
 ├── ModuleName.psm1      # Module script file

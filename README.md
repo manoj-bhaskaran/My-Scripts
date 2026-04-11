@@ -181,6 +181,7 @@ pip install -e .
 - **[FileSystem](src/powershell/modules/Core/FileSystem/)** (v1.0.0) – Common file system operations (directory creation, file accessibility checks, path validation, file locking detection)
 - **[FileQueue](src/powershell/modules/FileManagement/FileQueue/)** (v1.0.0) – File queue management for distribution operations with state persistence and session tracking
 - **[FileDistributor](src/powershell/modules/FileManagement/FileDistributor/)** (v1.2.0) – Private support helpers for FileDistributor orchestration (path handling, state persistence, and state-file locking)
+- **[AdbHelpers](src/powershell/modules/Android/AdbHelpers/)** (v1.0.0) – Shared Android Debug Bridge helpers for device checks, remote shell execution, and remote path metadata queries
 
 **Python Modules:**
 

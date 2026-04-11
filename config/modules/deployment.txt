@@ -49,6 +49,7 @@ PurgeLogs|src\powershell\modules\Core\Logging\PurgeLogs.psm1|System|Manoj Bhaska
 # Utility and media processing modules
 RandomName|src\powershell\modules\Utilities\RandomName|System|Manoj Bhaskaran|Generates Windows-safe random file names using a conservative allow-list
 Videoscreenshot|src\powershell\modules\Media\Videoscreenshot|System|Manoj Bhaskaran|Video frame capture via VLC or GDI+ with optional Python cropper integration
+AdbHelpers|src\powershell\modules\Android\AdbHelpers|System|Manoj Bhaskaran|Reusable Android Debug Bridge helpers for device validation, remote shell execution, and remote metadata queries
 
 # Shared utility modules (error handling, file operations, progress reporting)
 ErrorHandling|src\powershell\modules\Core\ErrorHandling|System|Manoj Bhaskaran|Standardized error handling and retry logic with exponential backoff
