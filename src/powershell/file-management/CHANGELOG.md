@@ -88,105 +88,26 @@
 - Retained ADB-specific `DebugMode` for low-level adb diagnostics.
 - All log messages are now written to standardized log files.
 
-### 1.3.9 — 2025-08-27
+### 1.x (rollup) — 2025-08-27
+
+#### Added
+
+- Introduced disk-space precheck, resumable pull flow, TAR retries/cleanup, and `-StreamTar`.
+- Added `-Verify` and local/remote summary reporting after pull and TAR-based transfers.
+- Introduced `DebugMode` for transfer troubleshooting with adb command/stdout/stderr capture.
 
 #### Changed
 
-- Verify summary shows Local before → after (+Δ) for both file count and size (MB).
-- Baseline adapts to mode:
-  - pull (default): baseline = `$Dest\$leaf` if that subfolder is used by adb; otherwise `$Dest`
-  - pull `-Resume`, tar (stream or file): baseline = `$Dest`
-- Remote values remain best-effort counts/sizes; no transfer-logic change.
-
-### 1.3.8 — 2025-08-27
+- Documented TAR mode as non-resumable; recommended pull with `-Resume` for resumable transfers.
+- Replaced awk-dependent remote size parsing with awk-free `du`/`stat`/`find` shell arithmetic.
+- Reworked `Invoke-AdbSh` to remove `sh -lc`/`$0` argument tricks and use placeholder replacement.
+- Hardened `Invoke-AdbSh` behavior for toybox/busybox-driven phone shells.
+- Updated `Test-PhoneTar` to prefer `command -v tar` with `tar --help` fallback while retaining toybox/busybox fallback.
+- Verify summary now shows `Local before → after (+Δ)` with mode-aware baseline selection.
 
 #### Fixed
 
-- Fixed `Start-Process` parameter handling in TAR-to-file and pull modes:
-  - Previously, `-RedirectStandardError` / `-RedirectStandardOutput` were passed `$null` when
-    `-DebugMode` was disabled, causing validation errors.
-  - Now uses conditional splatting so redirection keys are set only when `DebugMode` is on.
-- Eliminates `RedirectStandardError` validation errors when running without `DebugMode`.
-
-### 1.3.7 — 2025-08-27
-
-#### Changed
-
-- Hardened `Invoke-AdbSh`:
-  - Rewrote multi-line collapsing to avoid extra semicolons.
-  - Added deduplication of whitespace-only lines.
-  - Standardized left-hand-side `$null` comparisons.
-- Improves stability of phone-side script execution on toybox/busybox shells.
-
-### 1.3.6 — 2025-08-27
-
-#### Added
-
-- Added optional `DebugMode` for transfer troubleshooting without TAR stream corruption:
-  - Logs the exact single-line shell sent via `Invoke-AdbSh` (with short stdout prefix + length).
-  - Captures adb stderr for TAR-to-file and both stdout/stderr for pull mode.
-  - Does not enable `ADB_TRACE` by default (minimal, safe, low-noise).
-
-#### Changed
-
-- Updated documentation for `DebugMode` behavior, log location, and sharing caveats.
-
-### 1.3.5 — 2025-08-27
-
-#### Changed
-
-- Improved adb shell delivery in `Invoke-AdbSh`:
-  - Normalizes line endings and joins multi-line scripts to avoid toybox/busybox parsing errors
-    (for example, `unexpected 'elif'`).
-- `Test-PhoneTar` now prefers `command -v tar` with `--help` fallback, while keeping toybox/busybox fallback.
-- Hardened parsing of adb outputs to avoid null/empty `Trim()` crashes.
-
-### 1.3.4 — 2025-08-27
-
-#### Fixed
-
-- Corrected phone-side tar detection (`Test-PhoneTar`) to use `command -v tar` and accept
-  `tar --help` instead of requiring `tar --version`.
-- Maintains fallback to `toybox tar` / `busybox tar`.
-- Resolves false negatives introduced in 1.3.3 on devices where `--version` is unsupported.
-
-### 1.3.3 — 2025-08-27
-
-#### Changed
-
-- Reworked adb shell invocations: removed `sh -lc` and `$0` argument trick.
-- Inlined remote path via placeholder replacement to avoid quoting issues.
-- Restored full comment-based help for all functions.
-- Retained awk-free remote size logic (`du`/`stat`/`find` + shell arithmetic).
-
-### 1.3.2 — 2025-08-27
-
-#### Changed
-
-- Removed awk usage from `Get-RemoteSize`; replaced with POSIX shell arithmetic using `du`/`stat`/`find`.
-- Hardened adb quoting and timestamped warnings (including `$ts:` parse fix).
-- Inlined remote path argument to satisfy analyzers.
-
-### 1.3.1 — 2025-08-27
-
-#### Changed
-
-- Documented TAR mode as non-resumable; recommended pull + `-Resume` for resumable transfers.
-- Added timestamped warnings/retries and verify summary table (Local vs Remote counts/sizes).
-- Reduced pull progress polling to 5 seconds (configurable).
-
-### 1.3.0 — 2025-08-27
-
-#### Added
-
-- Added `-Verify` and local/remote file-count helpers.
-- Logged local/remote summaries after TAR extraction and after pull.
-
-### 1.2.x — 2025-08-27
-
-#### Added
-
-- Added disk-space precheck, resumable pull, TAR retries/cleanup, and `-StreamTar`.
+- Corrected `Start-Process` handling so `-RedirectStandardError` and `-RedirectStandardOutput` are only splatted when `DebugMode` is enabled, preventing null redirection validation errors.
 
 ---
 
