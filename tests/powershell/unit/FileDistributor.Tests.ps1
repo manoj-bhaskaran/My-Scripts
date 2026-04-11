@@ -19,6 +19,18 @@ BeforeAll {
     # Path to FileDistributor script
     $script:ScriptPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'file-management' 'FileDistributor.ps1'
     $script:StateHelpersPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'Private' 'State.ps1'
+
+    # Prefer pwsh for cross-platform CI, fall back to Windows PowerShell when needed.
+    $runner = Get-Command -Name 'pwsh' -ErrorAction SilentlyContinue
+    if (-not $runner) {
+        $runner = Get-Command -Name 'powershell' -ErrorAction SilentlyContinue
+    }
+
+    if (-not $runner) {
+        throw 'Neither pwsh nor powershell executable is available for subprocess script invocation.'
+    }
+
+    $script:PowerShellRunner = $runner.Name
 }
 
 Describe "FileDistributor Script Existence" {
@@ -33,12 +45,12 @@ Describe "FileDistributor Script Existence" {
 
 Describe "FileDistributor Help" {
     It "Should display help when -Help parameter is provided" {
-        $result = & pwsh -File $script:ScriptPath -Help 2>&1
+        $result = & $script:PowerShellRunner -File $script:ScriptPath -Help 2>&1
         $result | Should -Not -BeNullOrEmpty
     }
 
     It "Should not throw errors with valid parameters and -Help" {
-        { & pwsh -File $script:ScriptPath -SourceFolder $script:SourceFolder -TargetFolder $script:TargetFolder -Help } | Should -Not -Throw
+        { & $script:PowerShellRunner -File $script:ScriptPath -SourceFolder $script:SourceFolder -TargetFolder $script:TargetFolder -Help } | Should -Not -Throw
     }
 }
 
@@ -255,6 +267,11 @@ Describe "FileDistributor Math Operations" {
 
 Describe 'FileDistributor Module Public API' {
 
+    BeforeAll {
+        $script:ModulePath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'FileDistributor.psd1'
+        Import-Module -Name $script:ModulePath -Force | Out-Null
+    }
+
     It 'Invoke-FileDistribution completion path avoids Write-Host output' {
         $functionPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'Public' 'Invoke-FileDistribution.ps1'
         $functionContent = Get-Content -LiteralPath $functionPath -Raw
@@ -263,19 +280,36 @@ Describe 'FileDistributor Module Public API' {
     }
 
     It 'Invoke-FileDistribution accepts FileSystemInfo inputs for -Files' {
-        $modPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'FileDistributor.psd1'
-        Import-Module -Name $modPath -Force | Out-Null
         $filesParam = (Get-Command Invoke-FileDistribution -ErrorAction Stop).Parameters['Files']
 
         $filesParam.ParameterType.FullName | Should -Be 'System.Object[]'
     }
 
-    It 'Should expose post-processing functions through module exports' {
-        $modPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'FileDistributor.psd1'
-        Import-Module -Name $modPath -Force | Out-Null
-        (Get-Command Invoke-FolderRebalance -ErrorAction Stop).Name | Should -Be 'Invoke-FolderRebalance'
-        (Get-Command Invoke-DistributionRandomize -ErrorAction Stop).Name | Should -Be 'Invoke-DistributionRandomize'
-        (Get-Command Invoke-FolderConsolidation -ErrorAction Stop).Name | Should -Be 'Invoke-FolderConsolidation'
+    It 'Should expose the complete expected function API through module exports' {
+        $expectedExports = @(
+            'Initialize-FileDistributorPaths',
+            'Invoke-ParameterValidation',
+            'Invoke-RestoreCheckpoint',
+            'New-CheckpointPayload',
+            'Invoke-DistributionPhase',
+            'Invoke-PostProcessingPhase',
+            'Invoke-EndOfScriptDeletion',
+            'Invoke-PostRunCleanup',
+            'Invoke-DistributionLockRelease',
+            'Invoke-FileDistribution',
+            'Invoke-TargetRedistribution',
+            'Invoke-FolderRebalance',
+            'Invoke-DistributionRandomize',
+            'Invoke-FolderConsolidation'
+        )
+
+        $exportedNames = (Get-Command -Module FileDistributor -CommandType Function).Name
+
+        foreach ($name in $expectedExports) {
+            $exportedNames | Should -Contain $name
+        }
+
+        $exportedNames.Count | Should -Be $expectedExports.Count
     }
 }
 
@@ -283,10 +317,10 @@ Describe 'FileDistributor State Helpers' -Tag 'StateHelpers' {
     BeforeAll {
         $script:InvokeWithRetryCalls = @()
 
-        function Write-LogInfo    { param([string]$Message) }
+        function Write-LogInfo { param([string]$Message) }
         function Write-LogWarning { param([string]$Message) }
-        function Write-LogError   { param([string]$Message) }
-        function Write-LogDebug   { param([string]$Message) }
+        function Write-LogError { param([string]$Message) }
+        function Write-LogDebug { param([string]$Message) }
 
         function Invoke-WithRetry {
             param(
