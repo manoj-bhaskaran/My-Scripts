@@ -34,6 +34,9 @@ Scripts for file operations, distribution, copying, and archiving.
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 ## Recent Updates
 
+- **Documentation (2026-04-11)**
+  - Condensed FileDistributor changelog history for the `v3.3.0–v3.5.0` and `v4.1.0–v4.5.0` feature/checkpoint eras into rollup entries.
+  - Preserved the checkpoint progression summary (`CP4`/`CP5`/`CP6`/`CP7`/`CP8`) and mode-level behavior without repeating long per-version prose.
 - **Documentation (2026-04-10)**
   - Normalized `src/powershell/file-management/CHANGELOG.md` structure across **Copy-AndroidFiles** and **FileDistributor** sections.
   - Added a short changelog table of contents for faster navigation.
