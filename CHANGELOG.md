@@ -41,27 +41,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Test-LongPathsEnabled` (now imported via `FileSystem.psm1`)
 
 - **Sync-MacriumBackups.ps1** bumped to v2.7.2
-  - Documentation-only: removed 117-line inline CHANGELOG from `.NOTES`; replaced with
-    a one-line pointer to `CHANGELOG.md`. All version history is now consolidated here.
-  - `PARAMETER_VALIDATION_TESTS.md` updated: replaced stale whitelist pattern
-    `'^[a-zA-Z0-9\s_-]+$'` with the current blacklist pattern `'^[^"\`$|;&<>\r\n\t]+$'`
-    to match the `ValidatePattern` attribute used in the script.
-
-- **Sync-MacriumBackups.ps1** bumped to v2.7.1
-  - Extracted `Connect-WiFiNetwork` inner helper function to eliminate duplicated
+  - v2.7.0: Extracted all eight state management functions into the new `BackupState`
+    module (`BackupState.psm1`). `Test-BackupPath`, `Test-Rclone`, `Test-Network`, and
+    `Sync-Backups` now accept an explicit `$State` parameter; state file is read once at
+    startup and passed through the call chain. `README.md` updated to document the new
+    `BackupState` module dependency.
+  - v2.7.1: Extracted `Connect-WiFiNetwork` inner helper to eliminate duplicated
     `netsh wlan connect` + `Start-Sleep` + `Get-CurrentSSID` pattern from `Test-Network`.
-  - `Test-Network` now delegates all Wi-Fi connection attempts to `Connect-WiFiNetwork`,
-    reducing code duplication across the preferred-switch and not-connected branches.
-  - All three WiFi scenarios (preferred, fallback, neither) behave identically to before.
-
-- **Sync-MacriumBackups.ps1** bumped to v2.7.0
-  - Imports `BackupState.psm1`; eight state management functions removed from the script.
-  - State file is read once at startup and the resulting object is passed to
-    `Invoke-AutoResumeLogic`, `Initialize-StateFile`, and all downstream step
-    functions, eliminating repeated disk reads within a single run.
-  - `Test-BackupPath`, `Test-Rclone`, `Test-Network`, and `Sync-Backups` now accept
-    an explicit `$State` parameter.
-  - `README.md` updated to document the new `BackupState` module dependency.
+    All three WiFi scenarios (preferred, fallback, neither) behave identically to before.
+  - v2.7.2: Documentation-only — removed 117-line inline CHANGELOG from `.NOTES`;
+    replaced with a pointer to `CHANGELOG.md`. Fixed stale SSID whitelist pattern in
+    `PARAMETER_VALIDATION_TESTS.md` to use the current blacklist pattern
+    `'^[^"\`$|;&<>\r\n\t]+$'`.
 
 ### Fixed
 
