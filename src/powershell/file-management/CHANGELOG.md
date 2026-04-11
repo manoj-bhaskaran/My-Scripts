@@ -276,155 +276,48 @@ Addresses script-scope coupling issues that surfaced after functions were moved 
 - Restored queue-signal integrity and safety checks during modularization: EndOfScript queue failures are surfaced as warnings, single-item checkpoint payloads are accepted, and subfolder candidate normalization enforces target-root containment with fallback candidate handling on scan failures.
 - Restored post-run file-count integrity validation/warnings for both distribution and rebalance-only modes, preserving discrepancy detection that regressed during early 4.6 refactors.
 
-### 4.5.0 — 2026-03-25
+### 4.1.0–4.5.0 (feature/checkpoint rollup) — 2026-01-05 to 2026-03-25
 
 #### Added
 
-- **`.mp4` file extension support:** Added `.mp4` to the list of allowed file extensions for distribution.
+- Added optional post-processing modes for target-only balancing:
+  - `-RandomizeDistribution` (full randomized redistribution; **Checkpoint 8**)
+  - `-RebalanceTolerance` (custom tolerance for `-RebalanceToAverage`)
+  - Rebalance-only execution by omitting `-SourceFolder` (auto `MaxFilesToCopy=0`)
+- Added `.mp4` support to the distributed extension set in v4.5.0.
 
-### 4.4.1 — 2026-01-05
+#### Changed
+
+- Switched placement from "fill emptiest first" to weighted-random assignment based on remaining per-folder capacity to improve spread across eligible subfolders.
+- Rebalance-only flows now suppress source-copy messaging and show target-only summaries.
 
 #### Fixed
 
-- **Console feedback for rebalancing operations:** Added console output for early exit conditions in `-RebalanceToAverage`, `-ConsolidateToMinimum`, and `-RandomizeDistribution` modes. Users now see clear messages when operations are skipped due to:
-  - All subfolders already balanced within tolerance
-  - Insufficient subfolders for rebalancing
-  - No files to process
-  - Already at or below minimal subfolder count
-  - No feasible moves or capacity issues
-- Previously these conditions were only logged to file, making it unclear why operations completed without action.
-- **Cleaner output in rebalance-only mode:** Suppressed source-related messages when SourceFolder is not provided. Changes include:
-  - "Preparing for distribution" message only shown when copying from source
-  - "Enumerating source and target files..." changed to "Enumerating target files..." in rebalance-only mode
-  - Removed redundant "Skipping source enumeration (rebalance-only mode)." message
-  - File count summary shows only target count in rebalance-only mode
-  - Separate "File Rebalancing Summary" with relevant information only (excludes source file counts, skipped extensions, and files selected for copying)
+- Improved operator feedback for no-op/early-exit rebalance/consolidation/randomization paths (for example: already balanced, insufficient folders, no feasible moves, no files).
 
-### 4.4.0 — 2026-01-05
+#### Notes
+
+- All features in this range are opt-in and non-breaking.
+- Checkpoint map in this range: **CP8** = randomization complete.
+
+### 3.3.0–3.5.0 (feature/checkpoint rollup) — 2025-10-02
 
 #### Added
 
-- **Optional SourceFolder for rebalance-only mode:** SourceFolder parameter is now optional. When omitted, the script automatically runs in rebalance-only mode (no files copied from source).
-  - **Use case:** Run `-RebalanceToAverage`, `-ConsolidateToMinimum`, or `-RandomizeDistribution` on existing target files without providing a source folder.
-  - **Examples:**
-    - `.\FileDistributor.ps1 -TargetFolder "C:\Target" -RebalanceToAverage`
-    - `.\FileDistributor.ps1 -TargetFolder "C:\Target" -ConsolidateToMinimum`
-    - `.\FileDistributor.ps1 -TargetFolder "C:\Target" -RandomizeDistribution`
-  - **Automatic behavior:** When SourceFolder is not provided, `MaxFilesToCopy` is automatically set to 0 and source enumeration is skipped.
+- Added staged post-copy workflows:
+  - Source→target distribution phase inserted before within-target redistribution (**Checkpoint 4**)
+  - `-ConsolidateToMinimum` for packing into the minimum number of folders (**Checkpoint 6**)
+  - `-RebalanceToAverage` for ±10% average balancing (**Checkpoint 7**)
 
 #### Changed
 
-- Parameter validation logic: SourceFolder omission automatically enables rebalance-only mode
-- Source file enumeration is completely skipped when running in rebalance-only mode
-- State file restoration handles empty SourceFolder gracefully for rebalance-only sessions
+- Renumbered "within-target redistribution completed" from **CP4** to **CP5** after introducing the new source→target stage.
+- Preserved restart-aware gating so each optional phase runs only when requested and only when its checkpoint has not yet been recorded.
 
 #### Notes
 
-- No breaking changes. Existing behavior unchanged when SourceFolder is provided.
-- Enhanced UX: Users no longer need to specify `-MaxFilesToCopy 0` for rebalance-only operations.
-
-### 4.3.0 — 2026-01-05
-
-#### Added
-
-- **`-RandomizeDistribution` parameter:** New optional switch to perform full randomized redistribution of ALL files across ALL existing subfolders. Completely ignores current distribution and redistributes from scratch.
-  - **Behavior:** Enumerates all files in all subfolders, shuffles them randomly, then redistributes evenly using round-robin assignment through the shuffled list.
-  - **Use case:** When you want to completely reset the distribution and achieve perfect randomization and balance. Particularly useful after multiple batches have created uneven distribution.
-  - **Performance:** Moves many files (all files not already in their assigned destination). Use with caution on large datasets.
-  - **Safety:** Respects `FilesPerFolderLimit`, uses existing `DeleteMode` for handling originals, supports progress tracking and retries.
-  - **Mutual exclusivity:** Cannot be used with `-ConsolidateToMinimum` or `-RebalanceToAverage` (script will error).
-
-#### Notes
-
-- **Restart semantics:** Introduces **Checkpoint 8** recorded after randomization. Randomization runs when `-RandomizeDistribution` is specified and `lastCheckpoint < 8`; otherwise it is skipped.
-
-#### Notes
-
-- No breaking changes. Feature is opt-in and not performed unless `-RandomizeDistribution` is specified.
-
-### 4.2.0 — 2026-01-05
-
-#### Added
-
-- **`-RebalanceTolerance` parameter:** New optional parameter to configure the tolerance percentage for the `-RebalanceToAverage` feature. Defaults to 10, meaning folders are rebalanced to be within ±10% of the average file count.
-  - **Usage:** `-RebalanceTolerance 15` will rebalance folders to be within ±15% of average instead of the default ±10%.
-  - **Flexibility:** Allows users to control how strictly folders should be balanced. Lower values (e.g., 5) create tighter balance; higher values (e.g., 20) allow more variance.
-  - The tolerance is applied to both donor identification (folders above `avg * (1 + tolerance/100)`) and receiver identification (folders below `avg * (1 - tolerance/100)`).
-
-#### Notes
-
-- No breaking changes. Default behavior remains ±10% when `-RebalanceTolerance` is not specified.
-
-### 4.1.0 — 2026-01-05
-
-#### Changed
-
-- **Distribution algorithm:** Switched from "fill emptiest folder first" to **weighted random selection** based on available capacity. Files are now distributed randomly across multiple eligible folders, with probability weighted by each folder's remaining capacity (`FilesPerFolderLimit - currentCount`).
-  - **Benefit:** Prevents all files from a batch going to a single newly-created folder. When new folders are created due to existing folders reaching the limit, files are spread across multiple folders rather than sequentially filling one at a time.
-  - **Behavior:** Folders with more available capacity have higher probability of receiving files, but all eligible folders can receive files from the same batch, maintaining better distribution randomness.
-  - The change applies to both source-to-target distribution and within-target redistribution phases.
-
-#### Notes
-
-- No breaking changes or new parameters. Existing scripts will work unchanged but will see improved file distribution across folders.
-
-### 3.5.0 — 2025-10-02
-
-#### Added
-
-- **`-RebalanceToAverage` (opt-in):** After Source→Target and target-root redistribution, compute the **average files per existing subfolder** and move files so every subfolder is within **±10%** of that average. No subfolders are created or deleted, and `FilesPerFolderLimit` is always respected.
-  - Identifies **donor** folders (`count > ceil(avg*1.1)` capped by limit) and **receiver** folders (`count < floor(avg*0.9)`), then transfers randomly selected files to meet deficits without exceeding per-folder limits.
-  - Rebalancing uses existing safety semantics (randomized destination names, `DeleteMode`, retries, progress).
-
-#### Notes
-
-- **Incompatibility:** `-RebalanceToAverage` is **mutually exclusive** with `-ConsolidateToMinimum`; specifying both results in an error.
-
-#### Notes
-
-- **Restart semantics:** Introduces **Checkpoint 7** recorded after rebalancing. Rebalancing runs when `-RebalanceToAverage` is specified and `lastCheckpoint < 7`; otherwise it is skipped.
-
-#### Notes
-
-- No breaking changes; feature is _not_ performed unless `-RebalanceToAverage` is passed.
-
-### 3.4.0 — 2025-10-02
-
-#### Added
-
-- **`-ConsolidateToMinimum` (opt-in):** New command-line switch that packs files into the **minimum number of subfolders** while honoring `FilesPerFolderLimit`. Runs **after** Source→Target copy and target-root redistribution **only when specified**.
-  - Computes `needed = ceil(total_files / FilesPerFolderLimit)`.
-  - Randomly chooses `needed` existing subfolders as keepers; moves files from other subfolders into keepers (never exceeding the limit).
-  - Deletes subfolders that become empty after the move.
-  - Uses existing safety semantics (randomized destination names, `DeleteMode`, retries, progress).
-
-#### Notes
-
-- **Restart semantics:** Introduces **Checkpoint 6** recorded after consolidation. Consolidation runs when `-ConsolidateToMinimum` is specified and `lastCheckpoint < 6`; otherwise it is skipped.
-
-#### Notes
-
-- No breaking changes. Consolidation is _not_ performed unless `-ConsolidateToMinimum` is passed.
-
-### 3.3.0 — 2025-10-02
-
-#### Added
-
-- **Checkpoint 4 + Source → Target distribution phase:** Selected source files (subject to `-MaxFilesToCopy`) are now copied into eligible target subfolders **before** any within-target redistribution (root or overloaded folders). This phase respects `-FilesPerFolderLimit` and your `-DeleteMode` (including `EndOfScript`, which queues originals for final cleanup).
-
-#### Changed
-
-- The earlier “within-target redistribution completed” checkpoint has been **renumbered from CP4 to CP5**.
-
-#### Notes
-
-- **Restart semantics:** Resume at **CP3** → runs the new Source→Target copy and saves **CP4**.
-- Resume at **CP4** → skips Source→Target copy and runs within-target redistribution, then saves **CP5**.
-- Resume at **CP5** → skips redistribution and proceeds to end-of-script actions (e.g., deletions).
-
-#### Notes
-
-- No breaking parameter changes. Logging now includes a banner: _“Distributing N source file(s) to subfolders…”_ for the new phase.
+- `-RebalanceToAverage` and `-ConsolidateToMinimum` are mutually exclusive.
+- No breaking parameter changes in this range.
 
 ### 3.2.0 — 2025-09-30
 
