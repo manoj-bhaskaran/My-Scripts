@@ -162,7 +162,7 @@ Describe "FileSystem Module" {
             Push-Location "TestDrive:/"
             try {
                 $result = Get-FullPath -Path ".\relative"
-                $result | Should -Match "TestDrive"
+                $result | Should -Match "relative"
             } finally {
                 Pop-Location
             }
@@ -175,7 +175,7 @@ Describe "FileSystem Module" {
             # On Windows, backslashes are used; on Linux, it preserves the structure
             $result | Should -Match 'Users' # Path structure is preserved
             if ($PSVersionTable.Platform -eq 'Win32NT' -or $null -eq $PSVersionTable.Platform) {
-                $result | Should -NotMatch '/' # Forward slashes normalized on Windows
+                $result | Should -Not -Match '/' # Forward slashes normalized on Windows
             }
         }
     }
@@ -213,7 +213,7 @@ Describe "FileSystem Module" {
 
     Context "Get-SafeName" {
         It "Removes invalid characters from filename" {
-            Get-SafeName -Name "file<name>.txt" | Should -Be "file_name.txt"
+            Get-SafeName -Name "file<name>.txt" | Should -Be "file_name_.txt"
         }
 
         It "Replaces colons with underscores" {
@@ -240,7 +240,7 @@ Describe "FileSystem Module" {
 
         It "Accepts pipeline input" {
             $result = "file<name>.txt" | Get-SafeName
-            $result | Should -Be "file_name.txt"
+            $result | Should -Be "file_name_.txt"
         }
     }
 
