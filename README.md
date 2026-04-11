@@ -7,7 +7,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Code Formatting](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml/badge.svg)](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml)
 
-**Version:** 2.12.9 | **Last Updated:** 2026-04-05
+**Version:** 2.12.10 | **Last Updated:** 2026-04-05
 
 ---
 
@@ -180,7 +180,7 @@ pip install -e .
 - **[PurgeLogs](src/powershell/modules/Core/Logging/PurgeLogs/)** (v2.0.0) – Log file purging and retention management
 - **[FileSystem](src/powershell/modules/Core/FileSystem/)** (v1.0.0) – Common file system operations (directory creation, file accessibility checks, path validation, file locking detection)
 - **[FileQueue](src/powershell/modules/FileManagement/FileQueue/)** (v1.0.0) – File queue management for distribution operations with state persistence and session tracking
-- **[FileDistributor](src/powershell/modules/FileManagement/FileDistributor/)** (v1.1.11) – Private support helpers for FileDistributor orchestration (path handling, state persistence, and state-file locking)
+- **[FileDistributor](src/powershell/modules/FileManagement/FileDistributor/)** (v1.2.0) – Private support helpers for FileDistributor orchestration (path handling, state persistence, and state-file locking)
 
 **Python Modules:**
 

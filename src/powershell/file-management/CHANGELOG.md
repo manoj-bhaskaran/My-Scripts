@@ -208,6 +208,21 @@
 - Bumped `FileDistributor` module version to `1.2.0`.
 - Bumped script version to `4.8.0`.
 
+### 4.7.2 — 2026-04-02
+
+#### Fixed
+
+- Updated `Invoke-FileMove` race handling so source files that disappear between discovery and copy are logged as warnings and skipped instead of aborting distribution.
+- Bumped `FileDistributor` module version to `1.1.2`.
+
+### 4.7.1 — 2026-04-02
+
+#### Changed
+
+- Replaced script-local retry/file-operation helpers with shared Core modules (`Core/ErrorHandling` + `Core/FileOperations`) and removed direct `Private/RetryOps.ps1` loading from script orchestration.
+- Updated orchestration call paths to use `Copy-FileWithRetry`, `Remove-FileWithRetry`, and `Invoke-WithRetry -IgnoreFileNotFound`.
+- Bumped `FileDistributor` module version to `1.1.1`.
+
 ### 4.7.x (rollup) — 2026-04-01 to 2026-04-05
 
 Addresses script-scope coupling issues that surfaced after functions were moved into the `FileDistributor` module in 4.7.0. Module versions advanced from `1.1.0` to `1.1.13`.
