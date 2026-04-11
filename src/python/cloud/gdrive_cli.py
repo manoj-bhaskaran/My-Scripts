@@ -24,7 +24,6 @@ from gdrive_constants import (
     DEFAULT_PROCESS_BATCH,
     DEFAULT_STATE_FILE,
     DEFAULT_WORKERS,
-    DEFAULT_CREDENTIALS_FILE,
 )
 from gdrive_models import PostRestorePolicy
 from gdrive_recover import DriveTrashRecoveryTool
@@ -38,165 +37,13 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=r"""
 Examples:
-  # Dry run to see what would be recovered
-  %(prog)s dry-run --extensions jpg png
+    %(prog)s dry-run --extensions jpg png --no-emoji
+    %(prog)s recover-only --extensions pdf docx
+    %(prog)s recover-and-download --download-dir ./recovered --post-restore-policy retain
+    %(prog)s recover-and-download --download-dir ./recovered --state-file ./state.json
 
-  # Recover only (no download)
-  %(prog)s recover-only --extensions pdf docx
-
-  # Recover and download with custom policy
-  %(prog)s recover-and-download --download-dir ./recovered --post-restore-policy RetainOnDrive
-
-  # Resume interrupted operation
-  %(prog)s recover-and-download --download-dir ./recovered
-
-Post-restore policies:
-  trash  (default) / MoveToDriveTrash / Move-To-Drive-Trash / MoveToTrash
-  retain / RetainOnDrive / Keep / KeepOnDrive
-  delete / RemoveFromDrive / Purge / Delete
-
-Troubleshooting:
-  * Quota Exhausted:
-    Error: "Quota exceeded for quota metric 'Requests' and limit 'Requests per day'"
-    Solution: Wait until the next day for quota reset or request a quota increase in Google Cloud Console.
-
-  * Permission Errors:
-    Error: "HTTP 403: Forbidden - The user does not have sufficient permissions"
-    Solution: Ensure the authenticated account has edit access to the files. For shared drives, verify team drive permissions.
-
-  * Authentication Failures:
-    Error: "{DEFAULT_CREDENTIALS_FILE} not found" or "Authentication failed"
-    Solution: Download {DEFAULT_CREDENTIALS_FILE} from Google Cloud Console and place it in the script directory.
-
-  * Invalid File IDs:
-    Error: "Invalid file ID format" or "File IDs not found"
-    Solution: Ensure file IDs are valid (25+ alphanumeric characters, hyphens, or underscores).
-
-  * Missing Dependency (python-dateutil):
-    Error: "Missing optional dependency 'python-dateutil' required for --after-date parsing."
-    Solution: pip install python-dateutil
-
-Quotas & Monitoring:
-  Drive API enforces per-minute and daily quotas. If you see HTTP 429 responses,
-  reduce --concurrency and retry later. Monitor usage in Google Cloud Console.
-
-Shared Drives:
-  Access is governed by membership/roles on the shared drive and by item-level permissions.
-
-Concurrency Tuning:
-  As a starting point, use min(8, CPU*2). If you observe 429/5xx bursts, back off concurrency.
-
-Rate Limiting:
-  --max-rps caps average request rate. Enable burst absorption with --burst N (token bucket).
-  Use --rl-diagnostics and -vv to log sampled limiter stats (tokens, capacity, observed RPS).
-  Set --max-rps 0 to disable throttling entirely. Execution progress lines respect -v;
-  summaries always print.
-
-Performance & Scale (v1.5.9):
-  These settings are distilled from test-proven runs (incl. 200k+ items) and are meant
-  as safe starting points. Tune gradually while watching logs and API error rates.
-
-  • Batch size (`--process-batch-size`)
-      - Memory-constrained (≤2 GB RAM): 200–500
-      - General purpose: 500 (default) to 1000
-      - Very large sets with ample RAM/IO: 750–1500
-    Notes: Peak RSS scales roughly with batch size. We observed stable RSS on 200k items
-           at N=500 with steady throughput.
-
-  • Rate (`--max-rps`) and Burst (`--burst`)
-      - Conservative default: --max-rps 5.0
-      - Typical: --max-rps 6–10 with --burst 20–50
-      - CI/cold networks: start at --max-rps 5 --burst 20 and increase slowly
-    Notes: Burst enables short bursts to absorb network jitter while keeping average RPS
-           within target. Use `--rl-diagnostics -vv` to confirm observed RPS within ±10%.
-
-  • Concurrency (`--concurrency`)
-      - Rule of thumb: min(8, CPU*2); cap remains enforced internally to avoid 429s.
-      - If you see 429/5xx spikes, reduce concurrency first, then RPS.
-
-  • Client lifecycle
-      - `--client-per-thread` (default ON) avoids shared-object contention. Keep it on
-        unless you have a strong reason to use `--single-client`.
-
-  • Example presets (copy/paste):
-      # Large set (≈200k items), 8-core VM, 8–12 RPS target
-      %(prog)s recover-and-download --download-dir ./out \
-        --process-batch-size 500 --concurrency 16 \
-        --max-rps 8 --burst 32 --client-per-thread -v
-
-     # Memory-constrained VM (2 GB RAM), steady & safe
-      %(prog)s recover-only \
-        --process-batch-size 250 --concurrency 8 \
-        --max-rps 5 --burst 20 --client-per-thread -v
-
-Requirements & Compatibility:
-  • Python: 3.10+ (the codebase uses PEP 604 union types like 'str | None';
-    this also applies to validators.py). If you must run on Python 3.9,
-    consider a 1.5.x tag or refactor types to typing.Optional / typing.Union.
-  • Transports: see README → Compatibility for the version matrix covering
-    python (3.10+), google-api-python-client, google-auth, and requests per
-    transport (httplib2 vs requests). This is especially relevant when using
-    --http-transport requests and connection pooling.
-
-Policy Normalization UX (v1.5.8):
-  * Unknown policy warnings print to **stderr** and log at WARNING.
-  * Warning is repeated once in the EXECUTION COMMAND preview.
-  * Strict mode remains opt-in: use --strict-policy or set env GDRT_STRICT_POLICY=1
-    (useful in CI). In strict mode, unknown policy exits with code 2.
-
-Extension Filtering Semantics (v1.5.7):
-  * Multi-segment tokens like 'tar.gz' or 'min.js' are accepted.
-  * Server-side MIME narrowing uses the LAST segment (e.g., 'gz', 'js') when it is
-    known/mapped; otherwise no server-side narrowing is applied for that token.
-  * Client-side filtering uses the FULL token against the filename suffix, so
-    'archive.tar.gz' matches 'tar.gz' and 'script.min.js' matches 'min.js'.
-  * This makes the behavior explicit and predictable for mixed extensions.
-
-Memory & Streaming (v1.5.6):
-  Execution now supports streaming discovery with bounded memory usage. Use
-  --process-batch-size to control how many items are resident at once. Batches
-  are fully processed (recover/download/post-restore) before the next batch is
-  fetched.
-
-HTTP Transport & Pooling (v1.6.0):
-  You can opt into a requests-based transport with connection pooling:
-    --http-transport requests --http-pool-maxsize 32
-  (See README → Compatibility for minimal library versions per transport.)
-
-  Each worker builds a pooled session (when supported) to improve throughput
-  at high concurrency. Falls back to the default transport if unavailable.
-
-Transport setup tips (v1.6.3):
-  * To enable requests-based pooling, install:
-        pip install requests google-auth[requests]
-    then run with:
-        --http-transport requests
-  * Pool size rationale:
-        Effective per-thread HTTP pool ≈ min(--concurrency, --http-pool-maxsize)
-    This is a rule-of-thumb for help text only; code remains unchanged to keep behavior stable.
-
-Performance caveat (v1.6.3):
-  Pooling can reduce connection churn and improve throughput under certain conditions,
-  but gains are workload- and environment-dependent (file types/sizes, concurrency,
-  network, quotas). Our ad-hoc tests used a multi-core VM and mixed small/medium
-  binaries; treat any % improvement as directional, not guaranteed.
-
-Compatibility matrix (v1.6.3):
-  ┌───────────────────────────────┬──────────────────────────────┐
-  │ Component                     │ Tested with / Minimum (guid.)│
-  ├───────────────────────────────┼──────────────────────────────┤
-  │ Python                        │ 3.10+                         │
-  │ google-api-python-client      │ 2.100+                        │
-  │ google-auth                   │ 2.20+                         │
-  │ google-auth-httplib2          │ 0.2+                          │
-  │ requests (optional)           │ 2.28+                         │
-  │ google-auth[requests] (opt.)  │ 2.20+                         │
-  └───────────────────────────────┴──────────────────────────────┘
-
-Concurrent-run guardrail (v1.6.0):
-  Runs write owner PID and a run-id into the lockfile/state. If another run
-  targets the same state file, it exits early with a friendly message.
-  Use --force to bypass (not recommended unless previous run is definitely stopped).
+Policies: trash (default), retain, delete
+For compatibility matrix, transport notes, and performance presets: see README.md and CHANGELOG.md.
 """,
     )
 
@@ -369,6 +216,22 @@ def _set_mode(args) -> None:
     args.mode = mode_map.get(args.command)
 
 
+def _use_emoji(args) -> bool:
+    return not getattr(args, "no_emoji", False)
+
+
+def _sym_fail(args) -> str:
+    return "❌" if _use_emoji(args) else "ERROR"
+
+
+def _sym_warn(args) -> str:
+    return "⚠️" if _use_emoji(args) else "WARN"
+
+
+def _sym_info(args) -> str:
+    return "ℹ️" if _use_emoji(args) else "INFO"
+
+
 def _validate_concurrency_arg(args) -> Tuple[bool, int]:
     try:
         cpu = os.cpu_count() or 1
@@ -376,7 +239,7 @@ def _validate_concurrency_arg(args) -> Tuple[bool, int]:
         cpu = 1
     ceiling = min(cpu * 4, 64)
     if args.concurrency < 1:
-        print("❌ Invalid --concurrency value. It must be >= 1.")
+        print(f"{_sym_fail(args)} Invalid --concurrency value. It must be >= 1.")
         return False, 2
     if args.concurrency > ceiling:
         print(
@@ -454,14 +317,14 @@ def _normalize_and_validate_policy(args) -> Tuple[bool, int]:
         pass
     if policy_errors:
         for msg in policy_errors:
-            print(f"❌ {msg}", file=sys.stderr)
+            print(f"{_sym_fail(args)} {msg}", file=sys.stderr)
             try:
                 logging.getLogger(__name__).error(msg)
             except Exception:
                 pass
         return False, 2
     for msg in policy_warnings:
-        print(f"⚠️  {msg}", file=sys.stderr)
+        print(f"{_sym_warn(args)} {msg}", file=sys.stderr)
         try:
             logging.getLogger(__name__).warning(msg)
         except Exception:
@@ -484,7 +347,7 @@ def _normalize_and_validate_extensions(args) -> Tuple[bool, int]:
         print("   Do not include wildcards, commas, spaces, or path characters.")
         return False, 2
     for msg in ext_warnings:
-        print(f"ℹ️  {msg}")
+        print(f"{_sym_info(args)} {msg}")
     args.extensions = cleaned_exts
     return True, 0
 

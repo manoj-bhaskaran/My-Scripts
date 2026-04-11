@@ -17,16 +17,12 @@ See CHANGELOG.md in this directory for version history.
 """
 
 import os
-import io
-import json
 import time
 import logging
 import shutil
-import re
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Tuple, Optional, TypedDict, Mapping, cast
+from typing import List, Dict, Any, Tuple, Optional, Mapping
 from pathlib import Path
-from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 import sys
@@ -36,14 +32,10 @@ import uuid
 from gdrive_constants import (
     VERSION,
     EXTENSION_MIME_TYPES,
-    DEFAULT_STATE_FILE,
-    DEFAULT_LOG_FILE,
     DEFAULT_PROCESS_BATCH,
     PAGE_SIZE,
     DEFAULT_WORKERS,
     INFERRED_MODIFY_ERROR,
-    DEFAULT_MAX_RPS,
-    DEFAULT_BURST,
 )
 
 __version__ = VERSION
@@ -56,6 +48,7 @@ from gdrive_state import RecoveryStateManager
 from gdrive_auth import DriveAuthManager
 from gdrive_rate_limiter import RateLimiter
 from gdrive_operations import DriveOperations
+from gdrive_report import RecoveryReporter
 
 try:
     from googleapiclient.errors import HttpError
@@ -137,6 +130,7 @@ class DriveTrashRecoveryTool:
             self.stats,
             self.stats_lock,
         )
+        self.reporter = RecoveryReporter(self.args, self.logger, self.stats)
 
     @property
     def _seen_total(self) -> int:
@@ -146,30 +140,14 @@ class DriveTrashRecoveryTool:
     def _seen_total(self, value: int) -> None:
         self._seen_total_ref[0] = value
 
-    # --- Symbol / message helpers (emoji can be disabled via --no-emoji) ---
-    def _use_emoji(self) -> bool:
-        return not getattr(self.args, "no_emoji", False)
-
-    def _sym_ok(self) -> str:
-        return "✓" if self._use_emoji() else "OK"
-
-    def _sym_fail(self) -> str:
-        return "❌" if self._use_emoji() else "ERROR"
-
-    def _sym_warn(self) -> str:
-        return "⚠️" if self._use_emoji() else "WARN"
-
-    def _sym_info(self) -> str:
-        return "ℹ️" if self._use_emoji() else "INFO"
-
     def _print_err(self, msg: str) -> None:
-        print(f"{self._sym_fail()} {msg}", file=sys.stderr)
+        self.reporter._print_err(msg)
 
     def _print_warn(self, msg: str) -> None:
-        print(f"{self._sym_warn()} {msg}", file=sys.stderr)
+        self.reporter._print_warn(msg)
 
     def _print_info(self, msg: str) -> None:
-        print(f"{self._sym_info()} {msg}")
+        self.reporter._print_info(msg)
 
     def _record_state_load_error(self) -> None:
         with self.stats_lock:
@@ -367,173 +345,8 @@ class DriveTrashRecoveryTool:
                 checks["local_error"] = str(e)
         return checks
 
-    def _print_drive_access_status(self, checks: Dict[str, Any]):
-        drive_status = "✓ PASS" if checks["drive_access"] else "❌ FAIL"
-        print(f"Drive API Access: {drive_status}")
-        if checks["drive_error"]:
-            print(f"  Error: {checks['drive_error']}")
-
-    def _print_operation_privileges(self, checks: Dict[str, Any]):
-        if not checks.get("operation_privileges"):
-            return
-        print("\nOperation Privileges:")
-        for operation, result in checks["operation_privileges"].items():
-            self._print_single_operation_privilege(operation, result)
-
-    def _print_single_operation_privilege(self, operation: str, result: Dict[str, Any]):
-        status_symbol = {"pass": "✓", "fail": "❌"}.get(result["status"], "?")  # nosec B105
-        print(f"  {operation.title()}: {status_symbol} {result['status'].upper()}")
-        if result["error"]:
-            print(f"    Error: {result['error']}")
-
-    def _print_local_directory_status(self, checks: Dict[str, Any]):
-        if not getattr(self.args, "download_dir", None):
-            return
-        local_status = "✓ PASS" if checks["local_writable"] else "❌ FAIL"
-        print(f"Local Directory Writable: {local_status}")
-        if checks["local_error"]:
-            print(f"  Error: {checks['local_error']}")
-        self._print_disk_space_info(checks)
-
-    def _print_privilege_checks(self, checks: Dict[str, Any]):
-        print("\n📋 PRIVILEGE AND ENVIRONMENT CHECKS")
-        print("-" * 50)
-        self._print_drive_access_status(checks)
-        self._print_operation_privileges(checks)
-        self._print_local_directory_status(checks)
-
-    def _print_disk_space_info(self, checks: Dict[str, Any]):
-        if checks["disk_space"] > 0:
-            free_gb = checks["disk_space"] / (1024**3)
-            needed_gb = checks["estimated_needed"] / (1024**3)
-            space_status = (
-                "✓ SUFFICIENT"
-                if checks["disk_space"] > checks["estimated_needed"]
-                else "⚠️  INSUFFICIENT"
-            )
-            print(f"Disk Space: {space_status}")
-            print(f"  Available: {free_gb:.2f} GB")
-            print(f"  Estimated needed: {needed_gb:.2f} GB")
-
-    def _print_scope_summary(self):
-        print("\n📊 SCOPE SUMMARY")
-        print("-" * 50)
-        print(f"Total trashed files found: {len(self.items)}")
-        if self.args.extensions:
-            print(f"Extension filter: {', '.join(self.args.extensions)}")
-        recover_count = sum(1 for item in self.items if item.will_recover)
-        download_count = sum(1 for item in self.items if item.will_download)
-        total_size_mb = sum(item.size for item in self.items) / (1024**2)
-        print(f"Files to recover: {recover_count}")
-        print(f"Files to download: {download_count}")
-        print(f"Total size: {total_size_mb:.2f} MB")
-        print(f"Post-restore policy: {PostRestorePolicy.normalize(self.args.post_restore_policy)}")
-
-    def _print_item_details(self, item: RecoveryItem, index: int):
-        print(f"{index:4d}. {item.name[:50]}")
-        print(f"      ID: {item.id}")
-        print(f"      Size: {item.size / 1024:.1f} KB")
-        print(f"      Recover: {'Yes' if item.will_recover else 'No'}")
-        if item.will_download:
-            print(f"      Download: Yes → {item.target_path}")
-        else:
-            print("      Download: No")
-        print(f"      Post-restore: {item.post_restore_action}")
-        print()
-
-    def _show_detailed_plan(self) -> bool:
-        print("\n📋 DETAILED EXECUTION PLAN")
-        print("-" * 50)
-        page_size = 20
-        total_pages = (len(self.items) + page_size - 1) // page_size
-        for page in range(total_pages):
-            start_idx = page * page_size
-            end_idx = min(start_idx + page_size, len(self.items))
-            print(f"\nPage {page + 1}/{total_pages} (items {start_idx + 1}-{end_idx}):")
-            print("-" * 80)
-            for _, item in enumerate(self.items[start_idx:end_idx], start_idx + 1):
-                self._print_item_details(item, _)
-            if page < total_pages - 1:
-                response = (
-                    input(
-                        "Press Enter for next page, 'q' to stop viewing, or 's' to skip to summary: "
-                    )
-                    .strip()
-                    .lower()
-                )
-                if response == "q":
-                    return False
-                elif response == "s":
-                    break
-        return True
-
-    def _generate_execution_command(self):
-        print("\n🚀 EXECUTION COMMAND")
-        print("-" * 50)
-        cmd_parts = [sys.argv[0]]
-        self._add_mode_arguments(cmd_parts)
-        self._add_filter_arguments(cmd_parts)
-        self._add_config_arguments(cmd_parts)
-        self._add_file_arguments(cmd_parts)
-        self._add_verbosity_arguments(cmd_parts)
-        print("To execute this plan, run:")
-        print(f"  {' '.join(cmd_parts)}")
-
-        # v1.5.8: Repeat unknown-policy warning once in the EXECUTION COMMAND section
-        warn_msg = getattr(self.args, "_policy_warning_message", None)
-        if warn_msg:
-            # Log at WARNING and emit to stderr for visibility amid stdout noise.
-            try:
-                self.logger.warning(warn_msg)
-            except Exception:
-                pass
-            print(f"⚠️  {warn_msg}", file=sys.stderr)
-
-    def _add_file_arguments(self, cmd_parts: List[str]):
-        if self.args.after_date:
-            cmd_parts.extend(["--after-date", self.args.after_date])
-        if self.args.file_ids:
-            cmd_parts.extend(["--file-ids"] + self.args.file_ids)
-        if self.args.log_file != DEFAULT_LOG_FILE:
-            cmd_parts.extend(["--log-file", self.args.log_file])
-        if self.args.state_file != DEFAULT_STATE_FILE:
-            cmd_parts.extend(["--state-file", self.args.state_file])
-
-    def _add_verbosity_arguments(self, cmd_parts: List[str]):
-        if self.args.verbose > 0:
-            cmd_parts.append("-" + "v" * self.args.verbose)
-
-    def _add_mode_arguments(self, cmd_parts: List[str]):
-        if self.args.mode == "recover_and_download":
-            cmd_parts.append("recover-and-download")
-            cmd_parts.extend(["--download-dir", str(self.args.download_dir)])
-        elif self.args.mode == "recover_only":
-            cmd_parts.append("recover-only")
-        else:
-            cmd_parts.append("dry-run")
-
-    def _add_filter_arguments(self, cmd_parts: List[str]):
-        if self.args.extensions:
-            cmd_parts.extend(["--extensions"] + self.args.extensions)
-
-    def _add_config_arguments(self, cmd_parts: List[str]):
-        normalized = PostRestorePolicy.normalize(self.args.post_restore_policy)
-        if normalized != PostRestorePolicy.TRASH:
-            cmd_parts.extend(["--post-restore-policy", normalized])
-        cmd_parts.extend(["--concurrency", str(self.args.concurrency)])
-        if self.args.max_rps != DEFAULT_MAX_RPS:
-            cmd_parts.extend(["--max-rps", str(self.args.max_rps)])
-        if self.args.burst != DEFAULT_BURST:
-            cmd_parts.extend(["--burst", str(self.args.burst)])
-        if self.args.limit and self.args.limit > 0:
-            cmd_parts.extend(["--limit", str(self.args.limit)])
-        if self.args.yes:
-            cmd_parts.append("--yes")
-
     def dry_run(self) -> bool:
-        print("\n" + "=" * 80)
-        print("🔍 DRY RUN MODE - No changes will be made")
-        print("=" * 80)
+        self.reporter.print_dry_run_banner()
         # Authenticate up front; dry-run still needs list access
         try:
             if not self.auth.authenticate():
@@ -546,14 +359,16 @@ class DriveTrashRecoveryTool:
             return False
         self.items = self.discover_trashed_files()
         if not self.items:
-            print("No files found matching criteria.")
+            self.reporter.print_no_files_found_matching()
             return True
         checks = self._check_privileges()
-        self._print_privilege_checks(checks)
-        self._print_scope_summary()
-        if not self._show_detailed_plan():
+        self.reporter._print_privilege_checks(checks)
+        self.reporter._print_scope_summary(self.items)
+        if not self.reporter._show_detailed_plan(self.items):
             return False
-        self._generate_execution_command()
+        self.reporter._generate_execution_command(
+            getattr(self.args, "_policy_warning_message", None)
+        )
         return True
 
     def _recover_file(self, item: RecoveryItem) -> bool:
@@ -611,7 +426,7 @@ class DriveTrashRecoveryTool:
                 self.items = self.discover_trashed_files()
             has_files = len(self.items) > 0
             if not has_files:
-                print("No files found to process.")
+                self.reporter.print_no_files_to_process()
             return True, has_files
 
     def _get_safety_confirmation(self) -> bool:
@@ -621,7 +436,7 @@ class DriveTrashRecoveryTool:
         action_text = ", ".join(actions)
         response = input(f"\nProceed to {action_text} for {len(self.items)} files? (y/N): ")
         if response.lower() != "y":
-            print("Operation cancelled.")
+            self.reporter.print_operation_cancelled()
             return False
         return True
 
@@ -647,16 +462,16 @@ class DriveTrashRecoveryTool:
             self.state.owner_pid = os.getpid()
 
     def _process_all_items(self) -> bool:
-        print(f"\n🚀 Processing {len(self.items)} files with {self.args.concurrency} workers...")
+        self.reporter.print_processing_start(len(self.items), self.args.concurrency)
         start_time = time.time()
         try:
             self._run_parallel_processing(start_time)
         except KeyboardInterrupt:
-            print("\n⚠️  Operation interrupted. State saved for resume.")
+            self.reporter.print_interrupted_state_saved()
             self.state_manager._save_state()
             return False
         self.state_manager._save_state()
-        self._print_summary(time.time() - start_time)
+        self.reporter._print_summary(time.time() - start_time, self.state)
         return True
 
     def _process_streaming(self) -> bool:
@@ -665,9 +480,7 @@ class DriveTrashRecoveryTool:
         batch_n = int(
             getattr(self.args, "process_batch_size", DEFAULT_PROCESS_BATCH) or DEFAULT_PROCESS_BATCH
         )
-        print(
-            f"\n🚀 Streaming execution with batch size {batch_n} and {self.args.concurrency} workers..."
-        )
+        self.reporter.print_streaming_start(batch_n, self.args.concurrency)
         start_time = time.time()
         try:
             if self.args.file_ids:
@@ -675,11 +488,11 @@ class DriveTrashRecoveryTool:
             else:
                 ok = self.discovery._stream_stream_query(batch_n, start_time)
         except KeyboardInterrupt:
-            print("\n⚠️  Operation interrupted. State saved for resume.")
+            self.reporter.print_interrupted_state_saved()
             self.state_manager._save_state()
             return False
         self.state_manager._save_state()
-        self._print_summary(time.time() - start_time)
+        self.reporter._print_summary(time.time() - start_time, self.state)
         return ok
 
     def _run_parallel_processing(self, start_time: float):
@@ -723,17 +536,12 @@ class DriveTrashRecoveryTool:
                 self.stats["errors"] += 1
 
     def _print_stream_progress(self, start_time: float):
-        elapsed = time.time() - start_time
-        rate = self._processed_total / elapsed if elapsed > 0 else 0
-        if self.args.file_ids:
-            pct = self._processed_total / max(1, len(self.args.file_ids)) * 100.0
-            print(
-                f"📈 Progress: {self._processed_total}/{len(self.args.file_ids)} ({pct:.1f}%) Rate: {rate:.1f}/sec"
-            )
-        else:
-            print(
-                f"📈 Progress: processed={self._processed_total} discovered={self._seen_total} Rate: {rate:.1f}/sec"
-            )
+        self.reporter._print_stream_progress(
+            self._processed_total,
+            start_time,
+            self._seen_total,
+            self.args.file_ids,
+        )
 
     def _handle_item_result(
         self, future, item: RecoveryItem, processed_count: int, start_time: float
@@ -758,15 +566,7 @@ class DriveTrashRecoveryTool:
                 self.stats["errors"] += 1
 
     def _print_progress_update(self, processed_count: int, start_time: float):
-        elapsed = time.time() - start_time
-        rate = processed_count / elapsed if elapsed > 0 else 0
-        eta = (len(self.items) - processed_count) / rate if rate > 0 else 0
-        pct = (processed_count / len(self.items) * 100) if self.items else 100.0
-        print(
-            f"📈 Progress: {processed_count}/{len(self.items)} "
-            f"({pct:.1f}%) "
-            f"Rate: {rate:.1f}/sec ETA: {eta:.0f}s"
-        )
+        self.reporter.print_progress_update(processed_count, len(self.items), start_time)
 
     def _progress_interval(self, total: int) -> int:
         if total <= 0:
@@ -789,7 +589,7 @@ class DriveTrashRecoveryTool:
                 msg += f" for ~{est} files? (y/N): " if est else " in streaming mode? (y/N): "
                 confirmed = input(msg).strip().lower() == "y"
             if not confirmed:
-                print("Operation cancelled.")
+                self.reporter.print_operation_cancelled()
                 return False
             self._initialize_recovery_state()
             try:
@@ -799,36 +599,6 @@ class DriveTrashRecoveryTool:
         if not has_files:  # non-streaming (dry-run) path
             return False
         return True
-
-    def _print_summary(self, elapsed_time: float):
-        print("\n" + "=" * 80)
-        print("📊 EXECUTION SUMMARY")
-        print("=" * 80)
-        print(f"Total files found: {self.stats['found']}")
-        print(f"Files recovered: {self.stats['recovered']}")
-        print(f"Files downloaded: {self.stats['downloaded']}")
-        total_post_restore = (
-            self.stats["post_restore_retained"]
-            + self.stats["post_restore_trashed"]
-            + self.stats["post_restore_deleted"]
-        )
-        if total_post_restore > 0:
-            print(f"Post-restore actions applied: {total_post_restore}")
-            print(f"  • Retained on Drive: {self.stats['post_restore_retained']}")
-            print(f"  • Moved to trash: {self.stats['post_restore_trashed']}")
-            print(f"  • Permanently deleted: {self.stats['post_restore_deleted']}")
-        print(f"Files skipped (already processed): {self.stats['skipped']}")
-        print(f"Errors encountered: {self.stats['errors']}")
-        print(f"Execution time: {elapsed_time:.1f} seconds")
-        if self.stats["errors"] > 0:
-            self._print_warn(f"Check log file for error details: {self.args.log_file}")
-        if self.state.processed_items:
-            print(f"\n📂 State file: {self.args.state_file}")
-            print("   Use same command to resume if interrupted")
-        success_rate = (
-            (self.stats["recovered"] / self.stats["found"] * 100) if self.stats["found"] > 0 else 0
-        )
-        print(f"\n✅ Success rate: {success_rate:.1f}%")
 
 
 if __name__ == "__main__":

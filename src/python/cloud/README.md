@@ -14,6 +14,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - **gdrive_discovery.py** - Discovery and trashed file resolution helpers extracted from gdrive_recover.py (issue #791)
 - **gdrive_download.py** - File download subsystem (chunked streaming, atomic placement, Windows/OneDrive retry, partial cleanup) extracted from gdrive_recover.py (issue #853)
 - **gdrive_operations.py** - Recovery and post-restore execution helpers extracted from gdrive_recover.py (issue #854)
+- **gdrive_report.py** - Recovery reporting/presentation layer (dry-run plan output, progress, and summaries) extracted from gdrive_recover.py (issue #855)
 - **gdrive_retry.py** - Shared retry/backoff utility used across recovery/discovery operations
 - **google_drive_root_files_delete.py** - Cleans up files in Google Drive root directory
 - **drive_space_monitor.py** - Monitors Google Drive storage usage and sends alerts
@@ -82,6 +83,30 @@ Recover deleted or lost files from Google Drive trash.
 
 All scripts use the Python Logging Framework located in `src/python/modules/logging/`.
 
+## Compatibility and Performance
+
+### Compatibility Matrix
+
+| Component                        | Tested with / Minimum (guidance) |
+| -------------------------------- | -------------------------------- |
+| Python                           | 3.10+                            |
+| google-api-python-client         | 2.100+                           |
+| google-auth                      | 2.20+                            |
+| google-auth-httplib2             | 0.2+                             |
+| requests (optional)              | 2.28+                            |
+| google-auth[requests] (optional) | 2.20+                            |
+
+### Performance Presets
+
+- Large sets (for example ~200k items, 8-core VM):
+  - `recover-and-download --download-dir ./out --process-batch-size 500 --concurrency 16 --max-rps 8 --burst 32 --client-per-thread -v`
+- Memory-constrained environments (around 2 GB RAM):
+  - `recover-only --process-batch-size 250 --concurrency 8 --max-rps 5 --burst 20 --client-per-thread -v`
+- Tuning guidance:
+  - Start with `--concurrency min(8, CPU*2)` and reduce first when 429/5xx spikes appear.
+  - Use `--max-rps` and `--burst` together to smooth short network jitter while controlling average rate.
+  - Enable `--rl-diagnostics -vv` when validating throughput behavior.
+
 ## Internal Module Boundaries
 
 - `gdrive_recover.py` owns recovery orchestration and execution flow; download calls are delegated to `self.downloader`.
@@ -105,6 +130,9 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
 - `gdrive_operations.py` owns per-item recovery execution (`_recover_file`, `_apply_post_restore_policy`, and `_process_item`) plus post-restore helper logic.
   - Exposes `DriveOperations`; used by `DriveTrashRecoveryTool` via `self.ops`.
   - `DriveOperations` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`args`, `logger`, `auth`, `downloader`, `state_manager`, `stats`, `stats_lock`) are injected at construction time.
+- `gdrive_report.py` owns user-facing presentation for recovery and dry-run paths.
+  - Exposes `RecoveryReporter`; used by `DriveTrashRecoveryTool` via `self.reporter`.
+  - `RecoveryReporter` formats symbols/messages, plan rendering, progress lines, and execution summary output while honoring `--no-emoji`.
 - `gdrive_retry.py` owns shared `with_retries(...)` backoff logic used by both recovery and discovery modules to avoid copy-pasted retry loops.
   - `with_retries(...)` returns `(result, error_message, http_status)` so callers can branch on status code without parsing formatted message text.
   - Internal planning/logging helpers keep retry flow explicit while reducing function complexity for static analysis.

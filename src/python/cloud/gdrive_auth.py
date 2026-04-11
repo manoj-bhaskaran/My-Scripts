@@ -129,8 +129,9 @@ class DriveAuthManager:
                 # One-time console note so users understand how to enable pooling.
                 if not self._printed_requests_fallback:
                     self._printed_requests_fallback = True
+                    prefix = "ℹ️" if not getattr(self.args, "no_emoji", False) else "INFO"
                     print(
-                        "ℹ️  Requests transport could not be enabled; falling back to httplib2.\n"
+                        f"{prefix} Requests transport could not be enabled; falling back to httplib2.\n"
                         "   To enable connection pooling, install:  pip install requests google-auth[requests]\n"
                         "   and run with:  --http-transport requests"
                     )
