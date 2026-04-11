@@ -74,14 +74,35 @@ class DriveTrashDiscovery:
         self._id_prefetch_errors: Dict[str, str] = {}
         self._last_discover_progress_ts: Optional[float] = None
 
+    def _use_emoji(self) -> bool:
+        return not getattr(self.args, "no_emoji", False)
+
+    def _sym_fail(self) -> str:
+        return "❌" if self._use_emoji() else "ERROR"
+
+    def _sym_warn(self) -> str:
+        return "⚠️" if self._use_emoji() else "WARN"
+
+    def _sym_info(self) -> str:
+        return "ℹ️" if self._use_emoji() else "INFO"
+
+    def _sym_scope(self) -> str:
+        return "📊" if self._use_emoji() else "SCOPE"
+
+    def _sym_search(self) -> str:
+        return "🔍" if self._use_emoji() else "SEARCH"
+
+    def _sym_done(self) -> str:
+        return "⛳" if self._use_emoji() else "LIMIT"
+
     def _print_err(self, msg: str) -> None:
-        print(f"❌ {msg}", file=sys.stderr)
+        print(f"{self._sym_fail()} {msg}", file=sys.stderr)
 
     def _print_warn(self, msg: str) -> None:
-        print(f"⚠️ {msg}", file=sys.stderr)
+        print(f"{self._sym_warn()} {msg}", file=sys.stderr)
 
     def _print_info(self, msg: str) -> None:
-        print(f"ℹ️ {msg}")
+        print(f"{self._sym_info()} {msg}")
 
     def _matches_extension_filter(self, filename: str) -> bool:
         if not self.args.extensions or not filename:
@@ -481,7 +502,7 @@ class DriveTrashDiscovery:
 
     def _print_discover_id_summary(self, items, skipped_non_trashed, errors):
         if skipped_non_trashed:
-            print(f"ℹ️  Skipped {skipped_non_trashed} non-trashed file ID(s).")
+            self._print_info(f"Skipped {skipped_non_trashed} non-trashed file ID(s).")
         if errors:
             self._print_info(
                 f"Encountered {errors} error(s) while fetching file ID metadata. See log for details."
@@ -572,7 +593,7 @@ class DriveTrashDiscovery:
         return items
 
     def discover_trashed_files(self) -> List[RecoveryItem]:
-        print("🔍 Discovering trashed files...")
+        print(f"{self._sym_search()} Discovering trashed files...")
         if self.args.file_ids:
             items = self._discover_via_ids()
         else:
@@ -581,9 +602,9 @@ class DriveTrashDiscovery:
             items = self._discover_via_query(query)
         if self.args.limit and self.args.limit > 0 and len(items) > self.args.limit:
             items = items[: self.args.limit]
-            print(f"⛳ Limiting to first {self.args.limit} item(s) as requested.")
+            print(f"{self._sym_done()} Limiting to first {self.args.limit} item(s) as requested.")
         self._stats["found"] = len(items)
-        print(f"📊 Total files discovered: {len(items)}")
+        print(f"{self._sym_scope()} Total files discovered: {len(items)}")
         return items
 
     def _stream_stream_query(self, batch_n: int, start_time: float) -> bool:

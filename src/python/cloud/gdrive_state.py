@@ -49,7 +49,8 @@ class RecoveryStateManager:
             "Loaded legacy state (schema v0). This will be upgraded to schema v1 "
             "on next save for better compatibility."
         )
-        print(f"ℹ️  {msg}")
+        prefix = "ℹ️" if not getattr(self.args, "no_emoji", False) else "INFO"
+        print(f"{prefix} {msg}")
         try:
             self.logger.warning("State schema v0 detected; promoting to v1 on next save.")
         except Exception:
@@ -80,8 +81,9 @@ class RecoveryStateManager:
             elif raw_version != self.state.schema_version:
                 self._handle_schema_version_mismatch(raw_version)
 
+            prefix = "📂" if not getattr(self.args, "no_emoji", False) else "STATE"
             print(
-                f"📂 Loaded previous state: {len(self.state.processed_items)} items already processed"
+                f"{prefix} Loaded previous state: {len(self.state.processed_items)} items already processed"
             )
             return True
         except Exception:
