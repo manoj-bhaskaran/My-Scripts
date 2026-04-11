@@ -387,8 +387,11 @@ Describe "Backup-PostgresDatabase" -Skip:($env:OS -ne 'Windows_NT') {
                 $now = Get-Date
                 $db1File = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-100).ToString('yyyy-MM-dd'))_10-00-00.backup"
                 $db2File = Join-Path $script:testBackupFolder "otherdb_backup_$($now.AddDays(-100).ToString('yyyy-MM-dd'))_10-00-00.backup"
+                # One recent testdb backup is required so recent_count(1) >= MinBackups(1) and deletion is eligible
+                $recentFile = Join-Path $script:testBackupFolder "testdb_backup_$($now.AddDays(-1).ToString('yyyy-MM-dd'))_10-00-00.backup"
                 New-TestBackupFile -Path $db1File -AgeDays 100
                 New-TestBackupFile -Path $db2File -AgeDays 100
+                New-TestBackupFile -Path $recentFile -AgeDays 1
 
                 InModuleScope 'PostgresBackup' -Parameters @{ Folder = $script:testBackupFolder; Log = $script:testLogFile } {
                     param($Folder, $Log)
