@@ -289,8 +289,8 @@ def test_privilege_checks_and_file_info(tmp_path, monkeypatch):
         "size": 1024,
     }
 
-    # monkeypatch _get_file_info to return our fake_file when called
-    tool._get_file_info = MagicMock(return_value=fake_file)
+    # monkeypatch privilege checker fetch helper to return our fake_file when called
+    tool.privileges._get_file_info = MagicMock(return_value=fake_file)
     status = tool._check_untrash_privilege("fid")
     assert status["status"] == "pass"
 
@@ -324,10 +324,21 @@ def test_check_privileges_samples_single_item(tmp_path, monkeypatch):
         captured["items"] = items
         return {}
 
-    tool._test_operation_privileges = fake_test_operation_privileges
+    tool.privileges._test_operation_privileges = fake_test_operation_privileges
 
     checks = tool._check_privileges()
 
     assert checks["drive_access"] is True
     assert len(captured["items"]) == 1
     assert captured["items"][0].id == "one"
+
+
+def test_validate_file_ids_delegates_to_discovery(tmp_path, monkeypatch):
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    tool = DriveTrashRecoveryTool(_build_dummy_args(tmp_path))
+    tool.discovery._validate_file_ids = MagicMock(return_value=True)
+
+    assert tool._validate_file_ids() is True
+    tool.discovery._validate_file_ids.assert_called_once_with()

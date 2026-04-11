@@ -19,7 +19,6 @@ See CHANGELOG.md in this directory for version history.
 import os
 import time
 import logging
-import shutil
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple, Optional, Mapping
 from pathlib import Path
@@ -31,28 +30,23 @@ import uuid
 # v1.9.0: static configuration constants extracted to dedicated module
 from gdrive_constants import (
     VERSION,
-    EXTENSION_MIME_TYPES,
     DEFAULT_PROCESS_BATCH,
-    PAGE_SIZE,
-    DEFAULT_WORKERS,
-    INFERRED_MODIFY_ERROR,
 )
 
 __version__ = VERSION
 
 # v1.10.0: data model types extracted to dedicated module
-from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
+from gdrive_models import RecoveryItem, PostRestorePolicy
 from gdrive_state import RecoveryStateManager
 
 # v1.12.0: authentication extracted to dedicated module (issue #789)
 from gdrive_auth import DriveAuthManager
 from gdrive_rate_limiter import RateLimiter
 from gdrive_operations import DriveOperations
+from gdrive_privileges import DrivePrivilegeChecker
 from gdrive_report import RecoveryReporter
 
 try:
-    from googleapiclient.errors import HttpError
-
     # v1.12.3: discovery module uses googleapiclient.errors, so import under same guard.
     from gdrive_discovery import DriveTrashDiscovery
 
@@ -131,6 +125,8 @@ class DriveTrashRecoveryTool:
             self.stats_lock,
         )
         self.reporter = RecoveryReporter(self.args, self.logger, self.stats)
+        # v1.17.0: privilege checks extracted to DrivePrivilegeChecker (issue #856).
+        self.privileges = DrivePrivilegeChecker(self.auth, self._execute, self.logger, self.items)
 
     @property
     def _seen_total(self) -> int:
@@ -183,167 +179,40 @@ class DriveTrashRecoveryTool:
     def _generate_target_path(self, item: Mapping[str, Any] | RecoveryItem) -> str:
         if not self.args.download_dir:
             return ""
+        item_name = item.get("name", "") if isinstance(item, Mapping) else item.name
+        item_id = item.get("id", "") if isinstance(item, Mapping) else item.id
         safe_name = "".join(
-            c for c in item.name if c.isalnum() or c in (" ", "-", "_", ".")
+            c for c in str(item_name) if c.isalnum() or c in (" ", "-", "_", ".")
         ).rstrip()
         if not safe_name:
-            safe_name = f"file_{item.id}"
+            safe_name = f"file_{item_id}"
         base_path = Path(self.args.download_dir) / safe_name
         if base_path.exists():
-            stem = base_path.stem
+            stem = base_path.stem or f"file_{item_id}"
             suffix = base_path.suffix
-            counter = 1
-            while base_path.exists():
-                base_path = base_path.parent / f"{stem}_{counter}{suffix}"
-                counter += 1
+            base_path = base_path.parent / f"{stem}_{uuid.uuid4().hex[:6]}{suffix}"
         return str(base_path)
 
-    def _get_file_info(self, file_id: str, fields: str) -> FileMeta:
-        api_ctx = f"files.get(fileId={file_id}, fields={fields})"
-        try:
-            service = self.auth._get_service()
-            return self._execute(service.files().get(fileId=file_id, fields=fields))
-        except HttpError as e:
-            status = getattr(e.resp, "status", None)
-            payload = getattr(e, "content", b"")
-            detail = payload.decode(errors="ignore") if hasattr(payload, "decode") else str(e)
-            self.logger.error(f"{api_ctx} failed: HTTP {status}: {detail}")
-            return {"error": f"HTTP {status}: {detail}"}
-        except (OSError, IOError) as e:
-            self.logger.error(f"{api_ctx} I/O error: {e}")
-            return {"error": f"I/O error: {e}"}
-        except Exception as e:
-            self.logger.error(f"{api_ctx} unexpected error: {e}")
-            return {"error": f"Unexpected error: {e}"}  # type: ignore[return-value]
-
     def _check_untrash_privilege(self, file_id: str) -> Dict[str, Any]:
-        result = {"status": "unknown", "error": None}
-        file_info = self._get_file_info(file_id, "id,trashed,capabilities")
-        if "error" in file_info:
-            result["status"] = "fail"
-            result["error"] = file_info["error"]
-            return result
-        if not file_info.get("trashed", False):
-            result["status"] = "skip"
-            result["error"] = "Test file is not trashed - cannot validate untrash permission"
-            return result
-        capabilities = file_info.get("capabilities", {})
-        if "canUntrash" in capabilities:
-            result["status"] = "pass" if capabilities["canUntrash"] else "fail"
-            if not capabilities["canUntrash"]:
-                result["error"] = "File capabilities indicate untrash not allowed"
-        else:
-            result["status"] = "pass"  # Fallback
-        return result
+        return self.privileges._check_untrash_privilege(file_id)
 
     def _check_download_privilege(self, file_id: str) -> Dict[str, Any]:
-        result = {"status": "unknown", "error": None}
-        file_info = self._get_file_info(file_id, "id,size,mimeType,capabilities")
-        if "error" in file_info:
-            result["status"] = "fail"
-            result["error"] = file_info["error"]
-            return result
-        if "size" not in file_info:
-            result["status"] = "fail"
-            result["error"] = "File is not downloadable (Google Docs format or no size)"
-            return result
-        capabilities = file_info.get("capabilities", {})
-        if "canDownload" in capabilities:
-            result["status"] = "pass" if capabilities["canDownload"] else "fail"
-            if not capabilities["canDownload"]:
-                result["error"] = "File capabilities indicate download not allowed"
-        else:
-            result["status"] = "pass"  # Fallback
-        return result
+        return self.privileges._check_download_privilege(file_id)
 
     def _check_trash_delete_privileges(
         self, file_id: str, untrash_status: str
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        trash_result = {
-            "status": untrash_status,
-            "error": INFERRED_MODIFY_ERROR if untrash_status == "fail" else None,
-        }
-        delete_result = {
-            "status": untrash_status,
-            "error": INFERRED_MODIFY_ERROR if untrash_status == "fail" else None,
-        }
-        file_info = self._get_file_info(file_id, "id,capabilities")
-        if "error" in file_info:
-            trash_result["status"] = "fail"
-            trash_result["error"] = file_info["error"]
-            delete_result["status"] = "fail"
-            delete_result["error"] = file_info["error"]
-            return trash_result, delete_result
-        capabilities = file_info.get("capabilities", {})
-        if "canTrash" in capabilities:
-            trash_result["status"] = "pass" if capabilities["canTrash"] else "fail"
-            trash_result["error"] = (
-                None if capabilities["canTrash"] else "File capabilities indicate trash not allowed"
-            )
-        if "canDelete" in capabilities:
-            delete_result["status"] = "pass" if capabilities["canDelete"] else "fail"
-            delete_result["error"] = (
-                None
-                if capabilities["canDelete"]
-                else "File capabilities indicate delete not allowed"
-            )
-        elif trash_result["status"] == "pass":
-            delete_result["status"] = "pass"
-            delete_result["error"] = None
-        return trash_result, delete_result
+        return self.privileges._check_trash_delete_privileges(file_id, untrash_status)
 
     def _test_operation_privileges(self, test_items: List[RecoveryItem]) -> Dict[str, Any]:
-        privileges = {
-            "untrash": {"status": "unknown", "error": None},
-            "download": {"status": "unknown", "error": None},
-            "trash": {"status": "unknown", "error": None},
-            "delete": {"status": "unknown", "error": None},
-        }
-        if not test_items:
-            return privileges
-        test_item = test_items[0]
-        privileges["untrash"] = self._check_untrash_privilege(test_item.id)
-        privileges["download"] = self._check_download_privilege(test_item.id)
-        privileges["trash"], privileges["delete"] = self._check_trash_delete_privileges(
-            test_item.id, privileges["untrash"]["status"]
-        )
-        return privileges
+        return self.privileges._test_operation_privileges(test_items)
 
     def _check_privileges(self) -> Dict[str, Any]:
-        checks = {
-            "drive_access": False,
-            "drive_error": None,
-            "operation_privileges": {},
-            "local_writable": False,
-            "local_error": None,
-            "disk_space": 0,
-            "estimated_needed": 0,
-        }
-        try:
-            service = self.auth._get_service()
-            service.files().list(pageSize=1).execute()
-            checks["drive_access"] = True
-            sample_items = self.items[:1] if self.items else []
-            checks["operation_privileges"] = self._test_operation_privileges(sample_items)
-        except Exception as e:
-            checks["drive_error"] = str(e)
-        dl_dir = getattr(self.args, "download_dir", None)
-        if dl_dir:
-            try:
-                download_path = Path(dl_dir)
-                download_path.mkdir(parents=True, exist_ok=True)
-                test_file = download_path / ".write_test"
-                test_file.write_text("test")
-                test_file.unlink()
-                checks["local_writable"] = True
-                if hasattr(shutil, "disk_usage"):
-                    _, _, free_bytes = shutil.disk_usage(download_path)
-                    checks["disk_space"] = free_bytes
-                    total_size = sum(item.size for item in self.items if item.will_download)
-                    checks["estimated_needed"] = total_size
-            except Exception as e:
-                checks["local_error"] = str(e)
-        return checks
+        self.privileges.items = self.items
+        return self.privileges._check_privileges(self.args)
+
+    def _validate_file_ids(self) -> bool:
+        return self.discovery._validate_file_ids()
 
     def dry_run(self) -> bool:
         self.reporter.print_dry_run_banner()

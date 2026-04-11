@@ -14,6 +14,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - **gdrive_discovery.py** - Discovery and trashed file resolution helpers extracted from gdrive_recover.py (issue #791)
 - **gdrive_download.py** - File download subsystem (chunked streaming, atomic placement, Windows/OneDrive retry, partial cleanup) extracted from gdrive_recover.py (issue #853)
 - **gdrive_operations.py** - Recovery and post-restore execution helpers extracted from gdrive_recover.py (issue #854)
+- **gdrive_privileges.py** - Dry-run privilege-check subsystem (Drive capability checks and local-writability checks) extracted from gdrive_recover.py (issue #856)
 - **gdrive_report.py** - Recovery reporting/presentation layer (dry-run plan output, progress, and summaries) extracted from gdrive_recover.py (issue #855)
 - **gdrive_retry.py** - Shared retry/backoff utility used across recovery/discovery operations
 - **google_drive_root_files_delete.py** - Cleans up files in Google Drive root directory
@@ -130,6 +131,9 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
 - `gdrive_operations.py` owns per-item recovery execution (`_recover_file`, `_apply_post_restore_policy`, and `_process_item`) plus post-restore helper logic.
   - Exposes `DriveOperations`; used by `DriveTrashRecoveryTool` via `self.ops`.
   - `DriveOperations` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`args`, `logger`, `auth`, `downloader`, `state_manager`, `stats`, `stats_lock`) are injected at construction time.
+- `gdrive_privileges.py` owns dry-run privilege checking concerns (`_check_privileges`, `_check_untrash_privilege`, `_check_download_privilege`, `_check_trash_delete_privileges`, `_test_operation_privileges`, `_get_file_info`).
+  - Exposes `DrivePrivilegeChecker`; used by `DriveTrashRecoveryTool` via `self.privileges`.
+  - `DrivePrivilegeChecker` receives auth, execute function, logger, and item list via dependency injection; it has no back-reference to `DriveTrashRecoveryTool`.
 - `gdrive_report.py` owns user-facing presentation for recovery and dry-run paths.
   - Exposes `RecoveryReporter`; used by `DriveTrashRecoveryTool` via `self.reporter`.
   - `RecoveryReporter` formats symbols/messages, plan rendering, progress lines, and execution summary output while honoring `--no-emoji`.

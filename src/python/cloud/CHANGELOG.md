@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.17.0] - 2026-04-11
+
+### Changed
+
+- **Issue #856:** Extracted dry-run privilege checks from `gdrive_recover.py` into new `gdrive_privileges.py` with `DrivePrivilegeChecker`.
+  - `DriveTrashRecoveryTool` now delegates `_check_privileges`, `_check_untrash_privilege`, `_check_download_privilege`, `_check_trash_delete_privileges`, and `_test_operation_privileges` through `self.privileges`.
+- Added server-side `modifiedTime >` clause to Drive discovery query when `--after-date` is set, while keeping client-side filtering as a guard.
+- Improved target download-path collision handling by switching from iterative `exists()` probing to a single collision fallback using a short UUID suffix.
+- Aligned `DEFAULT_WORKERS` with documented guidance by setting it to `min(8, (os.cpu_count() or 1) * 2)`.
+- `RecoveryItem.post_restore_action` now defaults via `PostRestorePolicy.TRASH`.
+
+### Fixed
+
+- Prevented unnecessary duplicate file-ID prefetch API calls by reusing existing prefetch caches when metadata has already been collected.
+- Added explicit warning when `--clear-id-cache` is enabled to clarify that metadata will be re-fetched in discovery/streaming phases.
+
 ## [1.16.0] - 2026-04-11
 
 ### Changed
