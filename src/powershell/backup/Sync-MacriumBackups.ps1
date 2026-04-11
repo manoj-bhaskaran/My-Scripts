@@ -61,9 +61,17 @@
     Forces a sync run regardless of the previous run's status.
 
 .NOTES
-    Version: 2.7.0
+    Version: 2.7.1
 
     CHANGELOG
+    ## 2.7.1 - 2026-04-11
+    ### Changed
+    - Extracted `Connect-WiFiNetwork` inner helper function to eliminate duplicated
+      `netsh wlan connect` + `Start-Sleep` + `Get-CurrentSSID` pattern from Test-Network.
+    - Test-Network now delegates all Wi-Fi connection attempts to Connect-WiFiNetwork,
+      reducing code duplication across the preferred-switch and not-connected branches.
+    - All three WiFi scenarios (preferred, fallback, neither) behave identically to before.
+
     ## 2.7.0 - 2026-04-06
     ### Changed
     - Extracted all eight state management functions into the new BackupState module
@@ -239,7 +247,7 @@ param(
 )
 
 # Script Version (extracted from .NOTES for programmatic access)
-$ScriptVersion = "2.7.0"
+$ScriptVersion = "2.7.1"
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
@@ -456,6 +464,32 @@ function Get-CurrentSSID {
     }
 }
 
+function Connect-WiFiNetwork {
+    <#
+    .SYNOPSIS
+    Issues a netsh wlan connect command and returns the resulting SSID.
+
+    .DESCRIPTION
+    Connects to the specified Wi-Fi network, waits for the connection to settle,
+    then returns the current SSID as reported by Get-CurrentSSID. Returns $null
+    if the SSID cannot be verified after the connection attempt.
+
+    .PARAMETER SSID
+    The SSID of the Wi-Fi network to connect to.
+
+    .PARAMETER TimeoutSeconds
+    Number of seconds to wait after issuing the connect command before verifying.
+    Default: 10.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$SSID,
+        [Parameter(Mandatory = $false)][int]$TimeoutSeconds = 10
+    )
+    netsh wlan connect name="$SSID"
+    Start-Sleep -Seconds $TimeoutSeconds
+    return Get-CurrentSSID
+}
+
 function Test-Network {
     param([Parameter(Mandatory = $true)][object]$State)
     Update-StateStep -StateFile $StateFile -State $State -StepName "Test-Network"
@@ -487,15 +521,11 @@ function Test-Network {
         $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
         if ($availableNetworks -match $PreferredSSID) {
             Write-LogInfo "Switching from '$FallbackSSID' to preferred network '$PreferredSSID'"
-            netsh wlan connect name="$PreferredSSID"
-            Start-Sleep -Seconds 10
-
-            $currentSSID = Get-CurrentSSID
+            $currentSSID = Connect-WiFiNetwork -SSID $PreferredSSID -TimeoutSeconds 10
             if ($null -eq $currentSSID) {
                 Write-LogWarning "Unable to verify SSID after connection attempt. Assuming connection failed."
                 $currentSSID = $FallbackSSID
             }
-
             if ($currentSSID -eq $PreferredSSID) {
                 Write-LogInfo "Switched successfully to '$PreferredSSID'"
             }
@@ -509,37 +539,31 @@ function Test-Network {
     }
     else {
         Write-LogInfo "Not connected to either '$PreferredSSID' or '$FallbackSSID'. Trying to connect..."
-
         $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
         if ($availableNetworks -match $PreferredSSID) {
             Write-LogInfo "Connecting to preferred network '$PreferredSSID'"
-            netsh wlan connect name="$PreferredSSID"
+            $targetSSID = $PreferredSSID
         }
         elseif ($availableNetworks -match $FallbackSSID) {
             Write-LogInfo "Connecting to fallback network '$FallbackSSID'"
-            netsh wlan connect name="$FallbackSSID"
+            $targetSSID = $FallbackSSID
         }
         else {
             Write-LogError "Neither '$PreferredSSID' nor '$FallbackSSID' WiFi networks are available."
             Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
             exit 1
         }
-
-        Start-Sleep -Seconds 10
-
-        $currentSSID = Get-CurrentSSID
+        $currentSSID = Connect-WiFiNetwork -SSID $targetSSID -TimeoutSeconds 10
         if ($null -eq $currentSSID) {
             Write-LogError "Unable to verify SSID after connection attempt. Connection likely failed."
             Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
             exit 1
         }
-
         if ($currentSSID -ne $PreferredSSID -and $currentSSID -ne $FallbackSSID) {
             Write-LogError "Failed to connect to preferred or fallback WiFi networks. Connected to: '$currentSSID'"
             Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
             exit 1
         }
-
         Write-LogInfo "Connected to WiFi network '$currentSSID'"
     }
 
