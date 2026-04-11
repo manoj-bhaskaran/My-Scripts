@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 The script recursively enumerates files from the source directory and ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
@@ -6,12 +6,12 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.8.1
+ 4.8.2
 
  CHANGELOG:
    See CHANGELOG.md in this directory for full release history.
 
-File name conflicts are resolved using the **RandomName** moduleâ€™s `Get-RandomFileName`. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
+File name conflicts are resolved using the **RandomName** module’s `Get-RandomFileName`. After ensuring successful copying, the script handles the original files based on the specified `DeleteMode`:
 
 - `RecycleBin`: Moves the files to the Recycle Bin.
 - `Immediate`: Deletes the files immediately after successful copying.
@@ -110,19 +110,19 @@ Optional. Path to the **RandomName** module (either a `.psd1`/`.psm1` file or th
 The script errors out if the module cannot be located.
 
 .PARAMETER ConsolidateToMinimum
-Optional. **Opt-in** consolidation phase. When specified, after Sourceâ†’Target distribution and target-root redistribution, pack all files into the **minimum number of subfolders** allowed by `FilesPerFolderLimit`. Randomly selects the required number of *keeper* subfolders, moves files from the others, and deletes any subfolders that become empty.
+Optional. **Opt-in** consolidation phase. When specified, after Source→Target distribution and target-root redistribution, pack all files into the **minimum number of subfolders** allowed by `FilesPerFolderLimit`. Randomly selects the required number of *keeper* subfolders, moves files from the others, and deletes any subfolders that become empty.
 
 .PARAMETER RebalanceToAverage
-Optional. **Opt-in** *rebalancing* phase. When specified, after Sourceâ†’Target distribution and target-root redistribution, compute the **average files per existing subfolder** and move files **among existing subfolders only** so that no subfolder deviates by more than the specified tolerance from that average.
+Optional. **Opt-in** *rebalancing* phase. When specified, after Source→Target distribution and target-root redistribution, compute the **average files per existing subfolder** and move files **among existing subfolders only** so that no subfolder deviates by more than the specified tolerance from that average.
 - Does **not** create or delete subfolders.
 - Always honors `FilesPerFolderLimit`.
 - Incompatible with `-ConsolidateToMinimum`; both switches **cannot** be used together (the script will error).
 
 .PARAMETER RebalanceTolerance
-Optional. Specifies the tolerance percentage for rebalancing when using `-RebalanceToAverage`. Defaults to 10, meaning folders are rebalanced to be within Â±10% of the average. For example, if the tolerance is 15, folders will be rebalanced to be within Â±15% of the average file count.
+Optional. Specifies the tolerance percentage for rebalancing when using `-RebalanceToAverage`. Defaults to 10, meaning folders are rebalanced to be within ±10% of the average. For example, if the tolerance is 15, folders will be rebalanced to be within ±15% of the average file count.
 
 .PARAMETER RandomizeDistribution
-Optional. **Opt-in** *full randomization* phase. When specified, after Sourceâ†’Target distribution and target-root redistribution, redistributes **ALL files** across **ALL existing subfolders** from scratch, ignoring current distribution. Files are randomly shuffled and evenly redistributed to achieve balanced distribution.
+Optional. **Opt-in** *full randomization* phase. When specified, after Source→Target distribution and target-root redistribution, redistributes **ALL files** across **ALL existing subfolders** from scratch, ignoring current distribution. Files are randomly shuffled and evenly redistributed to achieve balanced distribution.
 - Does **not** create or delete subfolders.
 - Always honors `FilesPerFolderLimit`.
 - Incompatible with `-ConsolidateToMinimum` and `-RebalanceToAverage`; cannot be used together with either (the script will error).
@@ -186,11 +186,11 @@ To truncate the log file and start afresh:
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -TruncateLog
 
 .EXAMPLE
-Pack existing files into the minimum required subfolders (e.g., 168,869 files at limit 20,000 â†’ 9 keepers):
+Pack existing files into the minimum required subfolders (e.g., 168,869 files at limit 20,000 → 9 keepers):
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -ConsolidateToMinimum
 
 .EXAMPLE
-Rebalance existing subfolders to within Â±10% of the current average (no new folders, no deletions):
+Rebalance existing subfolders to within ±10% of the current average (no new folders, no deletions):
 .\FileDistributor.ps1 -SourceFolder "C:\Source" -TargetFolder "C:\Target" -RebalanceToAverage
 
 .EXAMPLE
@@ -198,7 +198,7 @@ Rebalance-only mode: rebalance existing files without copying any new files (no 
 .\FileDistributor.ps1 -TargetFolder "C:\Target" -RebalanceToAverage
 
 .EXAMPLE
-Rebalance-only mode with custom tolerance: rebalance to within Â±15% without copying:
+Rebalance-only mode with custom tolerance: rebalance to within ±15% without copying:
 .\FileDistributor.ps1 -TargetFolder "C:\Target" -RebalanceToAverage -RebalanceTolerance 15
 
 .EXAMPLE
@@ -226,7 +226,7 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
-Version: 4.8.1 (2026-04-11).
+Version: 4.8.2 (2026-04-11).
 
 For full release history (including v4.7.1 and v4.7.2), see:
 - ./CHANGELOG.md (FileDistributor section)
@@ -304,6 +304,12 @@ param(
     [switch]$RandomizeDistribution
 )
 
+# Display help and exit if -Help is specified (short-circuit before module imports)
+if ($Help) {
+    Get-Help -Full $PSCommandPath
+    exit 0
+}
+
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PurgeLogs.psm1" -Force
@@ -316,79 +322,8 @@ Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistr
 
 # Note: Logger initialization moved to after LogFilePath resolution
 
-# Display help and exit if -Help is specified
-if ($Help) {
-    Write-Host "FileDistributor.ps1 - File Distribution Script" -ForegroundColor Cyan
-    Write-Host "`nSYNOPSIS" -ForegroundColor Yellow
-    Write-Host "This PowerShell script copies files from a source folder to a target folder, distributing them across subfolders while maintaining a maximum file count per subfolder. It supports configurable deletion modes, progress updates, and automatic conflict resolution for file names." -ForegroundColor White
-
-    Write-Host "`nDESCRIPTION" -ForegroundColor Yellow
-    Write-Host "The script recursively enumerates files from the source directory and ensures they are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed." -ForegroundColor White
-
-    Write-Host "`nPARAMETERS" -ForegroundColor Yellow
-    Write-Host "- SourceFolder:" -ForegroundColor Green
-    Write-Host "  Optional. Specifies the path to the source folder containing the files to be copied." -ForegroundColor White
-    Write-Host "  If not specified, runs in rebalance-only mode (no files copied from source)." -ForegroundColor White
-    Write-Host "- TargetFolder:" -ForegroundColor Green
-    Write-Host "  Mandatory. Specifies the path to the target folder where the files will be distributed." -ForegroundColor White
-    Write-Host "- FilesPerFolderLimit:" -ForegroundColor Green
-    Write-Host "  Optional. Maximum number of files allowed in each subfolder. Defaults to 20,000." -ForegroundColor White
-    Write-Host "- LogFilePath:" -ForegroundColor Green
-    Write-Host "  Optional. Path to the log file for recording script activities. Defaults to 'FileDistributor-log.txt'." -ForegroundColor White
-    Write-Host "- Restart:" -ForegroundColor Green
-    Write-Host "  Optional. Resumes the script from the last checkpoint." -ForegroundColor White
-    Write-Host "- ShowProgress:" -ForegroundColor Green
-    Write-Host "  Optional. Displays progress updates during execution." -ForegroundColor White
-    Write-Host "- UpdateFrequency:" -ForegroundColor Green
-    Write-Host "  Optional. Frequency of progress updates. Defaults to 100 files." -ForegroundColor White
-    Write-Host "- DeleteMode:" -ForegroundColor Green
-    Write-Host "  Optional. Specifies how original files are handled after copying. Options: RecycleBin (default), Immediate, EndOfScript." -ForegroundColor White
-    Write-Host "- EndOfScriptDeletionCondition:" -ForegroundColor Green
-    Write-Host "  Optional. Conditions for deletion in EndOfScript mode. Options: NoWarnings (default), WarningsOnly." -ForegroundColor White
-    Write-Host "- RetryDelay:" -ForegroundColor Green
-    Write-Host "  Optional. Delay in seconds before retrying file access. Defaults to 10 seconds." -ForegroundColor White
-    Write-Host "- RetryCount:" -ForegroundColor Green
-    Write-Host "  Optional. Number of retries for file access. Defaults to 3. A value of 0 means unlimited retries (with backoff cap)." -ForegroundColor White
-    Write-Host "- MaxBackoff:" -ForegroundColor Green
-    Write-Host "  Optional. Maximum backoff (seconds) for exponential retry. Defaults to 60 seconds." -ForegroundColor White
-    Write-Host "- CleanupDuplicates:" -ForegroundColor Green
-    Write-Host "  Optional. Invokes duplicate file removal script after distribution." -ForegroundColor White
-    Write-Host "- CleanupEmptyFolders:" -ForegroundColor Green
-    Write-Host "  Optional. Invokes empty folder cleanup script after distribution." -ForegroundColor White
-    Write-Host "- TruncateLog:" -ForegroundColor Green
-    Write-Host "  Optional. Clears the log file at the start of the script." -ForegroundColor White
-    Write-Host "- TruncateIfLarger:" -ForegroundColor Green
-    Write-Host "  Optional. Truncates the log file if it exceeds a specified size." -ForegroundColor White
-    Write-Host "- RemoveEntriesBefore:" -ForegroundColor Green
-    Write-Host "  Optional. Removes log entries before a specific timestamp." -ForegroundColor White
-    Write-Host "- RemoveEntriesOlderThan:" -ForegroundColor Green
-    Write-Host "  Optional. Removes log entries older than a specified number of days." -ForegroundColor White
-    Write-Host "- Help:" -ForegroundColor Green
-    Write-Host "  Displays this help text and exits." -ForegroundColor White
-
-    Write-Host "`nEXAMPLES" -ForegroundColor Yellow
-    Write-Host "To copy files from 'C:\Source' to 'C:\Target' with a default file limit:" -ForegroundColor White
-    Write-Host ".\FileDistributor.ps1 -SourceFolder 'C:\Source' -TargetFolder 'C:\Target'" -ForegroundColor DarkCyan
-    Write-Host "`nTo display progress updates every 50 files:" -ForegroundColor White
-    Write-Host ".\FileDistributor.ps1 -SourceFolder 'C:\Source' -TargetFolder 'C:\Target' -ShowProgress -UpdateFrequency 50" -ForegroundColor DarkCyan
-    Write-Host "`nTo restart the script from the last checkpoint:" -ForegroundColor White
-    Write-Host ".\FileDistributor.ps1 -SourceFolder 'C:\Source' -TargetFolder 'C:\Target' -Restart" -ForegroundColor DarkCyan
-    Write-Host "`nTo display this help text:" -ForegroundColor White
-    Write-Host ".\FileDistributor.ps1 -Help" -ForegroundColor DarkCyan
-
-    Write-Host "`nNOTES" -ForegroundColor Yellow
-    Write-Host "Ensure permissions for reading and writing in both source and target directories." -ForegroundColor White
-    Write-Host "Random name provider (module) resolution order:" -ForegroundColor White
-    Write-Host "  1) -RandomNameModulePath (.psd1/.psm1 or module folder)" -ForegroundColor DarkCyan
-    Write-Host "  2) Script-root 'powershell\\module\\RandomName\\RandomName.psd1' (or .psm1)" -ForegroundColor DarkCyan
-    Write-Host "  3) Import-Module RandomName (from PSModulePath)" -ForegroundColor DarkCyan
-    Write-Host "The script errors out if the RandomName module cannot be located." -ForegroundColor White
-
-    exit
-}
-
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.8.1"
+$script:Version = "4.8.2"
 $script:Warnings = 0
 $script:Errors = 0
 
