@@ -36,6 +36,14 @@ function Get-FullPath {
     process {
         try {
             $normalized = $Path -replace '/', '\'
+
+            # If path starts with a drive letter (C:\, D:\, etc.), it's already absolute
+            # Return it as-is after normalization to handle cross-platform testing
+            if ($normalized -match '^[a-zA-Z]:\\') {
+                return $normalized
+            }
+
+            # For relative paths or UNC paths, use GetFullPath to resolve
             return [System.IO.Path]::GetFullPath($normalized)
         } catch {
             Write-Warning "Failed to normalize path '$Path': $_"

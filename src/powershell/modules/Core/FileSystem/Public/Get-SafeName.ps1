@@ -4,9 +4,11 @@ function Get-SafeName {
         Sanitizes a file or folder name by removing invalid characters.
 
     .DESCRIPTION
-        Removes or replaces invalid filesystem characters (as defined by .NET's
-        GetInvalidFileNameChars), and optionally truncates the result to a maximum length.
-        Trims trailing dots and spaces, and provides a fallback name if the result is empty.
+        Removes or replaces invalid filename characters (those invalid on Windows/NTFS)
+        with underscores, and optionally truncates the result to a maximum length.
+        Uses an explicit character set (including control characters and <>:"/\|?*) for
+        cross-platform consistency. Trims trailing dots and spaces, and provides a
+        fallback name if the result is empty.
 
     .PARAMETER Name
         The original name to sanitize.
@@ -44,11 +46,19 @@ function Get-SafeName {
     )
 
     process {
-        $invalid = [System.IO.Path]::GetInvalidFileNameChars()
+        # Use explicit set of invalid filename characters for Windows/NTFS compatibility
+        # regardless of platform running this code (handles cross-platform testing)
+        $invalid = @(
+            [char]0, [char]1, [char]2, [char]3, [char]4, [char]5, [char]6, [char]7,
+            [char]8, [char]9, [char]10, [char]11, [char]12, [char]13, [char]14, [char]15,
+            [char]16, [char]17, [char]18, [char]19, [char]20, [char]21, [char]22, [char]23,
+            [char]24, [char]25, [char]26, [char]27, [char]28, [char]29, [char]30, [char]31,
+            '<', '>', ':', '"', '/', '\', '|', '?', '*'
+        )
         $sb = [System.Text.StringBuilder]::new()
 
         foreach ($ch in $Name.ToCharArray()) {
-            if ($invalid -contains $ch -or $ch -eq [char]':') {
+            if ($invalid -contains $ch) {
                 [void]$sb.Append('_')
             } else {
                 [void]$sb.Append($ch)
