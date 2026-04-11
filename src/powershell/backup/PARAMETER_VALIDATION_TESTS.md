@@ -7,7 +7,7 @@ This document outlines test cases for the improved parameter block validation in
 1. Added `[Parameter(Mandatory=$false)]` to all optional parameters
 2. Added validation attributes:
    - `[ValidateNotNullOrEmpty()]` for string parameters
-   - `[ValidatePattern('^[a-zA-Z0-9\s_-]+$')]` for SSID parameters (prevents command injection)
+   - `[ValidatePattern('^[^"`$|;&<>\r\n\t]+$')]` for SSID parameters (blacklist approach: blocks dangerous chars, allows legitimate WiFi names)
    - `[ValidateRange(64, 4096)]` for MaxChunkMB parameter
 3. Organized parameters into logical groups with clear comments:
    - Path Parameters
