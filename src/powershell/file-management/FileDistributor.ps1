@@ -226,26 +226,10 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
-## 4.7.10 — 2026-04-05
+Version: 4.8.0 (2026-04-05).
 
-- Added explicit `StateFilePath`, `RetryDelay`, `RetryCount`, and `MaxBackoff` parameters to the state persistence helpers in `Private/State.ps1`.
-- Updated checkpoint and restart call sites to pass state path and retry settings explicitly, removing the helpers' dependency on script-scope free variables.
-
-## 4.7.2 — 2026-04-02
-
-- Fixed race handling in `Invoke-FileMove` so missing source files are logged and skipped instead of aborting the run.
-
-## 4.7.1 — 2026-04-02
-
-- Replaced script-local retry/file-operation utilities with shared Core modules (`ErrorHandling` + `FileOperations`) and removed direct `Private/RetryOps.ps1` loading.
-- Updated call paths to use `Copy-FileWithRetry`, `Remove-FileWithRetry`, and module `Invoke-WithRetry -IgnoreFileNotFound` semantics.
-
-## 4.7.0 â€” 2026-04-01
-### Changed
-- Moved `DistributeFilesToSubfolders` â†’ `Invoke-FileDistribution` and `RedistributeFilesInTarget` â†’ `Invoke-TargetRedistribution` into `Public/` files of the `FileManagement/FileDistributor` module.
-- Moved `Get-SubfolderFileCounts` into `Private/Distribution.ps1` and retry helpers (`Invoke-WithRetry`, `Copy-ItemWithRetry`, `Remove-ItemWithRetry`, `Rename-ItemWithRetry`) into `Private/RetryOps.ps1`.
-- Updated `FolderOps.ps1` to call `Write-LogInfo`/`Write-LogWarning`/`Write-LogError` directly and accept retry params explicitly.
-- Full changelog: `./CHANGELOG.md`.
+For full release history (including v4.7.1 and v4.7.2), see:
+- ./CHANGELOG.md (FileDistributor section)
 
 Script Workflow:
 

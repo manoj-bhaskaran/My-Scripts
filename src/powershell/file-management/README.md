@@ -57,6 +57,10 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
   - Consolidated module/script loading boundaries: private helpers are now loaded once in module scope, redundant Core module imports were removed, and orchestration helpers were promoted to module `Public/` exports.
   - Replaced remaining private-module `LogMessage` calls with framework-native `Write-Log*` functions to avoid module-scope `CommandNotFoundException`.
   - Removed dead script-local duplication (`Write-DistributionSummary`) and aligned helper placement (`Test-EndOfScriptCondition`) with module-scope orchestration.
+- **FileDistributor.ps1 v4.7.2** (module v1.1.2)
+  - Fixed race handling in `Invoke-FileMove`: missing source files are now warning-and-skip instead of aborting distribution.
+- **FileDistributor.ps1 v4.7.1** (module v1.1.1)
+  - Switched retry/file-operation flows to shared Core modules (`Core/ErrorHandling`, `Core/FileOperations`) and removed direct script loading of `Private/RetryOps.ps1`.
 - **FileDistributor.ps1 v4.7.x rollup** (v4.7.0–v4.7.13; module v1.1.0→v1.1.13)
   - Hardened moduleized distribution/post-processing flows by fixing script-scope coupling (`LogMessage` migration, explicit state/retry parameters, warning/error counter propagation, and restart/checkpoint wiring).
   - Landed stability fixes across redistribution and rebalance logic (`-Files` parameter typing, random-selection race clamp, divide-by-zero logging guards, unused `-TotalFiles` removal, and unreachable normalized-subfolder guard removal).
