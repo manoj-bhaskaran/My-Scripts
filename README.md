@@ -96,6 +96,8 @@ These documents provide comprehensive insights into the system design, helping y
 
 For comprehensive installation instructions, see **[INSTALLATION.md](INSTALLATION.md)**.
 
+Quick start assumes **PowerShell**, **Python 3+**, and **Git** are installed.
+
 **Quick Start:**
 
 ```bash
@@ -138,17 +140,6 @@ The repository now ships with **dual dependency manifests**:
 - The manifests explicitly pin `virtualenv` and `filelock` to patched versions because repository tooling such as `pre-commit` depends on them transitively. The lockfile uses `virtualenv==20.36.1`, which remains available on package indexes where `20.36.2` is missing. Security scanning now standardizes on `pip-audit`, removing the vulnerable transitive `nltk` dependency that arrived through Safety while preserving the patched `filelock==3.20.3` override for the `pre-commit` runtime stack.
 
 **Configuration Guide**: See [config/CONFIG_GUIDE.md](config/CONFIG_GUIDE.md) for detailed configuration instructions.
-
----
-
-## Prerequisites
-
-To make use of the scripts in this repository, you'll need the following installed on your system:
-
-- **PowerShell 5.1+ (Windows) or PowerShell 7+**
-- **Python 3+**
-- **Git**
-- Python package requirements are script- or project-specific; see headers within individual scripts or any `requirements.txt` files colocated under `src/python/` subfolders.
 
 ---
 
@@ -221,120 +212,11 @@ For detailed installation instructions, configuration, and troubleshooting:
 
 ---
 
-## Logging Framework
-
-All PowerShell scripts in this repository use a centralized logging framework (`PowerShellLoggingFramework.psm1`) that provides:
-
-- **Standardized Logging**: Consistent timestamp formats, log levels, and output structure
-- **Automatic Log Files**: Logs are automatically written to `logs/{ScriptName}_powershell_YYYY-MM-DD.log`
-- **Log Levels**: DEBUG (10), INFO (20), WARNING (30), ERROR (40), CRITICAL (50)
-- **Flexible Output**: Plain-text or JSON structured logging
-- **Metadata Support**: Optional metadata tagging for enhanced context
-- **Precomputed Defaults**: The PowerShell module caches its default log directory on import to minimize repeated path resolution during initialization
-
-> **Console output guidance:** Production scripts should log via `PowerShellLoggingFramework`. Lightweight utilities that skip logger initialization should use `Write-Information` (with `-InformationAction Continue`) for user-facing messages so output remains redirectable. Reserve `Write-Host` for interactive, color-coded tools only and document its intentional use.
-
-### Log Levels
-
-The framework supports five log levels, controllable via the `-LogLevel` parameter when initializing the logger:
-
-- **10 (DEBUG)**: Detailed information for debugging
-- **20 (INFO)**: General informational messages (default)
-- **30 (WARNING)**: Warning messages for potentially problematic situations
-- **40 (ERROR)**: Error messages for failures
-- **50 (CRITICAL)**: Critical errors that may cause script termination
-
-### Example Usage
-
-```powershell
-# Import the logging framework
-Import-Module "$PSScriptRoot\..\common\PowerShellLoggingFramework.psm1" -Force
-
-# Initialize logger with script name and log level
-Initialize-Logger -ScriptName "MyScript" -LogLevel 20
-
-# Use logging functions
-Write-LogInfo "Script started successfully"
-Write-LogDebug "Processing file: example.txt"
-Write-LogWarning "File not found, using default"
-Write-LogError "Failed to connect to database"
-```
-
-For more details, see the [PowerShellLoggingFramework documentation](src/common/PowerShellLoggingFramework.psm1).
-
----
-
 ## Logging
 
-All scripts in this repository implement standardized logging to help with debugging, auditing, and monitoring script execution.
+This repository includes a standardized, cross-platform logging framework for Python, PowerShell, and Batch scripts with consistent formatting and centralized log handling.
 
-### Logging Standard
-
-The repository follows a consistent logging format across all script types:
-
-```
-[YYYY-MM-DD HH:mm:ss.fff TIMEZONE] [LEVEL] [ScriptName] [HostName] [PID] Message
-```
-
-**Example:**
-
-```
-[2025-11-16 14:30:45.123 Eastern Standard Time] [INFO] [RunDeleteOldDownloads.bat] [WORKSTATION] [12345] Script started
-```
-
-### Log Levels
-
-- **DEBUG** (10): Detailed diagnostic information
-- **INFO** (20): General informational messages (default)
-- **WARNING** (30): Warning messages for potentially problematic situations
-- **ERROR** (40): Error messages for failures that don't stop execution
-- **CRITICAL** (50): Critical errors that may stop execution
-
-### PowerShell Scripts
-
-PowerShell scripts use the **PowerShellLoggingFramework.psm1** module located in `src/common/`.
-
-**Log File Location:** `<script_directory>/logs/<script_name>_powershell_YYYY-MM-DD.log`
-
-**Usage Example:**
-
-```powershell
-Import-Module ".\src\common\PowerShellLoggingFramework.psm1"
-Initialize-Logger -ScriptName "MyScript.ps1"
-Write-LogInfo "Script started"
-Write-LogError "An error occurred"
-```
-
-### Batch Scripts
-
-Batch scripts (.bat, .cmd) implement inline logging functions that conform to the same standard format.
-
-**Log File Location:** `src/batch/logs/<script_name>_batch_YYYY-MM-DD.log`
-
-**Features:**
-
-- Automatic log directory creation
-- Timestamps with millisecond precision
-- Hostname and Process ID tracking
-- Multiple log levels (INFO, WARNING, ERROR)
-- Same-day log file appending
-
-**Available Batch Scripts:**
-
-- **RunDeleteOldDownloads.bat** (v3.0.0): Wrapper for PowerShell file cleanup script
-- **printcancel.cmd** (v2.0.0): Printer spooler maintenance utility
-
-For detailed information about logging implementation and testing, see `docs/batch-logging-test-plan.md`.
-
----
-
-## Logging Framework
-
-This repository includes a **standardized, cross-platform logging framework** that ensures consistent log formatting and management across all scripts.
-
-### Quick Start
-
-**Python:**
+Log levels: DEBUG (10), INFO (20), WARNING (30), ERROR (40), CRITICAL (50).
 
 ```python
 import python_logging_framework as plog
@@ -342,31 +224,13 @@ plog.initialise_logger(log_file_path="auto", level="INFO")
 plog.log_info("Script started successfully")
 ```
 
-**PowerShell:**
-
 ```powershell
 Import-Module "PowerShellLoggingFramework.psm1"
 Initialize-Logger -LogLevel 20
 Write-LogInfo "Script started successfully"
 ```
 
-### Key Features
-
-- **Unified Format:** Consistent log structure across Python, PowerShell, and Batch scripts
-- **Multiple Log Levels:** DEBUG, INFO, WARNING, ERROR, CRITICAL
-- **Structured Metadata:** Optional key-value pairs for enhanced context
-- **Automatic Management:** Auto-creates log directories, handles file rotation
-- **Log Purge Tools:** Built-in retention management (default: 30 days)
-- **Timezone Support:** Timestamps in IST (Asia/Kolkata) by default
-- **JSON Output:** Optional structured logging for aggregation tools
-
-### Documentation
-
-- **Full Specification:** [`docs/logging_specification.md`](docs/logging_specification.md)
-- **Usage Guidelines:** [`CONTRIBUTING.md`](CONTRIBUTING.md#logging-framework) - Comprehensive examples and patterns
-- **Log Purge Guide:** [`CONTRIBUTING.md`](CONTRIBUTING.md#log-purge-mechanism) - Retention management and scheduling
-
-All logs are stored in the `logs/` directory with the naming pattern: `<script_name>_<language>_YYYY-MM-DD.log`
+See [docs/logging_specification.md](docs/logging_specification.md) for the full logging standard and [CONTRIBUTING.md](CONTRIBUTING.md#logging-framework) for usage guidelines.
 
 ---
 
@@ -426,10 +290,8 @@ This repository follows [Semantic Versioning](https://semver.org/):
 - **MAJOR**: Breaking changes to script interfaces or module APIs
 - **MINOR**: New features (new scripts, module enhancements)
 - **PATCH**: Bug fixes and minor improvements
-
-Current version: **2.0.0**
-
-See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
+  Current version: **2.12.10**
+  See [CHANGELOG.md](CHANGELOG.md) for release history and [docs/guides/versioning.md](docs/guides/versioning.md) for the release/versioning workflow.
 
 ---
 
@@ -843,50 +705,6 @@ The repository uses a modern TOML-based configuration system for PowerShell modu
 
 ---
 
-## Versioning and Releases
-
-This repository follows [Semantic Versioning](https://semver.org/):
-
-- **MAJOR.MINOR.PATCH** (e.g., 2.0.0)
-- Current Version: **2.11.0** (see [VERSION](VERSION) file)
-
-### Release Process
-
-Releases are automated using GitHub Actions:
-
-1. **Bump version** using the version bump script:
-
-   ```bash
-   ./scripts/bump-version.sh [major|minor|patch]
-   ```
-
-2. **Update CHANGELOG.md** with release notes in concise Keep a Changelog style (focus on architectural/user impact, avoid file-by-file implementation dumps)
-
-3. **Create and push tag** to trigger release:
-   ```bash
-   git commit -am "chore: release vX.Y.Z"
-   git tag -a vX.Y.Z -m "Release vX.Y.Z"
-   git push origin main --tags
-   ```
-
-The workflow automatically:
-
-- Extracts changelog for the version
-- Creates GitHub Release
-- Publishes release notes
-
-### Documentation
-
-- **[Versioning Guide](docs/guides/versioning.md)** - Complete versioning and release documentation
-- **[Release Checklist](.github/RELEASE_CHECKLIST.md)** - Pre-release and post-release tasks
-- **[CHANGELOG.md](CHANGELOG.md)** - Detailed change history
-
-### Version History
-
-All releases are available on the [Releases](https://github.com/manoj-bhaskaran/My-Scripts/releases) page.
-
----
-
 ## Contributing
 
 Please note that at present, I am not inviting contributions to this personal project. However, the [`CONTRIBUTING.md`](CONTRIBUTING.md) file documents coding standards, logging guidelines, and best practices used throughout this repository.
@@ -904,7 +722,3 @@ This project is licensed under the [MIT Licence](LICENSE).
 For any questions or feedback, please feel free to open a Git issue within this repository.
 
 ---
-
-# test change
-
-# test
