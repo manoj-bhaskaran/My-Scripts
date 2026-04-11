@@ -57,8 +57,7 @@ function Invoke-FileDistribution {
     $filesToProcess = $Files
     try {
         if ($Files.Count -gt 1) { $filesToProcess = $Files | Get-Random -Count $Files.Count }
-    }
-    catch {
+    } catch {
         $filesToProcess = $Files
         Write-LogWarning "Could not shuffle file list due to: $($_.Exception.Message). Proceeding without shuffle."
         if ($WarningCount) { $WarningCount.Value++ }
@@ -82,8 +81,7 @@ function Invoke-FileDistribution {
         # Weighted random selection based on available capacity
         if ($eligible.Count -eq 1) {
             $destinationFolder = $eligible[0]
-        }
-        else {
+        } else {
             # Calculate weights based on available capacity (Limit - current count)
             $weights = @{}
             $totalWeight = 0
@@ -108,7 +106,7 @@ function Invoke-FileDistribution {
         }
 
         Write-LogDebug "DEBUG: Eligible count: $($eligible.Count), Selected: $destinationFolder (count: $($folderCounts[$destinationFolder]))"
-        Write-LogInfo "Selected destination before resolve: '$destinationFolder'"
+        Write-LogDebug "DEBUG: Selected destination before resolve: '$destinationFolder'"
 
         # Last-mile guards (never root, always under TargetRoot, must exist)
         $destinationFolder = Resolve-SubfolderPath -Path $destinationFolder -TargetRoot $TargetRoot -WarningCount $WarningCount
@@ -132,15 +130,13 @@ function Invoke-FileDistribution {
                 $fallback = $safe | Get-Random
                 if ($destNormalized -eq $targetNormalized) {
                     Write-LogWarning "Destination resolved to the target ROOT; selecting a subfolder instead: '$fallback'."
-                }
-                else {
+                } else {
                     $destDisplay = if ($destNormalized) { $destNormalized } else { '<null>' }
                     Write-LogWarning "Destination escaped target root ('$destDisplay'); forcing subfolder '$fallback'."
                 }
                 if ($WarningCount) { $WarningCount.Value++ }
                 $destinationFolder = $fallback
-            }
-            else {
+            } else {
                 $destinationFolder = Join-Path -Path $TargetRoot -ChildPath (Get-RandomFileName)
                 New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
                 $folderCounts[$destinationFolder] = 0
@@ -157,8 +153,7 @@ function Invoke-FileDistribution {
             try {
                 New-Item -ItemType Directory -Path $destinationFolder -Force | Out-Null
                 Write-LogInfo "Created missing destination folder: $destinationFolder"
-            }
-            catch {
+            } catch {
                 Write-LogError "Failed to ensure destination folder '$destinationFolder': $($_.Exception.Message)"
                 if ($ErrorCount) { $ErrorCount.Value++ }
                 continue
@@ -198,15 +193,12 @@ function Invoke-FileDistribution {
             $folderCounts[$destinationFolder] = $folderCountRef.Value
             if ($DeleteMode -eq "RecycleBin") {
                 Write-LogInfo "Copied from $file to $destinationFile and moved original to Recycle Bin."
-            }
-            elseif ($DeleteMode -eq "Immediate") {
+            } elseif ($DeleteMode -eq "Immediate") {
                 Write-LogInfo "Copied from $file to $destinationFile and immediately deleted original."
-            }
-            elseif ($DeleteMode -eq "EndOfScript") {
+            } elseif ($DeleteMode -eq "EndOfScript") {
                 if ($moveResult.QueueQueued -eq $true) {
                     Write-LogInfo "Copied from $file to $destinationFile. Original pending deletion at end of script."
-                }
-                else {
+                } else {
                     Write-LogWarning "Copied from $file to $destinationFile, but original could not be queued for end-of-script deletion."
                     if ($WarningCount) { $WarningCount.Value++ }
                 }
