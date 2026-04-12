@@ -365,7 +365,7 @@ $StateFilePath = $script:StateFilePath
 # Initialize logger with the resolved log directory
 $logDirectory = Split-Path -Path $LogFilePath -Parent
 Initialize-Logger -resolvedLogDir $logDirectory -ScriptName "FileDistributor" -LogLevel (Get-LoggerLevelValue -Level INFO)
-Set-LoggerLogFilePath -Path $LogFilePath
+$null = Set-LoggerLogFilePath -Path $LogFilePath
 Reset-LogCounters
 
 # Main script logic
