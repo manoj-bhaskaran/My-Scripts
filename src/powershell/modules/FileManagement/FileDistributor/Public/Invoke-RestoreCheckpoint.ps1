@@ -2,7 +2,7 @@
 
 function Invoke-RestoreCheckpoint {
     param(
-        [hashtable]$RunState,
+        [FileDistributorRunState]$RunState,
         [Parameter(Mandatory = $true)][ref]$FileLockRef,
         [Parameter(Mandatory = $true)][ref]$PriorWarnings,
         [Parameter(Mandatory = $true)][ref]$PriorErrors,
@@ -24,7 +24,15 @@ function Invoke-RestoreCheckpoint {
 
         $state = Restore-DistributionState -FileLock $FileLockRef -StateFilePath $StateFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
         $RunState.State = $state
-        $RunState.LastCheckpoint = $state.Checkpoint
+        $restoredRunState = [FileDistributorRunState]::FromHashtable($state)
+        $RunState.LastCheckpoint = $restoredRunState.LastCheckpoint
+        $RunState.TotalSourceFiles = $restoredRunState.TotalSourceFiles
+        $RunState.TotalSourceFilesAll = $restoredRunState.TotalSourceFilesAll
+        $RunState.TotalTargetFilesBefore = $restoredRunState.TotalTargetFilesBefore
+        $RunState.TotalSkippedFiles = $restoredRunState.TotalSkippedFiles
+        if ($restoredRunState.SkippedFilesByExtension) {
+            $RunState.SkippedFilesByExtension = @{} + $restoredRunState.SkippedFilesByExtension
+        }
 
         if ($RunState.LastCheckpoint -gt 0) {
             if ($state.PSObject.Properties.Name -contains 'SessionId' -and $state.SessionId) {
@@ -50,6 +58,7 @@ function Invoke-RestoreCheckpoint {
                     throw "SourceFolder mismatch: Restarted script must use the saved SourceFolder ('$savedSourceFolder'). Aborting."
                 }
             }
+            $RunState.SourceFolder = [string]$savedSourceFolder
         } else {
             throw "State file does not contain SourceFolder. Unable to enforce."
         }
@@ -64,9 +73,6 @@ function Invoke-RestoreCheckpoint {
         }
 
         if ($RunState.LastCheckpoint -in 2..7 -and $null -ne $state) {
-            if ($state.ContainsKey('totalSourceFiles'))     { $RunState.totalSourceFiles     = [int]$state['totalSourceFiles'] }
-            if ($state.ContainsKey('totalTargetFilesBefore')) { $RunState.totalTargetFilesBefore = [int]$state['totalTargetFilesBefore'] }
-            if ($state.ContainsKey('totalSourceFilesAll'))  { $RunState.totalSourceFilesAll  = [int]$state['totalSourceFilesAll'] }
             if ($state.ContainsKey('MaxFilesToCopy')) {
                 $savedMax = [int]$state['MaxFilesToCopy']
                 if ($RunState.MaxFilesToCopy -ne $savedMax) {
@@ -74,8 +80,8 @@ function Invoke-RestoreCheckpoint {
                 }
                 $RunState.MaxFilesToCopy = $savedMax
             }
-            if ($state.ContainsKey('subfolders')) { $RunState.subfolders = ConvertPathsToItems($state['subfolders']) }
-            if ($RunState.LastCheckpoint -in 2, 3 -and $state.ContainsKey('sourceFiles')) { $RunState.sourceFiles = ConvertPathsToItems($state['sourceFiles']) }
+            if ($state.ContainsKey('subfolders')) { $RunState.Subfolders = ConvertPathsToItems($state['subfolders']) }
+            if ($RunState.LastCheckpoint -in 2, 3 -and $state.ContainsKey('sourceFiles')) { $RunState.SourceFiles = ConvertPathsToItems($state['sourceFiles']) }
         }
 
         if ($DeleteMode -eq "EndOfScript" -and $RunState.LastCheckpoint -in 3, 4, 5, 6, 7 -and $state.ContainsKey("FilesToDelete")) {

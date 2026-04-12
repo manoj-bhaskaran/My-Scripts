@@ -2,6 +2,7 @@ function ConvertTo-Hashtable {
     param([Parameter(Mandatory = $true)]$Object)
 
     if ($null -eq $Object) { return $null }
+    if ($Object -is [FileDistributorRunState]) { return $Object.ToSerializableHashtable() }
     if ($Object -is [hashtable]) { return $Object }
     if ($Object -is [System.Collections.IDictionary]) { return @{} + $Object }
 

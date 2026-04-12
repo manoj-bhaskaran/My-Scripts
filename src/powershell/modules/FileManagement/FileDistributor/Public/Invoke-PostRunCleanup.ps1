@@ -2,7 +2,7 @@
 
 function Invoke-PostRunCleanup {
     param(
-        [hashtable]$RunState,
+        [FileDistributorRunState]$RunState,
         [Parameter(Mandatory = $true)][ref]$FileLockRef,
         [Parameter(Mandatory = $true)][string]$TargetFolder,
         [Parameter(Mandatory = $true)][string]$StateFilePath,
@@ -17,7 +17,7 @@ function Invoke-PostRunCleanup {
     $totalTargetFilesAfter = Get-ChildItem -Path $TargetFolder -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count
     $totalTargetFilesAfter = if ($null -eq $totalTargetFilesAfter) { 0 } else { $totalTargetFilesAfter }
 
-    if ([string]::IsNullOrWhiteSpace($RunState['SourceFolder'])) {
+    if ([string]::IsNullOrWhiteSpace($RunState.SourceFolder)) {
         Write-LogInfo "===== File Rebalancing Summary ====="
         Write-LogInfo "Original number of files in the target folder hierarchy: $($RunState.totalTargetFilesBefore)"
         Write-LogInfo "Final number of files in the target folder hierarchy: $totalTargetFilesAfter"

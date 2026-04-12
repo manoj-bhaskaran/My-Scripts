@@ -1,4 +1,13 @@
 # Function to extract paths from items
+function Convert-RunStateToSerializableHashtable {
+    param(
+        [Parameter(Mandatory = $true)][FileDistributorRunState]$RunState
+    )
+
+    return $RunState.ToSerializableHashtable()
+}
+
+# Function to extract paths from items
 function ConvertItemsToPaths {
     param ([array]$Items)
 
@@ -28,20 +37,16 @@ function ConvertItemsToPaths {
                 if (-not [string]::IsNullOrWhiteSpace($fullPath)) {
                     Write-LogDebug "DEBUG: ConvertItemsToPaths - Item $index converting '$($i.Name)' to '$fullPath'"
                     $out += $fullPath
-                }
-                else {
+                } else {
                     Write-LogDebug "DEBUG: ConvertItemsToPaths - Item $index has whitespace-only FullName for '$($i.Name)'"
                 }
-            }
-            else {
+            } else {
                 Write-LogDebug "DEBUG: ConvertItemsToPaths - Item $index has no FullName property for '$($i.Name)'"
             }
-        }
-        elseif (-not [string]::IsNullOrWhiteSpace([string]$i)) {
+        } elseif (-not [string]::IsNullOrWhiteSpace([string]$i)) {
             Write-LogDebug "DEBUG: ConvertItemsToPaths - Item $index is string '$i'"
             $out += [string]$i
-        }
-        else {
+        } else {
             Write-LogDebug "DEBUG: ConvertItemsToPaths - Item $index skipped (empty/whitespace)"
         }
     }
@@ -78,12 +83,10 @@ function ConvertPathsToItems {
             if ($item -and $item.FullName -and -not [string]::IsNullOrWhiteSpace($item.FullName)) {
                 Write-LogDebug "DEBUG: ConvertPathsToItems - Item $index successfully converted to $($item.GetType().Name)"
                 $out += $item
-            }
-            else {
+            } else {
                 Write-LogDebug "DEBUG: ConvertPathsToItems - Item $index has invalid FullName after Get-Item"
             }
-        }
-        catch {
+        } catch {
             Write-LogWarning "DEBUG: ConvertPathsToItems - Item $index failed to convert '$path' - $($_.Exception.Message)"
         }
     }
