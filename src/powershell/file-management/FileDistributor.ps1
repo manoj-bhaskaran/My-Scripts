@@ -326,14 +326,12 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PurgeLogs.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\ErrorHandling\ErrorHandling.psd1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1" -Force
 
-# Import FileQueue module for queue management
-Import-Module "$PSScriptRoot\..\modules\FileManagement\FileQueue\FileQueue.psd1" -Force
 Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistributor.psd1" -Force
 
 # Note: Logger initialization moved to after LogFilePath resolution
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.9.0"
+$script:Version = "4.9.1"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -343,10 +341,19 @@ $script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Pat
 
 # ===== Resolve effective LogFilePath and StateFilePath (before first Write-Log* call) =====
 # Uses Initialize-FileDistributorPaths from the FileDistributor module (imported above).
-$_paths = Initialize-FileDistributorPaths `
-    -UserLogPath   $LogFilePath `
-    -UserStatePath $StateFilePath `
-    -CallerScriptRoot $script:ScriptRoot
+try {
+    $_paths = Initialize-FileDistributorPaths `
+        -UserLogPath   $LogFilePath `
+        -UserStatePath $StateFilePath `
+        -CallerScriptRoot $script:ScriptRoot
+} catch {
+    $pathInitError = [System.Exception]::new(
+        "Failed to initialize FileDistributor log/state paths. Verify -LogFilePath and -StateFilePath values are valid and writable.",
+        $_.Exception
+    )
+    Write-Error -Exception $pathInitError -Category InvalidOperation -ErrorId 'FileDistributor.PathInitializationFailed'
+    exit 1
+}
 
 $script:LogFilePath = $_paths.LogFilePath
 $script:StateFilePath = $_paths.StateFilePath
@@ -357,18 +364,17 @@ $StateFilePath = $script:StateFilePath
 
 # Initialize logger with the resolved log directory
 $logDirectory = Split-Path -Path $LogFilePath -Parent
-Initialize-Logger -resolvedLogDir $logDirectory -ScriptName "FileDistributor" -LogLevel 20
-# Override the framework's auto-generated filename to use the user's exact path
-$Global:LogConfig.LogFilePath = $LogFilePath
+Initialize-Logger -resolvedLogDir $logDirectory -ScriptName "FileDistributor" -LogLevel (Get-LoggerLevelValue -Level INFO)
+Set-LoggerLogFilePath -Path $LogFilePath
 Reset-LogCounters
 
 # Main script logic
 function Main {
+    $script:DebugMode = ($DebugPreference -ne 'SilentlyContinue')
     Write-LogInfo "FileDistributor starting..."
     Write-Host "FileDistributor starting..."
     Write-LogInfo "Version: $script:Version"
     Write-Host "Version: $script:Version"
-    $script:DebugMode = ($DebugPreference -ne 'SilentlyContinue')
     Import-RandomNameProvider -ModulePath $RandomNameModulePath -ScriptRoot $script:ScriptRoot
     $script:Warnings = Get-LogWarningCount
     $script:Errors = Get-LogErrorCount

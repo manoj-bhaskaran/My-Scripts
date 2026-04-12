@@ -1,5 +1,20 @@
 # CHANGELOG — FileDistributor
 
+## 4.9.1 — 2026-04-12
+
+### Changed
+
+- Removed direct entry-script import of `FileQueue`; dependency is now declared in `FileDistributor.psd1` (`RequiredModules`) so module encapsulation controls transitive imports.
+- Added structured startup error handling around `Initialize-FileDistributorPaths`; path initialization failures now emit a descriptive `Write-Error` with `FileDistributor.PathInitializationFailed` and exit code `1` before logger setup.
+- Replaced hardcoded `-LogLevel 20` with `Get-LoggerLevelValue -Level INFO` from the logging framework.
+- Replaced direct `$Global:LogConfig.LogFilePath` mutation with `Set-LoggerLogFilePath -Path <resolvedPath>`.
+- Moved `$script:DebugMode` initialization to the start of `Main()` so debug behavior is configured before first log calls.
+
+### Versioning
+
+- Bumped `FileDistributor.ps1` script version to `4.9.1`.
+- Bumped `FileDistributor` module version to `1.3.1`.
+
 ## 4.9.0 — 2026-04-12
 
 ### Changed

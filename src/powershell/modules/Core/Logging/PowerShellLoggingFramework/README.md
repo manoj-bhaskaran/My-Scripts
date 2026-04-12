@@ -1,15 +1,18 @@
 # PowerShell Logging Framework
 
 ## Overview
+
 Cross-platform structured logging framework implementing the [Logging Specification](../../../../../docs/specifications/logging_specification.md) for consistent log output across PowerShell scripts.
 
 ## Version
-Current version: **2.0.1**
+
+Current version: **2.1.0**
 
 ## Features
 
 - **Structured log format:** `[TIMESTAMP] [LEVEL] [SCRIPT] [HOST] [PID] [MESSAGE] [metadata]`
 - **Multiple log levels:** DEBUG (10), INFO (20), WARNING (30), ERROR (40), CRITICAL (50)
+- **Named log-level API:** `Get-LoggerLevelValue` for consuming scripts/modules
 - **Dual output:** File and console with automatic fallback
 - **Format options:** Plain text or JSON structured logging
 - **Cross-platform:** Windows, Linux, macOS
@@ -21,16 +24,19 @@ Current version: **2.0.1**
 ## Installation
 
 **Module import:**
+
 ```powershell
 Import-Module PowerShellLoggingFramework
 ```
 
 **Manual import with path:**
+
 ```powershell
 Import-Module .\src\powershell\modules\Core\Logging\PowerShellLoggingFramework.psd1
 ```
 
 **Using deployment script:**
+
 ```powershell
 .\scripts\Deploy-Modules.ps1
 ```
@@ -42,9 +48,55 @@ Import-Module .\src\powershell\modules\Core\Logging\PowerShellLoggingFramework.p
 Initializes the logging framework for a script.
 
 **Syntax:**
+
 ```powershell
 Initialize-Logger [[-LogDirectory] <string>] [[-ScriptName] <string>]
     [[-LogLevel] <int>] [-JsonFormat]
+```
+
+Tip: avoid numeric literals in consumers by using `Get-LoggerLevelValue`, for example
+`Initialize-Logger -LogLevel (Get-LoggerLevelValue -Level INFO)`.
+
+### Get-LoggerLevelValue
+
+Returns the numeric value for a named framework log level.
+
+**Syntax:**
+
+```powershell
+Get-LoggerLevelValue [[-Level] <string>]
+```
+
+**Accepted level names:**
+
+- `DEBUG` -> `10`
+- `INFO` -> `20`
+- `WARNING` -> `30`
+- `ERROR` -> `40`
+- `CRITICAL` -> `50`
+
+**Examples:**
+
+```powershell
+$infoLevel = Get-LoggerLevelValue -Level INFO
+Initialize-Logger -LogLevel $infoLevel
+```
+
+### Set-LoggerLogFilePath
+
+Sets the exact runtime log file path through the framework API.
+
+**Syntax:**
+
+```powershell
+Set-LoggerLogFilePath [-Path] <string>
+```
+
+**Example:**
+
+```powershell
+Initialize-Logger -resolvedLogDir "D:\logs" -ScriptName "example"
+Set-LoggerLogFilePath -Path "D:\custom\exact-log-file.log"
 ```
 
 **Parameters:**
@@ -96,6 +148,7 @@ Initialize-Logger `
 Writes a DEBUG level log entry.
 
 **Syntax:**
+
 ```powershell
 Write-LogDebug [-Message] <string> [[-Metadata] <hashtable>]
 ```
@@ -116,6 +169,7 @@ Write-LogDebug "Query parameters" -Metadata @{
 Writes an INFO level log entry.
 
 **Syntax:**
+
 ```powershell
 Write-LogInfo [-Message] <string> [[-Metadata] <hashtable>]
 ```
@@ -136,6 +190,7 @@ Write-LogInfo "Files processed" -Metadata @{
 Writes a WARNING level log entry.
 
 **Syntax:**
+
 ```powershell
 Write-LogWarning [-Message] <string> [[-Metadata] <hashtable>]
 ```
@@ -156,6 +211,7 @@ Write-LogWarning "Retry attempt" -Metadata @{
 Writes an ERROR level log entry.
 
 **Syntax:**
+
 ```powershell
 Write-LogError [-Message] <string> [[-Metadata] <hashtable>]
 ```
@@ -176,6 +232,7 @@ Write-LogError "Backup failed" -Metadata @{
 Writes a CRITICAL level log entry.
 
 **Syntax:**
+
 ```powershell
 Write-LogCritical [-Message] <string> [[-Metadata] <hashtable>]
 ```
@@ -196,6 +253,7 @@ Write-LogCritical "Data corruption detected" -Metadata @{
 Reads or resets framework-managed warning/error counters.
 
 **Syntax:**
+
 ```powershell
 Get-LogWarningCount
 Get-LogErrorCount
@@ -203,6 +261,7 @@ Reset-LogCounters
 ```
 
 **Examples:**
+
 ```powershell
 Reset-LogCounters
 Write-LogWarning "Sample warning"
@@ -220,6 +279,7 @@ Write-LogInfo "Errors so far: $(Get-LogErrorCount)"
 ```
 
 **Example:**
+
 ```
 [2025-11-19 14:30:22.123 IST] [INFO] [backup_job.ps1] [SERVER01] [12345] Backup started [Database=mydb Duration=120]
 ```
@@ -358,13 +418,13 @@ $Global:LogConfig = @{
 
 ### Log Levels
 
-| Level | Value | Description |
-|-------|-------|-------------|
-| DEBUG | 10 | Detailed debugging information |
-| INFO | 20 | General informational messages |
-| WARNING | 30 | Warning messages for potential issues |
-| ERROR | 40 | Error messages for failures |
-| CRITICAL | 50 | Critical failures requiring immediate attention |
+| Level    | Value | Description                                     |
+| -------- | ----- | ----------------------------------------------- |
+| DEBUG    | 10    | Detailed debugging information                  |
+| INFO     | 20    | General informational messages                  |
+| WARNING  | 30    | Warning messages for potential issues           |
+| ERROR    | 40    | Error messages for failures                     |
+| CRITICAL | 50    | Critical failures requiring immediate attention |
 
 ### Log File Location
 
@@ -424,20 +484,24 @@ This module implements the [Cross-Platform Logging Specification](../../../../..
 ## Troubleshooting
 
 ### "Log file not created"
+
 - Check LogDirectory exists and is writable
 - Verify Initialize-Logger was called
 - Check console output for fallback messages
 
 ### "Metadata validation warnings"
+
 - Use recommended metadata keys (CorrelationId, User, TaskId, FileName, Duration)
 - Warnings don't prevent logging, just indicate non-standard keys
 
 ### "Timestamps showing wrong timezone"
+
 - Module uses system timezone by default
 - Timezone abbreviation is automatically detected
 - Check system timezone configuration
 
 ### "JSON format not working"
+
 - Ensure `-JsonFormat` switch is passed to `Initialize-Logger`
 - Check log file for proper JSON structure
 - Verify no syntax errors in metadata hashtables

@@ -16,6 +16,65 @@ $Global:LogCounters = @{
 
 $Global:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration")
 $script:DefaultLogDir = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "logs"
+$script:LoggerLevels = @{
+    DEBUG    = 10
+    INFO     = 20
+    WARNING  = 30
+    ERROR    = 40
+    CRITICAL = 50
+}
+
+function Get-LoggerLevelValue {
+    <#
+.SYNOPSIS
+    Returns a numeric log level value for a named level.
+
+.PARAMETER Level
+    Log level name. Accepted values: DEBUG, INFO, WARNING, ERROR, CRITICAL.
+
+.EXAMPLE
+    Get-LoggerLevelValue -Level INFO
+#>
+    param(
+        [ValidateSet('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')]
+        [string]$Level = 'INFO'
+    )
+
+    return $script:LoggerLevels[$Level.ToUpperInvariant()]
+}
+
+function Set-LoggerLogFilePath {
+    <#
+.SYNOPSIS
+    Sets the exact log file path used by the logging framework.
+
+.DESCRIPTION
+    Uses public module API to update the runtime log target without direct mutation of
+    framework globals by consumers.
+
+.PARAMETER Path
+    Absolute or relative path to the target log file.
+#>
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Path
+    )
+
+    try {
+        $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+    } catch {
+        throw "Invalid log file path '$Path': $($_.Exception.Message)"
+    }
+
+    $logFileDir = Split-Path -Path $resolvedPath -Parent
+    if ($logFileDir -and -not (Test-Path -LiteralPath $logFileDir)) {
+        [System.IO.Directory]::CreateDirectory($logFileDir) | Out-Null
+    }
+
+    $Global:LogConfig.LogFilePath = $resolvedPath
+    return $Global:LogConfig.LogFilePath
+}
 
 function Initialize-Logger {
     <#
@@ -68,8 +127,12 @@ function Initialize-Logger {
     param (
         [string]$resolvedLogDir = $script:DefaultLogDir,
         [string]$ScriptName = $null,
-        [int]$LogLevel = 20
+        [int]$LogLevel = (Get-LoggerLevelValue -Level INFO)
     )
+
+    if ($LogLevel -notin $script:LoggerLevels.Values) {
+        throw "Invalid log level '$LogLevel'. Valid values: $($script:LoggerLevels.Values -join ', ')."
+    }
 
     $Global:LogConfig.LogLevel = $LogLevel
     $Global:LogConfig.ScriptName = if ($ScriptName) { $ScriptName } else { $MyInvocation.ScriptName }
@@ -79,8 +142,7 @@ function Initialize-Logger {
         if ($callerScriptPath) {
             $callerScriptRoot = Split-Path -Path $callerScriptPath -Parent
             $resolvedLogDir = Join-Path (Split-Path $callerScriptRoot -Parent) "logs"
-        }
-        else {
+        } else {
             $resolvedLogDir = $script:DefaultLogDir
         }
     }
@@ -92,8 +154,7 @@ function Initialize-Logger {
     if (-not (Test-Path $resolvedLogDir)) {
         try {
             New-Item -Path $resolvedLogDir -ItemType Directory -Force | Out-Null
-        }
-        catch {
+        } catch {
             Write-Warning "Failed to create log directory '$resolvedLogDir': $_"
             throw
         }
@@ -203,8 +264,7 @@ function Write-Log {
     $metaStr = if ($Metadata.Count -gt 0) {
         Test-MetadataKeys -Metadata $Metadata
         $Metadata.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } -join ' '
-    }
-    else {
+    } else {
         ""
     }
 
@@ -219,8 +279,7 @@ function Write-Log {
             metadata  = $Metadata
         }
         $logLine = $logObject | ConvertTo-Json -Depth 5 -Compress
-    }
-    else {
+    } else {
         $logLine = "[${timestamp}] [$Level] [$scriptName] [$hostName] [$PID] $Message"
         if ($metaStr) { $logLine += " [$metaStr]" }
     }
@@ -232,14 +291,12 @@ function Write-Log {
             # Always create directory structure - .NET method handles existing directories gracefully
             try {
                 [System.IO.Directory]::CreateDirectory($logFileDir) | Out-Null
-            }
-            catch {
+            } catch {
                 Write-Warning "Failed to create log directory '$logFileDir' using .NET method: $_"
                 # Fallback to PowerShell method
                 try {
                     $null = New-Item -Path $logFileDir -ItemType Directory -Force -ErrorAction Stop
-                }
-                catch {
+                } catch {
                     Write-Warning "Failed to create log directory '$logFileDir' using PowerShell method: $_"
                 }
             }
@@ -247,8 +304,7 @@ function Write-Log {
 
         # Use .NET method for cross-platform file writing reliability
         [System.IO.File]::AppendAllText($Global:LogConfig.LogFilePath, "$logLine`n", [System.Text.Encoding]::UTF8)
-    }
-    catch {
+    } catch {
         Write-Warning "Failed to write to log file '$($Global:LogConfig.LogFilePath)': $_"
         Write-Output $logLine
     }

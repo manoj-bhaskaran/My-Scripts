@@ -19,6 +19,14 @@ BeforeAll {
 
 Describe "PowerShellLoggingFramework" {
     Context "Logger Initialization" {
+        It "Returns numeric values for named log levels" {
+            (Get-LoggerLevelValue -Level DEBUG) | Should -Be 10
+            (Get-LoggerLevelValue -Level INFO) | Should -Be 20
+            (Get-LoggerLevelValue -Level WARNING) | Should -Be 30
+            (Get-LoggerLevelValue -Level ERROR) | Should -Be 40
+            (Get-LoggerLevelValue -Level CRITICAL) | Should -Be 50
+        }
+
         It "Creates logger with default settings" {
             $logDir = Join-Path $script:testLogDir "default_test"
 
@@ -71,6 +79,17 @@ Describe "PowerShellLoggingFramework" {
             Initialize-Logger -resolvedLogDir $logDir -ScriptName "ScriptWithoutExtension" -LogLevel 20
 
             $Global:LogConfig.LogFilePath | Should -Match "ScriptWithoutExtension_powershell_"
+        }
+
+        It "Sets exact log file path through public API" {
+            $logDir = Join-Path $script:testLogDir "explicit_path_test"
+            Initialize-Logger -resolvedLogDir $logDir -ScriptName "PathSetter" -LogLevel 20
+
+            $targetPath = Join-Path $logDir "custom.log"
+            $setPath = Set-LoggerLogFilePath -Path $targetPath
+
+            $setPath | Should -Be ([System.IO.Path]::GetFullPath($targetPath))
+            $Global:LogConfig.LogFilePath | Should -Be ([System.IO.Path]::GetFullPath($targetPath))
         }
     }
 
