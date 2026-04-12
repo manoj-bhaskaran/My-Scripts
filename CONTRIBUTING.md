@@ -7,6 +7,8 @@ Thank you for your interest in this repository. While this is primarily a person
 ## Table of Contents
 
 - [Code Standards](#code-standards)
+- [Code Style](#code-style)
+- [Naming Conventions](#naming-conventions)
 - [Logging Framework](#logging-framework)
   - [Overview](#overview)
   - [Console Output Streams](#console-output-streams)
@@ -30,6 +32,61 @@ All scripts in this repository should follow these general principles:
 - **Error Handling**: Implement robust error handling with appropriate logging
 - **Security**: Never log sensitive data (credentials, tokens, PII); use restricted file permissions for logs
 - **Modularity**: Prefer reusable functions and modules over duplicate code
+
+---
+
+## Code Style
+
+This repository uses automated formatters to maintain consistent code style across all languages. Formatting is enforced through pre-commit hooks and CI/CD pipelines.
+
+### Formatters
+
+- **Python**: [Black](https://github.com/psf/black) (line length: 100, target: Python 3.11)
+- **PowerShell**: [PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer) / Invoke-Formatter (OTBS style, 4-space indentation)
+- **SQL**: [SQLFluff](https://www.sqlfluff.com/) (PostgreSQL dialect, uppercase keywords)
+
+### Format All Code
+
+Use the convenience script to format all code at once:
+
+```bash
+./scripts/format-all.sh
+```
+
+### Recommended VS Code Extensions
+
+- [Black Formatter](https://marketplace.visualstudio.com/items?itemName=ms-python.black-formatter)
+- [PowerShell](https://marketplace.visualstudio.com/items?itemName=ms-vscode.PowerShell)
+- [SQLFluff](https://marketplace.visualstudio.com/items?itemName=dorzey.vscode-sqlfluff)
+- [EditorConfig](https://marketplace.visualstudio.com/items?itemName=EditorConfig.EditorConfig)
+
+### Enforcement
+
+Formatting is automatically checked on every commit via pre-commit hooks and on every pull request and push via the CI/CD pipeline. All code must pass formatting checks before merging.
+
+For detailed configuration and troubleshooting, see [docs/guides/code-style.md](docs/guides/code-style.md).
+
+---
+
+## Naming Conventions
+
+All scripts follow language-standard naming conventions:
+
+### PowerShell
+
+Scripts use the **Verb-Noun** pattern with PascalCase. The verb must be from the [PowerShell Approved Verbs list](https://learn.microsoft.com/en-us/powershell/scripting/developer/cmdlet/approved-verbs-for-windows-powershell-commands); the noun is a singular, descriptive PascalCase word.
+
+- `Clear-LogFile.ps1`
+- `Remove-MergedGitBranch.ps1`
+
+### Python
+
+Scripts use **snake_case** per [PEP 8](https://peps.python.org/pep-0008/): all lowercase letters with words separated by underscores.
+
+- `csv_to_gpx.py`
+- `find_duplicate_images.py`
+
+For the full reference, see [docs/guides/naming-conventions.md](docs/guides/naming-conventions.md).
 
 ---
 

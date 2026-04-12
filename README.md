@@ -417,31 +417,7 @@ See the [Security Scan workflow](.github/workflows/security-scan.yml) for implem
 
 ## Naming Conventions
 
-All scripts in this repository follow standardized naming conventions based on language best practices:
-
-### PowerShell Scripts
-
-PowerShell scripts use the **Verb-Noun** pattern with PascalCase (e.g., `Get-FileHandle.ps1`, `Backup-Database.ps1`):
-
-- **Verb**: Must be from the [PowerShell Approved Verbs list](https://learn.microsoft.com/en-us/powershell/scripting/developer/cmdlet/approved-verbs-for-windows-powershell-commands)
-- **Noun**: Singular, descriptive noun in PascalCase
-- **Examples**: `Clear-LogFile.ps1`, `Remove-MergedGitBranch.ps1`, `Invoke-PostCommitHook.ps1`
-
-### Python Scripts
-
-Python scripts use **snake_case** per [PEP 8](https://peps.python.org/pep-0008/) (e.g., `csv_to_gpx.py`, `find_duplicate_images.py`):
-
-- All lowercase letters
-- Words separated by underscores (`_`)
-- Descriptive and concise
-- **Examples**: `cloudconvert_utils.py`, `extract_timeline_locations.py`, `python_logging_framework.py`
-
-### Documentation
-
-For complete naming standards, examples, and migration guidance:
-
-- [Naming Conventions Guide](docs/guides/naming-conventions.md) - Comprehensive naming standards with examples and FAQs
-- [Rename Mapping](docs/RENAME_MAPPING.md) - Complete list of renamed scripts with justifications
+Scripts follow language-standard naming conventions (PowerShell Verb-Noun, Python snake_case). See [docs/guides/naming-conventions.md](docs/guides/naming-conventions.md).
 
 ---
 
@@ -466,76 +442,7 @@ See [docs/guides/git-hooks.md](docs/guides/git-hooks.md) for full behavior, trou
 
 ## Code Style
 
-This repository uses automated formatters to maintain consistent code style across all languages. Code formatting is enforced through pre-commit hooks and CI/CD pipelines.
-
-### Formatters
-
-- **Python**: [Black](https://github.com/psf/black) (line length: 100, target: Python 3.11)
-- **PowerShell**: [PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer) / Invoke-Formatter (OTBS style, 4-space indentation)
-- **SQL**: [SQLFluff](https://www.sqlfluff.com/) (PostgreSQL dialect, uppercase keywords)
-
-### Format All Code
-
-Use the convenience script to format all code:
-
-```bash
-./scripts/format-all.sh
-```
-
-Or format by language:
-
-```bash
-# Python
-black src/python/ tests/python/
-
-# PowerShell
-pwsh ./scripts/Format-PowerShellCode.ps1
-
-# SQL
-sqlfluff fix src/sql/
-```
-
-### Editor Integration
-
-The repository includes:
-
-- **`.editorconfig`** - Universal editor configuration
-- **`.vscode/settings.json`** - VS Code specific settings with format-on-save enabled
-
-Recommended VS Code extensions:
-
-- [Black Formatter](https://marketplace.visualstudio.com/items?itemName=ms-python.black-formatter)
-- [PowerShell](https://marketplace.visualstudio.com/items?itemName=ms-vscode.PowerShell)
-- [SQLFluff](https://marketplace.visualstudio.com/items?itemName=dorzey.vscode-sqlfluff)
-- [EditorConfig](https://marketplace.visualstudio.com/items?itemName=EditorConfig.EditorConfig)
-
-### Pre-Commit Enforcement
-
-Code formatting is automatically checked on commit via pre-commit hooks:
-
-- Black formatting check for Python
-- PSScriptAnalyzer formatting check for PowerShell
-- SQLFluff linting and auto-fix for SQL
-
-### CI/CD Enforcement
-
-The [Code Formatting workflow](https://github.com/manoj-bhaskaran/My-Scripts/actions/workflows/code-formatting.yml) runs on all pull requests and pushes, ensuring all code meets formatting standards.
-
-### CI/CD Caching
-
-Caching keeps pipeline runs fast and repeatable:
-
-- **Python (pip)**: `actions/setup-python@v5` enables the built-in pip cache for formatting checks, security scans, SonarCloud analysis, and module validation. Each step reports cache status via `Python cache hit: ...` so misses are visible in the logs.
-- **npm (sql-lint)**: SQL linting in the SonarCloud workflow restores the `~/.npm` cache with the key `${{ runner.os }}-npm-sql-lint-v1` before installing `sql-lint`, with an explicit cache hit/miss message.
-- **PowerShell modules**: PowerShell linting and module deployment cache the user module path derived from the first entry in `$PSModulePath`, using the shared key `${{ runner.os }}-psmodules-v1` and logging hit/miss status for traceability.
-
-These caches are safe to invalidate by bumping the cache key suffix (e.g., `-v2`) whenever dependency versions change.
-
-### Documentation
-
-For detailed code style guidelines, configuration, and troubleshooting:
-
-- [Code Style Guide](docs/guides/code-style.md) - Comprehensive formatting guide for all languages
+Code is formatted with Black (Python), PSScriptAnalyzer (PowerShell), and SQLFluff (SQL). See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/guides/code-style.md](docs/guides/code-style.md).
 
 ---
 
