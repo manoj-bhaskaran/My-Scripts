@@ -709,6 +709,105 @@ Describe "Get-FileSize" {
     }
 }
 
+Describe "Import-RandomNameProvider" {
+    Context "Basic Functionality" {
+        It "Skips import when Get-RandomFileName is already available" {
+            Mock Get-Command -ModuleName FileOperations {
+                [pscustomobject]@{ Name = 'Get-RandomFileName' }
+            } -ParameterFilter {
+                $Name -eq 'Get-RandomFileName'
+            }
+
+            Mock Import-Module -ModuleName FileOperations {}
+
+            Import-RandomNameProvider
+
+            Should -Invoke Import-Module -ModuleName FileOperations -Times 0
+        }
+
+        It "Imports module from explicit ModulePath when provided" {
+            Mock Get-Command -ModuleName FileOperations {
+                $null
+            } -ParameterFilter {
+                $Name -eq 'Get-RandomFileName'
+            }
+
+            Mock Resolve-Path -ModuleName FileOperations {
+                [pscustomobject]@{ Path = 'C:\Modules\RandomName\RandomName.psm1' }
+            } -ParameterFilter {
+                $LiteralPath -eq 'C:\Custom\RandomName.psm1'
+            }
+
+            Mock Import-Module -ModuleName FileOperations {} -ParameterFilter {
+                $LiteralPath -eq 'C:\Modules\RandomName\RandomName.psm1'
+            }
+
+            Import-RandomNameProvider -ModulePath 'C:\Custom\RandomName.psm1'
+
+            Should -Invoke Resolve-Path -ModuleName FileOperations -Times 1 -ParameterFilter {
+                $LiteralPath -eq 'C:\Custom\RandomName.psm1'
+            }
+            Should -Invoke Import-Module -ModuleName FileOperations -Times 1 -ParameterFilter {
+                $LiteralPath -eq 'C:\Modules\RandomName\RandomName.psm1'
+            }
+        }
+
+        It "Imports module from ScriptRoot conventional path" {
+            $candidatePath = 'C:\Repo\powershell\module\RandomName\RandomName.psd1'
+
+            Mock Get-Command -ModuleName FileOperations {
+                $null
+            } -ParameterFilter {
+                $Name -eq 'Get-RandomFileName'
+            }
+
+            Mock Test-Path -ModuleName FileOperations {
+                $true
+            } -ParameterFilter {
+                $LiteralPath -eq $candidatePath
+            }
+
+            Mock Test-Path -ModuleName FileOperations {
+                $false
+            }
+
+            Mock Import-Module -ModuleName FileOperations {} -ParameterFilter {
+                $LiteralPath -eq $candidatePath
+            }
+
+            Import-RandomNameProvider -ScriptRoot 'C:\Repo'
+
+            Should -Invoke Import-Module -ModuleName FileOperations -Times 1 -ParameterFilter {
+                $LiteralPath -eq $candidatePath
+            }
+        }
+    }
+
+    Context "Error Handling" {
+        It "Throws when provider cannot be imported from any source" {
+            Mock Get-Command -ModuleName FileOperations {
+                $null
+            } -ParameterFilter {
+                $Name -eq 'Get-RandomFileName'
+            }
+
+            Mock Test-Path -ModuleName FileOperations { $false }
+
+            Mock Import-Module -ModuleName FileOperations {
+                throw 'Module not found'
+            } -ParameterFilter {
+                $Name -eq 'RandomName'
+            }
+
+            { Import-RandomNameProvider -ScriptRoot 'C:\Repo' } | Should -Throw 'Random name provider (module) not found.'
+
+            Should -Invoke Import-Module -ModuleName FileOperations -Times 1 -ParameterFilter {
+                $Name -eq 'RandomName'
+            }
+        }
+    }
+}
+
 AfterAll {
     # Clean up
     if (Test-Path $script:testDir) {
