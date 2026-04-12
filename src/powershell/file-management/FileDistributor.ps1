@@ -274,7 +274,7 @@ Limitations:
  - The script processes files only (directories are ignored) and will recurse all nested folders under the specified source.
 #>
 
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param(
     [string]$SourceFolder = $null,
     [string]$TargetFolder = $null,
@@ -323,7 +323,7 @@ Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistr
 # Note: Logger initialization moved to after LogFilePath resolution
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.8.4"
+$script:Version = "4.8.5"
 $script:Warnings = 0
 $script:Errors = 0
 

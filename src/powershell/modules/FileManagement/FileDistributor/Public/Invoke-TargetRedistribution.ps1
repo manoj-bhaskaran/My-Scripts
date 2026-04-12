@@ -1,6 +1,7 @@
 # Invoke-TargetRedistribution.ps1 - Target-folder redistribution algorithm (public module function)
 
 function Invoke-TargetRedistribution {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param (
         [string]$TargetFolder,
         [object[]]$Subfolders,
@@ -30,7 +31,9 @@ function Invoke-TargetRedistribution {
         if ($WarningCount) { $WarningCount.Value++ }
         $randomName = Get-RandomFileName
         $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
-        New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
+        if ($PSCmdlet.ShouldProcess($newFolder, "Create emergency redistribution subfolder")) {
+            New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
+        }
         $normalizedSubfolders = @($newFolder)
         $folderFilesMap[$newFolder] = 0
     }
@@ -101,12 +104,16 @@ function Invoke-TargetRedistribution {
             # Create a new subfolder using Get-RandomFileName
             $randomName = Get-RandomFileName
             $newFolder = Join-Path -Path $TargetFolder -ChildPath $randomName
-            New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
-            Write-LogInfo "Created new target subfolder: $newFolder for redistribution from overloaded folder $sourceFolder."
+            if ($PSCmdlet.ShouldProcess($newFolder, "Create redistribution subfolder for overloaded folder '$sourceFolder'")) {
+                New-Item -Path $newFolder -ItemType Directory -Force | Out-Null
+                Write-LogInfo "Created new target subfolder: $newFolder for redistribution from overloaded folder $sourceFolder."
+            }
 
             # Update maps
             $eligibleTargets = @($newFolder)
-            $Subfolders += (Get-Item -LiteralPath $newFolder)
+            if (Test-Path -LiteralPath $newFolder -PathType Container) {
+                $Subfolders += (Get-Item -LiteralPath $newFolder)
+            }
             $folderFilesMap[$newFolder] = 0
         }
 

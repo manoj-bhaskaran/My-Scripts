@@ -41,6 +41,11 @@ Describe "FileDistributor Script Existence" {
     It "Script should be a PowerShell file" {
         $script:ScriptPath | Should -Match '\.ps1$'
     }
+
+    It "Script should declare SupportsShouldProcess in CmdletBinding" {
+        $scriptContent = Get-Content -LiteralPath $script:ScriptPath -Raw
+        $scriptContent | Should -Match '\[CmdletBinding\(SupportsShouldProcess\s*=\s*\$true'
+    }
 }
 
 Describe "FileDistributor Help" {
@@ -283,6 +288,19 @@ Describe 'FileDistributor Module Public API' {
         $filesParam = (Get-Command Invoke-FileDistribution -ErrorAction Stop).Parameters['Files']
 
         $filesParam.ParameterType.FullName | Should -Be 'System.Object[]'
+    }
+
+    It 'Should expose SupportsShouldProcess on copy/redistribution public functions' {
+        $distribution = Get-Command Invoke-DistributionPhase -ErrorAction Stop
+        $copy = Get-Command Invoke-FileDistribution -ErrorAction Stop
+        $redistribution = Get-Command Invoke-TargetRedistribution -ErrorAction Stop
+
+        $distribution.CmdletBinding | Should -Be $true
+        $distribution.Parameters.ContainsKey('WhatIf') | Should -Be $true
+        $copy.CmdletBinding | Should -Be $true
+        $copy.Parameters.ContainsKey('WhatIf') | Should -Be $true
+        $redistribution.CmdletBinding | Should -Be $true
+        $redistribution.Parameters.ContainsKey('WhatIf') | Should -Be $true
     }
 
     It 'Should expose the complete expected function API through module exports' {

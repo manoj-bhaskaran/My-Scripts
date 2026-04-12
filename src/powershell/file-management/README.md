@@ -45,6 +45,9 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.8.5** (module v1.2.2) (2026-04-12)
+  - Added `SupportsShouldProcess` to the entry script so `-WhatIf`/`-Confirm` flow is available at invocation time.
+  - Added `ShouldProcess` guards to copy and redistribution execution paths (including folder creation and source post-copy handling) in the `FileDistributor` support module.
 - **FileDistributor.ps1 v4.8.4** (2026-04-12)
   - Removed the script-local `LogMessage` wrapper and migrated script-level logging calls to direct `Write-Log*` framework APIs.
   - Aligned warning/error accounting with framework counter APIs for end-of-script gating and summary output.
