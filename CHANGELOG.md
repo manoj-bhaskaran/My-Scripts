@@ -39,6 +39,11 @@ Entries older than the current minor release line are condensed to architectural
 
 ### Changed
 
+- **FileDistributor ShouldProcess support** (issue #932)
+  - Added `SupportsShouldProcess` to `src/powershell/file-management/FileDistributor.ps1` so the entry script now supports `-WhatIf` / `-Confirm`.
+  - Updated copy/redistribution phases to honor `ShouldProcess` in `Invoke-DistributionPhase`, `Invoke-FileDistribution`, `Invoke-TargetRedistribution`, and `Invoke-FileMove`.
+  - Bumped versions: `FileDistributor.ps1` to `4.8.5` and `FileManagement/FileDistributor` module to `1.2.2`.
+
 - **FileDistributor logging refactor** (issue #929)
   - Removed the script-local `LogMessage` wrapper in `src/powershell/file-management/FileDistributor.ps1` and switched script-level logging calls to direct `Write-Log*` framework APIs.
   - Added warning/error counter APIs to `PowerShellLoggingFramework` (`Get-LogWarningCount`, `Get-LogErrorCount`, `Reset-LogCounters`) and updated FileDistributor end-of-script/summary paths to source totals from the logging framework.

@@ -1,6 +1,7 @@
 # Invoke-DistributionPhase.ps1 - Main distribution phase orchestration (public module function)
 
 function Invoke-DistributionPhase {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [hashtable]$RunState,
         [Parameter(Mandatory = $true)][ref]$FileLockRef,

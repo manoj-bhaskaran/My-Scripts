@@ -1,6 +1,7 @@
 # Invoke-FileDistribution.ps1 - Core file distribution algorithm (public module function)
 
 function Invoke-FileDistribution {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param (
         [object[]]$Files,
         [object[]]$Subfolders,

@@ -19,6 +19,7 @@ function Resolve-DistributionFileName {
 }
 
 function New-DistributionSubfolders {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param (
         [string]$TargetPath,
         [int]$NumberOfFolders,
@@ -36,12 +37,14 @@ function New-DistributionSubfolders {
             $folderPath = Join-Path -Path $TargetPath -ChildPath $randomFolderName
         } while (Test-Path -Path $folderPath)
 
-        # Create the new directory and keep a DirectoryInfo so we retain FullName later
-        $dirInfo = New-Item -ItemType Directory -Path $folderPath -Force
-        $createdFolders += $dirInfo
+        if ($PSCmdlet.ShouldProcess($folderPath, "Create distribution subfolder")) {
+            # Create the new directory and keep a DirectoryInfo so we retain FullName later
+            $dirInfo = New-Item -ItemType Directory -Path $folderPath -Force
+            $createdFolders += $dirInfo
 
-        # Log the creation of the folder
-        Write-LogInfo "Created folder: $folderPath"
+            # Log the creation of the folder
+            Write-LogInfo "Created folder: $folderPath"
+        }
 
         # Show progress if enabled
         if ($ShowProgress -and ($i % $UpdateFrequency -eq 0)) {
@@ -118,6 +121,7 @@ function Remove-DistributionFile {
 }
 
 function Invoke-FileMove {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param (
         [Parameter(Mandatory = $true)][string]$SourceFilePath,
         [Parameter(Mandatory = $true)][string]$OriginalFileName,
@@ -153,6 +157,15 @@ function Invoke-FileMove {
         $copyFailureHandled = $true
     }
     else {
+        if (-not $PSCmdlet.ShouldProcess($destinationFile, "Copy '$SourceFilePath'")) {
+            Write-LogInfo "Skipped copy due to ShouldProcess: '$SourceFilePath' -> '$destinationFile'"
+            return [pscustomobject]@{
+                Success         = $false
+                DestinationFile = $destinationFile
+                QueueQueued     = $null
+            }
+        }
+
         try {
             Copy-FileWithRetry -Source $SourceFilePath -Destination $destinationFile -RetryDelay $RetryDelay -MaxRetries $RetryCount -MaxBackoff $MaxBackoff | Out-Null
             $copySucceeded = Test-Path -LiteralPath $destinationFile
@@ -178,17 +191,23 @@ function Invoke-FileMove {
         $FolderCountRef.Value++
         try {
             if ($DeleteMode -eq "RecycleBin") {
-                Move-ToRecycleBin -FilePath $SourceFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+                if ($PSCmdlet.ShouldProcess($SourceFilePath, "Move source file to Recycle Bin after successful copy")) {
+                    Move-ToRecycleBin -FilePath $SourceFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+                }
             }
             elseif ($DeleteMode -eq "Immediate") {
-                Remove-DistributionFile -FilePath $SourceFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+                if ($PSCmdlet.ShouldProcess($SourceFilePath, "Delete source file after successful copy")) {
+                    Remove-DistributionFile -FilePath $SourceFilePath -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff
+                }
             }
             elseif ($DeleteMode -eq "EndOfScript") {
-                $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $SourceFilePath -ValidateFile $false
-                $queuedForEndOfScriptDeletion = [bool]$queueResult
-                if (-not $queuedForEndOfScriptDeletion) {
-                    Write-LogWarning "Failed to queue file for deletion: $SourceFilePath"
-                    if ($WarningCount) { $WarningCount.Value++ }
+                if ($PSCmdlet.ShouldProcess($SourceFilePath, "Queue source file for EndOfScript deletion")) {
+                    $queueResult = Add-FileToQueue -Queue $FilesToDelete -FilePath $SourceFilePath -ValidateFile $false
+                    $queuedForEndOfScriptDeletion = [bool]$queueResult
+                    if (-not $queuedForEndOfScriptDeletion) {
+                        Write-LogWarning "Failed to queue file for deletion: $SourceFilePath"
+                        if ($WarningCount) { $WarningCount.Value++ }
+                    }
                 }
             }
         }

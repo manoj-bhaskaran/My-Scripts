@@ -1,5 +1,13 @@
 # CHANGELOG — FileDistributor
 
+## 4.8.5 — 2026-04-12
+
+### Changed
+
+- Added `SupportsShouldProcess` to `FileDistributor.ps1` so the entry script now honors PowerShell `-WhatIf` / `-Confirm`.
+- Added `SupportsShouldProcess` support to copy/redistribution execution paths in the `FileDistributor` module (`Invoke-DistributionPhase`, `Invoke-FileDistribution`, `Invoke-TargetRedistribution`, and `Invoke-FileMove`), and guarded folder creation/copy/delete queue actions with `ShouldProcess`.
+- Bumped `FileDistributor` module version to `1.2.2`.
+
 ## 4.8.4 — 2026-04-12
 
 ### Changed
