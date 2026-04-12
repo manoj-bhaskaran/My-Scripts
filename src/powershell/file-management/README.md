@@ -36,6 +36,13 @@ Scripts for file operations, distribution, copying, and archiving.
 
 All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
 
+## FileDistributor Versioning
+
+- `FileDistributor.ps1` uses `$script:Version` as the script runtime/versioning source of truth.
+- `src/powershell/modules/FileManagement/FileDistributor/FileDistributor.psd1` `ModuleVersion` versions
+  the support module API and implementation.
+- These versions are intentionally independent and may advance separately under SemVer.
+
 ## Recent Updates
 
 - **Documentation (2026-04-11)**

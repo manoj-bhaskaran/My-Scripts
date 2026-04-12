@@ -1,5 +1,17 @@
 # CHANGELOG — FileDistributor
 
+## 4.8.3 — 2026-04-12
+
+### Changed
+
+- Made `$script:Version` the single hand-maintained script-version literal in `FileDistributor.ps1`.
+  The comment-based help `.VERSION` field and `.NOTES` version line now reference `$script:Version`
+  instead of duplicating hardcoded numeric values.
+- Added CI-covered drift protection via a dedicated Pester test that checks script version metadata
+  and verifies the latest `FileDistributor.CHANGELOG.md` release heading matches `$script:Version`.
+- Documented the versioning model distinction: script version (`FileDistributor.ps1`) and module
+  version (`FileDistributor.psd1`) are intentionally independent.
+
 ## 4.8.2 — 2026-04-11
 
 ### Changed
