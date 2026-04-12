@@ -6,7 +6,7 @@ The script recursively enumerates files from the source directory and ensures th
 The script ensures that files are evenly distributed across subfolders in the target directory, adhering to a configurable file limit per subfolder. If the limit is exceeded, new subfolders are created dynamically. Files in the target folder (not in subfolders) are also redistributed.
 
  .VERSION
- 4.8.2
+ See `$script:Version`.
 
   CHANGELOG:
     See FileDistributor.CHANGELOG.md in this directory for full release history.
@@ -226,7 +226,7 @@ To display the script's help text:
 .\FileDistributor.ps1 -Help
 
 .NOTES
-Version: 4.8.2 (2026-04-11).
+Version: see `$script:Version` (runtime script version; module version is independently versioned).
 
 For full release history (including v4.7.1 and v4.7.2), see:
 - ./FileDistributor.CHANGELOG.md
@@ -323,7 +323,7 @@ Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistr
 # Note: Logger initialization moved to after LogFilePath resolution
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.8.2"
+$script:Version = "4.8.3"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -376,11 +376,11 @@ $_paths = Initialize-FileDistributorPaths `
     -UserStatePath $StateFilePath `
     -CallerScriptRoot $script:ScriptRoot
 
-$script:LogFilePath   = $_paths.LogFilePath
+$script:LogFilePath = $_paths.LogFilePath
 $script:StateFilePath = $_paths.StateFilePath
 
 # From here on, use the resolved script-scoped variables
-$LogFilePath   = $script:LogFilePath
+$LogFilePath = $script:LogFilePath
 $StateFilePath = $script:StateFilePath
 
 # Initialize logger with the resolved log directory
