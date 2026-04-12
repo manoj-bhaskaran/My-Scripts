@@ -139,71 +139,36 @@ The [INSTALLATION.md](INSTALLATION.md) guide includes:
 
 ## Module Installation
 
-This repository includes reusable PowerShell and Python modules that can be installed to your system for easy access across all scripts. Module installation is **optional** but recommended for the best experience.
-
-### Quick Start
-
-**Automated installation (recommended):**
+This repository includes reusable PowerShell and Python modules. Module installation is **optional** but recommended for the best experience.
 
 ```bash
 # Install all modules (PowerShell + Python)
 ./scripts/install-modules.sh
 
-# Force overwrite existing modules
-./scripts/install-modules.sh --force
-```
-
-**Windows users** can run the script in Git Bash/WSL, or use PowerShell directly:
-
-```powershell
-# PowerShell modules only
-./scripts/Deploy-Modules.ps1 -Force
-
 # Python modules only
 pip install -e .
 ```
 
-### Available Modules
+```powershell
+# PowerShell modules only
+./scripts/Deploy-Modules.ps1 -Force
+```
 
-**PowerShell Modules:**
+**Available Modules:**
 
-- **[RandomName](src/powershell/modules/Utilities/RandomName/)** (v2.1.0) – Windows-safe random filename generation
-- **[Videoscreenshot](src/powershell/modules/Media/Videoscreenshot/)** (v3.0.2) – Video frame capture via VLC or GDI+
-- **[PostgresBackup](src/powershell/modules/Database/PostgresBackup/)** (v2.0.0) – PostgreSQL database backup with retention management
-- **[PowerShellLoggingFramework](src/powershell/modules/Core/Logging/PowerShellLoggingFramework/)** (v2.0.0) – Cross-platform structured logging
-- **[PurgeLogs](src/powershell/modules/Core/Logging/PurgeLogs/)** (v2.0.0) – Log file purging and retention management
-- **[FileSystem](src/powershell/modules/Core/FileSystem/)** (v1.0.0) – Common file system operations (directory creation, file accessibility checks, path validation, file locking detection)
-- **[FileQueue](src/powershell/modules/FileManagement/FileQueue/)** (v1.0.0) – File queue management for distribution operations with state persistence and session tracking
-- **[FileDistributor](src/powershell/modules/FileManagement/FileDistributor/)** (v1.2.0) – Private support helpers for FileDistributor orchestration (path handling, state persistence, and state-file locking)
-- **[AdbHelpers](src/powershell/modules/Android/AdbHelpers/)** (v1.0.0) – Shared Android Debug Bridge helpers for device checks, remote shell execution, and remote path metadata queries
-
-**Python Modules:**
-
-- **[python_logging_framework](src/python/modules/logging/)** (v0.1.0) – Cross-platform structured logging for Python
+- **[RandomName](src/powershell/modules/Utilities/RandomName/)** – Windows-safe random filename generation
+- **[Videoscreenshot](src/powershell/modules/Media/Videoscreenshot/)** – Video frame capture via VLC or GDI+
+- **[PostgresBackup](src/powershell/modules/Database/PostgresBackup/)** – PostgreSQL database backup with retention management
+- **[PowerShellLoggingFramework](src/powershell/modules/Core/Logging/PowerShellLoggingFramework/)** – Cross-platform structured logging
+- **[PurgeLogs](src/powershell/modules/Core/Logging/PurgeLogs/)** – Log file purging and retention management
+- **[FileSystem](src/powershell/modules/Core/FileSystem/)** – Common file system operations
+- **[FileQueue](src/powershell/modules/FileManagement/FileQueue/)** – File queue management for distribution operations
+- **[FileDistributor](src/powershell/modules/FileManagement/FileDistributor/)** – Support helpers for FileDistributor orchestration
+- **[AdbHelpers](src/powershell/modules/Android/AdbHelpers/)** – Android Debug Bridge helpers for device checks and shell execution
+- **[python_logging_framework](src/python/modules/logging/)** – Cross-platform structured logging for Python
 
 See individual module READMEs for detailed documentation, usage examples, and API reference.
-
-### After Installation
-
-Once installed, modules can be used from any script:
-
-```powershell
-# Import and use PowerShell modules
-Import-Module PostgresBackup
-Backup-PostgresDatabase -dbname "mydb" -backup_folder "D:\backups" ...
-```
-
-```python
-# Import and use Python modules
-import python_logging_framework as plog
-plog.initialise_logger(log_file_path="auto", level="INFO")
-```
-
-### Documentation
-
-For detailed installation instructions, configuration, and troubleshooting:
-
-- [Module Deployment Guide](docs/guides/module-deployment.md) - Complete guide to module installation and management
+For installation troubleshooting, see the [Module Deployment Guide](docs/guides/module-deployment.md).
 
 ---
 
@@ -361,57 +326,14 @@ Configuration lives in [mypy.ini](mypy.ini), and you can run it locally with `my
 
 ## Security
 
-### Dependency Security Scanning
-
-This repository includes automated security scanning to detect vulnerabilities in Python dependencies.
-
-**Security Tools:**
-
-- **[pip-audit](https://pypi.org/project/pip-audit/)** - PyPI package auditor (OSV and PyPI Advisory databases)
-- **[GitHub Dependency Review](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review)** - Native GitHub security scanning
-
-**Automated Scans:**
-
-- ✅ **On every push and PR** - Runs pip-audit checks
-- ✅ **Weekly schedule** - Automated scans every Sunday at 2:00 AM UTC
-- ✅ **Pre-commit hook** - Validates dependencies before allowing commits
-- ✅ **Pull request reviews** - GitHub Dependency Review action comments on PRs
-
-**Running Security Scans Locally:**
+Automated security scanning via [pip-audit](https://pypi.org/project/pip-audit/) runs on every push, pull request, and weekly schedule; [GitHub Dependency Review](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review) additionally annotates pull requests. Builds fail on detected vulnerabilities to ensure prompt remediation.
 
 ```bash
-# Install security scanning tools
-pip install "$(grep -E '^pip-audit==' requirements.lock)"
-
-# Optional: install the patched pre-commit runtime stack from the lockfile
-pip install $(grep -E '^pre-commit==' requirements.lock) $(grep -E '^virtualenv==' requirements.lock) $(grep -E '^filelock==' requirements.lock)
-
-# Run pip-audit against the locked dependency set used by CI/production
+# Run a local security scan
 pip-audit -r requirements.lock --desc
-
-# Run the dependency audit hook via pre-commit
-pre-commit run python-pip-audit --all-files
 ```
 
-**Workflow Configuration:**
-
-- Security scans are configured in `.github/workflows/security-scan.yml`
-- Pre-commit hook configured in `.pre-commit-config.yaml`
-- Reports are uploaded as GitHub Actions artifacts (30-day retention)
-- Builds fail on detected vulnerabilities to ensure prompt remediation
-- CI audits `requirements.lock` so results match the reproducible dependency set that the repository supports
-- `requirements.lock` includes explicit patched pins for the `pre-commit` runtime stack (`virtualenv` and `filelock`) so local and CI scans see the same secure dependency set
-- Security scanning is standardized on `pip-audit`, which avoids the vulnerable transitive `nltk` dependency introduced by Safety while continuing to audit the locked dependency set
-
-**Enabling Dependabot (Recommended):**
-
-To enable Dependabot security alerts on GitHub:
-
-1. Go to **Settings** → **Security & analysis**
-2. Enable **Dependabot alerts**
-3. Enable **Dependabot security updates** (optional - auto-creates PRs for vulnerable dependencies)
-
-See the [Security Scan workflow](.github/workflows/security-scan.yml) for implementation details.
+See [`.github/workflows/security-scan.yml`](.github/workflows/security-scan.yml) for implementation details.
 
 ---
 
