@@ -1,5 +1,13 @@
 # CHANGELOG — FileDistributor
 
+## 4.8.4 — 2026-04-12
+
+### Changed
+
+- Removed the script-local `LogMessage` wrapper from `FileDistributor.ps1` and switched startup/import/fatal paths to direct `Write-LogInfo` / `Write-LogWarning` / `Write-LogError` calls.
+- Reset logging counters at runtime start and sourced script warning/error baselines from the logging framework counter APIs.
+- Updated end-of-script gating and summary reporting paths to prefer framework-provided warning/error totals (`Get-LogWarningCount`, `Get-LogErrorCount`) when available.
+
 ## 4.8.3 — 2026-04-12
 
 ### Changed

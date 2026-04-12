@@ -40,8 +40,10 @@ function Invoke-PostRunCleanup {
             Write-LogInfo "File distribution and cleanup completed successfully."
         }
     }
-    Write-LogInfo "Total warnings: $($WarningCount.Value)"
-    Write-LogInfo "Total errors: $($ErrorCount.Value)"
+    $frameworkWarnings = if (Get-Command -Name Get-LogWarningCount -ErrorAction SilentlyContinue) { Get-LogWarningCount } else { $WarningCount.Value }
+    $frameworkErrors = if (Get-Command -Name Get-LogErrorCount -ErrorAction SilentlyContinue) { Get-LogErrorCount } else { $ErrorCount.Value }
+    Write-LogInfo "Total warnings: $frameworkWarnings"
+    Write-LogInfo "Total errors: $frameworkErrors"
 
     if ($FileLockRef.Value) { Unlock-DistributionStateFile -FileStream $FileLockRef.Value; $FileLockRef.Value = $null }
     Remove-Item -LiteralPath $StateFilePath -Force -ErrorAction SilentlyContinue

@@ -9,6 +9,10 @@ $Global:LogConfig = @{
     LogFilePath = $null
     JsonFormat  = $false  # Set to $true to enable JSON structured logging
 }
+$Global:LogCounters = @{
+    Warnings = 0
+    Errors   = 0
+}
 
 $Global:RecommendedMetadataKeys = @("CorrelationId", "User", "TaskId", "FileName", "Duration")
 $script:DefaultLogDir = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "logs"
@@ -293,6 +297,7 @@ function Write-LogWarning {
     Optional key-value metadata.
 #>
     param($Message, [hashtable]$Metadata = @{})
+    $Global:LogCounters.Warnings++
     Write-Log -Level 'WARNING' -NumericLevel 30 -Message $Message -Metadata $Metadata
 }
 
@@ -308,6 +313,7 @@ function Write-LogError {
     Optional key-value metadata.
 #>
     param($Message, [hashtable]$Metadata = @{})
+    $Global:LogCounters.Errors++
     Write-Log -Level 'ERROR' -NumericLevel 40 -Message $Message -Metadata $Metadata
 }
 
@@ -324,4 +330,17 @@ function Write-LogCritical {
 #>
     param($Message, [hashtable]$Metadata = @{})
     Write-Log -Level 'CRITICAL' -NumericLevel 50 -Message $Message -Metadata $Metadata
+}
+
+function Get-LogWarningCount {
+    return $Global:LogCounters.Warnings
+}
+
+function Get-LogErrorCount {
+    return $Global:LogCounters.Errors
+}
+
+function Reset-LogCounters {
+    $Global:LogCounters.Warnings = 0
+    $Global:LogCounters.Errors = 0
 }

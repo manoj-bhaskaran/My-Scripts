@@ -6,6 +6,13 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.0.1] - 2026-04-12
+### Added
+- Framework counter APIs: `Get-LogWarningCount`, `Get-LogErrorCount`, and `Reset-LogCounters`.
+
+### Changed
+- `Write-LogWarning` and `Write-LogError` now update module-level counters to support consumer orchestration logic.
+
 ## [2.0.0] - 2024-11-19
 ### Added
 - Comprehensive module documentation (README.md, CHANGELOG.md)

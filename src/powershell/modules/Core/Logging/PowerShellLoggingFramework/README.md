@@ -4,7 +4,7 @@
 Cross-platform structured logging framework implementing the [Logging Specification](../../../../../docs/specifications/logging_specification.md) for consistent log output across PowerShell scripts.
 
 ## Version
-Current version: **2.0.0**
+Current version: **2.0.1**
 
 ## Features
 
@@ -16,6 +16,7 @@ Current version: **2.0.0**
 - **Timezone-aware:** Timestamps with timezone abbreviation (IST, UTC, etc.)
 - **Metadata validation:** Recommended keys for structured logging
 - **Automatic log file naming:** `<script_name>_powershell_<YYYY-MM-DD>.log`
+- **Built-in counters:** Framework-managed warning/error counters for orchestration and summaries
 
 ## Installation
 
@@ -188,6 +189,26 @@ Write-LogCritical "Data corruption detected" -Metadata @{
     Table = "transactions"
     RecordsAffected = 1500
 }
+```
+
+### Get-LogWarningCount / Get-LogErrorCount / Reset-LogCounters
+
+Reads or resets framework-managed warning/error counters.
+
+**Syntax:**
+```powershell
+Get-LogWarningCount
+Get-LogErrorCount
+Reset-LogCounters
+```
+
+**Examples:**
+```powershell
+Reset-LogCounters
+Write-LogWarning "Sample warning"
+Write-LogError "Sample error"
+Write-LogInfo "Warnings so far: $(Get-LogWarningCount)"
+Write-LogInfo "Errors so far: $(Get-LogErrorCount)"
 ```
 
 ## Log Format

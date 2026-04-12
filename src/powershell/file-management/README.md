@@ -45,6 +45,9 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.8.4** (2026-04-12)
+  - Removed the script-local `LogMessage` wrapper and migrated script-level logging calls to direct `Write-Log*` framework APIs.
+  - Aligned warning/error accounting with framework counter APIs for end-of-script gating and summary output.
 - **Documentation (2026-04-11)**
   - Condensed FileDistributor changelog history for the `v3.3.0–v3.5.0` and `v4.1.0–v4.5.0` feature/checkpoint eras into rollup entries.
   - Preserved the checkpoint progression summary (`CP4`/`CP5`/`CP6`/`CP7`/`CP8`) and mode-level behavior without repeating long per-version prose.

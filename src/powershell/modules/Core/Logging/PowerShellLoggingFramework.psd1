@@ -1,7 +1,7 @@
 @{
     # Module manifest for PowerShellLoggingFramework
     RootModule        = 'PowerShellLoggingFramework.psm1'
-    ModuleVersion     = '2.0.0'
+    ModuleVersion     = '2.0.1'
     GUID              = '3c8d5e2a-9f4b-4e6c-8d7a-5b9c3f6e1a2d'
     Author            = 'Manoj Bhaskaran'
     CompanyName       = ''
@@ -13,7 +13,10 @@
         'Write-LogInfo',
         'Write-LogWarning',
         'Write-LogError',
-        'Write-LogCritical'
+        'Write-LogCritical',
+        'Get-LogWarningCount',
+        'Get-LogErrorCount',
+        'Reset-LogCounters'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()
@@ -22,7 +25,7 @@
         PSData = @{
             Tags         = @('logging','framework','structured-logging','json','cross-platform')
             ProjectUri   = ''
-            ReleaseNotes = '2.0.0: Aligned with repository version; cross-platform structured logging with JSON support.'
+            ReleaseNotes = '2.0.1: Added framework warning/error counter APIs for consumer scripts and modules.'
         }
     }
 }
