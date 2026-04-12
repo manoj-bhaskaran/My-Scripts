@@ -323,7 +323,7 @@ Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistr
 # Note: Logger initialization moved to after LogFilePath resolution
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.8.5"
+$script:Version = "4.8.6"
 $script:Warnings = 0
 $script:Errors = 0
 

@@ -1,5 +1,13 @@
 # CHANGELOG — FileDistributor
 
+## 4.8.6 — 2026-04-12
+
+### Changed
+
+- Extended `SupportsShouldProcess` coverage to post-processing and end-of-script deletion module phases by marking `Invoke-PostProcessingPhase`, `Invoke-EndOfScriptDeletion`, `Invoke-FolderConsolidation`, `Invoke-FolderRebalance`, and `Invoke-DistributionRandomize` as advanced functions with `SupportsShouldProcess`.
+- Added `ShouldProcess` guard around empty-subfolder deletion in consolidation and around end-of-script source-file deletion, so `-WhatIf`/`-Confirm` now protects these destructive operations.
+- Bumped `FileDistributor` script version to `4.8.6` and module version to `1.2.3`.
+
 ## 4.8.5 — 2026-04-12
 
 ### Changed

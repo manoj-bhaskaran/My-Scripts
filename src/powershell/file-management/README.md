@@ -45,6 +45,9 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.8.6** (module v1.2.3) (2026-04-12)
+  - Extended `SupportsShouldProcess` coverage to post-processing/end-of-script-deletion phases in the support module (`Invoke-PostProcessingPhase`, `Invoke-EndOfScriptDeletion`, `Invoke-FolderConsolidation`, `Invoke-FolderRebalance`, `Invoke-DistributionRandomize`).
+  - Added `ShouldProcess` guards for consolidation empty-subfolder deletion and end-of-script source-file deletion so `-WhatIf`/`-Confirm` protects those actions.
 - **FileDistributor.ps1 v4.8.5** (module v1.2.2) (2026-04-12)
   - Added `SupportsShouldProcess` to the entry script so `-WhatIf`/`-Confirm` flow is available at invocation time.
   - Added `ShouldProcess` guards to copy and redistribution execution paths (including folder creation and source post-copy handling) in the `FileDistributor` support module.

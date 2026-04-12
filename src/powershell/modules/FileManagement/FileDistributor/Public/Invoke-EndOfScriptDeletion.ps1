@@ -1,6 +1,7 @@
 # Invoke-EndOfScriptDeletion.ps1 - End-of-script deletion phase (public module function)
 
 function Invoke-EndOfScriptDeletion {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [hashtable]$RunState,
         [int]$PriorWarnings,
@@ -39,11 +40,17 @@ function Invoke-EndOfScriptDeletion {
         } catch { Write-LogDebug "Could not stat queued file before deletion: $($_.Exception.Message)" }
 
         if ($okToDelete) {
-            try { Remove-DistributionFile -FilePath $entry.SourcePath -RetryDelay $RetryDelay -RetryCount $RetryCount }
-            catch {
-                Write-LogWarning "Failed to delete file $($entry.SourcePath). Error: $($_.Exception.Message)"
-                $WarningCount.Value++
+            if ($PSCmdlet.ShouldProcess($entry.SourcePath, "Delete source file at end-of-script")) {
+                try { Remove-DistributionFile -FilePath $entry.SourcePath -RetryDelay $RetryDelay -RetryCount $RetryCount }
+                catch {
+                    Write-LogWarning "Failed to delete file $($entry.SourcePath). Error: $($_.Exception.Message)"
+                    $WarningCount.Value++
+                }
+            } else {
+                Write-LogInfo "End-of-script deletion skipped due to ShouldProcess: '$($entry.SourcePath)'."
             }
+        } else {
+            Write-LogDebug "End-of-script deletion: skipped '$($entry.SourcePath)' due to file metadata drift."
         }
     }
 }

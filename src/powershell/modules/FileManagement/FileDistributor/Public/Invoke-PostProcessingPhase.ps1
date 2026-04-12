@@ -1,6 +1,7 @@
 # Invoke-PostProcessingPhase.ps1 - Post-processing phase orchestration (public module function)
 
 function Invoke-PostProcessingPhase {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [hashtable]$RunState,
         [Parameter(Mandatory = $true)][ref]$FileLockRef,

@@ -44,6 +44,11 @@ Entries older than the current minor release line are condensed to architectural
   - Updated copy/redistribution phases to honor `ShouldProcess` in `Invoke-DistributionPhase`, `Invoke-FileDistribution`, `Invoke-TargetRedistribution`, and `Invoke-FileMove`.
   - Bumped versions: `FileDistributor.ps1` to `4.8.5` and `FileManagement/FileDistributor` module to `1.2.2`.
 
+- **FileDistributor ShouldProcess coverage for post-processing/deletion phases** (issue #933)
+  - Added `SupportsShouldProcess` to `Invoke-PostProcessingPhase`, `Invoke-EndOfScriptDeletion`, `Invoke-FolderConsolidation`, `Invoke-FolderRebalance`, and `Invoke-DistributionRandomize`.
+  - Guarded consolidation empty-subfolder removal and end-of-script source-file deletion with `ShouldProcess` so `-WhatIf` / `-Confirm` now applies to those operations.
+  - Bumped versions: `FileDistributor.ps1` to `4.8.6` and `FileManagement/FileDistributor` module to `1.2.3`.
+
 - **FileDistributor logging refactor** (issue #929)
   - Removed the script-local `LogMessage` wrapper in `src/powershell/file-management/FileDistributor.ps1` and switched script-level logging calls to direct `Write-Log*` framework APIs.
   - Added warning/error counter APIs to `PowerShellLoggingFramework` (`Get-LogWarningCount`, `Get-LogErrorCount`, `Reset-LogCounters`) and updated FileDistributor end-of-script/summary paths to source totals from the logging framework.

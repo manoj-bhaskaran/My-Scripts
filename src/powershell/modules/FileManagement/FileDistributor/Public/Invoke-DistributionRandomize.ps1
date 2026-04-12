@@ -1,6 +1,7 @@
 # Invoke-DistributionRandomize.ps1 - Randomize algorithm (public module function)
 
 function Invoke-DistributionRandomize {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param (
         [Parameter(Mandatory = $true)][string]$TargetFolder,
         [Parameter(Mandatory = $true)][int]$FilesPerFolderLimit,
