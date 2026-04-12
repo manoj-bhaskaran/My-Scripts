@@ -145,9 +145,13 @@ This repository includes reusable PowerShell and Python modules. Module installa
 # Install all modules (PowerShell + Python)
 ./scripts/install-modules.sh
 
-# Or install separately:
-./scripts/Deploy-Modules.ps1 -Force   # PowerShell modules
-pip install -e .                       # Python modules
+# Python modules only
+pip install -e .
+```
+
+```powershell
+# PowerShell modules only
+./scripts/Deploy-Modules.ps1 -Force
 ```
 
 **Available Modules:**
@@ -322,7 +326,7 @@ Configuration lives in [mypy.ini](mypy.ini), and you can run it locally with `my
 
 ## Security
 
-Automated security scanning runs on every push, pull request, and weekly schedule using [pip-audit](https://pypi.org/project/pip-audit/) and [GitHub Dependency Review](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review). Builds fail on detected vulnerabilities to ensure prompt remediation.
+Automated security scanning via [pip-audit](https://pypi.org/project/pip-audit/) runs on every push, pull request, and weekly schedule; [GitHub Dependency Review](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review) additionally annotates pull requests. Builds fail on detected vulnerabilities to ensure prompt remediation.
 
 ```bash
 # Run a local security scan
