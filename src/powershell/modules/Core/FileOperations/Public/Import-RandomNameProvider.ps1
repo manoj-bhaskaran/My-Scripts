@@ -77,7 +77,7 @@ function Import-RandomNameProvider {
     if ($ModulePath) {
         try {
             $resolved = Resolve-Path -LiteralPath $ModulePath -ErrorAction Stop
-            Import-Module -LiteralPath $resolved.Path -Force -ErrorAction Stop
+            Import-Module -Name $resolved.Path -Force -ErrorAction Stop
             Write-RandomNameProviderLog -Level Info -Message "Imported RandomName module from '$($resolved.Path)'."
             return
         }
@@ -87,17 +87,18 @@ function Import-RandomNameProvider {
     }
 
     if ($ScriptRoot) {
+        $normalizedScriptRoot = $ScriptRoot -replace '[\\/]+$', ''
         $scriptRootCandidates = @(
-            (Join-Path $ScriptRoot 'powershell\module\RandomName\RandomName.psd1'),
-            (Join-Path $ScriptRoot 'powershell\module\RandomName\RandomName.psm1'),
-            (Join-Path $ScriptRoot 'powershell\modules\Utilities\RandomName\RandomName.psd1'),
-            (Join-Path $ScriptRoot 'powershell\modules\Utilities\RandomName\RandomName.psm1')
+            "$normalizedScriptRoot\powershell\module\RandomName\RandomName.psd1",
+            "$normalizedScriptRoot\powershell\module\RandomName\RandomName.psm1",
+            "$normalizedScriptRoot\powershell\modules\Utilities\RandomName\RandomName.psd1",
+            "$normalizedScriptRoot\powershell\modules\Utilities\RandomName\RandomName.psm1"
         )
 
         foreach ($candidate in $scriptRootCandidates) {
             if (Test-Path -LiteralPath $candidate) {
                 try {
-                    Import-Module -LiteralPath $candidate -Force -ErrorAction Stop
+                    Import-Module -Name $candidate -Force -ErrorAction Stop
                     Write-RandomNameProviderLog -Level Info -Message "Imported RandomName module from script-root '$candidate'."
                     return
                 }

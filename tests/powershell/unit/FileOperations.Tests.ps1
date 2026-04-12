@@ -739,7 +739,7 @@ Describe "Import-RandomNameProvider" {
             }
 
             Mock Import-Module -ModuleName FileOperations {} -ParameterFilter {
-                $LiteralPath -eq 'C:\Modules\RandomName\RandomName.psm1'
+                $Name -eq 'C:\Modules\RandomName\RandomName.psm1'
             }
 
             Import-RandomNameProvider -ModulePath 'C:\Custom\RandomName.psm1'
@@ -748,7 +748,7 @@ Describe "Import-RandomNameProvider" {
                 $LiteralPath -eq 'C:\Custom\RandomName.psm1'
             }
             Should -Invoke Import-Module -ModuleName FileOperations -Times 1 -ParameterFilter {
-                $LiteralPath -eq 'C:\Modules\RandomName\RandomName.psm1'
+                $Name -eq 'C:\Modules\RandomName\RandomName.psm1'
             }
         }
 
@@ -772,13 +772,13 @@ Describe "Import-RandomNameProvider" {
             }
 
             Mock Import-Module -ModuleName FileOperations {} -ParameterFilter {
-                $LiteralPath -eq $candidatePath
+                $Name -eq $candidatePath
             }
 
             Import-RandomNameProvider -ScriptRoot 'C:\Repo'
 
             Should -Invoke Import-Module -ModuleName FileOperations -Times 1 -ParameterFilter {
-                $LiteralPath -eq $candidatePath
+                $Name -eq $candidatePath
             }
         }
     }
