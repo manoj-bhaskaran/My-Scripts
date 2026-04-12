@@ -1,6 +1,7 @@
 # Invoke-FolderConsolidation.ps1 - Consolidation algorithm (public module function)
 
 function Invoke-FolderConsolidation {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param (
         [Parameter(Mandatory = $true)][string]$TargetFolder,
         [Parameter(Mandatory = $true)][int]$FilesPerFolderLimit,
@@ -146,11 +147,15 @@ function Invoke-FolderConsolidation {
         try {
             $entries = (Get-ChildItem -LiteralPath $o -Force -ErrorAction Stop | Measure-Object).Count
             if ($entries -eq 0) {
-                Invoke-WithRetry -Operation { Remove-Item -LiteralPath $o -Force -ErrorAction Stop } `
-                    -Description "Consolidation: delete empty subfolder '$o'" `
-                    -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff -IgnoreFileNotFound
-                Write-LogInfo "Consolidation: deleted empty subfolder '$o'."
-                $deleted++
+                if ($PSCmdlet.ShouldProcess($o, "Delete empty subfolder after consolidation")) {
+                    Invoke-WithRetry -Operation { Remove-Item -LiteralPath $o -Force -ErrorAction Stop } `
+                        -Description "Consolidation: delete empty subfolder '$o'" `
+                        -RetryDelay $RetryDelay -RetryCount $RetryCount -MaxBackoff $MaxBackoff -IgnoreFileNotFound
+                    Write-LogInfo "Consolidation: deleted empty subfolder '$o'."
+                    $deleted++
+                } else {
+                    Write-LogInfo "Consolidation: skipped deleting empty subfolder due to ShouldProcess: '$o'."
+                }
             } else {
                 $skipped++
                 Write-LogWarning "Consolidation: subfolder '$o' not empty after move; skipping deletion."

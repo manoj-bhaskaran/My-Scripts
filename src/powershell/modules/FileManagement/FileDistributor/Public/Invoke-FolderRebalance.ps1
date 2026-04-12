@@ -1,6 +1,7 @@
 # Invoke-FolderRebalance.ps1 - Rebalance algorithm (public module function)
 
 function Invoke-FolderRebalance {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param (
         [Parameter(Mandatory = $true)][string]$TargetFolder,
         [Parameter(Mandatory = $true)][int]$FilesPerFolderLimit,

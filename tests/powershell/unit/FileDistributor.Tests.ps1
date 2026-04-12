@@ -290,10 +290,15 @@ Describe 'FileDistributor Module Public API' {
         $filesParam.ParameterType.FullName | Should -Be 'System.Object[]'
     }
 
-    It 'Should expose SupportsShouldProcess on copy/redistribution public functions' {
+    It 'Should expose SupportsShouldProcess on copy/redistribution/post-processing/deletion public functions' {
         $distribution = Get-Command Invoke-DistributionPhase -ErrorAction Stop
         $copy = Get-Command Invoke-FileDistribution -ErrorAction Stop
         $redistribution = Get-Command Invoke-TargetRedistribution -ErrorAction Stop
+        $postProcessing = Get-Command Invoke-PostProcessingPhase -ErrorAction Stop
+        $consolidation = Get-Command Invoke-FolderConsolidation -ErrorAction Stop
+        $rebalance = Get-Command Invoke-FolderRebalance -ErrorAction Stop
+        $randomize = Get-Command Invoke-DistributionRandomize -ErrorAction Stop
+        $endOfScriptDeletion = Get-Command Invoke-EndOfScriptDeletion -ErrorAction Stop
 
         $distribution.CmdletBinding | Should -Be $true
         $distribution.Parameters.ContainsKey('WhatIf') | Should -Be $true
@@ -301,6 +306,23 @@ Describe 'FileDistributor Module Public API' {
         $copy.Parameters.ContainsKey('WhatIf') | Should -Be $true
         $redistribution.CmdletBinding | Should -Be $true
         $redistribution.Parameters.ContainsKey('WhatIf') | Should -Be $true
+        $postProcessing.CmdletBinding | Should -Be $true
+        $postProcessing.Parameters.ContainsKey('WhatIf') | Should -Be $true
+        $consolidation.CmdletBinding | Should -Be $true
+        $consolidation.Parameters.ContainsKey('WhatIf') | Should -Be $true
+        $rebalance.CmdletBinding | Should -Be $true
+        $rebalance.Parameters.ContainsKey('WhatIf') | Should -Be $true
+        $randomize.CmdletBinding | Should -Be $true
+        $randomize.Parameters.ContainsKey('WhatIf') | Should -Be $true
+        $endOfScriptDeletion.CmdletBinding | Should -Be $true
+        $endOfScriptDeletion.Parameters.ContainsKey('WhatIf') | Should -Be $true
+    }
+
+    It 'Invoke-EndOfScriptDeletion should peek queue before ShouldProcess-gated deletion' {
+        $functionPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'Public' 'Invoke-EndOfScriptDeletion.ps1'
+        $functionContent = Get-Content -LiteralPath $functionPath -Raw
+
+        $functionContent | Should -Match 'Get-NextQueueItem\s+-Queue\s+\$RunState\.FilesToDelete\s+-Peek'
     }
 
     It 'Should expose the complete expected function API through module exports' {
