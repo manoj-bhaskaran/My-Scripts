@@ -323,7 +323,7 @@ Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistr
 # Note: Logger initialization moved to after LogFilePath resolution
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.8.3"
+$script:Version = "4.8.4"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -331,45 +331,7 @@ $script:Errors = 0
 # Determine script root (works in PS 5.1+ when running as a script)
 $script:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Path $MyInvocation.MyCommand.Path -Parent }
 
-# Function to log messages
-function LogMessage {
-    param (
-        [string]$Message,
-        [switch]$ConsoleOutput,
-        [switch]$IsError,
-        [switch]$IsWarning,
-        [switch]$IsDebug
-    )
-
-    # Map to PowerShellLoggingFramework functions
-    if ($IsError) {
-        Write-LogError $Message
-        $script:Errors++
-        if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
-            Write-Host "ERROR: $Message" -ForegroundColor Red
-        }
-    } elseif ($IsWarning) {
-        Write-LogWarning $Message
-        $script:Warnings++
-        if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
-            Write-Host "WARNING: $Message" -ForegroundColor Yellow
-        }
-    } elseif ($IsDebug) {
-        if ($script:DebugMode) {
-            Write-LogDebug $Message
-            if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
-                Write-Host "DEBUG: $Message" -ForegroundColor Cyan
-            }
-        }
-    } else {
-        Write-LogInfo $Message
-        if ($ConsoleOutput -or $VerbosePreference -eq 'Continue') {
-            Write-Host $Message
-        }
-    }
-}
-
-# ===== Resolve effective LogFilePath and StateFilePath (before first LogMessage call) =====
+# ===== Resolve effective LogFilePath and StateFilePath (before first Write-Log* call) =====
 # Uses Initialize-FileDistributorPaths from the FileDistributor module (imported above).
 $_paths = Initialize-FileDistributorPaths `
     -UserLogPath   $LogFilePath `
@@ -388,6 +350,7 @@ $logDirectory = Split-Path -Path $LogFilePath -Parent
 Initialize-Logger -resolvedLogDir $logDirectory -ScriptName "FileDistributor" -LogLevel 20
 # Override the framework's auto-generated filename to use the user's exact path
 $Global:LogConfig.LogFilePath = $LogFilePath
+Reset-LogCounters
 
 # ===== Random name provider resolution (module-only) =====
 function Import-RandomNameProvider {
@@ -397,7 +360,7 @@ function Import-RandomNameProvider {
 
     # Already available?
     if (Get-Command -Name Get-RandomFileName -ErrorAction SilentlyContinue) {
-        LogMessage -Message "RandomName provider already available (Get-RandomFileName found)."
+        Write-LogInfo "RandomName provider already available (Get-RandomFileName found)."
         return
     }
 
@@ -406,10 +369,10 @@ function Import-RandomNameProvider {
         try {
             $resolved = Resolve-Path -LiteralPath $ModulePath -ErrorAction Stop
             Import-Module -LiteralPath $resolved.Path -Force -ErrorAction Stop
-            LogMessage -Message "Imported RandomName module from '$($resolved.Path)'."
+            Write-LogInfo "Imported RandomName module from '$($resolved.Path)'."
             return
         } catch {
-            LogMessage -Message "Failed to import RandomName module from '$ModulePath': $($_.Exception.Message)" -IsWarning
+            Write-LogWarning "Failed to import RandomName module from '$ModulePath': $($_.Exception.Message)"
         }
     }
 
@@ -422,10 +385,10 @@ function Import-RandomNameProvider {
         if (Test-Path -LiteralPath $c) {
             try {
                 Import-Module -LiteralPath $c -Force -ErrorAction Stop
-                LogMessage -Message "Imported RandomName module from script-root '$c'."
+                Write-LogInfo "Imported RandomName module from script-root '$c'."
                 return
             } catch {
-                LogMessage -Message "Failed to import RandomName module from '$c': $($_.Exception.Message)" -IsWarning
+                Write-LogWarning "Failed to import RandomName module from '$c': $($_.Exception.Message)"
             }
         }
     }
@@ -433,20 +396,24 @@ function Import-RandomNameProvider {
     # 3) PSModulePath
     try {
         Import-Module -Name RandomName -ErrorAction Stop
-        LogMessage -Message "Imported RandomName module from PSModulePath."
+        Write-LogInfo "Imported RandomName module from PSModulePath."
         return
     } catch {
-        LogMessage -Message "Failed to import 'RandomName' from PSModulePath: $($_.Exception.Message)" -IsError
+        Write-LogError "Failed to import 'RandomName' from PSModulePath: $($_.Exception.Message)"
         throw "Random name provider (module) not found."
     }
 }
 
 # Main script logic
 function Main {
-    LogMessage -Message "FileDistributor starting..." -ConsoleOutput
-    LogMessage -Message "Version: $script:Version" -ConsoleOutput
+    Write-LogInfo "FileDistributor starting..."
+    Write-Host "FileDistributor starting..."
+    Write-LogInfo "Version: $script:Version"
+    Write-Host "Version: $script:Version"
     $script:DebugMode = ($DebugPreference -ne 'SilentlyContinue')
     Import-RandomNameProvider -ModulePath $RandomNameModulePath
+    $script:Warnings = Get-LogWarningCount
+    $script:Errors = Get-LogErrorCount
 
     $priorWarnings = 0
     $priorErrors = 0
@@ -467,9 +434,11 @@ function Main {
 
         if ($purgeParams.Keys.Count -gt 1) {
             try { Clear-LogFile @purgeParams }
-            catch { LogMessage -Message "Failed to apply log file cleanup policy: $($_.Exception.Message)" -IsError }
+            catch { Write-LogError "Failed to apply log file cleanup policy: $($_.Exception.Message)" }
         }
     }
+    $script:Warnings = [Math]::Max($script:Warnings, (Get-LogWarningCount))
+    $script:Errors = [Math]::Max($script:Errors, (Get-LogErrorCount))
 
     $runState = @{
         totalSourceFilesAll     = 0
@@ -525,10 +494,11 @@ function Main {
             -LogFilePath $LogFilePath -ScriptRoot $script:ScriptRoot `
             -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
 
-        LogMessage -Message "File distribution and optional cleanup completed."
+        Write-LogInfo "File distribution and optional cleanup completed."
     } catch {
-        LogMessage -Message "FATAL ERROR: $($_.Exception.Message)" -IsError -ConsoleOutput
-        LogMessage -Message "Stack Trace: $($_.ScriptStackTrace)" -IsError
+        Write-LogError "FATAL ERROR: $($_.Exception.Message)"
+        Write-Host "ERROR: FATAL ERROR: $($_.Exception.Message)" -ForegroundColor Red
+        Write-LogError "Stack Trace: $($_.ScriptStackTrace)"
         throw
     } finally {
         if ($fileLockRef -and ($fileLockRef.PSObject.Properties.Name -contains 'Value') -and $fileLockRef.Value) {

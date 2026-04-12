@@ -39,6 +39,11 @@ Entries older than the current minor release line are condensed to architectural
 
 ### Changed
 
+- **FileDistributor logging refactor** (issue #929)
+  - Removed the script-local `LogMessage` wrapper in `src/powershell/file-management/FileDistributor.ps1` and switched script-level logging calls to direct `Write-Log*` framework APIs.
+  - Added warning/error counter APIs to `PowerShellLoggingFramework` (`Get-LogWarningCount`, `Get-LogErrorCount`, `Reset-LogCounters`) and updated FileDistributor end-of-script/summary paths to source totals from the logging framework.
+  - Bumped versions: `FileDistributor.ps1` to `4.8.4` and `PowerShellLoggingFramework` module to `2.0.1`.
+
 - **Expand-ZipsAndClean.ps1** bumped to v2.0.1 (issue #937)
   - Refactored: seven generic helper functions moved to `FileSystem.psm1` module
     for reuse across other scripts (no behavioral changes to script)

@@ -15,8 +15,10 @@ function Invoke-EndOfScriptDeletion {
 
     if ($DeleteMode -ne "EndOfScript") { return }
 
-    $effectiveWarnings = [Math]::Max($WarningCount.Value, $PriorWarnings)
-    $effectiveErrors   = [Math]::Max($ErrorCount.Value,   $PriorErrors)
+    $frameworkWarnings = if (Get-Command -Name Get-LogWarningCount -ErrorAction SilentlyContinue) { Get-LogWarningCount } else { $WarningCount.Value }
+    $frameworkErrors = if (Get-Command -Name Get-LogErrorCount -ErrorAction SilentlyContinue) { Get-LogErrorCount } else { $ErrorCount.Value }
+    $effectiveWarnings = [Math]::Max($frameworkWarnings, $PriorWarnings)
+    $effectiveErrors   = [Math]::Max($frameworkErrors,   $PriorErrors)
 
     if (-not (Test-EndOfScriptCondition -Condition $EndOfScriptDeletionCondition -Warnings $effectiveWarnings -Errors $effectiveErrors)) {
         Write-LogInfo "End-of-script deletion skipped due to warnings or errors."
