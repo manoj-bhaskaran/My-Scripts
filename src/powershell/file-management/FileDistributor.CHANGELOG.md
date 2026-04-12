@@ -1,5 +1,13 @@
 # CHANGELOG — FileDistributor
 
+## 4.8.7 — 2026-04-12
+
+### Fixed
+
+- Fixed end-of-script deletion queue semantics when `ShouldProcess` is not approved (`-WhatIf` or declined `-Confirm`): `Invoke-EndOfScriptDeletion` now **peeks** queue entries before approval and only dequeues when deletion is actually approved/attempted.
+- Prevented queue consumption on denied confirmation by breaking out of the deletion loop after logging the `ShouldProcess` skip, preserving pending deletion entries for a later approved run in the same session.
+- Bumped `FileDistributor` script version to `4.8.7` and module version to `1.2.4`.
+
 ## 4.8.6 — 2026-04-12
 
 ### Changed

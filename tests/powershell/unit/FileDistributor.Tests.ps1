@@ -318,6 +318,13 @@ Describe 'FileDistributor Module Public API' {
         $endOfScriptDeletion.Parameters.ContainsKey('WhatIf') | Should -Be $true
     }
 
+    It 'Invoke-EndOfScriptDeletion should peek queue before ShouldProcess-gated deletion' {
+        $functionPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'Public' 'Invoke-EndOfScriptDeletion.ps1'
+        $functionContent = Get-Content -LiteralPath $functionPath -Raw
+
+        $functionContent | Should -Match 'Get-NextQueueItem\s+-Queue\s+\$RunState\.FilesToDelete\s+-Peek'
+    }
+
     It 'Should expose the complete expected function API through module exports' {
         $expectedExports = @(
             'Initialize-FileDistributorPaths',

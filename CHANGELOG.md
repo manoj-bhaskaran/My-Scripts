@@ -77,6 +77,11 @@ Entries older than the current minor release line are condensed to architectural
 
 ### Fixed
 
+- **FileDistributor EndOfScript queue preservation on denied ShouldProcess** (issue #933)
+  - Updated `Invoke-EndOfScriptDeletion` to peek queue entries first and only dequeue when deletion is approved/attempted, preventing `-WhatIf`/declined `-Confirm` from consuming pending queue items.
+  - When deletion is not approved, the loop now exits after logging the skip so queued entries remain available for a later approved run in the same session.
+  - Bumped versions: `FileDistributor.ps1` to `4.8.7` and `FileManagement/FileDistributor` module to `1.2.4`.
+
 - **Python data smoke import stability:** `src/python/data/seat_assignment.py` now lazy-loads `pandas` and `networkx` via `_get_pandas()` / `_get_networkx()` instead of importing them at module import time, preventing CI smoke-import failures in minimal dependency environments.
 
 ## [2.12.10] - 2026-04-05
