@@ -2,16 +2,16 @@
 
 function Invoke-ParameterValidation {
     param(
-        [hashtable]$RunState,
+        [Parameter(Mandatory = $true)][hashtable]$RunState,
         [string]$SourceFolder,
-        [Parameter(Mandatory = $true)][string]$TargetFolder,
-        [int]$FilesPerFolderLimit,
-        [int]$MaxFilesToCopy,
-        [Parameter(Mandatory = $true)][string]$DeleteMode,
+        [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$TargetFolder,
+        [ValidateRange(1, [int]::MaxValue)][int]$FilesPerFolderLimit,
+        [ValidateRange(-1, [int]::MaxValue)][int]$MaxFilesToCopy,
+        [Parameter(Mandatory = $true)][ValidateSet("RecycleBin", "Immediate", "EndOfScript")][string]$DeleteMode,
         [switch]$ConsolidateToMinimum,
         [switch]$RebalanceToAverage,
         [switch]$RandomizeDistribution,
-        [Parameter(Mandatory = $true)][string]$EndOfScriptDeletionCondition,
+        [Parameter(Mandatory = $true)][ValidateSet("NoWarnings", "WarningsOnly")][string]$EndOfScriptDeletionCondition,
         [Parameter(Mandatory = $true)][ref]$WarningCount,
         [Parameter(Mandatory = $true)][ref]$ErrorCount
     )
@@ -27,36 +27,18 @@ function Invoke-ParameterValidation {
         $RunState.MaxFilesToCopy = $MaxFilesToCopy
     }
 
-    if ([string]::IsNullOrWhiteSpace($TargetFolder)) {
-        Write-LogError "TargetFolder not specified. Provide -TargetFolder with a valid path."
-        $ErrorCount.Value++
-        throw "Missing required parameter: -TargetFolder"
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($SourceFolder) -and !(Test-Path -Path $SourceFolder)) {
+    if (-not [string]::IsNullOrWhiteSpace($SourceFolder) -and -not (Test-Path -Path $SourceFolder)) {
         Write-LogError "Source folder '$SourceFolder' does not exist."
         $ErrorCount.Value++
         throw "Source folder not found."
     }
 
-    if (!($FilesPerFolderLimit -gt 0)) {
-        Write-LogWarning "Incorrect value for FilesPerFolderLimit. Resetting to default: 20000."
-        $WarningCount.Value++
-        $RunState.FilesPerFolderLimit = 20000
-    } else {
-        $RunState.FilesPerFolderLimit = $FilesPerFolderLimit
-    }
+    $RunState.FilesPerFolderLimit = $FilesPerFolderLimit
 
-    if (!(Test-Path -Path $TargetFolder)) {
+    if (-not (Test-Path -Path $TargetFolder)) {
         Write-LogWarning "Target folder '$TargetFolder' does not exist. Creating it."
         $WarningCount.Value++
         New-Item -ItemType Directory -Path $TargetFolder -Force | Out-Null
-    }
-
-    if (-not ("RecycleBin", "Immediate", "EndOfScript" -contains $DeleteMode)) {
-        Write-LogError "Invalid value for DeleteMode: $DeleteMode. Valid options are 'RecycleBin', 'Immediate', 'EndOfScript'."
-        $ErrorCount.Value++
-        throw "Invalid DeleteMode."
     }
 
     $exclusiveOptions = @($ConsolidateToMinimum, $RebalanceToAverage, $RandomizeDistribution)
@@ -67,19 +49,7 @@ function Invoke-ParameterValidation {
         throw "Mutually exclusive options: only one of -ConsolidateToMinimum, -RebalanceToAverage, or -RandomizeDistribution can be specified"
     }
 
-    if (-not ("NoWarnings", "WarningsOnly" -contains $EndOfScriptDeletionCondition)) {
-        Write-LogError "Invalid value for EndOfScriptDeletionCondition: $EndOfScriptDeletionCondition. Valid options are 'NoWarnings', 'WarningsOnly'."
-        $ErrorCount.Value++
-        throw "Invalid EndOfScriptDeletionCondition."
-    }
-
-    if ($RunState.MaxFilesToCopy -lt -1) {
-        Write-LogWarning "Invalid MaxFilesToCopy '$($RunState.MaxFilesToCopy)'. Using -1 (no limit)."
-        $WarningCount.Value++
-        $RunState.MaxFilesToCopy = -1
-    }
-
-    $RunState.FilesToDelete    = New-FileQueue -Name "FilesToDelete" -SessionId $RunState.SessionId -MaxSize -1
+    $RunState.FilesToDelete = New-FileQueue -Name "FilesToDelete" -SessionId $RunState.SessionId -MaxSize -1
     $RunState.GlobalFileCounter = New-Ref 0
     Write-LogInfo "Parameter validation completed"
 }

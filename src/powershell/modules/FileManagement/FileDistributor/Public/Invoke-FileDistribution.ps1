@@ -5,17 +5,17 @@ function Invoke-FileDistribution {
     param (
         [object[]]$Files,
         [object[]]$Subfolders,
-        [Parameter(Mandatory = $true)][string]$TargetRoot,
-        [int]$Limit,
+        [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$TargetRoot,
+        [ValidateRange(1, [int]::MaxValue)][int]$Limit,
         [switch]$ShowProgress,
-        [int]$UpdateFrequency,
-        [string]$DeleteMode,
+        [ValidateRange(1, [int]::MaxValue)][int]$UpdateFrequency,
+        [ValidateSet("RecycleBin", "Immediate", "EndOfScript")][string]$DeleteMode,
         $FilesToDelete,  # FileQueue object (PSCustomObject) - reference type, no [ref] needed
         [ref]$GlobalFileCounter,
-        [int]$TotalFiles,
-        [int]$RetryDelay = 10,
-        [int]$RetryCount = 3,
-        [int]$MaxBackoff = 60,
+        [ValidateRange(0, [int]::MaxValue)][int]$TotalFiles,
+        [ValidateRange(1, [int]::MaxValue)][int]$RetryDelay = 10,
+        [ValidateRange(0, [int]::MaxValue)][int]$RetryCount = 3,
+        [ValidateRange(1, [int]::MaxValue)][int]$MaxBackoff = 60,
         [ref]$WarningCount,
         [ref]$ErrorCount
     )

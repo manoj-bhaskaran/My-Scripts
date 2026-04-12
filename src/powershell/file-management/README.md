@@ -45,6 +45,10 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **FileDistributor.ps1 v4.8.8** (module v1.2.5) (2026-04-12)
+  - Hardened parameter contracts using `ValidateRange`/`ValidateSet` attributes for core limit/retry/delete-mode inputs in the script and module public functions.
+  - Removed redundant dead defensive checks in `Invoke-ParameterValidation` that are now enforced by parameter binding.
+  - Applied small style cleanups in validation code (`-not` consistency and formatting).
 - **FileDistributor.ps1 v4.8.7** (module v1.2.4) (2026-04-12)
   - Fixed `Invoke-EndOfScriptDeletion` queue handling so denied `ShouldProcess` (`-WhatIf` or declined `-Confirm`) does not consume pending deletion entries.
   - The function now peeks first and dequeues only when deletion is approved/attempted, preserving queue state for a later confirmed run.
