@@ -1,5 +1,15 @@
 # CHANGELOG — FileDistributor
 
+## 4.8.8 — 2026-04-12
+
+### Changed
+
+- Hardened FileDistributor parameter contracts with explicit validation attributes (`ValidateRange` / `ValidateSet`) for numeric retry/limit settings and enum-like mode inputs in `FileDistributor.ps1`.
+- Added stricter parameter attributes to module public functions (`Invoke-ParameterValidation`, `Invoke-FileDistribution`) so invalid values fail earlier during binding.
+- Removed now-unreachable defensive branches in `Invoke-ParameterValidation` that duplicated binder-enforced validation (invalid `DeleteMode`, invalid end-of-script condition, fallback reset for non-positive `FilesPerFolderLimit`, and `< -1` normalization for `MaxFilesToCopy`).
+- Applied small style cleanups in validation logic (`-not` consistency and minor spacing/alignment fixes) while preserving behavior.
+- Bumped `FileDistributor` script version to `4.8.8` and module version to `1.2.5`.
+
 ## 4.8.7 — 2026-04-12
 
 ### Fixed

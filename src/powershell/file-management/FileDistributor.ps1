@@ -278,28 +278,38 @@ Limitations:
 param(
     [string]$SourceFolder = $null,
     [string]$TargetFolder = $null,
+    [ValidateRange(1, [int]::MaxValue)]
     [int]$FilesPerFolderLimit = 20000,
+    [ValidateRange(-1, [int]::MaxValue)]
     [int]$MaxFilesToCopy = -1, # -1 = all, 0 = none, N = first N files from enumeration
     [string]$LogFilePath = $null,
     [string]$StateFilePath = $null,
     [string]$RandomNameModulePath = $null,
     [switch]$Restart,
     [switch]$ShowProgress = $false,
+    [ValidateRange(1, [int]::MaxValue)]
     [int]$MaxBackoff = 60, # Cap for exponential backoff used by retry helper
+    [ValidateRange(1, [int]::MaxValue)]
     [int]$UpdateFrequency = 100, # Default: 100 files
+    [ValidateSet("RecycleBin", "Immediate", "EndOfScript")]
     [string]$DeleteMode = "RecycleBin", # Options: "RecycleBin", "Immediate", "EndOfScript"
+    [ValidateSet("NoWarnings", "WarningsOnly")]
     [string]$EndOfScriptDeletionCondition = "NoWarnings", # Options: "NoWarnings", "WarningsOnly"
+    [ValidateRange(1, [int]::MaxValue)]
     [int]$RetryDelay = 10, # Time to wait before retrying file access (seconds)
+    [ValidateRange(0, [int]::MaxValue)]
     [int]$RetryCount = 3, # Number of times to retry file access (0 for unlimited retries)
     [switch]$CleanupDuplicates,
     [switch]$CleanupEmptyFolders,
     [switch]$TruncateLog,
     [string]$TruncateIfLarger,
     [string]$RemoveEntriesBefore,
+    [ValidateRange(0, [int]::MaxValue)]
     [int]$RemoveEntriesOlderThan,
     [switch]$Help,
     [switch]$ConsolidateToMinimum,
     [switch]$RebalanceToAverage,
+    [ValidateRange(0, 100)]
     [int]$RebalanceTolerance = 10,
     [switch]$RandomizeDistribution
 )
@@ -323,7 +333,7 @@ Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistr
 # Note: Logger initialization moved to after LogFilePath resolution
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.8.7"
+$script:Version = "4.8.8"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -372,8 +382,6 @@ function Main {
             try { $beforeTimestamp = [datetime]::Parse($RemoveEntriesBefore) }
             catch { throw "Invalid timestamp format. Use 'YYYY-MM-DD HH:MM:SS' or ISO 8601." }
         }
-        if ($RemoveEntriesOlderThan -lt 0) { throw "Invalid value for RemoveEntriesOlderThan. Must be a non-negative integer." }
-
         $purgeParams = @{ LogFilePath = $LogFilePath }
         if ($beforeTimestamp) { $purgeParams.BeforeTimestamp = $beforeTimestamp }
         if ($RemoveEntriesOlderThan) { $purgeParams.RetentionDays = $RemoveEntriesOlderThan }
