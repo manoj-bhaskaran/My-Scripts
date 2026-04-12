@@ -1,6 +1,6 @@
 @{
     RootModule        = 'FileDistributor.psm1'
-    ModuleVersion     = '1.3.0'
+    ModuleVersion     = '1.3.1'
     GUID              = '7ce4ef6c-cc9f-4c89-a0d9-6c2751f4f0df'
     Author            = 'Manoj Bhaskaran'
     CompanyName       = 'Unknown'
@@ -22,6 +22,9 @@
         'Invoke-FolderRebalance',
         'Invoke-DistributionRandomize',
         'Invoke-FolderConsolidation'
+    )
+    RequiredModules   = @(
+        '..\FileQueue\FileQueue.psd1'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()
