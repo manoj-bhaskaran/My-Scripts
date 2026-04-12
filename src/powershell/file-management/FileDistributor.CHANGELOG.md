@@ -1,5 +1,23 @@
 # CHANGELOG — FileDistributor
 
+## 4.9.0 — 2026-04-12
+
+### Changed
+
+- Replaced the ad-hoc `$runState` hashtable with a typed `FileDistributorRunState` class (`Private/FileDistributorRunState.ps1`) and updated orchestration startup in `FileDistributor.ps1` to construct `[FileDistributorRunState]::new()`.
+- Updated all module orchestration/public phase functions that accept `-RunState` (`Invoke-ParameterValidation`, `Invoke-RestoreCheckpoint`, `Invoke-DistributionPhase`, `Invoke-PostProcessingPhase`, `Invoke-EndOfScriptDeletion`, `Invoke-PostRunCleanup`, `New-CheckpointPayload`) to declare `[FileDistributorRunState]`.
+- Added typed state serialization helpers: `FileDistributorRunState.ToSerializableHashtable()`, `FileDistributorRunState.FromHashtable([hashtable])`, and `Convert-RunStateToSerializableHashtable`.
+- Updated checkpoint payload creation to use typed state serialization instead of direct hashtable field assembly.
+
+### Compatibility
+
+- Preserved restart/checkpoint backward compatibility with legacy hashtable-shaped state files; typed restore uses case-insensitive key mapping via `FromHashtable` and still enforces saved `SourceFolder` / `DeleteMode` invariants.
+
+### Tests
+
+- Added `FileDistributorRunState.Tests.ps1` covering default construction, property mutation, JSON round-trip serialization, and legacy checkpoint-load compatibility.
+- Bumped `FileDistributor` script version to `4.9.0` and module version to `1.3.0`.
+
 ## 4.8.8 — 2026-04-12
 
 ### Changed

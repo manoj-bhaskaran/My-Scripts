@@ -2,22 +2,25 @@
 
 $ModuleRoot = $PSScriptRoot
 
-$privateFunctions = @(Get-ChildItem -Path "$ModuleRoot\Private\*.ps1" -ErrorAction SilentlyContinue)
+$runStateClassPath = Join-Path -Path $ModuleRoot -ChildPath 'Private\FileDistributorRunState.ps1'
+if (Test-Path -LiteralPath $runStateClassPath) {
+    . $runStateClassPath
+}
+
+$privateFunctions = @(Get-ChildItem -Path "$ModuleRoot\Private\*.ps1" -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'FileDistributorRunState.ps1' } | Sort-Object Name)
 foreach ($import in $privateFunctions) {
     try {
         . $import.FullName
-    }
-    catch {
+    } catch {
         Write-Error "Failed to import private function $($import.FullName): $_"
     }
 }
 
-$publicFunctions = @(Get-ChildItem -Path "$ModuleRoot\Public\*.ps1" -ErrorAction SilentlyContinue)
+$publicFunctions = @(Get-ChildItem -Path "$ModuleRoot\Public\*.ps1" -ErrorAction SilentlyContinue | Sort-Object Name)
 foreach ($import in $publicFunctions) {
     try {
         . $import.FullName
-    }
-    catch {
+    } catch {
         Write-Error "Failed to import public function $($import.FullName): $_"
     }
 }

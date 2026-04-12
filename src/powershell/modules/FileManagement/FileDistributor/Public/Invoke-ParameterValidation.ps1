@@ -2,7 +2,7 @@
 
 function Invoke-ParameterValidation {
     param(
-        [Parameter(Mandatory = $true)][hashtable]$RunState,
+        [Parameter(Mandatory = $true)][FileDistributorRunState]$RunState,
         [string]$SourceFolder,
         [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$TargetFolder,
         [ValidateRange(1, [int]::MaxValue)][int]$FilesPerFolderLimit,
@@ -22,9 +22,11 @@ function Invoke-ParameterValidation {
 
     if ([string]::IsNullOrWhiteSpace($SourceFolder)) {
         $RunState.MaxFilesToCopy = 0
+        $RunState.SourceFolder = $null
         Write-LogInfo "SourceFolder not specified. Running in rebalance-only mode (no files will be copied)."
     } else {
         $RunState.MaxFilesToCopy = $MaxFilesToCopy
+        $RunState.SourceFolder = $SourceFolder
     }
 
     if (-not [string]::IsNullOrWhiteSpace($SourceFolder) -and -not (Test-Path -Path $SourceFolder)) {

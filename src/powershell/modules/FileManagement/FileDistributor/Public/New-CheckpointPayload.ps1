@@ -2,7 +2,7 @@
 
 function New-CheckpointPayload {
     param(
-        [hashtable]$RunState,
+        [FileDistributorRunState]$RunState,
         [Parameter(Mandatory = $true)][string]$DeleteMode,
         [string]$SourceFolder,
         [int]$MaxFilesToCopy,
@@ -12,14 +12,10 @@ function New-CheckpointPayload {
         [switch]$IncludeFilesToDelete
     )
 
-    $payload = @{
-        totalSourceFiles       = $RunState.totalSourceFiles
-        totalSourceFilesAll    = $RunState.totalSourceFilesAll
-        totalTargetFilesBefore = $RunState.totalTargetFilesBefore
-        deleteMode             = $DeleteMode
-        SourceFolder           = $SourceFolder
-        MaxFilesToCopy         = $MaxFilesToCopy
-    }
+    $payload = Convert-RunStateToSerializableHashtable -RunState $RunState
+    $payload.deleteMode = $DeleteMode
+    $payload.SourceFolder = $SourceFolder
+    $payload.MaxFilesToCopy = $MaxFilesToCopy
 
     if ($null -ne $Subfolders) {
         $payload.subfolders = ConvertItemsToPaths($Subfolders)

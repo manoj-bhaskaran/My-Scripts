@@ -3,7 +3,7 @@
 function Invoke-PostProcessingPhase {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
-        [hashtable]$RunState,
+        [FileDistributorRunState]$RunState,
         [Parameter(Mandatory = $true)][ref]$FileLockRef,
         [switch]$ConsolidateToMinimum,
         [switch]$RebalanceToAverage,
