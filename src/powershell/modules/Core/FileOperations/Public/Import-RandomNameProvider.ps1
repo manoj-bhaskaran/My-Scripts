@@ -45,24 +45,21 @@ function Import-RandomNameProvider {
             'Info' {
                 if (Get-Command -Name Write-LogInfo -ErrorAction SilentlyContinue) {
                     Write-LogInfo $Message
-                }
-                else {
+                } else {
                     Write-Verbose $Message
                 }
             }
             'Warning' {
                 if (Get-Command -Name Write-LogWarning -ErrorAction SilentlyContinue) {
                     Write-LogWarning $Message
-                }
-                else {
+                } else {
                     Write-Warning $Message
                 }
             }
             'Error' {
                 if (Get-Command -Name Write-LogError -ErrorAction SilentlyContinue) {
                     Write-LogError $Message
-                }
-                else {
+                } else {
                     Write-Error $Message
                 }
             }
@@ -80,8 +77,7 @@ function Import-RandomNameProvider {
             Import-Module -Name $resolved.Path -Force -ErrorAction Stop
             Write-RandomNameProviderLog -Level Info -Message "Imported RandomName module from '$($resolved.Path)'."
             return
-        }
-        catch {
+        } catch {
             Write-RandomNameProviderLog -Level Warning -Message "Failed to import RandomName module from '$ModulePath': $($_.Exception.Message)"
         }
     }
@@ -101,8 +97,7 @@ function Import-RandomNameProvider {
                     Import-Module -Name $candidate -Force -ErrorAction Stop
                     Write-RandomNameProviderLog -Level Info -Message "Imported RandomName module from script-root '$candidate'."
                     return
-                }
-                catch {
+                } catch {
                     Write-RandomNameProviderLog -Level Warning -Message "Failed to import RandomName module from '$candidate': $($_.Exception.Message)"
                 }
             }
@@ -113,9 +108,13 @@ function Import-RandomNameProvider {
         Import-Module -Name RandomName -ErrorAction Stop
         Write-RandomNameProviderLog -Level Info -Message 'Imported RandomName module from PSModulePath.'
         return
-    }
-    catch {
-        Write-RandomNameProviderLog -Level Error -Message "Failed to import 'RandomName' from PSModulePath: $($_.Exception.Message)"
+    } catch {
+        $failureMessage = "Failed to import 'RandomName' from PSModulePath: $($_.Exception.Message)"
+        if (Get-Command -Name Write-LogError -ErrorAction SilentlyContinue) {
+            Write-RandomNameProviderLog -Level Error -Message $failureMessage
+        } else {
+            Write-Verbose $failureMessage
+        }
         throw 'Random name provider (module) not found.'
     }
 }
