@@ -1,6 +1,8 @@
 BeforeAll {
-    $script:ModulePath = Join-Path $PSScriptRoot '..' '..' '..' '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'FileDistributor.psd1'
+    $script:ClassPath = Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'Private' 'FileDistributorRunState.ps1'
+    $script:ModulePath = Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'FileDistributor.psd1'
 
+    . $script:ClassPath
     Import-Module -Name $script:ModulePath -Force | Out-Null
 }
 
@@ -8,13 +10,13 @@ Describe 'FileDistributorRunState typed state contract' {
     It 'constructs with expected default values' {
         $state = [FileDistributorRunState]::new()
 
-        $state | Should -BeOfType 'FileDistributorRunState'
+        $state.GetType().Name | Should -Be 'FileDistributorRunState'
         $state.TotalSourceFilesAll | Should -Be 0
         $state.TotalSourceFiles | Should -Be 0
         $state.TotalTargetFilesBefore | Should -Be 0
         $state.TotalSkippedFiles | Should -Be 0
-        $state.Subfolders | Should -BeEmpty
-        $state.SourceFiles | Should -BeEmpty
+        $state.Subfolders.Count | Should -Be 0
+        $state.SourceFiles.Count | Should -Be 0
         $state.SkippedFilesByExtension.Count | Should -Be 0
     }
 
@@ -78,15 +80,15 @@ Describe 'FileDistributorRunState typed state contract' {
 
     It 'loads legacy checkpoint hashtable shape using case-insensitive keys' {
         $legacy = @{
-            totalsourcefiles = 12
-            TOTALSOURCEFILESALL = 20
-            totaltargetfilesbefore = 8
-            maxfilestocopy = 12
-            sourcefolder = 'C:\legacy'
-            totalskippedfiles = 2
+            totalsourcefiles        = 12
+            TOTALSOURCEFILESALL     = 20
+            totaltargetfilesbefore  = 8
+            maxfilestocopy          = 12
+            sourcefolder            = 'C:\legacy'
+            totalskippedfiles       = 2
             skippedfilesbyextension = @{ '.tmp' = 2 }
-            checkpoint = 3
-            sessionid = 'legacy-session-id'
+            checkpoint              = 3
+            sessionid               = 'legacy-session-id'
         }
 
         $state = [FileDistributorRunState]::FromHashtable($legacy)
