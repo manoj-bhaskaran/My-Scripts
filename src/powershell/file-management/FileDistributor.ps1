@@ -352,58 +352,6 @@ Initialize-Logger -resolvedLogDir $logDirectory -ScriptName "FileDistributor" -L
 $Global:LogConfig.LogFilePath = $LogFilePath
 Reset-LogCounters
 
-# ===== Random name provider resolution (module-only) =====
-function Import-RandomNameProvider {
-    param(
-        [string]$ModulePath
-    )
-
-    # Already available?
-    if (Get-Command -Name Get-RandomFileName -ErrorAction SilentlyContinue) {
-        Write-LogInfo "RandomName provider already available (Get-RandomFileName found)."
-        return
-    }
-
-    # 1) Explicit module path (psd1/psm1 or module directory)
-    if ($ModulePath) {
-        try {
-            $resolved = Resolve-Path -LiteralPath $ModulePath -ErrorAction Stop
-            Import-Module -LiteralPath $resolved.Path -Force -ErrorAction Stop
-            Write-LogInfo "Imported RandomName module from '$($resolved.Path)'."
-            return
-        } catch {
-            Write-LogWarning "Failed to import RandomName module from '$ModulePath': $($_.Exception.Message)"
-        }
-    }
-
-    # 2) Script-root conventional location
-    $scriptRootCandidates = @(
-        (Join-Path $script:ScriptRoot 'powershell\module\RandomName\RandomName.psd1'),
-        (Join-Path $script:ScriptRoot 'powershell\module\RandomName\RandomName.psm1')
-    )
-    foreach ($c in $scriptRootCandidates) {
-        if (Test-Path -LiteralPath $c) {
-            try {
-                Import-Module -LiteralPath $c -Force -ErrorAction Stop
-                Write-LogInfo "Imported RandomName module from script-root '$c'."
-                return
-            } catch {
-                Write-LogWarning "Failed to import RandomName module from '$c': $($_.Exception.Message)"
-            }
-        }
-    }
-
-    # 3) PSModulePath
-    try {
-        Import-Module -Name RandomName -ErrorAction Stop
-        Write-LogInfo "Imported RandomName module from PSModulePath."
-        return
-    } catch {
-        Write-LogError "Failed to import 'RandomName' from PSModulePath: $($_.Exception.Message)"
-        throw "Random name provider (module) not found."
-    }
-}
-
 # Main script logic
 function Main {
     Write-LogInfo "FileDistributor starting..."
@@ -411,7 +359,7 @@ function Main {
     Write-LogInfo "Version: $script:Version"
     Write-Host "Version: $script:Version"
     $script:DebugMode = ($DebugPreference -ne 'SilentlyContinue')
-    Import-RandomNameProvider -ModulePath $RandomNameModulePath
+    Import-RandomNameProvider -ModulePath $RandomNameModulePath -ScriptRoot $script:ScriptRoot
     $script:Warnings = Get-LogWarningCount
     $script:Errors = Get-LogErrorCount
 
