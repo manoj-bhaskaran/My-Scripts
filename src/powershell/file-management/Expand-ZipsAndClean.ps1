@@ -659,9 +659,8 @@ function Remove-SourceDirectory {
             }
         }
 
-        if ($PSCmdlet.ShouldProcess($SourceDir, "Delete source directory")) {
-            Remove-Item -LiteralPath $SourceDir -Recurse -Force
-        }
+        # Delete the source directory itself (no ShouldProcess check needed since $ShouldDeleteSource is explicit)
+        Remove-Item -LiteralPath $SourceDir -Recurse -Force
     } catch {
         $msg = "Failed to delete source directory '$SourceDir': $($_.Exception.Message)"
         Write-LogDebug $msg
