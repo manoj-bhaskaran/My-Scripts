@@ -22,7 +22,7 @@ Scripts for file operations, distribution, copying, and archiving.
 
 ### External Tools
 
-- PowerShell 5.1 or later
+- PowerShell 7+ (required by `Expand-ZipsAndClean.ps1`; other scripts may work on 5.1)
 - Windows API access for file handle operations
 
 ## Common Use Cases
@@ -45,6 +45,12 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 v2.1.0** (2026-04-13)
+  - Added `#requires -Version 7.0` to enforce the PowerShell 7+ runtime at parse time (script already used the ternary operator which is PS 7-only).
+  - Added `using namespace System.Collections.Generic` and `using namespace System.IO.Compression` declarations; shortened `List[string]`, `ZipFile`, and `ZipFileExtensions` type references accordingly.
+  - Replaced `New-Object System.Collections.Generic.List[string]` with `[List[string]]::new()`.
+  - Updated `.NOTES` `Requires` line and `Setup/Module check` section to remove the PowerShell 5.1 compatibility note.
+  - Version bump: `2.1.0` (minor — supported-runtime contract change).
 - **Expand-ZipsAndClean.ps1 test-suite follow-up** (2026-04-13)
   - Updated the dispatcher routing Pester test to mock `Expand-ZipFlat` explicitly in the `PerArchiveSubfolder` path assertion, fixing CI `Should -Invoke ... -Times 0` mock-resolution failures.
 - **Expand-ZipsAndClean.ps1 v2.0.4** (2026-04-13)
