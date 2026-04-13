@@ -54,11 +54,14 @@ using namespace System.IO.Compression
 
 .PARAMETER DeleteSource
     Switch. If present, deletes the source directory after zips are moved and,
-    if -CleanNonZips is also set, after non-zip items are removed.
+    if -CleanNonZips is also set, after non-zip items are removed. If leftovers remain
+    and -CleanNonZips is not specified, deletion is skipped with a warning that
+    distinguishes between "non-zip files present" and "only empty subdirectories remain".
 
 .PARAMETER CleanNonZips
     Switch. If present (and -DeleteSource is also specified), deletes non-zip items remaining
-    in the source directory before deleting the source directory. Without this switch, the
+    in the source directory before deleting the source directory, processing paths deepest-first
+    to avoid "directory not empty" errors on nested trees. Without this switch, the
     script will WARN and list remaining items instead of deleting.
 
 .PARAMETER MaxSafeNameLength
@@ -97,13 +100,22 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.1.0
+    Version  : 2.1.1
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.1.1  Fixed Remove-SourceDirectory: simplified non-zip filter (dropped the dead
+           .zip-exclusion branch, since Move-ZipFilesToParent has already relocated all
+           zips before this function runs); differentiated warning message between
+           "non-zip files present" and "only empty subdirectories remain"; added
+           deepest-first sort (FullName descending) when -CleanNonZips is set to prevent
+           "directory not empty" failures on nested trees; wrapped Get-ChildItem with
+           -ErrorVariable so unreadable items surface as Write-Warning rather than
+           being silently dropped. Updated -DeleteSource / -CleanNonZips parameter help.
+
     2.1.0  Enforced PowerShell 7+ as the minimum runtime: added #requires -Version 7.0,
            added using namespace directives (System.Collections.Generic,
            System.IO.Compression), updated .NOTES Requires line and Setup/Module
@@ -539,7 +551,7 @@ function Invoke-ZipExtractions {
         [Parameter(Mandatory)][string]$Policy,
         [Parameter(Mandatory)][int]$SafeNameMaxLen,
         [Parameter(Mandatory)][bool]$QuietMode,
-        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$ErrorList
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
     )
 
     $processedZips = 0
@@ -592,11 +604,11 @@ function Invoke-ZipExtractions {
     }
 
     return [pscustomobject]@{
-        ZipCount = $zipCount
-        ProcessedZips = $processedZips
-        FilesExtracted = $totalFilesExtracted
+        ZipCount          = $zipCount
+        ProcessedZips     = $processedZips
+        FilesExtracted    = $totalFilesExtracted
         UncompressedBytes = $totalUncompressedBytes
-        CompressedBytes = $totalCompressedZipBytes
+        CompressedBytes   = $totalCompressedZipBytes
     }
 }
 
@@ -610,7 +622,7 @@ function Remove-SourceDirectory {
         [Parameter(Mandatory)][string]$SourceDir,
         [Parameter(Mandatory)][bool]$ShouldDeleteSource,
         [Parameter(Mandatory)][bool]$ShouldCleanNonZips,
-        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$ErrorList
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
     )
 
     if (-not $ShouldDeleteSource) {
@@ -618,17 +630,26 @@ function Remove-SourceDirectory {
     }
 
     try {
-        $remaining = Get-ChildItem -LiteralPath $SourceDir -Recurse -Force -ErrorAction SilentlyContinue
-        $nonZips = @($remaining | Where-Object { (-not $_.PSIsContainer -and $_.Extension -ne '.zip') -or $_.PSIsContainer })
+        $gcErrors = $null
+        $remaining = Get-ChildItem -LiteralPath $SourceDir -Recurse -Force -ErrorAction SilentlyContinue -ErrorVariable gcErrors
+        foreach ($e in $gcErrors) {
+            Write-Warning "Could not read item during source directory scan: $($e.Exception.Message)"
+        }
+        $nonZips = @($remaining | Where-Object { $_.PSIsContainer -or $_.Extension -ne '.zip' })
         if ($nonZips.Count -gt 0 -and -not $ShouldCleanNonZips) {
-            $ErrorList.Add("DeleteSource skipped: non-zip items remain. Use -CleanNonZips to remove them.") | Out-Null
+            $hasFiles = @($nonZips | Where-Object { -not $_.PSIsContainer })
+            if ($hasFiles.Count -gt 0) {
+                $ErrorList.Add("DeleteSource skipped: non-zip files remain in '$SourceDir'. Use -CleanNonZips to remove them.") | Out-Null
+            } else {
+                $ErrorList.Add("DeleteSource skipped: only empty subdirectories remain in '$SourceDir'. Use -CleanNonZips to remove them.") | Out-Null
+            }
             Write-LogDebug ("Remaining items: `n" + ($nonZips | Select-Object -ExpandProperty FullName | Out-String))
             return
         }
 
         if ($ShouldCleanNonZips -and $nonZips.Count -gt 0) {
             if ($PSCmdlet.ShouldProcess($SourceDir, "Clean non-zip items before delete")) {
-                $nonZips | ForEach-Object {
+                $nonZips | Sort-Object -Property FullName -Descending | ForEach-Object {
                     try {
                         Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
                     } catch {
