@@ -648,13 +648,11 @@ function Remove-SourceDirectory {
         }
 
         if ($ShouldCleanNonZips -and $nonZips.Count -gt 0) {
-            if ($PSCmdlet.ShouldProcess($SourceDir, "Clean non-zip items before delete")) {
-                $nonZips | Sort-Object -Property FullName -Descending | ForEach-Object {
-                    try {
-                        Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
-                    } catch {
-                        $ErrorList.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null
-                    }
+            $nonZips | Sort-Object -Property FullName -Descending | ForEach-Object {
+                try {
+                    Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+                } catch {
+                    $ErrorList.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null
                 }
             }
         }
