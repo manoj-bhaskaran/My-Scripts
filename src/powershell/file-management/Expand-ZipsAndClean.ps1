@@ -93,12 +93,17 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.0.2
+    Version  : 2.0.3
     Author   : Manoj Bhaskaran
     Requires : PowerShell 5.1 or 7+, Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.0.3  Review follow-up: added comment-based help to extracted phase functions
+           (Test-ScriptPreconditions, Initialize-Destination, Invoke-ZipExtractions,
+           Remove-SourceDirectory) for clarity and script documentation consistency.
+           No behavioral changes.
+
     2.0.2  Refactored orchestration into named phase functions:
            - Test-ScriptPreconditions, Initialize-Destination,
              Invoke-ZipExtractions, Move-ZipFilesToParent, Remove-SourceDirectory
@@ -393,6 +398,10 @@ function Expand-ZipSmart {
     }
 }
 
+<#
+.SYNOPSIS
+    Validates source/destination safety constraints before any file operations.
+#>
 function Test-ScriptPreconditions {
     [CmdletBinding()]
     param(
@@ -426,6 +435,10 @@ function Test-ScriptPreconditions {
     }
 }
 
+<#
+.SYNOPSIS
+    Ensures destination root exists before extraction begins.
+#>
 function Initialize-Destination {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$DestinationDir)
@@ -437,6 +450,10 @@ function Initialize-Destination {
     }
 }
 
+<#
+.SYNOPSIS
+    Extracts all zip files from source to destination and returns summary totals.
+#>
 function Invoke-ZipExtractions {
     [CmdletBinding()]
     param(
@@ -507,6 +524,10 @@ function Invoke-ZipExtractions {
     }
 }
 
+<#
+.SYNOPSIS
+    Optionally cleans non-zip leftovers and removes the source directory.
+#>
 function Remove-SourceDirectory {
     [CmdletBinding()]
     param(

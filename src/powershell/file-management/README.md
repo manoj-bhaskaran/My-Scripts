@@ -45,6 +45,8 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 v2.0.3** (2026-04-13)
+  - Review follow-up: added comment-based help blocks for extracted phase functions to keep inline script documentation consistent.
 - **Expand-ZipsAndClean.ps1 v2.0.2** (2026-04-13)
   - Refactored the top-level execution flow into named phase functions (`Test-ScriptPreconditions`, `Initialize-Destination`, `Invoke-ZipExtractions`, `Move-ZipFilesToParent`, `Remove-SourceDirectory`) so the main orchestration is easier to follow.
   - Renamed `Move-Zips-ToParent` to `Move-ZipFilesToParent` for PowerShell naming convention compliance.
