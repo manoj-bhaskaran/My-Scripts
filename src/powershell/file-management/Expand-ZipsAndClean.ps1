@@ -661,6 +661,11 @@ function Remove-SourceDirectory {
         if (Test-Path -LiteralPath $SourceDir) {
             Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction Stop
         }
+        # Defensive: on some platforms Remove-Item -Recurse can leave the root
+        # directory behind (PowerShell #8211); remove the now-empty shell.
+        if (Test-Path -LiteralPath $SourceDir) {
+            Remove-Item -LiteralPath $SourceDir -Force -ErrorAction Stop
+        }
     } catch {
         $msg = "Failed to delete source directory '$SourceDir': $($_.Exception.Message)"
         Write-LogDebug $msg
