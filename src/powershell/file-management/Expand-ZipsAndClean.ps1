@@ -660,7 +660,14 @@ function Remove-SourceDirectory {
         }
 
         # Delete the source directory itself (no ShouldProcess check needed since $ShouldDeleteSource is explicit)
-        Remove-Item -LiteralPath $SourceDir -Recurse -Force
+        if (Test-Path -LiteralPath $SourceDir) {
+            Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction Stop
+        }
+
+        # Defensive fallback for providers/environments that can leave the directory behind.
+        if (Test-Path -LiteralPath $SourceDir) {
+            [System.IO.Directory]::Delete($SourceDir, $true)
+        }
     } catch {
         $msg = "Failed to delete source directory '$SourceDir': $($_.Exception.Message)"
         Write-LogDebug $msg
