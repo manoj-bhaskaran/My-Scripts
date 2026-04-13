@@ -93,12 +93,16 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.0.3
+    Version  : 2.0.4
     Author   : Manoj Bhaskaran
     Requires : PowerShell 5.1 or 7+, Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.0.4  Refactored extraction internals by splitting Expand-ZipSmart into
+           mode-specific helpers: Expand-ZipToSubfolder and Expand-ZipFlat.
+           Expand-ZipSmart now acts as a dispatcher only (no behavior changes).
+
     2.0.3  Review follow-up: added comment-based help to extracted phase functions
            (Test-ScriptPreconditions, Initialize-Destination, Invoke-ZipExtractions,
            Remove-SourceDirectory) for clarity and script documentation consistency.
@@ -289,67 +293,84 @@ function Get-ZipFileStats {
 
 <#
 .SYNOPSIS
-    Extracts a zip into DestinationRoot with collision handling.
+    Extracts one ZIP archive into a unique subfolder under the destination root.
 .DESCRIPTION
-    - PerArchiveSubfolder: uses Expand-Archive into a unique subfolder (simpler, robust).
-    - Flat: streams entries with ZipArchive, checking collisions BEFORE writing each file,
-            and preventing Zip Slip by verifying resolved full paths.
+    This helper implements `PerArchiveSubfolder` mode. It uses `Expand-Archive` to extract
+    into a sanitized subfolder name and resolves collisions by creating a unique directory path.
 .PARAMETER ZipPath
     Path to the zip archive.
 .PARAMETER DestinationRoot
     Root folder for extraction.
-.PARAMETER ExtractMode
-    'PerArchiveSubfolder' or 'Flat'.
-.PARAMETER CollisionPolicy
-    'Skip' | 'Overwrite' | 'Rename'
-.PARAMETER SafeNameMaxLen
-    Used only in PerArchiveSubfolder mode to cap folder name derived from the zip.
+.PARAMETER SafeSubfolderName
+    Safe destination subfolder name derived from the zip file name.
 .OUTPUTS
-    Int (number of files written or moved into DestinationRoot/subfolder).
+    Int (number of files extracted into the resolved subfolder).
 #>
-function Expand-ZipSmart {
+function Expand-ZipToSubfolder {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$ZipPath,
         [Parameter(Mandatory)][string]$DestinationRoot,
-        [ValidateSet('PerArchiveSubfolder', 'Flat')][string]$ExtractMode = 'PerArchiveSubfolder',
-        [ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy = 'Rename',
-        [int]$SafeNameMaxLen = 0
+        [Parameter(Mandatory)][string]$SafeSubfolderName
     )
 
-    if (-not (Test-Path -LiteralPath $DestinationRoot)) {
-        New-DirectoryIfMissing -Path $DestinationRoot -Force | Out-Null
+    try {
+        $target = Join-Path $DestinationRoot $SafeSubfolderName
+        $target = Resolve-UniqueDirectoryPath -Path $target
+        if (-not (Test-Path -LiteralPath $target)) {
+            New-DirectoryIfMissing -Path $target -Force | Out-Null
+        }
+
+        Expand-Archive -LiteralPath $ZipPath -DestinationPath $target -Force
+        return (Get-ChildItem -Path $target -Recurse -File | Measure-Object).Count
+
+    } catch {
+        $msg = $_.Exception.Message
+        if ($msg -imatch 'encrypt|password|protected') {
+            throw "Extraction failed for '$ZipPath' (zip may be encrypted): $msg"
+        }
+        throw
     }
+}
 
-    $destRootFull = Get-FullPath -Path $DestinationRoot
-    $destRootFullWithSep = if ($destRootFull.EndsWith('\')) { $destRootFull } else { $destRootFull + '\' }
+<#
+.SYNOPSIS
+    Streams one ZIP archive directly into the destination root (flat mode).
+.DESCRIPTION
+    Implements `Flat` extraction mode using `ZipArchive` streaming extraction. The function:
+    - Normalizes each entry path and enforces a destination-root prefix check to prevent Zip Slip.
+    - Applies per-file collision policy (`Skip`, `Overwrite`, `Rename`) before writing.
+    - Creates required destination directories on demand.
+.PARAMETER ZipPath
+    Path to the zip archive.
+.PARAMETER DestinationRoot
+    Root folder for extraction.
+.PARAMETER DestinationRootFull
+    Fully-qualified destination root path used for Zip Slip boundary validation.
+.PARAMETER CollisionPolicy
+    File collision behavior: `Skip`, `Overwrite`, or `Rename`.
+.OUTPUTS
+    Int (number of files extracted).
+#>
+function Expand-ZipFlat {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ZipPath,
+        [Parameter(Mandatory)][string]$DestinationRoot,
+        [Parameter(Mandatory)][string]$DestinationRootFull,
+        [ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy = 'Rename'
+    )
 
-    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($ZipPath)
-    $safeSub = Get-SafeName -Name $baseName -MaxLength $SafeNameMaxLen
+    $destRootFullWithSep = if ($DestinationRootFull.EndsWith('\')) { $DestinationRootFull } else { $DestinationRootFull + '\' }
     $written = 0
 
     try {
-        if ($ExtractMode -eq 'PerArchiveSubfolder') {
-            # Extract to a unique subfolder under DestinationRoot
-            $target = Join-Path $DestinationRoot $safeSub
-            $target = Resolve-UniqueDirectoryPath -Path $target
-            if (-not (Test-Path -LiteralPath $target)) {
-                New-DirectoryIfMissing -Path $target -Force | Out-Null
-            }
-            Expand-Archive -LiteralPath $ZipPath -DestinationPath $target -Force
-            $written = (Get-ChildItem -Path $target -Recurse -File | Measure-Object).Count
-            return $written
-        }
-
-        # Flat mode: stream entries directly (no temp folder)
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
         $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
         try {
             foreach ($entry in $zip.Entries) {
-                # Skip directory markers
                 if ([string]::IsNullOrEmpty($entry.Name)) { continue }
 
-                # Build target path safely; prevent Zip Slip
                 $rel = ($entry.FullName -replace '/', '\').TrimStart('\')
                 $dest = Join-Path $DestinationRoot $rel
                 $destFull = [System.IO.Path]::GetFullPath($dest)
@@ -368,12 +389,11 @@ function Expand-ZipSmart {
                     switch ($CollisionPolicy) {
                         'Skip' { continue }
                         'Rename' { $targetPath = Resolve-UniquePath -Path $targetPath }
-                        'Overwrite' { } # NOTE: overwrite flag below is only enabled when policy is Overwrite
+                        'Overwrite' { }
                     }
                 }
 
                 try {
-                    # Overwrite is true only if policy == Overwrite; otherwise false (Skip handled above; Rename changed path)
                     [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, ($CollisionPolicy -eq 'Overwrite'))
                     $written++
                 } catch {
@@ -387,6 +407,7 @@ function Expand-ZipSmart {
         } finally {
             $zip.Dispose()
         }
+
         return $written
 
     } catch {
@@ -396,6 +417,50 @@ function Expand-ZipSmart {
         }
         throw
     }
+}
+
+<#
+.SYNOPSIS
+    Dispatches zip extraction to the configured extraction mode helper.
+.DESCRIPTION
+    Public-facing compatibility wrapper that preserves the existing signature and routes
+    extraction to either `Expand-ZipToSubfolder` (`PerArchiveSubfolder`) or `Expand-ZipFlat` (`Flat`).
+.PARAMETER ZipPath
+    Path to the zip archive.
+.PARAMETER DestinationRoot
+    Root folder for extraction.
+.PARAMETER ExtractMode
+    `PerArchiveSubfolder` or `Flat`.
+.PARAMETER CollisionPolicy
+    `Skip` | `Overwrite` | `Rename`.
+.PARAMETER SafeNameMaxLen
+    Maximum safe-name length used to derive per-archive subfolder names.
+.OUTPUTS
+    Int (number of files written by the selected mode helper).
+#>
+function Expand-ZipSmart {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ZipPath,
+        [Parameter(Mandatory)][string]$DestinationRoot,
+        [ValidateSet('PerArchiveSubfolder', 'Flat')][string]$ExtractMode = 'PerArchiveSubfolder',
+        [ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy = 'Rename',
+        [int]$SafeNameMaxLen = 0
+    )
+
+    if (-not (Test-Path -LiteralPath $DestinationRoot)) {
+        New-DirectoryIfMissing -Path $DestinationRoot -Force | Out-Null
+    }
+
+    $destRootFull = Get-FullPath -Path $DestinationRoot
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($ZipPath)
+    $safeSub = Get-SafeName -Name $baseName -MaxLength $SafeNameMaxLen
+
+    if ($ExtractMode -eq 'PerArchiveSubfolder') {
+        return Expand-ZipToSubfolder -ZipPath $ZipPath -DestinationRoot $DestinationRoot -SafeSubfolderName $safeSub
+    }
+
+    return Expand-ZipFlat -ZipPath $ZipPath -DestinationRoot $DestinationRoot -DestinationRootFull $destRootFull -CollisionPolicy $CollisionPolicy
 }
 
 <#

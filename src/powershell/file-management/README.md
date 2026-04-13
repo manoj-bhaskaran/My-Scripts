@@ -45,6 +45,12 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 test-suite follow-up** (2026-04-13)
+  - Updated the dispatcher routing Pester test to mock `Expand-ZipFlat` explicitly in the `PerArchiveSubfolder` path assertion, fixing CI `Should -Invoke ... -Times 0` mock-resolution failures.
+- **Expand-ZipsAndClean.ps1 v2.0.4** (2026-04-13)
+  - Refactored extraction internals by splitting `Expand-ZipSmart` into mode-specific helpers: `Expand-ZipToSubfolder` and `Expand-ZipFlat`.
+  - Kept `Expand-ZipSmart` as the compatibility dispatcher with unchanged parameters and mode behavior.
+  - Added Pester coverage for dispatcher routing, `Flat` skip-collision behavior, and Zip Slip traversal rejection.
 - **Expand-ZipsAndClean.ps1 v2.0.3** (2026-04-13)
   - Review follow-up: added comment-based help blocks for extracted phase functions to keep inline script documentation consistent.
 - **Expand-ZipsAndClean.ps1 v2.0.2** (2026-04-13)
