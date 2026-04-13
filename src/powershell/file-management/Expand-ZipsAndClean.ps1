@@ -1,3 +1,7 @@
+#requires -Version 7.0
+using namespace System.Collections.Generic
+using namespace System.IO.Compression
+
 <#
 .SYNOPSIS
     Unzips all .zip files from a source folder into a destination folder, moves the .zip files
@@ -93,12 +97,21 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.0.4
+    Version  : 2.1.0
     Author   : Manoj Bhaskaran
-    Requires : PowerShell 5.1 or 7+, Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
+    Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
+               Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.1.0  Enforced PowerShell 7+ as the minimum runtime: added #requires -Version 7.0,
+           added using namespace directives (System.Collections.Generic,
+           System.IO.Compression), updated .NOTES Requires line and Setup/Module
+           section (removed PS 5.1 compatibility note), replaced New-Object
+           List[string] with [List[string]]::new(), and shortened ZipFile /
+           ZipFileExtensions type references to use the declared namespaces.
+           Version bump: minor (supported-runtime contract change, no new features).
+
     2.0.4  Refactored extraction internals by splitting Expand-ZipSmart into
            mode-specific helpers: Expand-ZipToSubfolder and Expand-ZipFlat.
            Expand-ZipSmart now acts as a dispatcher only (no behavior changes).
@@ -153,9 +166,7 @@
            table summary, ms in duration, and expanded docs/FAQ.
     ── Setup / Module check ─────────────────────────────────────────────────────
     Expand-Archive is provided by Microsoft.PowerShell.Archive.
-    • PowerShell 5.1: The module is included with Windows Management Framework 5.1.
-      (Install-Module is generally for PowerShell 7+. On 5.1 you normally already have it.)
-    • PowerShell 7+: If missing, install from PSGallery:
+    If missing on PowerShell 7+, install from PSGallery:
         Install-Module -Name Microsoft.PowerShell.Archive -Scope CurrentUser -Force
       (You may need: Set-PSRepository PSGallery -InstallationPolicy Trusted)
 
@@ -274,7 +285,7 @@ function Get-ZipFileStats {
     }
 
     try {
-        $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+        $zip = [ZipFile]::OpenRead($ZipPath)
         try {
             foreach ($entry in $zip.Entries) {
                 if ($entry.Name) {
@@ -366,7 +377,7 @@ function Expand-ZipFlat {
 
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
-        $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+        $zip = [ZipFile]::OpenRead($ZipPath)
         try {
             foreach ($entry in $zip.Entries) {
                 if ([string]::IsNullOrEmpty($entry.Name)) { continue }
@@ -394,7 +405,7 @@ function Expand-ZipFlat {
                 }
 
                 try {
-                    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, ($CollisionPolicy -eq 'Overwrite'))
+                    [ZipFileExtensions]::ExtractToFile($entry, $targetPath, ($CollisionPolicy -eq 'Overwrite'))
                     $written++
                 } catch {
                     $emsg = $_.Exception.Message
@@ -700,7 +711,7 @@ function Move-ZipFilesToParent {
 #------------------------------- Main -------------------------------#
 
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-$errors = New-Object System.Collections.Generic.List[string]
+$errors = [List[string]]::new()
 
 # State for summary
 $zipCount = 0
