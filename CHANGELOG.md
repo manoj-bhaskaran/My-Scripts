@@ -54,12 +54,20 @@ Entries older than the current minor release line are condensed to architectural
   - Added warning/error counter APIs to `PowerShellLoggingFramework` (`Get-LogWarningCount`, `Get-LogErrorCount`, `Reset-LogCounters`) and updated FileDistributor end-of-script/summary paths to source totals from the logging framework.
   - Bumped versions: `FileDistributor.ps1` to `4.8.4` and `PowerShellLoggingFramework` module to `2.0.1`.
 
-- **Expand-ZipsAndClean.ps1** bumped to v2.0.1 (issue #937)
-  - Refactored: seven generic helper functions moved to `FileSystem.psm1` module
-    for reuse across other scripts (no behavioral changes to script)
-  - Removed from script: `Get-FullPath`, `Format-Bytes`, `Resolve-UniquePathCore`,
-    `Resolve-UniquePath`, `Resolve-UniqueDirectoryPath`, `Get-SafeName`,
-    `Test-LongPathsEnabled` (now imported via `FileSystem.psm1`)
+- **Expand-ZipsAndClean.ps1** bumped to v2.0.3 (issues #937, #938)
+  - v2.0.1: Refactored seven generic helper functions into `FileSystem.psm1`
+    for reuse across scripts (no behavioral changes).
+  - v2.0.2: Refactored main execution into named phase helpers:
+    `Test-ScriptPreconditions`, `Initialize-Destination`,
+    `Invoke-ZipExtractions`, `Move-ZipFilesToParent`, and
+    `Remove-SourceDirectory`.
+  - v2.0.3: Review follow-up — added comment-based help blocks to extracted
+    phase functions for readability/documentation consistency; no behavior
+    changes.
+  - Renamed `Move-Zips-ToParent` to `Move-ZipFilesToParent` to align with
+    PowerShell Verb-Noun naming conventions.
+  - Removed duplicate historical entries (`1.1.1`–`1.2.2`) from the script
+    `.NOTES` version history block.
 
 - **Sync-MacriumBackups.ps1** bumped to v2.7.2
   - v2.7.0: Extracted all eight state management functions into the new `BackupState`

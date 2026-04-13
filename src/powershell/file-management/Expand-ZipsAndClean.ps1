@@ -93,12 +93,24 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.0.1
+    Version  : 2.0.3
     Author   : Manoj Bhaskaran
     Requires : PowerShell 5.1 or 7+, Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.0.3  Review follow-up: added comment-based help to extracted phase functions
+           (Test-ScriptPreconditions, Initialize-Destination, Invoke-ZipExtractions,
+           Remove-SourceDirectory) for clarity and script documentation consistency.
+           No behavioral changes.
+
+    2.0.2  Refactored orchestration into named phase functions:
+           - Test-ScriptPreconditions, Initialize-Destination,
+             Invoke-ZipExtractions, Move-ZipFilesToParent, Remove-SourceDirectory
+           Renamed Move-Zips-ToParent -> Move-ZipFilesToParent to follow Verb-Noun.
+           Removed duplicate 1.1.1-1.2.2 entries from version history block.
+           Script behavior unchanged.
+
     2.0.1  Refactored: Moved generic helper functions to FileSystem.psm1 module
            for shared reuse across scripts. Moved functions:
            - Get-FullPath, Format-Bytes, Resolve-UniquePathCore
@@ -135,24 +147,6 @@
            for password-protected zips, unique subfolder naming if exists, parent
            writability check, optional -CleanNonZips, consistent summary printing,
            table summary, ms in duration, and expanded docs/FAQ.
-    1.1.1  Safety/UX: guard against same/overlapping source/destination, optional
-           MaxSafeNameLength, per-file move progress, compression ratio, de-duped
-           suffix logic, directory write probe, docs for novices, PS 5.1 note.
-    1.1.2  Quick wins: path separator normalization for comparisons, verbose notice
-           on truncation, bytes shown in move progress, compression ratio rounded
-           to 1 decimal, `.EXAMPLE` for MaxSafeNameLength + -Verbose, notes on
-           typical MaxSafeNameLength values, FAQ includes 7-Zip example.
-    1.2.0  Flat mode now streams via ZipArchive (no temp folder; pre-check collisions);
-           function-level help & more inline comments; cache minor lookups;
-           progress shows cumulative bytes moved; docs extend security caveats and
-           rationale for 255-char limit; notes clarify ratio meaning.
-    1.2.1  Docs/UX polish: .NOTES calls out Zip Slip protection; parameter doc & NOTES
-           reiterate 255-char rationale; verbose truncation message retained (with
-           original length); clarify ExtractToFile overwrite flag comment; progress shows
-           total bytes target; FAQ explains CompressionRatio; minor comments on caching.
-    1.2.2  Fixes & UX: Move Format-Bytes to Helpers (scope); adaptive summary layout
-           (table for wide consoles, list for narrow) to prevent header wrapping.
-
     ── Setup / Module check ─────────────────────────────────────────────────────
     Expand-Archive is provided by Microsoft.PowerShell.Archive.
     • PowerShell 5.1: The module is included with Windows Management Framework 5.1.
@@ -406,9 +400,183 @@ function Expand-ZipSmart {
 
 <#
 .SYNOPSIS
+    Validates source/destination safety constraints before any file operations.
+#>
+function Test-ScriptPreconditions {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SourceDir,
+        [Parameter(Mandatory)][string]$DestinationDir
+    )
+
+    $srcFull = Get-FullPath -Path $SourceDir
+    $dstFull = Get-FullPath -Path $DestinationDir
+
+    if ($srcFull -eq $dstFull) {
+        throw "Source and destination cannot be the same: $srcFull"
+    }
+
+    $srcWithSep = if ($srcFull.EndsWith('\')) { $srcFull } else { $srcFull + '\' }
+    $dstWithSep = if ($dstFull.EndsWith('\')) { $dstFull } else { $dstFull + '\' }
+
+    if ($dstWithSep.StartsWith($srcWithSep, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Destination cannot be inside the source directory."
+    }
+    if ($srcWithSep.StartsWith($dstWithSep, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Source cannot be inside the destination directory."
+    }
+
+    if (-not (Test-Path -LiteralPath $SourceDir)) {
+        throw "Source directory not found: $SourceDir"
+    }
+
+    if (-not (Test-LongPathsEnabled)) {
+        Write-LogDebug "LongPathsEnabled=0; consider enabling to avoid path-length issues."
+    }
+}
+
+<#
+.SYNOPSIS
+    Ensures destination root exists before extraction begins.
+#>
+function Initialize-Destination {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$DestinationDir)
+
+    if (-not (Test-Path -LiteralPath $DestinationDir)) {
+        if ($PSCmdlet.ShouldProcess($DestinationDir, "Create destination directory")) {
+            New-DirectoryIfMissing -Path $DestinationDir -Force | Out-Null
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Extracts all zip files from source to destination and returns summary totals.
+#>
+function Invoke-ZipExtractions {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SourceDir,
+        [Parameter(Mandatory)][string]$DestinationDir,
+        [Parameter(Mandatory)][string]$Mode,
+        [Parameter(Mandatory)][string]$Policy,
+        [Parameter(Mandatory)][int]$SafeNameMaxLen,
+        [Parameter(Mandatory)][bool]$QuietMode,
+        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$ErrorList
+    )
+
+    $processedZips = 0
+    $totalFilesExtracted = 0
+    $totalUncompressedBytes = [int64]0
+    $totalCompressedZipBytes = [int64]0
+
+    $zips = @(Get-ChildItem -LiteralPath $SourceDir -Filter *.zip -File -ErrorAction Stop)
+    $zipCount = $zips.Count
+
+    Write-LogInfo "Found $zipCount zip file(s) in: $SourceDir"
+    Write-LogInfo "Extracting to: $DestinationDir (Mode: $Mode, Policy: $Policy)"
+
+    if ($zipCount -gt 0) {
+        $index = 0
+        foreach ($zip in $zips) {
+            $index++
+            try {
+                if (-not $QuietMode) {
+                    $pct = [int](($index - 1) / [math]::Max(1, $zipCount) * 100)
+                    Write-Progress -Activity "Extracting archives" -Status $zip.Name -PercentComplete $pct
+                }
+
+                if ($PSCmdlet.ShouldProcess($zip.FullName, "Extract")) {
+                    $stats = Get-ZipFileStats -ZipPath $zip.FullName
+                    $stats.CompressedBytes = [int64]$zip.Length
+
+                    $filesFromZip = Expand-ZipSmart -ZipPath $zip.FullName `
+                        -DestinationRoot $DestinationDir `
+                        -ExtractMode $Mode `
+                        -CollisionPolicy $Policy `
+                        -SafeNameMaxLen $SafeNameMaxLen
+
+                    $totalFilesExtracted += (($filesFromZip -is [int]) ? $filesFromZip : $stats.FileCount)
+                    $totalUncompressedBytes += $stats.UncompressedBytes
+                    $totalCompressedZipBytes += $stats.CompressedBytes
+                    $processedZips++
+                    Write-LogDebug "Extracted '$($zip.Name)': files=$($stats.FileCount), uncompressed=$($stats.UncompressedBytes), compressed=$($stats.CompressedBytes)"
+                }
+            } catch {
+                $msg = $_.Exception.Message
+                $ErrorList.Add("Extraction failed for '$($zip.FullName)': $msg") | Out-Null
+                Write-LogDebug $msg
+            }
+        }
+
+        if (-not $QuietMode) {
+            Write-Progress -Activity "Extracting archives" -Completed
+        }
+    }
+
+    return [pscustomobject]@{
+        ZipCount = $zipCount
+        ProcessedZips = $processedZips
+        FilesExtracted = $totalFilesExtracted
+        UncompressedBytes = $totalUncompressedBytes
+        CompressedBytes = $totalCompressedZipBytes
+    }
+}
+
+<#
+.SYNOPSIS
+    Optionally cleans non-zip leftovers and removes the source directory.
+#>
+function Remove-SourceDirectory {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SourceDir,
+        [Parameter(Mandatory)][bool]$ShouldDeleteSource,
+        [Parameter(Mandatory)][bool]$ShouldCleanNonZips,
+        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$ErrorList
+    )
+
+    if (-not $ShouldDeleteSource) {
+        return
+    }
+
+    try {
+        $remaining = Get-ChildItem -LiteralPath $SourceDir -Recurse -Force -ErrorAction SilentlyContinue
+        $nonZips = @($remaining | Where-Object { (-not $_.PSIsContainer -and $_.Extension -ne '.zip') -or $_.PSIsContainer })
+        if ($nonZips.Count -gt 0 -and -not $ShouldCleanNonZips) {
+            $ErrorList.Add("DeleteSource skipped: non-zip items remain. Use -CleanNonZips to remove them.") | Out-Null
+            Write-LogDebug ("Remaining items: `n" + ($nonZips | Select-Object -ExpandProperty FullName | Out-String))
+            return
+        }
+
+        if ($ShouldCleanNonZips -and $nonZips.Count -gt 0) {
+            if ($PSCmdlet.ShouldProcess($SourceDir, "Clean non-zip items before delete")) {
+                $nonZips | ForEach-Object {
+                    try {
+                        Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+                    } catch {
+                        $ErrorList.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null
+                    }
+                }
+            }
+        }
+
+        if ($PSCmdlet.ShouldProcess($SourceDir, "Delete source directory")) {
+            Remove-Item -LiteralPath $SourceDir -Recurse -Force
+        }
+    } catch {
+        $msg = "Failed to delete source directory '$SourceDir': $($_.Exception.Message)"
+        Write-LogDebug $msg
+        $ErrorList.Add($msg) | Out-Null
+    }
+}
+
+<#
+.SYNOPSIS
     Moves .zip files from SourceDir to its parent folder with per-file progress.
 #>
-function Move-Zips-ToParent {
+function Move-ZipFilesToParent {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$SourceDir)
 
@@ -478,89 +646,27 @@ $totalCompressedZipBytes = [int64]0
 $moveSummary = [pscustomobject]@{ Count = 0; Bytes = 0; Destination = "" }
 
 try {
-    # Guard: same/overlapping paths (prevent destructive/undefined behaviors)
-    $srcFull = Get-FullPath -Path $SourceDirectory
-    $dstFull = Get-FullPath -Path $DestinationDirectory
+    Test-ScriptPreconditions -SourceDir $SourceDirectory -DestinationDir $DestinationDirectory
+    Initialize-Destination -DestinationDir $DestinationDirectory
 
-    if ($srcFull -eq $dstFull) {
-        throw "Source and destination cannot be the same: $srcFull"
-    }
+    $extractionResult = Invoke-ZipExtractions `
+        -SourceDir $SourceDirectory `
+        -DestinationDir $DestinationDirectory `
+        -Mode $ExtractMode `
+        -Policy $CollisionPolicy `
+        -SafeNameMaxLen $MaxSafeNameLength `
+        -QuietMode $Quiet.IsPresent `
+        -ErrorList $errors
 
-    # Add trailing backslash for containment tests (use normalized paths)
-    $srcWithSep = if ($srcFull.EndsWith('\')) { $srcFull } else { $srcFull + '\' }
-    $dstWithSep = if ($dstFull.EndsWith('\')) { $dstFull } else { $dstFull + '\' }
+    $zipCount = $extractionResult.ZipCount
+    $processedZips = $extractionResult.ProcessedZips
+    $totalFilesExtracted = $extractionResult.FilesExtracted
+    $totalUncompressedBytes = $extractionResult.UncompressedBytes
+    $totalCompressedZipBytes = $extractionResult.CompressedBytes
 
-    if ($dstWithSep.StartsWith($srcWithSep, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Destination cannot be inside the source directory."
-    }
-    if ($srcWithSep.StartsWith($dstWithSep, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Source cannot be inside the destination directory."
-    }
-
-    if (-not (Test-Path -LiteralPath $SourceDirectory)) {
-        throw "Source directory not found: $SourceDirectory"
-    }
-
-    # Destination readiness
-    if (-not (Test-Path -LiteralPath $DestinationDirectory)) {
-        if ($PSCmdlet.ShouldProcess($DestinationDirectory, "Create destination directory")) {
-            New-DirectoryIfMissing -Path $DestinationDirectory -Force | Out-Null
-        }
-    }
-
-    if (-not (Test-LongPathsEnabled)) {
-        Write-LogDebug "LongPathsEnabled=0; consider enabling to avoid path-length issues."
-    }
-
-    $zips = @(Get-ChildItem -LiteralPath $SourceDirectory -Filter *.zip -File -ErrorAction Stop)
-    $zipCount = $zips.Count
-
-    Write-LogInfo "Found $zipCount zip file(s) in: $SourceDirectory"
-    Write-LogInfo "Extracting to: $DestinationDirectory (Mode: $ExtractMode, Policy: $CollisionPolicy)"
-
-    if ($zipCount -gt 0) {
-        $index = 0
-        foreach ($zip in $zips) {
-            $index++
-            try {
-                if (-not $Quiet) {
-                    $pct = [int](($index - 1) / [math]::Max(1, $zipCount) * 100)
-                    Write-Progress -Activity "Extracting archives" -Status $zip.Name -PercentComplete $pct
-                }
-
-                if ($PSCmdlet.ShouldProcess($zip.FullName, "Extract")) {
-                    $stats = Get-ZipFileStats -ZipPath $zip.FullName
-                    # Cache compressed bytes from the FileInfo to avoid redundant Get-Item
-                    $stats.CompressedBytes = [int64]$zip.Length
-
-                    $filesFromZip = Expand-ZipSmart -ZipPath $zip.FullName `
-                        -DestinationRoot $DestinationDirectory `
-                        -ExtractMode $ExtractMode `
-                        -CollisionPolicy $CollisionPolicy `
-                        -SafeNameMaxLen $MaxSafeNameLength
-
-                    $totalFilesExtracted += ( ($filesFromZip -is [int]) ? $filesFromZip : $stats.FileCount )
-                    $totalUncompressedBytes += $stats.UncompressedBytes
-                    $totalCompressedZipBytes += $stats.CompressedBytes
-                    $processedZips++
-                    Write-LogDebug "Extracted '$($zip.Name)': files=$($stats.FileCount), uncompressed=$($stats.UncompressedBytes), compressed=$($stats.CompressedBytes)"
-                }
-            } catch {
-                $msg = $_.Exception.Message
-                $errors.Add("Extraction failed for '$($zip.FullName)': $msg") | Out-Null
-                Write-LogDebug $msg
-            }
-        }
-
-        if (-not $Quiet) {
-            Write-Progress -Activity "Extracting archives" -Completed
-        }
-    }
-
-    # Move zips to parent
     try {
         if ($PSCmdlet.ShouldProcess($SourceDirectory, "Move .zip files to parent")) {
-            $moveSummary = Move-Zips-ToParent -SourceDir $SourceDirectory
+            $moveSummary = Move-ZipFilesToParent -SourceDir $SourceDirectory
         }
     } catch {
         $msg = "Moving .zip files to parent failed: $($_.Exception.Message)"
@@ -568,35 +674,11 @@ try {
         $errors.Add($msg) | Out-Null
     }
 
-    # Optionally delete/clean source directory
-    if ($DeleteSource) {
-        try {
-            # If not cleaning non-zips, warn and list if anything other than zip remains
-            # (We include containers in "non-zips" to catch leftover directories.)
-            $remaining = Get-ChildItem -LiteralPath $SourceDirectory -Recurse -Force -ErrorAction SilentlyContinue
-            $nonZips = @($remaining | Where-Object { -not $_.PSIsContainer -and $_.Extension -ne '.zip' -or $_.PSIsContainer })
-            if ($nonZips.Count -gt 0 -and -not $CleanNonZips) {
-                $errors.Add("DeleteSource skipped: non-zip items remain. Use -CleanNonZips to remove them.") | Out-Null
-                Write-LogDebug ("Remaining items: `n" + ($nonZips | Select-Object -ExpandProperty FullName | Out-String))
-            } else {
-                if ($CleanNonZips -and $nonZips.Count -gt 0) {
-                    if ($PSCmdlet.ShouldProcess($SourceDirectory, "Clean non-zip items before delete")) {
-                        # Remove non-zip files and directories
-                        $nonZips | ForEach-Object {
-                            try { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop } catch { $errors.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null }
-                        }
-                    }
-                }
-                if ($PSCmdlet.ShouldProcess($SourceDirectory, "Delete source directory")) {
-                    Remove-Item -LiteralPath $SourceDirectory -Recurse -Force
-                }
-            }
-        } catch {
-            $msg = "Failed to delete source directory '$SourceDirectory': $($_.Exception.Message)"
-            Write-LogDebug $msg
-            $errors.Add($msg) | Out-Null
-        }
-    }
+    Remove-SourceDirectory `
+        -SourceDir $SourceDirectory `
+        -ShouldDeleteSource $DeleteSource.IsPresent `
+        -ShouldCleanNonZips $CleanNonZips.IsPresent `
+        -ErrorList $errors
 
 } catch {
     $errors.Add("Fatal error: $($_.Exception.Message)") | Out-Null
