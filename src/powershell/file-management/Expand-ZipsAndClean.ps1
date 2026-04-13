@@ -617,7 +617,7 @@ function Invoke-ZipExtractions {
     Optionally cleans non-zip leftovers and removes the source directory.
 #>
 function Remove-SourceDirectory {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory)][string]$SourceDir,
         [Parameter(Mandatory)][bool]$ShouldDeleteSource,
