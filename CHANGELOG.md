@@ -15,6 +15,15 @@ Entries older than the current minor release line are condensed to architectural
 
 ### Fixed
 
+- **[Expand-ZipsAndClean] Remove-SourceDirectory non-zip filter and deletion ordering** (issue #970)
+  - Simplified the non-zip filter from `(-not $_.PSIsContainer -and $_.Extension -ne '.zip') -or $_.PSIsContainer` to `$_.PSIsContainer -or $_.Extension -ne '.zip'`, dropping the dead `.zip`-exclusion branch (all zips have already been moved by `Move-ZipFilesToParent` before this function runs).
+  - Warning message now differentiates between "only empty subdirectories remain" and "non-zip files present" so the caller understands why deletion was blocked.
+  - When `-CleanNonZips` is specified, items are now sorted by `FullName` descending (deepest paths first) before removal, preventing "directory not empty" errors on nested trees.
+  - `Get-ChildItem` is now invoked with `-ErrorVariable` so unreadable items surface as `Write-Warning` output rather than being silently dropped.
+  - Script version bumped to **2.1.1** (patch; correctness fix, no new features).
+  - Updated `-DeleteSource` / `-CleanNonZips` parameter help in comment-based documentation.
+  - Added four Pester `It` blocks in `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1` covering: empty-subdir-only, non-zip-files-present, nested-tree CleanNonZips (deepest-first), and unreadable-item warning.
+
 - **Expand-ZipsAndClean Pester dispatcher mock coverage** (issue #939)
   - Updated `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1` to explicitly mock `Expand-ZipFlat` in the `PerArchiveSubfolder` dispatcher test so `Should -Invoke Expand-ZipFlat -Times 0` assertions resolve cleanly in CI.
 
