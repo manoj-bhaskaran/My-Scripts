@@ -14,10 +14,16 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
 
         $helpers = $scriptText.Substring($helpersStart, $helpersEnd - $helpersStart)
 
+        # Prepend using-namespace declarations so that short type aliases (e.g. [ZipFile],
+        # [List[string]]) resolve when the helpers block is evaluated via Invoke-Expression.
+        $usingLines = ($scriptText -split "`n" |
+            Where-Object { $_ -match '^\s*using\s+namespace\s+' }) -join "`n"
+        $helpersWithUsing = $usingLines + "`n" + $helpers
+
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
 
         function Write-LogDebug { param([string]$Message) }
-        Invoke-Expression $helpers
+        Invoke-Expression $helpersWithUsing
     }
 
     It 'defines mode-specific helper functions and dispatcher' {
