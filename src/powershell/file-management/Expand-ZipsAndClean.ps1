@@ -657,12 +657,14 @@ function Remove-SourceDirectory {
             }
         }
 
-        # Delete the source directory itself (no ShouldProcess check needed since $ShouldDeleteSource is explicit)
+        # Delete the source directory itself (no ShouldProcess check needed since $ShouldDeleteSource is explicit).
+        # Use SilentlyContinue for the recursive pass because on Linux Remove-Item
+        # -Recurse can emit non-terminating errors while still removing most content
+        # (PowerShell #8211).  A follow-up Remove-Item without -Recurse handles the
+        # leftover empty shell; only that final attempt uses -ErrorAction Stop.
         if (Test-Path -LiteralPath $SourceDir) {
-            Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction Stop
+            Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction SilentlyContinue
         }
-        # Defensive: on some platforms Remove-Item -Recurse can leave the root
-        # directory behind (PowerShell #8211); remove the now-empty shell.
         if (Test-Path -LiteralPath $SourceDir) {
             Remove-Item -LiteralPath $SourceDir -Force -ErrorAction Stop
         }
