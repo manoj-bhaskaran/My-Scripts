@@ -13,6 +13,11 @@ Entries older than the current minor release line are condensed to architectural
 
 ## [Unreleased]
 
+### Fixed
+
+- **Expand-ZipsAndClean Pester dispatcher mock coverage** (issue #939)
+  - Updated `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1` to explicitly mock `Expand-ZipFlat` in the `PerArchiveSubfolder` dispatcher test so `Should -Invoke Expand-ZipFlat -Times 0` assertions resolve cleanly in CI.
+
 ### Added
 
 - **FileSystem module** bumped to v1.1.0 (issue #937)

@@ -31,6 +31,7 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
         Mock Get-FullPath { '/tmp/dest' }
         Mock Get-SafeName { 'safe-name' }
         Mock Expand-ZipToSubfolder { 7 }
+        Mock Expand-ZipFlat { 0 }
 
         $result = Expand-ZipSmart -ZipPath '/tmp/a.zip' -DestinationRoot '/tmp/dest' -ExtractMode PerArchiveSubfolder -SafeNameMaxLen 80
 
