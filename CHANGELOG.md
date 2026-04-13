@@ -54,7 +54,8 @@ Entries older than the current minor release line are condensed to architectural
   - Added warning/error counter APIs to `PowerShellLoggingFramework` (`Get-LogWarningCount`, `Get-LogErrorCount`, `Reset-LogCounters`) and updated FileDistributor end-of-script/summary paths to source totals from the logging framework.
   - Bumped versions: `FileDistributor.ps1` to `4.8.4` and `PowerShellLoggingFramework` module to `2.0.1`.
 
-- **Expand-ZipsAndClean.ps1** bumped to v2.0.3 (issues #937, #938)
+- **Expand-ZipsAndClean.ps1** bumped to v2.0.4 (issues #937, #938, #939)
+  - v2.0.4: Split `Expand-ZipSmart` extraction internals into mode-specific helpers (`Expand-ZipToSubfolder` and `Expand-ZipFlat`) and kept `Expand-ZipSmart` as a dispatcher-only compatibility wrapper. Added Pester coverage for dispatcher routing and flat-mode extraction safety/collision behavior.
   - v2.0.1: Refactored seven generic helper functions into `FileSystem.psm1`
     for reuse across scripts (no behavioral changes).
   - v2.0.2: Refactored main execution into named phase helpers:
