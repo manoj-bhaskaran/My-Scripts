@@ -539,7 +539,7 @@ function Invoke-ZipExtractions {
         [Parameter(Mandatory)][string]$Policy,
         [Parameter(Mandatory)][int]$SafeNameMaxLen,
         [Parameter(Mandatory)][bool]$QuietMode,
-        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$ErrorList
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
     )
 
     $processedZips = 0
@@ -610,7 +610,7 @@ function Remove-SourceDirectory {
         [Parameter(Mandatory)][string]$SourceDir,
         [Parameter(Mandatory)][bool]$ShouldDeleteSource,
         [Parameter(Mandatory)][bool]$ShouldCleanNonZips,
-        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$ErrorList
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
     )
 
     if (-not $ShouldDeleteSource) {
