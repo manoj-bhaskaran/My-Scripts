@@ -1,5 +1,24 @@
 # CHANGELOG — FileDistributor
 
+## 4.9.2 — 2026-04-22
+
+### Fixed
+
+- Fixed `InvalidOperation: Unable to find type [FileDistributorRunState]` when running `FileDistributor.ps1` (regression introduced in 4.9.0). `Import-Module` does not export PowerShell class types to the caller's scope, so the entry script could not construct `[FileDistributorRunState]::new()` directly. The script now obtains its run state from a module-scope factory function.
+
+### Added
+
+- Added public module function `New-FileDistributorRunState` (`Public/New-FileDistributorRunState.ps1`) that returns a fresh `[FileDistributorRunState]` instance. The function runs in module scope where the class type is visible and is exported via `FileDistributor.psd1`.
+
+### Changed
+
+- Replaced `[FileDistributorRunState]::new()` at `FileDistributor.ps1` startup with `New-FileDistributorRunState`. No behavior change; the returned object is identical.
+
+### Versioning
+
+- Bumped `FileDistributor.ps1` script version to `4.9.2`.
+- Bumped `FileDistributor` module version to `1.3.2`.
+
 ## 4.9.1 — 2026-04-12
 
 ### Changed

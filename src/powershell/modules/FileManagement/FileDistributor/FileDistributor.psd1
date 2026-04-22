@@ -1,6 +1,6 @@
 @{
     RootModule        = 'FileDistributor.psm1'
-    ModuleVersion     = '1.3.1'
+    ModuleVersion     = '1.3.2'
     GUID              = '7ce4ef6c-cc9f-4c89-a0d9-6c2751f4f0df'
     Author            = 'Manoj Bhaskaran'
     CompanyName       = 'Unknown'
@@ -12,6 +12,7 @@
         'Invoke-ParameterValidation',
         'Invoke-RestoreCheckpoint',
         'New-CheckpointPayload',
+        'New-FileDistributorRunState',
         'Invoke-DistributionPhase',
         'Invoke-PostProcessingPhase',
         'Invoke-EndOfScriptDeletion',
