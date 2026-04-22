@@ -325,12 +325,19 @@ Describe 'FileDistributor Module Public API' {
         $functionContent | Should -Match 'Get-NextQueueItem\s+-Queue\s+\$RunState\.FilesToDelete\s+-Peek'
     }
 
+    It 'New-FileDistributorRunState should return a FileDistributorRunState instance callable from script scope' {
+        $runState = New-FileDistributorRunState
+        $runState | Should -Not -BeNullOrEmpty
+        $runState.GetType().Name | Should -Be 'FileDistributorRunState'
+    }
+
     It 'Should expose the complete expected function API through module exports' {
         $expectedExports = @(
             'Initialize-FileDistributorPaths',
             'Invoke-ParameterValidation',
             'Invoke-RestoreCheckpoint',
             'New-CheckpointPayload',
+            'New-FileDistributorRunState',
             'Invoke-DistributionPhase',
             'Invoke-PostProcessingPhase',
             'Invoke-EndOfScriptDeletion',

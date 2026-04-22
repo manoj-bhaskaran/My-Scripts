@@ -14,6 +14,11 @@
 
 - Replaced `[FileDistributorRunState]::new()` at `FileDistributor.ps1` startup with `New-FileDistributorRunState`. No behavior change; the returned object is identical.
 
+### Tests
+
+- Added `New-FileDistributorRunState` to the expected-exports list in `FileDistributor.Tests.ps1` so the public-API contract test matches the new export.
+- Added a behavioral test verifying `New-FileDistributorRunState` returns a `FileDistributorRunState` instance from script scope (the scenario the fix enables).
+
 ### Versioning
 
 - Bumped `FileDistributor.ps1` script version to `4.9.2`.
