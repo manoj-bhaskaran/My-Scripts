@@ -8,7 +8,7 @@
 
 function New-FileDistributorRunState {
     [CmdletBinding()]
-    [OutputType([FileDistributorRunState])]
+    [OutputType('FileDistributorRunState')]
     param()
 
     return [FileDistributorRunState]::new()
