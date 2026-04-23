@@ -650,10 +650,16 @@ function Remove-SourceDirectory {
         if ($ShouldCleanNonZips -and $nonZips.Count -gt 0) {
             # Best-effort per-item removal deepest-first for diagnostics; the final
             # Remove-Item -Recurse on the source directory handles any remainders.
-            $nonZips | Sort-Object -Property { $_.FullName.Length } -Descending | ForEach-Object {
+            $nonZips | Sort-Object -Property {
+                ($_.FullName -split '[\\/]').Count
+            } -Descending | ForEach-Object {
                 try {
                     if (Test-Path -LiteralPath $_.FullName) {
-                        Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                        if ($_.PSIsContainer) {
+                            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+                        } else {
+                            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                        }
                     }
                 } catch {
                     $ErrorList.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null
