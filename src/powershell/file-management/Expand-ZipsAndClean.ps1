@@ -650,9 +650,13 @@ function Remove-SourceDirectory {
         if ($ShouldCleanNonZips -and $nonZips.Count -gt 0) {
             # Best-effort per-item removal deepest-first for diagnostics; the final
             # Remove-Item -Recurse on the source directory handles any remainders.
-            $nonZips | Sort-Object -Property FullName -Descending | ForEach-Object {
-                if (Test-Path -LiteralPath $_.FullName) {
-                    Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+            $nonZips | Sort-Object -Property { $_.FullName.Length } -Descending | ForEach-Object {
+                try {
+                    if (Test-Path -LiteralPath $_.FullName) {
+                        Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                    }
+                } catch {
+                    $ErrorList.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null
                 }
             }
         }
@@ -666,7 +670,11 @@ function Remove-SourceDirectory {
             Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction SilentlyContinue
         }
         if (Test-Path -LiteralPath $SourceDir) {
-            Remove-Item -LiteralPath $SourceDir -Force -ErrorAction Stop
+            try {
+                Remove-Item -LiteralPath $SourceDir -Force -ErrorAction Stop
+            } catch {
+                $ErrorList.Add("Failed to delete source directory '$SourceDir': $($_.Exception.Message)") | Out-Null
+            }
         }
     } catch {
         $msg = "Failed to delete source directory '$SourceDir': $($_.Exception.Message)"
