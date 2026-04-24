@@ -45,6 +45,22 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 v2.1.5** (2026-04-24)
+  - Updated final source-directory delete error accounting: cleanup now records an error only when the source directory still exists after all delete attempts.
+  - Final retry exceptions are logged for diagnostics and only treated as failures if the directory remains.
+  - Version bump: `2.1.5` (patch — correctness fix, no feature change).
+- **Expand-ZipsAndClean.ps1 v2.1.4** (2026-04-24)
+  - Updated `Remove-SourceDirectory` cleanup error handling so per-item `-CleanNonZips` removals are best-effort (debug-log only) and do not mark the run as failed.
+  - `ErrorList` now reports only final source-directory deletion failures, matching end-state behavior.
+  - Version bump: `2.1.4` (patch — correctness fix, no feature change).
+- **Expand-ZipsAndClean.ps1 v2.1.3** (2026-04-24)
+  - Fixed `Remove-SourceDirectory` false-positive cleanup failures by recording removal errors only when the target path still exists after a caught `Remove-Item` exception.
+  - Applied the same existence guard to the final source-directory deletion retry path.
+  - Version bump: `2.1.3` (patch — correctness fix, no feature change).
+- **Expand-ZipsAndClean.ps1 v2.1.2** (2026-04-24)
+  - Fixed nested `-CleanNonZips` cleanup reliability in `Remove-SourceDirectory`: directories are now removed with `-Recurse` to prevent intermittent `directory not empty` cleanup errors.
+  - Added deterministic same-depth tie-breaking (`FullName` descending) in deepest-first cleanup ordering.
+  - Version bump: `2.1.2` (patch — bug fix, no feature change).
 - **Expand-ZipsAndClean.ps1 v2.1.0** (2026-04-13)
   - Added `#requires -Version 7.0` to enforce the PowerShell 7+ runtime at parse time (script already used the ternary operator which is PS 7-only).
   - Added `using namespace System.Collections.Generic` and `using namespace System.IO.Compression` declarations; shortened `List[string]`, `ZipFile`, and `ZipFileExtensions` type references accordingly.
