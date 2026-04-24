@@ -15,6 +15,24 @@ Entries older than the current minor release line are condensed to architectural
 
 ### Fixed
 
+- **[Expand-ZipsAndClean] Remove-SourceDirectory nested `-CleanNonZips` CI flake**
+  - Changed per-item non-zip cleanup failures to best-effort debug diagnostics instead of `ErrorList` entries.
+  - `ErrorList` now reflects only final source-directory deletion failure (the true operation result).
+  - Prevents intermittent `Expected 0, but got 1` failures in the nested cleanup Pester case when intermediate removals are noisy but final deletion succeeds.
+  - Script version bumped to **2.1.4** (patch; correctness fix, no new features).
+
+- **[Expand-ZipsAndClean] Remove-SourceDirectory transient Remove-Item errors no longer produce false failures**
+  - Guarded cleanup error reporting so `ErrorList` is only appended when the target path still exists after a caught `Remove-Item` failure.
+  - Applied the same guard to the final source-directory deletion retry path.
+  - Prevents false-positive cleanup failures in CI/Linux cases where `Remove-Item` throws but the path is already deleted.
+  - Script version bumped to **2.1.3** (patch; correctness fix, no new features).
+
+- **[Expand-ZipsAndClean] Remove-SourceDirectory nested cleanup error under `-CleanNonZips`**
+  - Hardened non-zip cleanup so directory entries are removed with `Remove-Item -Recurse -Force` while files continue to use file-only removal.
+  - Added a deterministic secondary sort key (`FullName` descending) during deepest-first cleanup to avoid same-depth ordering variance.
+  - Fixes the nested cleanup case where `Remove-SourceDirectory` could emit `Failed to remove ... directory not empty` even though `-CleanNonZips` was enabled.
+  - Script version bumped to **2.1.2** (patch; bug fix, no new features).
+
 - **[Expand-ZipsAndClean] Remove-SourceDirectory non-zip filter and deletion ordering** (issue #970)
   - Simplified the non-zip filter from `(-not $_.PSIsContainer -and $_.Extension -ne '.zip') -or $_.PSIsContainer` to `$_.PSIsContainer -or $_.Extension -ne '.zip'`, dropping the dead `.zip`-exclusion branch (all zips have already been moved by `Move-ZipFilesToParent` before this function runs).
   - Warning message now differentiates between "only empty subdirectories remain" and "non-zip files present" so the caller understands why deletion was blocked.

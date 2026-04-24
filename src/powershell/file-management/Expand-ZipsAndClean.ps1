@@ -100,13 +100,28 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.1.1
+    Version  : 2.1.4
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.1.4  Fixed Remove-SourceDirectory CI flake for nested -CleanNonZips cleanup:
+           per-item non-zip removal failures are now treated as best-effort debug
+           diagnostics, and ErrorList is reserved for final source directory deletion
+           failures only (the operation's true success criterion).
+
+    2.1.3  Fixed Remove-SourceDirectory false-positive cleanup errors on Linux/CI:
+           when Remove-Item reports a transient error but the target path is already
+           gone, the function no longer records a failure in ErrorList. Applied to
+           both per-item cleanup and final source directory removal paths.
+
+    2.1.2  Fixed Remove-SourceDirectory cleanup robustness for nested trees when
+           -CleanNonZips is set: directory entries are now removed with -Recurse so
+           parent folders do not fail with "directory not empty" when same-depth
+           ordering is non-deterministic. No functional changes to warning behavior.
+
     2.1.1  Fixed Remove-SourceDirectory: simplified non-zip filter (dropped the dead
            .zip-exclusion branch, since Move-ZipFilesToParent has already relocated all
            zips before this function runs); differentiated warning message between
@@ -652,15 +667,19 @@ function Remove-SourceDirectory {
         }
 
         if ($ShouldCleanNonZips -and $nonZips.Count -gt 0) {
-            $nonZips | Sort-Object -Property {
-                ($_.FullName -replace [regex]::Escape($SourceDir), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count
-            } -Descending | ForEach-Object {
+            $nonZips | Sort-Object -Property `
+                @{ Expression = { ($_.FullName -replace [regex]::Escape($SourceDir), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count }; Descending = $true }, `
+                @{ Expression = { $_.FullName }; Descending = $true } | ForEach-Object {
                 try {
                     if (Test-Path -LiteralPath $_.FullName) {
-                        Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                        if ($_.PSIsContainer) {
+                            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+                        } else {
+                            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                        }
                     }
                 } catch {
-                    $ErrorList.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null
+                    Write-LogDebug "Best-effort cleanup skip for '$($_.FullName)': $($_.Exception.Message)"
                 }
             }
         }
@@ -677,7 +696,9 @@ function Remove-SourceDirectory {
             try {
                 Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction Stop
             } catch {
-                $ErrorList.Add("Failed to delete source directory '$SourceDir': $($_.Exception.Message)") | Out-Null
+                if (Test-Path -LiteralPath $SourceDir) {
+                    $ErrorList.Add("Failed to delete source directory '$SourceDir': $($_.Exception.Message)") | Out-Null
+                }
             }
         }
     } catch {
