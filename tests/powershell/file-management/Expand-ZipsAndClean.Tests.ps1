@@ -179,21 +179,11 @@ Describe 'Remove-SourceDirectory' {
 
         Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $true -ErrorList $errors
 
-        # End-state is the real contract: the source directory must be gone.
-        Test-Path -LiteralPath $sourceDir | Should -BeFalse
-
-        # Remove-Item -Recurse -Force on Linux PowerShell can emit transient
-        # non-terminating errors during recursive cleanup while still deleting
-        # the content (PowerShell issue #8211). The function retries and logs
-        # those as debug output, but CI has intermittently surfaced one such
-        # leftover entry in $ErrorList. Rather than asserting an exact count,
-        # guard against errors that would indicate a *meaningful* regression
-        # (items not removed / permission issues) — transient recursive-remove
-        # noise on a dir that is ultimately gone is acceptable.
-        $meaningfulErrors = @($errors | Where-Object {
-            $_ -match 'non-zip files remain|only empty subdirectories remain|Access.*denied|permission denied|directory not empty'
-        })
-        $meaningfulErrors | Should -BeNullOrEmpty -Because ("expected no meaningful cleanup errors, got: " + ($errors -join '; '))
+        # End-state: the source directory must be gone. The -Because clause
+        # surfaces the actual $errors content so CI failures are self-diagnosing
+        # instead of requiring another round-trip.
+        Test-Path -LiteralPath $sourceDir | Should -BeFalse -Because ("errors: " + ($errors -join '; '))
+        $errors.Count | Should -Be 0 -Because ("errors: " + ($errors -join '; '))
     }
 
     It 'surfaces Get-ChildItem read errors as warnings rather than silently dropping them' {
