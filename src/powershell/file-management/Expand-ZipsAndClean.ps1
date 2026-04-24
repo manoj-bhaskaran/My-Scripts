@@ -704,6 +704,9 @@ function Remove-SourceDirectory {
             } catch {
                 $finalDeleteError = $_
                 Write-LogDebug "Final source delete retry raised an exception for '$SourceDir': $($_.Exception.Message)"
+                if (Test-Path -LiteralPath $SourceDir) {
+                    $ErrorList.Add("Failed to delete source directory '$SourceDir': $($_.Exception.Message)") | Out-Null
+                }
             }
         }
         if (Test-Path -LiteralPath $SourceDir) {
