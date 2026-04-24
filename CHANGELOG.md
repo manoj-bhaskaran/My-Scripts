@@ -13,7 +13,17 @@ Entries older than the current minor release line are condensed to architectural
 
 ## [Unreleased]
 
+### Security
+
+- **[requirements] Bumped `pytest` minimum to `9.0.3`** to resolve `GHSA-6w46-j5rx-g56g` (predictable `/tmp/pytest-of-{user}` directory name on UNIX enables local DoS / privilege escalation). Previous pin `pytest>=7.4.0,<9.0.0` excluded the fix; new pin is `pytest>=9.0.3,<10.0.0`.
+
 ### Fixed
+
+- **[Expand-ZipsAndClean] Remove-SourceDirectory double-counted delete failure and strict-mode sort noise**
+  - Final source-directory cleanup now records a delete failure in exactly one place, eliminating the `Expected 0, but got 2` Pester failure seen in CI when `Remove-Item` throws while the directory still exists.
+  - The failure is now recorded whenever the retry threw, regardless of whether a subsequent `Test-Path` reports the directory absent; this preserves error reporting when permission-denied ACLs make the path unreadable after a genuine `Remove-Item` failure (review feedback on 2.1.5).
+  - Wrapped the deepest-first `Sort-Object` expression in `@(...)` so `.Count` stays valid under `Set-StrictMode -Version Latest` for single-segment relative paths (previously emitted non-terminating `Count cannot be found` errors without breaking the sort).
+  - Script version bumped to **2.1.6** (patch; correctness fix, no new features).
 
 - **[Expand-ZipsAndClean] Remove-SourceDirectory final delete error accounting**
   - Final source-directory cleanup now appends to `ErrorList` only if `SourceDir` still exists after both deletion attempts complete.

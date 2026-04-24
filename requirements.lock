@@ -17,7 +17,7 @@ psycopg2==2.9.9
 pytz==2023.3
 
 # Development and testing dependencies
-pytest==7.4.3
+pytest==9.0.3
 pytest-cov==4.1.0
 pytest-mock==3.11.1
 
