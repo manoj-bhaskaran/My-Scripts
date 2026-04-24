@@ -18,8 +18,13 @@ pytz==2023.3
 
 # Development and testing dependencies
 pytest==9.0.3
+<<<<<<< 970-expand-zipsandclean-fix-remove-sourcedirectory-non-zip-filter-and-deletion-ordering
 pytest-cov==4.1.0
 pytest-mock==3.11.1
+=======
+pytest-cov==7.1.0
+pytest-mock==3.15.1
+>>>>>>> main
 
 # Code quality and formatting
 pre-commit==4.3.0
