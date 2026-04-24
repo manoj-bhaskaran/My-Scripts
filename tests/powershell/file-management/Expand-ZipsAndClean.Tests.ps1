@@ -120,3 +120,106 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
         Test-Path -LiteralPath (Join-Path (Split-Path -Parent $root) 'evil.txt') | Should -BeFalse
     }
 }
+
+Describe 'Remove-SourceDirectory' {
+    BeforeAll {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
+        $scriptText = Get-Content -LiteralPath $scriptPath -Raw
+
+        $helpersStart = $scriptText.IndexOf('#region Helpers')
+        $helpersEnd = $scriptText.IndexOf('#endregion Helpers')
+        if ($helpersStart -lt 0 -or $helpersEnd -lt 0) {
+            throw 'Failed to locate helpers region in Expand-ZipsAndClean.ps1'
+        }
+
+        $helpers = $scriptText.Substring($helpersStart, $helpersEnd - $helpersStart)
+        $usingLines = ($scriptText -split "`n" |
+            Where-Object { $_ -match '^\s*using\s+namespace\s+' }) -join "`n"
+        $helpersWithUsing = $usingLines + "`n" + $helpers
+
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+
+        function Write-LogDebug { param([string]$Message) }
+        Invoke-Expression $helpersWithUsing
+    }
+
+    It 'warns "only empty subdirectories remain" when source contains only empty subdirs and -CleanNonZips is not set' {
+        $sourceDir = Join-Path $TestDrive 'source-empty-subdir'
+        New-Item -ItemType Directory -Path (Join-Path $sourceDir 'sub') -Force | Out-Null
+        $errors = [System.Collections.Generic.List[string]]::new()
+
+        Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $false -ErrorList $errors
+
+        $errors.Count | Should -Be 1
+        $errors[0] | Should -BeLike '*only empty subdirectories remain*'
+        Test-Path -LiteralPath $sourceDir | Should -BeTrue
+    }
+
+    It 'warns "non-zip files remain" when source contains actual non-zip files and -CleanNonZips is not set' {
+        $sourceDir = Join-Path $TestDrive 'source-nonzip-files'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $sourceDir 'leftover.txt') -Value 'data'
+        $errors = [System.Collections.Generic.List[string]]::new()
+
+        Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $false -ErrorList $errors
+
+        $errors.Count | Should -Be 1
+        $errors[0] | Should -BeLike '*non-zip files remain*'
+        Test-Path -LiteralPath $sourceDir | Should -BeTrue
+    }
+
+    It 'deletes nested non-zip files deepest-first and removes source dir when -CleanNonZips is set' {
+        $sourceDir = Join-Path $TestDrive 'source-nested'
+        $nestedDir = Join-Path $sourceDir 'sub' | Join-Path -ChildPath 'nested'
+        New-Item -ItemType Directory -Path $nestedDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $nestedDir 'file.txt')  -Value 'nested content'
+        Set-Content -LiteralPath (Join-Path $sourceDir 'top.txt')   -Value 'top content'
+        $errors = [System.Collections.Generic.List[string]]::new()
+
+        Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $true -ErrorList $errors
+
+        # End-state: the source directory must be gone. Assemble a rich -Because
+        # clause so CI failures are self-diagnosing.
+        #
+        # On at least one GitHub Actions Linux runner configuration we observed
+        # a repeatable anomaly where Test-Path -LiteralPath returns $true for a
+        # path that [System.IO.Directory]::Exists, [System.IO.File]::Exists,
+        # and Get-ChildItem all report as non-existent (the latter throwing
+        # "Cannot find path ... it does not exist"). We therefore anchor the
+        # assertion on [System.IO.Directory]::Exists -- the same API the
+        # function uses to decide whether deletion succeeded -- and surface
+        # the other signals in the diagnostic for visibility.
+        $netDirExists  = [System.IO.Directory]::Exists($sourceDir)
+        $netFileExists = [System.IO.File]::Exists($sourceDir)
+        $psExists      = Test-Path -LiteralPath $sourceDir
+        $psType        = if ($psExists) {
+            "container=$(Test-Path -LiteralPath $sourceDir -PathType Container);leaf=$(Test-Path -LiteralPath $sourceDir -PathType Leaf)"
+        } else { '<n/a>' }
+        $remaining     = if ($psExists) {
+            try {
+                (Get-ChildItem -LiteralPath $sourceDir -Recurse -Force -ErrorAction Stop |
+                    ForEach-Object FullName) -join ', '
+            } catch { "<enum-failed: $($_.Exception.Message)>" }
+        } else { '<none>' }
+        $diag = "errors=[$($errors -join '; ')]; IO.Directory.Exists=$netDirExists; IO.File.Exists=$netFileExists; Test-Path=$psExists ($psType); sourceDir='$sourceDir'; remaining=[$remaining]"
+
+        $netDirExists | Should -BeFalse -Because $diag
+        $errors.Count | Should -Be 0    -Because $diag
+    }
+
+    It 'surfaces Get-ChildItem read errors as warnings rather than silently dropping them' {
+        $sourceDir = Join-Path $TestDrive 'source-unreadable'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+        Mock Get-ChildItem {
+            Write-Error 'Access to the path is denied.'
+        }
+        Mock Write-Warning {}
+        $errors = [System.Collections.Generic.List[string]]::new()
+
+        { Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $false -ErrorList $errors } |
+        Should -Not -Throw
+
+        Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -like '*scan*' }
+    }
+}

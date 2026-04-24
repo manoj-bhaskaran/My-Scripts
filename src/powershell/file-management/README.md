@@ -45,6 +45,36 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 v2.1.8** (2026-04-24)
+  - Resolved `SourceDir` to its native provider path before any `[System.IO.Directory]` call. `.NET` file APIs don't understand PowerShell PSDrives, so a PSDrive-qualified path (e.g. `TestDrive:\...` from Pester) was making `Directory.Exists` return `$false` and both delete attempts would skip silently, leaving the directory on disk with no error reported.
+  - Enriched Pester test `-Because` diagnostic to include `[IO.Directory]::Exists` / `Test-Path` / remaining-items state for self-diagnosing failures.
+  - Version bump: `2.1.8` (patch — correctness fix, no feature change).
+- **Expand-ZipsAndClean.ps1 v2.1.7** (2026-04-24)
+  - Replaced the two-pass `Remove-Item -Recurse -Force` source-directory deletion with `[System.IO.Directory]::Delete($path, recursive: $true)`, with `Remove-Item` retained as a single-shot fallback. Fixes the nested-cleanup Pester case on Linux CI where the source directory remained on disk even after its contents were removed.
+  - Captured the per-item cleanup pipeline value as `$item` before the `try`/`catch` to avoid a latent `$_` shadowing hazard under `Set-StrictMode -Version Latest`.
+  - Restored the strict `$errors.Count | Should -Be 0` assertion with a `-Because` clause that surfaces the actual error content on failure.
+  - Version bump: `2.1.7` (patch — correctness fix, no feature change).
+- **Expand-ZipsAndClean.ps1 v2.1.6** (2026-04-24)
+  - Fixed `Remove-SourceDirectory` double-counting of final delete failures: the retry exception and the trailing `Test-Path` check no longer both append an entry to `ErrorList`, eliminating the `Expected 0, but got 2` Pester failure observed in CI.
+  - Ensured a delete failure is reported whenever the retry threw — even if a subsequent `Test-Path` returns false (e.g. permission-denied ACLs on Linux/Windows) — addressing review feedback on 2.1.5.
+  - Hardened the deepest-first `Sort-Object` expression with `@(...)` so `.Count` remains valid under `Set-StrictMode -Version Latest` for single-segment relative paths (removes stderr noise without affecting sort order).
+  - Version bump: `2.1.6` (patch — correctness fix, no feature change).
+- **Expand-ZipsAndClean.ps1 v2.1.5** (2026-04-24)
+  - Updated final source-directory delete error accounting: cleanup now records an error only when the source directory still exists after all delete attempts.
+  - Final retry exceptions are logged for diagnostics and only treated as failures if the directory remains.
+  - Version bump: `2.1.5` (patch — correctness fix, no feature change).
+- **Expand-ZipsAndClean.ps1 v2.1.4** (2026-04-24)
+  - Updated `Remove-SourceDirectory` cleanup error handling so per-item `-CleanNonZips` removals are best-effort (debug-log only) and do not mark the run as failed.
+  - `ErrorList` now reports only final source-directory deletion failures, matching end-state behavior.
+  - Version bump: `2.1.4` (patch — correctness fix, no feature change).
+- **Expand-ZipsAndClean.ps1 v2.1.3** (2026-04-24)
+  - Fixed `Remove-SourceDirectory` false-positive cleanup failures by recording removal errors only when the target path still exists after a caught `Remove-Item` exception.
+  - Applied the same existence guard to the final source-directory deletion retry path.
+  - Version bump: `2.1.3` (patch — correctness fix, no feature change).
+- **Expand-ZipsAndClean.ps1 v2.1.2** (2026-04-24)
+  - Fixed nested `-CleanNonZips` cleanup reliability in `Remove-SourceDirectory`: directories are now removed with `-Recurse` to prevent intermittent `directory not empty` cleanup errors.
+  - Added deterministic same-depth tie-breaking (`FullName` descending) in deepest-first cleanup ordering.
+  - Version bump: `2.1.2` (patch — bug fix, no feature change).
 - **Expand-ZipsAndClean.ps1 v2.1.0** (2026-04-13)
   - Added `#requires -Version 7.0` to enforce the PowerShell 7+ runtime at parse time (script already used the ternary operator which is PS 7-only).
   - Added `using namespace System.Collections.Generic` and `using namespace System.IO.Compression` declarations; shortened `List[string]`, `ZipFile`, and `ZipFileExtensions` type references accordingly.

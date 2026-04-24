@@ -13,7 +13,63 @@ Entries older than the current minor release line are condensed to architectural
 
 ## [Unreleased]
 
+### Security
+
+- **[requirements] Bumped `pytest` minimum to `9.0.3`** to resolve `GHSA-6w46-j5rx-g56g` (predictable `/tmp/pytest-of-{user}` directory name on UNIX enables local DoS / privilege escalation). Previous pin `pytest>=7.4.0,<9.0.0` excluded the fix; new pin is `pytest>=9.0.3,<10.0.0`.
+
 ### Fixed
+
+- **[Expand-ZipsAndClean] Remove-SourceDirectory silent short-circuit on PSDrive-qualified `SourceDir`**
+  - `[System.IO.Directory]::Exists` / `::Delete` don't understand PowerShell PSDrives. A caller (or test harness) passing `TestDrive:\source-nested` would make `Directory.Exists` return `$false`, so both delete attempts were skipped and the function returned with `$errors` empty while the directory remained on disk — exactly the `"errors: , but got $true"` Pester failure that followed the 2.1.7 fix.
+  - Now resolves `SourceDir` to its native provider path (`(Resolve-Path -LiteralPath $SourceDir).ProviderPath`) upfront and uses the resolved path for every `[System.IO.Directory]` call, the recursive `Get-ChildItem` scan, and the deepest-first sort regex. The user-facing error messages still reference the caller's original path.
+  - Also enriched the Pester `-Because` diagnostic with `[IO.Directory.Exists]` / `Test-Path` / remaining-items state so future regressions are self-diagnosing.
+  - Script version bumped to **2.1.8** (patch; correctness fix, no new features).
+
+- **[Expand-ZipsAndClean] Remove-SourceDirectory source-dir deletion unreliable on Linux CI**
+  - Replaced the two-pass `Remove-Item -Recurse -Force` pattern for the source directory with `[System.IO.Directory]::Delete($path, recursive: $true)`. On GitHub Actions Linux runners the two-pass pattern was leaving the source directory on disk even after the per-item cleanup loop had successfully removed its contents, which manifested as `Test-Path $sourceDir | Should -BeFalse` failing in the nested-cleanup Pester case.
+  - The .NET primitive is synchronous, cross-platform, and not subject to PowerShell issue #8211. `Remove-Item` is retained as a single-shot fallback only if the .NET call fails.
+  - Also captured the pipeline item as `$item` before the per-item cleanup `try`/`catch` so that under `Set-StrictMode -Version Latest`, a diagnostic `Write-LogDebug` inside the catch cannot raise a terminating `PropertyNotFoundException` on the `ErrorRecord`. Pester disables StrictMode inside test scopes, so this was only a latent hazard for external callers — but worth hardening.
+  - Restored the strict `$errors.Count | Should -Be 0` test assertion with a `-Because` clause that surfaces the actual `$errors` content, so CI failures are self-diagnosing.
+  - Script version bumped to **2.1.7** (patch; correctness fix, no new features).
+
+- **[Expand-ZipsAndClean] Remove-SourceDirectory double-counted delete failure and strict-mode sort noise**
+  - Final source-directory cleanup now records a delete failure in exactly one place, eliminating the `Expected 0, but got 2` Pester failure seen in CI when `Remove-Item` throws while the directory still exists.
+  - The failure is now recorded whenever the retry threw, regardless of whether a subsequent `Test-Path` reports the directory absent; this preserves error reporting when permission-denied ACLs make the path unreadable after a genuine `Remove-Item` failure (review feedback on 2.1.5).
+  - Wrapped the deepest-first `Sort-Object` expression in `@(...)` so `.Count` stays valid under `Set-StrictMode -Version Latest` for single-segment relative paths (previously emitted non-terminating `Count cannot be found` errors without breaking the sort).
+  - Script version bumped to **2.1.6** (patch; correctness fix, no new features).
+
+- **[Expand-ZipsAndClean] Remove-SourceDirectory final delete error accounting**
+  - Final source-directory cleanup now appends to `ErrorList` only if `SourceDir` still exists after both deletion attempts complete.
+  - Exceptions raised during the final retry are now logged at debug level and only surfaced as failures when the directory remains present.
+  - Prevents residual `Expected 0, but got 1` failures when transient retry exceptions occur but the source directory is successfully removed.
+  - Script version bumped to **2.1.5** (patch; correctness fix, no new features).
+
+- **[Expand-ZipsAndClean] Remove-SourceDirectory nested `-CleanNonZips` CI flake**
+  - Changed per-item non-zip cleanup failures to best-effort debug diagnostics instead of `ErrorList` entries.
+  - `ErrorList` now reflects only final source-directory deletion failure (the true operation result).
+  - Prevents intermittent `Expected 0, but got 1` failures in the nested cleanup Pester case when intermediate removals are noisy but final deletion succeeds.
+  - Script version bumped to **2.1.4** (patch; correctness fix, no new features).
+
+- **[Expand-ZipsAndClean] Remove-SourceDirectory transient Remove-Item errors no longer produce false failures**
+  - Guarded cleanup error reporting so `ErrorList` is only appended when the target path still exists after a caught `Remove-Item` failure.
+  - Applied the same guard to the final source-directory deletion retry path.
+  - Prevents false-positive cleanup failures in CI/Linux cases where `Remove-Item` throws but the path is already deleted.
+  - Script version bumped to **2.1.3** (patch; correctness fix, no new features).
+
+- **[Expand-ZipsAndClean] Remove-SourceDirectory nested cleanup error under `-CleanNonZips`**
+  - Hardened non-zip cleanup so directory entries are removed with `Remove-Item -Recurse -Force` while files continue to use file-only removal.
+  - Added a deterministic secondary sort key (`FullName` descending) during deepest-first cleanup to avoid same-depth ordering variance.
+  - Fixes the nested cleanup case where `Remove-SourceDirectory` could emit `Failed to remove ... directory not empty` even though `-CleanNonZips` was enabled.
+  - Script version bumped to **2.1.2** (patch; bug fix, no new features).
+
+- **[Expand-ZipsAndClean] Remove-SourceDirectory non-zip filter and deletion ordering** (issue #970)
+  - Simplified the non-zip filter from `(-not $_.PSIsContainer -and $_.Extension -ne '.zip') -or $_.PSIsContainer` to `$_.PSIsContainer -or $_.Extension -ne '.zip'`, dropping the dead `.zip`-exclusion branch (all zips have already been moved by `Move-ZipFilesToParent` before this function runs).
+  - Warning message now differentiates between "only empty subdirectories remain" and "non-zip files present" so the caller understands why deletion was blocked.
+  - When `-CleanNonZips` is specified, items are now sorted by `FullName` descending (deepest paths first) before removal, preventing "directory not empty" errors on nested trees.
+  - `Get-ChildItem` is now invoked with `-ErrorVariable` so unreadable items surface as `Write-Warning` output rather than being silently dropped.
+  - Script version bumped to **2.1.1** (patch; correctness fix, no new features).
+  - Updated `-DeleteSource` / `-CleanNonZips` parameter help in comment-based documentation.
+  - Added four Pester `It` blocks in `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1` covering: empty-subdir-only, non-zip-files-present, nested-tree CleanNonZips (deepest-first), and unreadable-item warning.
 
 - **Expand-ZipsAndClean Pester dispatcher mock coverage** (issue #939)
   - Updated `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1` to explicitly mock `Expand-ZipFlat` in the `PerArchiveSubfolder` dispatcher test so `Should -Invoke Expand-ZipFlat -Times 0` assertions resolve cleanly in CI.
