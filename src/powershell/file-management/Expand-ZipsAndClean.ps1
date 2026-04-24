@@ -651,16 +651,16 @@ function Remove-SourceDirectory {
             # Best-effort per-item removal deepest-first for diagnostics; the final
             # Remove-Item -Recurse on the source directory handles any remainders.
             $nonZips | Sort-Object -Property {
-                ($_.FullName -split '[\\/]').Count
+                ($_.FullName -replace [regex]::Escape($SourceDir), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count
             } -Descending | ForEach-Object {
                 try {
                     if (Test-Path -LiteralPath $_.FullName) {
                         if ($_.PSIsContainer) {
                             Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
                         } else {
-                            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                             Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
                         }
-                    }
+                   }
                 } catch {
                     $ErrorList.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null
                 }
