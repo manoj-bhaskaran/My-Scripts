@@ -15,6 +15,12 @@ Entries older than the current minor release line are condensed to architectural
 
 ### Fixed
 
+- **[Expand-ZipsAndClean] Remove-SourceDirectory final delete error accounting**
+  - Final source-directory cleanup now appends to `ErrorList` only if `SourceDir` still exists after both deletion attempts complete.
+  - Exceptions raised during the final retry are now logged at debug level and only surfaced as failures when the directory remains present.
+  - Prevents residual `Expected 0, but got 1` failures when transient retry exceptions occur but the source directory is successfully removed.
+  - Script version bumped to **2.1.5** (patch; correctness fix, no new features).
+
 - **[Expand-ZipsAndClean] Remove-SourceDirectory nested `-CleanNonZips` CI flake**
   - Changed per-item non-zip cleanup failures to best-effort debug diagnostics instead of `ErrorList` entries.
   - `ErrorList` now reflects only final source-directory deletion failure (the true operation result).

@@ -100,13 +100,18 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.1.4
+    Version  : 2.1.5
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.1.5  Fixed Remove-SourceDirectory final error accounting: record a delete
+           failure only if SourceDir still exists after all delete attempts. This
+           avoids transient retry exceptions being counted as failures when the
+           directory is ultimately removed.
+
     2.1.4  Fixed Remove-SourceDirectory CI flake for nested -CleanNonZips cleanup:
            per-item non-zip removal failures are now treated as best-effort debug
            diagnostics, and ErrorList is reserved for final source directory deletion
@@ -692,14 +697,21 @@ function Remove-SourceDirectory {
         if (Test-Path -LiteralPath $SourceDir) {
             Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction SilentlyContinue
         }
+        $finalDeleteError = $null
         if (Test-Path -LiteralPath $SourceDir) {
             try {
                 Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction Stop
             } catch {
+                $finalDeleteError = $_
+                Write-LogDebug "Final source delete retry raised an exception for '$SourceDir': $($_.Exception.Message)"
                 if (Test-Path -LiteralPath $SourceDir) {
                     $ErrorList.Add("Failed to delete source directory '$SourceDir': $($_.Exception.Message)") | Out-Null
                 }
             }
+        }
+        if (Test-Path -LiteralPath $SourceDir) {
+            $reason = if ($null -ne $finalDeleteError) { $finalDeleteError.Exception.Message } else { 'unknown error' }
+            $ErrorList.Add("Failed to delete source directory '$SourceDir': $reason") | Out-Null
         }
     } catch {
         $msg = "Failed to delete source directory '$SourceDir': $($_.Exception.Message)"
