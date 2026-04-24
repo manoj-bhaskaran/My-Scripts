@@ -15,6 +15,12 @@ Entries older than the current minor release line are condensed to architectural
 
 ### Fixed
 
+- **[Expand-ZipsAndClean] Remove-SourceDirectory transient Remove-Item errors no longer produce false failures**
+  - Guarded cleanup error reporting so `ErrorList` is only appended when the target path still exists after a caught `Remove-Item` failure.
+  - Applied the same guard to the final source-directory deletion retry path.
+  - Prevents false-positive cleanup failures in CI/Linux cases where `Remove-Item` throws but the path is already deleted.
+  - Script version bumped to **2.1.3** (patch; correctness fix, no new features).
+
 - **[Expand-ZipsAndClean] Remove-SourceDirectory nested cleanup error under `-CleanNonZips`**
   - Hardened non-zip cleanup so directory entries are removed with `Remove-Item -Recurse -Force` while files continue to use file-only removal.
   - Added a deterministic secondary sort key (`FullName` descending) during deepest-first cleanup to avoid same-depth ordering variance.

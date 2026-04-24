@@ -100,13 +100,18 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.1.2
+    Version  : 2.1.3
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.1.3  Fixed Remove-SourceDirectory false-positive cleanup errors on Linux/CI:
+           when Remove-Item reports a transient error but the target path is already
+           gone, the function no longer records a failure in ErrorList. Applied to
+           both per-item cleanup and final source directory removal paths.
+
     2.1.2  Fixed Remove-SourceDirectory cleanup robustness for nested trees when
            -CleanNonZips is set: directory entries are now removed with -Recurse so
            parent folders do not fail with "directory not empty" when same-depth
@@ -669,7 +674,9 @@ function Remove-SourceDirectory {
                         }
                     }
                 } catch {
-                    $ErrorList.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null
+                    if (Test-Path -LiteralPath $_.FullName) {
+                        $ErrorList.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null
+                    }
                 }
             }
         }
@@ -686,7 +693,9 @@ function Remove-SourceDirectory {
             try {
                 Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction Stop
             } catch {
-                $ErrorList.Add("Failed to delete source directory '$SourceDir': $($_.Exception.Message)") | Out-Null
+                if (Test-Path -LiteralPath $SourceDir) {
+                    $ErrorList.Add("Failed to delete source directory '$SourceDir': $($_.Exception.Message)") | Out-Null
+                }
             }
         }
     } catch {
