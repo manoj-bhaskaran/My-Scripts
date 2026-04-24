@@ -658,9 +658,9 @@ function Remove-SourceDirectory {
                         if ($_.PSIsContainer) {
                             Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
                         } else {
-                             Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
                         }
-                   }
+                    }
                 } catch {
                     $ErrorList.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null
                 }
@@ -670,14 +670,14 @@ function Remove-SourceDirectory {
         # Delete the source directory itself (no ShouldProcess check needed since $ShouldDeleteSource is explicit).
         # Use SilentlyContinue for the recursive pass because on Linux Remove-Item
         # -Recurse can emit non-terminating errors while still removing most content
-        # (PowerShell #8211).  A follow-up Remove-Item without -Recurse handles the
+        # (PowerShell #8211).  A follow-up Remove-Item with -Recurse handles the
         # leftover empty shell; only that final attempt uses -ErrorAction Stop.
         if (Test-Path -LiteralPath $SourceDir) {
             Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction SilentlyContinue
         }
         if (Test-Path -LiteralPath $SourceDir) {
             try {
-                Remove-Item -LiteralPath $SourceDir -Force -ErrorAction Stop
+                Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction Stop
             } catch {
                 $ErrorList.Add("Failed to delete source directory '$SourceDir': $($_.Exception.Message)") | Out-Null
             }
