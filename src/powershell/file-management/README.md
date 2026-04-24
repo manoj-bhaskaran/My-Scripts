@@ -45,6 +45,10 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 v2.1.8** (2026-04-24)
+  - Resolved `SourceDir` to its native provider path before any `[System.IO.Directory]` call. `.NET` file APIs don't understand PowerShell PSDrives, so a PSDrive-qualified path (e.g. `TestDrive:\...` from Pester) was making `Directory.Exists` return `$false` and both delete attempts would skip silently, leaving the directory on disk with no error reported.
+  - Enriched Pester test `-Because` diagnostic to include `[IO.Directory]::Exists` / `Test-Path` / remaining-items state for self-diagnosing failures.
+  - Version bump: `2.1.8` (patch — correctness fix, no feature change).
 - **Expand-ZipsAndClean.ps1 v2.1.7** (2026-04-24)
   - Replaced the two-pass `Remove-Item -Recurse -Force` source-directory deletion with `[System.IO.Directory]::Delete($path, recursive: $true)`, with `Remove-Item` retained as a single-shot fallback. Fixes the nested-cleanup Pester case on Linux CI where the source directory remained on disk even after its contents were removed.
   - Captured the per-item cleanup pipeline value as `$item` before the `try`/`catch` to avoid a latent `$_` shadowing hazard under `Set-StrictMode -Version Latest`.

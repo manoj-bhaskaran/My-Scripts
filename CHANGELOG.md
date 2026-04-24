@@ -19,6 +19,12 @@ Entries older than the current minor release line are condensed to architectural
 
 ### Fixed
 
+- **[Expand-ZipsAndClean] Remove-SourceDirectory silent short-circuit on PSDrive-qualified `SourceDir`**
+  - `[System.IO.Directory]::Exists` / `::Delete` don't understand PowerShell PSDrives. A caller (or test harness) passing `TestDrive:\source-nested` would make `Directory.Exists` return `$false`, so both delete attempts were skipped and the function returned with `$errors` empty while the directory remained on disk — exactly the `"errors: , but got $true"` Pester failure that followed the 2.1.7 fix.
+  - Now resolves `SourceDir` to its native provider path (`(Resolve-Path -LiteralPath $SourceDir).ProviderPath`) upfront and uses the resolved path for every `[System.IO.Directory]` call, the recursive `Get-ChildItem` scan, and the deepest-first sort regex. The user-facing error messages still reference the caller's original path.
+  - Also enriched the Pester `-Because` diagnostic with `[IO.Directory.Exists]` / `Test-Path` / remaining-items state so future regressions are self-diagnosing.
+  - Script version bumped to **2.1.8** (patch; correctness fix, no new features).
+
 - **[Expand-ZipsAndClean] Remove-SourceDirectory source-dir deletion unreliable on Linux CI**
   - Replaced the two-pass `Remove-Item -Recurse -Force` pattern for the source directory with `[System.IO.Directory]::Delete($path, recursive: $true)`. On GitHub Actions Linux runners the two-pass pattern was leaving the source directory on disk even after the per-item cleanup loop had successfully removed its contents, which manifested as `Test-Path $sourceDir | Should -BeFalse` failing in the nested-cleanup Pester case.
   - The .NET primitive is synchronous, cross-platform, and not subject to PowerShell issue #8211. `Remove-Item` is retained as a single-shot fallback only if the .NET call fails.
