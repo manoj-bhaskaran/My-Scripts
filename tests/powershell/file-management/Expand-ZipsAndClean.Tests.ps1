@@ -180,22 +180,31 @@ Describe 'Remove-SourceDirectory' {
         Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $true -ErrorList $errors
 
         # End-state: the source directory must be gone. Assemble a rich -Because
-        # clause so CI failures are self-diagnosing. Previously we only dumped
-        # $errors, which left us guessing when Test-Path disagreed with
-        # [System.IO.Directory]::Exists (e.g. 0 errors reported but the dir
-        # still visible on disk -- points to the function taking a path that
-        # normalizes differently from the one the test holds).
-        $netExists  = [System.IO.Directory]::Exists($sourceDir)
-        $psExists   = Test-Path -LiteralPath $sourceDir
-        $remaining  = if ($psExists) {
+        # clause so CI failures are self-diagnosing.
+        #
+        # On at least one GitHub Actions Linux runner configuration we observed
+        # a repeatable anomaly where Test-Path -LiteralPath returns $true for a
+        # path that [System.IO.Directory]::Exists, [System.IO.File]::Exists,
+        # and Get-ChildItem all report as non-existent (the latter throwing
+        # "Cannot find path ... it does not exist"). We therefore anchor the
+        # assertion on [System.IO.Directory]::Exists -- the same API the
+        # function uses to decide whether deletion succeeded -- and surface
+        # the other signals in the diagnostic for visibility.
+        $netDirExists  = [System.IO.Directory]::Exists($sourceDir)
+        $netFileExists = [System.IO.File]::Exists($sourceDir)
+        $psExists      = Test-Path -LiteralPath $sourceDir
+        $psType        = if ($psExists) {
+            "container=$(Test-Path -LiteralPath $sourceDir -PathType Container);leaf=$(Test-Path -LiteralPath $sourceDir -PathType Leaf)"
+        } else { '<n/a>' }
+        $remaining     = if ($psExists) {
             try {
                 (Get-ChildItem -LiteralPath $sourceDir -Recurse -Force -ErrorAction Stop |
                     ForEach-Object FullName) -join ', '
             } catch { "<enum-failed: $($_.Exception.Message)>" }
         } else { '<none>' }
-        $diag = "errors=[$($errors -join '; ')]; IO.Directory.Exists=$netExists; Test-Path=$psExists; sourceDir='$sourceDir'; remaining=[$remaining]"
+        $diag = "errors=[$($errors -join '; ')]; IO.Directory.Exists=$netDirExists; IO.File.Exists=$netFileExists; Test-Path=$psExists ($psType); sourceDir='$sourceDir'; remaining=[$remaining]"
 
-        $psExists     | Should -BeFalse -Because $diag
+        $netDirExists | Should -BeFalse -Because $diag
         $errors.Count | Should -Be 0    -Because $diag
     }
 
