@@ -100,13 +100,18 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.1.3
+    Version  : 2.1.4
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.1.4  Fixed Remove-SourceDirectory CI flake for nested -CleanNonZips cleanup:
+           per-item non-zip removal failures are now treated as best-effort debug
+           diagnostics, and ErrorList is reserved for final source directory deletion
+           failures only (the operation's true success criterion).
+
     2.1.3  Fixed Remove-SourceDirectory false-positive cleanup errors on Linux/CI:
            when Remove-Item reports a transient error but the target path is already
            gone, the function no longer records a failure in ErrorList. Applied to
@@ -674,9 +679,7 @@ function Remove-SourceDirectory {
                         }
                     }
                 } catch {
-                    if (Test-Path -LiteralPath $_.FullName) {
-                        $ErrorList.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null
-                    }
+                    Write-LogDebug "Best-effort cleanup skip for '$($_.FullName)': $($_.Exception.Message)"
                 }
             }
         }

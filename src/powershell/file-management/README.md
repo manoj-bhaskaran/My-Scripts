@@ -45,6 +45,10 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 v2.1.4** (2026-04-24)
+  - Updated `Remove-SourceDirectory` cleanup error handling so per-item `-CleanNonZips` removals are best-effort (debug-log only) and do not mark the run as failed.
+  - `ErrorList` now reports only final source-directory deletion failures, matching end-state behavior.
+  - Version bump: `2.1.4` (patch — correctness fix, no feature change).
 - **Expand-ZipsAndClean.ps1 v2.1.3** (2026-04-24)
   - Fixed `Remove-SourceDirectory` false-positive cleanup failures by recording removal errors only when the target path still exists after a caught `Remove-Item` exception.
   - Applied the same existence guard to the final source-directory deletion retry path.

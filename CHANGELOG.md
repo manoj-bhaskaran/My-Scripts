@@ -15,6 +15,12 @@ Entries older than the current minor release line are condensed to architectural
 
 ### Fixed
 
+- **[Expand-ZipsAndClean] Remove-SourceDirectory nested `-CleanNonZips` CI flake**
+  - Changed per-item non-zip cleanup failures to best-effort debug diagnostics instead of `ErrorList` entries.
+  - `ErrorList` now reflects only final source-directory deletion failure (the true operation result).
+  - Prevents intermittent `Expected 0, but got 1` failures in the nested cleanup Pester case when intermediate removals are noisy but final deletion succeeds.
+  - Script version bumped to **2.1.4** (patch; correctness fix, no new features).
+
 - **[Expand-ZipsAndClean] Remove-SourceDirectory transient Remove-Item errors no longer produce false failures**
   - Guarded cleanup error reporting so `ErrorList` is only appended when the target path still exists after a caught `Remove-Item` failure.
   - Applied the same guard to the final source-directory deletion retry path.
