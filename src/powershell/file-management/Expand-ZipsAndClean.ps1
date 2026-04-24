@@ -100,13 +100,27 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.1.7
+    Version  : 2.1.8
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.1.8  Fixed Remove-SourceDirectory silent short-circuit when SourceDir
+           was passed as a PSDrive-qualified path:
+           - Resolve SourceDir to its native provider path (Resolve-Path |
+             ProviderPath) before any [System.IO.Directory] call. .NET APIs are
+             unaware of PowerShell PSDrives, so a caller (or test harness)
+             passing a path like `TestDrive:\source-nested` would make
+             [Directory]::Exists return $false, causing both delete attempts
+             to be skipped silently and leaving the directory on disk with no
+             error recorded. This matches the CI symptom where $errors was
+             empty yet Test-Path reported the directory still present.
+           - The deepest-first Sort-Object regex and the Get-ChildItem scan
+             also use the resolved path so item FullName values consistently
+             strip the expected prefix.
+
     2.1.7  Fixed Remove-SourceDirectory source-dir deletion reliability on Linux:
            - Replaced the two-pass Remove-Item -Recurse -Force dance with
              [System.IO.Directory]::Delete($path, recursive: $true), which is
@@ -684,9 +698,21 @@ function Remove-SourceDirectory {
         return
     }
 
+    # Resolve to the native provider path so [System.IO.Directory] calls (which
+    # are unaware of PowerShell PSDrives) see exactly the same path PowerShell
+    # does. Without this, a caller passing e.g. `TestDrive:\source-nested`
+    # would make Directory.Exists return $false (invalid path to .NET) while
+    # Test-Path correctly reported $true, causing the delete logic to short-
+    # circuit silently and leave the directory on disk.
+    $resolvedSource = try {
+        (Resolve-Path -LiteralPath $SourceDir -ErrorAction Stop).ProviderPath
+    } catch {
+        $SourceDir
+    }
+
     try {
         $gcErrors = $null
-        $remaining = Get-ChildItem -LiteralPath $SourceDir -Recurse -Force -ErrorAction SilentlyContinue -ErrorVariable gcErrors
+        $remaining = Get-ChildItem -LiteralPath $resolvedSource -Recurse -Force -ErrorAction SilentlyContinue -ErrorVariable gcErrors
         foreach ($e in $gcErrors) {
             Write-Warning "Could not read item during source directory scan: $($e.Exception.Message)"
         }
@@ -707,7 +733,7 @@ function Remove-SourceDirectory {
             # Set-StrictMode -Version Latest when a single-segment relative path
             # would otherwise make Where-Object return a scalar string.
             $nonZips | Sort-Object -Property `
-                @{ Expression = { @($_.FullName -replace [regex]::Escape($SourceDir), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count }; Descending = $true }, `
+                @{ Expression = { @($_.FullName -replace [regex]::Escape($resolvedSource), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count }; Descending = $true }, `
                 @{ Expression = { $_.FullName }; Descending = $true } | ForEach-Object {
                 # Capture the pipeline item; inside the catch below, $_ is rebound
                 # to the ErrorRecord and reading $_.FullName would raise a
@@ -742,29 +768,29 @@ function Remove-SourceDirectory {
         # cross-platform, and has no such quirk. Remove-Item is kept as a
         # fallback only if the .NET call fails.
         $finalDeleteError = $null
-        if ([System.IO.Directory]::Exists($SourceDir)) {
+        if ([System.IO.Directory]::Exists($resolvedSource)) {
             try {
-                [System.IO.Directory]::Delete($SourceDir, $true)
+                [System.IO.Directory]::Delete($resolvedSource, $true)
             } catch {
                 $finalDeleteError = $_
-                Write-LogDebug "Directory.Delete raised for '$SourceDir': $($_.Exception.Message)"
+                Write-LogDebug "Directory.Delete raised for '$resolvedSource': $($_.Exception.Message)"
             }
         }
         # Fallback: if .NET failed and the dir still exists, try Remove-Item once.
-        if ([System.IO.Directory]::Exists($SourceDir)) {
+        if ([System.IO.Directory]::Exists($resolvedSource)) {
             try {
-                Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction Stop
+                Remove-Item -LiteralPath $resolvedSource -Recurse -Force -ErrorAction Stop
                 $finalDeleteError = $null
             } catch {
                 if ($null -eq $finalDeleteError) { $finalDeleteError = $_ }
-                Write-LogDebug "Remove-Item fallback raised for '$SourceDir': $($_.Exception.Message)"
+                Write-LogDebug "Remove-Item fallback raised for '$resolvedSource': $($_.Exception.Message)"
             }
         }
         # Record a single failure entry if the directory still exists, or if the
         # last delete attempt threw (preserves error reporting when permission-
         # denied ACLs might make the directory appear absent while deletion
         # genuinely failed).
-        if ([System.IO.Directory]::Exists($SourceDir)) {
+        if ([System.IO.Directory]::Exists($resolvedSource)) {
             $reason = if ($null -ne $finalDeleteError) { $finalDeleteError.Exception.Message } else { 'source directory still exists after removal' }
             $ErrorList.Add("Failed to delete source directory '$SourceDir': $reason") | Out-Null
         } elseif ($null -ne $finalDeleteError) {

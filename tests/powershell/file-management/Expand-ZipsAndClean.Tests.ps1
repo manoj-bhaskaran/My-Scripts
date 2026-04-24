@@ -179,11 +179,24 @@ Describe 'Remove-SourceDirectory' {
 
         Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $true -ErrorList $errors
 
-        # End-state: the source directory must be gone. The -Because clause
-        # surfaces the actual $errors content so CI failures are self-diagnosing
-        # instead of requiring another round-trip.
-        Test-Path -LiteralPath $sourceDir | Should -BeFalse -Because ("errors: " + ($errors -join '; '))
-        $errors.Count | Should -Be 0 -Because ("errors: " + ($errors -join '; '))
+        # End-state: the source directory must be gone. Assemble a rich -Because
+        # clause so CI failures are self-diagnosing. Previously we only dumped
+        # $errors, which left us guessing when Test-Path disagreed with
+        # [System.IO.Directory]::Exists (e.g. 0 errors reported but the dir
+        # still visible on disk -- points to the function taking a path that
+        # normalizes differently from the one the test holds).
+        $netExists  = [System.IO.Directory]::Exists($sourceDir)
+        $psExists   = Test-Path -LiteralPath $sourceDir
+        $remaining  = if ($psExists) {
+            try {
+                (Get-ChildItem -LiteralPath $sourceDir -Recurse -Force -ErrorAction Stop |
+                    ForEach-Object FullName) -join ', '
+            } catch { "<enum-failed: $($_.Exception.Message)>" }
+        } else { '<none>' }
+        $diag = "errors=[$($errors -join '; ')]; IO.Directory.Exists=$netExists; Test-Path=$psExists; sourceDir='$sourceDir'; remaining=[$remaining]"
+
+        $psExists     | Should -BeFalse -Because $diag
+        $errors.Count | Should -Be 0    -Because $diag
     }
 
     It 'surfaces Get-ChildItem read errors as warnings rather than silently dropping them' {
