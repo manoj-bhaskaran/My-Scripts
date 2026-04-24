@@ -45,6 +45,11 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 v2.1.7** (2026-04-24)
+  - Replaced the two-pass `Remove-Item -Recurse -Force` source-directory deletion with `[System.IO.Directory]::Delete($path, recursive: $true)`, with `Remove-Item` retained as a single-shot fallback. Fixes the nested-cleanup Pester case on Linux CI where the source directory remained on disk even after its contents were removed.
+  - Captured the per-item cleanup pipeline value as `$item` before the `try`/`catch` to avoid a latent `$_` shadowing hazard under `Set-StrictMode -Version Latest`.
+  - Restored the strict `$errors.Count | Should -Be 0` assertion with a `-Because` clause that surfaces the actual error content on failure.
+  - Version bump: `2.1.7` (patch — correctness fix, no feature change).
 - **Expand-ZipsAndClean.ps1 v2.1.6** (2026-04-24)
   - Fixed `Remove-SourceDirectory` double-counting of final delete failures: the retry exception and the trailing `Test-Path` check no longer both append an entry to `ErrorList`, eliminating the `Expected 0, but got 2` Pester failure observed in CI.
   - Ensured a delete failure is reported whenever the retry threw — even if a subsequent `Test-Path` returns false (e.g. permission-denied ACLs on Linux/Windows) — addressing review feedback on 2.1.5.

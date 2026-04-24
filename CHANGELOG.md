@@ -19,6 +19,13 @@ Entries older than the current minor release line are condensed to architectural
 
 ### Fixed
 
+- **[Expand-ZipsAndClean] Remove-SourceDirectory source-dir deletion unreliable on Linux CI**
+  - Replaced the two-pass `Remove-Item -Recurse -Force` pattern for the source directory with `[System.IO.Directory]::Delete($path, recursive: $true)`. On GitHub Actions Linux runners the two-pass pattern was leaving the source directory on disk even after the per-item cleanup loop had successfully removed its contents, which manifested as `Test-Path $sourceDir | Should -BeFalse` failing in the nested-cleanup Pester case.
+  - The .NET primitive is synchronous, cross-platform, and not subject to PowerShell issue #8211. `Remove-Item` is retained as a single-shot fallback only if the .NET call fails.
+  - Also captured the pipeline item as `$item` before the per-item cleanup `try`/`catch` so that under `Set-StrictMode -Version Latest`, a diagnostic `Write-LogDebug` inside the catch cannot raise a terminating `PropertyNotFoundException` on the `ErrorRecord`. Pester disables StrictMode inside test scopes, so this was only a latent hazard for external callers — but worth hardening.
+  - Restored the strict `$errors.Count | Should -Be 0` test assertion with a `-Because` clause that surfaces the actual `$errors` content, so CI failures are self-diagnosing.
+  - Script version bumped to **2.1.7** (patch; correctness fix, no new features).
+
 - **[Expand-ZipsAndClean] Remove-SourceDirectory double-counted delete failure and strict-mode sort noise**
   - Final source-directory cleanup now records a delete failure in exactly one place, eliminating the `Expected 0, but got 2` Pester failure seen in CI when `Remove-Item` throws while the directory still exists.
   - The failure is now recorded whenever the retry threw, regardless of whether a subsequent `Test-Path` reports the directory absent; this preserves error reporting when permission-denied ACLs make the path unreadable after a genuine `Remove-Item` failure (review feedback on 2.1.5).

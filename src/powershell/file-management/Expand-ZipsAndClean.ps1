@@ -100,13 +100,30 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.1.6
+    Version  : 2.1.7
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.1.7  Fixed Remove-SourceDirectory source-dir deletion reliability on Linux:
+           - Replaced the two-pass Remove-Item -Recurse -Force dance with
+             [System.IO.Directory]::Delete($path, recursive: $true), which is
+             synchronous, cross-platform, and not subject to PowerShell #8211.
+             Remove-Item is retained as a single-shot fallback only if the .NET
+             call fails. On GitHub Actions Linux runners the two-pass Remove-Item
+             pattern was leaving the source directory on disk even after the
+             per-item cleanup loop had successfully removed its contents, which
+             manifested as `Test-Path $sourceDir | Should -BeFalse` failing in
+             the nested-cleanup Pester case.
+           - Also captures the pipeline item as $item before the per-item cleanup
+             try-block so that under Set-StrictMode -Version Latest, a diagnostic
+             Write-LogDebug inside the catch cannot raise a terminating
+             PropertyNotFoundException on the ErrorRecord. This was a latent
+             hazard for callers running under StrictMode even though Pester
+             itself disables StrictMode inside test scopes.
+
     2.1.6  Fixed Remove-SourceDirectory double-counting of final delete failures
            and strict-mode noise in the deepest-first sort:
            - The deepest-first Sort-Object expression now wraps its split/filter
@@ -692,44 +709,66 @@ function Remove-SourceDirectory {
             $nonZips | Sort-Object -Property `
                 @{ Expression = { @($_.FullName -replace [regex]::Escape($SourceDir), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count }; Descending = $true }, `
                 @{ Expression = { $_.FullName }; Descending = $true } | ForEach-Object {
+                # Capture the pipeline item; inside the catch below, $_ is rebound
+                # to the ErrorRecord and reading $_.FullName would raise a
+                # terminating PropertyNotFoundException under Set-StrictMode -Latest,
+                # which would bubble past this catch into the outer handler and
+                # prevent the final source-directory deletion from running.
+                $item = $_
                 try {
-                    if (Test-Path -LiteralPath $_.FullName) {
-                        if ($_.PSIsContainer) {
-                            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+                    if (Test-Path -LiteralPath $item.FullName) {
+                        if ($item.PSIsContainer) {
+                            Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction Stop
                         } else {
-                            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                            Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop
                         }
                     }
                 } catch {
-                    Write-LogDebug "Best-effort cleanup skip for '$($_.FullName)': $($_.Exception.Message)"
+                    Write-LogDebug "Best-effort cleanup skip for '$($item.FullName)': $($_.Exception.Message)"
                 }
             }
         }
 
         # Delete the source directory itself (no ShouldProcess check needed since $ShouldDeleteSource is explicit).
-        # Use SilentlyContinue for the recursive pass because on Linux Remove-Item
-        # -Recurse can emit non-terminating errors while still removing most content
-        # (PowerShell #8211).  A follow-up Remove-Item with -Recurse handles the
-        # leftover empty shell; only that final attempt uses -ErrorAction Stop.
-        if (Test-Path -LiteralPath $SourceDir) {
-            Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        #
+        # Use [System.IO.Directory]::Delete($path, recursive: true) instead of
+        # Remove-Item -Recurse -Force. On Linux, PowerShell's Remove-Item has a
+        # long-standing rough edge with recursive deletion (PowerShell #8211):
+        # it can emit non-terminating errors while still removing most content,
+        # and on some CI filesystems (GitHub Actions runners in particular) it
+        # leaves the root directory behind, producing a persistent
+        # "source directory still exists after removal" failure in
+        # the nested-cleanup Pester case. The .NET primitive is synchronous,
+        # cross-platform, and has no such quirk. Remove-Item is kept as a
+        # fallback only if the .NET call fails.
         $finalDeleteError = $null
-        if (Test-Path -LiteralPath $SourceDir) {
+        if ([System.IO.Directory]::Exists($SourceDir)) {
             try {
-                Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction Stop
+                [System.IO.Directory]::Delete($SourceDir, $true)
             } catch {
                 $finalDeleteError = $_
-                Write-LogDebug "Final source delete retry raised an exception for '$SourceDir': $($_.Exception.Message)"
+                Write-LogDebug "Directory.Delete raised for '$SourceDir': $($_.Exception.Message)"
             }
         }
-        # Record a single failure entry if the retry threw (real cleanup failure,
-        # even when Test-Path cannot see the directory afterwards, e.g. permission-
-        # denied ACLs) or if the directory still exists on disk.
-        if ($null -ne $finalDeleteError) {
+        # Fallback: if .NET failed and the dir still exists, try Remove-Item once.
+        if ([System.IO.Directory]::Exists($SourceDir)) {
+            try {
+                Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction Stop
+                $finalDeleteError = $null
+            } catch {
+                if ($null -eq $finalDeleteError) { $finalDeleteError = $_ }
+                Write-LogDebug "Remove-Item fallback raised for '$SourceDir': $($_.Exception.Message)"
+            }
+        }
+        # Record a single failure entry if the directory still exists, or if the
+        # last delete attempt threw (preserves error reporting when permission-
+        # denied ACLs might make the directory appear absent while deletion
+        # genuinely failed).
+        if ([System.IO.Directory]::Exists($SourceDir)) {
+            $reason = if ($null -ne $finalDeleteError) { $finalDeleteError.Exception.Message } else { 'source directory still exists after removal' }
+            $ErrorList.Add("Failed to delete source directory '$SourceDir': $reason") | Out-Null
+        } elseif ($null -ne $finalDeleteError) {
             $ErrorList.Add("Failed to delete source directory '$SourceDir': $($finalDeleteError.Exception.Message)") | Out-Null
-        } elseif (Test-Path -LiteralPath $SourceDir) {
-            $ErrorList.Add("Failed to delete source directory '$SourceDir': source directory still exists after removal") | Out-Null
         }
     } catch {
         $msg = "Failed to delete source directory '$SourceDir': $($_.Exception.Message)"
