@@ -100,13 +100,27 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.1.5
+    Version  : 2.1.6
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.1.6  Fixed Remove-SourceDirectory double-counting of final delete failures
+           and strict-mode noise in the deepest-first sort:
+           - The deepest-first Sort-Object expression now wraps its split/filter
+             result in @(...) so .Count is always valid under Set-StrictMode
+             -Version Latest (previously a single-segment relative path produced
+             a scalar string and emitted non-terminating errors).
+           - The final source-delete failure is now recorded in exactly one place,
+             eliminating the "Expected 0, but got 2" failure observed in CI when
+             Remove-Item threw and the directory still existed.
+           - The failure is recorded whenever the retry threw, regardless of
+             whether Test-Path subsequently reports the directory absent. This
+             preserves error reporting when ACLs make the path unreadable but
+             Remove-Item genuinely failed (review feedback on 2.1.5).
+
     2.1.5  Fixed Remove-SourceDirectory final error accounting: record a delete
            failure only if SourceDir still exists after all delete attempts. This
            avoids transient retry exceptions being counted as failures when the
@@ -672,8 +686,11 @@ function Remove-SourceDirectory {
         }
 
         if ($ShouldCleanNonZips -and $nonZips.Count -gt 0) {
+            # Wrap the split/filter result with @(...) so .Count remains valid under
+            # Set-StrictMode -Version Latest when a single-segment relative path
+            # would otherwise make Where-Object return a scalar string.
             $nonZips | Sort-Object -Property `
-                @{ Expression = { ($_.FullName -replace [regex]::Escape($SourceDir), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count }; Descending = $true }, `
+                @{ Expression = { @($_.FullName -replace [regex]::Escape($SourceDir), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count }; Descending = $true }, `
                 @{ Expression = { $_.FullName }; Descending = $true } | ForEach-Object {
                 try {
                     if (Test-Path -LiteralPath $_.FullName) {
@@ -704,14 +721,15 @@ function Remove-SourceDirectory {
             } catch {
                 $finalDeleteError = $_
                 Write-LogDebug "Final source delete retry raised an exception for '$SourceDir': $($_.Exception.Message)"
-                if (Test-Path -LiteralPath $SourceDir) {
-                    $ErrorList.Add("Failed to delete source directory '$SourceDir': $($_.Exception.Message)") | Out-Null
-                }
             }
         }
-        if (Test-Path -LiteralPath $SourceDir) {
-            $reason = if ($null -ne $finalDeleteError) { $finalDeleteError.Exception.Message } else { 'unknown error' }
-            $ErrorList.Add("Failed to delete source directory '$SourceDir': $reason") | Out-Null
+        # Record a single failure entry if the retry threw (real cleanup failure,
+        # even when Test-Path cannot see the directory afterwards, e.g. permission-
+        # denied ACLs) or if the directory still exists on disk.
+        if ($null -ne $finalDeleteError) {
+            $ErrorList.Add("Failed to delete source directory '$SourceDir': $($finalDeleteError.Exception.Message)") | Out-Null
+        } elseif (Test-Path -LiteralPath $SourceDir) {
+            $ErrorList.Add("Failed to delete source directory '$SourceDir': source directory still exists after removal") | Out-Null
         }
     } catch {
         $msg = "Failed to delete source directory '$SourceDir': $($_.Exception.Message)"

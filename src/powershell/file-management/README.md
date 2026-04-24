@@ -45,6 +45,11 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 v2.1.6** (2026-04-24)
+  - Fixed `Remove-SourceDirectory` double-counting of final delete failures: the retry exception and the trailing `Test-Path` check no longer both append an entry to `ErrorList`, eliminating the `Expected 0, but got 2` Pester failure observed in CI.
+  - Ensured a delete failure is reported whenever the retry threw — even if a subsequent `Test-Path` returns false (e.g. permission-denied ACLs on Linux/Windows) — addressing review feedback on 2.1.5.
+  - Hardened the deepest-first `Sort-Object` expression with `@(...)` so `.Count` remains valid under `Set-StrictMode -Version Latest` for single-segment relative paths (removes stderr noise without affecting sort order).
+  - Version bump: `2.1.6` (patch — correctness fix, no feature change).
 - **Expand-ZipsAndClean.ps1 v2.1.5** (2026-04-24)
   - Updated final source-directory delete error accounting: cleanup now records an error only when the source directory still exists after all delete attempts.
   - Final retry exceptions are logged for diagnostics and only treated as failures if the directory remains.
