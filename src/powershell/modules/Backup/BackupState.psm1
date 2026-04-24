@@ -21,7 +21,7 @@
     - Format-Duration: formats a duration in seconds to a human-readable string.
     - Read-StateFile: reads the state file; renames corrupt files for debugging.
     - Write-StateFile: atomically writes the state object to the state file.
-    - Mark-InterruptedState: marks an in-progress state as Interrupted and persists it.
+    - Set-InterruptedState: sets an in-progress state as Interrupted and persists it.
     - Initialize-StateFile: creates a new run state; accepts PreviousState to
       avoid a second disk read after Invoke-AutoResumeLogic.
     - Update-StateStep: updates the lastStep field; accepts State parameter to
@@ -139,10 +139,10 @@ function Write-StateFile {
     }
 }
 
-function Mark-InterruptedState {
+function Set-InterruptedState {
     <#
     .SYNOPSIS
-        Marks a previous in-progress state as Interrupted and persists it.
+        Sets a previous in-progress state to Interrupted and persists it.
     .DESCRIPTION
         Centralises the logic for marking an interrupted run, logging the
         details, and writing the updated state to the state file.
@@ -210,7 +210,7 @@ function Initialize-StateFile {
 
     # Handle interrupted state first (applies to both clean start and resume scenarios)
     if ($null -ne $previousState -and $previousState.status -eq "InProgress") {
-        Mark-InterruptedState -StateFile $StateFile -State $previousState
+        Set-InterruptedState -StateFile $StateFile -State $previousState
     }
 
     # Handle clean start (default behavior without AutoResume)
@@ -431,7 +431,7 @@ Export-ModuleMember -Function @(
     'Format-Duration',
     'Read-StateFile',
     'Write-StateFile',
-    'Mark-InterruptedState',
+    'Set-InterruptedState',
     'Initialize-StateFile',
     'Update-StateStep',
     'Complete-StateFile',
