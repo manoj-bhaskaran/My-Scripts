@@ -100,13 +100,18 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.1.1
+    Version  : 2.1.2
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.1.2  Fixed Remove-SourceDirectory cleanup robustness for nested trees when
+           -CleanNonZips is set: directory entries are now removed with -Recurse so
+           parent folders do not fail with "directory not empty" when same-depth
+           ordering is non-deterministic. No functional changes to warning behavior.
+
     2.1.1  Fixed Remove-SourceDirectory: simplified non-zip filter (dropped the dead
            .zip-exclusion branch, since Move-ZipFilesToParent has already relocated all
            zips before this function runs); differentiated warning message between
@@ -652,12 +657,16 @@ function Remove-SourceDirectory {
         }
 
         if ($ShouldCleanNonZips -and $nonZips.Count -gt 0) {
-            $nonZips | Sort-Object -Property {
-                ($_.FullName -replace [regex]::Escape($SourceDir), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count
-            } -Descending | ForEach-Object {
+            $nonZips | Sort-Object -Property `
+                @{ Expression = { ($_.FullName -replace [regex]::Escape($SourceDir), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count }; Descending = $true }, `
+                @{ Expression = { $_.FullName }; Descending = $true } | ForEach-Object {
                 try {
                     if (Test-Path -LiteralPath $_.FullName) {
-                        Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                        if ($_.PSIsContainer) {
+                            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+                        } else {
+                            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                        }
                     }
                 } catch {
                     $ErrorList.Add("Failed to remove: $($_.FullName) -> $($_.Exception.Message)") | Out-Null

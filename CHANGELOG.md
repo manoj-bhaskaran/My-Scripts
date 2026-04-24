@@ -15,6 +15,12 @@ Entries older than the current minor release line are condensed to architectural
 
 ### Fixed
 
+- **[Expand-ZipsAndClean] Remove-SourceDirectory nested cleanup error under `-CleanNonZips`**
+  - Hardened non-zip cleanup so directory entries are removed with `Remove-Item -Recurse -Force` while files continue to use file-only removal.
+  - Added a deterministic secondary sort key (`FullName` descending) during deepest-first cleanup to avoid same-depth ordering variance.
+  - Fixes the nested cleanup case where `Remove-SourceDirectory` could emit `Failed to remove ... directory not empty` even though `-CleanNonZips` was enabled.
+  - Script version bumped to **2.1.2** (patch; bug fix, no new features).
+
 - **[Expand-ZipsAndClean] Remove-SourceDirectory non-zip filter and deletion ordering** (issue #970)
   - Simplified the non-zip filter from `(-not $_.PSIsContainer -and $_.Extension -ne '.zip') -or $_.PSIsContainer` to `$_.PSIsContainer -or $_.Extension -ne '.zip'`, dropping the dead `.zip`-exclusion branch (all zips have already been moved by `Move-ZipFilesToParent` before this function runs).
   - Warning message now differentiates between "only empty subdirectories remain" and "non-zip files present" so the caller understands why deletion was blocked.

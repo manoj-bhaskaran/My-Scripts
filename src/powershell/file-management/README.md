@@ -45,6 +45,10 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 v2.1.2** (2026-04-24)
+  - Fixed nested `-CleanNonZips` cleanup reliability in `Remove-SourceDirectory`: directories are now removed with `-Recurse` to prevent intermittent `directory not empty` cleanup errors.
+  - Added deterministic same-depth tie-breaking (`FullName` descending) in deepest-first cleanup ordering.
+  - Version bump: `2.1.2` (patch — bug fix, no feature change).
 - **Expand-ZipsAndClean.ps1 v2.1.0** (2026-04-13)
   - Added `#requires -Version 7.0` to enforce the PowerShell 7+ runtime at parse time (script already used the ternary operator which is PS 7-only).
   - Added `using namespace System.Collections.Generic` and `using namespace System.IO.Compression` declarations; shortened `List[string]`, `ZipFile`, and `ZipFileExtensions` type references accordingly.
