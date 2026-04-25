@@ -6,6 +6,11 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.2.3] - 2026-04-25
+### Fixed
+- `Clear-LogFile` no longer overwrites the caller's `$Global:LogConfig.LogFilePath` when a logger has already been initialized. Previously the unconditional `Initialize-Logger -ScriptName "purge_logs.ps1"` call (with no `-resolvedLogDir`) reset the global log path to the framework's default `logs` directory, silently redirecting all subsequent `Write-Log*` output away from the host script's chosen log file. This affected `FileDistributor.ps1` runs invoked with `-TruncateLog` (and any other `Clear-LogFile` retention/truncation parameter), where logs after the truncation step landed in `<framework-modules>\logs\purge_logs_powershell_<date>.log` instead of the user-specified `-LogFilePath`.
+- The fallback `Initialize-Logger` call now only fires when no logger is already initialized (`$Global:LogConfig.LogFilePath` is null/empty), preserving the safety net for standalone use of `Clear-LogFile` without disturbing host scripts that have already configured the logger.
+
 ## [2.2.2] - 2026-03-27
 ### Fixed
 - Corrected `Clear-LogFile` timestamp parsing to use explicit `TryParseExact`/`TryParse` overloads compatible across PowerShell/.NET runtime variants.
