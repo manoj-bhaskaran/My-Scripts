@@ -859,37 +859,51 @@ function Move-ZipFilesToParent {
         [ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy = 'Rename'
     )
 
+    Write-Host "[DIAG-FN] enter SourceDir='$SourceDir' Quiet=$QuietMode Policy=$CollisionPolicy" -ForegroundColor Yellow
+    Write-Host "[DIAG-FN] ConfirmPref='$ConfirmPreference' WhatIfPref='$WhatIfPreference' ErrorActionPref='$ErrorActionPreference'" -ForegroundColor Yellow
+
     # Prevent New-Item/Remove-Item/Move-Item (ConfirmImpact=Medium) from prompting
     # for confirmation when running in non-interactive contexts (e.g. Pester in CI)
     # where $ConfirmPreference may be at or below Medium.
     $ConfirmPreference = 'None'
 
+    Write-Host "[DIAG-FN] before Get-Item" -ForegroundColor Yellow
     $parentItem = Get-Item -LiteralPath $SourceDir
+    Write-Host "[DIAG-FN] after Get-Item; Parent=$($parentItem.Parent)" -ForegroundColor Yellow
     if (-not $parentItem.Parent) {
         throw "Cannot move zip files: source directory '$SourceDir' is at drive root (no parent directory exists)"
     }
     $parent = $parentItem.Parent.FullName
+    Write-Host "[DIAG-FN] parent='$parent'" -ForegroundColor Yellow
 
     if (-not (Test-Path -LiteralPath $parent)) {
         throw "Parent directory not found: $parent"
     }
+    Write-Host "[DIAG-FN] after Test-Path parent" -ForegroundColor Yellow
 
     # Writability probe using a temporary file (skip if WhatIf)
     if (-not $WhatIfPreference) {
         $probe = Join-Path $parent ("_write_test_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
+        Write-Host "[DIAG-FN] before probe New-Item: '$probe'" -ForegroundColor Yellow
         try {
-            New-Item -ItemType File -Path $probe -Force | Out-Null
-            Remove-Item -LiteralPath $probe -Force
+            New-Item -ItemType File -Path $probe -Force -Confirm:$false | Out-Null
+            Write-Host "[DIAG-FN] after probe New-Item" -ForegroundColor Yellow
+            Remove-Item -LiteralPath $probe -Force -Confirm:$false
+            Write-Host "[DIAG-FN] after probe Remove-Item" -ForegroundColor Yellow
         } catch {
+            Write-Host "[DIAG-FN] probe threw: $($_.Exception.Message)" -ForegroundColor Red
             # Clean up probe file even on failure
-            try { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue } catch { }
+            try { Remove-Item -LiteralPath $probe -Force -Confirm:$false -ErrorAction SilentlyContinue } catch { }
             throw "Parent directory is not writable: $parent"
         }
     }
 
+    Write-Host "[DIAG-FN] before Get-ChildItem zips" -ForegroundColor Yellow
     $zipsToMove = @(Get-ChildItem -LiteralPath $SourceDir -Filter *.zip -File)
+    Write-Host "[DIAG-FN] zipsToMove.Count=$($zipsToMove.Count)" -ForegroundColor Yellow
     $total = $zipsToMove.Count
     $totalBytes = [int64](($zipsToMove | Measure-Object Length -Sum).Sum)
+    Write-Host "[DIAG-FN] totalBytes=$totalBytes" -ForegroundColor Yellow
 
     $idx = 0
     $moved = 0
@@ -900,6 +914,7 @@ function Move-ZipFilesToParent {
 
     foreach ($zf in $zipsToMove) {
         $idx++
+        Write-Host "[DIAG-FN] loop idx=$idx name='$($zf.Name)'" -ForegroundColor Yellow
         if (-not $QuietMode) {
             $pct = [int](($idx) / [math]::Max(1, $total) * 100)
             Write-Progress -Activity "Moving zip files to parent" `
@@ -911,6 +926,7 @@ function Move-ZipFilesToParent {
         $target = Join-Path $parent $zf.Name
         $collides = Test-Path -LiteralPath $target
         $useForce = $false
+        Write-Host "[DIAG-FN] loop target='$target' collides=$collides" -ForegroundColor Yellow
 
         if ($collides) {
             if ($CollisionPolicy -eq 'Skip') {
@@ -926,16 +942,19 @@ function Move-ZipFilesToParent {
             }
         }
 
+        Write-Host "[DIAG-FN] before Move-Item useForce=$useForce" -ForegroundColor Yellow
         if ($useForce) {
-            Move-Item -LiteralPath $zf.FullName -Destination $target -Force
+            Move-Item -LiteralPath $zf.FullName -Destination $target -Force -Confirm:$false
         } else {
-            Move-Item -LiteralPath $zf.FullName -Destination $target
+            Move-Item -LiteralPath $zf.FullName -Destination $target -Confirm:$false
         }
+        Write-Host "[DIAG-FN] after Move-Item" -ForegroundColor Yellow
         $moved++
         $bytes += $zf.Length
     }
 
     if (-not $QuietMode) { Write-Progress -Activity "Moving zip files to parent" -Completed }
+    Write-Host "[DIAG-FN] returning Count=$moved" -ForegroundColor Yellow
 
     [pscustomobject]@{ Count = $moved; Bytes = $bytes; Destination = $parent; Skipped = $skipped; Overwritten = $overwritten; Renamed = $renamed }
 }
