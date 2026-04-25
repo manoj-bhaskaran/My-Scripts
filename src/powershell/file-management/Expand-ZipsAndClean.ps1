@@ -905,26 +905,24 @@ function Move-ZipFilesToParent {
 
         $target = Join-Path $parent $zf.Name
         $collides = Test-Path -LiteralPath $target
+        $useForce = $false
+
         if ($collides) {
-            switch ($CollisionPolicy) {
-                'Skip' {
-                    Write-LogDebug "Move skip (collision): '$($zf.Name)' already exists in parent."
-                    $skipped++
-                    continue
-                }
-                'Overwrite' {
-                    # target path stays the same; Move-Item -Force below handles the overwrite
-                }
-                'Rename' {
-                    $target = Resolve-UniquePath -Path $target
-                    $renamed++
-                }
+            if ($CollisionPolicy -eq 'Skip') {
+                Write-LogDebug "Move skip (collision): '$($zf.Name)' already exists in parent."
+                $skipped++
+                continue
+            } elseif ($CollisionPolicy -eq 'Overwrite') {
+                $useForce = $true
+                $overwritten++
+            } elseif ($CollisionPolicy -eq 'Rename') {
+                $target = Resolve-UniquePath -Path $target
+                $renamed++
             }
         }
 
-        if ($collides -and $CollisionPolicy -eq 'Overwrite') {
+        if ($useForce) {
             Move-Item -LiteralPath $zf.FullName -Destination $target -Force
-            $overwritten++
         } else {
             Move-Item -LiteralPath $zf.FullName -Destination $target
         }
