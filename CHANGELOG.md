@@ -38,6 +38,7 @@ Entries older than the current minor release line are condensed to architectural
   - `Resolve-ZipEntryDestinationPath` now rejects rooted entry names *before* relative-path normalization and trimming, fixing false acceptance of entries like `/etc/passwd`.
   - Canonical containment checks now compare against a normalized full destination root, and Flat-mode collision detection uses `[System.IO.File]::Exists` for consistent file-existence checks on extracted targets.
   - Added explicit traversal-segment (`..`) rejection and a defensive Skip-policy fallback for late "already exists" extraction exceptions so Flat-mode Skip and Zip Slip tests remain deterministic across runners.
+  - Added a second guard in `Expand-ZipFlat` that short-circuits any entry whose raw `entry.FullName` contains traversal segments (`..`) before destination-path resolution, preventing traversal writes even if resolver normalization behavior differs by runtime.
   - Restores expected behavior in Pester scenarios for `Skip` collision policy and Zip Slip traversal blocking.
 
 - **[Expand-ZipsAndClean] Remove-SourceDirectory source-dir deletion unreliable on Linux CI**
