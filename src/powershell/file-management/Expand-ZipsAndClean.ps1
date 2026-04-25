@@ -837,15 +837,15 @@ function Move-ZipFilesToParent {
         throw "Parent directory not found: $parent"
     }
 
-    # Writability probe using an empty directory (skip if WhatIf)
+    # Writability probe using a temporary file (skip if WhatIf)
     if (-not $WhatIfPreference) {
-        $probe = Join-Path $parent ("._write_test_{0}" -f ([guid]::NewGuid().ToString('N')))
+        $probe = Join-Path $parent ("_write_test_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
         try {
-            New-DirectoryIfMissing -Path $probe -Force | Out-Null
-            Remove-Item -LiteralPath $probe -Recurse -Force
+            New-Item -ItemType File -Path $probe -Force | Out-Null
+            Remove-Item -LiteralPath $probe -Force
         } catch {
-            # Clean up probe directory even on failure
-            try { Remove-Item -LiteralPath $probe -Recurse -Force -ErrorAction SilentlyContinue } catch { }
+            # Clean up probe file even on failure
+            try { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue } catch { }
             throw "Parent directory is not writable: $parent"
         }
     }
