@@ -97,6 +97,9 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
     It 'blocks Zip Slip traversal entries in Flat mode' {
         $root = Join-Path $TestDrive 'flat-zipslip'
         New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $outsideParent = Split-Path -Parent $root
+        $outsideEvilPath = Join-Path $outsideParent 'evil.txt'
+        Set-Content -LiteralPath $outsideEvilPath -Value 'sentinel' -NoNewline
 
         $zipPath = Join-Path $TestDrive 'flat-zipslip.zip'
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -119,7 +122,11 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
 
         $written | Should -Be 1
         Test-Path -LiteralPath (Join-Path $root 'good.txt') | Should -BeTrue
-        Test-Path -LiteralPath (Join-Path (Split-Path -Parent $root) 'evil.txt') | Should -BeFalse
+        (Get-Content -LiteralPath $outsideEvilPath -Raw) | Should -Be 'sentinel'
+        @(
+            Get-ChildItem -LiteralPath $outsideParent -Filter 'evil*.txt' -File |
+            Where-Object { $_.Name -ne 'evil.txt' }
+        ).Count | Should -Be 0
     }
 
     It 'rejects rooted entry names while allowing valid relative names' {

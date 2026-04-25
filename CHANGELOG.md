@@ -39,6 +39,7 @@ Entries older than the current minor release line are condensed to architectural
   - Canonical containment checks now compare against a normalized full destination root, and Flat-mode collision detection uses `[System.IO.File]::Exists` for consistent file-existence checks on extracted targets.
   - Added explicit traversal-segment (`..`) rejection and a defensive Skip-policy fallback for late "already exists" extraction exceptions so Flat-mode Skip and Zip Slip tests remain deterministic across runners.
   - Added a second guard in `Expand-ZipFlat` that short-circuits any entry whose raw `entry.FullName` contains traversal markers (`..`) before destination-path resolution, preventing traversal writes even if resolver normalization behavior differs by runtime.
+  - Refined the Zip Slip Pester assertion to use a pre-existing sentinel `evil.txt` outside the destination root and verify it is neither overwritten nor accompanied by renamed siblings (`evil*.txt`), making the security expectation deterministic even when parent directories already contain files.
   - Restores expected behavior in Pester scenarios for `Skip` collision policy and Zip Slip traversal blocking.
 
 - **[Expand-ZipsAndClean] Remove-SourceDirectory source-dir deletion unreliable on Linux CI**
