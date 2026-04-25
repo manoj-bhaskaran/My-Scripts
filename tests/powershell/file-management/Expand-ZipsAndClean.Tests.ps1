@@ -266,6 +266,11 @@ Describe 'Move-ZipFilesToParent' {
     }
 
     It 'throws clear error for drive root source directory' {
+        # Mock Get-Item to simulate a drive root (no parent directory)
+        Mock Get-Item {
+            [pscustomobject]@{ Parent = $null; FullName = 'C:\' }
+        }
+
         { Move-ZipFilesToParent -SourceDir 'C:\' -QuietMode $true } | Should -Throw "*drive root*"
     }
 
