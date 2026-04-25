@@ -53,7 +53,9 @@ function Clear-LogFile {
 
     $verboseSet = $PSCmdlet.MyInvocation.BoundParameters['Verbose']
     if (Get-Command -Name Initialize-Logger -ErrorAction SilentlyContinue) {
-        Initialize-Logger -ScriptName "purge_logs.ps1" -Verbose:$verboseSet
+        if (-not $Global:LogConfig -or [string]::IsNullOrEmpty([string]$Global:LogConfig.LogFilePath)) {
+            Initialize-Logger -ScriptName "purge_logs.ps1" -Verbose:$verboseSet
+        }
     }
 
     if ($PSBoundParameters.ContainsKey('RetentionDays') -and $RetentionDays -lt 0) {
