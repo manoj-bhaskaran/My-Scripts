@@ -33,7 +33,7 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
     }
 
     It 'dispatches PerArchiveSubfolder mode to Expand-ZipToSubfolder' {
-        Mock Test-Path { $true }
+        Mock New-DirectoryIfMissing { }
         Mock Get-FullPath { '/tmp/dest' }
         Mock Get-SafeName { 'safe-name' }
         Mock Expand-ZipToSubfolder { 7 }
@@ -51,7 +51,7 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
     }
 
     It 'dispatches Flat mode to Expand-ZipFlat with computed destination root' {
-        Mock Test-Path { $true }
+        Mock New-DirectoryIfMissing { }
         Mock Get-FullPath { '/tmp/dest-full' }
         Mock Get-SafeName { 'unused-safe-name' }
         Mock Expand-ZipFlat { 3 }
@@ -142,6 +142,22 @@ Describe 'Remove-SourceDirectory' {
 
         function Write-LogDebug { param([string]$Message) }
         Invoke-Expression $helpersWithUsing
+    }
+
+    It 'blocks DeleteSource and preserves zip files remaining after a Skip-policy move' {
+        $sourceDir = Join-Path $TestDrive 'source-skip-remaining'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+        $skippedZip = Join-Path $sourceDir 'skipped.zip'
+        Set-Content -LiteralPath $skippedZip -Value 'zip-content' -NoNewline
+        $errors = [System.Collections.Generic.List[string]]::new()
+
+        Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $false -ErrorList $errors
+
+        # Source directory and the zip must both survive
+        Test-Path -LiteralPath $sourceDir  | Should -BeTrue
+        Test-Path -LiteralPath $skippedZip | Should -BeTrue
+        $errors.Count | Should -Be 1
+        $errors[0] | Should -BeLike '*zip file*remain*'
     }
 
     It 'warns "only empty subdirectories remain" when source contains only empty subdirs and -CleanNonZips is not set' {
@@ -261,8 +277,8 @@ Describe 'Move-ZipFilesToParent' {
         $result.Bytes | Should -BeGreaterThan 0
         $result.Destination | Should -Be $parentDir
 
-        Test-Path -LiteralPath $zipPath | Should -BeFalse
-        Test-Path -LiteralPath (Join-Path $parentDir 'test.zip') | Should -BeTrue
+        [System.IO.File]::Exists($zipPath) | Should -BeFalse
+        [System.IO.File]::Exists((Join-Path $parentDir 'test.zip')) | Should -BeTrue
     }
 
     It 'throws clear error for drive root source directory' {
@@ -284,5 +300,69 @@ Describe 'Move-ZipFilesToParent' {
         }
 
         { Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true } | Should -Throw "*drive root*"
+    }
+
+    It 'Skip policy: leaves source zip and existing parent zip untouched on collision' {
+        $parentDir = Join-Path $TestDrive 'parent-skip'
+        $sourceDir = Join-Path $parentDir 'source'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+
+        $srcZip    = Join-Path $sourceDir 'test.zip'
+        $parentZip = Join-Path $parentDir 'test.zip'
+        Set-Content -LiteralPath $srcZip    -Value 'source-content'  -NoNewline
+        Set-Content -LiteralPath $parentZip -Value 'original-content' -NoNewline
+
+        $result = Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true -CollisionPolicy Skip
+
+        $result.Count   | Should -Be 0
+        $result.Skipped | Should -Be 1
+
+        # Source zip must still be present and parent zip must be unchanged
+        [System.IO.File]::Exists($srcZip) | Should -BeTrue
+        (Get-Content -LiteralPath $parentZip -Raw) | Should -Be 'original-content'
+    }
+
+    It 'Overwrite policy: replaces existing parent zip with source zip on collision' {
+        $parentDir = Join-Path $TestDrive 'parent-overwrite'
+        $sourceDir = Join-Path $parentDir 'source'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+
+        $srcZip    = Join-Path $sourceDir 'test.zip'
+        $parentZip = Join-Path $parentDir 'test.zip'
+        Set-Content -LiteralPath $srcZip    -Value 'new-content'      -NoNewline
+        Set-Content -LiteralPath $parentZip -Value 'original-content' -NoNewline
+
+        $result = Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true -CollisionPolicy Overwrite
+
+        $result.Count       | Should -Be 1
+        $result.Overwritten | Should -Be 1
+
+        # Source zip must be gone; parent zip must hold the new content
+        [System.IO.File]::Exists($srcZip) | Should -BeFalse
+        (Get-Content -LiteralPath $parentZip -Raw) | Should -Be 'new-content'
+    }
+
+    It 'Rename policy: keeps existing parent zip and moves source zip under a unique name on collision' {
+        $parentDir = Join-Path $TestDrive 'parent-rename'
+        $sourceDir = Join-Path $parentDir 'source'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+
+        $srcZip    = Join-Path $sourceDir 'test.zip'
+        $parentZip = Join-Path $parentDir 'test.zip'
+        Set-Content -LiteralPath $srcZip    -Value 'new-content'      -NoNewline
+        Set-Content -LiteralPath $parentZip -Value 'original-content' -NoNewline
+
+        $result = Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true -CollisionPolicy Rename
+
+        $result.Count   | Should -Be 1
+        $result.Renamed | Should -Be 1
+
+        # Source zip must be gone; original parent zip must be intact
+        [System.IO.File]::Exists($srcZip) | Should -BeFalse
+        (Get-Content -LiteralPath $parentZip -Raw) | Should -Be 'original-content'
+
+        # A second zip with a unique name must exist in the parent
+        $parentZips = @(Get-ChildItem -LiteralPath $parentDir -Filter '*.zip' -File)
+        $parentZips.Count | Should -Be 2
     }
 }
