@@ -485,13 +485,14 @@ function Resolve-ZipEntryDestinationPath {
         return $null
     }
 
-    # Normalize archive separators and drop a leading './' if present.
+    # Normalize separators and explicitly reject traversal segments.
     $directorySeparator = [System.IO.Path]::DirectorySeparatorChar
-    $relativePath = ($EntryFullName -replace '[\\/]+', [string]$directorySeparator)
-    if ($relativePath.StartsWith(".${directorySeparator}")) {
-        $relativePath = $relativePath.Substring(2)
-    }
-    if ([string]::IsNullOrWhiteSpace($relativePath)) { return $null }
+    $normalizedEntry = ($EntryFullName -replace '\\', '/')
+    $segments = @($normalizedEntry -split '/+' | Where-Object { $_ -ne '' -and $_ -ne '.' })
+    if ($segments.Count -eq 0) { return $null }
+    if (@($segments | Where-Object { $_ -eq '..' }).Count -gt 0) { return $null }
+
+    $relativePath = ($segments -join [string]$directorySeparator)
     if ([System.IO.Path]::IsPathRooted($relativePath)) { return $null }
 
     # Compute canonical paths from fully-qualified roots to compare like-for-like.
@@ -603,7 +604,12 @@ function Expand-ZipFlat {
                 try {
                     [ZipFileExtensions]::ExtractToFile($entry, $targetPath, ($CollisionPolicy -eq 'Overwrite'))
                     $written++
-                } catch { Resolve-ExtractionError -ZipPath $ZipPath -ErrorRecord $_ }
+                } catch {
+                    # Defensive fallback: if a race or path normalization mismatch causes
+                    # a late "already exists" exception under Skip policy, honor Skip.
+                    if ($CollisionPolicy -eq 'Skip' -and $_.Exception.Message -imatch 'already exists') { continue }
+                    Resolve-ExtractionError -ZipPath $ZipPath -ErrorRecord $_
+                }
             }
         } finally {
             $zip.Dispose()

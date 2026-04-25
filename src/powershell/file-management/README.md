@@ -49,7 +49,7 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
   - Hardened Flat-mode Zip Slip handling by introducing a dedicated `Resolve-ZipEntryDestinationPath` helper that normalizes entry separators, rejects rooted entry paths, and validates destination containment with OS-appropriate path comparison semantics.
   - Centralized encrypted/password-protected archive detection via `Resolve-ExtractionError` + `Test-IsEncryptedZipError`, replacing duplicated message-regex checks across extraction paths and ensuring consistent user-facing error text.
   - Added Pester coverage for rooted path rejection and nested-exception encryption detection.
-  - Follow-up fix (same version): corrected rooted-path validation order in `Resolve-ZipEntryDestinationPath` and switched Flat-mode collision existence checks to `[System.IO.File]::Exists`, resolving regressions seen in Skip-policy and Zip Slip Pester tests.
+  - Follow-up fix (same version): corrected rooted-path validation order in `Resolve-ZipEntryDestinationPath`, added explicit `..` traversal-segment rejection, and switched Flat-mode collision existence checks to `[System.IO.File]::Exists` with a defensive Skip-policy "already exists" fallback for cross-runner determinism.
   - Version bump: `2.2.1` (patch — security hardening and error-classification refactor).
 - **Expand-ZipsAndClean.ps1 v2.1.8** (2026-04-24)
   - Resolved `SourceDir` to its native provider path before any `[System.IO.Directory]` call. `.NET` file APIs don't understand PowerShell PSDrives, so a PSDrive-qualified path (e.g. `TestDrive:\...` from Pester) was making `Directory.Exists` return `$false` and both delete attempts would skip silently, leaving the directory on disk with no error reported.
