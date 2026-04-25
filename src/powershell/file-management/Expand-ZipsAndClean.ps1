@@ -580,7 +580,7 @@ function Expand-ZipFlat {
         try {
             foreach ($entry in $zip.Entries) {
                 if ([string]::IsNullOrEmpty($entry.Name)) { continue }
-                if ($entry.FullName -match '(^|[\\/])\.\.([\\/]|$)') {
+                if ($entry.FullName.Contains('..') -or $entry.FullName -match '(^|[\\/])\.\.([\\/]|$)') {
                     Write-LogDebug "Skipped traversal-segment entry: $($entry.FullName)"
                     continue
                 }
