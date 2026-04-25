@@ -24,7 +24,7 @@ using namespace System.IO.Compression
           If the subfolder exists, a unique folder name is created (timestamped).
         * Flat: STREAMING extraction via ZipArchive (no temp folder). Collisions handled
           per CollisionPolicy before writing each file (Skip/Overwrite/Rename).
-    - CollisionPolicy (for overlapping paths and/or Flat mode):
+    - CollisionPolicy (for overlapping paths in Flat mode AND for the zip-move-to-parent step):
         * Skip | Overwrite | Rename (default: Rename)
     - Progress bars for long runs (suppressed by -Quiet). Move progress shows cumulative AND total bytes.
     - End-of-run summary includes uncompressed bytes, total compressed zip bytes, and compression ratio.
@@ -46,10 +46,13 @@ using namespace System.IO.Compression
       - Flat   (streams entries directly without temp folder; collisions handled per policy)
 
 .PARAMETER CollisionPolicy
-    Behavior when a target file already exists:
-      - Skip       : leave existing files untouched, skip the incoming file
-      - Overwrite  : replace existing files
-      - Rename     : save incoming file with a unique suffix
+    Behavior when a target file or zip already exists. Applied during both the
+    extraction phase and the zip-move-to-parent phase:
+      - Skip       : leave the existing item untouched; skip the incoming file/zip.
+                     Skipped zip count is reported in the summary.
+      - Overwrite  : replace the existing item (Move-Item -Force for zips; direct
+                     write for extracted files).
+      - Rename     : save the incoming item with a unique suffix (default behavior).
     Default: Rename
 
 .PARAMETER DeleteSource
@@ -100,13 +103,23 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.1.9
+    Version  : 2.2.0
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.2.0  Honored CollisionPolicy during zip-move-to-parent step (issue #972):
+           - Added -CollisionPolicy parameter to Move-ZipFilesToParent.
+           - Skip: leaves the existing parent zip untouched and records skipped count.
+           - Overwrite: replaces the existing parent zip using Move-Item -Force.
+           - Rename: prior behavior via Resolve-UniquePath (unchanged default).
+           - Summary now reports MoveSkipped, MoveOverwritten, MoveRenamed counts.
+           - .PARAMETER CollisionPolicy help updated to enumerate both phases.
+           - Added Pester tests for each policy on a colliding move.
+           Version bump: minor (behavior change for Skip/Overwrite users).
+
     2.1.9  Refactored Move-ZipFilesToParent to eliminate parent-scope reads:
            - Added [bool]$QuietMode parameter to avoid reading $Quiet from parent scope
            - Added drive-root edge case check with clear error message
@@ -819,12 +832,19 @@ function Remove-SourceDirectory {
 
 .PARAMETER QuietMode
     Suppresses progress bar output when $true.
+
+.PARAMETER CollisionPolicy
+    Behavior when a zip with the same name already exists in the parent directory:
+      - Skip       : leave the existing parent zip untouched and do not move the source zip.
+      - Overwrite  : replace the existing parent zip with the source zip (Move-Item -Force).
+      - Rename     : move the source zip with a unique suffix (default, prior behavior).
 #>
 function Move-ZipFilesToParent {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$SourceDir,
-        [Parameter(Mandatory)][bool]$QuietMode
+        [Parameter(Mandatory)][bool]$QuietMode,
+        [ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy = 'Rename'
     )
 
     $parentItem = Get-Item -LiteralPath $SourceDir
@@ -857,6 +877,9 @@ function Move-ZipFilesToParent {
     $idx = 0
     $moved = 0
     $bytes = [int64]0
+    $skipped = 0
+    $overwritten = 0
+    $renamed = 0
 
     foreach ($zf in $zipsToMove) {
         $idx++
@@ -869,17 +892,37 @@ function Move-ZipFilesToParent {
         }
 
         $target = Join-Path $parent $zf.Name
-        if (Test-Path -LiteralPath $target) {
-            $target = Resolve-UniquePath -Path $target
+        $collides = Test-Path -LiteralPath $target
+        if ($collides) {
+            switch ($CollisionPolicy) {
+                'Skip' {
+                    Write-LogDebug "Move skip (collision): '$($zf.Name)' already exists in parent."
+                    $skipped++
+                    continue
+                }
+                'Overwrite' {
+                    # target path stays the same; Move-Item -Force below handles the overwrite
+                }
+                'Rename' {
+                    $target = Resolve-UniquePath -Path $target
+                    $renamed++
+                }
+            }
         }
-        Move-Item -LiteralPath $zf.FullName -Destination $target
+
+        if ($collides -and $CollisionPolicy -eq 'Overwrite') {
+            Move-Item -LiteralPath $zf.FullName -Destination $target -Force
+            $overwritten++
+        } else {
+            Move-Item -LiteralPath $zf.FullName -Destination $target
+        }
         $moved++
         $bytes += $zf.Length
     }
 
     if (-not $QuietMode) { Write-Progress -Activity "Moving zip files to parent" -Completed }
 
-    [pscustomobject]@{ Count = $moved; Bytes = $bytes; Destination = $parent }
+    [pscustomobject]@{ Count = $moved; Bytes = $bytes; Destination = $parent; Skipped = $skipped; Overwritten = $overwritten; Renamed = $renamed }
 }
 
 #endregion Helpers
@@ -895,7 +938,7 @@ $processedZips = 0
 $totalFilesExtracted = 0
 $totalUncompressedBytes = [int64]0
 $totalCompressedZipBytes = [int64]0
-$moveSummary = [pscustomobject]@{ Count = 0; Bytes = 0; Destination = "" }
+$moveSummary = [pscustomobject]@{ Count = 0; Bytes = 0; Destination = ""; Skipped = 0; Overwritten = 0; Renamed = 0 }
 
 try {
     Test-ScriptPreconditions -SourceDir $SourceDirectory -DestinationDir $DestinationDirectory
@@ -918,7 +961,7 @@ try {
 
     try {
         if ($PSCmdlet.ShouldProcess($SourceDirectory, "Move .zip files to parent")) {
-            $moveSummary = Move-ZipFilesToParent -SourceDir $SourceDirectory -QuietMode $Quiet.IsPresent
+            $moveSummary = Move-ZipFilesToParent -SourceDir $SourceDirectory -QuietMode $Quiet.IsPresent -CollisionPolicy $CollisionPolicy
         }
     } catch {
         $msg = "Moving .zip files to parent failed: $($_.Exception.Message)"
@@ -948,21 +991,24 @@ $compressionRatio = if ($totalCompressedZipBytes -gt 0) {
 
 # Build a view with shorter column names to avoid wrapping on narrow consoles
 $summaryView = [pscustomobject]@{
-    SrcDir       = $SourceDirectory
-    DestDir      = $DestinationDirectory
-    Mode         = $ExtractMode
-    Policy       = $CollisionPolicy
-    ZipsFound    = $zipCount
-    ZipsDone     = $processedZips
-    Files        = $totalFilesExtracted
-    Uncompressed = (Format-Bytes $totalUncompressedBytes)
-    Compressed   = (Format-Bytes $totalCompressedZipBytes)
-    Ratio        = $compressionRatio
-    ZipsMoved    = ($moveSummary.Count)
-    MovedBytes   = (Format-Bytes $moveSummary.Bytes)
-    MovedTo      = ($moveSummary.Destination)
-    Errors       = ($errors.Count)
-    Duration     = ("{0:hh\:mm\:ss\.fff}" -f $stopwatch.Elapsed)
+    SrcDir          = $SourceDirectory
+    DestDir         = $DestinationDirectory
+    Mode            = $ExtractMode
+    Policy          = $CollisionPolicy
+    ZipsFound       = $zipCount
+    ZipsDone        = $processedZips
+    Files           = $totalFilesExtracted
+    Uncompressed    = (Format-Bytes $totalUncompressedBytes)
+    Compressed      = (Format-Bytes $totalCompressedZipBytes)
+    Ratio           = $compressionRatio
+    ZipsMoved       = ($moveSummary.Count)
+    MoveSkipped     = ($moveSummary.Skipped)
+    MoveOverwritten = ($moveSummary.Overwritten)
+    MoveRenamed     = ($moveSummary.Renamed)
+    MovedBytes      = (Format-Bytes $moveSummary.Bytes)
+    MovedTo         = ($moveSummary.Destination)
+    Errors          = ($errors.Count)
+    Duration        = ("{0:hh\:mm\:ss\.fff}" -f $stopwatch.Elapsed)
 }
 
 Write-Host ""

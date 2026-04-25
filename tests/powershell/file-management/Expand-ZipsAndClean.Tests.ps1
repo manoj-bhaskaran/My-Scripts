@@ -285,4 +285,68 @@ Describe 'Move-ZipFilesToParent' {
 
         { Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true } | Should -Throw "*drive root*"
     }
+
+    It 'Skip policy: leaves source zip and existing parent zip untouched on collision' {
+        $parentDir = Join-Path $TestDrive 'parent-skip'
+        $sourceDir = Join-Path $parentDir 'source'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+
+        $srcZip    = Join-Path $sourceDir 'test.zip'
+        $parentZip = Join-Path $parentDir 'test.zip'
+        Set-Content -LiteralPath $srcZip    -Value 'source-content'  -NoNewline
+        Set-Content -LiteralPath $parentZip -Value 'original-content' -NoNewline
+
+        $result = Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true -CollisionPolicy Skip
+
+        $result.Count   | Should -Be 0
+        $result.Skipped | Should -Be 1
+
+        # Source zip must still be present and parent zip must be unchanged
+        Test-Path -LiteralPath $srcZip | Should -BeTrue
+        (Get-Content -LiteralPath $parentZip -Raw) | Should -Be 'original-content'
+    }
+
+    It 'Overwrite policy: replaces existing parent zip with source zip on collision' {
+        $parentDir = Join-Path $TestDrive 'parent-overwrite'
+        $sourceDir = Join-Path $parentDir 'source'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+
+        $srcZip    = Join-Path $sourceDir 'test.zip'
+        $parentZip = Join-Path $parentDir 'test.zip'
+        Set-Content -LiteralPath $srcZip    -Value 'new-content'      -NoNewline
+        Set-Content -LiteralPath $parentZip -Value 'original-content' -NoNewline
+
+        $result = Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true -CollisionPolicy Overwrite
+
+        $result.Count       | Should -Be 1
+        $result.Overwritten | Should -Be 1
+
+        # Source zip must be gone; parent zip must hold the new content
+        Test-Path -LiteralPath $srcZip | Should -BeFalse
+        (Get-Content -LiteralPath $parentZip -Raw) | Should -Be 'new-content'
+    }
+
+    It 'Rename policy: keeps existing parent zip and moves source zip under a unique name on collision' {
+        $parentDir = Join-Path $TestDrive 'parent-rename'
+        $sourceDir = Join-Path $parentDir 'source'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+
+        $srcZip    = Join-Path $sourceDir 'test.zip'
+        $parentZip = Join-Path $parentDir 'test.zip'
+        Set-Content -LiteralPath $srcZip    -Value 'new-content'      -NoNewline
+        Set-Content -LiteralPath $parentZip -Value 'original-content' -NoNewline
+
+        $result = Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true -CollisionPolicy Rename
+
+        $result.Count   | Should -Be 1
+        $result.Renamed | Should -Be 1
+
+        # Source zip must be gone; original parent zip must be intact
+        Test-Path -LiteralPath $srcZip | Should -BeFalse
+        (Get-Content -LiteralPath $parentZip -Raw) | Should -Be 'original-content'
+
+        # A second zip with a unique name must exist in the parent
+        $parentZips = @(Get-ChildItem -LiteralPath $parentDir -Filter '*.zip' -File)
+        $parentZips.Count | Should -Be 2
+    }
 }
