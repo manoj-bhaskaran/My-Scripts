@@ -277,8 +277,8 @@ Describe 'Move-ZipFilesToParent' {
         $result.Bytes | Should -BeGreaterThan 0
         $result.Destination | Should -Be $parentDir
 
-        Test-Path -LiteralPath $zipPath | Should -BeFalse
-        Test-Path -LiteralPath (Join-Path $parentDir 'test.zip') | Should -BeTrue
+        [System.IO.File]::Exists($zipPath) | Should -BeFalse
+        [System.IO.File]::Exists((Join-Path $parentDir 'test.zip')) | Should -BeTrue
     }
 
     It 'throws clear error for drive root source directory' {
@@ -318,7 +318,7 @@ Describe 'Move-ZipFilesToParent' {
         $result.Skipped | Should -Be 1
 
         # Source zip must still be present and parent zip must be unchanged
-        Test-Path -LiteralPath $srcZip | Should -BeTrue
+        [System.IO.File]::Exists($srcZip) | Should -BeTrue
         (Get-Content -LiteralPath $parentZip -Raw) | Should -Be 'original-content'
     }
 
@@ -338,7 +338,7 @@ Describe 'Move-ZipFilesToParent' {
         $result.Overwritten | Should -Be 1
 
         # Source zip must be gone; parent zip must hold the new content
-        Test-Path -LiteralPath $srcZip | Should -BeFalse
+        [System.IO.File]::Exists($srcZip) | Should -BeFalse
         (Get-Content -LiteralPath $parentZip -Raw) | Should -Be 'new-content'
     }
 
@@ -358,7 +358,7 @@ Describe 'Move-ZipFilesToParent' {
         $result.Renamed | Should -Be 1
 
         # Source zip must be gone; original parent zip must be intact
-        Test-Path -LiteralPath $srcZip | Should -BeFalse
+        [System.IO.File]::Exists($srcZip) | Should -BeFalse
         (Get-Content -LiteralPath $parentZip -Raw) | Should -Be 'original-content'
 
         # A second zip with a unique name must exist in the parent

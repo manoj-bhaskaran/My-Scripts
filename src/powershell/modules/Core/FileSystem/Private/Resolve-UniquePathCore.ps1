@@ -46,6 +46,7 @@ function Resolve-UniquePathCore {
     # filesystem returning stale results) and is preferable to an infinite loop.
     $maxAttempts = 1000
 
+    $candidateExists = $true
     do {
         if ($i -ge $maxAttempts) {
             throw "Resolve-UniquePathCore: exceeded $maxAttempts attempts finding a unique path for '$Path'."
@@ -53,7 +54,8 @@ function Resolve-UniquePathCore {
         $suffix = if ($i -eq 0) { "_$stamp" } else { "_$stamp`_$i" }
         $candidate = Join-Path $parent ($base + $suffix + $ext)
         $i++
-    } while (Test-Path -LiteralPath $candidate)
+        $candidateExists = if ($IsDirectory) { [System.IO.Directory]::Exists($candidate) } else { [System.IO.File]::Exists($candidate) }
+    } while ($candidateExists)
 
     return $candidate
 }

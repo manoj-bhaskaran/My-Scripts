@@ -865,7 +865,7 @@ function Move-ZipFilesToParent {
     }
     $parent = $parentItem.Parent.FullName
 
-    if (-not (Test-Path -LiteralPath $parent)) {
+    if (-not [System.IO.Directory]::Exists($parent)) {
         throw "Parent directory not found: $parent"
     }
 
@@ -904,7 +904,7 @@ function Move-ZipFilesToParent {
         }
 
         $target = Join-Path $parent $zf.Name
-        $collides = Test-Path -LiteralPath $target
+        $collides = [System.IO.File]::Exists($target)
         $useForce = $false
 
         if ($collides) {
