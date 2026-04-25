@@ -242,7 +242,6 @@ Describe 'Remove-SourceDirectory' {
 
 Describe 'Move-ZipFilesToParent' {
     BeforeAll {
-        Write-Host '[DIAG] Move-ZipFilesToParent BeforeAll: start' -ForegroundColor Magenta
         $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
         $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
         $scriptText = Get-Content -LiteralPath $scriptPath -Raw
@@ -258,17 +257,13 @@ Describe 'Move-ZipFilesToParent' {
             Where-Object { $_ -match '^\s*using\s+namespace\s+' }) -join "`n"
         $helpersWithUsing = $usingLines + "`n" + $helpers
 
-        Write-Host '[DIAG] Move-ZipFilesToParent BeforeAll: before Import-Module' -ForegroundColor Magenta
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
-        Write-Host '[DIAG] Move-ZipFilesToParent BeforeAll: before Invoke-Expression' -ForegroundColor Magenta
 
         function Write-LogDebug { param([string]$Message) }
         Invoke-Expression $helpersWithUsing
-        Write-Host '[DIAG] Move-ZipFilesToParent BeforeAll: complete' -ForegroundColor Magenta
     }
 
     It 'moves zip files from source to parent directory' {
-        Write-Host '[DIAG] Test "moves zip files": start' -ForegroundColor Cyan
         $parentDir = Join-Path $TestDrive 'parent'
         $sourceDir = Join-Path $parentDir 'source'
         New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
@@ -276,9 +271,7 @@ Describe 'Move-ZipFilesToParent' {
         $zipPath = Join-Path $sourceDir 'test.zip'
         Set-Content -LiteralPath $zipPath -Value 'dummy zip content' -NoNewline
 
-        Write-Host '[DIAG] Test "moves zip files": before Move-ZipFilesToParent call' -ForegroundColor Cyan
         $result = Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true
-        Write-Host '[DIAG] Test "moves zip files": after Move-ZipFilesToParent call' -ForegroundColor Cyan
 
         $result.Count | Should -Be 1
         $result.Bytes | Should -BeGreaterThan 0

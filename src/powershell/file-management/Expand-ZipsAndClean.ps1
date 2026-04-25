@@ -859,6 +859,11 @@ function Move-ZipFilesToParent {
         [ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy = 'Rename'
     )
 
+    # Prevent New-Item/Remove-Item/Move-Item (ConfirmImpact=Medium) from prompting
+    # for confirmation when running in non-interactive contexts (e.g. Pester in CI)
+    # where $ConfirmPreference may be at or below Medium.
+    $ConfirmPreference = 'None'
+
     $parentItem = Get-Item -LiteralPath $SourceDir
     if (-not $parentItem.Parent) {
         throw "Cannot move zip files: source directory '$SourceDir' is at drive root (no parent directory exists)"
