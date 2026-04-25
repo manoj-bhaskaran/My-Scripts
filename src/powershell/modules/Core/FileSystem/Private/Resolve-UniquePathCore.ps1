@@ -40,15 +40,18 @@ function Resolve-UniquePathCore {
     $ext = if ($IsDirectory) { '' } else { [System.IO.Path]::GetExtension($leaf) }
     $stamp = (Get-Date -Format 'yyyyMMddHHmmss')
     $i = 0
+    # Safety bound: a directory should never legitimately need this many
+    # timestamped variants to find a free name. Hitting the bound indicates
+    # something pathological (e.g. Test-Path mocked to always return $true,
+    # filesystem returning stale results) and is preferable to an infinite loop.
     $maxAttempts = 1000
 
     do {
         if ($i -ge $maxAttempts) {
-            throw "Resolve-UniquePathCore: exceeded $maxAttempts attempts finding a unique path for '$Path'. Test-Path may be mocked or the directory has an unexpected number of collisions."
+            throw "Resolve-UniquePathCore: exceeded $maxAttempts attempts finding a unique path for '$Path'."
         }
         $suffix = if ($i -eq 0) { "_$stamp" } else { "_$stamp`_$i" }
         $candidate = Join-Path $parent ($base + $suffix + $ext)
-        Write-Host "[DIAG-RUPC] attempt $i candidate='$candidate' exists=$(Test-Path -LiteralPath $candidate)" -ForegroundColor DarkYellow
         $i++
     } while (Test-Path -LiteralPath $candidate)
 

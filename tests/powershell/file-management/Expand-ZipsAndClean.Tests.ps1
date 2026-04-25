@@ -33,7 +33,7 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
     }
 
     It 'dispatches PerArchiveSubfolder mode to Expand-ZipToSubfolder' {
-        Mock Test-Path { $true }
+        Mock New-DirectoryIfMissing { }
         Mock Get-FullPath { '/tmp/dest' }
         Mock Get-SafeName { 'safe-name' }
         Mock Expand-ZipToSubfolder { 7 }
@@ -51,7 +51,7 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
     }
 
     It 'dispatches Flat mode to Expand-ZipFlat with computed destination root' {
-        Mock Test-Path { $true }
+        Mock New-DirectoryIfMissing { }
         Mock Get-FullPath { '/tmp/dest-full' }
         Mock Get-SafeName { 'unused-safe-name' }
         Mock Expand-ZipFlat { 3 }
@@ -242,7 +242,6 @@ Describe 'Remove-SourceDirectory' {
 
 Describe 'Move-ZipFilesToParent' {
     BeforeAll {
-        Write-Host '[DIAG-BA] Move-ZipFilesToParent BeforeAll: start' -ForegroundColor Magenta
         $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
         $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
         $scriptText = Get-Content -LiteralPath $scriptPath -Raw
@@ -258,30 +257,21 @@ Describe 'Move-ZipFilesToParent' {
             Where-Object { $_ -match '^\s*using\s+namespace\s+' }) -join "`n"
         $helpersWithUsing = $usingLines + "`n" + $helpers
 
-        Write-Host '[DIAG-BA] before Import-Module' -ForegroundColor Magenta
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
-        Write-Host '[DIAG-BA] before Invoke-Expression' -ForegroundColor Magenta
 
         function Write-LogDebug { param([string]$Message) }
         Invoke-Expression $helpersWithUsing
-        Write-Host '[DIAG-BA] BeforeAll complete' -ForegroundColor Magenta
     }
 
     It 'moves zip files from source to parent directory' {
-        Write-Host '[DIAG-IT] test "moves zip files": start' -ForegroundColor Cyan
-        Write-Host "[DIAG-IT] ConfirmPref='$ConfirmPreference' WhatIfPref='$WhatIfPreference' PSVersion=$($PSVersionTable.PSVersion)" -ForegroundColor Cyan
         $parentDir = Join-Path $TestDrive 'parent'
         $sourceDir = Join-Path $parentDir 'source'
         New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
-        Write-Host "[DIAG-IT] sourceDir created: $sourceDir" -ForegroundColor Cyan
 
         $zipPath = Join-Path $sourceDir 'test.zip'
         Set-Content -LiteralPath $zipPath -Value 'dummy zip content' -NoNewline
-        Write-Host "[DIAG-IT] zip written: $zipPath" -ForegroundColor Cyan
 
-        Write-Host '[DIAG-IT] before Move-ZipFilesToParent call' -ForegroundColor Cyan
         $result = Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true
-        Write-Host '[DIAG-IT] after Move-ZipFilesToParent call' -ForegroundColor Cyan
 
         $result.Count | Should -Be 1
         $result.Bytes | Should -BeGreaterThan 0
