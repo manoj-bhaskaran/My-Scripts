@@ -472,14 +472,32 @@ function Resolve-ZipEntryDestinationPath {
         [Parameter(Mandatory)][string]$EntryFullName
     )
 
-    # Normalize archive separators first, then ensure the resulting path is relative.
+    if ([string]::IsNullOrWhiteSpace($EntryFullName)) { return $null }
+
+    # Reject rooted/archive-absolute inputs before normalization/trimming.
+    if (
+        $EntryFullName.StartsWith('/') -or
+        $EntryFullName.StartsWith('\') -or
+        $EntryFullName -match '^[A-Za-z]:[\\/]' -or
+        $EntryFullName.StartsWith('//') -or
+        $EntryFullName.StartsWith('\\')
+    ) {
+        return $null
+    }
+
+    # Normalize archive separators and drop a leading './' if present.
     $directorySeparator = [System.IO.Path]::DirectorySeparatorChar
-    $relativePath = (($EntryFullName -replace '[\\/]+', [string]$directorySeparator)).TrimStart('\', '/')
+    $relativePath = ($EntryFullName -replace '[\\/]+', [string]$directorySeparator)
+    if ($relativePath.StartsWith(".${directorySeparator}")) {
+        $relativePath = $relativePath.Substring(2)
+    }
     if ([string]::IsNullOrWhiteSpace($relativePath)) { return $null }
     if ([System.IO.Path]::IsPathRooted($relativePath)) { return $null }
 
-    $candidate = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($DestinationRootFull, $relativePath))
-    $rootWithSep = if ($DestinationRootFull.EndsWith($directorySeparator)) { $DestinationRootFull } else { $DestinationRootFull + $directorySeparator }
+    # Compute canonical paths from fully-qualified roots to compare like-for-like.
+    $rootFull = [System.IO.Path]::GetFullPath($DestinationRootFull)
+    $candidate = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($rootFull, $relativePath))
+    $rootWithSep = if ($rootFull.EndsWith($directorySeparator)) { $rootFull } else { $rootFull + $directorySeparator }
     $comparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
 
     if ($candidate.StartsWith($rootWithSep, $comparison)) {
@@ -574,7 +592,7 @@ function Expand-ZipFlat {
                 }
 
                 $targetPath = $destFull
-                if (Test-Path -LiteralPath $targetPath) {
+                if ([System.IO.File]::Exists($targetPath)) {
                     switch ($CollisionPolicy) {
                         'Skip' { continue }
                         'Rename' { $targetPath = Resolve-UniquePath -Path $targetPath }

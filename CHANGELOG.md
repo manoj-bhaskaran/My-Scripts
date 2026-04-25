@@ -34,6 +34,11 @@ Entries older than the current minor release line are condensed to architectural
   - Reduces drift between `PerArchiveSubfolder` and `Flat` extraction paths and improves maintainability of encrypted/password-protected archive diagnostics.
   - Script version bumped to **2.2.1** (patch; hardening/refactor, no breaking changes).
 
+- **[Expand-ZipsAndClean] Follow-up fixes for #973 helper regressions (no version change)**
+  - `Resolve-ZipEntryDestinationPath` now rejects rooted entry names *before* relative-path normalization and trimming, fixing false acceptance of entries like `/etc/passwd`.
+  - Canonical containment checks now compare against a normalized full destination root, and Flat-mode collision detection uses `[System.IO.File]::Exists` for consistent file-existence checks on extracted targets.
+  - Restores expected behavior in Pester scenarios for `Skip` collision policy and Zip Slip traversal blocking.
+
 - **[Expand-ZipsAndClean] Remove-SourceDirectory source-dir deletion unreliable on Linux CI**
   - Replaced the two-pass `Remove-Item -Recurse -Force` pattern for the source directory with `[System.IO.Directory]::Delete($path, recursive: $true)`. On GitHub Actions Linux runners the two-pass pattern was leaving the source directory on disk even after the per-item cleanup loop had successfully removed its contents, which manifested as `Test-Path $sourceDir | Should -BeFalse` failing in the nested-cleanup Pester case.
   - The .NET primitive is synchronous, cross-platform, and not subject to PowerShell issue #8211. `Remove-Item` is retained as a single-shot fallback only if the .NET call fails.
