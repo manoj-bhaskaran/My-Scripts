@@ -103,13 +103,25 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.2.0
+    Version  : 2.2.1
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.2.1  Hardened Flat-mode Zip Slip protection and centralized encrypted-archive
+           error detection (issue #973):
+           - Added Resolve-ZipEntryDestinationPath helper to normalize archive entry
+             separators, reject rooted paths, and validate destination containment
+             using OS-appropriate path comparisons.
+           - Removed duplicated "zip may be encrypted" regex checks from multiple
+             catch blocks; extraction errors now flow through Resolve-ExtractionError
+             + Test-IsEncryptedZipError for consistent messaging.
+           - Added Pester coverage for rooted-path rejection and encrypted error
+             classification with nested exceptions.
+           Version bump: patch (security hardening + internal refactor).
+
     2.2.0  Honored CollisionPolicy during zip-move-to-parent step (issue #972):
            - Added -CollisionPolicy parameter to Move-ZipFilesToParent.
            - Skip: leaves the existing parent zip untouched and records skipped count.
@@ -404,6 +416,81 @@ function Get-ZipFileStats {
 
 <#
 .SYNOPSIS
+    Returns $true when an exception/message indicates archive encryption/password protection.
+#>
+function Test-IsEncryptedZipError {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][AllowNull()][object]$ErrorObject)
+
+    $encryptionPattern = '(?i)encrypt(?:ed|ion)?|password|protected|unsupported compression method'
+
+    if ($ErrorObject -is [System.Management.Automation.ErrorRecord]) {
+        if ($ErrorObject.Exception -and (Test-IsEncryptedZipError -ErrorObject $ErrorObject.Exception)) {
+            return $true
+        }
+        if ([string]$ErrorObject -match $encryptionPattern) { return $true }
+        return $false
+    }
+
+    if ($ErrorObject -is [System.Exception]) {
+        $ex = [System.Exception]$ErrorObject
+        while ($null -ne $ex) {
+            if (($ex.Message ?? '') -match $encryptionPattern) { return $true }
+            $ex = $ex.InnerException
+        }
+        return $false
+    }
+
+    return ([string]$ErrorObject -match $encryptionPattern)
+}
+
+<#
+.SYNOPSIS
+    Throws a normalized encrypted-archive extraction error when applicable.
+#>
+function Resolve-ExtractionError {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ZipPath,
+        [Parameter(Mandatory)][System.Management.Automation.ErrorRecord]$ErrorRecord
+    )
+
+    if (Test-IsEncryptedZipError -ErrorObject $ErrorRecord) {
+        throw "Extraction failed for '$ZipPath' (zip may be encrypted): $($ErrorRecord.Exception.Message)"
+    }
+    throw $ErrorRecord
+}
+
+<#
+.SYNOPSIS
+    Resolves a ZipArchive entry destination and blocks path traversal (Zip Slip).
+#>
+function Resolve-ZipEntryDestinationPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$DestinationRootFull,
+        [Parameter(Mandatory)][string]$EntryFullName
+    )
+
+    # Normalize archive separators first, then ensure the resulting path is relative.
+    $directorySeparator = [System.IO.Path]::DirectorySeparatorChar
+    $relativePath = (($EntryFullName -replace '[\\/]+', [string]$directorySeparator)).TrimStart('\', '/')
+    if ([string]::IsNullOrWhiteSpace($relativePath)) { return $null }
+    if ([System.IO.Path]::IsPathRooted($relativePath)) { return $null }
+
+    $candidate = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($DestinationRootFull, $relativePath))
+    $rootWithSep = if ($DestinationRootFull.EndsWith($directorySeparator)) { $DestinationRootFull } else { $DestinationRootFull + $directorySeparator }
+    $comparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+
+    if ($candidate.StartsWith($rootWithSep, $comparison)) {
+        return $candidate
+    }
+
+    return $null
+}
+
+<#
+.SYNOPSIS
     Extracts one ZIP archive into a unique subfolder under the destination root.
 .DESCRIPTION
     This helper implements `PerArchiveSubfolder` mode. It uses `Expand-Archive` to extract
@@ -435,13 +522,7 @@ function Expand-ZipToSubfolder {
         Expand-Archive -LiteralPath $ZipPath -DestinationPath $target -Force
         return (Get-ChildItem -Path $target -Recurse -File | Measure-Object).Count
 
-    } catch {
-        $msg = $_.Exception.Message
-        if ($msg -imatch 'encrypt|password|protected') {
-            throw "Extraction failed for '$ZipPath' (zip may be encrypted): $msg"
-        }
-        throw
-    }
+    } catch { Resolve-ExtractionError -ZipPath $ZipPath -ErrorRecord $_ }
 }
 
 <#
@@ -472,7 +553,6 @@ function Expand-ZipFlat {
         [ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy = 'Rename'
     )
 
-    $destRootFullWithSep = if ($DestinationRootFull.EndsWith('\')) { $DestinationRootFull } else { $DestinationRootFull + '\' }
     $written = 0
 
     try {
@@ -482,10 +562,8 @@ function Expand-ZipFlat {
             foreach ($entry in $zip.Entries) {
                 if ([string]::IsNullOrEmpty($entry.Name)) { continue }
 
-                $rel = ($entry.FullName -replace '/', '\').TrimStart('\')
-                $dest = Join-Path $DestinationRoot $rel
-                $destFull = [System.IO.Path]::GetFullPath($dest)
-                if (-not $destFull.StartsWith($destRootFullWithSep, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $destFull = Resolve-ZipEntryDestinationPath -DestinationRootFull $DestinationRootFull -EntryFullName $entry.FullName
+                if ($null -eq $destFull) {
                     Write-LogDebug "Skipped path traversal: $($entry.FullName)"
                     continue
                 }
@@ -507,13 +585,7 @@ function Expand-ZipFlat {
                 try {
                     [ZipFileExtensions]::ExtractToFile($entry, $targetPath, ($CollisionPolicy -eq 'Overwrite'))
                     $written++
-                } catch {
-                    $emsg = $_.Exception.Message
-                    if ($emsg -imatch 'encrypt|password|protected') {
-                        throw "Extraction failed for '$ZipPath' (zip may be encrypted): $emsg"
-                    }
-                    throw
-                }
+                } catch { Resolve-ExtractionError -ZipPath $ZipPath -ErrorRecord $_ }
             }
         } finally {
             $zip.Dispose()
@@ -521,13 +593,7 @@ function Expand-ZipFlat {
 
         return $written
 
-    } catch {
-        $msg = $_.Exception.Message
-        if ($msg -imatch 'encrypt|password|protected') {
-            throw "Extraction failed for '$ZipPath' (zip may be encrypted): $msg"
-        }
-        throw
-    }
+    } catch { Resolve-ExtractionError -ZipPath $ZipPath -ErrorRecord $_ }
 }
 
 <#
