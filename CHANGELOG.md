@@ -16,6 +16,10 @@ Entries older than the current minor release line are condensed to architectural
 ### Security
 
 - **[requirements] Bumped `pytest` minimum to `9.0.3`** to resolve `GHSA-6w46-j5rx-g56g` (predictable `/tmp/pytest-of-{user}` directory name on UNIX enables local DoS / privilege escalation). Previous pin `pytest>=7.4.0,<9.0.0` excluded the fix; new pin is `pytest>=9.0.3,<10.0.0`.
+- **[Expand-ZipsAndClean] Hardened Flat-mode Zip Slip path validation** (issue #973)
+  - Added a dedicated helper (`Resolve-ZipEntryDestinationPath`) that normalizes archive separators, rejects rooted entry names, resolves a canonical candidate path, and validates containment within the destination root.
+  - Containment comparison now uses OS-appropriate semantics (`OrdinalIgnoreCase` on Windows, `Ordinal` elsewhere), avoiding platform-specific false positives/negatives from hard-coded Windows path assumptions.
+  - Added Pester coverage for rooted-entry rejection and traversal blocking behavior.
 
 ### Fixed
 
@@ -24,6 +28,19 @@ Entries older than the current minor release line are condensed to architectural
   - Now resolves `SourceDir` to its native provider path (`(Resolve-Path -LiteralPath $SourceDir).ProviderPath`) upfront and uses the resolved path for every `[System.IO.Directory]` call, the recursive `Get-ChildItem` scan, and the deepest-first sort regex. The user-facing error messages still reference the caller's original path.
   - Also enriched the Pester `-Because` diagnostic with `[IO.Directory.Exists]` / `Test-Path` / remaining-items state so future regressions are self-diagnosing.
   - Script version bumped to **2.1.8** (patch; correctness fix, no new features).
+
+- **[Expand-ZipsAndClean] Centralized encrypted-archive extraction error classification** (issue #973)
+  - Replaced duplicated catch-block heuristics with `Resolve-ExtractionError` and `Test-IsEncryptedZipError`, which classify nested exceptions/messages in one place and emit a consistent "zip may be encrypted" failure message.
+  - Reduces drift between `PerArchiveSubfolder` and `Flat` extraction paths and improves maintainability of encrypted/password-protected archive diagnostics.
+  - Script version bumped to **2.2.1** (patch; hardening/refactor, no breaking changes).
+
+- **[Expand-ZipsAndClean] Follow-up fixes for #973 helper regressions (no version change)**
+  - `Resolve-ZipEntryDestinationPath` now rejects rooted entry names *before* relative-path normalization and trimming, fixing false acceptance of entries like `/etc/passwd`.
+  - Canonical containment checks now compare against a normalized full destination root, and Flat-mode collision detection uses `[System.IO.File]::Exists` for consistent file-existence checks on extracted targets.
+  - Added explicit traversal-segment (`..`) rejection and a defensive Skip-policy fallback for late "already exists" extraction exceptions so Flat-mode Skip and Zip Slip tests remain deterministic across runners.
+  - Added a second guard in `Expand-ZipFlat` that short-circuits any entry whose raw `entry.FullName` contains traversal markers (`..`) before destination-path resolution, preventing traversal writes even if resolver normalization behavior differs by runtime.
+  - Refined the Zip Slip Pester assertion to use a pre-existing sentinel `evil.txt` outside the destination root and verify it is neither overwritten nor accompanied by renamed siblings (`evil*.txt`), making the security expectation deterministic even when parent directories already contain files.
+  - Restores expected behavior in Pester scenarios for `Skip` collision policy and Zip Slip traversal blocking.
 
 - **[Expand-ZipsAndClean] Remove-SourceDirectory source-dir deletion unreliable on Linux CI**
   - Replaced the two-pass `Remove-Item -Recurse -Force` pattern for the source directory with `[System.IO.Directory]::Delete($path, recursive: $true)`. On GitHub Actions Linux runners the two-pass pattern was leaving the source directory on disk even after the per-item cleanup loop had successfully removed its contents, which manifested as `Test-Path $sourceDir | Should -BeFalse` failing in the nested-cleanup Pester case.
