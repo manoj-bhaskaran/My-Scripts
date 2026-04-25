@@ -100,13 +100,20 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.1.8
+    Version  : 2.1.9
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.1.9  Refactored Move-ZipFilesToParent to eliminate parent-scope reads:
+           - Added [bool]$QuietMode parameter to avoid reading $Quiet from parent scope
+           - Added drive-root edge case check with clear error message
+           - Made writability probe leak-free by cleaning up temp directory on failure
+           - Added comprehensive Pester tests for standalone function exercise
+           - Updated function help documentation for new parameter
+
     2.1.8  Fixed Remove-SourceDirectory silent short-circuit when SourceDir
            was passed as a PSDrive-qualified path:
            - Resolve SourceDir to its native provider path (Resolve-Path |
@@ -733,8 +740,8 @@ function Remove-SourceDirectory {
             # Set-StrictMode -Version Latest when a single-segment relative path
             # would otherwise make Where-Object return a scalar string.
             $nonZips | Sort-Object -Property `
-                @{ Expression = { @($_.FullName -replace [regex]::Escape($resolvedSource), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count }; Descending = $true }, `
-                @{ Expression = { $_.FullName }; Descending = $true } | ForEach-Object {
+            @{ Expression = { @($_.FullName -replace [regex]::Escape($resolvedSource), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count }; Descending = $true }, `
+            @{ Expression = { $_.FullName }; Descending = $true } | ForEach-Object {
                 # Capture the pipeline item; inside the catch below, $_ is rebound
                 # to the ErrorRecord and reading $_.FullName would raise a
                 # terminating PropertyNotFoundException under Set-StrictMode -Latest,
@@ -806,25 +813,39 @@ function Remove-SourceDirectory {
 <#
 .SYNOPSIS
     Moves .zip files from SourceDir to its parent folder with per-file progress.
+
+.PARAMETER SourceDir
+    The source directory containing .zip files to move.
+
+.PARAMETER QuietMode
+    Suppresses progress bar output when $true.
 #>
 function Move-ZipFilesToParent {
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$SourceDir)
+    param(
+        [Parameter(Mandatory)][string]$SourceDir,
+        [Parameter(Mandatory)][bool]$QuietMode
+    )
 
     $parentItem = Get-Item -LiteralPath $SourceDir
+    if (-not $parentItem.Parent) {
+        throw "Cannot move zip files: source directory '$SourceDir' is at drive root (no parent directory exists)"
+    }
     $parent = $parentItem.Parent.FullName
 
     if (-not (Test-Path -LiteralPath $parent)) {
         throw "Parent directory not found: $parent"
     }
 
-    # Writability probe using an empty directory (skip if WhatIf)
+    # Writability probe using a temporary file (skip if WhatIf)
     if (-not $WhatIfPreference) {
-        $probe = Join-Path $parent ("._write_test_{0}" -f ([guid]::NewGuid().ToString('N')))
+        $probe = Join-Path $parent ("_write_test_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
         try {
-            New-DirectoryIfMissing -Path $probe -Force | Out-Null
-            Remove-Item -LiteralPath $probe -Recurse -Force
+            New-Item -ItemType File -Path $probe -Force | Out-Null
+            Remove-Item -LiteralPath $probe -Force
         } catch {
+            # Clean up probe file even on failure
+            try { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue } catch { }
             throw "Parent directory is not writable: $parent"
         }
     }
@@ -839,7 +860,7 @@ function Move-ZipFilesToParent {
 
     foreach ($zf in $zipsToMove) {
         $idx++
-        if (-not $Quiet) {
+        if (-not $QuietMode) {
             $pct = [int](($idx) / [math]::Max(1, $total) * 100)
             Write-Progress -Activity "Moving zip files to parent" `
                 -Status "$idx / $total : $($zf.Name) ($(Format-Bytes $zf.Length))" `
@@ -856,7 +877,7 @@ function Move-ZipFilesToParent {
         $bytes += $zf.Length
     }
 
-    if (-not $Quiet) { Write-Progress -Activity "Moving zip files to parent" -Completed }
+    if (-not $QuietMode) { Write-Progress -Activity "Moving zip files to parent" -Completed }
 
     [pscustomobject]@{ Count = $moved; Bytes = $bytes; Destination = $parent }
 }
@@ -897,7 +918,7 @@ try {
 
     try {
         if ($PSCmdlet.ShouldProcess($SourceDirectory, "Move .zip files to parent")) {
-            $moveSummary = Move-ZipFilesToParent -SourceDir $SourceDirectory
+            $moveSummary = Move-ZipFilesToParent -SourceDir $SourceDirectory -QuietMode $Quiet.IsPresent
         }
     } catch {
         $msg = "Moving .zip files to parent failed: $($_.Exception.Message)"

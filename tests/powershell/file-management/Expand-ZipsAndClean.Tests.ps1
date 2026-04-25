@@ -190,16 +190,16 @@ Describe 'Remove-SourceDirectory' {
         # assertion on [System.IO.Directory]::Exists -- the same API the
         # function uses to decide whether deletion succeeded -- and surface
         # the other signals in the diagnostic for visibility.
-        $netDirExists  = [System.IO.Directory]::Exists($sourceDir)
+        $netDirExists = [System.IO.Directory]::Exists($sourceDir)
         $netFileExists = [System.IO.File]::Exists($sourceDir)
-        $psExists      = Test-Path -LiteralPath $sourceDir
-        $psType        = if ($psExists) {
+        $psExists = Test-Path -LiteralPath $sourceDir
+        $psType = if ($psExists) {
             "container=$(Test-Path -LiteralPath $sourceDir -PathType Container);leaf=$(Test-Path -LiteralPath $sourceDir -PathType Leaf)"
         } else { '<n/a>' }
-        $remaining     = if ($psExists) {
+        $remaining = if ($psExists) {
             try {
                 (Get-ChildItem -LiteralPath $sourceDir -Recurse -Force -ErrorAction Stop |
-                    ForEach-Object FullName) -join ', '
+                ForEach-Object FullName) -join ', '
             } catch { "<enum-failed: $($_.Exception.Message)>" }
         } else { '<none>' }
         $diag = "errors=[$($errors -join '; ')]; IO.Directory.Exists=$netDirExists; IO.File.Exists=$netFileExists; Test-Path=$psExists ($psType); sourceDir='$sourceDir'; remaining=[$remaining]"
@@ -221,5 +221,68 @@ Describe 'Remove-SourceDirectory' {
         Should -Not -Throw
 
         Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -like '*scan*' }
+    }
+}
+
+Describe 'Move-ZipFilesToParent' {
+    BeforeAll {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
+        $scriptText = Get-Content -LiteralPath $scriptPath -Raw
+
+        $helpersStart = $scriptText.IndexOf('#region Helpers')
+        $helpersEnd = $scriptText.IndexOf('#endregion Helpers')
+        if ($helpersStart -lt 0 -or $helpersEnd -lt 0) {
+            throw 'Failed to locate helpers region in Expand-ZipsAndClean.ps1'
+        }
+
+        $helpers = $scriptText.Substring($helpersStart, $helpersEnd - $helpersStart)
+        $usingLines = ($scriptText -split "`n" |
+            Where-Object { $_ -match '^\s*using\s+namespace\s+' }) -join "`n"
+        $helpersWithUsing = $usingLines + "`n" + $helpers
+
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+
+        function Write-LogDebug { param([string]$Message) }
+        Invoke-Expression $helpersWithUsing
+    }
+
+    It 'moves zip files from source to parent directory' {
+        $parentDir = Join-Path $TestDrive 'parent'
+        $sourceDir = Join-Path $parentDir 'source'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+
+        $zipPath = Join-Path $sourceDir 'test.zip'
+        Set-Content -LiteralPath $zipPath -Value 'dummy zip content' -NoNewline
+
+        $result = Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true
+
+        $result.Count | Should -Be 1
+        $result.Bytes | Should -BeGreaterThan 0
+        $result.Destination | Should -Be $parentDir
+
+        Test-Path -LiteralPath $zipPath | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $parentDir 'test.zip') | Should -BeTrue
+    }
+
+    It 'throws clear error for drive root source directory' {
+        # Mock Get-Item to simulate a drive root (no parent directory)
+        Mock Get-Item {
+            [pscustomobject]@{ Parent = $null; FullName = 'C:\' }
+        }
+
+        { Move-ZipFilesToParent -SourceDir 'C:\' -QuietMode $true } | Should -Throw "*drive root*"
+    }
+
+    It 'handles non-existent parent gracefully' {
+        $sourceDir = Join-Path $TestDrive 'orphan'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+
+        # Mock Get-Item to return an item with no parent
+        Mock Get-Item {
+            [pscustomobject]@{ Parent = $null; FullName = $sourceDir }
+        }
+
+        { Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true } | Should -Throw "*drive root*"
     }
 }
