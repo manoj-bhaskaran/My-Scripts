@@ -144,6 +144,22 @@ Describe 'Remove-SourceDirectory' {
         Invoke-Expression $helpersWithUsing
     }
 
+    It 'blocks DeleteSource and preserves zip files remaining after a Skip-policy move' {
+        $sourceDir = Join-Path $TestDrive 'source-skip-remaining'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+        $skippedZip = Join-Path $sourceDir 'skipped.zip'
+        Set-Content -LiteralPath $skippedZip -Value 'zip-content' -NoNewline
+        $errors = [System.Collections.Generic.List[string]]::new()
+
+        Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $false -ErrorList $errors
+
+        # Source directory and the zip must both survive
+        Test-Path -LiteralPath $sourceDir  | Should -BeTrue
+        Test-Path -LiteralPath $skippedZip | Should -BeTrue
+        $errors.Count | Should -Be 1
+        $errors[0] | Should -BeLike '*zip file*remain*'
+    }
+
     It 'warns "only empty subdirectories remain" when source contains only empty subdirs and -CleanNonZips is not set' {
         $sourceDir = Join-Path $TestDrive 'source-empty-subdir'
         New-Item -ItemType Directory -Path (Join-Path $sourceDir 'sub') -Force | Out-Null

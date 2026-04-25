@@ -118,6 +118,9 @@ using namespace System.IO.Compression
            - Summary now reports MoveSkipped, MoveOverwritten, MoveRenamed counts.
            - .PARAMETER CollisionPolicy help updated to enumerate both phases.
            - Added Pester tests for each policy on a colliding move.
+           - Fixed Remove-SourceDirectory data-loss: zip files remaining after a
+             Skip-policy move now block -DeleteSource (matching non-zip file guard)
+             so skipped archives are never silently deleted.
            Version bump: minor (behavior change for Skip/Overwrite users).
 
     2.1.9  Refactored Move-ZipFilesToParent to eliminate parent-scope reads:
@@ -736,6 +739,15 @@ function Remove-SourceDirectory {
         foreach ($e in $gcErrors) {
             Write-Warning "Could not read item during source directory scan: $($e.Exception.Message)"
         }
+        # Zip files left behind (e.g. by Skip collision policy) must block deletion
+        # to prevent data loss: the caller chose Skip precisely to keep those archives.
+        $remainingZips = @($remaining | Where-Object { -not $_.PSIsContainer -and $_.Extension -eq '.zip' })
+        if ($remainingZips.Count -gt 0) {
+            $ErrorList.Add("DeleteSource skipped: $($remainingZips.Count) zip file(s) remain in '$SourceDir' (not moved due to Skip collision policy). Resolve the collisions or change -CollisionPolicy before using -DeleteSource.") | Out-Null
+            Write-LogDebug ("Remaining zips: `n" + ($remainingZips | Select-Object -ExpandProperty FullName | Out-String))
+            return
+        }
+
         $nonZips = @($remaining | Where-Object { $_.PSIsContainer -or $_.Extension -ne '.zip' })
         if ($nonZips.Count -gt 0 -and -not $ShouldCleanNonZips) {
             $hasFiles = @($nonZips | Where-Object { -not $_.PSIsContainer })
