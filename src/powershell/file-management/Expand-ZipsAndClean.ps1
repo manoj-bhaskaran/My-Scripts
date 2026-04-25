@@ -937,7 +937,11 @@ function Move-ZipFilesToParent {
                 $useForce = $true
                 $overwritten++
             } elseif ($CollisionPolicy -eq 'Rename') {
+                $tpType = (Get-Command Test-Path).CommandType
+                $parentContents = (@(Get-ChildItem -LiteralPath $parent -Force -ErrorAction SilentlyContinue) | ForEach-Object { $_.Name }) -join ','
+                Write-Host "[DIAG-FN] Rename: Test-Path CommandType=$tpType parent='$parent' contents=[$parentContents]" -ForegroundColor Red
                 $target = Resolve-UniquePath -Path $target
+                Write-Host "[DIAG-FN] Rename: Resolve-UniquePath returned '$target'" -ForegroundColor Red
                 $renamed++
             }
         }
