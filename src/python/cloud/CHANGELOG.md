@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.5] - 2026-05-12
+
+### Fixed
+
+- **Execution command in dry-run now reflects the actual subcommand to run:** `_generate_execution_command` was unconditionally emitting `dry-run` as the subcommand, so the suggested command would not execute the plan. It now emits `recover-and-download --download-dir <dir>` when `--download-dir` is set, or `recover-only` otherwise. `--folder-id` was also missing from the generated command entirely; it is now included whenever it was part of the dry-run invocation.
+- **Untrash privilege check suppressed when no files will be recovered:** When `--folder-id` is used, all discovered items have `will_recover=False` (they are not in trash). `_test_operation_privileges` previously ran the untrash check unconditionally, producing a confusing "Test file is not trashed — cannot validate untrash permission" warning. The check is now skipped when the sample item has `will_recover=False`, and the "Untrash" row is omitted from the privilege-checks output.
+
 ## [1.18.4] - 2026-05-12
 
 ### Fixed

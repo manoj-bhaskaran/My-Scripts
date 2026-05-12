@@ -195,6 +195,8 @@ class RecoveryReporter:
             self._print_warn(policy_warning_message)
 
     def _add_file_arguments(self, cmd_parts: List[str]) -> None:
+        if getattr(self.args, "folder_id", None):
+            cmd_parts.extend(["--folder-id", self.args.folder_id])
         if self.args.after_date:
             cmd_parts.extend(["--after-date", self.args.after_date])
         if self.args.file_ids:
@@ -215,7 +217,13 @@ class RecoveryReporter:
         elif self.args.mode == "recover_only":
             cmd_parts.append("recover-only")
         else:
-            cmd_parts.append("dry-run")
+            # dry-run: emit the command that would actually execute the plan
+            dl_dir = getattr(self.args, "download_dir", None)
+            if dl_dir:
+                cmd_parts.append("recover-and-download")
+                cmd_parts.extend(["--download-dir", str(dl_dir)])
+            else:
+                cmd_parts.append("recover-only")
 
     def _add_filter_arguments(self, cmd_parts: List[str]) -> None:
         if self.args.extensions:
