@@ -13,6 +13,75 @@ from gdrive_constants import (
 from gdrive_models import PostRestorePolicy, RecoveryItem, RecoveryState
 
 
+class ProgressBar:
+    """Renders an in-place ASCII/Unicode progress bar for recovery operations.
+
+    On a real terminal (TTY) the bar overwrites the current line via CR so it
+    animates smoothly without scrolling.  On a non-TTY stream (log file, CI
+    pipe) a plain line is printed at most every LOG_INTERVAL seconds so output
+    stays readable.
+    """
+
+    BAR_WIDTH = 20
+    TTY_INTERVAL = 0.5  # seconds between renders on a live terminal
+    LOG_INTERVAL = 10.0  # seconds between lines on a non-TTY stream
+
+    def __init__(self, args, total: Optional[int] = None) -> None:
+        self.args = args
+        self.total = total
+        self._is_tty: bool = sys.stdout.isatty()
+        self._last_render: float = 0.0
+
+    def _use_emoji(self) -> bool:
+        return not getattr(self.args, "no_emoji", False)
+
+    def _fill_bar(self, count: int, total: int) -> str:
+        pct = count / total if total > 0 else 0.0
+        filled = round(self.BAR_WIDTH * pct)
+        if self._use_emoji():
+            bar = "█" * filled + "░" * (self.BAR_WIDTH - filled)
+        else:
+            bar = "#" * filled + "-" * (self.BAR_WIDTH - filled)
+        return f"[{bar}]"
+
+    def _format_line(self, count: int, start_time: float, discovered: int) -> str:
+        elapsed = time.time() - start_time
+        rate = count / elapsed if elapsed > 0 else 0.0
+        sep = "│" if self._use_emoji() else "|"
+
+        if self.total is not None and self.total > 0:
+            bar = self._fill_bar(count, self.total)
+            pct = count / self.total * 100
+            eta = (self.total - count) / rate if rate > 0 else 0.0
+            return (
+                f"{bar} {count}/{self.total} ({pct:.1f}%) "
+                f"{sep} {rate:.1f}/sec {sep} ETA: {eta:.0f}s"
+            )
+
+        sym = "▶" if self._use_emoji() else ">"
+        if discovered > count:
+            return f"{sym} processed={count} discovered={discovered} {sep} {rate:.1f}/sec"
+        return f"{sym} processed={count} {sep} {rate:.1f}/sec"
+
+    def update(self, count: int, start_time: float, discovered: int = 0) -> None:
+        """Emit a progress update, throttled to avoid flooding output."""
+        now = time.time()
+        interval = self.TTY_INTERVAL if self._is_tty else self.LOG_INTERVAL
+        if now - self._last_render < interval:
+            return
+        self._last_render = now
+        line = self._format_line(count, start_time, discovered)
+        if self._is_tty:
+            print(f"\r{line:<79}", end="", flush=True)
+        else:
+            print(line)
+
+    def close(self) -> None:
+        """Move the cursor to a new line after the last in-place update."""
+        if self._is_tty and self._last_render > 0.0:
+            print()
+
+
 class RecoveryReporter:
     """Owns user-facing console output for recovery/discovery execution."""
 
@@ -20,6 +89,7 @@ class RecoveryReporter:
         self.args = args
         self.logger = logger
         self.stats = stats
+        self._progress_bar: Optional[ProgressBar] = None
 
     def _use_emoji(self) -> bool:
         return not getattr(self.args, "no_emoji", False)
@@ -50,6 +120,22 @@ class RecoveryReporter:
 
     def _sym_search(self) -> str:
         return "🔍" if self._use_emoji() else "SEARCH"
+
+    def _should_show_progress(self) -> bool:
+        """Return True when progress output should be emitted.
+
+        Always True on a real terminal (progress bar animates without -v).
+        Requires -v on non-TTY so log files and CI output stay tidy.
+        """
+        return sys.stdout.isatty() or getattr(self.args, "verbose", 0) >= 1
+
+    def _start_progress(self, total: Optional[int] = None) -> None:
+        self._progress_bar = ProgressBar(self.args, total=total)
+
+    def _close_progress(self) -> None:
+        if self._progress_bar is not None:
+            self._progress_bar.close()
+            self._progress_bar = None
 
     def _print_err(self, msg: str) -> None:
         print(f"{self._sym_fail()} {msg}", file=sys.stderr)
@@ -260,6 +346,9 @@ class RecoveryReporter:
         seen_total: int,
         file_ids: Optional[List[str]],
     ) -> None:
+        if self._progress_bar is not None:
+            self._progress_bar.update(processed_total, start_time, seen_total)
+            return
         elapsed = time.time() - start_time
         rate = processed_total / elapsed if elapsed > 0 else 0
         if file_ids:
@@ -275,6 +364,9 @@ class RecoveryReporter:
     def print_progress_update(
         self, processed_count: int, total_items: int, start_time: float
     ) -> None:
+        if self._progress_bar is not None:
+            self._progress_bar.update(processed_count, start_time)
+            return
         elapsed = time.time() - start_time
         rate = processed_count / elapsed if elapsed > 0 else 0
         eta = (total_items - processed_count) / rate if rate > 0 else 0
@@ -299,17 +391,22 @@ class RecoveryReporter:
         print("Operation cancelled.")
 
     def print_processing_start(self, count: int, concurrency: int) -> None:
+        self._start_progress(total=count)
         print(f"\n{self._sym_plan()} Processing {count} files with {concurrency} workers...")
 
     def print_streaming_start(self, batch_n: int, concurrency: int) -> None:
+        total = len(self.args.file_ids) if getattr(self.args, "file_ids", None) else None
+        self._start_progress(total=total)
         print(
             f"\n{self._sym_plan()} Streaming execution with batch size {batch_n} and {concurrency} workers..."
         )
 
     def print_interrupted_state_saved(self) -> None:
+        self._close_progress()
         self._print_warn("Operation interrupted. State saved for resume.")
 
     def _print_summary(self, elapsed_time: float, state: RecoveryState) -> None:
+        self._close_progress()
         print("\n" + "=" * 80)
         print(f"{self._sym_scope()} EXECUTION SUMMARY")
         print("=" * 80)

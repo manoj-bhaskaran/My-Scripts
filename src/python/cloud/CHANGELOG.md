@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.19.0] - 2026-05-12
+
+### Added
+
+- **Progress bar for recovery and download operations:** A new `ProgressBar` class (in `gdrive_report.py`) renders an animated in-place progress bar during streaming execution and batch processing.
+  - **TTY (interactive terminal):** The bar overwrites the current line via carriage-return, updating every 0.5 s so the display animates smoothly without scrolling. Example rendering:
+    - Known total (e.g. `--file-ids`): `[████████░░░░░░░░░░░░] 400/1000 (40.0%) │ 5.2/sec │ ETA: 115s`
+    - Streaming (unknown total): `▶ processed=800 discovered=1234 │ 5.2/sec`
+  - **Non-TTY (CI / log files):** A plain text line is written at most every 10 s when `--verbose` (`-v`) is active, preserving the previous behaviour and keeping log files tidy.
+  - **`--no-emoji` compatibility:** Unicode block characters (`█░▶│`) are replaced with ASCII equivalents (`#->`).
+  - `RecoveryReporter` gains `_start_progress(total)`, `_close_progress()`, and `_should_show_progress()` helpers. The bar is started in `print_streaming_start` / `print_processing_start` and finalised (cursor moved to a new line) in `_print_summary` and `print_interrupted_state_saved`.
+  - The `verbose >= 1` guard in `_handle_item_result_stream` and `_handle_item_result` is replaced with `reporter._should_show_progress()` so the bar appears on TTY without requiring `-v`.
+
 ## [1.18.17] - 2026-05-12
 
 ### Changed

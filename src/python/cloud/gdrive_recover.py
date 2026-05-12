@@ -593,14 +593,8 @@ class DriveTrashRecoveryTool:
     def _handle_item_result_stream(self, future, item: RecoveryItem, start_time: float):
         try:
             future.result()
-            if self.args.verbose >= 1:
-                now = time.time()
-                due_time = (self._last_exec_progress_ts is None) or (
-                    (now - self._last_exec_progress_ts) >= 10
-                )
-                if due_time:
-                    self._print_stream_progress(start_time)
-                    self._last_exec_progress_ts = now
+            if self.reporter._should_show_progress():
+                self._print_stream_progress(start_time)
             if self._processed_total % 100 == 0:
                 self.state_manager._save_state()
         except Exception as e:
@@ -621,7 +615,7 @@ class DriveTrashRecoveryTool:
     ):
         try:
             future.result()
-            if self.args.verbose >= 1:
+            if self.reporter._should_show_progress():
                 interval = self._progress_interval(len(self.items))
                 now = time.time()
                 due_count = (processed_count % interval) == 0
