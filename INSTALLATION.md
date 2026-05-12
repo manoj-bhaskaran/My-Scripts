@@ -69,7 +69,7 @@ Before installing, ensure you have the following installed:
   brew install --cask powershell
   ```
 
-- **Python 3.7+** - Programming language
+- **Python 3.10+** - Programming language
   - Windows: [Python.org](https://www.python.org/downloads/)
   - Linux: `sudo apt install python3 python3-pip` (Debian/Ubuntu)
   - macOS: `brew install python3`
@@ -746,7 +746,7 @@ Installation Verification for My-Scripts Repository
 ==================================================
 
 ✅ PowerShell 7.4.0 (Minimum: 5.1.0)
-✅ Python 3.11.5 (Minimum: 3.8.0)
+✅ Python 3.14.5 (Minimum: 3.10.0)
 ✅ Git 2.42.0 (Minimum: 2.30.0)
 
 PowerShell Modules:

@@ -96,7 +96,7 @@ These documents provide comprehensive insights into the system design, helping y
 
 For comprehensive installation instructions, see **[INSTALLATION.md](INSTALLATION.md)**.
 
-Quick start assumes **PowerShell**, **Python 3+**, and **Git** are installed.
+Quick start assumes **PowerShell**, **Python 3.10+**, and **Git** are installed.
 
 **Quick Start:**
 

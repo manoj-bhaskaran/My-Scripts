@@ -11,6 +11,49 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.13.2] - 2026-05-12
+
+### Fixed
+
+- **[pyproject.toml] Black `target-version` corrected from `py314` to `py312`** – `py314` is not a recognised target in Black 26.3.1; supplying an unknown version caused Black to fall back to Python 2-compatible output (e.g. rewriting `except (E1, E2):` as `except E1, E2:`), breaking the formatting CI check on every file it touched.
+- **[mypy.ini] `python_version` corrected from `3.14` to `3.10`** – Type-checking against the maximum Python version rather than the minimum floor hides incompatibilities for users on 3.10–3.13. Checking against the declared minimum ensures any API or typing feature only valid on newer Python surfaces as an error.
+- **[.pre-commit-config.yaml] Removed `language_version: python3.14` from Black hook** – Pinning the hook to a specific interpreter version requires every contributor to have exactly that interpreter installed; contributors on 3.10–3.13 would fail to run pre-commit. Removing the pin lets pre-commit use the active Python.
+- **[requirements] Raised `google-auth-httplib2` floor to `>=0.2.0`** – `google-api-python-client==2.194.0` declares a minimum requirement of `google-auth-httplib2>=0.2.0`; the previous floor of `>=0.1.1` caused a pip dependency resolution failure in CI.
+- **[requirements.lock] Updated `google-auth-httplib2` from `0.1.1` to `0.2.0`** to resolve the conflict above.
+
+## [2.13.1] - 2026-05-12
+
+### Changed
+
+- **[requirements] Widened numpy constraint to `>=2.3.0,<3.0.0`** – numpy 2.3 is the first release with Python 3.14 wheel support; the previous cap of `<2.3.0` would have prevented installation on 3.14.
+- **[requirements] Relaxed opencv-python pin to `>=4.13.0,<5.0.0`** – The hard pin `==4.13.0.92` made the project dependent on a single pre-built wheel that may not exist for every new Python release; a range allows pip to pick the closest available wheel for 3.14.
+- **[requirements] Switched `psycopg2` to `psycopg2-binary`** – `psycopg2` requires compilation against `libpq` headers at install time, which often lags new CPython releases by months. `psycopg2-binary` ships pre-built wheels and installs cleanly on 3.14. Import paths are unchanged (`import psycopg2`).
+- **[requirements.lock] Aligned locked versions with requirements.txt** – The lock file was significantly stale (e.g., numpy 1.26.4, pandas 2.2.1). Updated all entries to the minimum versions specified in requirements.txt.
+
+### Removed
+
+- **[requirements] Removed `oauth2client==4.1.3`** – The package has been unmaintained since 2019 and will not receive Python 3.14 support. Its authentication functionality is fully covered by `google-auth`, which is already a direct dependency. No source files imported `oauth2client`.
+
+## [2.13.0] - 2026-05-12
+
+### Added
+
+- **[Python] Python 3.14 compatibility** – Declared and verified compatibility with Python 3.14.5 across all Python source files, tests, and tooling. No breaking syntax changes were required; the codebase already used only features stable in 3.14.
+- **[setup.py] Python 3.12, 3.13, 3.14 PyPI classifiers** – Added `Programming Language :: Python :: 3.12`, `3.13`, and `3.14` classifiers so the package is correctly advertised on PyPI for all supported interpreters.
+
+### Changed
+
+- **[setup.py] Raised `python_requires` from `>=3.7` to `>=3.10`** – The codebase has used PEP 604 union-type syntax (`X | Y`) since it was introduced, making Python 3.10 the true minimum. The declared floor is now corrected to match the actual requirement.
+- **[pyproject.toml] Black `target-version` updated to `py314`** – Ensures Black formats code targeting the Python 3.14 grammar.
+- **[mypy.ini] `python_version` updated from `3.11` to `3.14`** – MyPy now type-checks against the 3.14 standard library stubs.
+- **[.pre-commit-config.yaml] Black `language_version` updated to `python3.14`** – Pre-commit runs Black with the Python 3.14 interpreter.
+- **[CI] All workflow `python-version` pins updated from `3.11` to `3.14`** – Affects `sonarcloud.yml`, `code-formatting.yml`, `security-scan.yml`, `validate-modules.yml`, and `pre-commit-autoupdate.yml`.
+- **[INSTALLATION.md / README.md] Minimum Python version updated to 3.10+** – Prerequisites sections now state `Python 3.10+` instead of `Python 3.7+`, and the sample verification output reflects 3.14.5.
+
+### Removed
+
+- **[google_drive_root_files_delete.py] Dropped `from __future__ import print_function`** – This Python 2 forward-compatibility shim is unnecessary on Python 3 and has been removed.
+
 ## [Unreleased]
 
 ### Security

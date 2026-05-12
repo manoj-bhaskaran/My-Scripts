@@ -34,16 +34,16 @@ setup(
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: System :: Logging",
     ],
-    # Minimum required Python version
-    python_requires=">=3.7",
+    # Minimum required Python version (PEP 604 union types require 3.10+)
+    python_requires=">=3.10",
     # Project URLs
     project_urls={
         "Source": "https://github.com/manoj-bhaskaran/My-Scripts",

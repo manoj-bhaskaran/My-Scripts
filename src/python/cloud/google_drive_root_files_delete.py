@@ -23,7 +23,6 @@ Notes:
     - All non-folder files in the root of the authenticated user's Google Drive will be deleted.
 """
 
-from __future__ import print_function
 import sys
 from pathlib import Path
 
