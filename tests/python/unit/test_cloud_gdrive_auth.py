@@ -255,39 +255,84 @@ def test_load_creds_from_token_returns_none_on_corrupt_file(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# _refresh_or_flow_creds — write-side PermissionError
+# _refresh_or_flow_creds — write-side (temp-file-then-rename pattern)
 # ---------------------------------------------------------------------------
 
 
-def test_refresh_or_flow_creds_logs_and_reraises_on_write_permission_error(monkeypatch, tmp_path):
-    import builtins
+def test_refresh_or_flow_creds_writes_token_via_temp_file(monkeypatch, tmp_path):
+    """Happy path: credentials land in token_file; no .tmp files remain."""
+    manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=MagicMock(), execute_fn=lambda x: x)
 
+    fake_creds = MagicMock()
+    fake_creds.expired = True
+    fake_creds.refresh_token = "dummy-refresh-token"
+    fake_creds.to_json.return_value = '{"token": "abc"}'
+
+    monkeypatch.setattr(gdrive_auth, "Request", MagicMock)
+    monkeypatch.setattr(manager, "_harden_token_permissions_windows", lambda path: None)
+
+    token_file = tmp_path / "token.json"
+    result = manager._refresh_or_flow_creds(fake_creds, str(token_file))
+
+    assert result is fake_creds
+    assert token_file.read_text() == '{"token": "abc"}'
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_refresh_or_flow_creds_logs_and_reraises_on_write_permission_error(monkeypatch, tmp_path):
+    """mkstemp failure triggers the PermissionError log and re-raise."""
     mock_logger = MagicMock()
     manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=mock_logger, execute_fn=lambda x: x)
 
-    # Simulate expired creds with a refresh token so the refresh branch is taken.
     fake_creds = MagicMock()
     fake_creds.expired = True
     fake_creds.refresh_token = "dummy-refresh-token"
     fake_creds.to_json.return_value = "{}"
 
-    # refresh() succeeds (no exception), so we reach the write step.
     monkeypatch.setattr(gdrive_auth, "Request", MagicMock)
-
-    token_file = str(tmp_path / "token.json")
-
-    # Patch builtins.open to raise PermissionError only for the token write.
-    real_open = builtins.open
-
-    def failing_open(file, mode="r", *args, **kwargs):
-        if str(file) == token_file and "w" in str(mode):
-            raise PermissionError("access denied")
-        return real_open(file, mode, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "open", failing_open)
+    monkeypatch.setattr(
+        gdrive_auth.tempfile, "mkstemp", MagicMock(side_effect=PermissionError("access denied"))
+    )
 
     with pytest.raises(PermissionError):
-        manager._refresh_or_flow_creds(fake_creds, token_file)
+        manager._refresh_or_flow_creds(fake_creds, str(tmp_path / "token.json"))
 
     mock_logger.error.assert_called_once()
     assert "writing" in mock_logger.error.call_args[0][0]
+
+
+def test_refresh_or_flow_creds_cleans_up_temp_file_on_replace_failure(monkeypatch, tmp_path):
+    """If os.replace fails, the temp file is deleted and the exception propagates."""
+    manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=MagicMock(), execute_fn=lambda x: x)
+
+    fake_creds = MagicMock()
+    fake_creds.expired = True
+    fake_creds.refresh_token = "dummy-refresh-token"
+    fake_creds.to_json.return_value = "{}"
+
+    monkeypatch.setattr(gdrive_auth, "Request", MagicMock)
+    monkeypatch.setattr(gdrive_auth.os, "replace", MagicMock(side_effect=OSError("replace failed")))
+
+    with pytest.raises(OSError, match="replace failed"):
+        manager._refresh_or_flow_creds(fake_creds, str(tmp_path / "token.json"))
+
+    # Temp file must have been cleaned up.
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_refresh_or_flow_creds_suppresses_unlink_error_during_cleanup(monkeypatch, tmp_path):
+    """If both os.replace and os.unlink fail, the original exception still propagates."""
+    manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=MagicMock(), execute_fn=lambda x: x)
+
+    fake_creds = MagicMock()
+    fake_creds.expired = True
+    fake_creds.refresh_token = "dummy-refresh-token"
+    fake_creds.to_json.return_value = "{}"
+
+    monkeypatch.setattr(gdrive_auth, "Request", MagicMock)
+    monkeypatch.setattr(gdrive_auth.os, "replace", MagicMock(side_effect=OSError("replace failed")))
+    monkeypatch.setattr(gdrive_auth.os, "unlink", MagicMock(side_effect=OSError("unlink failed")))
+
+    # The unlink OSError must be suppressed; the original replace OSError propagates.
+    with pytest.raises(OSError, match="replace failed"):
+        manager._refresh_or_flow_creds(fake_creds, str(tmp_path / "token.json"))

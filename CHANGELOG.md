@@ -11,6 +11,12 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.13.9] - 2026-05-13
+
+### Fixed
+
+- **[gdrive_auth] Token write no longer fails with `ERROR_ACCESS_DENIED` on Windows when `token.json` is hidden** – `_harden_token_permissions_windows` marks `token.json` with `FILE_ATTRIBUTE_HIDDEN` after each successful write. Windows documents that `CreateFile` with `CREATE_ALWAYS` and `FILE_ATTRIBUTE_NORMAL` (the combination used by Python's `open(path, "w")`) returns `ERROR_ACCESS_DENIED` when the target file already has `FILE_ATTRIBUTE_HIDDEN` or `FILE_ATTRIBUTE_SYSTEM` set. This caused every token refresh after the first run to fail with `[Errno 13] Permission denied`, even though NTFS ACLs granted Full Control and the file had no `ReadOnly` attribute. Fixed by replacing the direct `open(token_file, "w")` write with a write-to-temp-then-rename pattern: credentials are written to a sibling `.tmp` file via `tempfile.mkstemp`, then atomically moved into place with `os.replace()` (`MoveFileExW`), which is not subject to the same hidden-file attribute restriction. The temp file is cleaned up on any failure before the exception is re-raised.
+
 ## [2.13.8] - 2026-05-12
 
 ### Fixed

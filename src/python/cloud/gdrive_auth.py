@@ -10,6 +10,7 @@ ongoing modularisation effort (issue #789).
 import os
 import sys
 import logging
+import tempfile
 from pathlib import Path
 from threading import local
 from typing import Callable, Optional
@@ -186,9 +187,27 @@ class DriveAuthManager:
             creds = flow.run_local_server(port=0)
         if creds is None:
             return None
+        # On Windows, CreateFile(CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL) raises
+        # ERROR_ACCESS_DENIED when the target already has FILE_ATTRIBUTE_HIDDEN
+        # set (https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea).
+        # _harden_token_permissions_windows marks the file hidden after the first
+        # write, causing every subsequent refresh to fail.  Writing to a sibling
+        # temp file and atomically replacing the target with os.replace()
+        # (MoveFileExW) avoids that restriction because rename is not subject to
+        # the same CreateFile attribute check.
+        token_dir = os.path.dirname(os.path.abspath(token_file))
         try:
-            with open(token_file, "w") as token:
-                token.write(creds.to_json())
+            fd, tmp_path = tempfile.mkstemp(dir=token_dir, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w") as f:
+                    f.write(creds.to_json())
+                os.replace(tmp_path, token_file)
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
         except PermissionError:
             self.logger.error("Permission denied writing token file: %s", token_file)
             raise

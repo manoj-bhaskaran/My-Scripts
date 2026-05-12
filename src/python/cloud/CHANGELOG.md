@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.15] - 2026-05-13
+
+### Fixed
+
+- **Token write no longer fails with `ERROR_ACCESS_DENIED` on Windows when `token.json` is hidden** – `_harden_token_permissions_windows` marks the token file with `FILE_ATTRIBUTE_HIDDEN` after each write. Windows's `CreateFile(CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL)` — the call underlying Python's `open(path, "w")` — returns `ERROR_ACCESS_DENIED` when the target already has `FILE_ATTRIBUTE_HIDDEN` set. This caused every OAuth token refresh after the first run to fail with `[Errno 13] Permission denied`, regardless of NTFS ACLs. Fixed by writing credentials to a sibling temp file (`tempfile.mkstemp`) and atomically renaming it into place with `os.replace()` (`MoveFileExW`), which is not subject to the same attribute restriction. The temp file is unlinked on any failure before the exception propagates.
+
 ## [1.18.14] - 2026-05-12
 
 ### Fixed

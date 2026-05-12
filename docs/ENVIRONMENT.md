@@ -708,35 +708,28 @@ source "$ENV_FILE"
 
 7. **For `gdrive_recover.py`: `[Errno 13] Permission denied` on `token.json`:**
 
-   The log will now show one of two specific messages before the generic `Authentication failed` line:
+   The log shows one of two specific messages before the generic `Authentication failed` line:
 
    - `Permission denied reading token file: <path>` — the file exists but cannot be opened for reading.
-     Check NTFS ACLs and Win32 attributes; another process may hold an exclusive lock.
-   - `Permission denied writing token file: <path>` — the file was read and the token was refreshed
+     Check NTFS ACLs (`icacls`) and Win32 attributes (`Get-Item -Force`); another process may hold an
+     exclusive lock.
+   - `Permission denied writing token file: <path>` — the file was read and the OAuth token was refreshed
      successfully over the network, but the updated credentials could not be saved back to disk.
-     The most common causes are a `ReadOnly` attribute or a lock held by security software during the write.
 
-   Before assuming an NTFS permission problem, check the file's Win32 attributes — correct ACLs do not
-   rule out a `ReadOnly` attribute or a transient lock held by security software:
+   **Known root cause for the write error (fixed in v1.18.15):** Windows documents that
+   `CreateFile(CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL)` — the call underlying Python's `open(path, "w")` —
+   returns `ERROR_ACCESS_DENIED` when the target file already has `FILE_ATTRIBUTE_HIDDEN` set. The script
+   marks `token.json` as hidden after each successful write. This caused every token refresh after the
+   first run to fail with `[Errno 13] Permission denied`, regardless of NTFS ACLs, ReadOnly attribute, or
+   antivirus configuration. The fix (write to a sibling temp file, then `os.replace()`) is included in
+   v1.18.15 and later.
 
-   ```powershell
-   # Check file attributes (should NOT include ReadOnly)
-   (Get-Item "$env:GDRT_TOKEN_FILE" -Force).Attributes
-
-   # If ReadOnly is present, clear it
-   Set-ItemProperty "$env:GDRT_TOKEN_FILE" -Name Attributes -Value ((Get-Item "$env:GDRT_TOKEN_FILE" -Force).Attributes -band -bnot [System.IO.FileAttributes]::ReadOnly)
-
-   # Check whether another process holds the file open (requires Sysinternals handle.exe)
-   handle.exe "$env:GDRT_TOKEN_FILE"
-   ```
-
-   If the file is locked by antivirus or a sync agent (OneDrive, Backup), exclude the credentials
-   directory from real-time scanning, then retry. If the problem persists, delete the token and
-   re-authenticate:
+   If running an older version, the workaround is to clear the hidden attribute before each run:
 
    ```powershell
-   Remove-Item "$env:GDRT_TOKEN_FILE" -Force
-   python src/python/cloud/gdrive_recover.py recover-and-download --yes ...
+   Set-ItemProperty "$env:GDRT_TOKEN_FILE" -Name Attributes `
+     -Value ((Get-Item "$env:GDRT_TOKEN_FILE" -Force).Attributes -band `
+             -bnot [System.IO.FileAttributes]::Hidden)
    ```
 
 ### Scripts can't find .env file
