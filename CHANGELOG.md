@@ -11,6 +11,12 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.13.6] - 2026-05-12
+
+### Fixed
+
+- **[gdrive_auth] `_RequestsHttpAdapter._Resp` now lowercases response header names** – `_Resp` was constructed as a plain `dict` seeded from `requests.Response.headers` (a `CaseInsensitiveDict`). Plain dict iteration preserves the original HTTP wire casing (e.g. `Content-Range`, `Content-Length`), but `MediaIoBaseDownload.next_chunk()` was written for `httplib2`, which normalises all header names to lowercase before returning them. The mismatch meant `"content-range" in resp` evaluated to `False` on every 206 Partial Content response. With no `content-range` or `content-length` found, `self._total_size` remained `None`; the condition `if self._total_size is None` then set `done = True` after the very first chunk, so any file larger than `DOWNLOAD_CHUNK_BYTES` (1 MiB) was silently truncated to 1 MiB. Fixed by building `_Resp` with `{k.lower(): v for k, v in resp.headers.items()}` so all lookups behave consistently regardless of server header casing.
+
 ## [2.13.5] - 2026-05-12
 
 ### Fixed

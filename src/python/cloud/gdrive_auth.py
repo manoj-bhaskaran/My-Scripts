@@ -79,7 +79,7 @@ class DriveAuthManager:
 
             class _Resp(dict):
                 def __init__(self, resp):
-                    super().__init__(resp.headers)
+                    super().__init__({k.lower(): v for k, v in resp.headers.items()})
                     self.status = resp.status_code
                     self.reason = resp.reason
 
