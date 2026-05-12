@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.3] - 2026-05-12
+
+### Fixed
+
+- **`--download-dir` now accepted by `dry-run` and `recover-only` subcommands:** Previously the argument was registered only on `recover-and-download`, causing argparse to reject it with "unrecognized arguments" when passed to `dry-run` or `recover-only`. Both subcommands now accept `--download-dir` as an optional argument; when provided during a dry-run it is surfaced in plan output to show where files would be saved.
+
 ## [1.18.2] - 2026-05-12
 
 ### Added

@@ -107,9 +107,10 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
 
 **Folder-scoped download (download a live Drive folder — no untrash step)**::
 
-    # Preview the folder tree before downloading (dry-run)
+    # Preview the folder tree before downloading (dry-run); --download-dir shows target paths
     python gdrive_recover.py dry-run \
         --folder-id DRIVE_FOLDER_ID \
+        --download-dir ./my_backup \
         --post-restore-policy retain
 
     # Download an entire Drive folder (and all subfolders) preserving hierarchy
