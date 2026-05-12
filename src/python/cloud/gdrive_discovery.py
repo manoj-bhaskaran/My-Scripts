@@ -722,7 +722,11 @@ class DriveTrashDiscovery:
                     item = self._process_file_data(fd, relative_path=prefix)
                     if item:
                         items.append(item)
-                        if self.args.limit and self.args.limit > 0 and len(items) >= self.args.limit:
+                        if (
+                            self.args.limit
+                            and self.args.limit > 0
+                            and len(items) >= self.args.limit
+                        ):
                             break
                 if self.args.limit and self.args.limit > 0 and len(items) >= self.args.limit:
                     return items

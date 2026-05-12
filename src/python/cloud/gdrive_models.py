@@ -43,7 +43,9 @@ class RecoveryItem:
     will_recover: bool = True
     will_download: bool = False
     target_path: str = ""
-    relative_path: str = ""  # subfolder path relative to --folder-id root (for hierarchy reconstruction)
+    relative_path: str = (
+        ""  # subfolder path relative to --folder-id root (for hierarchy reconstruction)
+    )
     post_restore_action: str = ""
     status: str = "pending"  # pending, recovered, downloaded, failed
     error_message: str = ""
