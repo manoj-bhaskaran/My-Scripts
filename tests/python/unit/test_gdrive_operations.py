@@ -311,3 +311,35 @@ def test_process_item_does_not_write_failed_file_on_success(tmp_path):
 
     assert ok is True
     assert not failed_file.exists(), "failed-file should not be created on success"
+
+
+def test_process_item_writes_failed_file_on_post_restore_failure(tmp_path, monkeypatch):
+    """A failed post-restore action (trash/delete) propagates into success=False."""
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    # Recovery succeeds
+    service = MagicMock()
+    ops.auth._get_service.return_value = service
+    service.files.return_value.update.return_value = MagicMock()
+
+    # Download succeeds and sets status (mirrors real DriveDownloader behaviour)
+    def _mock_download(item):
+        item.status = "downloaded"
+        return True
+
+    ops.downloader.download.side_effect = _mock_download
+
+    # Post-restore fails (403 on delete, for example)
+    ops._apply_post_restore_policy = MagicMock(return_value=False)
+
+    item = _item(post_restore_action="delete")
+    item.will_recover = True
+    item.will_download = True
+    item.target_path = "/downloads/file.txt"
+
+    ok = ops._process_item(item)
+
+    assert ok is False
+    assert failed_file.read_text() == "/downloads/file.txt\n"

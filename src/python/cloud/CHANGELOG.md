@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.20.1] - 2026-05-12
+
+### Fixed
+
+- **Post-restore failures now propagate into item failure state:** `_process_item` was discarding the return value of `_apply_post_restore_policy`, so a failed trash or delete API call left `success = True`. Items whose post-restore action failed were therefore not written to `--failed-file` and not counted as errors, making retry lists incomplete. The return value is now folded into `success`; a post-restore failure marks the item as failed and triggers `_write_failed_file`.
+
 ## [1.20.0] - 2026-05-12
 
 ### Added

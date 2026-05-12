@@ -177,7 +177,8 @@ class DriveOperations:
         if success and item.will_download and not self.downloader.download(item):
             success = False
         if success and item.will_download and item.status == "downloaded":
-            self._apply_post_restore_policy(item)
+            if not self._apply_post_restore_policy(item):
+                success = False
 
         if not success:
             self._write_failed_file(item)
