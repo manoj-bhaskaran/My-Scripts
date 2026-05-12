@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.12] - 2026-05-12
+
+### Fixed
+
+- **Success rate no longer shows 0 % after a successful `--folder-id` download:** The final-line metric was computed as `recovered / found`. When `--folder-id` is used, all discovered files are already live (not trashed), so `recovered` stays 0 even when every download succeeds — producing a misleading "Success rate: 0.0 %". The metric is now mode-aware: `recover-and-download` reports **Download success rate** (`downloaded / found`), while `recover-only` continues to report **Recovery success rate** (`recovered / found`).
+
 ## [1.18.11] - 2026-05-12
 
 ### Fixed

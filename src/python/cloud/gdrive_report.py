@@ -335,7 +335,15 @@ class RecoveryReporter:
             state_symbol = "📂" if self._use_emoji() else "STATE"
             print(f"\n{state_symbol} State file: {self.args.state_file}")
             print("   Use same command to resume if interrupted")
-        success_rate = (
-            (self.stats["recovered"] / self.stats["found"] * 100) if self.stats["found"] > 0 else 0
-        )
-        print(f"\n{self._sym_done()} Success rate: {success_rate:.1f}%")
+        # For recover-and-download (including folder-id downloads), the final
+        # measurable outcome is a file on disk; "recovered" stays 0 for live
+        # (non-trashed) files even when every download succeeded, so using it
+        # as the numerator gives a false 0 % in that path.
+        if getattr(self.args, "mode", "") == "recover_only":
+            success_count = self.stats["recovered"]
+            success_label = "Recovery success rate"
+        else:
+            success_count = self.stats["downloaded"]
+            success_label = "Download success rate"
+        success_rate = (success_count / self.stats["found"] * 100) if self.stats["found"] > 0 else 0
+        print(f"\n{self._sym_done()} {success_label}: {success_rate:.1f}%")
