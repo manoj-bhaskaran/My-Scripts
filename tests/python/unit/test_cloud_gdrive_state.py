@@ -70,3 +70,14 @@ def test_clear_processed_items_on_empty_state_returns_zero(tmp_path):
 
     assert count == 0
     assert manager.state.processed_items == []
+
+
+def test_clear_processed_items_tolerates_null_from_json(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    # Simulate _assign_recovery_state_fields loading "processed_items": null
+    manager.state.processed_items = None  # type: ignore[assignment]
+
+    count = manager._clear_processed_items()
+
+    assert count == 0
+    assert manager.state.processed_items == []
