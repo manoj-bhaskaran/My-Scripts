@@ -174,6 +174,11 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
             $archive.Dispose()
         }
 
+        # Mock Expand-Archive so the test is CI-independent; we are verifying that
+        # Expand-ZipToSubfolder returns ExpectedFileCount directly (not a Get-ChildItem
+        # walk), not that the extraction itself succeeds.
+        Mock Expand-Archive { }
+
         $stats = Get-ZipFileStats -ZipPath $zipPath
         $count = Expand-ZipToSubfolder -ZipPath $zipPath -DestinationRoot $root -SafeSubfolderName 'subfolder-count' -ExpectedFileCount $stats.FileCount
 
@@ -222,7 +227,12 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
             $archive.Dispose()
         }
 
-        # Call without -ExpectedFileCount to exercise the Get-ZipFileStats fallback in Expand-ZipSmart
+        # Mock Expand-Archive so the test is CI-independent; we are verifying that
+        # Expand-ZipSmart falls back to Get-ZipFileStats when ExpectedFileCount is
+        # omitted and returns the correct count — not that extraction itself succeeds.
+        Mock Expand-Archive { }
+
+        # Call without -ExpectedFileCount to exercise the Get-ZipFileStats fallback
         $count = Expand-ZipSmart -ZipPath $zipPath -DestinationRoot $root -ExtractMode PerArchiveSubfolder
 
         $count | Should -Be 2
