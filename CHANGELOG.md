@@ -11,6 +11,12 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.13.7] - 2026-05-12
+
+### Fixed
+
+- **[gdrive_auth] `_load_creds_from_token` no longer silently swallows `PermissionError`** – The method caught all exceptions with a bare `except Exception` block, including `PermissionError`, and returned `None` without logging anything. When the token file existed but could not be read due to a permission problem, the method silently returned `None`, causing `authenticate()` to proceed to `_refresh_or_flow_creds`. That function then attempted to open the same file for writing (`open(token_file, "w")`), which raised a second `PermissionError`. Because the first failure was swallowed, the only error surfaced was the write-time `[Errno 13] Permission denied`, making it appear that writing had failed when reading had already failed first. Fixed by re-raising `PermissionError` before the generic `except Exception` clause so that `authenticate()`'s outer handler surfaces the true failure point immediately. All other exceptions (e.g. corrupt JSON, missing keys) are still caught and result in a fresh OAuth flow as before.
+
 ## [2.13.6] - 2026-05-12
 
 ### Fixed

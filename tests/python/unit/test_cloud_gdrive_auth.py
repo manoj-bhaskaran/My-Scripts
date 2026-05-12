@@ -209,3 +209,43 @@ def test_build_and_test_service_uses_single_list_call(monkeypatch):
     assert fake_service._files.list_calls == 1
     assert fake_service._files.media_calls == 1
     assert len(fake_http.calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# _load_creds_from_token
+# ---------------------------------------------------------------------------
+
+
+def test_load_creds_from_token_returns_none_when_file_missing(monkeypatch):
+    manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=MagicMock(), execute_fn=lambda x: x)
+    monkeypatch.setattr(gdrive_auth.os.path, "exists", lambda path: False)
+    assert manager._load_creds_from_token("/any/path/token.json") is None
+
+
+def test_load_creds_from_token_returns_credentials_when_valid(monkeypatch):
+    manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=MagicMock(), execute_fn=lambda x: x)
+    fake_creds = MagicMock()
+    fake_creds_cls = MagicMock()
+    fake_creds_cls.from_authorized_user_file.return_value = fake_creds
+    monkeypatch.setattr(gdrive_auth.os.path, "exists", lambda path: True)
+    monkeypatch.setattr(gdrive_auth, "Credentials", fake_creds_cls)
+    assert manager._load_creds_from_token("/any/path/token.json") is fake_creds
+
+
+def test_load_creds_from_token_reraises_permission_error(monkeypatch):
+    manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=MagicMock(), execute_fn=lambda x: x)
+    fake_creds_cls = MagicMock()
+    fake_creds_cls.from_authorized_user_file.side_effect = PermissionError("access denied")
+    monkeypatch.setattr(gdrive_auth.os.path, "exists", lambda path: True)
+    monkeypatch.setattr(gdrive_auth, "Credentials", fake_creds_cls)
+    with pytest.raises(PermissionError, match="access denied"):
+        manager._load_creds_from_token("/any/path/token.json")
+
+
+def test_load_creds_from_token_returns_none_on_corrupt_file(monkeypatch):
+    manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=MagicMock(), execute_fn=lambda x: x)
+    fake_creds_cls = MagicMock()
+    fake_creds_cls.from_authorized_user_file.side_effect = ValueError("invalid JSON")
+    monkeypatch.setattr(gdrive_auth.os.path, "exists", lambda path: True)
+    monkeypatch.setattr(gdrive_auth, "Credentials", fake_creds_cls)
+    assert manager._load_creds_from_token("/any/path/token.json") is None

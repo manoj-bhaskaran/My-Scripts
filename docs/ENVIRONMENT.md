@@ -706,6 +706,32 @@ source "$ENV_FILE"
    - Ensure your app is not in "Testing" mode with expired test users
    - Verify required scopes are enabled
 
+7. **For `gdrive_recover.py`: `[Errno 13] Permission denied` on `token.json`:**
+
+   This error is reported as `Authentication failed: [Errno 13] Permission denied: '<path>/token.json'`.
+   Before assuming an NTFS permission problem, check the file's Win32 attributes — correct ACLs do not
+   rule out a `ReadOnly` attribute or a transient lock held by security software:
+
+   ```powershell
+   # Check file attributes (should NOT include ReadOnly)
+   (Get-Item "$env:GDRT_TOKEN_FILE" -Force).Attributes
+
+   # If ReadOnly is present, clear it
+   Set-ItemProperty "$env:GDRT_TOKEN_FILE" -Name Attributes -Value ((Get-Item "$env:GDRT_TOKEN_FILE" -Force).Attributes -band -bnot [System.IO.FileAttributes]::ReadOnly)
+
+   # Check whether another process holds the file open (requires Sysinternals handle.exe)
+   handle.exe "$env:GDRT_TOKEN_FILE"
+   ```
+
+   If the file is locked by antivirus or a sync agent (OneDrive, Backup), exclude the credentials
+   directory from real-time scanning, then retry. If the problem persists, delete the token and
+   re-authenticate:
+
+   ```powershell
+   Remove-Item "$env:GDRT_TOKEN_FILE" -Force
+   python src/python/cloud/gdrive_recover.py recover-and-download --yes ...
+   ```
+
 ### Scripts can't find .env file
 
 **Symptoms:**
