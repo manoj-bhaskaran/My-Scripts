@@ -299,3 +299,40 @@ def test_refresh_or_flow_creds_logs_and_reraises_on_write_permission_error(monke
 
     mock_logger.error.assert_called_once()
     assert "writing" in mock_logger.error.call_args[0][0]
+
+
+def test_refresh_or_flow_creds_cleans_up_temp_file_on_replace_failure(monkeypatch, tmp_path):
+    """If os.replace fails, the temp file is deleted and the exception propagates."""
+    manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=MagicMock(), execute_fn=lambda x: x)
+
+    fake_creds = MagicMock()
+    fake_creds.expired = True
+    fake_creds.refresh_token = "dummy-refresh-token"
+    fake_creds.to_json.return_value = "{}"
+
+    monkeypatch.setattr(gdrive_auth, "Request", MagicMock)
+    monkeypatch.setattr(gdrive_auth.os, "replace", MagicMock(side_effect=OSError("replace failed")))
+
+    with pytest.raises(OSError, match="replace failed"):
+        manager._refresh_or_flow_creds(fake_creds, str(tmp_path / "token.json"))
+
+    # Temp file must have been cleaned up.
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_refresh_or_flow_creds_suppresses_unlink_error_during_cleanup(monkeypatch, tmp_path):
+    """If both os.replace and os.unlink fail, the original exception still propagates."""
+    manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=MagicMock(), execute_fn=lambda x: x)
+
+    fake_creds = MagicMock()
+    fake_creds.expired = True
+    fake_creds.refresh_token = "dummy-refresh-token"
+    fake_creds.to_json.return_value = "{}"
+
+    monkeypatch.setattr(gdrive_auth, "Request", MagicMock)
+    monkeypatch.setattr(gdrive_auth.os, "replace", MagicMock(side_effect=OSError("replace failed")))
+    monkeypatch.setattr(gdrive_auth.os, "unlink", MagicMock(side_effect=OSError("unlink failed")))
+
+    # The unlink OSError must be suppressed; the original replace OSError propagates.
+    with pytest.raises(OSError, match="replace failed"):
+        manager._refresh_or_flow_creds(fake_creds, str(tmp_path / "token.json"))
