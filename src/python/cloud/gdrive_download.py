@@ -130,6 +130,39 @@ class DriveDownloader:
         except Exception:
             pass
 
+    def _download_direct(self, item: RecoveryItem, request, target: Path) -> bool:
+        try:
+            with open(target, "wb") as fh:
+                downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
+                self._download_with_downloader(downloader, item)
+            self._handle_download_success(item)
+            return True
+        except Exception as e:
+            self._handle_download_failure(item, f"Download error: {e}")
+            return False
+
+    def _download_via_partial(self, item: RecoveryItem, request, target: Path) -> bool:
+        partial = Path(str(target) + ".partial")
+        try:
+            with open(partial, "wb") as fh:
+                downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
+                self._download_with_downloader(downloader, item)
+        except Exception as e:
+            self._handle_download_failure(item, f"Download error: {e}")
+            return False
+        # File handle is closed; safe to rename on Windows
+        try:
+            if not self._atomic_replace_with_retry(partial, target):
+                raise PermissionError(
+                    f"Could not move '{partial}' to '{target}' "
+                    f"(destination locked by another process)"
+                )
+            self._handle_download_success(item)
+            return True
+        except Exception as e:
+            self._handle_download_failure(item, f"Download error: {e}")
+            return False
+
     def _download_file(self, item: RecoveryItem) -> bool:
         success = False
         try:
@@ -138,42 +171,9 @@ class DriveDownloader:
             target = Path(item.target_path)
             target.parent.mkdir(parents=True, exist_ok=True)
             if getattr(self.args, "direct_download", False):
-                with open(target, "wb") as fh:
-                    try:
-                        downloader = MediaIoBaseDownload(
-                            fh, request, chunksize=DOWNLOAD_CHUNK_BYTES
-                        )
-                        self._download_with_downloader(downloader, item)
-                        self._handle_download_success(item)
-                        success = True
-                    except Exception as e:
-                        self._handle_download_failure(item, f"Download error: {e}")
-                        success = False
+                success = self._download_direct(item, request, target)
             else:
-                partial = Path(str(target) + ".partial")
-                download_ok = False
-                try:
-                    with open(partial, "wb") as fh:
-                        downloader = MediaIoBaseDownload(
-                            fh, request, chunksize=DOWNLOAD_CHUNK_BYTES
-                        )
-                        self._download_with_downloader(downloader, item)
-                    download_ok = True
-                except Exception as e:
-                    self._handle_download_failure(item, f"Download error: {e}")
-                if download_ok:
-                    # File handle is closed; safe to rename on Windows
-                    try:
-                        if not self._atomic_replace_with_retry(partial, target):
-                            raise PermissionError(
-                                f"Could not move '{partial}' to '{target}' "
-                                f"(destination locked by another process)"
-                            )
-                        self._handle_download_success(item)
-                        success = True
-                    except Exception as e:
-                        self._handle_download_failure(item, f"Download error: {e}")
-                        success = False
+                success = self._download_via_partial(item, request, target)
         except HttpError as e:
             status = getattr(e.resp, "status", None)
             detail = getattr(e, "content", b"")
@@ -181,10 +181,8 @@ class DriveDownloader:
             self._handle_download_failure(
                 item, f"files.get_media(fileId={item.id}) failed: HTTP {status}: {detail}"
             )
-            success = False
         except Exception as e:
             self._handle_download_failure(item, f"Download error: {e}")
-            success = False
         finally:
             if not getattr(self.args, "direct_download", False):
                 partial = Path(str(Path(item.target_path)) + ".partial")

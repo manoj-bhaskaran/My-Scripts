@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.9] - 2026-05-12
+
+### Changed
+
+- **`_download_file` refactored to reduce cognitive complexity:** The direct-download and partial-download branches have been extracted into `_download_direct` and `_download_via_partial` respectively, eliminating deeply nested try/except blocks. `_download_file` now delegates to one of these helpers and handles only HTTP-level errors and directory setup. No behaviour change.
+
 ## [1.18.8] - 2026-05-12
 
 ### Added
