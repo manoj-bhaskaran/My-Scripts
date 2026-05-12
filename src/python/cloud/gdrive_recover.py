@@ -16,6 +16,188 @@ Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`)
 
 See CHANGELOG.md in this directory for version history.
+
+Examples
+--------
+All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``.
+
+**Dry-run (preview only — no changes made)**::
+
+    # Preview all recoverable trashed files
+    python gdrive_recover.py dry-run
+
+    # Preview trashed JPG and PNG files only
+    python gdrive_recover.py dry-run --extensions jpg png
+
+    # Preview trashed files modified after a specific date
+    python gdrive_recover.py dry-run --after-date 2024-01-01
+
+    # Preview specific files by their Drive IDs
+    python gdrive_recover.py dry-run --file-ids FILE_ID_1 FILE_ID_2
+
+    # Preview what a folder download would look like (full subfolder tree)
+    python gdrive_recover.py dry-run \
+        --folder-id DRIVE_FOLDER_ID \
+        --post-restore-policy retain
+
+    # Dry-run with ASCII output (no emoji) — useful for CI logs
+    python gdrive_recover.py dry-run --no-emoji
+
+**Recover-only (restore trashed files back to Drive — no local download)**::
+
+    # Restore all trashed files to Drive
+    python gdrive_recover.py recover-only
+
+    # Restore only PDF and DOCX files trashed after 2024-06-01
+    python gdrive_recover.py recover-only \
+        --extensions pdf docx \
+        --after-date 2024-06-01
+
+    # Restore specific files without a confirmation prompt (for automation)
+    python gdrive_recover.py recover-only \
+        --file-ids FILE_ID_1 FILE_ID_2 \
+        --yes
+
+    # Resume an interrupted recover-only run
+    python gdrive_recover.py recover-only \
+        --state-file ./my_state.json \
+        --yes
+
+**Recover-and-download (restore trashed files and save locally)**::
+
+    # Download all trashed files; move them to Drive Trash after download (default policy)
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered
+
+    # Download and keep files in Drive (recommended for most use cases)
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --post-restore-policy retain
+
+    # Download only image files, keep on Drive, skip confirmation
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --extensions jpg jpeg png gif \
+        --post-restore-policy retain \
+        --yes
+
+    # Download and permanently delete from Drive after downloading
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --post-restore-policy delete \
+        --yes
+
+    # Download specific files by Drive ID, retaining them in Drive
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --file-ids FILE_ID_1 FILE_ID_2 FILE_ID_3 \
+        --post-restore-policy retain
+
+    # Resume an interrupted download session using a named state file
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --state-file ./recovery_state.json \
+        --yes
+
+    # Stream bytes directly to final filename (avoids AV/thumbnailer lock races on Windows)
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --direct-download \
+        --post-restore-policy retain
+
+**Folder-scoped download (download a live Drive folder — no untrash step)**::
+
+    # Preview the folder tree before downloading (dry-run)
+    python gdrive_recover.py dry-run \
+        --folder-id DRIVE_FOLDER_ID \
+        --post-restore-policy retain
+
+    # Download an entire Drive folder (and all subfolders) preserving hierarchy
+    python gdrive_recover.py recover-and-download \
+        --folder-id DRIVE_FOLDER_ID \
+        --download-dir ./my_backup \
+        --post-restore-policy retain
+
+    # Download only PDF files from a folder
+    python gdrive_recover.py recover-and-download \
+        --folder-id DRIVE_FOLDER_ID \
+        --download-dir ./my_backup \
+        --extensions pdf \
+        --post-restore-policy retain \
+        --yes
+
+    # Large folder: increase concurrency and batch size for throughput
+    python gdrive_recover.py recover-and-download \
+        --folder-id DRIVE_FOLDER_ID \
+        --download-dir ./my_backup \
+        --post-restore-policy retain \
+        --concurrency 16 \
+        --process-batch-size 500 \
+        --max-rps 8 \
+        --burst 32 \
+        --yes
+
+    The folder ID is the alphanumeric string at the end of a Drive folder URL:
+    https://drive.google.com/drive/folders/<FOLDER_ID>
+
+    NOTE: --folder-id targets non-trashed, live files. It cannot be combined
+    with recover-only or --file-ids. Use --post-restore-policy retain to leave
+    files in Drive after download (the tool warns when the default 'trash'
+    policy is active).
+
+**Performance and throughput**::
+
+    # High-throughput preset for large sets (~200k files, 8-core VM)
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./out \
+        --process-batch-size 500 \
+        --concurrency 16 \
+        --max-rps 8 \
+        --burst 32 \
+        --client-per-thread \
+        --post-restore-policy retain \
+        -v
+
+    # Memory-constrained preset (~2 GB RAM)
+    python gdrive_recover.py recover-only \
+        --process-batch-size 250 \
+        --concurrency 8 \
+        --max-rps 5 \
+        --burst 20 \
+        --client-per-thread \
+        -v
+
+    # Enable rate-limiter diagnostics to validate observed RPS
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./out \
+        --rl-diagnostics \
+        --max-rps 5 \
+        -vv
+
+**Concurrency and locking**::
+
+    # Wait up to 60 s for a held state lock, then take over if still locked
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./out \
+        --state-file ./shared_state.json \
+        --lock-timeout 60
+
+    # Force takeover of a stale lock from a crashed previous run
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./out \
+        --state-file ./shared_state.json \
+        --force
+
+**HTTP transport**::
+
+    # Use requests-based pooled transport for higher concurrency
+    # Requires: pip install requests "google-auth[requests]"
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./out \
+        --http-transport requests \
+        --http-pool-maxsize 16 \
+        --concurrency 16 \
+        --post-restore-policy retain
 """
 
 import os
