@@ -492,4 +492,6 @@ def test_prepare_recovery_does_not_clear_failed_file_without_overwrite(tmp_path,
 
     tool._prepare_recovery(streaming_mode=True)
 
-    assert failed_file.read_text() == existing, "failed-file should not be touched without --overwrite"
+    assert (
+        failed_file.read_text() == existing
+    ), "failed-file should not be touched without --overwrite"
