@@ -23,7 +23,7 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
 
         function Write-LogDebug { param([string]$Message) }
-        Invoke-Expression $helpersWithUsing
+        . ([ScriptBlock]::Create($helpersWithUsing))
     }
 
     It 'defines mode-specific helper functions and dispatcher' {
@@ -173,7 +173,7 @@ Describe 'Remove-SourceDirectory' {
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
 
         function Write-LogDebug { param([string]$Message) }
-        Invoke-Expression $helpersWithUsing
+        . ([ScriptBlock]::Create($helpersWithUsing))
     }
 
     It 'blocks DeleteSource and preserves zip files remaining after a Skip-policy move' {
@@ -292,7 +292,7 @@ Describe 'Move-ZipFilesToParent' {
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
 
         function Write-LogDebug { param([string]$Message) }
-        Invoke-Expression $helpersWithUsing
+        . ([ScriptBlock]::Create($helpersWithUsing))
     }
 
     It 'moves zip files from source to parent directory' {
