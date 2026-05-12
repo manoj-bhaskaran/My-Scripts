@@ -461,6 +461,11 @@ class DriveTrashDiscovery:
         # Files discovered via --folder-id are not in trash; skip the untrash step.
         will_recover = not bool(getattr(self.args, "folder_id", None))
 
+        dry_run_with_dir = self.args.mode == "dry_run" and bool(
+            getattr(self.args, "download_dir", None)
+        )
+        will_download = self.args.mode == "recover_and_download" or dry_run_with_dir
+
         item = RecoveryItem(
             id=str(file_id),
             name=file_data.get("name", "Unknown"),
@@ -468,12 +473,12 @@ class DriveTrashDiscovery:
             mime_type=file_data.get("mimeType", ""),
             created_time=file_data.get("createdTime", ""),
             will_recover=will_recover,
-            will_download=self.args.mode == "recover_and_download",
+            will_download=will_download,
             relative_path=relative_path,
             post_restore_action=PostRestorePolicy.normalize(self.args.post_restore_policy),
         )
 
-        if self.args.mode == "recover_and_download":
+        if self.args.mode == "recover_and_download" or dry_run_with_dir:
             item.target_path = self._generate_target_path(item)
 
         return item
@@ -487,7 +492,10 @@ class DriveTrashDiscovery:
 
     def _id_discovery_fields(self) -> str:
         base_fields = ["id", "name", "mimeType", "trashed", "createdTime"]
-        if self.args.mode == "recover_and_download":
+        dry_run_with_dir = self.args.mode == "dry_run" and bool(
+            getattr(self.args, "download_dir", None)
+        )
+        if self.args.mode == "recover_and_download" or dry_run_with_dir:
             base_fields.append("size")
         if bool(self.args.after_date):
             base_fields.append("modifiedTime")

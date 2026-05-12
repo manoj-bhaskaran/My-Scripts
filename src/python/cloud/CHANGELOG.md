@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.4] - 2026-05-12
+
+### Fixed
+
+- **Dry-run no longer writes to disk when `--download-dir` is passed:** `_check_privileges()` previously created the target directory and wrote a probe file whenever `args.download_dir` was set, which violated the dry-run "no changes" contract. The write test is now skipped in dry-run mode; the privilege-checks output prints the target directory path as informational text instead of a pass/fail writability result.
+- **Dry-run plan now shows per-item target paths when `--download-dir` is provided:** `will_download` and `target_path` were only populated for `recover_and_download` mode in `gdrive_discovery.py`, so passing `--download-dir` to `dry-run` had no visible effect on per-item plan output. Discovery now sets `will_download=True` and computes `target_path` for dry-run items when `--download-dir` is set, and also requests the `size` field from the Drive API in that case (previously only fetched for `recover_and_download`).
+
 ## [1.18.3] - 2026-05-12
 
 ### Fixed
