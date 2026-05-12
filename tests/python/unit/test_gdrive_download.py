@@ -251,9 +251,7 @@ def test_atomic_replace_with_retry_oserror_winerror_32(tmp_path, monkeypatch):
 
     sharing_violation = OSError("sharing violation")
     sharing_violation.winerror = 32
-    monkeypatch.setattr(
-        gdrive_download.os, "replace", MagicMock(side_effect=sharing_violation)
-    )
+    monkeypatch.setattr(gdrive_download.os, "replace", MagicMock(side_effect=sharing_violation))
     monkeypatch.setattr(gdrive_download.time, "sleep", MagicMock())
 
     result = downloader._atomic_replace_with_retry(src, dst, attempts=2, sleep_s=0)
@@ -271,9 +269,7 @@ def test_atomic_replace_with_retry_oserror_non_32_reraises(tmp_path, monkeypatch
 
     other_oserror = OSError("disk full")
     other_oserror.winerror = 112  # ERROR_DISK_FULL
-    monkeypatch.setattr(
-        gdrive_download.os, "replace", MagicMock(side_effect=other_oserror)
-    )
+    monkeypatch.setattr(gdrive_download.os, "replace", MagicMock(side_effect=other_oserror))
 
     with pytest.raises(OSError, match="disk full"):
         downloader._atomic_replace_with_retry(src, dst, attempts=3, sleep_s=0)
