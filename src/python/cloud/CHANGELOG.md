@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.20.2] - 2026-05-12
+
+### Tests
+
+- **Increased new-code coverage to ≥ 80 %:** Added targeted tests to close gaps identified by SonarCloud (74.2 % → ≥ 80 %):
+  - `test_gdrive_operations.py`: added 9 tests covering previously-missed branches in `_do_post_restore_action` (`deleted` action and unknown-action fallback), `_log_post_restore_success` (`deleted` branch), `_handle_post_restore_retry`, `_extract_http_error_detail` (no-separator path), `_log_post_restore_final_error`, `_apply_post_restore_policy` non-terminal-error path (HTTP 5xx), and `_process_item` download-failure path.
+  - `test_gdrive_cli_folder_id.py`: imported `_validate_failed_file_arg` alongside the existing stub pattern and added 7 tests covering empty input, valid path with parent-dir creation, existing file, directory-rejection, and `--failed-file` argument acceptance on all three subcommands.
+
 ## [1.20.1] - 2026-05-12
 
 ### Fixed

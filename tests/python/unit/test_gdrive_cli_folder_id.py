@@ -16,7 +16,7 @@ if str(cloud_dir) not in sys.path:
 # and cause test_http_error_during_download to fail.
 # We delete the stub afterwards so subsequent tests can import the real module.
 sys.modules["gdrive_recover"] = MagicMock()
-from gdrive_cli import _validate_folder_id_args, create_parser  # noqa: E402
+from gdrive_cli import _validate_folder_id_args, _validate_failed_file_arg, create_parser  # noqa: E402
 
 del sys.modules["gdrive_recover"]
 
@@ -84,3 +84,55 @@ def test_recover_only_download_dir_defaults_to_none():
     parser = create_parser()
     args = parser.parse_args(["recover-only"])
     assert args.download_dir is None
+
+
+# ---------------------------------------------------------------------------
+# _validate_failed_file_arg
+# ---------------------------------------------------------------------------
+
+
+def test_validate_failed_file_arg_empty_passes():
+    ok, code = _validate_failed_file_arg(_args(failed_file=""))
+    assert ok and code == 0
+
+
+def test_validate_failed_file_arg_valid_path_creates_parent_dirs(tmp_path):
+    path = tmp_path / "logs" / "failed.txt"
+    ok, code = _validate_failed_file_arg(_args(failed_file=str(path)))
+    assert ok and code == 0
+    assert path.parent.exists()
+
+
+def test_validate_failed_file_arg_existing_file_passes(tmp_path):
+    path = tmp_path / "failed.txt"
+    path.write_text("old entry\n")
+    ok, code = _validate_failed_file_arg(_args(failed_file=str(path)))
+    assert ok and code == 0
+
+
+def test_validate_failed_file_arg_points_to_directory_rejected(tmp_path):
+    ok, code = _validate_failed_file_arg(_args(failed_file=str(tmp_path)))
+    assert not ok and code == 2
+
+
+# ---------------------------------------------------------------------------
+# Parser accepts --failed-file on all subcommands
+# ---------------------------------------------------------------------------
+
+
+def test_parser_accepts_failed_file_on_dry_run():
+    parser = create_parser()
+    args = parser.parse_args(["dry-run", "--failed-file", "./failed.txt"])
+    assert args.failed_file == "./failed.txt"
+
+
+def test_parser_accepts_failed_file_on_recover_only():
+    parser = create_parser()
+    args = parser.parse_args(["recover-only", "--failed-file", "./failed.txt"])
+    assert args.failed_file == "./failed.txt"
+
+
+def test_parser_failed_file_defaults_to_empty():
+    parser = create_parser()
+    args = parser.parse_args(["dry-run"])
+    assert args.failed_file == ""

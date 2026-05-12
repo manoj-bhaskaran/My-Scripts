@@ -343,3 +343,125 @@ def test_process_item_writes_failed_file_on_post_restore_failure(tmp_path, monke
 
     assert ok is False
     assert failed_file.read_text() == "/downloads/file.txt\n"
+
+
+# ---------------------------------------------------------------------------
+# _do_post_restore_action branches
+# ---------------------------------------------------------------------------
+
+
+def test_do_post_restore_action_deleted():
+    ops = _make_ops()
+    service = MagicMock()
+    item = _item()
+    ops._do_post_restore_action(service, item, "deleted")
+    service.files.return_value.delete.assert_called_once_with(fileId=item.id)
+
+
+def test_do_post_restore_action_returns_none_for_unknown_action():
+    ops = _make_ops()
+    service = MagicMock()
+    item = _item()
+    result = ops._do_post_restore_action(service, item, "unknown_action")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _log_post_restore_success deleted branch
+# ---------------------------------------------------------------------------
+
+
+def test_log_post_restore_success_deleted():
+    ops = _make_ops()
+    item = _item()
+    ops._log_post_restore_success(item, "deleted")
+    assert ops.stats["post_restore_deleted"] == 1
+    ops.logger.info.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _handle_post_restore_retry
+# ---------------------------------------------------------------------------
+
+
+def test_handle_post_restore_retry_logs_warning():
+    ops = _make_ops()
+    item = _item()
+    ops._handle_post_restore_retry(item, 429, 0)
+    ops.logger.warning.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _extract_http_error_detail — no ": " separator
+# ---------------------------------------------------------------------------
+
+
+def test_extract_http_error_detail_no_separator():
+    ops = _make_ops()
+    result = ops._extract_http_error_detail("plain error message")
+    assert result == "plain error message"
+
+
+# ---------------------------------------------------------------------------
+# _log_post_restore_final_error
+# ---------------------------------------------------------------------------
+
+
+def test_log_post_restore_final_error_logs_error():
+    ops = _make_ops()
+    item = _item()
+    ops._log_post_restore_final_error(item, "timed out", "files.delete(fileId=id-1)")
+    ops.logger.error.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _apply_post_restore_policy — non-terminal failure (covers else branch)
+# ---------------------------------------------------------------------------
+
+
+def test_apply_post_restore_policy_non_terminal_failure(monkeypatch):
+    ops = _make_ops()
+    item = _item(post_restore_action="delete")
+
+    monkeypatch.setattr(
+        "gdrive_operations.with_retries",
+        lambda *args, **kwargs: (
+            None,
+            "files.delete(fileId=id-1) failed: HTTP 500: server error",
+            500,
+        ),
+    )
+
+    ok = ops._apply_post_restore_policy(item)
+
+    assert ok is False
+    ops.logger.error.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# _process_item — download failure path
+# ---------------------------------------------------------------------------
+
+
+def test_process_item_download_failure_sets_success_false(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    # Recovery succeeds
+    service = MagicMock()
+    ops.auth._get_service.return_value = service
+    service.files.return_value.update.return_value = MagicMock()
+
+    # Download fails
+    ops.downloader.download.return_value = False
+
+    item = _item()
+    item.will_recover = True
+    item.will_download = True
+    item.target_path = "/downloads/file.txt"
+
+    ok = ops._process_item(item)
+
+    assert ok is False
+    assert failed_file.read_text() == "/downloads/file.txt\n"
