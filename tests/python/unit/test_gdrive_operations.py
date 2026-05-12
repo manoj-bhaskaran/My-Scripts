@@ -184,3 +184,284 @@ def test_process_item_proceeds_when_overwrite_and_already_processed():
     assert ok is True
     assert item.status == "recovered"
     ops.state_manager._mark_processed.assert_called_once_with(item.id)
+
+
+# ---------------------------------------------------------------------------
+# Failed-file tracking
+# ---------------------------------------------------------------------------
+
+
+def test_write_failed_file_appends_target_path(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    item = _item()
+    item.target_path = "/local/downloads/file.txt"
+    ops._write_failed_file(item)
+
+    assert failed_file.read_text() == "/local/downloads/file.txt\n"
+
+
+def test_write_failed_file_falls_back_to_name_when_no_target_path(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    item = _item()
+    item.target_path = ""
+    ops._write_failed_file(item)
+
+    assert failed_file.read_text() == "file.txt\n"
+
+
+def test_write_failed_file_creates_parent_dirs(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "nested" / "dir" / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    item = _item()
+    item.target_path = "/a/path.jpg"
+    ops._write_failed_file(item)
+
+    assert failed_file.exists()
+    assert failed_file.read_text() == "/a/path.jpg\n"
+
+
+def test_write_failed_file_appends_multiple_entries(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    for i in range(3):
+        item = _item()
+        item.target_path = f"/path/file{i}.txt"
+        ops._write_failed_file(item)
+
+    lines = failed_file.read_text().splitlines()
+    assert lines == ["/path/file0.txt", "/path/file1.txt", "/path/file2.txt"]
+
+
+def test_write_failed_file_noop_when_path_not_set(tmp_path):
+    ops = _make_ops()
+    ops._failed_file_path = ""
+
+    item = _item()
+    item.target_path = "/some/path.txt"
+    ops._write_failed_file(item)  # should not raise or create any file
+
+
+def test_clear_failed_files_truncates_file(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    failed_file.write_text("/old/path.txt\n")
+    ops._failed_file_path = str(failed_file)
+
+    ops._clear_failed_files()
+
+    assert failed_file.read_text() == ""
+
+
+def test_clear_failed_files_creates_parent_dirs(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "new" / "dir" / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    ops._clear_failed_files()
+
+    assert failed_file.exists()
+    assert failed_file.read_text() == ""
+
+
+def test_clear_failed_files_noop_when_path_not_set():
+    ops = _make_ops()
+    ops._failed_file_path = ""
+    ops._clear_failed_files()  # should not raise
+
+
+def test_process_item_writes_failed_file_on_failure(tmp_path, monkeypatch):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    monkeypatch.setattr(
+        "gdrive_operations.with_retries",
+        lambda *args, **kwargs: (None, "HTTP 404: not found", 404),
+    )
+
+    item = _item()
+    item.target_path = "/downloads/file.txt"
+    ok = ops._process_item(item)
+
+    assert ok is False
+    assert failed_file.read_text() == "/downloads/file.txt\n"
+
+
+def test_process_item_does_not_write_failed_file_on_success(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    service = MagicMock()
+    ops.auth._get_service.return_value = service
+    service.files.return_value.update.return_value = MagicMock()
+
+    item = _item()
+    ok = ops._process_item(item)
+
+    assert ok is True
+    assert not failed_file.exists(), "failed-file should not be created on success"
+
+
+def test_process_item_writes_failed_file_on_post_restore_failure(tmp_path, monkeypatch):
+    """A failed post-restore action (trash/delete) propagates into success=False."""
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    # Recovery succeeds
+    service = MagicMock()
+    ops.auth._get_service.return_value = service
+    service.files.return_value.update.return_value = MagicMock()
+
+    # Download succeeds and sets status (mirrors real DriveDownloader behaviour)
+    def _mock_download(item):
+        item.status = "downloaded"
+        return True
+
+    ops.downloader.download.side_effect = _mock_download
+
+    # Post-restore fails (403 on delete, for example)
+    ops._apply_post_restore_policy = MagicMock(return_value=False)
+
+    item = _item(post_restore_action="delete")
+    item.will_recover = True
+    item.will_download = True
+    item.target_path = "/downloads/file.txt"
+
+    ok = ops._process_item(item)
+
+    assert ok is False
+    assert failed_file.read_text() == "/downloads/file.txt\n"
+
+
+# ---------------------------------------------------------------------------
+# _do_post_restore_action branches
+# ---------------------------------------------------------------------------
+
+
+def test_do_post_restore_action_deleted():
+    ops = _make_ops()
+    service = MagicMock()
+    item = _item()
+    ops._do_post_restore_action(service, item, "deleted")
+    service.files.return_value.delete.assert_called_once_with(fileId=item.id)
+
+
+def test_do_post_restore_action_returns_none_for_unknown_action():
+    ops = _make_ops()
+    service = MagicMock()
+    item = _item()
+    result = ops._do_post_restore_action(service, item, "unknown_action")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _log_post_restore_success deleted branch
+# ---------------------------------------------------------------------------
+
+
+def test_log_post_restore_success_deleted():
+    ops = _make_ops()
+    item = _item()
+    ops._log_post_restore_success(item, "deleted")
+    assert ops.stats["post_restore_deleted"] == 1
+    ops.logger.info.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _handle_post_restore_retry
+# ---------------------------------------------------------------------------
+
+
+def test_handle_post_restore_retry_logs_warning():
+    ops = _make_ops()
+    item = _item()
+    ops._handle_post_restore_retry(item, 429, 0)
+    ops.logger.warning.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _extract_http_error_detail — no ": " separator
+# ---------------------------------------------------------------------------
+
+
+def test_extract_http_error_detail_no_separator():
+    ops = _make_ops()
+    result = ops._extract_http_error_detail("plain error message")
+    assert result == "plain error message"
+
+
+# ---------------------------------------------------------------------------
+# _log_post_restore_final_error
+# ---------------------------------------------------------------------------
+
+
+def test_log_post_restore_final_error_logs_error():
+    ops = _make_ops()
+    item = _item()
+    ops._log_post_restore_final_error(item, "timed out", "files.delete(fileId=id-1)")
+    ops.logger.error.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _apply_post_restore_policy — non-terminal failure (covers else branch)
+# ---------------------------------------------------------------------------
+
+
+def test_apply_post_restore_policy_non_terminal_failure(monkeypatch):
+    ops = _make_ops()
+    item = _item(post_restore_action="delete")
+
+    monkeypatch.setattr(
+        "gdrive_operations.with_retries",
+        lambda *args, **kwargs: (
+            None,
+            "files.delete(fileId=id-1) failed: HTTP 500: server error",
+            500,
+        ),
+    )
+
+    ok = ops._apply_post_restore_policy(item)
+
+    assert ok is False
+    ops.logger.error.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# _process_item — download failure path
+# ---------------------------------------------------------------------------
+
+
+def test_process_item_download_failure_sets_success_false(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    # Recovery succeeds
+    service = MagicMock()
+    ops.auth._get_service.return_value = service
+    service.files.return_value.update.return_value = MagicMock()
+
+    # Download fails
+    ops.downloader.download.return_value = False
+
+    item = _item()
+    item.will_recover = True
+    item.will_download = True
+    item.target_path = "/downloads/file.txt"
+
+    ok = ops._process_item(item)
+
+    assert ok is False
+    assert failed_file.read_text() == "/downloads/file.txt\n"

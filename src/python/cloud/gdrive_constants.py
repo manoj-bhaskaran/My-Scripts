@@ -12,7 +12,7 @@ import os
 # ---------------------------------------------------------------------------
 # Version
 # ---------------------------------------------------------------------------
-VERSION = "1.19.0"
+VERSION = "1.20.2"
 
 # ---------------------------------------------------------------------------
 # API / OAuth
@@ -23,7 +23,8 @@ SCOPES = ["https://www.googleapis.com/auth/drive"]
 # File-operation defaults
 # ---------------------------------------------------------------------------
 DEFAULT_STATE_FILE = "gdrive_recovery_state.json"
-DEFAULT_LOG_FILE = "gdrive_recovery.log"
+DEFAULT_LOG_FILE = ""  # empty = no log file; supply --log-file <path> to enable
+DEFAULT_FAILED_FILE = ""  # empty = disabled; supply --failed-file <path> to record failed paths
 DEFAULT_PROCESS_BATCH = 500
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds

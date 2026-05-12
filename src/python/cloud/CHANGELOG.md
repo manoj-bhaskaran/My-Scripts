@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.20.2] - 2026-05-12
+
+### Tests
+
+- **Increased new-code coverage to ≥ 80 %:** Added targeted tests to close gaps identified by SonarCloud (74.2 % → ≥ 80 %):
+  - `test_gdrive_operations.py`: added 9 tests covering previously-missed branches in `_do_post_restore_action` (`deleted` action and unknown-action fallback), `_log_post_restore_success` (`deleted` branch), `_handle_post_restore_retry`, `_extract_http_error_detail` (no-separator path), `_log_post_restore_final_error`, `_apply_post_restore_policy` non-terminal-error path (HTTP 5xx), and `_process_item` download-failure path.
+  - `test_gdrive_cli_folder_id.py`: imported `_validate_failed_file_arg` alongside the existing stub pattern and added 7 tests covering empty input, valid path with parent-dir creation, existing file, directory-rejection, and `--failed-file` argument acceptance on all three subcommands.
+
+## [1.20.1] - 2026-05-12
+
+### Fixed
+
+- **Post-restore failures now propagate into item failure state:** `_process_item` was discarding the return value of `_apply_post_restore_policy`, so a failed trash or delete API call left `success = True`. Items whose post-restore action failed were therefore not written to `--failed-file` and not counted as errors, making retry lists incomplete. The return value is now folded into `success`; a post-restore failure marks the item as failed and triggers `_write_failed_file`.
+
+## [1.20.0] - 2026-05-12
+
+### Added
+
+- **Optional log file (`--log-file`):** When supplied, a `FileHandler` is attached to the root logger at `DEBUG` level so every per-operation message is captured in the file regardless of console verbosity (`-v` / `-vv`).  Previously a log file was always written to `gdrive_recovery.log` with the same level as the console.  Now the default is no file logging; pass `--log-file <path>` to enable it.  The file and any missing parent directories are created automatically.
+- **Failed-file log (`--failed-file`):** New optional argument accepted by all three subcommands (`dry-run`, `recover-only`, `recover-and-download`).  When supplied, the full local path (or Drive file name for recover-only operations) of every failed item is appended to the file, one entry per line, as soon as the failure is detected.  The file and any missing parent directories are created automatically.  When `--overwrite` is active the file is truncated to zero bytes before processing begins, keeping it consistent with the fresh state of the run.
+- **`DEFAULT_FAILED_FILE = ""`** constant added to `gdrive_constants.py`.
+
+### Changed
+
+- `DEFAULT_LOG_FILE` in `gdrive_constants.py` changed from `"gdrive_recovery.log"` to `""` (empty string = disabled by default).
+- `DriveTrashRecoveryTool._setup_logging` rewritten to use explicit handler objects instead of `logging.basicConfig`, allowing the console handler and the file handler to carry independent log levels.  Console level continues to follow `-v` / `-vv`; the file handler (when enabled) is always `DEBUG`.
+- `DriveOperations.__init__` acquires `failed_file` from `args` and stores a dedicated `threading.Lock` for thread-safe writes.
+
+### Notes
+
+- Existing workflows that relied on `gdrive_recovery.log` being written automatically must now pass `--log-file gdrive_recovery.log` explicitly.
+- The `--failed-file` path is appended to on every non-overwrite run, so consecutive partial runs accumulate all failures.  Pass `--overwrite` to start fresh.
+
 ## [1.19.0] - 2026-05-12
 
 ### Added

@@ -17,6 +17,7 @@ from gdrive_constants import (
     VERSION,
     EXTENSION_MIME_TYPES,
     DEFAULT_BURST,
+    DEFAULT_FAILED_FILE,
     DEFAULT_HTTP_POOL_MAXSIZE,
     DEFAULT_HTTP_TRANSPORT,
     DEFAULT_LOG_FILE,
@@ -68,6 +69,12 @@ Examples:
   Performance presets:
     %(prog)s recover-and-download --download-dir ./out --concurrency 16 --process-batch-size 500 --max-rps 8 --burst 32 --post-restore-policy retain -v
     %(prog)s recover-and-download --download-dir ./out --http-transport requests --http-pool-maxsize 16 --concurrency 16 --post-restore-policy retain
+
+  Logging and failure tracking:
+    %(prog)s recover-and-download --download-dir ./out --log-file ./run.log
+    %(prog)s recover-and-download --download-dir ./out --failed-file ./failed_paths.txt
+    %(prog)s recover-and-download --download-dir ./out --log-file ./logs/run.log --failed-file ./logs/failed.txt
+    %(prog)s recover-and-download --download-dir ./out --overwrite --failed-file ./failed.txt  # clears failed.txt first
 
   Locking and automation:
     %(prog)s recover-and-download --download-dir ./out --lock-timeout 60 --state-file ./state.json
@@ -194,7 +201,26 @@ For the compatibility matrix, transport notes, and performance presets: see READ
             default=DEFAULT_PROCESS_BATCH,
             help="Streaming batch size for execution; items are processed and released per-batch",
         )
-        subparser.add_argument("--log-file", default=DEFAULT_LOG_FILE, help="Log file path")
+        subparser.add_argument(
+            "--log-file",
+            default=DEFAULT_LOG_FILE,
+            help=(
+                "Write a detailed DEBUG-level log to this file.  "
+                "The file and its parent directory are created automatically.  "
+                "Optional: omit to disable file logging (console verbosity is unaffected)."
+            ),
+        )
+        subparser.add_argument(
+            "--failed-file",
+            default=DEFAULT_FAILED_FILE,
+            help=(
+                "Append the local path (or Drive name for recover-only) of every failed item "
+                "to this file, one entry per line.  "
+                "The file and its parent directory are created automatically.  "
+                "When --overwrite is set the file is truncated before the run starts.  "
+                "Optional: omit to disable."
+            ),
+        )
         subparser.add_argument(
             "--verbose",
             "-v",
@@ -339,6 +365,22 @@ def _validate_download_dir_arg(args) -> Tuple[bool, int]:
         return True, 0
     except Exception as e:
         print(f"ERROR --download-dir is not writable or cannot be created: {e}", file=sys.stderr)
+        return False, 2
+
+
+def _validate_failed_file_arg(args) -> Tuple[bool, int]:
+    path_str = getattr(args, "failed_file", None) or ""
+    if not path_str:
+        return True, 0
+    try:
+        p = Path(path_str)
+        if p.exists() and not p.is_file():
+            print(f"ERROR --failed-file points to a non-file path: {p}", file=sys.stderr)
+            return False, 2
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return True, 0
+    except Exception as e:
+        print(f"ERROR --failed-file path is not usable: {e}", file=sys.stderr)
         return False, 2
 
 
@@ -584,6 +626,10 @@ def main() -> int:
         return code
 
     ok, code = _validate_after_date_arg(args)
+    if not ok:
+        return code
+
+    ok, code = _validate_failed_file_arg(args)
     if not ok:
         return code
 
