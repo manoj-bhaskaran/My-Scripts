@@ -64,8 +64,13 @@ def test_local_dir_status_omitted_when_no_download_dir(capsys):
 
 
 def test_add_file_arguments_includes_folder_id():
-    r = _reporter(folder_id="FOLDER123", after_date=None, file_ids=None,
-                  log_file=DEFAULT_LOG_FILE, state_file=DEFAULT_STATE_FILE)
+    r = _reporter(
+        folder_id="FOLDER123",
+        after_date=None,
+        file_ids=None,
+        log_file=DEFAULT_LOG_FILE,
+        state_file=DEFAULT_STATE_FILE,
+    )
     parts = []
     r._add_file_arguments(parts)
     assert "--folder-id" in parts
@@ -73,8 +78,13 @@ def test_add_file_arguments_includes_folder_id():
 
 
 def test_add_file_arguments_omits_folder_id_when_absent():
-    r = _reporter(folder_id=None, after_date=None, file_ids=None,
-                  log_file=DEFAULT_LOG_FILE, state_file=DEFAULT_STATE_FILE)
+    r = _reporter(
+        folder_id=None,
+        after_date=None,
+        file_ids=None,
+        log_file=DEFAULT_LOG_FILE,
+        state_file=DEFAULT_STATE_FILE,
+    )
     parts = []
     r._add_file_arguments(parts)
     assert "--folder-id" not in parts
