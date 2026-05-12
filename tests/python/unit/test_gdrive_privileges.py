@@ -205,3 +205,26 @@ def test_check_privileges_drive_and_local_errors(tmp_path):
     assert out["drive_access"] is True
     assert out["local_writable"] is False
     assert out["local_error"] is not None
+
+
+def test_operation_privileges_skips_untrash_when_will_recover_false(tmp_path):
+    checker, _ = _make_checker(tmp_path)
+    item = RecoveryItem(
+        id="norecover",
+        name="live.jpg",
+        size=100,
+        mime_type="image/jpeg",
+        created_time="",
+        will_recover=False,
+        will_download=True,
+    )
+    checker._check_download_privilege = MagicMock(return_value={"status": "pass", "error": None})
+    checker._check_trash_delete_privileges = MagicMock(
+        return_value=({"status": "pass", "error": None}, {"status": "pass", "error": None})
+    )
+
+    out = checker._test_operation_privileges([item])
+
+    assert "untrash" not in out
+    assert out["download"]["status"] == "pass"
+    checker._check_trash_delete_privileges.assert_called_once_with("norecover", "unknown")

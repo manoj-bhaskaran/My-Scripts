@@ -129,10 +129,15 @@ class DrivePrivilegeChecker:
         if not test_items:
             return privileges
         test_item = test_items[0]
-        privileges["untrash"] = self._check_untrash_privilege(test_item.id)
+        if test_item.will_recover:
+            privileges["untrash"] = self._check_untrash_privilege(test_item.id)
+            untrash_status = privileges["untrash"]["status"]
+        else:
+            del privileges["untrash"]
+            untrash_status = "unknown"
         privileges["download"] = self._check_download_privilege(test_item.id)
         privileges["trash"], privileges["delete"] = self._check_trash_delete_privileges(
-            test_item.id, privileges["untrash"]["status"]
+            test_item.id, untrash_status
         )
         return privileges
 
