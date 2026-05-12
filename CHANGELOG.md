@@ -11,6 +11,26 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.13.0] - 2026-05-12
+
+### Added
+
+- **[Python] Python 3.14 compatibility** – Declared and verified compatibility with Python 3.14.5 across all Python source files, tests, and tooling. No breaking syntax changes were required; the codebase already used only features stable in 3.14.
+- **[setup.py] Python 3.12, 3.13, 3.14 PyPI classifiers** – Added `Programming Language :: Python :: 3.12`, `3.13`, and `3.14` classifiers so the package is correctly advertised on PyPI for all supported interpreters.
+
+### Changed
+
+- **[setup.py] Raised `python_requires` from `>=3.7` to `>=3.10`** – The codebase has used PEP 604 union-type syntax (`X | Y`) since it was introduced, making Python 3.10 the true minimum. The declared floor is now corrected to match the actual requirement.
+- **[pyproject.toml] Black `target-version` updated to `py314`** – Ensures Black formats code targeting the Python 3.14 grammar.
+- **[mypy.ini] `python_version` updated from `3.11` to `3.14`** – MyPy now type-checks against the 3.14 standard library stubs.
+- **[.pre-commit-config.yaml] Black `language_version` updated to `python3.14`** – Pre-commit runs Black with the Python 3.14 interpreter.
+- **[CI] All workflow `python-version` pins updated from `3.11` to `3.14`** – Affects `sonarcloud.yml`, `code-formatting.yml`, `security-scan.yml`, `validate-modules.yml`, and `pre-commit-autoupdate.yml`.
+- **[INSTALLATION.md / README.md] Minimum Python version updated to 3.10+** – Prerequisites sections now state `Python 3.10+` instead of `Python 3.7+`, and the sample verification output reflects 3.14.5.
+
+### Removed
+
+- **[google_drive_root_files_delete.py] Dropped `from __future__ import print_function`** – This Python 2 forward-compatibility shim is unnecessary on Python 3 and has been removed.
+
 ## [Unreleased]
 
 ### Security
