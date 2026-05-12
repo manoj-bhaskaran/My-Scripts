@@ -675,12 +675,6 @@ class DriveTrashDiscovery:
         print(f"{self._sym_scope()} Total files discovered: {len(items)}")
         return items
 
-    @staticmethod
-    def _sanitize_path_component(name: str) -> str:
-        """Sanitize a Drive folder/file name for use as a local filesystem path component."""
-        safe = "".join(c for c in name if c.isalnum() or c in (" ", "-", "_", ".")).rstrip()
-        return safe or "unknown"
-
     def _fetch_folder_page(
         self, folder_id: str, page_token: Optional[str]
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Optional[str]]:
