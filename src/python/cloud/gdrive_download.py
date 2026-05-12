@@ -151,19 +151,25 @@ class DriveDownloader:
                         success = False
             else:
                 partial = Path(str(target) + ".partial")
-                with open(partial, "wb") as fh:
-                    try:
+                download_ok = False
+                try:
+                    with open(partial, "wb") as fh:
                         downloader = MediaIoBaseDownload(
                             fh, request, chunksize=DOWNLOAD_CHUNK_BYTES
                         )
                         self._download_with_downloader(downloader, item)
-                        self._handle_download_success(item)
-                        # Atomic move into place
+                    download_ok = True
+                except Exception as e:
+                    self._handle_download_failure(item, f"Download error: {e}")
+                if download_ok:
+                    # File handle is closed; safe to rename on Windows
+                    try:
                         if not self._atomic_replace_with_retry(partial, target):
                             raise PermissionError(
                                 f"Could not move '{partial}' to '{target}' "
                                 f"(destination locked by another process)"
                             )
+                        self._handle_download_success(item)
                         success = True
                     except Exception as e:
                         self._handle_download_failure(item, f"Download error: {e}")
