@@ -11,6 +11,19 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.13.1] - 2026-05-12
+
+### Changed
+
+- **[requirements] Widened numpy constraint to `>=2.3.0,<3.0.0`** – numpy 2.3 is the first release with Python 3.14 wheel support; the previous cap of `<2.3.0` would have prevented installation on 3.14.
+- **[requirements] Relaxed opencv-python pin to `>=4.13.0,<5.0.0`** – The hard pin `==4.13.0.92` made the project dependent on a single pre-built wheel that may not exist for every new Python release; a range allows pip to pick the closest available wheel for 3.14.
+- **[requirements] Switched `psycopg2` to `psycopg2-binary`** – `psycopg2` requires compilation against `libpq` headers at install time, which often lags new CPython releases by months. `psycopg2-binary` ships pre-built wheels and installs cleanly on 3.14. Import paths are unchanged (`import psycopg2`).
+- **[requirements.lock] Aligned locked versions with requirements.txt** – The lock file was significantly stale (e.g., numpy 1.26.4, pandas 2.2.1). Updated all entries to the minimum versions specified in requirements.txt.
+
+### Removed
+
+- **[requirements] Removed `oauth2client==4.1.3`** – The package has been unmaintained since 2019 and will not receive Python 3.14 support. Its authentication functionality is fully covered by `google-auth`, which is already a direct dependency. No source files imported `oauth2client`.
+
 ## [2.13.0] - 2026-05-12
 
 ### Added
