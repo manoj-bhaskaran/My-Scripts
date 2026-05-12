@@ -155,7 +155,8 @@ class DrivePrivilegeChecker:
         except Exception as e:
             checks["drive_error"] = str(e)
         dl_dir = getattr(args, "download_dir", None)
-        if dl_dir:
+        is_dry_run = getattr(args, "mode", None) == "dry_run"
+        if dl_dir and not is_dry_run:
             try:
                 download_path = Path(dl_dir)
                 download_path.mkdir(parents=True, exist_ok=True)

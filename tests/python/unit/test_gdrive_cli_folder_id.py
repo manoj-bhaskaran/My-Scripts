@@ -1,4 +1,4 @@
-"""Unit tests for --folder-id CLI validation in gdrive_cli."""
+"""Unit tests for --folder-id CLI validation and --download-dir parsing in gdrive_cli."""
 
 import sys
 from pathlib import Path
@@ -16,7 +16,7 @@ if str(cloud_dir) not in sys.path:
 # and cause test_http_error_during_download to fail.
 # We delete the stub afterwards so subsequent tests can import the real module.
 sys.modules["gdrive_recover"] = MagicMock()
-from gdrive_cli import _validate_folder_id_args  # noqa: E402
+from gdrive_cli import _validate_folder_id_args, create_parser  # noqa: E402
 
 del sys.modules["gdrive_recover"]
 
@@ -55,3 +55,32 @@ def test_folder_id_with_recover_and_download_passes():
 def test_folder_id_with_dry_run_passes():
     ok, code = _validate_folder_id_args(_args(folder_id="abc123", mode="dry_run"))
     assert ok and code == 0
+
+
+# ---------------------------------------------------------------------------
+# --download-dir accepted by dry-run and recover-only
+# ---------------------------------------------------------------------------
+
+
+def test_dry_run_accepts_download_dir():
+    parser = create_parser()
+    args = parser.parse_args(["dry-run", "--download-dir", "./out"])
+    assert args.download_dir == "./out"
+
+
+def test_recover_only_accepts_download_dir():
+    parser = create_parser()
+    args = parser.parse_args(["recover-only", "--download-dir", "./out"])
+    assert args.download_dir == "./out"
+
+
+def test_dry_run_download_dir_defaults_to_none():
+    parser = create_parser()
+    args = parser.parse_args(["dry-run"])
+    assert args.download_dir is None
+
+
+def test_recover_only_download_dir_defaults_to_none():
+    parser = create_parser()
+    args = parser.parse_args(["recover-only"])
+    assert args.download_dir is None

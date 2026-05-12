@@ -42,7 +42,8 @@ Examples:
     %(prog)s dry-run --extensions jpg png --no-emoji
     %(prog)s dry-run --after-date 2024-01-01
     %(prog)s dry-run --file-ids FILE_ID_1 FILE_ID_2
-    %(prog)s dry-run --folder-id FOLDER_ID --post-restore-policy retain
+    %(prog)s dry-run --folder-id FOLDER_ID --download-dir ./backup --post-restore-policy retain
+    %(prog)s dry-run --download-dir ./recovered --extensions jpg png
 
   Recover-only (restore trashed files to Drive — no local download):
     %(prog)s recover-only --extensions pdf docx
@@ -58,7 +59,7 @@ Examples:
     %(prog)s recover-and-download --download-dir ./recovered --direct-download --post-restore-policy retain
 
   Folder-scoped download (download a live Drive folder and all subfolders):
-    %(prog)s dry-run --folder-id FOLDER_ID --post-restore-policy retain
+    %(prog)s dry-run --folder-id FOLDER_ID --download-dir ./backup --post-restore-policy retain
     %(prog)s recover-and-download --folder-id FOLDER_ID --download-dir ./backup --post-restore-policy retain
     %(prog)s recover-and-download --folder-id FOLDER_ID --download-dir ./backup --extensions pdf --post-restore-policy retain --yes
 
@@ -96,6 +97,16 @@ For the compatibility matrix, transport notes, and performance presets: see READ
     )
     download_parser.add_argument(
         "--download-dir", required=True, help="Local directory for downloads"
+    )
+    dry_run_parser.add_argument(
+        "--download-dir",
+        default=None,
+        help="Local directory for downloads (optional; shown in plan output when provided)",
+    )
+    recover_parser.add_argument(
+        "--download-dir",
+        default=None,
+        help="Local directory for downloads (optional; shown in plan output when provided)",
     )
 
     for subparser in [dry_run_parser, recover_parser, download_parser]:

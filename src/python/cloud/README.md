@@ -96,9 +96,10 @@ python gdrive_recover.py dry-run --extensions jpg jpeg png --after-date 2024-01-
 # Preview specific files by their Drive IDs
 python gdrive_recover.py dry-run --file-ids FILE_ID_1 FILE_ID_2
 
-# Preview what a folder download would look like (full subfolder tree)
+# Preview what a folder download would look like (full subfolder tree with target paths)
 python gdrive_recover.py dry-run \
   --folder-id DRIVE_FOLDER_ID \
+  --download-dir ./backup \
   --post-restore-policy retain
 
 # Dry-run with ASCII output (no emoji) — useful for CI logs

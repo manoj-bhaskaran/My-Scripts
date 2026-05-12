@@ -87,7 +87,11 @@ class RecoveryReporter:
             print(f"    Error: {result['error']}")
 
     def _print_local_directory_status(self, checks: Dict[str, Any]) -> None:
-        if not getattr(self.args, "download_dir", None):
+        dl_dir = getattr(self.args, "download_dir", None)
+        if not dl_dir:
+            return
+        if getattr(self.args, "mode", None) == "dry_run":
+            print(f"Download directory: {dl_dir} (informational — no write check in dry-run)")
             return
         local_status = (
             f"{self._sym_ok()} PASS" if checks["local_writable"] else f"{self._sym_fail()} FAIL"
