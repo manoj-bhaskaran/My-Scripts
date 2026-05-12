@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.18.10] - 2026-05-12
+
+### Tests
+
+- **Improved `DriveDownloader` unit-test coverage:** Added four test cases to close the gaps introduced by the `_download_direct` / `_download_via_partial` refactor:
+  - `test_download_direct_download_failure` — covers the `except` handler in `_download_direct` when streaming raises.
+  - `test_rename_failure_marks_item_failed` — covers the path where `_atomic_replace_with_retry` returns `False`, triggering the `PermissionError` and its `except` handler in `_download_via_partial`.
+  - `test_atomic_replace_with_retry_oserror_winerror_32` — covers the `OSError` branch that treats Windows sharing-violation (winerror 32) as retryable.
+  - `test_atomic_replace_with_retry_oserror_non_32_reraises` — covers the `raise` path for non-sharing-violation `OSError`s.
+
 ## [1.18.9] - 2026-05-12
 
 ### Changed

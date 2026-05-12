@@ -102,6 +102,28 @@ def test_download_direct_download_flag(tmp_path, monkeypatch):
     assert not partial.exists()
 
 
+def test_download_direct_download_failure(tmp_path, monkeypatch):
+    """With direct_download=True a streaming error marks the item failed."""
+    downloader = _make_downloader(direct_download=True)
+    item = _make_item(tmp_path)
+
+    monkeypatch.setattr(
+        gdrive_download,
+        "MediaIoBaseDownload",
+        MagicMock(side_effect=RuntimeError("stream error")),
+    )
+
+    fake_service = MagicMock()
+    fake_service.files.return_value.get_media.return_value = MagicMock()
+    downloader.auth._get_service.return_value = fake_service
+
+    result = downloader.download(item)
+
+    assert result is False
+    assert item.status == "failed"
+    assert downloader.stats["errors"] == 1
+
+
 # ---------------------------------------------------------------------------
 # Partial cleanup on failure
 # ---------------------------------------------------------------------------
@@ -129,6 +151,30 @@ def test_partial_cleanup_on_failure(tmp_path, monkeypatch):
     # partial must be cleaned up
     partial = Path(str(tmp_path / "file.txt") + ".partial")
     assert not partial.exists()
+
+
+def test_rename_failure_marks_item_failed(tmp_path, monkeypatch):
+    """When _atomic_replace_with_retry returns False, the item is marked failed."""
+    downloader = _make_downloader()
+    item = _make_item(tmp_path)
+
+    fake_dl = MagicMock()
+    fake_dl.next_chunk.return_value = (None, True)
+    monkeypatch.setattr(gdrive_download, "MediaIoBaseDownload", lambda fh, req, chunksize: fake_dl)
+
+    fake_service = MagicMock()
+    fake_service.files.return_value.get_media.return_value = MagicMock()
+    downloader.auth._get_service.return_value = fake_service
+
+    # Force the atomic rename to always fail
+    monkeypatch.setattr(downloader, "_atomic_replace_with_retry", lambda src, dst: False)
+
+    result = downloader.download(item)
+
+    assert result is False
+    assert item.status == "failed"
+    assert "locked by another process" in item.error_message
+    assert downloader.stats["errors"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +240,43 @@ def test_atomic_replace_with_retry_permission_error(tmp_path, monkeypatch):
 
     assert result is False
     assert gdrive_download.time.sleep.call_count == 3
+
+
+def test_atomic_replace_with_retry_oserror_winerror_32(tmp_path, monkeypatch):
+    """OSError with winerror==32 is treated as a retryable sharing violation."""
+    downloader = _make_downloader()
+    src = tmp_path / "src.partial"
+    dst = tmp_path / "dst.txt"
+    src.write_bytes(b"x")
+
+    sharing_violation = OSError("sharing violation")
+    sharing_violation.winerror = 32
+    monkeypatch.setattr(
+        gdrive_download.os, "replace", MagicMock(side_effect=sharing_violation)
+    )
+    monkeypatch.setattr(gdrive_download.time, "sleep", MagicMock())
+
+    result = downloader._atomic_replace_with_retry(src, dst, attempts=2, sleep_s=0)
+
+    assert result is False
+    assert gdrive_download.time.sleep.call_count == 2
+
+
+def test_atomic_replace_with_retry_oserror_non_32_reraises(tmp_path, monkeypatch):
+    """OSError with a winerror other than 32 is re-raised immediately."""
+    downloader = _make_downloader()
+    src = tmp_path / "src.partial"
+    dst = tmp_path / "dst.txt"
+    src.write_bytes(b"x")
+
+    other_oserror = OSError("disk full")
+    other_oserror.winerror = 112  # ERROR_DISK_FULL
+    monkeypatch.setattr(
+        gdrive_download.os, "replace", MagicMock(side_effect=other_oserror)
+    )
+
+    with pytest.raises(OSError, match="disk full"):
+        downloader._atomic_replace_with_retry(src, dst, attempts=3, sleep_s=0)
 
 
 def test_atomic_replace_with_retry_existing_dst_removed(tmp_path):
