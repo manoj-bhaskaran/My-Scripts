@@ -1,6 +1,7 @@
 """Unit tests for RecoveryReporter covering new code paths."""
 
 import sys
+import time
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,7 +13,7 @@ if str(cloud_dir) not in sys.path:
 
 from gdrive_constants import DEFAULT_BURST, DEFAULT_LOG_FILE, DEFAULT_MAX_RPS, DEFAULT_STATE_FILE
 from gdrive_models import RecoveryState
-from gdrive_report import RecoveryReporter
+from gdrive_report import ProgressBar, RecoveryReporter
 
 
 def _reporter(**overrides):
@@ -192,3 +193,294 @@ def test_summary_zero_found_yields_zero_rate(capsys):
     r._print_summary(1.0, RecoveryState())
     out = capsys.readouterr().out
     assert "0.0%" in out
+
+
+# ---------------------------------------------------------------------------
+# ProgressBar — _fill_bar
+# ---------------------------------------------------------------------------
+
+
+def _pb(no_emoji=True, total=None):
+    args = SimpleNamespace(no_emoji=no_emoji)
+    return ProgressBar(args, total=total)
+
+
+def test_fill_bar_ascii_full():
+    bar = _pb(no_emoji=True, total=10)
+    rendered = bar._fill_bar(10, 10)
+    assert rendered == "[" + "#" * 20 + "]"
+
+
+def test_fill_bar_ascii_half():
+    bar = _pb(no_emoji=True, total=10)
+    rendered = bar._fill_bar(5, 10)
+    assert rendered == "[" + "#" * 10 + "-" * 10 + "]"
+
+
+def test_fill_bar_ascii_empty():
+    bar = _pb(no_emoji=True, total=10)
+    rendered = bar._fill_bar(0, 10)
+    assert rendered == "[" + "-" * 20 + "]"
+
+
+def test_fill_bar_emoji_uses_block_chars():
+    bar = _pb(no_emoji=False, total=4)
+    rendered = bar._fill_bar(4, 4)
+    assert "█" in rendered
+    assert "░" not in rendered
+
+
+# ---------------------------------------------------------------------------
+# ProgressBar — _format_line with known total
+# ---------------------------------------------------------------------------
+
+
+def test_format_line_known_total_contains_count_and_pct():
+    bar = _pb(no_emoji=True, total=100)
+    start = time.time() - 10  # 10 s elapsed → rate = 40/s
+    line = bar._format_line(40, start, 0)
+    assert "40/100" in line
+    assert "40.0%" in line
+    assert "/sec" in line
+    assert "ETA:" in line
+
+
+def test_format_line_known_total_uses_pipe_separator_no_emoji():
+    bar = _pb(no_emoji=True, total=10)
+    line = bar._format_line(5, time.time() - 1, 0)
+    assert "|" in line
+    assert "│" not in line
+
+
+def test_format_line_known_total_uses_box_separator_emoji():
+    bar = _pb(no_emoji=False, total=10)
+    line = bar._format_line(5, time.time() - 1, 0)
+    assert "│" in line
+
+
+# ---------------------------------------------------------------------------
+# ProgressBar — _format_line streaming (no total)
+# ---------------------------------------------------------------------------
+
+
+def test_format_line_streaming_shows_processed():
+    bar = _pb(no_emoji=True, total=None)
+    line = bar._format_line(42, time.time() - 1, 0)
+    assert "processed=42" in line
+
+
+def test_format_line_streaming_shows_discovered_when_larger():
+    bar = _pb(no_emoji=True, total=None)
+    line = bar._format_line(10, time.time() - 1, 50)
+    assert "discovered=50" in line
+
+
+def test_format_line_streaming_no_discovered_when_not_larger():
+    bar = _pb(no_emoji=True, total=None)
+    line = bar._format_line(10, time.time() - 1, 5)
+    assert "discovered" not in line
+
+
+# ---------------------------------------------------------------------------
+# ProgressBar — update throttling
+# ---------------------------------------------------------------------------
+
+
+def test_update_skips_render_within_interval(capsys):
+    bar = _pb(no_emoji=True, total=10)
+    bar._last_render = time.time()  # just rendered
+    bar.update(5, time.time() - 1)
+    assert capsys.readouterr().out == ""
+
+
+def test_update_renders_when_interval_elapsed(capsys, monkeypatch):
+    bar = _pb(no_emoji=True, total=10)
+    bar._is_tty = False
+    bar._last_render = 0.0  # never rendered
+    bar.update(5, time.time() - 5)
+    assert capsys.readouterr().out != ""
+
+
+def test_update_tty_uses_carriage_return(capsys, monkeypatch):
+    bar = _pb(no_emoji=True, total=10)
+    bar._is_tty = True
+    bar._last_render = 0.0
+    bar.update(5, time.time() - 5)
+    out = capsys.readouterr().out
+    assert out.startswith("\r")
+    assert not out.endswith("\n")
+
+
+# ---------------------------------------------------------------------------
+# ProgressBar — close
+# ---------------------------------------------------------------------------
+
+
+def test_close_prints_newline_on_tty_after_update(capsys):
+    bar = _pb(no_emoji=True, total=10)
+    bar._is_tty = True
+    bar._last_render = time.time()  # simulate a previous render
+    bar.close()
+    assert capsys.readouterr().out == "\n"
+
+
+def test_close_silent_when_no_render_yet(capsys):
+    bar = _pb(no_emoji=True, total=10)
+    bar._is_tty = True
+    bar._last_render = 0.0
+    bar.close()
+    assert capsys.readouterr().out == ""
+
+
+def test_close_silent_on_non_tty(capsys):
+    bar = _pb(no_emoji=True, total=10)
+    bar._is_tty = False
+    bar._last_render = time.time()
+    bar.close()
+    assert capsys.readouterr().out == ""
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _should_show_progress
+# ---------------------------------------------------------------------------
+
+
+def test_should_show_progress_non_tty_no_verbose(monkeypatch):
+    monkeypatch.setattr(sys, "stdout", MagicMock(isatty=lambda: False))
+    r = _reporter(verbose=0)
+    assert r._should_show_progress() is False
+
+
+def test_should_show_progress_non_tty_with_verbose(monkeypatch):
+    monkeypatch.setattr(sys, "stdout", MagicMock(isatty=lambda: False))
+    r = _reporter(verbose=1)
+    assert r._should_show_progress() is True
+
+
+def test_should_show_progress_tty_no_verbose(monkeypatch):
+    monkeypatch.setattr(sys, "stdout", MagicMock(isatty=lambda: True))
+    r = _reporter(verbose=0)
+    assert r._should_show_progress() is True
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _start_progress / _close_progress
+# ---------------------------------------------------------------------------
+
+
+def test_start_progress_creates_bar():
+    r = _reporter()
+    assert r._progress_bar is None
+    r._start_progress(total=50)
+    assert r._progress_bar is not None
+    assert r._progress_bar.total == 50
+
+
+def test_close_progress_removes_bar(capsys):
+    r = _reporter()
+    r._start_progress(total=10)
+    r._progress_bar._last_render = 0.0  # no render yet — close should be silent
+    r._close_progress()
+    assert r._progress_bar is None
+    assert capsys.readouterr().out == ""
+
+
+def test_close_progress_is_idempotent(capsys):
+    r = _reporter()
+    r._close_progress()  # no bar — should not raise
+    assert r._progress_bar is None
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — print_streaming_start initialises bar with file_ids total
+# ---------------------------------------------------------------------------
+
+
+def test_print_streaming_start_sets_total_from_file_ids(capsys):
+    r = _reporter(file_ids=["id1", "id2", "id3"])
+    r.print_streaming_start(batch_n=500, concurrency=8)
+    assert r._progress_bar is not None
+    assert r._progress_bar.total == 3
+    capsys.readouterr()  # consume output
+
+
+def test_print_streaming_start_total_none_when_no_file_ids(capsys):
+    r = _reporter(file_ids=None)
+    r.print_streaming_start(batch_n=500, concurrency=8)
+    assert r._progress_bar is not None
+    assert r._progress_bar.total is None
+    capsys.readouterr()
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _print_stream_progress delegates to bar
+# ---------------------------------------------------------------------------
+
+
+def test_print_stream_progress_delegates_to_bar(monkeypatch):
+    r = _reporter()
+    r._start_progress(total=None)
+    called_with = []
+    monkeypatch.setattr(r._progress_bar, "update", lambda c, st, d=0: called_with.append((c, d)))
+    r._print_stream_progress(42, time.time() - 1, 100, None)
+    assert called_with == [(42, 100)]
+
+
+def test_print_stream_progress_fallback_when_no_bar(capsys):
+    r = _reporter(verbose=1)
+    r._progress_bar = None
+    r._print_stream_progress(10, time.time() - 1, 20, None)
+    out = capsys.readouterr().out
+    assert "10" in out
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — print_progress_update delegates to bar
+# ---------------------------------------------------------------------------
+
+
+def test_print_progress_update_delegates_to_bar(monkeypatch):
+    r = _reporter()
+    r._start_progress(total=100)
+    called_with = []
+    monkeypatch.setattr(r._progress_bar, "update", lambda c, st, d=0: called_with.append(c))
+    r.print_progress_update(40, 100, time.time() - 1)
+    assert called_with == [40]
+
+
+def test_print_progress_update_fallback_when_no_bar(capsys):
+    r = _reporter(verbose=1)
+    r._progress_bar = None
+    r.print_progress_update(40, 100, time.time() - 1)
+    out = capsys.readouterr().out
+    assert "40/100" in out
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _print_summary closes bar before printing
+# ---------------------------------------------------------------------------
+
+
+def test_print_summary_closes_bar(capsys):
+    stats = _make_stats(found=10, recovered=10)
+    r = _reporter(mode="recover_only")
+    r.stats = stats
+    r._start_progress(total=10)
+    r._progress_bar._last_render = 0.0  # no render → close is silent
+    r._print_summary(5.0, RecoveryState())
+    assert r._progress_bar is None
+    capsys.readouterr()
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — print_interrupted_state_saved closes bar
+# ---------------------------------------------------------------------------
+
+
+def test_interrupted_state_saved_closes_bar(capsys):
+    r = _reporter()
+    r._start_progress(total=10)
+    r._progress_bar._last_render = 0.0
+    r.print_interrupted_state_saved()
+    assert r._progress_bar is None
+    capsys.readouterr()
