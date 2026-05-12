@@ -184,3 +184,130 @@ def test_process_item_proceeds_when_overwrite_and_already_processed():
     assert ok is True
     assert item.status == "recovered"
     ops.state_manager._mark_processed.assert_called_once_with(item.id)
+
+
+# ---------------------------------------------------------------------------
+# Failed-file tracking
+# ---------------------------------------------------------------------------
+
+
+def test_write_failed_file_appends_target_path(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    item = _item()
+    item.target_path = "/local/downloads/file.txt"
+    ops._write_failed_file(item)
+
+    assert failed_file.read_text() == "/local/downloads/file.txt\n"
+
+
+def test_write_failed_file_falls_back_to_name_when_no_target_path(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    item = _item()
+    item.target_path = ""
+    ops._write_failed_file(item)
+
+    assert failed_file.read_text() == "file.txt\n"
+
+
+def test_write_failed_file_creates_parent_dirs(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "nested" / "dir" / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    item = _item()
+    item.target_path = "/a/path.jpg"
+    ops._write_failed_file(item)
+
+    assert failed_file.exists()
+    assert failed_file.read_text() == "/a/path.jpg\n"
+
+
+def test_write_failed_file_appends_multiple_entries(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    for i in range(3):
+        item = _item()
+        item.target_path = f"/path/file{i}.txt"
+        ops._write_failed_file(item)
+
+    lines = failed_file.read_text().splitlines()
+    assert lines == ["/path/file0.txt", "/path/file1.txt", "/path/file2.txt"]
+
+
+def test_write_failed_file_noop_when_path_not_set(tmp_path):
+    ops = _make_ops()
+    ops._failed_file_path = ""
+
+    item = _item()
+    item.target_path = "/some/path.txt"
+    ops._write_failed_file(item)  # should not raise or create any file
+
+
+def test_clear_failed_files_truncates_file(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    failed_file.write_text("/old/path.txt\n")
+    ops._failed_file_path = str(failed_file)
+
+    ops._clear_failed_files()
+
+    assert failed_file.read_text() == ""
+
+
+def test_clear_failed_files_creates_parent_dirs(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "new" / "dir" / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    ops._clear_failed_files()
+
+    assert failed_file.exists()
+    assert failed_file.read_text() == ""
+
+
+def test_clear_failed_files_noop_when_path_not_set():
+    ops = _make_ops()
+    ops._failed_file_path = ""
+    ops._clear_failed_files()  # should not raise
+
+
+def test_process_item_writes_failed_file_on_failure(tmp_path, monkeypatch):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    monkeypatch.setattr(
+        "gdrive_operations.with_retries",
+        lambda *args, **kwargs: (None, "HTTP 404: not found", 404),
+    )
+
+    item = _item()
+    item.target_path = "/downloads/file.txt"
+    ok = ops._process_item(item)
+
+    assert ok is False
+    assert failed_file.read_text() == "/downloads/file.txt\n"
+
+
+def test_process_item_does_not_write_failed_file_on_success(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.txt"
+    ops._failed_file_path = str(failed_file)
+
+    service = MagicMock()
+    ops.auth._get_service.return_value = service
+    service.files.return_value.update.return_value = MagicMock()
+
+    item = _item()
+    ok = ops._process_item(item)
+
+    assert ok is True
+    assert not failed_file.exists(), "failed-file should not be created on success"

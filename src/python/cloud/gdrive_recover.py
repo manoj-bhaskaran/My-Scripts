@@ -181,6 +181,28 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
         --max-rps 5 \
         -vv
 
+**Logging and failure tracking**::
+
+    # Write a detailed per-operation log (parent directory created automatically)
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --log-file ./logs/run.log \
+        --post-restore-policy retain
+
+    # Record failed item paths to a file for inspection or retry (appends by default)
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --failed-file ./failed_paths.txt \
+        --post-restore-policy retain
+
+    # Use both together; on --overwrite the failed-file is cleared first
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --overwrite \
+        --log-file ./logs/run.log \
+        --failed-file ./logs/failed.txt \
+        --post-restore-policy retain
+
 **Concurrency and locking**::
 
     # Wait up to 60 s for a held state lock, then exit with an error if still locked
@@ -346,18 +368,37 @@ class DriveTrashRecoveryTool:
         return request.execute()
 
     def _setup_logging(self) -> logging.Logger:
-        """Configure logging based on verbosity level."""
-        log_level = logging.WARNING
-        if self.args.verbose >= 2:
-            log_level = logging.DEBUG
-        elif self.args.verbose == 1:
-            log_level = logging.INFO
+        """Configure logging based on verbosity level.
 
-        logging.basicConfig(
-            level=log_level,
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            handlers=[logging.FileHandler(self.args.log_file), logging.StreamHandler()],
-        )
+        Console level follows -v / -vv flags.  When --log-file is provided a
+        FileHandler at DEBUG level is added so every operation is captured in
+        the file regardless of console verbosity.  The parent directory is
+        created automatically if it does not exist.
+        """
+        console_level = logging.WARNING
+        if self.args.verbose >= 2:
+            console_level = logging.DEBUG
+        elif self.args.verbose == 1:
+            console_level = logging.INFO
+
+        root = logging.getLogger()
+        if not root.handlers:
+            root.setLevel(logging.DEBUG)  # handlers apply their own filters
+            fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+
+            console_h = logging.StreamHandler()
+            console_h.setLevel(console_level)
+            console_h.setFormatter(fmt)
+            root.addHandler(console_h)
+
+            log_file = getattr(self.args, "log_file", None) or ""
+            if log_file:
+                Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+                file_h = logging.FileHandler(log_file)
+                file_h.setLevel(logging.DEBUG)
+                file_h.setFormatter(fmt)
+                root.addHandler(file_h)
+
         return logging.getLogger(__name__)
 
     # -------------------- Discovery helpers delegated to DriveTrashDiscovery --------------------
@@ -484,6 +525,7 @@ class DriveTrashRecoveryTool:
                 print(
                     f"{prefix} --overwrite: cleared {cleared} previously processed item(s) from state"
                 )
+            self.ops._clear_failed_files()
         self.state = self.state_manager.state
         if streaming_mode:
             # Ensure counters are clean for streaming; discovery will bump these.

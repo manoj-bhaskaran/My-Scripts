@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from threading import Lock
 from typing import Optional, Tuple
 
 from gdrive_models import PostRestorePolicy, RecoveryItem
@@ -19,9 +21,30 @@ class DriveOperations:
         self.state_manager = state_manager
         self.stats = stats
         self.stats_lock = stats_lock
+        self._failed_file_path: str = getattr(args, "failed_file", None) or ""
+        self._failed_files_lock = Lock()
 
     def _execute(self, request):
         return self.auth._execute(request)
+
+    def _clear_failed_files(self) -> None:
+        """Truncate the failed-file log to zero bytes (called when --overwrite is set)."""
+        if not self._failed_file_path:
+            return
+        p = Path(self._failed_file_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("", encoding="utf-8")
+
+    def _write_failed_file(self, item: RecoveryItem) -> None:
+        """Append the item's local path (or Drive name) to the failed-file log."""
+        if not self._failed_file_path:
+            return
+        entry = item.target_path if item.target_path else item.name
+        p = Path(self._failed_file_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with self._failed_files_lock:
+            with open(self._failed_file_path, "a", encoding="utf-8") as fh:
+                fh.write(entry + "\n")
 
     def _recover_file(self, item: RecoveryItem) -> bool:
         if not getattr(self.args, "overwrite", False) and self.state_manager._is_processed(item.id):
@@ -155,6 +178,9 @@ class DriveOperations:
             success = False
         if success and item.will_download and item.status == "downloaded":
             self._apply_post_restore_policy(item)
+
+        if not success:
+            self._write_failed_file(item)
 
         self.state_manager._mark_processed(item.id)
         return success

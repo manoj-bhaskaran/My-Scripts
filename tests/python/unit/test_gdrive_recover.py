@@ -10,6 +10,7 @@ def _build_dummy_args(tmp_path):
     args = Args()
     args.verbose = 0
     args.log_file = str(tmp_path / "test.log")
+    args.failed_file = ""
     args.state_file = str(tmp_path / "state.json")
     args.file_ids = None
     args.extensions = None
@@ -385,3 +386,110 @@ def test_prepare_recovery_does_not_clear_when_overwrite_not_set(tmp_path, monkey
     tool._prepare_recovery(streaming_mode=True)
 
     assert tool.state_manager.state.processed_items == ["id-1", "id-2"]
+
+
+# ---------------------------------------------------------------------------
+# Logging setup tests
+# ---------------------------------------------------------------------------
+
+
+def test_log_file_created_with_parent_dirs(tmp_path, monkeypatch):
+    """FileHandler is added and its parent directories are created when --log-file is set."""
+    import logging
+
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    log_path = tmp_path / "nested" / "dir" / "run.log"
+    args = _build_dummy_args(tmp_path)
+    args.log_file = str(log_path)
+
+    # Reset root handlers so _setup_logging takes effect
+    root = logging.getLogger()
+    original_handlers = root.handlers[:]
+    root.handlers.clear()
+
+    try:
+        tool = DriveTrashRecoveryTool(args)
+        assert log_path.parent.exists(), "parent directories should have been created"
+        assert log_path.exists() or any(
+            isinstance(h, logging.FileHandler) for h in logging.getLogger().handlers
+        )
+    finally:
+        for h in list(root.handlers):
+            if isinstance(h, logging.FileHandler):
+                h.close()
+            root.removeHandler(h)
+        root.handlers.extend(original_handlers)
+
+
+def test_no_log_file_when_not_specified(tmp_path, monkeypatch):
+    """No FileHandler is added when --log-file is empty."""
+    import logging
+
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    args = _build_dummy_args(tmp_path)
+    args.log_file = ""
+
+    root = logging.getLogger()
+    original_handlers = root.handlers[:]
+    root.handlers.clear()
+
+    try:
+        DriveTrashRecoveryTool(args)
+        file_handlers = [h for h in root.handlers if isinstance(h, logging.FileHandler)]
+        assert file_handlers == [], "no FileHandler expected when log_file is empty"
+    finally:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        root.handlers.extend(original_handlers)
+
+
+# ---------------------------------------------------------------------------
+# --overwrite clears failed-file
+# ---------------------------------------------------------------------------
+
+
+def test_prepare_recovery_clears_failed_file_on_overwrite(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    failed_file = tmp_path / "failed.txt"
+    failed_file.write_text("/some/previous/path.jpg\n")
+
+    args = _build_dummy_args(tmp_path)
+    args.overwrite = True
+    args.no_emoji = True
+    args.failed_file = str(failed_file)
+
+    tool = DriveTrashRecoveryTool(args)
+    tool.ops._failed_file_path = str(failed_file)
+    tool.auth.authenticate = MagicMock(return_value=True)
+    tool.state_manager.state.processed_items = []
+
+    tool._prepare_recovery(streaming_mode=True)
+
+    assert failed_file.read_text() == "", "failed-file should be truncated on --overwrite"
+
+
+def test_prepare_recovery_does_not_clear_failed_file_without_overwrite(tmp_path, monkeypatch):
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    failed_file = tmp_path / "failed.txt"
+    existing = "/some/previous/path.jpg\n"
+    failed_file.write_text(existing)
+
+    args = _build_dummy_args(tmp_path)
+    args.failed_file = str(failed_file)
+
+    tool = DriveTrashRecoveryTool(args)
+    tool.ops._failed_file_path = str(failed_file)
+    tool.auth.authenticate = MagicMock(return_value=True)
+    tool.state_manager.state.processed_items = []
+
+    tool._prepare_recovery(streaming_mode=True)
+
+    assert failed_file.read_text() == existing, "failed-file should not be touched without --overwrite"
