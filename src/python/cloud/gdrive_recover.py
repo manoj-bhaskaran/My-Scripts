@@ -481,7 +481,9 @@ class DriveTrashRecoveryTool:
             cleared = self.state_manager._clear_processed_items()
             if cleared:
                 prefix = "🔄" if not getattr(self.args, "no_emoji", False) else "INFO"
-                print(f"{prefix} --overwrite: cleared {cleared} previously processed item(s) from state")
+                print(
+                    f"{prefix} --overwrite: cleared {cleared} previously processed item(s) from state"
+                )
         self.state = self.state_manager.state
         if streaming_mode:
             # Ensure counters are clean for streaming; discovery will bump these.
