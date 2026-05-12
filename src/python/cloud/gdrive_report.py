@@ -184,8 +184,11 @@ class RecoveryReporter:
         self._add_verbosity_arguments(cmd_parts)
         if getattr(self.args, "no_emoji", False):
             cmd_parts.append("--no-emoji")
+        cmd_str = " ".join(cmd_parts)
         print("To execute this plan, run:")
-        print(f"  {' '.join(cmd_parts)}")
+        print(f"  {cmd_str}")
+        if "<DOWNLOAD_DIR>" in cmd_str:
+            self._print_warn("Replace <DOWNLOAD_DIR> with the local path where files should be saved.")
 
         if policy_warning_message:
             try:
@@ -219,9 +222,14 @@ class RecoveryReporter:
         else:
             # dry-run: emit the command that would actually execute the plan
             dl_dir = getattr(self.args, "download_dir", None)
+            folder_id = getattr(self.args, "folder_id", None)
             if dl_dir:
                 cmd_parts.append("recover-and-download")
                 cmd_parts.extend(["--download-dir", str(dl_dir)])
+            elif folder_id:
+                # recover-only rejects --folder-id; recover-and-download is the only valid mode
+                cmd_parts.append("recover-and-download")
+                cmd_parts.extend(["--download-dir", "<DOWNLOAD_DIR>"])
             else:
                 cmd_parts.append("recover-only")
 

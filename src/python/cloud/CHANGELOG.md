@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.6] - 2026-05-12
+
+### Fixed
+
+- **Dry-run execution command is now valid when `--folder-id` is used without `--download-dir`:** Previously the suggested command fell through to `recover-only`, which the CLI rejects when `--folder-id` is present. The command now emits `recover-and-download --download-dir <DOWNLOAD_DIR>` in that case, with a warning prompting the user to substitute the placeholder with their intended local path.
+
 ## [1.18.5] - 2026-05-12
 
 ### Fixed
