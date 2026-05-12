@@ -162,6 +162,8 @@ class DriveAuthManager:
             return None
         try:
             return Credentials.from_authorized_user_file(token_file, SCOPES)
+        except PermissionError:
+            raise
         except Exception:
             # Corrupt or unreadable token—force a fresh OAuth flow.
             return None
