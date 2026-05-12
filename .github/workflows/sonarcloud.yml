@@ -12,6 +12,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: sonarcloud-${{ github.event.pull_request.base.ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   sonarcloud:
     runs-on: ubuntu-latest
