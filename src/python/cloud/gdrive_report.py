@@ -60,9 +60,7 @@ class ProgressBar:
 
         sym = "▶" if self._use_emoji() else ">"
         if discovered > count:
-            return (
-                f"{sym} processed={count} discovered={discovered} {sep} {rate:.1f}/sec"
-            )
+            return f"{sym} processed={count} discovered={discovered} {sep} {rate:.1f}/sec"
         return f"{sym} processed={count} {sep} {rate:.1f}/sec"
 
     def update(self, count: int, start_time: float, discovered: int = 0) -> None:
