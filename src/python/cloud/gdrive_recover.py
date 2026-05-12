@@ -181,12 +181,16 @@ class DriveTrashRecoveryTool:
             return ""
         item_name = item.get("name", "") if isinstance(item, Mapping) else item.name
         item_id = item.get("id", "") if isinstance(item, Mapping) else item.id
+        relative_path = "" if isinstance(item, Mapping) else item.relative_path
         safe_name = "".join(
             c for c in str(item_name) if c.isalnum() or c in (" ", "-", "_", ".")
         ).rstrip()
         if not safe_name:
             safe_name = f"file_{item_id}"
-        base_path = Path(self.args.download_dir) / safe_name
+        if relative_path:
+            base_path = Path(self.args.download_dir) / relative_path / safe_name
+        else:
+            base_path = Path(self.args.download_dir) / safe_name
         if base_path.exists():
             stem = base_path.stem or f"file_{item_id}"
             suffix = base_path.suffix
@@ -354,6 +358,8 @@ class DriveTrashRecoveryTool:
         try:
             if self.args.file_ids:
                 ok = self.discovery._stream_stream_ids(batch_n, start_time)
+            elif getattr(self.args, "folder_id", None):
+                ok = self.discovery._stream_stream_folder(batch_n, start_time)
             else:
                 ok = self.discovery._stream_stream_query(batch_n, start_time)
         except KeyboardInterrupt:

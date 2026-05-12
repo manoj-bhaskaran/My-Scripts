@@ -74,6 +74,14 @@ For compatibility matrix, transport notes, and performance presets: see README.m
         )
         subparser.add_argument("--file-ids", nargs="+", help="Process only specific file IDs")
         subparser.add_argument(
+            "--folder-id",
+            help=(
+                "Scope operation to this Drive folder ID and all its subfolders. "
+                "Discovers non-trashed files only; local subfolder hierarchy is reconstructed "
+                "under --download-dir. Use --post-restore-policy retain to leave files in Drive."
+            ),
+        )
+        subparser.add_argument(
             "--post-restore-policy",
             default=PostRestorePolicy.TRASH,
             help="Post-download handling in Drive (aliases accepted): retain|trash|delete",
@@ -470,6 +478,14 @@ def main() -> int:
     ok, code = _normalize_and_validate_policy(args)
     if not ok:
         return code
+
+    if getattr(args, "folder_id", None) and args.post_restore_policy == PostRestorePolicy.TRASH:
+        print(
+            f"{_sym_warn(args)} --folder-id is set with the default post-restore-policy 'trash'. "
+            "Files will be moved to Drive Trash after downloading. "
+            "Use --post-restore-policy retain to leave them in place.",
+            file=sys.stderr,
+        )
 
     ok, code = _validate_concurrency_arg(args)
     if not ok:
