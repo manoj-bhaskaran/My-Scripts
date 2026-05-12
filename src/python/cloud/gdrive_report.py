@@ -188,7 +188,9 @@ class RecoveryReporter:
         print("To execute this plan, run:")
         print(f"  {cmd_str}")
         if "<DOWNLOAD_DIR>" in cmd_str:
-            self._print_warn("Replace <DOWNLOAD_DIR> with the local path where files should be saved.")
+            self._print_warn(
+                "Replace <DOWNLOAD_DIR> with the local path where files should be saved."
+            )
 
         if policy_warning_message:
             try:
