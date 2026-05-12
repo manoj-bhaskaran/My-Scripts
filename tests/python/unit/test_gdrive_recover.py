@@ -89,6 +89,15 @@ def test_generate_target_path(tmp_path, monkeypatch):
     p2 = tool._generate_target_path(item2)
     assert p2 != str(tmp_path / "myfile.txt")
 
+    # relative_path is reconstructed as a subdirectory under download_dir
+    # Use SimpleNamespace: MagicMock treats 'name' as its internal mock name, not an attribute.
+    from types import SimpleNamespace
+    item3 = SimpleNamespace(id="def", name="doc.pdf", relative_path="subdir/nested")
+    p3 = tool._generate_target_path(item3)
+    assert "subdir" in p3
+    assert "nested" in p3
+    assert p3.endswith("doc.pdf")
+
 
 def test_report_validation_outcome(monkeypatch, tmp_path):
     monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
