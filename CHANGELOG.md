@@ -11,6 +11,12 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.13.3] - 2026-05-12
+
+### Fixed
+
+- **[CI / sonarcloud.yml] Prevent duplicate SonarCloud scans on PR merge** – The workflow declared both a `push: main` and `pull_request: main` trigger. On every PR merge the final `pull_request: synchronize` scan and the subsequent `push: main` scan fired near-simultaneously, analysing the same code twice. Added a `concurrency` group keyed on the target branch (`sonarcloud-${{ github.event.pull_request.base.ref || github.ref_name }}`) with `cancel-in-progress: true`; both event types resolve to `sonarcloud-main`, so the push-to-main scan cancels any still-running PR scan on merge.
+
 ## [2.13.2] - 2026-05-12
 
 ### Fixed
