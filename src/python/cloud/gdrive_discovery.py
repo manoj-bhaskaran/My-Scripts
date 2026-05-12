@@ -657,12 +657,12 @@ class DriveTrashDiscovery:
         return items
 
     def discover_trashed_files(self) -> List[RecoveryItem]:
-        if getattr(self.args, "folder_id", None):
-            print(f"{self._sym_search()} Discovering files in folder {self.args.folder_id} ...")
-            items = self._discover_folder_recursively()
-        elif self.args.file_ids:
+        if self.args.file_ids:
             print(f"{self._sym_search()} Discovering trashed files...")
             items = self._discover_via_ids()
+        elif getattr(self.args, "folder_id", None):
+            print(f"{self._sym_search()} Discovering files in folder {self.args.folder_id} ...")
+            items = self._discover_folder_recursively()
         else:
             print(f"{self._sym_search()} Discovering trashed files...")
             query = self._build_query()

@@ -443,6 +443,29 @@ def _acquire_or_bypass_lock(tool, args) -> Tuple[bool, int]:
     return True, 0
 
 
+def _validate_folder_id_args(args) -> Tuple[bool, int]:
+    """Reject flag combinations that are incompatible with --folder-id."""
+    if not getattr(args, "folder_id", None):
+        return True, 0
+    if getattr(args, "file_ids", None):
+        print(
+            f"{_sym_fail(args)} --folder-id and --file-ids are mutually exclusive. "
+            "Use one source at a time.",
+            file=sys.stderr,
+        )
+        return False, 2
+    if getattr(args, "mode", None) == "recover_only":
+        print(
+            f"{_sym_fail(args)} --folder-id cannot be used with recover-only: "
+            "folder-scoped files are not in trash so no action would be taken, "
+            "and items would still be recorded as processed in the state file. "
+            "Use recover-and-download with --post-restore-policy retain instead.",
+            file=sys.stderr,
+        )
+        return False, 2
+    return True, 0
+
+
 def _validate_file_ids_if_present(tool, args) -> Tuple[bool, int]:
     if hasattr(args, "file_ids") and args.file_ids:
         ok = tool._validate_file_ids()
@@ -476,6 +499,10 @@ def main() -> int:
     _set_mode(args)
 
     ok, code = _normalize_and_validate_policy(args)
+    if not ok:
+        return code
+
+    ok, code = _validate_folder_id_args(args)
     if not ok:
         return code
 
