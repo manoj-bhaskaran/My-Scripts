@@ -22,6 +22,10 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
 
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
 
+        # Assembly must be loaded before helpers are dot-sourced; Add-Type now lives
+        # at script start (outside #region Helpers) so the test loads it explicitly.
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+
         function Write-LogDebug { param([string]$Message) }
         . ([ScriptBlock]::Create($helpersWithUsing))
     }
@@ -41,13 +45,14 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
         Mock Expand-ZipToSubfolder { 7 }
         Mock Expand-ZipFlat { 0 }
 
-        $result = Expand-ZipSmart -ZipPath '/tmp/a.zip' -DestinationRoot '/tmp/dest' -ExtractMode PerArchiveSubfolder -SafeNameMaxLen 80
+        $result = Expand-ZipSmart -ZipPath '/tmp/a.zip' -DestinationRoot '/tmp/dest' -ExtractMode PerArchiveSubfolder -SafeNameMaxLen 80 -ExpectedFileCount 7
 
         $result | Should -Be 7
         Should -Invoke Expand-ZipToSubfolder -Times 1 -Exactly -ParameterFilter {
             $ZipPath -eq '/tmp/a.zip' -and
             $DestinationRoot -eq '/tmp/dest' -and
-            $SafeSubfolderName -eq 'safe-name'
+            $SafeSubfolderName -eq 'safe-name' -and
+            $ExpectedFileCount -eq 7
         }
         Should -Invoke Expand-ZipFlat -Times 0
     }
@@ -151,6 +156,87 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
             Resolve-ExtractionError -ZipPath '/tmp/test.zip' -ErrorRecord $err
         } | Should -Throw "*zip may be encrypted*"
     }
+
+    It 'PerArchiveSubfolder: file count returned matches archive entry count' {
+        $root = Join-Path $TestDrive 'subfolder-count'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+        $zipPath = Join-Path $TestDrive 'subfolder-count.zip'
+        $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($name in 'a.txt', 'b.txt', 'c.txt') {
+                $entry  = $archive.CreateEntry($name)
+                $stream = $entry.Open()
+                $writer = New-Object System.IO.StreamWriter($stream)
+                try { $writer.Write("content-$name") } finally { $writer.Dispose() }
+            }
+        } finally {
+            $archive.Dispose()
+        }
+
+        # Mock Expand-Archive so the test is CI-independent; we are verifying that
+        # Expand-ZipToSubfolder returns ExpectedFileCount directly (not a Get-ChildItem
+        # walk), not that the extraction itself succeeds.
+        Mock Expand-Archive { }
+
+        $stats = Get-ZipFileStats -ZipPath $zipPath
+        $count = Expand-ZipToSubfolder -ZipPath $zipPath -DestinationRoot $root -SafeSubfolderName 'subfolder-count' -ExpectedFileCount $stats.FileCount
+
+        $count | Should -Be $stats.FileCount
+        $count | Should -Be 3
+    }
+
+    It 'Flat: file count returned matches archive entry count' {
+        $root = Join-Path $TestDrive 'flat-filecount'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+        $zipPath = Join-Path $TestDrive 'flat-filecount.zip'
+        $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($name in 'x.txt', 'y.txt') {
+                $entry  = $archive.CreateEntry($name)
+                $stream = $entry.Open()
+                $writer = New-Object System.IO.StreamWriter($stream)
+                try { $writer.Write("content-$name") } finally { $writer.Dispose() }
+            }
+        } finally {
+            $archive.Dispose()
+        }
+
+        $stats = Get-ZipFileStats -ZipPath $zipPath
+        $count = Expand-ZipFlat -ZipPath $zipPath -DestinationRoot $root -DestinationRootFull ([System.IO.Path]::GetFullPath($root)) -CollisionPolicy Rename
+
+        $count | Should -Be $stats.FileCount
+        $count | Should -Be 2
+    }
+
+    It 'Expand-ZipSmart PerArchiveSubfolder: returns correct count when ExpectedFileCount is omitted' {
+        $root = Join-Path $TestDrive 'smart-fallback'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+        $zipPath = Join-Path $TestDrive 'smart-fallback.zip'
+        $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($name in 'p.txt', 'q.txt') {
+                $entry  = $archive.CreateEntry($name)
+                $stream = $entry.Open()
+                $writer = New-Object System.IO.StreamWriter($stream)
+                try { $writer.Write("content-$name") } finally { $writer.Dispose() }
+            }
+        } finally {
+            $archive.Dispose()
+        }
+
+        # Mock Expand-Archive so the test is CI-independent; we are verifying that
+        # Expand-ZipSmart falls back to Get-ZipFileStats when ExpectedFileCount is
+        # omitted and returns the correct count — not that extraction itself succeeds.
+        Mock Expand-Archive { }
+
+        # Call without -ExpectedFileCount to exercise the Get-ZipFileStats fallback
+        $count = Expand-ZipSmart -ZipPath $zipPath -DestinationRoot $root -ExtractMode PerArchiveSubfolder
+
+        $count | Should -Be 2
+    }
 }
 
 Describe 'Remove-SourceDirectory' {
@@ -171,6 +257,7 @@ Describe 'Remove-SourceDirectory' {
         $helpersWithUsing = $usingLines + "`n" + $helpers
 
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         function Write-LogDebug { param([string]$Message) }
         . ([ScriptBlock]::Create($helpersWithUsing))
@@ -290,6 +377,7 @@ Describe 'Move-ZipFilesToParent' {
         $helpersWithUsing = $usingLines + "`n" + $helpers
 
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         function Write-LogDebug { param([string]$Message) }
         . ([ScriptBlock]::Create($helpersWithUsing))
