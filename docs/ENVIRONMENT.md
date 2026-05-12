@@ -708,7 +708,14 @@ source "$ENV_FILE"
 
 7. **For `gdrive_recover.py`: `[Errno 13] Permission denied` on `token.json`:**
 
-   This error is reported as `Authentication failed: [Errno 13] Permission denied: '<path>/token.json'`.
+   The log will now show one of two specific messages before the generic `Authentication failed` line:
+
+   - `Permission denied reading token file: <path>` — the file exists but cannot be opened for reading.
+     Check NTFS ACLs and Win32 attributes; another process may hold an exclusive lock.
+   - `Permission denied writing token file: <path>` — the file was read and the token was refreshed
+     successfully over the network, but the updated credentials could not be saved back to disk.
+     The most common causes are a `ReadOnly` attribute or a lock held by security software during the write.
+
    Before assuming an NTFS permission problem, check the file's Win32 attributes — correct ACLs do not
    rule out a `ReadOnly` attribute or a transient lock held by security software:
 

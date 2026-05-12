@@ -163,6 +163,7 @@ class DriveAuthManager:
         try:
             return Credentials.from_authorized_user_file(token_file, SCOPES)
         except PermissionError:
+            self.logger.error("Permission denied reading token file: %s", token_file)
             raise
         except Exception:
             # Corrupt or unreadable token—force a fresh OAuth flow.
@@ -185,8 +186,12 @@ class DriveAuthManager:
             creds = flow.run_local_server(port=0)
         if creds is None:
             return None
-        with open(token_file, "w") as token:
-            token.write(creds.to_json())
+        try:
+            with open(token_file, "w") as token:
+                token.write(creds.to_json())
+        except PermissionError:
+            self.logger.error("Permission denied writing token file: %s", token_file)
+            raise
         self._harden_token_permissions_windows(token_file)
         return creds
 

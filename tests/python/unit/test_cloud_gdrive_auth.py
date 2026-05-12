@@ -233,13 +233,16 @@ def test_load_creds_from_token_returns_credentials_when_valid(monkeypatch):
 
 
 def test_load_creds_from_token_reraises_permission_error(monkeypatch):
-    manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=MagicMock(), execute_fn=lambda x: x)
+    mock_logger = MagicMock()
+    manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=mock_logger, execute_fn=lambda x: x)
     fake_creds_cls = MagicMock()
     fake_creds_cls.from_authorized_user_file.side_effect = PermissionError("access denied")
     monkeypatch.setattr(gdrive_auth.os.path, "exists", lambda path: True)
     monkeypatch.setattr(gdrive_auth, "Credentials", fake_creds_cls)
     with pytest.raises(PermissionError, match="access denied"):
         manager._load_creds_from_token("/any/path/token.json")
+    mock_logger.error.assert_called_once()
+    assert "reading" in mock_logger.error.call_args[0][0]
 
 
 def test_load_creds_from_token_returns_none_on_corrupt_file(monkeypatch):
@@ -249,3 +252,42 @@ def test_load_creds_from_token_returns_none_on_corrupt_file(monkeypatch):
     monkeypatch.setattr(gdrive_auth.os.path, "exists", lambda path: True)
     monkeypatch.setattr(gdrive_auth, "Credentials", fake_creds_cls)
     assert manager._load_creds_from_token("/any/path/token.json") is None
+
+
+# ---------------------------------------------------------------------------
+# _refresh_or_flow_creds — write-side PermissionError
+# ---------------------------------------------------------------------------
+
+
+def test_refresh_or_flow_creds_logs_and_reraises_on_write_permission_error(monkeypatch, tmp_path):
+    import builtins
+
+    mock_logger = MagicMock()
+    manager = gdrive_auth.DriveAuthManager(DummyArgs(), logger=mock_logger, execute_fn=lambda x: x)
+
+    # Simulate expired creds with a refresh token so the refresh branch is taken.
+    fake_creds = MagicMock()
+    fake_creds.expired = True
+    fake_creds.refresh_token = "dummy-refresh-token"
+    fake_creds.to_json.return_value = "{}"
+
+    # refresh() succeeds (no exception), so we reach the write step.
+    monkeypatch.setattr(gdrive_auth, "Request", MagicMock)
+
+    token_file = str(tmp_path / "token.json")
+
+    # Patch builtins.open to raise PermissionError only for the token write.
+    real_open = builtins.open
+
+    def failing_open(file, mode="r", *args, **kwargs):
+        if str(file) == token_file and "w" in str(mode):
+            raise PermissionError("access denied")
+        return real_open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", failing_open)
+
+    with pytest.raises(PermissionError):
+        manager._refresh_or_flow_creds(fake_creds, token_file)
+
+    mock_logger.error.assert_called_once()
+    assert "writing" in mock_logger.error.call_args[0][0]

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.18.14] - 2026-05-12
+
+### Fixed
+
+- **`_load_creds_from_token` and `_refresh_or_flow_creds` now log distinct messages on `PermissionError`** – Previously both paths propagated the error to `authenticate()`'s outer handler, which logged only the generic `Authentication failed: [Errno 13] Permission denied` message. It was impossible to tell from the log whether the OS had denied a read (token file unreadable) or a write (refreshed token could not be persisted). Fixed by logging `Permission denied reading token file: <path>` before re-raising in `_load_creds_from_token`, and wrapping `open(token_file, "w")` in `_refresh_or_flow_creds` with an equivalent `Permission denied writing token file: <path>` log entry.
+
+## [1.18.13] - 2026-05-12
+
+### Fixed
+
+- **`_load_creds_from_token` no longer silently swallows `PermissionError`** – See project CHANGELOG `[2.13.7]` for full details.
+
 ## [1.18.12] - 2026-05-12
 
 ### Fixed

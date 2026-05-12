@@ -11,6 +11,12 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.13.8] - 2026-05-12
+
+### Fixed
+
+- **[gdrive_auth] Read and write permission failures on `token.json` now log distinct messages** – Both `_load_creds_from_token` and `_refresh_or_flow_creds` previously propagated `PermissionError` to `authenticate()`'s outer handler without any context-specific logging. The outer handler logged only `Authentication failed: [Errno 13] Permission denied: '<path>'`, making it impossible to tell whether the OS had denied a read (file unreadable) or a write (token refresh could not be persisted). Fixed by logging `Permission denied reading token file: <path>` immediately before re-raising in `_load_creds_from_token`, and wrapping `open(token_file, "w")` in `_refresh_or_flow_creds` with an equivalent `Permission denied writing token file: <path>` log. The two messages appear in the log before the generic outer-handler message, pinpointing which operation failed without changing the exception propagation behaviour.
+
 ## [2.13.7] - 2026-05-12
 
 ### Fixed
