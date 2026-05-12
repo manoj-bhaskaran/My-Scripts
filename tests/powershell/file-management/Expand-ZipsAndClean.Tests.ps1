@@ -204,6 +204,29 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
         $count | Should -Be $stats.FileCount
         $count | Should -Be 2
     }
+
+    It 'Expand-ZipSmart PerArchiveSubfolder: returns correct count when ExpectedFileCount is omitted' {
+        $root = Join-Path $TestDrive 'smart-fallback'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+        $zipPath = Join-Path $TestDrive 'smart-fallback.zip'
+        $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($name in 'p.txt', 'q.txt') {
+                $entry  = $archive.CreateEntry($name)
+                $stream = $entry.Open()
+                $writer = New-Object System.IO.StreamWriter($stream)
+                try { $writer.Write("content-$name") } finally { $writer.Dispose() }
+            }
+        } finally {
+            $archive.Dispose()
+        }
+
+        # Call without -ExpectedFileCount to exercise the Get-ZipFileStats fallback in Expand-ZipSmart
+        $count = Expand-ZipSmart -ZipPath $zipPath -DestinationRoot $root -ExtractMode PerArchiveSubfolder
+
+        $count | Should -Be 2
+    }
 }
 
 Describe 'Remove-SourceDirectory' {

@@ -684,6 +684,12 @@ function Expand-ZipSmart {
     $safeSub = Get-SafeName -Name $baseName -MaxLength $SafeNameMaxLen
 
     if ($ExtractMode -eq 'PerArchiveSubfolder') {
+        # Callers that pre-compute stats pass ExpectedFileCount > 0 to avoid a
+        # second zip open; fall back to Get-ZipFileStats so the return value is
+        # correct when ExpectedFileCount is omitted (default 0).
+        if ($ExpectedFileCount -le 0) {
+            $ExpectedFileCount = (Get-ZipFileStats -ZipPath $ZipPath).FileCount
+        }
         return Expand-ZipToSubfolder -ZipPath $ZipPath -DestinationRoot $DestinationRoot -SafeSubfolderName $safeSub -ExpectedFileCount $ExpectedFileCount
     }
 
