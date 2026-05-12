@@ -48,7 +48,6 @@ sys.modules["googleapiclient.http"] = _http
 from gdrive_constants import FOLDER_MIME_TYPE  # noqa: E402
 from gdrive_discovery import DriveTrashDiscovery  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

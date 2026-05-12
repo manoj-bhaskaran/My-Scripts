@@ -59,6 +59,7 @@ def _args(**kwargs):
 # _validate_folder_id_args
 # ---------------------------------------------------------------------------
 
+
 def test_no_folder_id_always_passes():
     ok, code = _validate_folder_id_args(_args(folder_id=None))
     assert ok and code == 0

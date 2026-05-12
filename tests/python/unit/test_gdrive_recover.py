@@ -92,6 +92,7 @@ def test_generate_target_path(tmp_path, monkeypatch):
     # relative_path is reconstructed as a subdirectory under download_dir
     # Use SimpleNamespace: MagicMock treats 'name' as its internal mock name, not an attribute.
     from types import SimpleNamespace
+
     item3 = SimpleNamespace(id="def", name="doc.pdf", relative_path="subdir/nested")
     p3 = tool._generate_target_path(item3)
     assert "subdir" in p3
