@@ -103,13 +103,27 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.2.1
+    Version  : 2.2.2
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.2.2  De-duplicated stat computations and consolidated assembly load (issue #974):
+           - Moved single Add-Type -AssemblyName System.IO.Compression.FileSystem
+             call to script start; removed per-invocation calls from Get-ZipFileStats
+             and Expand-ZipFlat.
+           - Dropped caller-side CompressedBytes overwrite in Invoke-ZipExtractions;
+             the value from Get-ZipFileStats is now used directly.
+           - Refactored Expand-ZipToSubfolder to accept [int]$ExpectedFileCount (from
+             Get-ZipFileStats) and return it directly, eliminating the post-extraction
+             Get-ChildItem -Recurse walk of the destination folder.
+           - Expand-ZipSmart threads ExpectedFileCount to Expand-ZipToSubfolder.
+           - Added Pester regression tests for file count vs archive entry count in
+             both PerArchiveSubfolder and Flat extraction modes.
+           Version bump: patch.
+
     2.2.1  Hardened Flat-mode Zip Slip protection and centralized encrypted-archive
            error detection (issue #973):
            - Added Resolve-ZipEntryDestinationPath helper to normalize archive entry
@@ -369,6 +383,7 @@ Import-Module "$PSScriptRoot\..\modules\Core\FileSystem\FileSystem.psm1" -Force
 
 # Initialize logger (script name will be extracted from the script file name)
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
+Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
 #region Helpers
 
@@ -383,8 +398,6 @@ Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 function Get-ZipFileStats {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$ZipPath)
-
-    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
     # Precompute to avoid repeated Get-Item lookups (minor optimisation)
     $zipItem = Get-Item -LiteralPath $ZipPath
@@ -520,15 +533,19 @@ function Resolve-ZipEntryDestinationPath {
     Root folder for extraction.
 .PARAMETER SafeSubfolderName
     Safe destination subfolder name derived from the zip file name.
+.PARAMETER ExpectedFileCount
+    Pre-computed file count from Get-ZipFileStats. Returned directly to avoid
+    a post-extraction Get-ChildItem walk of the destination folder.
 .OUTPUTS
-    Int (number of files extracted into the resolved subfolder).
+    Int ($ExpectedFileCount as supplied by the caller).
 #>
 function Expand-ZipToSubfolder {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$ZipPath,
         [Parameter(Mandatory)][string]$DestinationRoot,
-        [Parameter(Mandatory)][string]$SafeSubfolderName
+        [Parameter(Mandatory)][string]$SafeSubfolderName,
+        [Parameter(Mandatory)][int]$ExpectedFileCount
     )
 
     try {
@@ -539,7 +556,8 @@ function Expand-ZipToSubfolder {
         }
 
         Expand-Archive -LiteralPath $ZipPath -DestinationPath $target -Force
-        return (Get-ChildItem -Path $target -Recurse -File | Measure-Object).Count
+        Write-LogDebug "Expand-ZipToSubfolder: '$($ZipPath | Split-Path -Leaf)' -> '$target' ($ExpectedFileCount file(s) per archive manifest)"
+        return $ExpectedFileCount
 
     } catch { Resolve-ExtractionError -ZipPath $ZipPath -ErrorRecord $_ }
 }
@@ -575,7 +593,6 @@ function Expand-ZipFlat {
     $written = 0
 
     try {
-        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
         $zip = [ZipFile]::OpenRead($ZipPath)
         try {
             foreach ($entry in $zip.Entries) {
@@ -640,6 +657,10 @@ function Expand-ZipFlat {
     `Skip` | `Overwrite` | `Rename`.
 .PARAMETER SafeNameMaxLen
     Maximum safe-name length used to derive per-archive subfolder names.
+.PARAMETER ExpectedFileCount
+    Pre-computed file count from Get-ZipFileStats, threaded to Expand-ZipToSubfolder
+    for PerArchiveSubfolder mode so it can be returned without a post-extraction
+    directory walk.
 .OUTPUTS
     Int (number of files written by the selected mode helper).
 #>
@@ -650,7 +671,8 @@ function Expand-ZipSmart {
         [Parameter(Mandatory)][string]$DestinationRoot,
         [ValidateSet('PerArchiveSubfolder', 'Flat')][string]$ExtractMode = 'PerArchiveSubfolder',
         [ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy = 'Rename',
-        [int]$SafeNameMaxLen = 0
+        [int]$SafeNameMaxLen = 0,
+        [int]$ExpectedFileCount = 0
     )
 
     if (-not (Test-Path -LiteralPath $DestinationRoot)) {
@@ -662,7 +684,7 @@ function Expand-ZipSmart {
     $safeSub = Get-SafeName -Name $baseName -MaxLength $SafeNameMaxLen
 
     if ($ExtractMode -eq 'PerArchiveSubfolder') {
-        return Expand-ZipToSubfolder -ZipPath $ZipPath -DestinationRoot $DestinationRoot -SafeSubfolderName $safeSub
+        return Expand-ZipToSubfolder -ZipPath $ZipPath -DestinationRoot $DestinationRoot -SafeSubfolderName $safeSub -ExpectedFileCount $ExpectedFileCount
     }
 
     return Expand-ZipFlat -ZipPath $ZipPath -DestinationRoot $DestinationRoot -DestinationRootFull $destRootFull -CollisionPolicy $CollisionPolicy
@@ -759,13 +781,13 @@ function Invoke-ZipExtractions {
 
                 if ($PSCmdlet.ShouldProcess($zip.FullName, "Extract")) {
                     $stats = Get-ZipFileStats -ZipPath $zip.FullName
-                    $stats.CompressedBytes = [int64]$zip.Length
 
                     $filesFromZip = Expand-ZipSmart -ZipPath $zip.FullName `
                         -DestinationRoot $DestinationDir `
                         -ExtractMode $Mode `
                         -CollisionPolicy $Policy `
-                        -SafeNameMaxLen $SafeNameMaxLen
+                        -SafeNameMaxLen $SafeNameMaxLen `
+                        -ExpectedFileCount $stats.FileCount
 
                     if ($filesFromZip -is [int]) {
                         $totalFilesExtracted += $filesFromZip
