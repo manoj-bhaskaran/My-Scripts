@@ -11,6 +11,16 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.13.2] - 2026-05-12
+
+### Fixed
+
+- **[pyproject.toml] Black `target-version` corrected from `py314` to `py312`** – `py314` is not a recognised target in Black 26.3.1; supplying an unknown version caused Black to fall back to Python 2-compatible output (e.g. rewriting `except (E1, E2):` as `except E1, E2:`), breaking the formatting CI check on every file it touched.
+- **[mypy.ini] `python_version` corrected from `3.14` to `3.10`** – Type-checking against the maximum Python version rather than the minimum floor hides incompatibilities for users on 3.10–3.13. Checking against the declared minimum ensures any API or typing feature only valid on newer Python surfaces as an error.
+- **[.pre-commit-config.yaml] Removed `language_version: python3.14` from Black hook** – Pinning the hook to a specific interpreter version requires every contributor to have exactly that interpreter installed; contributors on 3.10–3.13 would fail to run pre-commit. Removing the pin lets pre-commit use the active Python.
+- **[requirements] Raised `google-auth-httplib2` floor to `>=0.2.0`** – `google-api-python-client==2.194.0` declares a minimum requirement of `google-auth-httplib2>=0.2.0`; the previous floor of `>=0.1.1` caused a pip dependency resolution failure in CI.
+- **[requirements.lock] Updated `google-auth-httplib2` from `0.1.1` to `0.2.0`** to resolve the conflict above.
+
 ## [2.13.1] - 2026-05-12
 
 ### Changed
