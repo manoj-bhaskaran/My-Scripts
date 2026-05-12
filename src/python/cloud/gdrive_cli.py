@@ -12,7 +12,7 @@ from typing import Tuple
 
 from dateutil import parser as date_parser
 
-from validators import validate_extensions, normalize_policy_token
+from gdrive_validators import validate_extensions, normalize_policy_token
 from gdrive_constants import (
     VERSION,
     EXTENSION_MIME_TYPES,

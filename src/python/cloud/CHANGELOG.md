@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.1] - 2026-05-12
+
+### Fixed
+
+- **Import resolution for `validators`:** `gdrive_cli.py` was importing `validate_extensions` and `normalize_policy_token` from a bare `validators` module that only existed in the sibling `data/` directory, causing a `ModuleNotFoundError` at runtime. Extracted the gdrive-specific validators and all their private helpers into a new `gdrive_validators.py` co-located in `cloud/`, updated the import in `gdrive_cli.py`, and trimmed `data/validators.py` to its intended scope (geographic coordinate and timestamp validators).
+
 ## [1.18.0] - 2026-05-12
 
 ### Added
