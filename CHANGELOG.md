@@ -11,6 +11,15 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.13.4] - 2026-05-12
+
+### Fixed
+
+- **[CI / code-formatting.yml] Prevent duplicate Code Formatting scans on PR merge** – Added `concurrency` group `${{ github.workflow }}-${{ github.event.pull_request.base.ref || github.ref_name }}` with `cancel-in-progress: true`. Both the `pull_request: synchronize` run and the `push: main` run after merge resolve to the same group, so the merge-triggered run cancels any still-running PR scan.
+- **[CI / security-scan.yml] Prevent duplicate Python Dependency Security scans on PR merge** – Same concurrency fix applied. Also covers the `workflow_dispatch` and `schedule` triggers which resolve to their own per-branch groups and are unaffected by normal PR merges.
+- **[CI / validate-modules.yml] Prevent duplicate Validate Modules scans on PR merge** – Same concurrency fix applied. Path filters remain unchanged; the concurrency group ensures only one run proceeds per target branch at a time.
+- **[CI / environment-validation.yml] Prevent duplicate Validate Environment Configuration scans on PR merge** – Same concurrency fix applied. Path filters remain unchanged.
+
 ## [2.13.3] - 2026-05-12
 
 ### Fixed

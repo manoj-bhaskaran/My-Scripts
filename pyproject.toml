@@ -30,5 +30,5 @@ skips = ["B110", "B311", "B101", "B112", "B405", "B408", "B318", "B324"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "2.13.3"
+version = "2.13.4"
 tag_format = "v$version"
