@@ -34,3 +34,20 @@ def test_pid_is_alive_uses_posix_kill(monkeypatch, tmp_path, side_effect, expect
 
     assert manager._pid_is_alive(1234) is expected
     assert calls == [(1234, 0)]
+
+
+def test_save_state_creates_missing_parent_directory(tmp_path):
+    nested = tmp_path / "nested" / "subdir"
+    args = SimpleNamespace(state_file=str(nested / "state.json"))
+    manager = gdrive_state.RecoveryStateManager(args, MagicMock())
+
+    assert not nested.exists()
+    manager._save_state()
+    assert (nested / "state.json").exists()
+
+
+def test_save_state_succeeds_when_directory_already_exists(tmp_path):
+    manager = _build_state_manager(tmp_path)
+
+    manager._save_state()
+    assert (tmp_path / "state.json").exists()
