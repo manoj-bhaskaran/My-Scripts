@@ -176,7 +176,7 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
 
 **Concurrency and locking**::
 
-    # Wait up to 60 s for a held state lock, then take over if still locked
+    # Wait up to 60 s for a held state lock, then exit with an error if still locked
     python gdrive_recover.py recover-and-download \
         --download-dir ./out \
         --state-file ./shared_state.json \
