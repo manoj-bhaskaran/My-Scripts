@@ -16,7 +16,11 @@ if str(cloud_dir) not in sys.path:
 # and cause test_http_error_during_download to fail.
 # We delete the stub afterwards so subsequent tests can import the real module.
 sys.modules["gdrive_recover"] = MagicMock()
-from gdrive_cli import _validate_folder_id_args, _validate_failed_file_arg, create_parser  # noqa: E402
+from gdrive_cli import (  # noqa: E402
+    _validate_folder_id_args,
+    _validate_failed_file_arg,
+    create_parser,
+)
 
 del sys.modules["gdrive_recover"]
 
