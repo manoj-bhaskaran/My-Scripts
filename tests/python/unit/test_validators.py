@@ -1,26 +1,29 @@
 """
-Unit tests for src/python/data/validators.py
+Unit tests for validator helpers.
 
-Tests input validation functions including extension token normalization,
-policy token normalization, and related helper functions.
+Geo/timestamp validators live in src/python/data/validators.py.
+gdrive extension and policy validators live in src/python/cloud/gdrive_validators.py.
 """
 
 import pytest
 import sys
 from pathlib import Path
 
-# Add src path to allow imports
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src" / "python" / "data"))
+_root = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_root / "src" / "python" / "data"))
+sys.path.insert(0, str(_root / "src" / "python" / "cloud"))
 
 from validators import (
+    validate_latitude,
+    validate_longitude,
+    validate_timestamp,
+)
+from gdrive_validators import (
     _normalize_extension_token,
     _is_invalid_extension_token,
     _is_valid_extension_segments,
     _dedupe_preserve_order,
     validate_extensions,
-    validate_latitude,
-    validate_longitude,
-    validate_timestamp,
     normalize_policy_token,
     _levenshtein,
     _suggest_token,
