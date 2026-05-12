@@ -20,11 +20,22 @@ if "dateutil" not in sys.modules:
     sys.modules["dateutil"] = _dateutil
     sys.modules["dateutil.parser"] = _dateutil_parser
 
-# googleapiclient stubs (unconditional, same pattern as existing tests)
-_googleapiclient = ModuleType("googleapiclient")
-_errors = ModuleType("googleapiclient.errors")
-_discovery = ModuleType("googleapiclient.discovery")
-_http = ModuleType("googleapiclient.http")
+# googleapiclient stubs — use setdefault so that if an earlier test module
+# already registered these (with its own HttpError class), we reuse those
+# registrations rather than replacing them (which would break exception
+# isinstance checks across test files collected in the same session).
+for _gmod in (
+    "googleapiclient",
+    "googleapiclient.errors",
+    "googleapiclient.discovery",
+    "googleapiclient.http",
+):
+    sys.modules.setdefault(_gmod, ModuleType(_gmod))
+
+_errors = sys.modules["googleapiclient.errors"]
+_discovery_mod = sys.modules["googleapiclient.discovery"]
+_http = sys.modules["googleapiclient.http"]
+_googleapiclient = sys.modules["googleapiclient"]
 
 
 class _HttpError(Exception):
@@ -34,16 +45,20 @@ class _HttpError(Exception):
         self.content = content
 
 
-_errors.HttpError = _HttpError
-_discovery.build = lambda *a, **kw: None
-_http.MediaIoBaseDownload = type("MediaIoBaseDownload", (), {"__init__": lambda s, *a, **kw: None})
-_googleapiclient.errors = _errors
-_googleapiclient.discovery = _discovery
-_googleapiclient.http = _http
-sys.modules["googleapiclient"] = _googleapiclient
-sys.modules["googleapiclient.errors"] = _errors
-sys.modules["googleapiclient.discovery"] = _discovery
-sys.modules["googleapiclient.http"] = _http
+if not hasattr(_errors, "HttpError"):
+    _errors.HttpError = _HttpError
+if not hasattr(_discovery_mod, "build"):
+    _discovery_mod.build = lambda *a, **kw: None
+if not hasattr(_http, "MediaIoBaseDownload"):
+    _http.MediaIoBaseDownload = type(
+        "MediaIoBaseDownload", (), {"__init__": lambda s, *a, **kw: None}
+    )
+if not hasattr(_googleapiclient, "errors"):
+    _googleapiclient.errors = _errors
+if not hasattr(_googleapiclient, "discovery"):
+    _googleapiclient.discovery = _discovery_mod
+if not hasattr(_googleapiclient, "http"):
+    _googleapiclient.http = _http
 
 from gdrive_constants import FOLDER_MIME_TYPE  # noqa: E402
 from gdrive_discovery import DriveTrashDiscovery  # noqa: E402
@@ -51,6 +66,7 @@ from gdrive_discovery import DriveTrashDiscovery  # noqa: E402
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_discovery(folder_id="root_id", mode="recover_and_download", limit=0):
     args = SimpleNamespace(
@@ -74,7 +90,9 @@ def _make_discovery(folder_id="root_id", mode="recover_and_download", limit=0):
         stats_lock=Lock(),
         seen_total_ref=[0],
         generate_target_path=lambda item: f"/tmp/dl/{item.name}",
-        run_parallel_processing_for_batch=lambda batch, ts: processed.extend(list(batch)),
+        run_parallel_processing_for_batch=lambda batch, ts: processed.extend(
+            list(batch)
+        ),
     )
     disc._processed = processed
     return disc
@@ -98,8 +116,11 @@ def _folder(name, fid):
 # _sanitize_path_component
 # ---------------------------------------------------------------------------
 
+
 def test_sanitize_keeps_safe_chars():
-    assert DriveTrashDiscovery._sanitize_path_component("My-Folder_1.0") == "My-Folder_1.0"
+    assert (
+        DriveTrashDiscovery._sanitize_path_component("My-Folder_1.0") == "My-Folder_1.0"
+    )
 
 
 def test_sanitize_strips_special_chars():
@@ -115,10 +136,13 @@ def test_sanitize_empty_falls_back():
 # _collect_items_from_page
 # ---------------------------------------------------------------------------
 
+
 def test_collect_items_no_limit():
     disc = _make_discovery()
     items = []
-    reached = disc._collect_items_from_page([_file("a.txt", "id1"), _file("b.txt", "id2")], items, "")
+    reached = disc._collect_items_from_page(
+        [_file("a.txt", "id1"), _file("b.txt", "id2")], items, ""
+    )
     assert not reached
     assert len(items) == 2
 
@@ -126,7 +150,9 @@ def test_collect_items_no_limit():
 def test_collect_items_limit_stops_early():
     disc = _make_discovery(limit=1)
     items = []
-    reached = disc._collect_items_from_page([_file("a.txt", "id1"), _file("b.txt", "id2")], items, "")
+    reached = disc._collect_items_from_page(
+        [_file("a.txt", "id1"), _file("b.txt", "id2")], items, ""
+    )
     assert reached
     assert len(items) == 1
 
@@ -141,6 +167,7 @@ def test_collect_items_sets_relative_path():
 # ---------------------------------------------------------------------------
 # _enqueue_subfolders
 # ---------------------------------------------------------------------------
+
 
 def test_enqueue_subfolders_root_level():
     disc = _make_discovery()
@@ -168,9 +195,12 @@ def test_enqueue_subfolders_sanitizes_name():
 # _traverse_folder_pages
 # ---------------------------------------------------------------------------
 
+
 def test_traverse_folder_pages_collects_items():
     disc = _make_discovery()
-    disc._fetch_folder_page = MagicMock(return_value=([_file("f.txt", "id1")], [], None))
+    disc._fetch_folder_page = MagicMock(
+        return_value=([_file("f.txt", "id1")], [], None)
+    )
     items = []
     result = disc._traverse_folder_pages("f1", "", items, deque())
     assert not result
@@ -199,7 +229,9 @@ def test_traverse_folder_pages_limit_returns_true():
 
 def test_traverse_folder_pages_enqueues_subfolders():
     disc = _make_discovery()
-    disc._fetch_folder_page = MagicMock(return_value=([], [_folder("Sub", "sub1")], None))
+    disc._fetch_folder_page = MagicMock(
+        return_value=([], [_folder("Sub", "sub1")], None)
+    )
     queue = deque()
     disc._traverse_folder_pages("f1", "", [], queue)
     assert ("sub1", "Sub") in list(queue)
@@ -221,6 +253,7 @@ def test_traverse_folder_pages_paginates():
 # ---------------------------------------------------------------------------
 # _discover_folder_recursively
 # ---------------------------------------------------------------------------
+
 
 def test_discover_flat_folder():
     disc = _make_discovery()
@@ -263,6 +296,7 @@ def test_discover_fetch_error_returns_empty():
 # ---------------------------------------------------------------------------
 # _stream_stream_folder
 # ---------------------------------------------------------------------------
+
 
 def test_stream_folder_processes_items():
     disc = _make_discovery()
