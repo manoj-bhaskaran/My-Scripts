@@ -1,9 +1,11 @@
 r"""
-Google Drive Trash Recovery Tool
-A comprehensive tool to recover files from Google Drive Trash at scale with configurable options.
+Google Drive Recovery Tool
+A comprehensive tool to recover and download files from Google Drive at scale with configurable options.
 
 This tool provides:
 - Bulk recovery of trashed files with optional extension filtering
+- Folder-scoped download via --folder-id: download a Drive folder and all subfolders to a local
+  directory with full subfolder hierarchy reconstruction
 - Optional download to local directory with conflict-safe filenames
 - Configurable post-restore policies (retain/trash/delete with aliases)
 - Comprehensive Dry Run mode with full planning and privilege validation

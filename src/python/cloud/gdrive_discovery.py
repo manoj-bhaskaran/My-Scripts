@@ -106,6 +106,12 @@ class DriveTrashDiscovery:
     def _print_info(self, msg: str) -> None:
         print(f"{self._sym_info()} {msg}")
 
+    @staticmethod
+    def _sanitize_path_component(name: str) -> str:
+        """Sanitize a folder name for use as a local path component."""
+        safe = "".join(c for c in name if c.isalnum() or c in (" ", "-", "_", ".")).rstrip()
+        return safe or "unknown"
+
     def _matches_extension_filter(self, filename: str) -> bool:
         if not self.args.extensions or not filename:
             return True

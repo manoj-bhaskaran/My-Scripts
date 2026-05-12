@@ -11,7 +11,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - **gdrive_auth.py** - OAuth credential management, token caching, HTTP transport construction, and Drive service initialisation for gdrive_recover.py
 - **gdrive_rate_limiter.py** - Thread-safe request pacing primitives (fixed-interval and token-bucket) used by gdrive_recover.py
 - **gdrive_state.py** - Recovery state persistence, schema handling, and lock file management for gdrive_recover.py
-- **gdrive_discovery.py** - Discovery and trashed file resolution helpers extracted from gdrive_recover.py (issue #791)
+- **gdrive_discovery.py** - Discovery helpers: trashed-file query/ID resolution and folder-scoped BFS traversal with subfolder hierarchy reconstruction (issue #791)
 - **gdrive_download.py** - File download subsystem (chunked streaming, atomic placement, Windows/OneDrive retry, partial cleanup) extracted from gdrive_recover.py (issue #853)
 - **gdrive_operations.py** - Recovery and post-restore execution helpers extracted from gdrive_recover.py (issue #854)
 - **gdrive_privileges.py** - Dry-run privilege-check subsystem (Drive capability checks and local-writability checks) extracted from gdrive_recover.py (issue #856)
@@ -80,6 +80,28 @@ Move files out of Drive root into organized folders.
 
 Recover deleted or lost files from Google Drive trash.
 
+### Folder Download
+
+Download an entire Drive folder (and all subfolders) to a local directory, preserving the subfolder hierarchy:
+
+```bash
+# Preview what would be downloaded
+python gdrive_recover.py dry-run \
+  --folder-id <DRIVE_FOLDER_ID> \
+  --post-restore-policy retain
+
+# Download folder to local path
+python gdrive_recover.py recover-and-download \
+  --folder-id <DRIVE_FOLDER_ID> \
+  --download-dir "C:\Users\You\Documents\Restored" \
+  --post-restore-policy retain
+```
+
+The folder ID is the alphanumeric string at the end of a Google Drive folder URL:
+`https://drive.google.com/drive/folders/<FOLDER_ID>`
+
+> **Note:** `--post-restore-policy retain` is strongly recommended when using `--folder-id` to avoid moving your live Drive files to Trash after download. The tool will warn you if the default `trash` policy is active.
+
 ## Logging
 
 All scripts use the Python Logging Framework located in `src/python/modules/logging/`.
@@ -120,10 +142,11 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
 - `gdrive_state.py` owns persistent state and lock-file concerns.
   - Includes PID liveness checks used by lock diagnostics in `gdrive_cli.py`.
   - Reports state-load failures back to `gdrive_recover.py` so execution error totals remain accurate.
-- `gdrive_discovery.py` owns query/file-ID discovery, validation, and streaming discovery helpers used by `DriveTrashRecoveryTool`.
+- `gdrive_discovery.py` owns query/file-ID discovery, validation, streaming helpers, and folder-scoped BFS traversal used by `DriveTrashRecoveryTool`.
   - `DriveTrashDiscovery` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`stats`, `stats_lock`, `seen_total_ref`, `generate_target_path`, `run_parallel_processing_for_batch`) are injected at construction time.
   - Neither `DriveTrashRecoveryTool` nor `DriveTrashDiscovery` defines `__getattr__`; all inter-class wiring is explicit.
   - Streaming helper methods required by discovery paths are implemented in this module (not delegated back to `gdrive_recover.py`).
+  - Folder-scoped discovery (`--folder-id`) uses BFS traversal: `_discover_folder_recursively` for dry-run/non-streaming paths and `_stream_stream_folder` for streaming execution. Both reconstruct subfolder hierarchy via `relative_path` on each `RecoveryItem`.
 - `gdrive_download.py` owns the file download subsystem: chunked streaming via `MediaIoBaseDownload`, atomic placement, Windows/OneDrive retry, and partial-file cleanup.
   - Exposes `DriveDownloader`; used by `DriveTrashRecoveryTool` via `self.downloader`.
   - `DriveDownloader` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`args`, `logger`, `rate_limiter`, `auth`, `stats`, `stats_lock`) are injected at construction time.

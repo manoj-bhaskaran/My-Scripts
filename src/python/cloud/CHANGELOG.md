@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.18.0] - 2026-05-12
+
+### Added
+
+- **Folder-scoped download (`--folder-id`):** New argument accepted by all three subcommands (`dry-run`, `recover-only`, `recover-and-download`).
+  - Scopes discovery to a specific Google Drive folder and all its subfolders via BFS traversal.
+  - Targets **non-trashed, live files** — no untrash step is performed (`will_recover=False`).
+  - Reconstructs the full subfolder hierarchy under `--download-dir` so each file lands at `<download-dir>/<relative/path/to/file>`.
+  - Folder names are sanitized for local filesystems (keeps alphanumeric, space, hyphen, underscore, period; falls back to `unknown` for empty results).
+  - Added `_fetch_folder_page`, `_discover_folder_recursively` (non-streaming / dry-run path), and `_stream_stream_folder` (streaming path) to `DriveTrashDiscovery`.
+  - `_process_streaming` in `DriveTrashRecoveryTool` routes to `_stream_stream_folder` when `--folder-id` is set.
+- **`relative_path` field on `RecoveryItem`:** Stores each file's subfolder path relative to the `--folder-id` root; used by `_generate_target_path` to place downloads in the correct subdirectory.
+- **`FOLDER_MIME_TYPE` constant** (`application/vnd.google-apps.folder`) added to `gdrive_constants.py`.
+- **Post-restore policy warning:** When `--folder-id` is combined with the default `trash` post-restore policy (which would move downloaded files to Drive Trash), the CLI now prints a prominent warning and suggests `--post-restore-policy retain`.
+
+### Changed
+
+- `_generate_target_path` now places files under `<download-dir>/<relative_path>/<filename>` when `item.relative_path` is set, otherwise falls back to the existing flat layout.
+- `_process_file_data` accepts an optional `relative_path` parameter (default `""`) and sets `will_recover=False` when `--folder-id` is provided.
+- `_sanitize_path_component` extracted as a static helper on `DriveTrashDiscovery` and reused by both the recursive and streaming folder traversal paths.
+
+### Notes
+
+- Existing trash-recovery workflows (`recover-only`, `recover-and-download` without `--folder-id`) are unchanged.
+- Use `dry-run --folder-id <id>` to preview the file tree and target paths before downloading.
+- Recommended usage: `recover-and-download --folder-id <id> --download-dir <path> --post-restore-policy retain`
+
 ## [1.17.0] - 2026-04-11
 
 ### Changed
