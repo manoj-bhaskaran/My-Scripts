@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.17] - 2026-05-12
+
+### Changed
+
+- **`--overwrite` now clears the state file's processed-items list before execution begins:** Previously, re-running with `--overwrite` would bypass the per-item skip check but leave all IDs in `processed_items`, so an interrupted overwrite run could not be resumed — without `--overwrite` every item would be skipped again, and with it the whole run restarted from scratch. Now `_prepare_recovery` calls `RecoveryStateManager._clear_processed_items()` immediately after loading state whenever `--overwrite` is set, and prints an `--overwrite: cleared N previously processed item(s) from state` notice. A resumed overwrite run will therefore only re-process items that were not yet completed.
+
 ## [1.18.16] - 2026-05-12
 
 ### Fixed

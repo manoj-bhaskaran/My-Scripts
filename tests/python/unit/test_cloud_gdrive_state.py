@@ -51,3 +51,33 @@ def test_save_state_succeeds_when_directory_already_exists(tmp_path):
 
     manager._save_state()
     assert (tmp_path / "state.json").exists()
+
+
+def test_clear_processed_items_removes_all_and_returns_count(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    manager.state.processed_items = ["a", "b", "c"]
+
+    count = manager._clear_processed_items()
+
+    assert count == 3
+    assert manager.state.processed_items == []
+
+
+def test_clear_processed_items_on_empty_state_returns_zero(tmp_path):
+    manager = _build_state_manager(tmp_path)
+
+    count = manager._clear_processed_items()
+
+    assert count == 0
+    assert manager.state.processed_items == []
+
+
+def test_clear_processed_items_tolerates_null_from_json(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    # Simulate _assign_recovery_state_fields loading "processed_items": null
+    manager.state.processed_items = None  # type: ignore[assignment]
+
+    count = manager._clear_processed_items()
+
+    assert count == 0
+    assert manager.state.processed_items == []

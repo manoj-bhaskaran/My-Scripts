@@ -192,6 +192,13 @@ class RecoveryStateManager:
         except Exception as e:
             self.logger.error(f"Failed to save state: {e}")
 
+    def _clear_processed_items(self) -> int:
+        """Clear all processed IDs from state; returns the count removed."""
+        items = self.state.processed_items or []
+        count = len(items)
+        self.state.processed_items = []
+        return count
+
     def _is_processed(self, item_id: str) -> bool:
         return item_id in self.state.processed_items
 
