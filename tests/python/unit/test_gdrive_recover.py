@@ -353,3 +353,35 @@ def test_validate_file_ids_delegates_to_discovery(tmp_path, monkeypatch):
 
     assert tool._validate_file_ids() is True
     tool.discovery._validate_file_ids.assert_called_once_with()
+
+
+def test_prepare_recovery_clears_processed_items_when_overwrite(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    args = _build_dummy_args(tmp_path)
+    args.overwrite = True
+    args.no_emoji = True
+    tool = DriveTrashRecoveryTool(args)
+    tool.auth.authenticate = MagicMock(return_value=True)
+    tool.state_manager.state.processed_items = ["id-1", "id-2", "id-3"]
+
+    tool._prepare_recovery(streaming_mode=True)
+
+    assert tool.state_manager.state.processed_items == []
+    captured = capsys.readouterr()
+    assert "cleared 3" in captured.out
+
+
+def test_prepare_recovery_does_not_clear_when_overwrite_not_set(tmp_path, monkeypatch):
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    args = _build_dummy_args(tmp_path)
+    tool = DriveTrashRecoveryTool(args)
+    tool.auth.authenticate = MagicMock(return_value=True)
+    tool.state_manager.state.processed_items = ["id-1", "id-2"]
+
+    tool._prepare_recovery(streaming_mode=True)
+
+    assert tool.state_manager.state.processed_items == ["id-1", "id-2"]
