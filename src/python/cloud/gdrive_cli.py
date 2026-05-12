@@ -74,6 +74,14 @@ For compatibility matrix, transport notes, and performance presets: see README.m
         )
         subparser.add_argument("--file-ids", nargs="+", help="Process only specific file IDs")
         subparser.add_argument(
+            "--folder-id",
+            help=(
+                "Scope operation to this Drive folder ID and all its subfolders. "
+                "Discovers non-trashed files only; local subfolder hierarchy is reconstructed "
+                "under --download-dir. Use --post-restore-policy retain to leave files in Drive."
+            ),
+        )
+        subparser.add_argument(
             "--post-restore-policy",
             default=PostRestorePolicy.TRASH,
             help="Post-download handling in Drive (aliases accepted): retain|trash|delete",
@@ -435,6 +443,29 @@ def _acquire_or_bypass_lock(tool, args) -> Tuple[bool, int]:
     return True, 0
 
 
+def _validate_folder_id_args(args) -> Tuple[bool, int]:
+    """Reject flag combinations that are incompatible with --folder-id."""
+    if not getattr(args, "folder_id", None):
+        return True, 0
+    if getattr(args, "file_ids", None):
+        print(
+            f"{_sym_fail(args)} --folder-id and --file-ids are mutually exclusive. "
+            "Use one source at a time.",
+            file=sys.stderr,
+        )
+        return False, 2
+    if getattr(args, "mode", None) == "recover_only":
+        print(
+            f"{_sym_fail(args)} --folder-id cannot be used with recover-only: "
+            "folder-scoped files are not in trash so no action would be taken, "
+            "and items would still be recorded as processed in the state file. "
+            "Use recover-and-download with --post-restore-policy retain instead.",
+            file=sys.stderr,
+        )
+        return False, 2
+    return True, 0
+
+
 def _validate_file_ids_if_present(tool, args) -> Tuple[bool, int]:
     if hasattr(args, "file_ids") and args.file_ids:
         ok = tool._validate_file_ids()
@@ -470,6 +501,18 @@ def main() -> int:
     ok, code = _normalize_and_validate_policy(args)
     if not ok:
         return code
+
+    ok, code = _validate_folder_id_args(args)
+    if not ok:
+        return code
+
+    if getattr(args, "folder_id", None) and args.post_restore_policy == PostRestorePolicy.TRASH:
+        print(
+            f"{_sym_warn(args)} --folder-id is set with the default post-restore-policy 'trash'. "
+            "Files will be moved to Drive Trash after downloading. "
+            "Use --post-restore-policy retain to leave them in place.",
+            file=sys.stderr,
+        )
 
     ok, code = _validate_concurrency_arg(args)
     if not ok:

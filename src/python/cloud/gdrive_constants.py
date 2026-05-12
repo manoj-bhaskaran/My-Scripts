@@ -12,7 +12,7 @@ import os
 # ---------------------------------------------------------------------------
 # Version
 # ---------------------------------------------------------------------------
-VERSION = "1.17.0"
+VERSION = "1.18.0"
 
 # ---------------------------------------------------------------------------
 # API / OAuth
@@ -30,6 +30,7 @@ RETRY_DELAY = 2  # seconds
 PAGE_SIZE = 1000
 DEFAULT_WORKERS = min(8, (os.cpu_count() or 1) * 2)
 INFERRED_MODIFY_ERROR = "Cannot modify file (inferred from untrash check)"
+FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 
 # ---------------------------------------------------------------------------
 # Rate-limiting / HTTP transport

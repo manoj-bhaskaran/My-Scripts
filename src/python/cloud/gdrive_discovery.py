@@ -6,12 +6,14 @@ import logging
 import re
 import sys
 import time
+from collections import deque
 from datetime import timezone
 from pathlib import Path
 from threading import Lock
 from typing import (
     Any,
     Callable,
+    Deque,
     Dict,
     List,
     Mapping,
@@ -27,7 +29,7 @@ except ImportError:
     print("Install with: pip install python-dateutil")
     sys.exit(1)
 
-from gdrive_constants import EXTENSION_MIME_TYPES, MAX_RETRIES, PAGE_SIZE
+from gdrive_constants import EXTENSION_MIME_TYPES, FOLDER_MIME_TYPE, MAX_RETRIES, PAGE_SIZE
 from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
 from gdrive_retry import with_retries
 from googleapiclient.errors import HttpError
@@ -103,6 +105,12 @@ class DriveTrashDiscovery:
 
     def _print_info(self, msg: str) -> None:
         print(f"{self._sym_info()} {msg}")
+
+    @staticmethod
+    def _sanitize_path_component(name: str) -> str:
+        """Sanitize a folder name for use as a local path component."""
+        safe = "".join(c for c in name if c.isalnum() or c in (" ", "-", "_", ".")).rstrip()
+        return safe or "unknown"
 
     def _matches_extension_filter(self, filename: str) -> bool:
         if not self.args.extensions or not filename:
@@ -436,7 +444,9 @@ class DriveTrashDiscovery:
 
         return base_query
 
-    def _process_file_data(self, file_data: Mapping[str, Any] | FileMeta) -> Optional[RecoveryItem]:
+    def _process_file_data(
+        self, file_data: Mapping[str, Any] | FileMeta, relative_path: str = ""
+    ) -> Optional[RecoveryItem]:
         if self.args.extensions and not self._matches_extension_filter(file_data.get("name", "")):
             return None
 
@@ -448,13 +458,18 @@ class DriveTrashDiscovery:
             self.logger.debug("Skipping file metadata without id: %s", file_data)
             return None
 
+        # Files discovered via --folder-id are not in trash; skip the untrash step.
+        will_recover = not bool(getattr(self.args, "folder_id", None))
+
         item = RecoveryItem(
             id=str(file_id),
             name=file_data.get("name", "Unknown"),
             size=int(file_data.get("size", 0)),
             mime_type=file_data.get("mimeType", ""),
             created_time=file_data.get("createdTime", ""),
+            will_recover=will_recover,
             will_download=self.args.mode == "recover_and_download",
+            relative_path=relative_path,
             post_restore_action=PostRestorePolicy.normalize(self.args.post_restore_policy),
         )
 
@@ -642,10 +657,14 @@ class DriveTrashDiscovery:
         return items
 
     def discover_trashed_files(self) -> List[RecoveryItem]:
-        print(f"{self._sym_search()} Discovering trashed files...")
         if self.args.file_ids:
+            print(f"{self._sym_search()} Discovering trashed files...")
             items = self._discover_via_ids()
+        elif getattr(self.args, "folder_id", None):
+            print(f"{self._sym_search()} Discovering files in folder {self.args.folder_id} ...")
+            items = self._discover_folder_recursively()
         else:
+            print(f"{self._sym_search()} Discovering trashed files...")
             query = self._build_query()
             self.logger.info(f"Using query: {query}")
             items = self._discover_via_query(query)
@@ -655,6 +674,143 @@ class DriveTrashDiscovery:
         self._stats["found"] = len(items)
         print(f"{self._sym_scope()} Total files discovered: {len(items)}")
         return items
+
+    def _fetch_folder_page(
+        self, folder_id: str, page_token: Optional[str]
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Optional[str]]:
+        """Fetch one page of a folder's direct children; return (files, subfolders, next_token)."""
+        service = self.auth._get_service()
+        if service is None:
+            raise RuntimeError("Drive service not initialized")
+        fields_str = self._id_discovery_fields()
+        query = f"'{folder_id}' in parents and trashed=false"
+        response = self._execute(
+            service.files().list(
+                q=query,
+                spaces="drive",
+                fields=f"nextPageToken, files({fields_str})",
+                pageToken=page_token,
+                pageSize=PAGE_SIZE,
+            )
+        )
+        all_children = response.get("files", [])
+        files = [f for f in all_children if f.get("mimeType") != FOLDER_MIME_TYPE]
+        subfolders = [f for f in all_children if f.get("mimeType") == FOLDER_MIME_TYPE]
+        return files, subfolders, response.get("nextPageToken")
+
+    def _collect_items_from_page(
+        self,
+        files: List[Dict[str, Any]],
+        items: List[RecoveryItem],
+        prefix: str,
+    ) -> bool:
+        """Append valid items from one page of files. Returns True if the global limit is reached."""
+        for fd in files:
+            item = self._process_file_data(fd, relative_path=prefix)
+            if item:
+                items.append(item)
+                if self.args.limit and self.args.limit > 0 and len(items) >= self.args.limit:
+                    return True
+        return False
+
+    def _enqueue_subfolders(
+        self,
+        queue: Deque[Tuple[str, str]],
+        subfolders: List[Dict[str, Any]],
+        prefix: str,
+    ) -> None:
+        """Push each subfolder onto the BFS queue with an updated path prefix."""
+        for sf in subfolders:
+            sf_safe = self._sanitize_path_component(sf.get("name", sf.get("id", "unknown")))
+            sub_prefix = f"{prefix}/{sf_safe}" if prefix else sf_safe
+            queue.append((sf["id"], sub_prefix))
+
+    def _traverse_folder_pages(
+        self,
+        folder_id: str,
+        prefix: str,
+        items: List[RecoveryItem],
+        queue: Deque[Tuple[str, str]],
+    ) -> bool:
+        """Paginate through one folder, collecting items. Returns True when the limit is reached."""
+        page_token: Optional[str] = None
+        while True:
+            try:
+                files, subfolders, page_token = self._fetch_folder_page(folder_id, page_token)
+            except Exception as e:
+                self.logger.error("Error fetching folder %s: %s", folder_id, e)
+                return False
+            if self._collect_items_from_page(files, items, prefix):
+                return True
+            self._enqueue_subfolders(queue, subfolders, prefix)
+            if not page_token:
+                break
+        return False
+
+    def _discover_folder_recursively(self) -> List[RecoveryItem]:
+        """BFS traversal of a Drive folder tree; returns all matching non-trashed files."""
+        items: List[RecoveryItem] = []
+        queue: Deque[Tuple[str, str]] = deque([(self.args.folder_id, "")])
+        while queue:
+            folder_id, prefix = queue.popleft()
+            self.logger.info("Traversing folder %s (prefix=%r)", folder_id, prefix)
+            if self._traverse_folder_pages(folder_id, prefix, items, queue):
+                break
+        return items
+
+    def _stream_files_from_page(
+        self,
+        files: List[Dict[str, Any]],
+        prefix: str,
+        batch: List[RecoveryItem],
+        batch_n: int,
+        start_time: float,
+    ) -> None:
+        """Enqueue valid items from one page of files into the streaming batch."""
+        for fd in files:
+            item = self._process_file_data(fd, relative_path=prefix)
+            if item:
+                self._enqueue_streaming_item(item, batch, batch_n, start_time)
+            if self._should_stop_for_limit():
+                break
+
+    def _stream_folder_pages(
+        self,
+        folder_id: str,
+        prefix: str,
+        batch: List[RecoveryItem],
+        batch_n: int,
+        start_time: float,
+        queue: Deque[Tuple[str, str]],
+    ) -> bool:
+        """Paginate through one folder in streaming mode. Returns False on fetch error."""
+        page_token: Optional[str] = None
+        while True:
+            try:
+                files, subfolders, page_token = self._fetch_folder_page(folder_id, page_token)
+            except Exception as e:
+                self.logger.error("Error fetching folder %s: %s", folder_id, e)
+                return False
+            self._stream_files_from_page(files, prefix, batch, batch_n, start_time)
+            if not self._should_stop_for_limit():
+                self._enqueue_subfolders(queue, subfolders, prefix)
+            if not page_token or self._should_stop_for_limit():
+                break
+        return True
+
+    def _stream_stream_folder(self, batch_n: int, start_time: float) -> bool:
+        """BFS streaming traversal of a Drive folder tree, processing items in bounded batches."""
+        ok = True
+        batch: List[RecoveryItem] = []
+        queue: Deque[Tuple[str, str]] = deque([(self.args.folder_id, "")])
+        while queue and not self._should_stop_for_limit():
+            folder_id, prefix = queue.popleft()
+            self.logger.info("Streaming folder %s (prefix=%r)", folder_id, prefix)
+            if not self._stream_folder_pages(folder_id, prefix, batch, batch_n, start_time, queue):
+                ok = False
+        if batch:
+            self._process_streaming_batch(batch, start_time)
+        return ok
 
     def _stream_stream_query(self, batch_n: int, start_time: float) -> bool:
         ok = True
