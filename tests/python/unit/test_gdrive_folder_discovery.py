@@ -90,9 +90,7 @@ def _make_discovery(folder_id="root_id", mode="recover_and_download", limit=0):
         stats_lock=Lock(),
         seen_total_ref=[0],
         generate_target_path=lambda item: f"/tmp/dl/{item.name}",
-        run_parallel_processing_for_batch=lambda batch, ts: processed.extend(
-            list(batch)
-        ),
+        run_parallel_processing_for_batch=lambda batch, ts: processed.extend(list(batch)),
     )
     disc._processed = processed
     return disc
@@ -118,9 +116,7 @@ def _folder(name, fid):
 
 
 def test_sanitize_keeps_safe_chars():
-    assert (
-        DriveTrashDiscovery._sanitize_path_component("My-Folder_1.0") == "My-Folder_1.0"
-    )
+    assert DriveTrashDiscovery._sanitize_path_component("My-Folder_1.0") == "My-Folder_1.0"
 
 
 def test_sanitize_strips_special_chars():
@@ -198,9 +194,7 @@ def test_enqueue_subfolders_sanitizes_name():
 
 def test_traverse_folder_pages_collects_items():
     disc = _make_discovery()
-    disc._fetch_folder_page = MagicMock(
-        return_value=([_file("f.txt", "id1")], [], None)
-    )
+    disc._fetch_folder_page = MagicMock(return_value=([_file("f.txt", "id1")], [], None))
     items = []
     result = disc._traverse_folder_pages("f1", "", items, deque())
     assert not result
@@ -229,9 +223,7 @@ def test_traverse_folder_pages_limit_returns_true():
 
 def test_traverse_folder_pages_enqueues_subfolders():
     disc = _make_discovery()
-    disc._fetch_folder_page = MagicMock(
-        return_value=([], [_folder("Sub", "sub1")], None)
-    )
+    disc._fetch_folder_page = MagicMock(return_value=([], [_folder("Sub", "sub1")], None))
     queue = deque()
     disc._traverse_folder_pages("f1", "", [], queue)
     assert ("sub1", "Sub") in list(queue)

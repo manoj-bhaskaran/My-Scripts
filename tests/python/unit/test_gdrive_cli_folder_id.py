@@ -22,9 +22,7 @@ del sys.modules["gdrive_recover"]
 
 
 def _args(**kwargs):
-    defaults = dict(
-        folder_id=None, file_ids=None, mode="recover_and_download", no_emoji=True
-    )
+    defaults = dict(folder_id=None, file_ids=None, mode="recover_and_download", no_emoji=True)
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
 
@@ -40,9 +38,7 @@ def test_no_folder_id_always_passes():
 
 
 def test_folder_id_with_file_ids_rejected():
-    ok, code = _validate_folder_id_args(
-        _args(folder_id="abc123", file_ids=["id1", "id2"])
-    )
+    ok, code = _validate_folder_id_args(_args(folder_id="abc123", file_ids=["id1", "id2"]))
     assert not ok and code == 2
 
 
@@ -52,9 +48,7 @@ def test_folder_id_with_recover_only_rejected():
 
 
 def test_folder_id_with_recover_and_download_passes():
-    ok, code = _validate_folder_id_args(
-        _args(folder_id="abc123", mode="recover_and_download")
-    )
+    ok, code = _validate_folder_id_args(_args(folder_id="abc123", mode="recover_and_download"))
     assert ok and code == 0
 
 
