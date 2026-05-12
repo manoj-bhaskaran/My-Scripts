@@ -57,11 +57,13 @@ Examples:
     %(prog)s recover-and-download --download-dir ./recovered --file-ids FILE_ID_1 --post-restore-policy retain
     %(prog)s recover-and-download --download-dir ./recovered --state-file ./state.json --yes
     %(prog)s recover-and-download --download-dir ./recovered --direct-download --post-restore-policy retain
+    %(prog)s recover-and-download --download-dir ./recovered --overwrite --post-restore-policy retain
 
   Folder-scoped download (download a live Drive folder and all subfolders):
     %(prog)s dry-run --folder-id FOLDER_ID --download-dir ./backup --post-restore-policy retain
     %(prog)s recover-and-download --folder-id FOLDER_ID --download-dir ./backup --post-restore-policy retain
     %(prog)s recover-and-download --folder-id FOLDER_ID --download-dir ./backup --extensions pdf --post-restore-policy retain --yes
+    %(prog)s recover-and-download --folder-id FOLDER_ID --download-dir ./backup --overwrite --post-restore-policy retain --yes
 
   Performance presets:
     %(prog)s recover-and-download --download-dir ./out --concurrency 16 --process-batch-size 500 --max-rps 8 --burst 32 --post-restore-policy retain -v
@@ -260,6 +262,15 @@ For the compatibility matrix, transport notes, and performance presets: see READ
             'Write bytes directly to the final filename (no ".partial" and no rename). '
             "This can avoid destination-lock races from AV/thumbnailers/OneDrive, "
             "but an interruption may leave a partially written file."
+        ),
+    )
+    download_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help=(
+            "Overwrite existing local files instead of generating a conflict-safe name. "
+            "By default, if a file already exists at the target path a short unique suffix "
+            "is appended; this flag disables that behaviour and replaces the existing file."
         ),
     )
     return parser

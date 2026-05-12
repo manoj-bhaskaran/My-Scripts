@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.18.10] - 2026-05-12
+
+### Tests
+
+- **Improved `DriveDownloader` unit-test coverage:** Added four test cases to close the gaps introduced by the `_download_direct` / `_download_via_partial` refactor:
+  - `test_download_direct_download_failure` — covers the `except` handler in `_download_direct` when streaming raises.
+  - `test_rename_failure_marks_item_failed` — covers the path where `_atomic_replace_with_retry` returns `False`, triggering the `PermissionError` and its `except` handler in `_download_via_partial`.
+  - `test_atomic_replace_with_retry_oserror_winerror_32` — covers the `OSError` branch that treats Windows sharing-violation (winerror 32) as retryable.
+  - `test_atomic_replace_with_retry_oserror_non_32_reraises` — covers the `raise` path for non-sharing-violation `OSError`s.
+
+## [1.18.9] - 2026-05-12
+
+### Changed
+
+- **`_download_file` refactored to reduce cognitive complexity:** The direct-download and partial-download branches have been extracted into `_download_direct` and `_download_via_partial` respectively, eliminating deeply nested try/except blocks. `_download_file` now delegates to one of these helpers and handles only HTTP-level errors and directory setup. No behaviour change.
+
+## [1.18.8] - 2026-05-12
+
+### Added
+
+- **`--overwrite` flag for `recover-and-download`:** When set, existing local files at the computed target path are replaced instead of being renamed with a short unique suffix. Without the flag the existing conflict-safe behaviour (appending a `_<hex6>` suffix) is unchanged. Useful when re-downloading a Drive folder to refresh a local mirror.
+
+## [1.18.7] - 2026-05-12
+
+### Fixed
+
+- **WinError 32 on `.partial` → final rename eliminated:** `_atomic_replace_with_retry` was called while the `.partial` file's write handle was still open (inside the `with open(partial, "wb")` block). On Windows, holding an open handle prevents renaming the file, causing every rename attempt to fail with `[WinError 32] The process cannot access the file because it is being used by another process`. The rename is now performed after the `with` block exits and the handle is fully closed.
+
 ## [1.18.6] - 2026-05-12
 
 ### Fixed

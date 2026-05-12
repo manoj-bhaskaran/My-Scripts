@@ -105,6 +105,12 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
         --direct-download \
         --post-restore-policy retain
 
+    # Overwrite existing local files instead of creating conflict-safe copies
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --overwrite \
+        --post-restore-policy retain
+
 **Folder-scoped download (download a live Drive folder — no untrash step)**::
 
     # Preview the folder tree before downloading (dry-run); --download-dir shows target paths
@@ -376,7 +382,7 @@ class DriveTrashRecoveryTool:
             base_path = Path(self.args.download_dir) / relative_path / safe_name
         else:
             base_path = Path(self.args.download_dir) / safe_name
-        if base_path.exists():
+        if base_path.exists() and not getattr(self.args, "overwrite", False):
             stem = base_path.stem or f"file_{item_id}"
             suffix = base_path.suffix
             base_path = base_path.parent / f"{stem}_{uuid.uuid4().hex[:6]}{suffix}"

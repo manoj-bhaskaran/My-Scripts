@@ -166,6 +166,12 @@ python gdrive_recover.py recover-and-download \
   --download-dir ./recovered \
   --direct-download \
   --post-restore-policy retain
+
+# Overwrite existing local files instead of creating conflict-safe copies
+python gdrive_recover.py recover-and-download \
+  --download-dir ./recovered \
+  --overwrite \
+  --post-restore-policy retain
 ```
 
 ### Folder-scoped download (download a live Drive folder)
@@ -201,6 +207,14 @@ python gdrive_recover.py recover-and-download \
   --process-batch-size 500 \
   --max-rps 8 \
   --burst 32 \
+  --yes
+
+# Re-download a folder and overwrite any files already present locally
+python gdrive_recover.py recover-and-download \
+  --folder-id DRIVE_FOLDER_ID \
+  --download-dir ./my_backup \
+  --overwrite \
+  --post-restore-policy retain \
   --yes
 ```
 
