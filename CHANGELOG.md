@@ -11,6 +11,12 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.13.5] - 2026-05-12
+
+### Fixed
+
+- **[gdrive_state] `_save_state` no longer fails when the state-file parent directory does not exist** – `open()` was called on the `.tmp` path without first ensuring the parent directory existed. If `--state-file` pointed to a path whose directory had not been created, every periodic save raised `[Errno 2] No such file or directory` and recovery progress was never written to disk. Added `os.makedirs(..., exist_ok=True)` before the `open()` call so the directory is created automatically on first save.
+
 ## [2.13.4] - 2026-05-12
 
 ### Fixed

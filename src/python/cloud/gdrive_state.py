@@ -179,6 +179,7 @@ class RecoveryStateManager:
     def _save_state(self):
         try:
             tmp_path = f"{self.args.state_file}.tmp"
+            os.makedirs(os.path.dirname(os.path.abspath(tmp_path)), exist_ok=True)
             with open(tmp_path, "w") as f:
                 try:
                     self.state.schema_version = int(getattr(self.state, "schema_version", 0) or 1)

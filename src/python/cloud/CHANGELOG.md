@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.11] - 2026-05-12
+
+### Fixed
+
+- **`_save_state` no longer fails when the state-file directory does not exist:** `open()` was called on the `.tmp` path without first ensuring the parent directory exists. If `--state-file` pointed to a path whose parent had not been created (e.g. `C:\Users\...\scripts\log\gdrive_recover_state.json`), every periodic state save raised `[Errno 2] No such file or directory` and progress was never persisted. Added `os.makedirs(..., exist_ok=True)` before the `open()` call so the directory is created automatically on first save.
+
 ## [1.18.10] - 2026-05-12
 
 ### Tests
