@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.7] - 2026-05-12
+
+### Fixed
+
+- **WinError 32 on `.partial` → final rename eliminated:** `_atomic_replace_with_retry` was called while the `.partial` file's write handle was still open (inside the `with open(partial, "wb")` block). On Windows, holding an open handle prevents renaming the file, causing every rename attempt to fail with `[WinError 32] The process cannot access the file because it is being used by another process`. The rename is now performed after the `with` block exits and the handle is fully closed.
+
 ## [1.18.6] - 2026-05-12
 
 ### Fixed
