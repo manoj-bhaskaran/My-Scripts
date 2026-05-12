@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.8] - 2026-05-12
+
+### Added
+
+- **`--overwrite` flag for `recover-and-download`:** When set, existing local files at the computed target path are replaced instead of being renamed with a short unique suffix. Without the flag the existing conflict-safe behaviour (appending a `_<hex6>` suffix) is unchanged. Useful when re-downloading a Drive folder to refresh a local mirror.
+
 ## [1.18.7] - 2026-05-12
 
 ### Fixed
