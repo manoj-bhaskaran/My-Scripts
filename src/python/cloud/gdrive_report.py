@@ -345,7 +345,5 @@ class RecoveryReporter:
         else:
             success_count = self.stats["downloaded"]
             success_label = "Download success rate"
-        success_rate = (
-            (success_count / self.stats["found"] * 100) if self.stats["found"] > 0 else 0
-        )
+        success_rate = (success_count / self.stats["found"] * 100) if self.stats["found"] > 0 else 0
         print(f"\n{self._sym_done()} {success_label}: {success_rate:.1f}%")

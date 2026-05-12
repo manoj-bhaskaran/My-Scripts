@@ -11,6 +11,7 @@ if str(cloud_dir) not in sys.path:
     sys.path.insert(0, str(cloud_dir))
 
 from gdrive_constants import DEFAULT_BURST, DEFAULT_LOG_FILE, DEFAULT_MAX_RPS, DEFAULT_STATE_FILE
+from gdrive_models import RecoveryState
 from gdrive_report import RecoveryReporter
 
 
@@ -139,3 +140,55 @@ def test_generate_execution_command_no_warning_when_no_placeholder(capsys):
     captured = capsys.readouterr()
     assert "Replace" not in captured.out
     assert "Replace" not in captured.err
+
+
+# ---------------------------------------------------------------------------
+# _print_summary — mode-aware success rate
+# ---------------------------------------------------------------------------
+
+
+def _make_stats(**overrides):
+    base = dict(
+        found=100,
+        recovered=0,
+        downloaded=0,
+        errors=0,
+        skipped=0,
+        post_restore_retained=0,
+        post_restore_trashed=0,
+        post_restore_deleted=0,
+    )
+    base.update(overrides)
+    return base
+
+
+def test_summary_recover_and_download_uses_downloaded_count(capsys):
+    """recover-and-download (including --folder-id) must report downloaded/found."""
+    stats = _make_stats(found=2131, recovered=0, downloaded=2131)
+    r = _reporter(mode="recover_and_download")
+    r.stats = stats
+    r._print_summary(609.5, RecoveryState())
+    out = capsys.readouterr().out
+    assert "Download success rate: 100.0%" in out
+    assert "Recovery success rate" not in out
+
+
+def test_summary_recover_only_uses_recovered_count(capsys):
+    """recover-only must report recovered/found."""
+    stats = _make_stats(found=50, recovered=45, downloaded=0, errors=5)
+    r = _reporter(mode="recover_only")
+    r.stats = stats
+    r._print_summary(30.0, RecoveryState())
+    out = capsys.readouterr().out
+    assert "Recovery success rate: 90.0%" in out
+    assert "Download success rate" not in out
+
+
+def test_summary_zero_found_yields_zero_rate(capsys):
+    """When found=0 the rate must be 0.0% and not raise ZeroDivisionError."""
+    stats = _make_stats(found=0, downloaded=0)
+    r = _reporter(mode="recover_and_download")
+    r.stats = stats
+    r._print_summary(1.0, RecoveryState())
+    out = capsys.readouterr().out
+    assert "0.0%" in out
