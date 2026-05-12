@@ -37,13 +37,52 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=r"""
 Examples:
+  Dry-run (preview — no changes made):
+    %(prog)s dry-run
     %(prog)s dry-run --extensions jpg png --no-emoji
+    %(prog)s dry-run --after-date 2024-01-01
+    %(prog)s dry-run --file-ids FILE_ID_1 FILE_ID_2
+    %(prog)s dry-run --folder-id FOLDER_ID --post-restore-policy retain
+
+  Recover-only (restore trashed files to Drive — no local download):
     %(prog)s recover-only --extensions pdf docx
+    %(prog)s recover-only --after-date 2024-06-01 --yes
+    %(prog)s recover-only --file-ids FILE_ID_1 FILE_ID_2 --yes
+    %(prog)s recover-only --state-file ./state.json --yes
+
+  Recover-and-download (restore trashed files and save locally):
     %(prog)s recover-and-download --download-dir ./recovered --post-restore-policy retain
-    %(prog)s recover-and-download --download-dir ./recovered --state-file ./state.json
+    %(prog)s recover-and-download --download-dir ./recovered --extensions jpg png --post-restore-policy retain --yes
+    %(prog)s recover-and-download --download-dir ./recovered --file-ids FILE_ID_1 --post-restore-policy retain
+    %(prog)s recover-and-download --download-dir ./recovered --state-file ./state.json --yes
+    %(prog)s recover-and-download --download-dir ./recovered --direct-download --post-restore-policy retain
+
+  Folder-scoped download (download a live Drive folder and all subfolders):
+    %(prog)s dry-run --folder-id FOLDER_ID --post-restore-policy retain
+    %(prog)s recover-and-download --folder-id FOLDER_ID --download-dir ./backup --post-restore-policy retain
+    %(prog)s recover-and-download --folder-id FOLDER_ID --download-dir ./backup --extensions pdf --post-restore-policy retain --yes
+
+  Performance presets:
+    %(prog)s recover-and-download --download-dir ./out --concurrency 16 --process-batch-size 500 --max-rps 8 --burst 32 --post-restore-policy retain -v
+    %(prog)s recover-and-download --download-dir ./out --http-transport requests --http-pool-maxsize 16 --concurrency 16 --post-restore-policy retain
+
+  Locking and automation:
+    %(prog)s recover-and-download --download-dir ./out --lock-timeout 60 --state-file ./state.json
+    %(prog)s recover-and-download --download-dir ./out --force --state-file ./state.json
+    %(prog)s recover-and-download --download-dir ./out --yes --no-emoji
 
 Policies: trash (default), retain, delete
-For compatibility matrix, transport notes, and performance presets: see README.md and CHANGELOG.md.
+  trash  — move file to Drive Trash after download (WARNING: avoid with --folder-id)
+  retain — leave the file in its current Drive location (recommended with --folder-id)
+  delete — permanently delete from Drive after download (irreversible)
+
+Notes:
+  --folder-id targets non-trashed live files; it cannot be combined with --file-ids or recover-only.
+  Use --post-restore-policy retain with --folder-id to avoid moving live files to Trash.
+  The folder ID is the alphanumeric string at the end of a Drive folder URL:
+    https://drive.google.com/drive/folders/<FOLDER_ID>
+
+For the compatibility matrix, transport notes, and performance presets: see README.md and CHANGELOG.md.
 """,
     )
 

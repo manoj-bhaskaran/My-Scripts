@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.18.2] - 2026-05-12
+
+### Added
+
+- **Comprehensive usage examples** for all scenarios covering the full feature surface of `gdrive_recover.py`:
+  - `gdrive_recover.py` module docstring now includes an `Examples` section with runnable commands for: dry-run (all variants), recover-only (all variants), recover-and-download (all variants), folder-scoped download (`--folder-id`) with dry-run preview, extension filtering, large-folder throughput presets, performance/rate-limiter presets, HTTP transport selection, locking/automation, and `--direct-download`.
+  - `gdrive_cli.py` argparse epilog expanded with grouped, labeled examples for every subcommand and flag combination, including a policy reference table and a note on `--folder-id` constraints.
+  - `README.md` examples section replaced the single "Folder Download" sub-section with a full `## Examples` section covering all eight scenario groups (dry-run, recover-only, recover-and-download, folder-scoped download, post-restore policy table, performance presets, locking, and automation).
+
 ## [1.18.1] - 2026-05-12
 
 ### Fixed
