@@ -79,6 +79,7 @@ def test_generate_target_path(tmp_path, monkeypatch):
     class DummyItem:
         id = "abc"
         name = "my*file?.txt"
+        relative_path = ""
 
     p1 = tool._generate_target_path(DummyItem)
     assert str(tmp_path) in p1
