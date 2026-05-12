@@ -24,7 +24,7 @@ class DriveOperations:
         return self.auth._execute(request)
 
     def _recover_file(self, item: RecoveryItem) -> bool:
-        if self.state_manager._is_processed(item.id):
+        if not getattr(self.args, "overwrite", False) and self.state_manager._is_processed(item.id):
             with self.stats_lock:
                 self.stats["skipped"] += 1
             return True
@@ -145,7 +145,7 @@ class DriveOperations:
         return False
 
     def _process_item(self, item: RecoveryItem) -> bool:
-        if self.state_manager._is_processed(item.id):
+        if not getattr(self.args, "overwrite", False) and self.state_manager._is_processed(item.id):
             return True
 
         success = True

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.18.16] - 2026-05-12
+
+### Fixed
+
+- **`--overwrite` now re-processes items that were previously recorded in the state file:** `_process_item` and `_recover_file` both checked `_is_processed` unconditionally and exited early, causing every file to be silently skipped when a state file existed — even when `--overwrite` was explicitly requested. Both checks now honour the flag: when `--overwrite` is set, state-file entries are ignored and items are recovered and downloaded again.
+
 ## [1.18.15] - 2026-05-13
 
 ### Fixed
