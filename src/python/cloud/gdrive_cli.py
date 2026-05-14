@@ -75,7 +75,11 @@ Examples:
     %(prog)s recover-and-download --download-dir ./out --log-file ./run.log
     %(prog)s recover-and-download --download-dir ./out --failed-file ./failed.csv
     %(prog)s recover-and-download --download-dir ./out --log-file ./logs/run.log --failed-file ./logs/failed.csv
-    %(prog)s recover-and-download --download-dir ./out --overwrite --failed-file ./failed.csv  # clears failed.csv first
+    %(prog)s recover-and-download --download-dir ./out --fresh-run --failed-file ./failed.csv  # clears state + failed.csv first
+
+  Fresh run (ignore prior progress, regenerate run identity, truncate failed-file):
+    %(prog)s recover-only --fresh-run --state-file ./state.json --yes
+    %(prog)s recover-and-download --download-dir ./out --fresh-run --failed-file ./failed.csv --yes
 
   Retry failed downloads from a previous run:
     %(prog)s recover-and-download --download-dir ./out --retry-failed-file ./failed.csv
@@ -222,7 +226,7 @@ For the compatibility matrix, transport notes, and performance presets: see READ
                 "Append the local path (or Drive name for recover-only) of every failed item "
                 "to this file, one entry per line.  "
                 "The file and its parent directory are created automatically.  "
-                "When --overwrite is set the file is truncated before the run starts.  "
+                "When --fresh-run is set the file is truncated before the run starts.  "
                 "Optional: omit to disable."
             ),
         )
@@ -286,6 +290,17 @@ For the compatibility matrix, transport notes, and performance presets: see READ
             default=0.0,
             help="If the state lock is held, wait up to this many seconds for it to be released (0 = no wait)",
         )
+        subparser.add_argument(
+            "--fresh-run",
+            action="store_true",
+            help=(
+                "Start a fresh run: ignore prior progress in the state file, "
+                "regenerate run identity (run_id/start_time/owner_pid), and "
+                "(if --failed-file is set) truncate it. Use this when resuming "
+                "would target the wrong scope or when you want to retry everything "
+                "from scratch. Mutually exclusive with --retry-failed-file."
+            ),
+        )
     download_parser.add_argument(
         "--direct-download",
         action="store_true",
@@ -301,7 +316,10 @@ For the compatibility matrix, transport notes, and performance presets: see READ
         help=(
             "Overwrite existing local files instead of generating a conflict-safe name. "
             "By default, if a file already exists at the target path a short unique suffix "
-            "is appended; this flag disables that behaviour and replaces the existing file."
+            "is appended; this flag disables that behaviour and replaces the existing file. "
+            "DEPRECATED: prior versions also cleared state and the failed-file; that "
+            "combined behavior is now provided by --fresh-run and will be removed from "
+            "--overwrite in v1.23.0."
         ),
     )
     download_parser.add_argument(
@@ -421,6 +439,13 @@ def _validate_retry_failed_file_arg(args) -> Tuple[bool, int]:
     if getattr(args, "folder_id", None):
         print(
             "ERROR --retry-failed-file and --folder-id are mutually exclusive.",
+            file=sys.stderr,
+        )
+        return False, 2
+    if getattr(args, "fresh_run", False):
+        print(
+            "ERROR --retry-failed-file and --fresh-run are mutually exclusive "
+            "(fresh-run starts from nothing; retry resumes a specific list).",
             file=sys.stderr,
         )
         return False, 2

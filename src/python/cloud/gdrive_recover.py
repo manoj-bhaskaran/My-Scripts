@@ -11,7 +11,9 @@ This tool provides:
 - Comprehensive Dry Run mode with full planning and privilege validation
 - Resume capability for interrupted operations: only **successfully** processed
   items are recorded in the state file, so failed items are retried automatically
-  on a subsequent rerun (successful items are skipped)
+  on a subsequent rerun (successful items are skipped). To ignore prior progress
+  entirely and start over (regenerating run identity and truncating the
+  failed-file CSV), pass ``--fresh-run`` on either subcommand.
 - Progress tracking and detailed summaries
 
 Requirements:
@@ -198,10 +200,10 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
         --failed-file ./failed.csv \
         --post-restore-policy retain
 
-    # Use both together; on --overwrite the failed-file is cleared first
+    # Use both together; on --fresh-run the failed-file is cleared first
     python gdrive_recover.py recover-and-download \
         --download-dir ./recovered \
-        --overwrite \
+        --fresh-run \
         --log-file ./logs/run.log \
         --failed-file ./logs/failed.csv \
         --post-restore-policy retain
@@ -212,6 +214,30 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
         --retry-failed-file ./logs/failed.csv \
         --post-restore-policy retain \
         --yes
+
+**Fresh run (ignore prior progress and start over)**::
+
+    # Available on both recover-only and recover-and-download.
+    # Clears processed_items from state, regenerates run_id/start_time/owner_pid,
+    # and (when --failed-file is set) truncates the failed-file CSV.
+    python gdrive_recover.py recover-only \
+        --fresh-run \
+        --state-file ./state.json \
+        --yes
+
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --fresh-run \
+        --failed-file ./failed.csv \
+        --post-restore-policy retain \
+        --yes
+
+    # --fresh-run and --retry-failed-file are mutually exclusive.
+    # To both start fresh AND force local-file overwrite, combine flags:
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --fresh-run --overwrite \
+        --post-restore-policy retain --yes
 
 **Concurrency and locking**::
 
@@ -527,11 +553,34 @@ class DriveTrashRecoveryTool:
         Prepare auth/state. In streaming modes (recover-only / recover-and-download),
         DO NOT pre-discover items, because streaming discovery will do that and update
         stats incrementally. Pre-discovering here would double-count 'found'.
+
+        State/failed-file reset is gated on --fresh-run. The legacy --overwrite
+        combined behavior (state reset + failed-file truncation + local-file
+        overwrite) is preserved as a deprecation shim and will be removed in
+        v1.23.0; --overwrite alone now prints a deprecation warning to stderr.
         """
         if not self.auth.authenticate():
             return False, False
         self.state_manager._load_state()
-        if getattr(self.args, "overwrite", False):
+        fresh_run = getattr(self.args, "fresh_run", False)
+        overwrite = getattr(self.args, "overwrite", False)
+        if fresh_run:
+            cleared = self.state_manager._reset_state()
+            if cleared:
+                prefix = "🔄" if not getattr(self.args, "no_emoji", False) else "INFO"
+                print(
+                    f"{prefix} --fresh-run: cleared {cleared} previously processed item(s) "
+                    "from state and regenerated run identity"
+                )
+            self.ops._clear_failed_files()
+        elif overwrite:
+            # Deprecation shim: keep combined behavior for one release.
+            print(
+                "WARN --overwrite no longer implies state/failed-file reset in a future "
+                "release. Use --fresh-run to clear state and the failed-file CSV. "
+                "This combined behavior will be removed in v1.23.0.",
+                file=sys.stderr,
+            )
             cleared = self.state_manager._clear_processed_items()
             if cleared:
                 prefix = "🔄" if not getattr(self.args, "no_emoji", False) else "INFO"

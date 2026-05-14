@@ -172,11 +172,33 @@ python gdrive_recover.py recover-and-download \
   --post-restore-policy retain
 
 # Overwrite existing local files instead of creating conflict-safe copies
+# (--overwrite controls ONLY the local filename collision policy)
 python gdrive_recover.py recover-and-download \
   --download-dir ./recovered \
   --overwrite \
   --post-restore-policy retain
+
+# Start a fresh run: ignore prior progress, regenerate run identity, truncate failed-file
+# (use this when resuming would target the wrong scope or you want to retry everything)
+python gdrive_recover.py recover-and-download \
+  --download-dir ./recovered \
+  --fresh-run \
+  --failed-file ./logs/failed.csv \
+  --post-restore-policy retain --yes
 ```
+
+### `--fresh-run` vs. `--overwrite`
+
+These two flags do different things and can be combined:
+
+| Flag | Effect |
+| --- | --- |
+| `--overwrite` | Replace existing **local files** instead of generating a conflict-safe name (`name_<hex>.ext`). Does **not** touch state or the failed-file CSV. |
+| `--fresh-run` | Ignore prior progress in the **state file**, regenerate `run_id`/`start_time`/`owner_pid`, and (if `--failed-file` is set) truncate the failed-file CSV. Does **not** force local-file overwrite. |
+
+Pass both to start over completely *and* overwrite any pre-existing local files.
+
+> **Deprecation:** In versions <1.22.0 the `--overwrite` flag was overloaded with the fresh-run effects. For backwards compatibility, `--overwrite` alone still clears state and the failed-file CSV in this release, but prints a deprecation warning to stderr. The combined behavior will be removed in v1.23.0 — use `--fresh-run` (alone or with `--overwrite`) instead.
 
 ### Folder-scoped download (download a live Drive folder)
 

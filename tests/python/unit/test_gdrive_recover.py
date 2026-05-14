@@ -372,6 +372,8 @@ def test_prepare_recovery_clears_processed_items_when_overwrite(tmp_path, monkey
     assert tool.state_manager.state.processed_items == []
     captured = capsys.readouterr()
     assert "cleared 3" in captured.out
+    # Deprecation warning is printed to stderr when --overwrite alone is used
+    assert "v1.23.0" in captured.err and "--fresh-run" in captured.err
 
 
 def test_prepare_recovery_does_not_clear_when_overwrite_not_set(tmp_path, monkeypatch):
@@ -386,6 +388,126 @@ def test_prepare_recovery_does_not_clear_when_overwrite_not_set(tmp_path, monkey
     tool._prepare_recovery(streaming_mode=True)
 
     assert tool.state_manager.state.processed_items == ["id-1", "id-2"]
+
+
+def test_prepare_recovery_fresh_run_resets_state_and_regenerates_identity(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    args = _build_dummy_args(tmp_path)
+    args.fresh_run = True
+    args.no_emoji = True
+    tool = DriveTrashRecoveryTool(args)
+    tool.auth.authenticate = MagicMock(return_value=True)
+    tool.state_manager.state.processed_items = ["id-1", "id-2"]
+    tool.state_manager.state.run_id = "old-run-id"
+    tool.state_manager.state.start_time = "2020-01-01T00:00:00+00:00"
+    tool.state_manager.state.owner_pid = 99999
+    tool.state_manager.state.total_found = 42
+    tool.state_manager.state.last_checkpoint = "2020-01-01T00:00:01+00:00"
+
+    tool._prepare_recovery(streaming_mode=True)
+
+    # All identity fields wiped, processed_items cleared
+    assert tool.state_manager.state.processed_items == []
+    assert tool.state_manager.state.run_id == ""
+    assert tool.state_manager.state.start_time == ""
+    assert tool.state_manager.state.owner_pid is None
+    assert tool.state_manager.state.last_checkpoint == ""
+    # schema_version preserved
+    assert tool.state_manager.state.schema_version == 1
+    # No --overwrite deprecation warning on the fresh-run path
+    captured = capsys.readouterr()
+    assert "v1.23.0" not in captured.err
+    assert "no longer implies" not in captured.err
+
+
+def test_prepare_recovery_fresh_run_clears_failed_file(tmp_path, monkeypatch):
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    failed_file = tmp_path / "failed.csv"
+    failed_file.write_text("source_folder_id,file_id,target_path\nfid,abc,/p\n")
+
+    args = _build_dummy_args(tmp_path)
+    args.fresh_run = True
+    args.no_emoji = True
+    args.failed_file = str(failed_file)
+
+    tool = DriveTrashRecoveryTool(args)
+    tool.ops._failed_file_path = str(failed_file)
+    tool.auth.authenticate = MagicMock(return_value=True)
+
+    tool._prepare_recovery(streaming_mode=True)
+
+    lines = failed_file.read_text(encoding="utf-8").splitlines()
+    assert lines == ["source_folder_id,file_id,target_path"]
+
+
+def test_prepare_recovery_fresh_run_initialize_regenerates_identity(tmp_path, monkeypatch):
+    """After _reset_state + _initialize_recovery_state, the run gets a fresh run_id/start_time/owner_pid."""
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    args = _build_dummy_args(tmp_path)
+    args.fresh_run = True
+    args.no_emoji = True
+    tool = DriveTrashRecoveryTool(args)
+    tool.auth.authenticate = MagicMock(return_value=True)
+    tool.state_manager.state.processed_items = ["id-1"]
+    tool.state_manager.state.run_id = "old-id"
+    tool.state_manager.state.start_time = "2020-01-01T00:00:00+00:00"
+    tool.state_manager.state.owner_pid = 99999
+
+    tool._prepare_recovery(streaming_mode=True)
+    tool._initialize_recovery_state()
+
+    assert tool.state_manager.state.run_id != "old-id"
+    assert tool.state_manager.state.run_id  # not empty
+    assert tool.state_manager.state.start_time != "2020-01-01T00:00:00+00:00"
+    assert tool.state_manager.state.start_time  # not empty
+    assert tool.state_manager.state.owner_pid != 99999
+
+
+def test_prepare_recovery_overwrite_alone_prints_deprecation(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    args = _build_dummy_args(tmp_path)
+    args.overwrite = True
+    args.fresh_run = False
+    args.no_emoji = True
+    tool = DriveTrashRecoveryTool(args)
+    tool.auth.authenticate = MagicMock(return_value=True)
+
+    tool._prepare_recovery(streaming_mode=True)
+
+    captured = capsys.readouterr()
+    assert "v1.23.0" in captured.err
+    assert "--fresh-run" in captured.err
+
+
+def test_prepare_recovery_overwrite_with_fresh_run_no_deprecation(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    args = _build_dummy_args(tmp_path)
+    args.overwrite = True
+    args.fresh_run = True
+    args.no_emoji = True
+    tool = DriveTrashRecoveryTool(args)
+    tool.auth.authenticate = MagicMock(return_value=True)
+    tool.state_manager.state.processed_items = ["id-1"]
+
+    tool._prepare_recovery(streaming_mode=True)
+
+    captured = capsys.readouterr()
+    assert "v1.23.0" not in captured.err
+    assert "no longer implies" not in captured.err
+    # fresh-run path still resets state
+    assert tool.state_manager.state.processed_items == []
 
 
 # ---------------------------------------------------------------------------

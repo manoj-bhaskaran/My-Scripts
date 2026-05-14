@@ -302,3 +302,43 @@ def test_apply_retry_failed_file_same_as_failed_file_rejected(tmp_path):
     )
     ok, code = _apply_retry_failed_file(args)
     assert not ok and code == 2
+
+
+# ---------------------------------------------------------------------------
+# --fresh-run flag (issue #1028)
+# ---------------------------------------------------------------------------
+
+
+def test_parser_accepts_fresh_run_on_recover_only():
+    parser = create_parser()
+    args = parser.parse_args(["recover-only", "--fresh-run"])
+    assert args.fresh_run is True
+
+
+def test_parser_accepts_fresh_run_on_recover_and_download(tmp_path):
+    parser = create_parser()
+    args = parser.parse_args(
+        ["recover-and-download", "--download-dir", str(tmp_path), "--fresh-run"]
+    )
+    assert args.fresh_run is True
+
+
+def test_parser_accepts_fresh_run_on_dry_run():
+    parser = create_parser()
+    args = parser.parse_args(["dry-run", "--fresh-run"])
+    assert args.fresh_run is True
+
+
+def test_parser_fresh_run_defaults_to_false():
+    parser = create_parser()
+    args = parser.parse_args(["recover-only"])
+    assert args.fresh_run is False
+
+
+def test_validate_retry_failed_file_arg_with_fresh_run_rejected(tmp_path):
+    csv_file = tmp_path / "failed.csv"
+    csv_file.write_text("source_folder_id,file_id,target_path\nf1,id1,/p1\n")
+    ok, code = _validate_retry_failed_file_arg(
+        _args(retry_failed_file=str(csv_file), fresh_run=True)
+    )
+    assert not ok and code == 2
