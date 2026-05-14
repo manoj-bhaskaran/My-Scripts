@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.24.1] - 2026-05-14
+
+### Removed
+
+- **`--download-dir` removed from `recover-only`:** The argument was accepted by the parser but had no effect — `will_download` is only set to `True` for `recover_and_download` mode (or `dry-run` with `--download-dir`), never for `recover-only`. Keeping it was a footgun: a user could pass `--download-dir ./out` expecting files to appear there, see no error or warning, and not realise nothing was downloaded. The argument is now rejected by the `recover-only` subparser. It remains optional on `dry-run` (where it causes target paths to be shown in the plan) and required on `recover-and-download`.
+
 ## [1.24.0] - 2026-05-14
 
 ### Added
