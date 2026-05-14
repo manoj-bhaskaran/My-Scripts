@@ -72,9 +72,7 @@ class DriveDownloader:
                 item.status = "downloaded"
                 with self.stats_lock:
                     self.stats["skipped_existing"] += 1
-                self.logger.info(
-                    "Skipped existing file (--skip-existing): %s", item.target_path
-                )
+                self.logger.info("Skipped existing file (--skip-existing): %s", item.target_path)
                 return True
         return self._download_file(item)
 
