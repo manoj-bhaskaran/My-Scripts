@@ -1,6 +1,7 @@
 """CLI layer for Google Drive Trash Recovery Tool."""
 
 import argparse
+import csv
 import json
 import logging
 import os
@@ -8,7 +9,7 @@ import sys
 import time
 from datetime import timezone
 from pathlib import Path
-from typing import Tuple
+from typing import Dict, Tuple
 
 from dateutil import parser as date_parser
 
@@ -72,9 +73,13 @@ Examples:
 
   Logging and failure tracking:
     %(prog)s recover-and-download --download-dir ./out --log-file ./run.log
-    %(prog)s recover-and-download --download-dir ./out --failed-file ./failed_paths.txt
-    %(prog)s recover-and-download --download-dir ./out --log-file ./logs/run.log --failed-file ./logs/failed.txt
-    %(prog)s recover-and-download --download-dir ./out --overwrite --failed-file ./failed.txt  # clears failed.txt first
+    %(prog)s recover-and-download --download-dir ./out --failed-file ./failed.csv
+    %(prog)s recover-and-download --download-dir ./out --log-file ./logs/run.log --failed-file ./logs/failed.csv
+    %(prog)s recover-and-download --download-dir ./out --overwrite --failed-file ./failed.csv  # clears failed.csv first
+
+  Retry failed downloads from a previous run:
+    %(prog)s recover-and-download --download-dir ./out --retry-failed-file ./failed.csv
+    %(prog)s recover-and-download --download-dir ./out --retry-failed-file ./failed.csv --post-restore-policy retain --yes
 
   Locking and automation:
     %(prog)s recover-and-download --download-dir ./out --lock-timeout 60 --state-file ./state.json
@@ -299,6 +304,17 @@ For the compatibility matrix, transport notes, and performance presets: see READ
             "is appended; this flag disables that behaviour and replaces the existing file."
         ),
     )
+    download_parser.add_argument(
+        "--retry-failed-file",
+        default="",
+        help=(
+            "Path to a failed-items CSV produced by a previous run (via --failed-file). "
+            "When supplied, only the file IDs listed in the CSV are downloaded; "
+            "the saved target paths from the CSV are used so files land in the same "
+            "locations they would have in the original run. "
+            "Mutually exclusive with --file-ids and --folder-id."
+        ),
+    )
     return parser
 
 
@@ -382,6 +398,68 @@ def _validate_failed_file_arg(args) -> Tuple[bool, int]:
     except Exception as e:
         print(f"ERROR --failed-file path is not usable: {e}", file=sys.stderr)
         return False, 2
+
+
+def _validate_retry_failed_file_arg(args) -> Tuple[bool, int]:
+    """Validate --retry-failed-file and check it is not combined with conflicting flags."""
+    path_str = getattr(args, "retry_failed_file", None) or ""
+    if not path_str:
+        return True, 0
+    p = Path(path_str)
+    if not p.exists():
+        print(f"ERROR --retry-failed-file path does not exist: {p}", file=sys.stderr)
+        return False, 2
+    if not p.is_file():
+        print(f"ERROR --retry-failed-file must be a file, not a directory: {p}", file=sys.stderr)
+        return False, 2
+    if getattr(args, "file_ids", None):
+        print(
+            "ERROR --retry-failed-file and --file-ids are mutually exclusive.",
+            file=sys.stderr,
+        )
+        return False, 2
+    if getattr(args, "folder_id", None):
+        print(
+            "ERROR --retry-failed-file and --folder-id are mutually exclusive.",
+            file=sys.stderr,
+        )
+        return False, 2
+    return True, 0
+
+
+def _load_retry_failed_file(
+    path_str: str,
+) -> Tuple[bool, int, Dict[str, str]]:
+    """Read a failed-items CSV and return (ok, exit_code, {file_id: target_path}).
+
+    Expected columns: source_folder_id, file_id, target_path
+    The header row is skipped automatically.
+    """
+    target_path_overrides: Dict[str, str] = {}
+    try:
+        with open(path_str, newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            if reader.fieldnames is None or "file_id" not in reader.fieldnames:
+                print(
+                    f"ERROR --retry-failed-file does not look like a valid failed-items CSV "
+                    f"(missing 'file_id' column): {path_str}",
+                    file=sys.stderr,
+                )
+                return False, 2, {}
+            for row in reader:
+                fid = (row.get("file_id") or "").strip()
+                tp = (row.get("target_path") or "").strip()
+                if fid:
+                    target_path_overrides[fid] = tp
+    except Exception as e:
+        print(f"ERROR Could not read --retry-failed-file '{path_str}': {e}", file=sys.stderr)
+        return False, 2, {}
+    if not target_path_overrides:
+        print(
+            f"WARN --retry-failed-file '{path_str}' contains no actionable rows; nothing to retry.",
+            file=sys.stderr,
+        )
+    return True, 0, target_path_overrides
 
 
 def _validate_after_date_arg(args) -> Tuple[bool, int]:
@@ -632,6 +710,19 @@ def main() -> int:
     ok, code = _validate_failed_file_arg(args)
     if not ok:
         return code
+
+    retry_path = getattr(args, "retry_failed_file", None) or ""
+    if retry_path:
+        ok, code = _validate_retry_failed_file_arg(args)
+        if not ok:
+            return code
+        ok, code, target_path_overrides = _load_retry_failed_file(retry_path)
+        if not ok:
+            return code
+        args.file_ids = list(target_path_overrides.keys())
+        args._target_path_overrides = target_path_overrides
+    else:
+        args._target_path_overrides = {}
 
     ok, code = _normalize_and_validate_extensions(args)
     if not ok:

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import csv
+import io
 from pathlib import Path
 from threading import Lock
 from typing import Optional, Tuple
 
 from gdrive_models import PostRestorePolicy, RecoveryItem
 from gdrive_retry import with_retries
+
+FAILED_FILE_HEADER = ["source_folder_id", "file_id", "target_path"]
 
 
 class DriveOperations:
@@ -28,23 +32,33 @@ class DriveOperations:
         return self.auth._execute(request)
 
     def _clear_failed_files(self) -> None:
-        """Truncate the failed-file log to zero bytes (called when --overwrite is set)."""
+        """Truncate the failed-file CSV and write a fresh header (called when --overwrite is set)."""
         if not self._failed_file_path:
             return
         p = Path(self._failed_file_path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("", encoding="utf-8")
+        with open(self._failed_file_path, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(FAILED_FILE_HEADER)
 
     def _write_failed_file(self, item: RecoveryItem) -> None:
-        """Append the item's local path (or Drive name) to the failed-file log."""
+        """Append the item as a CSV row to the failed-file log.
+
+        Columns: source_folder_id, file_id, target_path
+        A header row is written automatically when the file is new or empty.
+        """
         if not self._failed_file_path:
             return
-        entry = item.target_path if item.target_path else item.name
+        target = item.target_path if item.target_path else item.name
         p = Path(self._failed_file_path)
         p.parent.mkdir(parents=True, exist_ok=True)
         with self._failed_files_lock:
-            with open(self._failed_file_path, "a", encoding="utf-8") as fh:
-                fh.write(entry + "\n")
+            needs_header = not p.exists() or p.stat().st_size == 0
+            with open(self._failed_file_path, "a", newline="", encoding="utf-8") as fh:
+                writer = csv.writer(fh)
+                if needs_header:
+                    writer.writerow(FAILED_FILE_HEADER)
+                writer.writerow([item.source_folder_id, item.id, target])
 
     def _recover_file(self, item: RecoveryItem) -> bool:
         if not getattr(self.args, "overwrite", False) and self.state_manager._is_processed(item.id):
