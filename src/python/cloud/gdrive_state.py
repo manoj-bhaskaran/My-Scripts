@@ -2,13 +2,31 @@
 State persistence and lock management for the Google Drive Trash Recovery Tool.
 """
 
+import hashlib
 import json
 import os
 from dataclasses import asdict, fields
 from datetime import datetime, timezone
 from typing import Any, Dict, Callable, Optional
 
-from gdrive_models import RecoveryState
+from gdrive_models import RecoveryState, RecoveryStateScope
+
+
+CURRENT_SCHEMA_VERSION = 2
+
+
+class StateScopeMismatchError(Exception):
+    """Raised when a saved scope does not match the current invocation's scope.
+
+    Carries both scopes so the CLI can render a clear remediation message.
+    """
+
+    def __init__(self, saved_scope: RecoveryStateScope, current_scope: RecoveryStateScope):
+        self.saved_scope = saved_scope
+        self.current_scope = current_scope
+        super().__init__(
+            f"State file scope mismatch: saved={saved_scope!r}, current={current_scope!r}"
+        )
 
 
 class RecoveryStateManager:
@@ -31,40 +49,97 @@ class RecoveryStateManager:
             return 0
 
     def _assign_recovery_state_fields(self, data: Dict[str, Any]) -> RecoveryState:
-        """Assign only known fields from data to a RecoveryState instance."""
+        """Assign only known fields from data to a RecoveryState instance.
+
+        Unknown keys present in the JSON (e.g. the retired ``owner_pid`` field
+        in v1 files) are silently dropped.
+        """
         new_state = RecoveryState()
         rs_fields = {f.name for f in fields(RecoveryState)}
         for k in rs_fields:
-            if k in data:
+            if k not in data:
+                continue
+            value = data[k]
+            if k == "scope" and isinstance(value, dict):
                 try:
-                    setattr(new_state, k, data[k])
+                    value = RecoveryStateScope(
+                        source=str(value.get("source", "")),
+                        command=str(value.get("command", "")),
+                        key=str(value.get("key", "")),
+                    )
                 except Exception:
-                    pass
+                    value = None
+            try:
+                setattr(new_state, k, value)
+            except Exception:
+                pass
         return new_state
 
-    def _handle_legacy_state_upgrade(self):
-        """Handle legacy (v0) state upgrade and logging."""
-        self.state.schema_version = 1
-        msg = (
-            "Loaded legacy state (schema v0). This will be upgraded to schema v1 "
-            "on next save for better compatibility."
-        )
-        prefix = "ℹ️" if not getattr(self.args, "no_emoji", False) else "INFO"
-        print(f"{prefix} {msg}")
-        try:
-            self.logger.warning("State schema v0 detected; promoting to v1 on next save.")
-        except Exception:
-            pass
+    def _derive_scope_from_args(self) -> RecoveryStateScope:
+        """Compute the scope block for the current invocation.
 
-    def _handle_schema_version_mismatch(self, raw_version):
-        """Handle state file with a different schema version."""
+        Discriminating ``key`` per source:
+          - retry_failed_file: absolute path of the retry CSV
+          - file_ids:           sha256("|".join(sorted(file_ids)))[:16]
+          - folder_id:          the folder ID itself
+          - trash_query:        sha256(extensions_sorted + "|" + after_date + "|" + str(limit))[:16]
+        """
+        args = self.args
+        retry_path = getattr(args, "retry_failed_file", None) or ""
+        if retry_path:
+            source = "retry_failed_file"
+            key = os.path.abspath(retry_path)
+        elif getattr(args, "file_ids", None):
+            source = "file_ids"
+            joined = "|".join(sorted(args.file_ids))
+            key = hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
+        elif getattr(args, "folder_id", None):
+            source = "folder_id"
+            key = str(args.folder_id)
+        else:
+            source = "trash_query"
+            exts = sorted(getattr(args, "extensions", None) or [])
+            after_date = getattr(args, "after_date", "") or ""
+            limit = getattr(args, "limit", 0) or 0
+            raw = "|".join(exts) + "|" + str(after_date) + "|" + str(limit)
+            key = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+        mode = getattr(args, "mode", "") or ""
+        if mode == "recover_and_download":
+            command = "recover_and_download"
+        elif mode == "recover_only":
+            command = "recover_only"
+        else:
+            # dry_run never persists state; default to the recover-only label so
+            # the dataclass round-trips cleanly if a test exercises this path.
+            command = mode or "recover_only"
+
+        return RecoveryStateScope(source=source, command=command, key=key)
+
+    def _check_scope_or_raise(self, saved_scope: RecoveryStateScope) -> None:
+        """Compare a loaded v2 scope against the current invocation."""
+        if getattr(self.args, "fresh_run", False):
+            return
+        current_scope = self._derive_scope_from_args()
+        if (
+            saved_scope.source != current_scope.source
+            or saved_scope.command != current_scope.command
+            or saved_scope.key != current_scope.key
+        ):
+            raise StateScopeMismatchError(saved_scope, current_scope)
+
+    def _print_migration_notice(self) -> None:
+        prefix = "ℹ️" if not getattr(self.args, "no_emoji", False) else "INFO"
+        print(
+            f"{prefix} Migrating state file from schema v1 to v2 "
+            "(scope inferred from current invocation)."
+        )
         try:
             self.logger.info(
-                "Loaded state with schema v%d; proceeding with tolerant parsing.", raw_version
+                "State file schema upgrade: v1 -> v2; scope synthesized from current args."
             )
         except Exception:
             pass
-        self.state.schema_version = 1
 
     def _load_state(self) -> bool:
         if not os.path.exists(self.args.state_file):
@@ -76,10 +151,28 @@ class RecoveryStateManager:
             raw_version = self._parse_schema_version(data)
             self.state = self._assign_recovery_state_fields(data)
 
-            if raw_version == 0:
-                self._handle_legacy_state_upgrade()
-            elif raw_version != self.state.schema_version:
-                self._handle_schema_version_mismatch(raw_version)
+            if raw_version < CURRENT_SCHEMA_VERSION:
+                # v0/v1: synthesize a scope from current args; promote to v2 on next save.
+                self._print_migration_notice()
+                self.state.scope = self._derive_scope_from_args()
+                self.state.schema_version = CURRENT_SCHEMA_VERSION
+            elif raw_version == CURRENT_SCHEMA_VERSION:
+                if self.state.scope is None:
+                    # v2 file without a scope block (corrupted/truncated); rebuild from args.
+                    self.state.scope = self._derive_scope_from_args()
+                else:
+                    self._check_scope_or_raise(self.state.scope)
+            else:
+                try:
+                    self.logger.info(
+                        "Loaded state with schema v%d (newer than v%d); "
+                        "proceeding with tolerant parsing.",
+                        raw_version,
+                        CURRENT_SCHEMA_VERSION,
+                    )
+                except Exception:
+                    pass
+                self.state.schema_version = CURRENT_SCHEMA_VERSION
 
             prefix = "📂" if not getattr(self.args, "no_emoji", False) else "STATE"
             print(
@@ -87,6 +180,8 @@ class RecoveryStateManager:
                 f"{len(self.state.processed_items)} items successfully processed (will be skipped)"
             )
             return True
+        except StateScopeMismatchError:
+            raise
         except Exception:
             self.logger.exception(
                 f"Unexpected error while loading state file '{self.args.state_file}'"
@@ -182,10 +277,9 @@ class RecoveryStateManager:
             tmp_path = f"{self.args.state_file}.tmp"
             os.makedirs(os.path.dirname(os.path.abspath(tmp_path)), exist_ok=True)
             with open(tmp_path, "w") as f:
-                try:
-                    self.state.schema_version = int(getattr(self.state, "schema_version", 0) or 1)
-                except Exception:
-                    self.state.schema_version = 1
+                self.state.schema_version = CURRENT_SCHEMA_VERSION
+                if self.state.scope is None:
+                    self.state.scope = self._derive_scope_from_args()
                 json.dump(asdict(self.state), f, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
@@ -193,37 +287,25 @@ class RecoveryStateManager:
         except Exception as e:
             self.logger.error(f"Failed to save state: {e}")
 
-    def _clear_processed_items(self) -> int:
-        """Clear all processed IDs from state; returns the count removed.
-
-        Deprecated: prefer `_reset_state` for a full fresh-run reset. This helper
-        is retained for the `--overwrite` deprecation shim and will be removed
-        when the deprecation period ends.
-        """
-        items = self.state.processed_items or []
-        count = len(items)
-        self.state.processed_items = []
-        return count
-
     def _reset_state(self) -> int:
         """Reset in-memory state to a brand-new `RecoveryState`, preserving only
         the schema version.
 
         After calling this the caller is expected to run
-        `_initialize_recovery_state` so that a new `run_id`, `start_time`, and
-        `owner_pid` are generated for the current process (the "if not X"
-        guards there naturally take the fresh path because every identity
-        field has been wiped here).
+        `_initialize_recovery_state` so that a new `run_id` and `start_time`
+        are generated for the current process (the "if not X" guards there
+        naturally take the fresh path because every identity field has been
+        wiped here). The scope block is repopulated from current args.
 
         Returns the count of previously processed items so callers can log it.
         """
         prev_count = len(self.state.processed_items or [])
-        prev_schema = getattr(self.state, "schema_version", 1)
+        prev_schema = getattr(self.state, "schema_version", CURRENT_SCHEMA_VERSION)
         self.state = RecoveryState()
         try:
-            self.state.schema_version = int(prev_schema or 1)
+            self.state.schema_version = int(prev_schema or CURRENT_SCHEMA_VERSION)
         except Exception:
-            self.state.schema_version = 1
+            self.state.schema_version = CURRENT_SCHEMA_VERSION
         return prev_count
 
     def _is_processed(self, item_id: str) -> bool:

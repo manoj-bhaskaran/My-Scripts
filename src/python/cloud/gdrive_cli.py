@@ -29,6 +29,7 @@ from gdrive_constants import (
 )
 from gdrive_models import PostRestorePolicy
 from gdrive_recover import DriveTrashRecoveryTool
+from gdrive_state import StateScopeMismatchError
 
 __version__ = VERSION
 
@@ -299,10 +300,11 @@ For the compatibility matrix, transport notes, and performance presets: see READ
             action="store_true",
             help=(
                 "Start a fresh run: ignore prior progress in the state file, "
-                "regenerate run identity (run_id/start_time/owner_pid), and "
-                "(if --failed-file is set) truncate it. Use this when resuming "
-                "would target the wrong scope or when you want to retry everything "
-                "from scratch. Mutually exclusive with --retry-failed-file."
+                "regenerate run identity (run_id/start_time) and the saved "
+                "scope, and (if --failed-file is set) truncate it. Also "
+                "bypasses the scope-mismatch guard, letting you reuse a state "
+                "file under a different source/command. Mutually exclusive "
+                "with --retry-failed-file."
             ),
         )
     download_parser.add_argument(
@@ -320,10 +322,7 @@ For the compatibility matrix, transport notes, and performance presets: see READ
         help=(
             "Overwrite existing local files instead of generating a conflict-safe name. "
             "By default, if a file already exists at the target path a short unique suffix "
-            "is appended; this flag disables that behaviour and replaces the existing file. "
-            "DEPRECATED: prior versions also cleared state and the failed-file; that "
-            "combined behavior is now provided by --fresh-run and will be removed from "
-            "--overwrite in v1.23.0."
+            "is appended; this flag disables that behaviour and replaces the existing file."
         ),
     )
     download_parser.add_argument(
@@ -727,6 +726,29 @@ def _validate_file_ids_if_present(tool, args) -> Tuple[bool, int]:
     return True, 0
 
 
+def _print_scope_mismatch_error(args, exc: "StateScopeMismatchError") -> None:
+    saved = exc.saved_scope
+    current = exc.current_scope
+    print(
+        f"{_sym_fail(args)} State file '{args.state_file}' was created for a different scope; "
+        "refusing to resume.",
+        file=sys.stderr,
+    )
+    print(
+        f"   Saved scope:   source={saved.source} command={saved.command} key={saved.key}",
+        file=sys.stderr,
+    )
+    print(
+        f"   Current scope: source={current.source} command={current.command} key={current.key}",
+        file=sys.stderr,
+    )
+    print(
+        "   Remediation: pass --fresh-run to reset this state file, or "
+        "use --state-file <path> to keep a separate file for this invocation.",
+        file=sys.stderr,
+    )
+
+
 def _run_and_release_lock(tool, args) -> int:
     ran_ok = False
     try:
@@ -734,6 +756,9 @@ def _run_and_release_lock(tool, args) -> int:
             ran_ok = _run_tool(tool, args)
         else:
             ran_ok = tool.execute_recovery()
+    except StateScopeMismatchError as e:
+        _print_scope_mismatch_error(args, e)
+        return 2
     finally:
         try:
             tool.state_manager._release_state_lock()

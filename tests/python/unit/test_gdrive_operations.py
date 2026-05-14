@@ -141,10 +141,8 @@ def test_recover_file_proceeds_when_processed_items_cleared():
     """After issue #1028, --overwrite no longer gates the _is_processed check.
 
     The bypass is now achieved by clearing `processed_items` upfront in
-    `_prepare_recovery` (via `_reset_state` on --fresh-run or
-    `_clear_processed_items` on the --overwrite deprecation shim). Once
-    cleared, `_is_processed` naturally returns False and the operation
-    proceeds.
+    `_prepare_recovery` (via `_reset_state` on --fresh-run). Once cleared,
+    `_is_processed` naturally returns False and the operation proceeds.
     """
     ops = _make_ops()
     # Simulate state cleared by _prepare_recovery: _is_processed returns False.

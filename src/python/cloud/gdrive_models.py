@@ -57,16 +57,32 @@ class RecoveryItem:
 
 
 @dataclass
+class RecoveryStateScope:
+    """Identifies what a recovery run is doing so resumes are scope-checked.
+
+    Resuming a state file written by one source/command against a different
+    invocation produced a silent failure mode in earlier versions (e.g. a
+    recover-only run untrashed IDs that a later recover-and-download run then
+    skipped without ever downloading). The scope block is compared on load and
+    a mismatch refuses to resume.
+    """
+
+    source: str = ""  # trash_query | folder_id | file_ids | retry_failed_file
+    command: str = ""  # recover_only | recover_and_download
+    key: str = ""  # scope-discriminating key (see RecoveryStateManager._derive_scope_from_args)
+
+
+@dataclass
 class RecoveryState:
     """Persistent state for resume capability."""
 
-    schema_version: int = 1  # v1.6.4: add schema versioning (v1); v0 implied if missing on load
+    schema_version: int = 2  # v1.23.0: v2 adds the `scope` block; v1 files auto-migrate.
     total_found: int = 0
     processed_items: Optional[List[str]] = None  # List of processed file IDs
     start_time: str = ""
     last_checkpoint: str = ""
     run_id: str = ""
-    owner_pid: Optional[int] = None
+    scope: Optional[RecoveryStateScope] = None
 
     def __post_init__(self):
         if self.processed_items is None:
