@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.23.2] - 2026-05-14
+
+### Added
+
+- **End-of-run summary is now written to the log file as a structured INFO line.** `RecoveryReporter._print_summary` previously used bare `print()` calls, so when `--log-file` was set the log ended abruptly with no record of how the run concluded. A single grep-friendly `Run complete: mode=… found=… recovered=… downloaded=… skipped=… errors=… elapsed=…s success_rate=…%` line is now emitted at INFO level alongside the stdout summary box. `print_interrupted_state_saved` mirrors this with a `Run interrupted: …` line so the log file unambiguously records the outcome of Ctrl-C'd runs as well. Logger errors are swallowed so a misbehaving handler can't break the user-facing summary.
+
 ## [1.23.1] - 2026-05-14
 
 ### Fixed
