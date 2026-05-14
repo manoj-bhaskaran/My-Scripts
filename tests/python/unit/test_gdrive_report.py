@@ -155,6 +155,7 @@ def _make_stats(**overrides):
         downloaded=0,
         errors=0,
         skipped=0,
+        skipped_existing=0,
         post_restore_retained=0,
         post_restore_trashed=0,
         post_restore_deleted=0,
@@ -193,6 +194,47 @@ def test_summary_zero_found_yields_zero_rate(capsys):
     r._print_summary(1.0, RecoveryState())
     out = capsys.readouterr().out
     assert "0.0%" in out
+
+
+def test_summary_prints_skipped_existing_line_when_nonzero(capsys):
+    """--skip-existing outcomes appear in the summary when stat > 0."""
+    stats = _make_stats(found=10, downloaded=7, skipped_existing=3)
+    r = _reporter(mode="recover_and_download")
+    r.stats = stats
+    r._print_summary(1.0, RecoveryState())
+    out = capsys.readouterr().out
+    assert "Files skipped (already on disk, --skip-existing): 3" in out
+
+
+def test_summary_skipped_existing_line_omitted_when_zero(capsys):
+    """Summary stays clean when skipped_existing is zero."""
+    stats = _make_stats(found=10, downloaded=10, skipped_existing=0)
+    r = _reporter(mode="recover_and_download")
+    r.stats = stats
+    r._print_summary(1.0, RecoveryState())
+    out = capsys.readouterr().out
+    assert "already on disk" not in out
+
+
+def test_summary_success_rate_includes_skipped_existing(capsys):
+    """Skipped-existing items are logical successes and feed the success-rate numerator."""
+    # 4 downloaded + 6 skipped-existing of 10 found = 100% success.
+    stats = _make_stats(found=10, downloaded=4, skipped_existing=6)
+    r = _reporter(mode="recover_and_download")
+    r.stats = stats
+    r._print_summary(1.0, RecoveryState())
+    out = capsys.readouterr().out
+    assert "Download success rate: 100.0%" in out
+
+
+def test_summary_recover_only_ignores_skipped_existing(capsys):
+    """recover_only uses recovered/found and is not affected by skipped_existing."""
+    stats = _make_stats(found=10, recovered=5, downloaded=0, skipped_existing=5)
+    r = _reporter(mode="recover_only")
+    r.stats = stats
+    r._print_summary(1.0, RecoveryState())
+    out = capsys.readouterr().out
+    assert "Recovery success rate: 50.0%" in out
 
 
 # ---------------------------------------------------------------------------

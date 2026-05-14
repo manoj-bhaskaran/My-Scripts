@@ -18,13 +18,15 @@ from gdrive_download import DriveDownloader
 from gdrive_models import RecoveryItem
 
 
-def _make_downloader(direct_download=False, verbose=0):
+def _make_downloader(direct_download=False, verbose=0, skip_existing=False):
     """Build a DriveDownloader with lightweight mock dependencies."""
-    args = SimpleNamespace(verbose=verbose, direct_download=direct_download)
+    args = SimpleNamespace(
+        verbose=verbose, direct_download=direct_download, skip_existing=skip_existing
+    )
     logger = MagicMock()
     rate_limiter = MagicMock()
     auth = MagicMock()
-    stats = {"downloaded": 0, "errors": 0}
+    stats = {"downloaded": 0, "errors": 0, "skipped_existing": 0}
     stats_lock = Lock()
     return DriveDownloader(args, logger, rate_limiter, auth, stats, stats_lock)
 
@@ -300,3 +302,77 @@ def test_drive_downloader_independent_import(tmp_path):
     assert isinstance(d, DriveDownloader)
     assert hasattr(d, "download")
     assert callable(d.download)
+
+
+# ---------------------------------------------------------------------------
+# --skip-existing fast path
+# ---------------------------------------------------------------------------
+
+
+def test_download_skip_existing_when_target_is_file(tmp_path):
+    """--skip-existing + target is a regular file → skip, mark success, bump stat."""
+    downloader = _make_downloader(skip_existing=True)
+    item = _make_item(tmp_path, name="present.txt")
+    Path(item.target_path).write_bytes(b"already here")
+
+    # If the fast path runs, no service call should happen.
+    result = downloader.download(item)
+
+    assert result is True
+    assert item.status == "downloaded"
+    assert downloader.stats["skipped_existing"] == 1
+    assert downloader.stats["downloaded"] == 0
+    downloader.auth._get_service.assert_not_called()
+
+
+def test_download_skip_existing_when_target_is_directory(tmp_path, monkeypatch):
+    """--skip-existing + target is a directory → must NOT skip; falls through to download.
+
+    Regression guard for the Codex P1: Path.exists() would be True for a
+    directory, but is_file() is False, so the skip branch must not fire.
+    """
+    downloader = _make_downloader(skip_existing=True)
+    item = _make_item(tmp_path, name="collision")
+    Path(item.target_path).mkdir()  # directory at target path
+
+    # Stub the underlying download so we can observe that it was attempted
+    # rather than silently skipped. We don't care about its outcome here.
+    sentinel = MagicMock(return_value=False)
+    monkeypatch.setattr(downloader, "_download_file", sentinel)
+
+    result = downloader.download(item)
+
+    sentinel.assert_called_once_with(item)
+    assert result is False
+    assert downloader.stats["skipped_existing"] == 0
+
+
+def test_download_skip_existing_when_target_absent(tmp_path, monkeypatch):
+    """--skip-existing + no existing target → normal download path runs."""
+    downloader = _make_downloader(skip_existing=True)
+    item = _make_item(tmp_path, name="fresh.txt")  # path does not exist
+
+    sentinel = MagicMock(return_value=True)
+    monkeypatch.setattr(downloader, "_download_file", sentinel)
+
+    result = downloader.download(item)
+
+    sentinel.assert_called_once_with(item)
+    assert result is True
+    assert downloader.stats["skipped_existing"] == 0
+
+
+def test_download_skip_existing_off_with_existing_file(tmp_path, monkeypatch):
+    """skip_existing=False + existing target → falls through to download (no skip)."""
+    downloader = _make_downloader(skip_existing=False)
+    item = _make_item(tmp_path, name="present.txt")
+    Path(item.target_path).write_bytes(b"already here")
+
+    sentinel = MagicMock(return_value=True)
+    monkeypatch.setattr(downloader, "_download_file", sentinel)
+
+    result = downloader.download(item)
+
+    sentinel.assert_called_once_with(item)
+    assert result is True
+    assert downloader.stats["skipped_existing"] == 0
