@@ -90,6 +90,35 @@ def test_generate_target_path(tmp_path, monkeypatch):
     p2 = tool._generate_target_path(item2)
     assert p2 != str(tmp_path / "myfile.txt")
 
+    # NOTE: MagicMock(name=...) sets the mock's internal repr name, not the
+    # .name attribute the code under test reads. Use SimpleNamespace below so
+    # item.name actually returns "myfile.txt" and the collision branch fires
+    # against the real target path.
+    from types import SimpleNamespace as _SNS
+
+    (tmp_path / "skip.txt").write_text("x")
+
+    # --skip-existing: existing target must NOT be renamed; downloader will
+    # decide to skip based on the unchanged path.
+    args.skip_existing = True
+    tool_skip = DriveTrashRecoveryTool(args)
+    p_skip = tool_skip._generate_target_path(_SNS(id="abc", name="skip.txt", relative_path=""))
+    assert p_skip == str(tmp_path / "skip.txt")
+    del args.skip_existing
+
+    # --overwrite: existing target must NOT be renamed either; downloader
+    # writes over the existing file.
+    args.overwrite = True
+    tool_ow = DriveTrashRecoveryTool(args)
+    p_ow = tool_ow._generate_target_path(_SNS(id="abc", name="skip.txt", relative_path=""))
+    assert p_ow == str(tmp_path / "skip.txt")
+    del args.overwrite
+
+    # Default (neither flag): existing target IS renamed with a uuid suffix.
+    p_def = tool._generate_target_path(_SNS(id="abc", name="skip.txt", relative_path=""))
+    assert p_def != str(tmp_path / "skip.txt")
+    assert p_def.startswith(str(tmp_path / "skip_")) and p_def.endswith(".txt")
+
     # relative_path is reconstructed as a subdirectory under download_dir
     # Use SimpleNamespace: MagicMock treats 'name' as its internal mock name, not an attribute.
     from types import SimpleNamespace

@@ -82,6 +82,48 @@ def test_dry_run_download_dir_defaults_to_none():
 
 
 # ---------------------------------------------------------------------------
+# --overwrite / --skip-existing are mutually exclusive on recover-and-download
+# ---------------------------------------------------------------------------
+
+
+def test_overwrite_alone_parses():
+    parser = create_parser()
+    args = parser.parse_args(["recover-and-download", "--download-dir", "./out", "--overwrite"])
+    assert args.overwrite is True
+    assert args.skip_existing is False
+
+
+def test_skip_existing_alone_parses():
+    parser = create_parser()
+    args = parser.parse_args(["recover-and-download", "--download-dir", "./out", "--skip-existing"])
+    assert args.skip_existing is True
+    assert args.overwrite is False
+
+
+def test_overwrite_and_skip_existing_are_mutually_exclusive():
+    import pytest
+
+    parser = create_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "recover-and-download",
+                "--download-dir",
+                "./out",
+                "--overwrite",
+                "--skip-existing",
+            ]
+        )
+
+
+def test_neither_collision_flag_defaults_false():
+    parser = create_parser()
+    args = parser.parse_args(["recover-and-download", "--download-dir", "./out"])
+    assert args.overwrite is False
+    assert args.skip_existing is False
+
+
+# ---------------------------------------------------------------------------
 # _validate_failed_file_arg
 # ---------------------------------------------------------------------------
 

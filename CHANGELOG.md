@@ -11,6 +11,20 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.14.0] - 2026-05-14
+
+### Added
+
+- **[gdrive_recover] `--skip-existing` flag for local target collisions (gdrive_recover 1.25.0)** – `recover-and-download` now accepts `--skip-existing` as an alternative to `--overwrite`. When the computed local target path already resolves to a regular file (checked via `Path.is_file()`, not `Path.exists()`, so a directory or special-file collision does not trigger a silent skip), the download is skipped, no bytes are written, and the item is still considered a successful operation: per-step state advances (`downloaded` is marked), the post-restore policy is still applied, and the skip is recorded against a new `stats["skipped_existing"]` counter. The `is_file()` discriminator matters because allowing a directory collision to satisfy the skip would otherwise let `post-restore-policy=delete` permanently remove the Drive file with no local copy ever created. The two flags are mutually exclusive via an argparse `add_mutually_exclusive_group`; with neither flag set, the default behaviour is unchanged — a short uuid suffix is appended to the filename to produce a conflict-safe name. Implementation lives in `DriveDownloader.download` (skip branch with `stats_lock`-guarded counter increment) and `DriveTrashRecoveryTool._generate_target_path` (third condition that suppresses the uuid-rename when `--skip-existing` is active).
+
+### Changed
+
+- **[gdrive_report] Run summary surfaces `--skip-existing` outcomes and includes them in the success rate** – `_print_summary` now prints `Files skipped (already on disk, --skip-existing): <n>` whenever `stats["skipped_existing"] > 0`, and the `Download success rate` numerator for `recover-and-download` is `downloaded + skipped_existing` (skipped items are logical successes — the file is on disk and post-restore ran — so they should not depress the success rate). The structured `Run complete` / `Run interrupted` log lines gain a `skipped_existing=%d` field for log-aggregation consumers.
+
+### Documentation
+
+- **[gdrive_recover] Document local target collision handling and re-run idempotency** – The module docstring gains a "Local target collision handling" section that contrasts the three collision behaviours (default uuid-rename, `--overwrite`, `--skip-existing`), warns that re-running without either flag creates a duplicate suffixed copy on every run, and notes which counter each path increments. The `--overwrite` and new `--skip-existing` CLI `--help` strings cross-reference each other and state that the flags are mutually exclusive. Epilog examples in `gdrive_cli.create_parser` updated to show `--skip-existing` alongside `--overwrite`.
+
 ## [2.13.9] - 2026-05-13
 
 ### Fixed

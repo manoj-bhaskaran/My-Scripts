@@ -125,6 +125,33 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
         --overwrite \
         --post-restore-policy retain
 
+    # Skip downloads whose target is already on disk (counted as successful)
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --skip-existing \
+        --post-restore-policy retain
+
+**Local target collision handling**
+
+    When the computed local target path already exists on disk, ``gdrive_recover``
+    chooses between three behaviours based on flags. The flags are mutually
+    exclusive — at most one of ``--overwrite`` or ``--skip-existing`` may be
+    passed:
+
+    - **Default (neither flag):** a short uuid suffix is appended to the
+      filename (``<stem>_xxxxxx<ext>``) and the file is downloaded under the
+      new name. Re-running the command without one of the flags will create
+      another suffixed duplicate, because the collision check is purely
+      filesystem-local and is not deduplicated against earlier suffixed copies.
+      The fresh download counts toward ``Files downloaded`` in the summary.
+    - ``--overwrite``: the existing file is replaced with the downloaded bytes.
+      Counts toward ``Files downloaded``.
+    - ``--skip-existing``: the download is skipped and no bytes are written;
+      the item is still considered successful, the post-restore policy is
+      still applied, and the skip is reported in the summary under
+      ``Files skipped (already on disk, --skip-existing)``. Skipped items are
+      included in the ``Download success rate`` numerator.
+
 **Folder-scoped download (download a live Drive folder — no untrash step)**::
 
     # Preview the folder tree before downloading (dry-run); --download-dir shows target paths
@@ -330,6 +357,7 @@ class DriveTrashRecoveryTool:
             "downloaded": 0,
             "errors": 0,
             "skipped": 0,
+            "skipped_existing": 0,  # Target file already present on disk (--skip-existing)
             "post_restore_retained": 0,  # Files kept on Drive
             "post_restore_trashed": 0,  # Files moved to trash
             "post_restore_deleted": 0,  # Files permanently deleted
@@ -471,7 +499,11 @@ class DriveTrashRecoveryTool:
             base_path = Path(self.args.download_dir) / relative_path / safe_name
         else:
             base_path = Path(self.args.download_dir) / safe_name
-        if base_path.exists() and not getattr(self.args, "overwrite", False):
+        if (
+            base_path.exists()
+            and not getattr(self.args, "overwrite", False)
+            and not getattr(self.args, "skip_existing", False)
+        ):
             stem = base_path.stem or f"file_{item_id}"
             suffix = base_path.suffix
             base_path = base_path.parent / f"{stem}_{uuid.uuid4().hex[:6]}{suffix}"
