@@ -162,7 +162,13 @@ def test_recover_file_proceeds_when_processed_items_cleared():
 
 
 def test_process_item_skips_when_already_processed():
-    """`_is_processed` short-circuit is no longer gated on args.overwrite."""
+    """`_is_processed` short-circuit is no longer gated on args.overwrite.
+
+    The short-circuit must bump `stats["skipped"]` so the summary correctly
+    accounts for items that were skipped because they were already processed
+    on a prior run (regression test for the resume-mode summary showing all
+    zeros).
+    """
     ops = _make_ops()
     ops.state_manager._is_processed.return_value = True
     item = _item()
@@ -170,6 +176,7 @@ def test_process_item_skips_when_already_processed():
     ok = ops._process_item(item)
 
     assert ok is True
+    assert ops.stats["skipped"] == 1
     ops.downloader.download.assert_not_called()
     ops.state_manager._mark_processed.assert_not_called()
 
