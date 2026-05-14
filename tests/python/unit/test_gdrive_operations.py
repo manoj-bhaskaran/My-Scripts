@@ -338,6 +338,8 @@ def test_process_item_writes_failed_file_on_failure(tmp_path, monkeypatch):
     assert ok is False
     _, rows = _parse_csv_rows(str(failed_file))
     assert len(rows) == 1 and rows[0]["target_path"] == "/downloads/file.txt"
+    # Failed items must NOT be marked processed in state.
+    ops.state_manager._mark_processed.assert_not_called()
 
 
 def test_process_item_does_not_write_failed_file_on_success(tmp_path):
@@ -354,6 +356,50 @@ def test_process_item_does_not_write_failed_file_on_success(tmp_path):
 
     assert ok is True
     assert not failed_file.exists(), "failed-file should not be created on success"
+    ops.state_manager._mark_processed.assert_called_once_with(item.id)
+
+
+def test_process_item_does_not_mark_processed_when_recover_fails(monkeypatch):
+    """Issue #1027: failed recover must not be recorded as processed."""
+    ops = _make_ops()
+
+    monkeypatch.setattr(
+        "gdrive_operations.with_retries",
+        lambda *args, **kwargs: (None, "HTTP 404: not found", 404),
+    )
+
+    item = _item()
+    item.will_recover = True
+    item.will_download = False
+
+    ok = ops._process_item(item)
+
+    assert ok is False
+    ops.state_manager._mark_processed.assert_not_called()
+
+
+def test_process_item_does_not_mark_processed_when_download_fails(tmp_path):
+    """Issue #1027: a failed download produces a failed-file row but no processed_items entry."""
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.csv"
+    ops._failed_file_path = str(failed_file)
+
+    service = MagicMock()
+    ops.auth._get_service.return_value = service
+    service.files.return_value.update.return_value = MagicMock()
+    ops.downloader.download.return_value = False
+
+    item = _item()
+    item.will_recover = True
+    item.will_download = True
+    item.target_path = "/downloads/file.txt"
+
+    ok = ops._process_item(item)
+
+    assert ok is False
+    ops.state_manager._mark_processed.assert_not_called()
+    _, rows = _parse_csv_rows(str(failed_file))
+    assert len(rows) == 1 and rows[0]["file_id"] == item.id
 
 
 def test_process_item_writes_failed_file_on_post_restore_failure(tmp_path, monkeypatch):

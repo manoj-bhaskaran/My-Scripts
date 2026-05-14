@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.21.2] - 2026-05-14
+
+### Fixed
+
+- **Failed items are no longer marked as processed in the state file (#1027):** `DriveOperations._process_item` previously called `state_manager._mark_processed(item.id)` unconditionally, regardless of whether the recover/download/post-restore steps succeeded. Failed items ended up in both the `--failed-file` CSV *and* `state.processed_items`; on a subsequent rerun they were silently skipped by `_is_processed`, defeating the stated purpose of resume ("rerun and concentrate on what is remaining"). The mark-processed call is now made only on full success. Failed items continue to be appended to `--failed-file` and are reattempted automatically on the next rerun against the same state file.
+- Module docstring (`gdrive_recover.py`) and README updated to spell out the new resume semantics; the `_load_state` and summary output now reference `processed_items` as the count of **successfully** processed items.
+- Added a clarifying comment on `_recover_file` documenting the invariant that only `_process_item` writes to state.
+
+### Notes
+
+- **No schema change.** Existing state files load and resume normally. Entries written under the old (buggy) semantics may include IDs of items that previously failed; those entries are still treated as "processed" and will be skipped on rerun — there is no way to distinguish them post-hoc. To retry items already marked processed under the old semantics, use `--retry-failed-file` (if the failed-file CSV is available) or trim the state file manually.
+
 ## [1.21.1] - 2026-05-14
 
 ### Fixed

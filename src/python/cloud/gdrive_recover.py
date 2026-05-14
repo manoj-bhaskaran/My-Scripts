@@ -9,7 +9,9 @@ This tool provides:
 - Optional download to local directory with conflict-safe filenames
 - Configurable post-restore policies (retain/trash/delete with aliases)
 - Comprehensive Dry Run mode with full planning and privilege validation
-- Resume capability for interrupted operations
+- Resume capability for interrupted operations: only **successfully** processed
+  items are recorded in the state file, so failed items are retried automatically
+  on a subsequent rerun (successful items are skipped)
 - Progress tracking and detailed summaries
 
 Requirements:

@@ -423,7 +423,7 @@ class RecoveryReporter:
             print(f"  - Retained on Drive: {self.stats['post_restore_retained']}")
             print(f"  - Moved to trash: {self.stats['post_restore_trashed']}")
             print(f"  - Permanently deleted: {self.stats['post_restore_deleted']}")
-        print(f"Files skipped (already processed): {self.stats['skipped']}")
+        print(f"Files skipped (already processed successfully): {self.stats['skipped']}")
         print(f"Errors encountered: {self.stats['errors']}")
         print(f"Execution time: {elapsed_time:.1f} seconds")
         if self.stats["errors"] > 0:

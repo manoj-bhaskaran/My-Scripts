@@ -83,7 +83,8 @@ class RecoveryStateManager:
 
             prefix = "📂" if not getattr(self.args, "no_emoji", False) else "STATE"
             print(
-                f"{prefix} Loaded previous state: {len(self.state.processed_items)} items already processed"
+                f"{prefix} Loaded previous state: "
+                f"{len(self.state.processed_items)} items successfully processed (will be skipped)"
             )
             return True
         except Exception:
