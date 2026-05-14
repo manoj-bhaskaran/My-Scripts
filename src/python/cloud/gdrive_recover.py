@@ -14,6 +14,11 @@ This tool provides:
   on a subsequent rerun (successful items are skipped). To ignore prior progress
   entirely and start over (regenerating run identity and truncating the
   failed-file CSV), pass ``--fresh-run`` on either subcommand.
+  State files are **scope-aware** (schema v2): each file records the source
+  (trash query / folder / file-ids / retry CSV) and command (recover-only vs.
+  recover-and-download) used to create it. Reusing a state file under a
+  different scope is rejected with exit code 2 unless ``--fresh-run`` is
+  passed; legacy v1 state files are migrated transparently on first load.
 - Progress tracking and detailed summaries
 
 Requirements:
@@ -218,7 +223,7 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
 **Fresh run (ignore prior progress and start over)**::
 
     # Available on both recover-only and recover-and-download.
-    # Clears processed_items from state, regenerates run_id/start_time/owner_pid,
+    # Clears processed_items from state, regenerates run_id/start_time,
     # and (when --failed-file is set) truncates the failed-file CSV.
     python gdrive_recover.py recover-only \
         --fresh-run \
@@ -265,7 +270,6 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
         --post-restore-policy retain
 """
 
-import os
 import time
 import logging
 from datetime import datetime, timezone
@@ -554,10 +558,10 @@ class DriveTrashRecoveryTool:
         DO NOT pre-discover items, because streaming discovery will do that and update
         stats incrementally. Pre-discovering here would double-count 'found'.
 
-        State/failed-file reset is gated on --fresh-run. The legacy --overwrite
-        combined behavior (state reset + failed-file truncation + local-file
-        overwrite) is preserved as a deprecation shim and will be removed in
-        v1.23.0; --overwrite alone now prints a deprecation warning to stderr.
+        State/failed-file reset is gated on --fresh-run; --overwrite is now
+        strictly a local-file collision policy. The state load is also
+        scope-aware: if the saved scope does not match the current invocation,
+        StateScopeMismatchError propagates and is rendered by the CLI.
         """
         if not self.auth.authenticate():
             return False, False
@@ -569,11 +573,9 @@ class DriveTrashRecoveryTool:
         return True, self._eager_discover_and_report()
 
     def _apply_pre_run_reset(self) -> None:
-        """Dispatch to --fresh-run reset or the --overwrite deprecation shim."""
+        """Apply --fresh-run reset, if requested."""
         if getattr(self.args, "fresh_run", False):
             self._fresh_run_reset()
-        elif getattr(self.args, "overwrite", False):
-            self._overwrite_deprecation_reset()
 
     def _reset_prefix(self) -> str:
         return "🔄" if not getattr(self.args, "no_emoji", False) else "INFO"
@@ -584,21 +586,6 @@ class DriveTrashRecoveryTool:
             print(
                 f"{self._reset_prefix()} --fresh-run: cleared {cleared} previously "
                 "processed item(s) from state and regenerated run identity"
-            )
-        self.ops._clear_failed_files()
-
-    def _overwrite_deprecation_reset(self) -> None:
-        print(
-            "WARN --overwrite no longer implies state/failed-file reset in a future "
-            "release. Use --fresh-run to clear state and the failed-file CSV. "
-            "This combined behavior will be removed in v1.23.0.",
-            file=sys.stderr,
-        )
-        cleared = self.state_manager._clear_processed_items()
-        if cleared:
-            print(
-                f"{self._reset_prefix()} --overwrite: cleared {cleared} previously "
-                "processed item(s) from state"
             )
         self.ops._clear_failed_files()
 
@@ -647,8 +634,8 @@ class DriveTrashRecoveryTool:
             self.state.total_found = len(self.items)
         if not getattr(self.state, "run_id", ""):
             self.state.run_id = str(uuid.uuid4())
-        if not getattr(self.state, "owner_pid", None):
-            self.state.owner_pid = os.getpid()
+        if getattr(self.state, "scope", None) is None:
+            self.state.scope = self.state_manager._derive_scope_from_args()
 
     def _process_all_items(self) -> bool:
         self.reporter.print_processing_start(len(self.items), self.args.concurrency)
@@ -679,9 +666,11 @@ class DriveTrashRecoveryTool:
             else:
                 ok = self.discovery._stream_stream_query(batch_n, start_time)
         except KeyboardInterrupt:
+            self.state.total_found = self._seen_total
             self.reporter.print_interrupted_state_saved()
             self.state_manager._save_state()
             return False
+        self.state.total_found = self._seen_total
         self.state_manager._save_state()
         self.reporter._print_summary(time.time() - start_time, self.state)
         return ok
@@ -714,6 +703,7 @@ class DriveTrashRecoveryTool:
             if self.reporter._should_show_progress():
                 self._print_stream_progress(start_time)
             if self._processed_total % 100 == 0:
+                self.state.total_found = self._seen_total
                 self.state_manager._save_state()
         except Exception as e:
             self.logger.error(f"Unexpected error processing {item.name}: {e}")

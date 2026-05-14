@@ -194,11 +194,30 @@ These two flags do different things and can be combined:
 | Flag | Effect |
 | --- | --- |
 | `--overwrite` | Replace existing **local files** instead of generating a conflict-safe name (`name_<hex>.ext`). Does **not** touch state or the failed-file CSV. |
-| `--fresh-run` | Ignore prior progress in the **state file**, regenerate `run_id`/`start_time`/`owner_pid`, and (if `--failed-file` is set) truncate the failed-file CSV. Does **not** force local-file overwrite. |
+| `--fresh-run` | Ignore prior progress in the **state file**, regenerate `run_id`/`start_time` and the saved scope, and (if `--failed-file` is set) truncate the failed-file CSV. Also bypasses the scope-mismatch guard. Does **not** force local-file overwrite. |
 
 Pass both to start over completely *and* overwrite any pre-existing local files.
 
-> **Deprecation:** In versions <1.22.0 the `--overwrite` flag was overloaded with the fresh-run effects. For backwards compatibility, `--overwrite` alone still clears state and the failed-file CSV in this release, but prints a deprecation warning to stderr. The combined behavior will be removed in v1.23.0 — use `--fresh-run` (alone or with `--overwrite`) instead.
+### State file scope (schema v2)
+
+Each state file records the **scope** it was created under:
+
+- `source` — `trash_query`, `folder_id`, `file_ids`, or `retry_failed_file`
+- `command` — `recover_only` or `recover_and_download`
+- `key` — a scope-discriminating fingerprint (folder ID, retry-CSV path, or a short hash of the file IDs / trash-query parameters)
+
+If you reuse a state file under a different scope (for example, a state file written by `recover-only --file-ids X Y` and then passed to `recover-and-download --file-ids X Y`, or a different file-id set), the tool refuses to resume and exits with code 2:
+
+```
+ERROR State file 'gdrive_recovery_state.json' was created for a different scope; refusing to resume.
+   Saved scope:   source=file_ids command=recover_only key=<hash>
+   Current scope: source=file_ids command=recover_and_download key=<hash>
+   Remediation: pass --fresh-run to reset this state file, or use --state-file <path> to keep a separate file for this invocation.
+```
+
+This replaces the prior silent-failure mode in which the tool would skip IDs that had been recovered-only and never download them.
+
+**v1 → v2 migration is automatic and non-destructive.** State files written by older versions are upgraded on first load: a `scope` block is synthesized from the current invocation's CLI args, the file is rewritten with `schema_version = 2` on the next save, and `processed_items` is preserved verbatim — no items are reprocessed.
 
 ### Folder-scoped download (download a live Drive folder)
 

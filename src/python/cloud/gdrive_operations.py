@@ -33,8 +33,7 @@ class DriveOperations:
     def _clear_failed_files(self) -> None:
         """Truncate the failed-file CSV and write a fresh header.
 
-        Called from `_prepare_recovery` on `--fresh-run` (and on the
-        `--overwrite` deprecation shim path).
+        Called from `_prepare_recovery` on `--fresh-run`.
         """
         if not self._failed_file_path:
             return

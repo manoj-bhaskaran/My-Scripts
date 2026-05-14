@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.23.0] - 2026-05-14
+
+### Added
+
+- **Scope-aware state file with v1→v2 schema migration (#1029):** State files now record a `scope` block (`source`, `command`, `key`) that captures *what* the run was doing. `source` is one of `trash_query | folder_id | file_ids | retry_failed_file`; `command` is `recover_only | recover_and_download`; `key` is a discriminating fingerprint (folder ID, retry-CSV absolute path, or a 16-char sha256 prefix over the file IDs / trash-query parameters). On load, the scope is compared to the current invocation; on mismatch, the tool refuses to resume and exits with code 2 unless `--fresh-run` is passed. This closes the silent failure where a `recover-only` state file was reused by `recover-and-download` and caused the same IDs to be skipped without being downloaded.
+- New `RecoveryStateScope` dataclass in `gdrive_models.py`; new `StateScopeMismatchError` exception in `gdrive_state.py`; new `RecoveryStateManager._derive_scope_from_args` helper.
+- CLI now renders a clear remediation message on scope mismatch (saved scope, current scope, suggestion to pass `--fresh-run` or `--state-file <path>`).
+
+### Changed
+
+- **`RecoveryState.schema_version` default is now 2.** v0/v1 state files load successfully, synthesize a `scope` from the current invocation, and are rewritten as v2 on next save. `processed_items` is preserved verbatim — no items are reprocessed.
+- **`RecoveryState.owner_pid` removed.** The lock file remains the source of truth for the live PID; the stale field has been retired. v1 files containing `owner_pid` load fine — the unknown field is silently dropped during migration.
+- **`state.total_found` is updated from `_seen_total` in streaming mode** at each periodic save and on completion/interruption, so the persisted number reflects how many items have been discovered so far.
+- **`--overwrite` deprecation shim removed (per v1.22.0 timing).** `--overwrite` is now strictly a local-file collision policy. It no longer clears `processed_items`, no longer truncates the failed-file CSV, and no longer emits a deprecation warning. Use `--fresh-run` (alone or combined with `--overwrite`) for the fresh-run effects.
+- `RecoveryStateManager._clear_processed_items` was removed (only the now-deleted overwrite shim called it). `_reset_state` remains and is the canonical fresh-run primitive.
+- `--fresh-run` help text updated: scope reset is mentioned, `owner_pid` is no longer referenced, and the flag is documented as bypassing the scope-mismatch guard.
+- Module docstring (`gdrive_recover.py`) and README updated to describe scope semantics and v1 → v2 migration behavior.
+
+### Notes
+
+- **Migration is automatic and non-destructive.** Existing v1 state files load on first run after the upgrade; the synthesized scope reflects the current invocation. On a subsequent run with the same scope, resume proceeds normally. If a different scope is used, the new guard rejects it with a clear message instead of silently skipping work.
+
 ## [1.22.0] - 2026-05-14
 
 ### Added
