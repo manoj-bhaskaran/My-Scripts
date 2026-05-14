@@ -323,10 +323,15 @@ def test_parser_accepts_fresh_run_on_recover_and_download(tmp_path):
     assert args.fresh_run is True
 
 
-def test_parser_accepts_fresh_run_on_dry_run():
+def test_parser_rejects_fresh_run_on_dry_run():
+    """dry-run is preview-only and never calls _prepare_recovery, so --fresh-run
+    would be silently ignored. The parser must reject it rather than accept and
+    drop it on the floor."""
+    import pytest
+
     parser = create_parser()
-    args = parser.parse_args(["dry-run", "--fresh-run"])
-    assert args.fresh_run is True
+    with pytest.raises(SystemExit):
+        parser.parse_args(["dry-run", "--fresh-run"])
 
 
 def test_parser_fresh_run_defaults_to_false():

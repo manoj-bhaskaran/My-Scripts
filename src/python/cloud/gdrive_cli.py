@@ -290,6 +290,10 @@ For the compatibility matrix, transport notes, and performance presets: see READ
             default=0.0,
             help="If the state lock is held, wait up to this many seconds for it to be released (0 = no wait)",
         )
+    # --fresh-run is intentionally NOT added to dry-run: dry-run is preview-only
+    # and never calls _prepare_recovery, so the flag would be silently ignored
+    # and mislead users. Limit to the two state-mutating subcommands.
+    for subparser in [recover_parser, download_parser]:
         subparser.add_argument(
             "--fresh-run",
             action="store_true",
