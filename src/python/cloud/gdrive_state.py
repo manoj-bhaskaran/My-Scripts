@@ -65,6 +65,46 @@ class RecoveryStateManager:
         except Exception:
             return 0
 
+    @staticmethod
+    def _parse_scope_value(value: dict) -> Optional[RecoveryStateScope]:
+        """Coerce a raw JSON dict into a RecoveryStateScope, or None on error."""
+        try:
+            return RecoveryStateScope(
+                source=str(value.get("source", "")),
+                command=str(value.get("command", "")),
+                key=str(value.get("key", "")),
+            )
+        except Exception:
+            return None
+
+    @staticmethod
+    def _make_processed_record(rec: dict) -> ProcessedRecord:
+        """Coerce a raw JSON dict into a ProcessedRecord.
+
+        Falls back to a fully-flagged record on any conversion error so that
+        a corrupt entry does not cause an item to be reprocessed.
+        """
+        try:
+            return ProcessedRecord(
+                recovered=bool(rec.get("recovered", False)),
+                downloaded=bool(rec.get("downloaded", False)),
+                post_restored=bool(rec.get("post_restored", False)),
+                last_attempt_iso=str(rec.get("last_attempt_iso", "")),
+            )
+        except Exception:
+            return ProcessedRecord(recovered=True, downloaded=True, post_restored=True)
+
+    @staticmethod
+    def _parse_processed_items(value: dict) -> Dict[str, ProcessedRecord]:
+        """Convert a v3 wire-format dict to ``Dict[str, ProcessedRecord]``."""
+        converted: Dict[str, ProcessedRecord] = {}
+        for id_, rec in value.items():
+            if isinstance(rec, dict):
+                converted[str(id_)] = RecoveryStateManager._make_processed_record(rec)
+            elif isinstance(rec, ProcessedRecord):
+                converted[str(id_)] = rec
+        return converted
+
     def _assign_recovery_state_fields(self, data: Dict[str, Any]) -> RecoveryState:
         """Assign only known fields from data to a RecoveryState instance.
 
@@ -80,35 +120,10 @@ class RecoveryStateManager:
                 continue
             value = data[k]
             if k == "scope" and isinstance(value, dict):
-                try:
-                    value = RecoveryStateScope(
-                        source=str(value.get("source", "")),
-                        command=str(value.get("command", "")),
-                        key=str(value.get("key", "")),
-                    )
-                except Exception:
-                    value = None
+                value = self._parse_scope_value(value)
             elif k == "processed_items" and isinstance(value, dict):
-                # v3 wire format: convert each entry to a ProcessedRecord.
-                converted: Dict[str, ProcessedRecord] = {}
-                for id_, rec in value.items():
-                    if isinstance(rec, dict):
-                        try:
-                            converted[str(id_)] = ProcessedRecord(
-                                recovered=bool(rec.get("recovered", False)),
-                                downloaded=bool(rec.get("downloaded", False)),
-                                post_restored=bool(rec.get("post_restored", False)),
-                                last_attempt_iso=str(rec.get("last_attempt_iso", "")),
-                            )
-                        except Exception:
-                            converted[str(id_)] = ProcessedRecord(
-                                recovered=True, downloaded=True, post_restored=True
-                            )
-                    elif isinstance(rec, ProcessedRecord):
-                        converted[str(id_)] = rec
-                value = converted
-            # If value is a list (v2 wire format) it is kept as-is; _migrate_v2_to_v3
-            # converts it later.
+                value = self._parse_processed_items(value)
+            # Lists (v2 wire format) are kept as-is; _migrate_v2_to_v3 converts later.
             try:
                 setattr(new_state, k, value)
             except Exception:

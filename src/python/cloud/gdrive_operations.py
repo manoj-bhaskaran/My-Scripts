@@ -186,6 +186,38 @@ class DriveOperations:
             self._log_post_restore_final_error(item, detail, api_ctx)
         return False
 
+    def _run_recover_step(self, item: RecoveryItem) -> bool:
+        """Execute the untrash step and mark it on success.
+
+        Returns True when the step is complete (either because it succeeded or
+        because ``will_recover=False`` and no API call is needed).
+        """
+        if not item.will_recover:
+            self.state_manager._mark_step(item.id, "recovered")
+            return True
+        if not self._recover_file(item):
+            return False
+        self.state_manager._mark_step(item.id, "recovered")
+        return True
+
+    def _run_download_step(self, item: RecoveryItem) -> bool:
+        """Execute the download step and mark it on success."""
+        if not item.will_download:
+            return True
+        if not self.downloader.download(item):
+            return False
+        self.state_manager._mark_step(item.id, "downloaded")
+        return True
+
+    def _run_post_restore_step(self, item: RecoveryItem) -> bool:
+        """Execute the post-restore step and mark it on success."""
+        if not (item.will_download and item.status == "downloaded"):
+            return True
+        if not self._apply_post_restore_policy(item):
+            return False
+        self.state_manager._mark_step(item.id, "post_restored")
+        return True
+
     def _process_item(self, item: RecoveryItem) -> bool:
         # All required steps complete → skip entirely and count as skipped.
         # --fresh-run clears state.processed_items upstream so this check
@@ -195,35 +227,11 @@ class DriveOperations:
                 self.stats["skipped"] += 1
             return True
 
-        success = True
-
-        # Step 1: untrash.  _recover_file internally skips the API call when
-        # the "recovered" step is already flagged (per-step resume).
-        if item.will_recover:
-            if not self._recover_file(item):
-                success = False
-            else:
-                self.state_manager._mark_step(item.id, "recovered")
-        else:
-            # will_recover=False (folder-id / retry-failed-file mode): the file
-            # is already live, so the recover step is a no-op — mark as done so
-            # the record is consistent.
-            self.state_manager._mark_step(item.id, "recovered")
-
-        # Step 2: download.
-        if success and item.will_download:
-            if not self.downloader.download(item):
-                success = False
-            else:
-                self.state_manager._mark_step(item.id, "downloaded")
-
-        # Step 3: post-restore.
-        if success and item.will_download and item.status == "downloaded":
-            if not self._apply_post_restore_policy(item):
-                success = False
-            else:
-                self.state_manager._mark_step(item.id, "post_restored")
-
+        success = (
+            self._run_recover_step(item)
+            and self._run_download_step(item)
+            and self._run_post_restore_step(item)
+        )
         if not success:
             self._write_failed_file(item)
         return success
