@@ -63,17 +63,12 @@ class DriveOperations:
                 writer.writerow([item.source_folder_id, item.id, target])
 
     def _recover_file(self, item: RecoveryItem) -> bool:
-        # Invariant: this method never calls state_manager._mark_processed.
-        # Only _process_item marks state, and only on full success.
-        #
-        # Fresh-run handling: --fresh-run clears state.processed_items in
-        # _prepare_recovery, so the _is_processed check below naturally bypasses
-        # the short-circuit on a fresh run without needing to reference
-        # args.fresh_run here. (--overwrite no longer gates this check; see the
-        # deprecation shim in DriveTrashRecoveryTool._prepare_recovery.)
-        if self.state_manager._is_processed(item.id):
-            with self.stats_lock:
-                self.stats["skipped"] += 1
+        # Per-step resume: if "recovered" was already recorded in a prior run,
+        # skip the untrash API call and return True so the caller can continue
+        # with the download or post-restore step.  No "skipped" stat bump here —
+        # the item is still being processed; only _process_item's top-level
+        # _is_processed check treats an item as fully skipped.
+        if self.state_manager._step_is_done(item.id, "recovered"):
             return True
 
         service = self.auth._get_service()
@@ -191,26 +186,52 @@ class DriveOperations:
             self._log_post_restore_final_error(item, detail, api_ctx)
         return False
 
+    def _run_recover_step(self, item: RecoveryItem) -> bool:
+        """Execute the untrash step and mark it on success.
+
+        Returns True when the step is complete (either because it succeeded or
+        because ``will_recover=False`` and no API call is needed).
+        """
+        if not item.will_recover:
+            self.state_manager._mark_step(item.id, "recovered")
+            return True
+        if not self._recover_file(item):
+            return False
+        self.state_manager._mark_step(item.id, "recovered")
+        return True
+
+    def _run_download_step(self, item: RecoveryItem) -> bool:
+        """Execute the download step and mark it on success."""
+        if not item.will_download:
+            return True
+        if not self.downloader.download(item):
+            return False
+        self.state_manager._mark_step(item.id, "downloaded")
+        return True
+
+    def _run_post_restore_step(self, item: RecoveryItem) -> bool:
+        """Execute the post-restore step and mark it on success."""
+        if not (item.will_download and item.status == "downloaded"):
+            return True
+        if not self._apply_post_restore_policy(item):
+            return False
+        self.state_manager._mark_step(item.id, "post_restored")
+        return True
+
     def _process_item(self, item: RecoveryItem) -> bool:
-        # Fresh-run handling: --fresh-run clears state.processed_items in
-        # _prepare_recovery, so the _is_processed check below naturally
-        # bypasses the short-circuit on a fresh run.
-        if self.state_manager._is_processed(item.id):
+        # All required steps complete → skip entirely and count as skipped.
+        # --fresh-run clears state.processed_items upstream so this check
+        # naturally takes the False path on a fresh run.
+        if self.state_manager._is_processed(item):
             with self.stats_lock:
                 self.stats["skipped"] += 1
             return True
 
-        success = True
-        if item.will_recover and not self._recover_file(item):
-            success = False
-        if success and item.will_download and not self.downloader.download(item):
-            success = False
-        if success and item.will_download and item.status == "downloaded":
-            if not self._apply_post_restore_policy(item):
-                success = False
-
+        success = (
+            self._run_recover_step(item)
+            and self._run_download_step(item)
+            and self._run_post_restore_step(item)
+        )
         if not success:
             self._write_failed_file(item)
-        else:
-            self.state_manager._mark_processed(item.id)
         return success

@@ -9,16 +9,21 @@ This tool provides:
 - Optional download to local directory with conflict-safe filenames
 - Configurable post-restore policies (retain/trash/delete with aliases)
 - Comprehensive Dry Run mode with full planning and privilege validation
-- Resume capability for interrupted operations: only **successfully** processed
-  items are recorded in the state file, so failed items are retried automatically
-  on a subsequent rerun (successful items are skipped). To ignore prior progress
-  entirely and start over (regenerating run identity and truncating the
+- Resume capability for interrupted operations with **per-step granularity**
+  (schema v3): each item carries a ``ProcessedRecord`` with three flags —
+  ``recovered``, ``downloaded``, ``post_restored``. Only steps that actually
+  succeeded are recorded, so a run interrupted between untrash and download
+  will skip the untrash API call on rerun and retry only the download. Items
+  whose all required steps are complete are skipped entirely. To ignore prior
+  progress and start over (regenerating run identity and truncating the
   failed-file CSV), pass ``--fresh-run`` on either subcommand.
-  State files are **scope-aware** (schema v2): each file records the source
+  State files are **scope-aware** (schema v3): each file records the source
   (trash query / folder / file-ids / retry CSV) and command (recover-only vs.
   recover-and-download) used to create it. Reusing a state file under a
   different scope is rejected with exit code 2 unless ``--fresh-run`` is
-  passed; legacy v1 state files are migrated transparently on first load.
+  passed; legacy v1/v2 state files are migrated transparently on first load
+  (v1→v2 attaches a scope block; v2→v3 converts the flat ID list to per-step
+  records — both migrations are automatic and non-destructive).
 - Progress tracking and detailed summaries
 
 Requirements:

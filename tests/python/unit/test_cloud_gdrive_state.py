@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import gdrive_state
 import pytest
 
-from gdrive_models import RecoveryStateScope
+from gdrive_models import ProcessedRecord, RecoveryStateScope
 
 
 def _default_args(tmp_path, **overrides):
@@ -77,29 +77,29 @@ def test_save_state_succeeds_when_directory_already_exists(tmp_path):
 
 def test_reset_state_wipes_all_fields_except_schema_version(tmp_path):
     manager = _build_state_manager(tmp_path)
-    manager.state.processed_items = ["a", "b"]
+    manager.state.processed_items = {"a": ProcessedRecord(), "b": ProcessedRecord()}
     manager.state.run_id = "r"
     manager.state.start_time = "2020-01-01T00:00:00+00:00"
     manager.state.last_checkpoint = "2020-01-01T00:00:01+00:00"
     manager.state.total_found = 7
     manager.state.scope = RecoveryStateScope(source="folder_id", command="recover_only", key="x")
-    manager.state.schema_version = 2
+    manager.state.schema_version = 3
 
     prev_count = manager._reset_state()
 
     assert prev_count == 2
-    assert manager.state.processed_items == []
+    assert manager.state.processed_items == {}
     assert manager.state.run_id == ""
     assert manager.state.start_time == ""
     assert manager.state.last_checkpoint == ""
     assert manager.state.total_found == 0
     assert manager.state.scope is None
-    assert manager.state.schema_version == 2
+    assert manager.state.schema_version == 3
 
 
 def test_reset_state_with_empty_processed_items_returns_zero(tmp_path):
     manager = _build_state_manager(tmp_path)
-    manager.state.processed_items = []
+    manager.state.processed_items = {}
     manager.state.run_id = "r"
 
     prev_count = manager._reset_state()
@@ -111,7 +111,7 @@ def test_reset_state_with_empty_processed_items_returns_zero(tmp_path):
 def test_reset_state_preserves_schema_version_value(tmp_path):
     manager = _build_state_manager(tmp_path)
     manager.state.schema_version = 5
-    manager.state.processed_items = ["x"]
+    manager.state.processed_items = {"x": ProcessedRecord()}
 
     manager._reset_state()
 
@@ -178,7 +178,7 @@ def test_derive_scope_retry_failed_file_uses_absolute_path(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# v1 -> v2 migration
+# v1 -> v2 -> v3 migration (chained)
 # ---------------------------------------------------------------------------
 
 
@@ -195,14 +195,22 @@ def _write_v1_state(path: Path, processed_items, owner_pid=12345):
     path.write_text(json.dumps(state))
 
 
-def test_load_v1_state_migrates_to_v2_and_preserves_processed_items(tmp_path, capsys):
+def test_load_v1_state_migrates_to_v3_and_preserves_processed_items(tmp_path, capsys):
+    """v1 files undergo chained v1→v2→v3 migration in a single load."""
     state_path = Path(tmp_path) / "state.json"
     _write_v1_state(state_path, processed_items=["a", "b", "c"])
     manager = _build_state_manager(tmp_path, mode="recover_only", extensions=["pdf"])
 
     assert manager._load_state() is True
-    assert manager.state.processed_items == ["a", "b", "c"]
-    assert manager.state.schema_version == 2
+    # processed_items must be a fully-flagged dict (no reprocessing).
+    pi = manager.state.processed_items
+    assert isinstance(pi, dict)
+    assert set(pi.keys()) == {"a", "b", "c"}
+    for rec in pi.values():
+        assert rec.recovered is True
+        assert rec.downloaded is True
+        assert rec.post_restored is True
+    assert manager.state.schema_version == 3
     assert manager.state.scope is not None
     assert manager.state.scope.source == "trash_query"
     assert manager.state.scope.command == "recover_only"
@@ -211,6 +219,7 @@ def test_load_v1_state_migrates_to_v2_and_preserves_processed_items(tmp_path, ca
 
     captured = capsys.readouterr()
     assert "Migrating state file from schema v1 to v2" in captured.out
+    assert "Migrating state file from schema v2 to v3" in captured.out
 
 
 def test_load_v1_state_with_no_schema_version_field_treated_as_legacy(tmp_path):
@@ -219,13 +228,16 @@ def test_load_v1_state_with_no_schema_version_field_treated_as_legacy(tmp_path):
     manager = _build_state_manager(tmp_path, mode="recover_only")
 
     assert manager._load_state() is True
-    assert manager.state.processed_items == ["x"]
-    assert manager.state.schema_version == 2
+    pi = manager.state.processed_items
+    assert isinstance(pi, dict)
+    assert "x" in pi
+    assert pi["x"].recovered is True
+    assert manager.state.schema_version == 3
     assert manager.state.scope is not None
 
 
 # ---------------------------------------------------------------------------
-# v2 scope match / mismatch
+# v2 -> v3 migration
 # ---------------------------------------------------------------------------
 
 
@@ -233,13 +245,35 @@ def _write_v2_state(path: Path, scope: RecoveryStateScope, processed_items=None)
     state = {
         "schema_version": 2,
         "total_found": 1,
-        "processed_items": processed_items or [],
+        "processed_items": processed_items if processed_items is not None else [],
         "start_time": "2024-01-01T00:00:00+00:00",
         "last_checkpoint": "2024-01-01T00:00:10+00:00",
         "run_id": "run-id",
         "scope": {"source": scope.source, "command": scope.command, "key": scope.key},
     }
     path.write_text(json.dumps(state))
+
+
+def test_load_v2_state_migrates_to_v3_and_preserves_ids(tmp_path, capsys):
+    """v2 List[str] processed_items must be converted to v3 fully-flagged records."""
+    state_path = Path(tmp_path) / "state.json"
+    manager = _build_state_manager(tmp_path, mode="recover_only", folder_id="F1")
+    saved_scope = manager._derive_scope_from_args()
+    _write_v2_state(state_path, saved_scope, processed_items=["id-1", "id-2"])
+
+    assert manager._load_state() is True
+    pi = manager.state.processed_items
+    assert isinstance(pi, dict)
+    assert set(pi.keys()) == {"id-1", "id-2"}
+    for rec in pi.values():
+        assert rec.recovered is True
+        assert rec.downloaded is True
+        assert rec.post_restored is True
+    assert manager.state.schema_version == 3
+
+    captured = capsys.readouterr()
+    assert "Migrating state file from schema v2 to v3" in captured.out
+    assert "2 items converted" in captured.out
 
 
 def test_load_v2_state_matching_scope_resumes(tmp_path):
@@ -249,7 +283,7 @@ def test_load_v2_state_matching_scope_resumes(tmp_path):
     _write_v2_state(state_path, saved_scope, processed_items=["a"])
 
     assert manager._load_state() is True
-    assert manager.state.processed_items == ["a"]
+    assert "a" in manager.state.processed_items
     assert manager.state.scope == saved_scope
 
 
@@ -276,18 +310,24 @@ def test_load_v2_mismatched_scope_with_fresh_run_does_not_raise(tmp_path):
     assert manager._load_state() is True
 
 
-def test_save_state_writes_v2_with_scope(tmp_path):
+def test_save_state_writes_v3_with_scope(tmp_path):
     state_path = Path(tmp_path) / "state.json"
     manager = _build_state_manager(tmp_path, mode="recover_and_download", folder_id="F2")
-    manager.state.processed_items = ["x", "y"]
+    manager.state.processed_items = {
+        "x": ProcessedRecord(recovered=True, downloaded=True, post_restored=True),
+        "y": ProcessedRecord(recovered=True, downloaded=False, post_restored=False),
+    }
     manager._save_state()
 
     saved = json.loads(state_path.read_text())
-    assert saved["schema_version"] == 2
+    assert saved["schema_version"] == 3
     assert saved["scope"]["source"] == "folder_id"
     assert saved["scope"]["command"] == "recover_and_download"
     assert saved["scope"]["key"] == "F2"
     assert "owner_pid" not in saved
+    # Serialised records must be dicts with boolean fields.
+    assert saved["processed_items"]["x"]["recovered"] is True
+    assert saved["processed_items"]["y"]["downloaded"] is False
 
 
 def test_load_v2_state_missing_scope_block_rebuilds_from_args(tmp_path):
@@ -312,11 +352,7 @@ def test_load_v2_state_missing_scope_block_rebuilds_from_args(tmp_path):
 
 
 def test_load_state_corrupted_scope_dict_falls_through_to_rebuild(tmp_path):
-    """If the JSON scope dict can't be coerced (e.g. non-string fields), the
-    loader leaves scope=None and the loader rebuilds it from current args."""
     state_path = Path(tmp_path) / "state.json"
-    # processed_items field is intentionally wrong type to exercise the
-    # broad except in _assign_recovery_state_fields (post_init repairs it).
     state_path.write_text(
         json.dumps(
             {
@@ -326,14 +362,13 @@ def test_load_state_corrupted_scope_dict_falls_through_to_rebuild(tmp_path):
             }
         )
     )
-    # Saved scope matches current → loads cleanly.
     manager = _build_state_manager(tmp_path, mode="recover_only", folder_id="OLD")
     assert manager._load_state() is True
     assert manager.state.scope is not None
 
 
 def test_load_newer_schema_falls_back_to_current(tmp_path, caplog):
-    """A state file with schema_version > 2 logs an info line and resets the
+    """A state file with schema_version > 3 logs an info line and resets the
     in-memory schema_version to the current value."""
     import logging
 
@@ -342,7 +377,7 @@ def test_load_newer_schema_falls_back_to_current(tmp_path, caplog):
         json.dumps(
             {
                 "schema_version": 99,
-                "processed_items": ["a"],
+                "processed_items": [],
             }
         )
     )
@@ -403,7 +438,7 @@ def test_load_v1_migration_tolerates_logger_exception(tmp_path):
     manager = gdrive_state.RecoveryStateManager(args, logger)
     # Should not raise — the exception path inside _print_migration_notice is swallowed.
     assert manager._load_state() is True
-    assert manager.state.schema_version == 2
+    assert manager.state.schema_version == 3
 
 
 def test_load_newer_schema_tolerates_logger_exception(tmp_path):
@@ -415,7 +450,7 @@ def test_load_newer_schema_tolerates_logger_exception(tmp_path):
     logger.info.side_effect = RuntimeError("logger boom")
     manager = gdrive_state.RecoveryStateManager(args, logger)
     assert manager._load_state() is True
-    assert manager.state.schema_version == 2
+    assert manager.state.schema_version == 3
 
 
 def test_load_state_callback_exception_is_swallowed(tmp_path):
@@ -439,3 +474,167 @@ def test_state_scope_mismatch_error_carries_both_scopes():
     assert err.saved_scope is saved
     assert err.current_scope is current
     assert "scope mismatch" in str(err)
+
+
+# ---------------------------------------------------------------------------
+# _required_steps
+# ---------------------------------------------------------------------------
+
+
+def _fake_item(will_recover=True, will_download=False):
+    """Return a minimal stub with will_recover and will_download attributes."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id="stub-id", will_recover=will_recover, will_download=will_download)
+
+
+def test_required_steps_recover_only(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    item = _fake_item(will_recover=True, will_download=False)
+    assert manager._required_steps(item) == {"recovered"}
+
+
+def test_required_steps_recover_and_download_with_recover(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    item = _fake_item(will_recover=True, will_download=True)
+    assert manager._required_steps(item) == {"recovered", "downloaded", "post_restored"}
+
+
+def test_required_steps_recover_and_download_without_recover(tmp_path):
+    """folder-id / retry-failed-file items have will_recover=False."""
+    manager = _build_state_manager(tmp_path)
+    item = _fake_item(will_recover=False, will_download=True)
+    assert manager._required_steps(item) == {"downloaded", "post_restored"}
+
+
+def test_required_steps_no_recover_no_download(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    item = _fake_item(will_recover=False, will_download=False)
+    assert manager._required_steps(item) == set()
+
+
+# ---------------------------------------------------------------------------
+# _is_processed (per-step)
+# ---------------------------------------------------------------------------
+
+
+def test_is_processed_returns_false_when_no_record(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    item = _fake_item(will_recover=True, will_download=False)
+    assert manager._is_processed(item) is False
+
+
+def test_is_processed_recover_only_true_when_recovered_flagged(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    item = _fake_item(will_recover=True, will_download=False)
+    manager.state.processed_items["stub-id"] = ProcessedRecord(recovered=True)
+    assert manager._is_processed(item) is True
+
+
+def test_is_processed_recover_and_download_requires_all_three(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    item = _fake_item(will_recover=True, will_download=True)
+    # Only recovered — not yet complete.
+    manager.state.processed_items["stub-id"] = ProcessedRecord(recovered=True)
+    assert manager._is_processed(item) is False
+    # All three set.
+    manager.state.processed_items["stub-id"] = ProcessedRecord(
+        recovered=True, downloaded=True, post_restored=True
+    )
+    assert manager._is_processed(item) is True
+
+
+def test_is_processed_folder_id_item_ignores_recovered_flag(tmp_path):
+    """For will_recover=False items, only downloaded+post_restored are required."""
+    manager = _build_state_manager(tmp_path)
+    item = _fake_item(will_recover=False, will_download=True)
+    manager.state.processed_items["stub-id"] = ProcessedRecord(
+        recovered=False, downloaded=True, post_restored=True
+    )
+    assert manager._is_processed(item) is True
+
+
+# ---------------------------------------------------------------------------
+# _mark_step / _step_is_done
+# ---------------------------------------------------------------------------
+
+
+def test_mark_step_creates_record_and_sets_flag(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    manager._mark_step("id-1", "recovered")
+    rec = manager.state.processed_items.get("id-1")
+    assert rec is not None
+    assert rec.recovered is True
+    assert rec.last_attempt_iso != ""
+    assert manager.state.last_checkpoint != ""
+
+
+def test_mark_step_updates_existing_record(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    manager._mark_step("id-1", "recovered")
+    manager._mark_step("id-1", "downloaded")
+    rec = manager.state.processed_items["id-1"]
+    assert rec.recovered is True
+    assert rec.downloaded is True
+    assert rec.post_restored is False
+
+
+def test_step_is_done_false_when_no_record(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    assert manager._step_is_done("missing-id", "recovered") is False
+
+
+def test_step_is_done_false_when_flag_not_set(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    manager.state.processed_items["id-1"] = ProcessedRecord(recovered=False)
+    assert manager._step_is_done("id-1", "recovered") is False
+
+
+def test_step_is_done_true_when_flag_set(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    manager.state.processed_items["id-1"] = ProcessedRecord(recovered=True)
+    assert manager._step_is_done("id-1", "recovered") is True
+
+
+# ---------------------------------------------------------------------------
+# Per-step resume scenario
+# ---------------------------------------------------------------------------
+
+
+def test_per_step_resume_recovered_done_download_pending(tmp_path):
+    """An item with recovered=True but downloaded=False skips the recovered
+    requirement in _is_processed and is NOT considered fully processed."""
+    manager = _build_state_manager(tmp_path)
+    item = _fake_item(will_recover=True, will_download=True)
+    manager.state.processed_items["stub-id"] = ProcessedRecord(
+        recovered=True, downloaded=False, post_restored=False
+    )
+    # Not fully processed — download step is still pending.
+    assert manager._is_processed(item) is False
+    # But the recovered step is individually done.
+    assert manager._step_is_done("stub-id", "recovered") is True
+    assert manager._step_is_done("stub-id", "downloaded") is False
+
+
+# ---------------------------------------------------------------------------
+# v3 round-trip: save then load
+# ---------------------------------------------------------------------------
+
+
+def test_v3_state_round_trips_through_json(tmp_path):
+    """ProcessedRecord dicts must survive a save/load cycle intact."""
+    state_path = Path(tmp_path) / "state.json"
+    manager = _build_state_manager(tmp_path, mode="recover_and_download", folder_id="F3")
+    manager._mark_step("id-A", "recovered")
+    manager._mark_step("id-A", "downloaded")
+    manager._mark_step("id-B", "recovered")
+    manager._save_state()
+
+    manager2 = _build_state_manager(tmp_path, mode="recover_and_download", folder_id="F3")
+    manager2._load_state()
+
+    assert manager2._step_is_done("id-A", "recovered") is True
+    assert manager2._step_is_done("id-A", "downloaded") is True
+    assert manager2._step_is_done("id-A", "post_restored") is False
+    assert manager2._step_is_done("id-B", "recovered") is True
+    assert manager2._step_is_done("id-B", "downloaded") is False

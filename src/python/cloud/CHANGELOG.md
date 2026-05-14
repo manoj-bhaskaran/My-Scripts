@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.24.0] - 2026-05-14
+
+### Added
+
+- **Per-item step records with v2 → v3 schema migration (#1030):** `processed_items` has been promoted from a flat `List[str]` (O(n) membership) to a `Dict[str, ProcessedRecord]` (O(1) membership) where each record carries three boolean flags — `recovered`, `downloaded`, `post_restored` — and a `last_attempt_iso` timestamp for diagnostics.
+  - `_process_item` now calls `_mark_step(item_id, step)` after each individual pipeline step succeeds instead of marking the item as a whole only at the end. This means an interrupted run that completed the untrash step but not the download step will skip the untrash API call on the next run and retry only the download.
+  - `_recover_file` checks `_step_is_done(item_id, "recovered")` and skips the `files.update(trashed=False)` call when the untrash step is already recorded, preventing redundant (and noisy) 4xx calls against live files.
+  - `_is_processed(item)` now takes the full `RecoveryItem` so it can compute which steps are required for that item (e.g. `recovered` only for recover-only mode; `recovered + downloaded + post_restored` for recover-and-download; `downloaded + post_restored` for folder-id / retry-failed-file items where `will_recover=False`).
+  - New `_required_steps(item)` helper encapsulates this logic; new `_step_is_done(item_id, step)` exposes individual step checks.
+  - `_mark_step` serialises dict mutations with an internal `_state_lock` (`threading.Lock`); callers must not hold `stats_lock` when calling it to avoid deadlock (see module docstring in `gdrive_state.py`).
+- **New `ProcessedRecord` dataclass** in `gdrive_models.py` with fields `recovered`, `downloaded`, `post_restored` (bool, default `False`) and `last_attempt_iso` (str).
+
+### Changed
+
+- **`RecoveryState.schema_version` default is now 3.** New state files are written at v3 immediately.
+- **`RecoveryState.processed_items` type changed** from `Optional[List[str]]` to `Optional[Dict[str, ProcessedRecord]]`; `__post_init__` initialises it to `{}` instead of `[]`.
+- **`_mark_processed(item_id)` is now a backward-compat wrapper** that marks all three steps as done. New code uses `_mark_step` per step.
+
+### Migration
+
+- **v2 → v3 is automatic and non-destructive.** On first load of a v2 state file, every ID in the `processed_items` list is converted to a `ProcessedRecord(recovered=True, downloaded=True, post_restored=True)` — all steps are treated as fully complete so no item is reprocessed.
+- **v0/v1 → v3 chained migration** also works in a single load: the v1 → v2 scope-synthesis step runs first, then the v2 → v3 list-to-dict conversion.
+- **Migration is one-way.** There is no v3 → v2 downgrade. Keep a copy of your state file before running v1.24.0 for the first time if you want to be able to roll back. If you need to retry previously-failed items use `--retry-failed-file <csv>` or `--fresh-run`.
+
 ## [1.23.3] - 2026-05-14
 
 ### Fixed

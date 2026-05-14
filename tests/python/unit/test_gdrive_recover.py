@@ -402,7 +402,7 @@ def test_prepare_recovery_fresh_run_resets_state_and_regenerates_identity(
     args.no_emoji = True
     tool = DriveTrashRecoveryTool(args)
     tool.auth.authenticate = MagicMock(return_value=True)
-    tool.state_manager.state.processed_items = ["id-1", "id-2"]
+    tool.state_manager.state.processed_items = {"id-1": None, "id-2": None}
     tool.state_manager.state.run_id = "old-run-id"
     tool.state_manager.state.start_time = "2020-01-01T00:00:00+00:00"
     tool.state_manager.state.total_found = 42
@@ -411,12 +411,12 @@ def test_prepare_recovery_fresh_run_resets_state_and_regenerates_identity(
     tool._prepare_recovery(streaming_mode=True)
 
     # All identity fields wiped, processed_items cleared
-    assert tool.state_manager.state.processed_items == []
+    assert tool.state_manager.state.processed_items == {}
     assert tool.state_manager.state.run_id == ""
     assert tool.state_manager.state.start_time == ""
     assert tool.state_manager.state.last_checkpoint == ""
-    # schema_version preserved (now defaults to 2)
-    assert tool.state_manager.state.schema_version == 2
+    # schema_version preserved (now defaults to 3)
+    assert tool.state_manager.state.schema_version == 3
     # owner_pid field has been retired
     assert not hasattr(tool.state_manager.state, "owner_pid")
     captured = capsys.readouterr()
@@ -482,14 +482,14 @@ def test_prepare_recovery_overwrite_with_fresh_run_still_resets_state(
     args.no_emoji = True
     tool = DriveTrashRecoveryTool(args)
     tool.auth.authenticate = MagicMock(return_value=True)
-    tool.state_manager.state.processed_items = ["id-1"]
+    tool.state_manager.state.processed_items = {"id-1": None}
 
     tool._prepare_recovery(streaming_mode=True)
 
     captured = capsys.readouterr()
     assert "no longer implies" not in captured.err
     # fresh-run path still resets state
-    assert tool.state_manager.state.processed_items == []
+    assert tool.state_manager.state.processed_items == {}
 
 
 # ---------------------------------------------------------------------------
