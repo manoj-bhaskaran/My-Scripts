@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.21.1] - 2026-05-14
+
+### Fixed
+
+- **`--retry-failed-file` now sets `will_recover=False` for all retried items:** Files written to the failed-file CSV are already live in Drive (the untrash step either succeeded or was not needed); previously they inherited `will_recover=True` and triggered a redundant — and in edge cases incorrect — `files.update(trashed=False)` call before download. A new `_retry_mode` flag (set on `args` by `main()`) tells `_process_file_data` to skip the recover step.
+- **`--retry-failed-file` no longer falls back to a full trash query when the CSV has no actionable rows:** `main()` now exits with code 1 and a clear message instead of continuing with an empty `args.file_ids` list, which previously caused the tool to discover and process all trashed files.
+- **Trash-prefetch validation skipped in retry mode:** `_validate_file_ids_if_present` is a no-op when `_retry_mode` is set; the prefetch classifies live files as "skipped_non_trashed" which would have caused confusing log output and potentially dropped all retry IDs from streaming.
+- **`--failed-file` and `--retry-failed-file` cannot point to the same path:** Reading and writing the same CSV in one run would silently corrupt it. A new check in `_validate_retry_failed_file_arg` rejects this combination with an informative error message.
+- **Removed unused `import io`** from `gdrive_operations.py` (leftover from draft implementation).
+
+## [1.21.0] - 2026-05-14
+
+### Added
+
+- **CSV failed-file output (`--failed-file`):** The file written by `--failed-file` is now a proper CSV instead of a plain text list.  Each row contains three columns:
+  - `source_folder_id` — Drive ID of the parent folder the file was discovered in
+  - `file_id` — Drive file ID (stable identifier, suitable for retry)
+  - `target_path` — full local path where the file was (or would be) saved
+
+  A header row is written automatically on the first entry of each run.  When `--overwrite` truncates the file, the header is written immediately so the file is always a valid CSV.  The `source_folder_id` is populated from the `parents` field returned by the Drive API for every discovery mode (trash query, `--file-ids`, and `--folder-id` BFS traversal).
+
+- **`--retry-failed-file <csv>` for `recover-and-download`:** New argument that accepts a CSV produced by `--failed-file` and retries only the file IDs it contains, restoring each file to its original target path.  The flag is mutually exclusive with `--file-ids` and `--folder-id`; validation rejects missing files, directories, and conflicting flags.
+
+- **`source_folder_id` field on `RecoveryItem`:** Populated at discovery time with the first element of the Drive `parents` array; exposed for downstream consumers and used when writing the failed-file CSV.
+
+- **`parents` requested from Drive API in all discovery modes:** `_id_discovery_fields()` now unconditionally includes `parents` so `source_folder_id` is available regardless of whether the run uses `--file-ids`, `--folder-id`, or a trash query.
+
+### Changed
+
+- `DriveOperations._write_failed_file` rewrites plain-text append logic to use `csv.writer`; writes a header row when the destination file is new or empty.
+- `DriveOperations._clear_failed_files` writes the CSV header row (instead of an empty file) so the cleared file remains a valid CSV.
+- `DriveTrashRecoveryTool._generate_target_path` checks `args._target_path_overrides` (populated from the retry CSV) before computing a new path, ensuring retried files land exactly where the original run intended.
+- Module docstring updated with retry example; CLI epilog updated with retry examples and CSV file extension.
+
+### Notes
+
+- **Breaking change for `--failed-file` consumers:** The output file is now CSV, not plain text.  Update any scripts that read the failed-file line-by-line to use a CSV reader; the `target_path` column contains the same value as the previous plain-text entry.
+- Retry mode (`--retry-failed-file`) sets `will_recover=False`; it issues download-only requests.  If a file was moved back to trash between the original run and the retry, the download will fail with HTTP 403/404 and be recorded in the (new) `--failed-file` if one is supplied.
+
 ## [1.20.2] - 2026-05-12
 
 ### Tests

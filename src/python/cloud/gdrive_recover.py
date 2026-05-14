@@ -189,10 +189,11 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
         --log-file ./logs/run.log \
         --post-restore-policy retain
 
-    # Record failed item paths to a file for inspection or retry (appends by default)
+    # Record failed items to a CSV for inspection or retry (appends by default)
+    # CSV columns: source_folder_id, file_id, target_path
     python gdrive_recover.py recover-and-download \
         --download-dir ./recovered \
-        --failed-file ./failed_paths.txt \
+        --failed-file ./failed.csv \
         --post-restore-policy retain
 
     # Use both together; on --overwrite the failed-file is cleared first
@@ -200,8 +201,15 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
         --download-dir ./recovered \
         --overwrite \
         --log-file ./logs/run.log \
-        --failed-file ./logs/failed.txt \
+        --failed-file ./logs/failed.csv \
         --post-restore-policy retain
+
+    # Retry only the failed items from a previous run using the CSV
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --retry-failed-file ./logs/failed.csv \
+        --post-restore-policy retain \
+        --yes
 
 **Concurrency and locking**::
 
@@ -413,6 +421,9 @@ class DriveTrashRecoveryTool:
             return ""
         item_name = item.get("name", "") if isinstance(item, Mapping) else item.name
         item_id = item.get("id", "") if isinstance(item, Mapping) else item.id
+        overrides: dict = getattr(self.args, "_target_path_overrides", {})
+        if overrides and item_id in overrides:
+            return overrides[item_id]
         relative_path = "" if isinstance(item, Mapping) else item.relative_path
         safe_name = "".join(
             c for c in str(item_name) if c.isalnum() or c in (" ", "-", "_", ".")

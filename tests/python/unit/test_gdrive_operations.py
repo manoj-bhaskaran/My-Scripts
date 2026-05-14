@@ -1,3 +1,4 @@
+import csv
 from pathlib import Path
 from threading import Lock
 from types import SimpleNamespace
@@ -191,33 +192,48 @@ def test_process_item_proceeds_when_overwrite_and_already_processed():
 # ---------------------------------------------------------------------------
 
 
+def _parse_csv_rows(path):
+    """Return (header, list-of-row-dicts) from a CSV file."""
+    with open(path, newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        rows = list(reader)
+    return reader.fieldnames, rows
+
+
 def test_write_failed_file_appends_target_path(tmp_path):
     ops = _make_ops()
-    failed_file = tmp_path / "failed.txt"
+    failed_file = tmp_path / "failed.csv"
     ops._failed_file_path = str(failed_file)
 
     item = _item()
     item.target_path = "/local/downloads/file.txt"
+    item.source_folder_id = "folder-abc"
     ops._write_failed_file(item)
 
-    assert failed_file.read_text() == "/local/downloads/file.txt\n"
+    _, rows = _parse_csv_rows(str(failed_file))
+    assert len(rows) == 1
+    assert rows[0]["source_folder_id"] == "folder-abc"
+    assert rows[0]["file_id"] == item.id
+    assert rows[0]["target_path"] == "/local/downloads/file.txt"
 
 
 def test_write_failed_file_falls_back_to_name_when_no_target_path(tmp_path):
     ops = _make_ops()
-    failed_file = tmp_path / "failed.txt"
+    failed_file = tmp_path / "failed.csv"
     ops._failed_file_path = str(failed_file)
 
     item = _item()
     item.target_path = ""
     ops._write_failed_file(item)
 
-    assert failed_file.read_text() == "file.txt\n"
+    _, rows = _parse_csv_rows(str(failed_file))
+    assert len(rows) == 1
+    assert rows[0]["target_path"] == "file.txt"
 
 
 def test_write_failed_file_creates_parent_dirs(tmp_path):
     ops = _make_ops()
-    failed_file = tmp_path / "nested" / "dir" / "failed.txt"
+    failed_file = tmp_path / "nested" / "dir" / "failed.csv"
     ops._failed_file_path = str(failed_file)
 
     item = _item()
@@ -225,21 +241,44 @@ def test_write_failed_file_creates_parent_dirs(tmp_path):
     ops._write_failed_file(item)
 
     assert failed_file.exists()
-    assert failed_file.read_text() == "/a/path.jpg\n"
+    _, rows = _parse_csv_rows(str(failed_file))
+    assert rows[0]["target_path"] == "/a/path.jpg"
 
 
 def test_write_failed_file_appends_multiple_entries(tmp_path):
     ops = _make_ops()
-    failed_file = tmp_path / "failed.txt"
+    failed_file = tmp_path / "failed.csv"
     ops._failed_file_path = str(failed_file)
 
     for i in range(3):
         item = _item()
+        item.id = f"id-{i}"
         item.target_path = f"/path/file{i}.txt"
         ops._write_failed_file(item)
 
-    lines = failed_file.read_text().splitlines()
-    assert lines == ["/path/file0.txt", "/path/file1.txt", "/path/file2.txt"]
+    _, rows = _parse_csv_rows(str(failed_file))
+    assert len(rows) == 3
+    assert [r["target_path"] for r in rows] == [
+        "/path/file0.txt",
+        "/path/file1.txt",
+        "/path/file2.txt",
+    ]
+
+
+def test_write_failed_file_writes_header_once_for_multiple_entries(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.csv"
+    ops._failed_file_path = str(failed_file)
+
+    for i in range(2):
+        item = _item()
+        item.id = f"id-{i}"
+        item.target_path = f"/path/file{i}.txt"
+        ops._write_failed_file(item)
+
+    lines = failed_file.read_text(encoding="utf-8").splitlines()
+    header_count = sum(1 for ln in lines if ln.startswith("source_folder_id"))
+    assert header_count == 1
 
 
 def test_write_failed_file_noop_when_path_not_set(tmp_path):
@@ -251,26 +290,29 @@ def test_write_failed_file_noop_when_path_not_set(tmp_path):
     ops._write_failed_file(item)  # should not raise or create any file
 
 
-def test_clear_failed_files_truncates_file(tmp_path):
+def test_clear_failed_files_writes_header(tmp_path):
     ops = _make_ops()
-    failed_file = tmp_path / "failed.txt"
-    failed_file.write_text("/old/path.txt\n")
-    ops._failed_file_path = str(failed_file)
-
-    ops._clear_failed_files()
-
-    assert failed_file.read_text() == ""
-
-
-def test_clear_failed_files_creates_parent_dirs(tmp_path):
-    ops = _make_ops()
-    failed_file = tmp_path / "new" / "dir" / "failed.txt"
+    failed_file = tmp_path / "failed.csv"
+    failed_file.write_text("stale content\n", encoding="utf-8")
     ops._failed_file_path = str(failed_file)
 
     ops._clear_failed_files()
 
     assert failed_file.exists()
-    assert failed_file.read_text() == ""
+    lines = failed_file.read_text(encoding="utf-8").splitlines()
+    assert lines == ["source_folder_id,file_id,target_path"]
+
+
+def test_clear_failed_files_creates_parent_dirs(tmp_path):
+    ops = _make_ops()
+    failed_file = tmp_path / "new" / "dir" / "failed.csv"
+    ops._failed_file_path = str(failed_file)
+
+    ops._clear_failed_files()
+
+    assert failed_file.exists()
+    lines = failed_file.read_text(encoding="utf-8").splitlines()
+    assert lines == ["source_folder_id,file_id,target_path"]
 
 
 def test_clear_failed_files_noop_when_path_not_set():
@@ -294,7 +336,8 @@ def test_process_item_writes_failed_file_on_failure(tmp_path, monkeypatch):
     ok = ops._process_item(item)
 
     assert ok is False
-    assert failed_file.read_text() == "/downloads/file.txt\n"
+    _, rows = _parse_csv_rows(str(failed_file))
+    assert len(rows) == 1 and rows[0]["target_path"] == "/downloads/file.txt"
 
 
 def test_process_item_does_not_write_failed_file_on_success(tmp_path):
@@ -342,7 +385,8 @@ def test_process_item_writes_failed_file_on_post_restore_failure(tmp_path, monke
     ok = ops._process_item(item)
 
     assert ok is False
-    assert failed_file.read_text() == "/downloads/file.txt\n"
+    _, rows = _parse_csv_rows(str(failed_file))
+    assert len(rows) == 1 and rows[0]["target_path"] == "/downloads/file.txt"
 
 
 # ---------------------------------------------------------------------------
@@ -464,4 +508,5 @@ def test_process_item_download_failure_sets_success_false(tmp_path):
     ok = ops._process_item(item)
 
     assert ok is False
-    assert failed_file.read_text() == "/downloads/file.txt\n"
+    _, rows = _parse_csv_rows(str(failed_file))
+    assert len(rows) == 1 and rows[0]["target_path"] == "/downloads/file.txt"

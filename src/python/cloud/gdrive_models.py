@@ -49,6 +49,7 @@ class RecoveryItem:
     post_restore_action: str = ""
     status: str = "pending"  # pending, recovered, downloaded, failed
     error_message: str = ""
+    source_folder_id: str = ""  # Drive ID of the file's parent folder at discovery time
 
     def __post_init__(self):
         if not self.post_restore_action:

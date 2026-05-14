@@ -19,6 +19,9 @@ sys.modules["gdrive_recover"] = MagicMock()
 from gdrive_cli import (  # noqa: E402
     _validate_folder_id_args,
     _validate_failed_file_arg,
+    _validate_retry_failed_file_arg,
+    _load_retry_failed_file,
+    _apply_retry_failed_file,
     create_parser,
 )
 
@@ -140,3 +143,162 @@ def test_parser_failed_file_defaults_to_empty():
     parser = create_parser()
     args = parser.parse_args(["dry-run"])
     assert args.failed_file == ""
+
+
+# ---------------------------------------------------------------------------
+# _validate_retry_failed_file_arg
+# ---------------------------------------------------------------------------
+
+
+def test_validate_retry_failed_file_arg_empty_passes():
+    ok, code = _validate_retry_failed_file_arg(_args(retry_failed_file=""))
+    assert ok and code == 0
+
+
+def test_validate_retry_failed_file_arg_nonexistent_file_rejected(tmp_path):
+    path = tmp_path / "missing.csv"
+    ok, code = _validate_retry_failed_file_arg(_args(retry_failed_file=str(path)))
+    assert not ok and code == 2
+
+
+def test_validate_retry_failed_file_arg_directory_rejected(tmp_path):
+    ok, code = _validate_retry_failed_file_arg(_args(retry_failed_file=str(tmp_path)))
+    assert not ok and code == 2
+
+
+def test_validate_retry_failed_file_arg_with_file_ids_rejected(tmp_path):
+    csv_file = tmp_path / "failed.csv"
+    csv_file.write_text("source_folder_id,file_id,target_path\nf1,id1,/p1\n")
+    ok, code = _validate_retry_failed_file_arg(
+        _args(retry_failed_file=str(csv_file), file_ids=["id1"])
+    )
+    assert not ok and code == 2
+
+
+def test_validate_retry_failed_file_arg_with_folder_id_rejected(tmp_path):
+    csv_file = tmp_path / "failed.csv"
+    csv_file.write_text("source_folder_id,file_id,target_path\nf1,id1,/p1\n")
+    ok, code = _validate_retry_failed_file_arg(
+        _args(retry_failed_file=str(csv_file), folder_id="folder123")
+    )
+    assert not ok and code == 2
+
+
+def test_validate_retry_failed_file_arg_valid_file_passes(tmp_path):
+    csv_file = tmp_path / "failed.csv"
+    csv_file.write_text("source_folder_id,file_id,target_path\nf1,id1,/p1\n")
+    ok, code = _validate_retry_failed_file_arg(_args(retry_failed_file=str(csv_file)))
+    assert ok and code == 0
+
+
+def test_validate_retry_failed_file_same_as_failed_file_rejected(tmp_path):
+    csv_file = tmp_path / "failed.csv"
+    csv_file.write_text("source_folder_id,file_id,target_path\nf1,id1,/p1\n")
+    ok, code = _validate_retry_failed_file_arg(
+        _args(retry_failed_file=str(csv_file), failed_file=str(csv_file))
+    )
+    assert not ok and code == 2
+
+
+# ---------------------------------------------------------------------------
+# _load_retry_failed_file
+# ---------------------------------------------------------------------------
+
+
+def test_load_retry_failed_file_parses_rows(tmp_path):
+    csv_file = tmp_path / "failed.csv"
+    csv_file.write_text(
+        "source_folder_id,file_id,target_path\nfolder1,id1,/a/b.txt\nfolder2,id2,/c/d.jpg\n"
+    )
+    ok, code, overrides = _load_retry_failed_file(str(csv_file))
+    assert ok and code == 0
+    assert overrides == {"id1": "/a/b.txt", "id2": "/c/d.jpg"}
+
+
+def test_load_retry_failed_file_missing_file_id_column_rejected(tmp_path):
+    csv_file = tmp_path / "bad.csv"
+    csv_file.write_text("source_folder_id,target_path\nfolder1,/a/b.txt\n")
+    ok, code, overrides = _load_retry_failed_file(str(csv_file))
+    assert not ok and code == 2
+
+
+def test_load_retry_failed_file_empty_rows_returns_empty_overrides(tmp_path):
+    csv_file = tmp_path / "empty.csv"
+    csv_file.write_text("source_folder_id,file_id,target_path\n")
+    ok, code, overrides = _load_retry_failed_file(str(csv_file))
+    # _load_retry_failed_file succeeds; main() is responsible for the early exit on empty result.
+    assert ok and code == 0
+    assert overrides == {}
+
+
+# ---------------------------------------------------------------------------
+# Parser accepts --retry-failed-file on recover-and-download
+# ---------------------------------------------------------------------------
+
+
+def test_parser_accepts_retry_failed_file_on_recover_and_download(tmp_path):
+    parser = create_parser()
+    args = parser.parse_args(
+        ["recover-and-download", "--download-dir", str(tmp_path), "--retry-failed-file", "./f.csv"]
+    )
+    assert args.retry_failed_file == "./f.csv"
+
+
+def test_parser_retry_failed_file_defaults_to_empty(tmp_path):
+    parser = create_parser()
+    args = parser.parse_args(["recover-and-download", "--download-dir", str(tmp_path)])
+    assert args.retry_failed_file == ""
+
+
+# ---------------------------------------------------------------------------
+# _apply_retry_failed_file
+# ---------------------------------------------------------------------------
+
+
+def test_apply_retry_failed_file_no_path_sets_defaults():
+    """No --retry-failed-file: sets safe defaults and returns True."""
+    args = _args(retry_failed_file="", failed_file="")
+    ok, code = _apply_retry_failed_file(args)
+    assert ok and code == 0
+    assert args._retry_mode is False
+    assert args._target_path_overrides == {}
+
+
+def test_apply_retry_failed_file_nonexistent_path_rejected(tmp_path):
+    path = tmp_path / "missing.csv"
+    args = _args(retry_failed_file=str(path), failed_file="")
+    ok, code = _apply_retry_failed_file(args)
+    assert not ok and code == 2
+
+
+def test_apply_retry_failed_file_empty_csv_rejected(tmp_path):
+    """An existing CSV with no data rows should return False with exit code 1."""
+    csv_file = tmp_path / "empty.csv"
+    csv_file.write_text("source_folder_id,file_id,target_path\n")
+    args = _args(retry_failed_file=str(csv_file), failed_file="")
+    ok, code = _apply_retry_failed_file(args)
+    assert not ok and code == 1
+
+
+def test_apply_retry_failed_file_valid_csv_populates_args(tmp_path):
+    csv_file = tmp_path / "failed.csv"
+    csv_file.write_text(
+        "source_folder_id,file_id,target_path\nfolder1,id1,/a/b.txt\nfolder2,id2,/c/d.jpg\n"
+    )
+    args = _args(retry_failed_file=str(csv_file), failed_file="")
+    ok, code = _apply_retry_failed_file(args)
+    assert ok and code == 0
+    assert args._retry_mode is True
+    assert args.file_ids == ["id1", "id2"]
+    assert args._target_path_overrides == {"id1": "/a/b.txt", "id2": "/c/d.jpg"}
+
+
+def test_apply_retry_failed_file_same_as_failed_file_rejected(tmp_path):
+    csv_file = tmp_path / "failed.csv"
+    csv_file.write_text("source_folder_id,file_id,target_path\nf1,id1,/p1\n")
+    args = _args(
+        retry_failed_file=str(csv_file),
+        failed_file=str(csv_file),
+    )
+    ok, code = _apply_retry_failed_file(args)
+    assert not ok and code == 2

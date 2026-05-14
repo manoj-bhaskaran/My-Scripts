@@ -458,13 +458,18 @@ class DriveTrashDiscovery:
             self.logger.debug("Skipping file metadata without id: %s", file_data)
             return None
 
-        # Files discovered via --folder-id are not in trash; skip the untrash step.
-        will_recover = not bool(getattr(self.args, "folder_id", None))
+        # Files discovered via --folder-id or from a retry CSV are already live; skip untrash.
+        will_recover = not bool(getattr(self.args, "folder_id", None)) and not bool(
+            getattr(self.args, "_retry_mode", False)
+        )
 
         dry_run_with_dir = self.args.mode == "dry_run" and bool(
             getattr(self.args, "download_dir", None)
         )
         will_download = self.args.mode == "recover_and_download" or dry_run_with_dir
+
+        parents = file_data.get("parents") or []
+        source_folder_id = parents[0] if parents else ""
 
         item = RecoveryItem(
             id=str(file_id),
@@ -476,6 +481,7 @@ class DriveTrashDiscovery:
             will_download=will_download,
             relative_path=relative_path,
             post_restore_action=PostRestorePolicy.normalize(self.args.post_restore_policy),
+            source_folder_id=source_folder_id,
         )
 
         if self.args.mode == "recover_and_download" or dry_run_with_dir:
@@ -491,7 +497,7 @@ class DriveTrashDiscovery:
             items.append(item)
 
     def _id_discovery_fields(self) -> str:
-        base_fields = ["id", "name", "mimeType", "trashed", "createdTime"]
+        base_fields = ["id", "name", "mimeType", "trashed", "createdTime", "parents"]
         dry_run_with_dir = self.args.mode == "dry_run" and bool(
             getattr(self.args, "download_dir", None)
         )
