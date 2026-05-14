@@ -562,47 +562,61 @@ class DriveTrashRecoveryTool:
         if not self.auth.authenticate():
             return False, False
         self.state_manager._load_state()
-        fresh_run = getattr(self.args, "fresh_run", False)
-        overwrite = getattr(self.args, "overwrite", False)
-        if fresh_run:
-            cleared = self.state_manager._reset_state()
-            if cleared:
-                prefix = "🔄" if not getattr(self.args, "no_emoji", False) else "INFO"
-                print(
-                    f"{prefix} --fresh-run: cleared {cleared} previously processed item(s) "
-                    "from state and regenerated run identity"
-                )
-            self.ops._clear_failed_files()
-        elif overwrite:
-            # Deprecation shim: keep combined behavior for one release.
-            print(
-                "WARN --overwrite no longer implies state/failed-file reset in a future "
-                "release. Use --fresh-run to clear state and the failed-file CSV. "
-                "This combined behavior will be removed in v1.23.0.",
-                file=sys.stderr,
-            )
-            cleared = self.state_manager._clear_processed_items()
-            if cleared:
-                prefix = "🔄" if not getattr(self.args, "no_emoji", False) else "INFO"
-                print(
-                    f"{prefix} --overwrite: cleared {cleared} previously processed item(s) from state"
-                )
-            self.ops._clear_failed_files()
+        self._apply_pre_run_reset()
         self.state = self.state_manager.state
         if streaming_mode:
-            # Ensure counters are clean for streaming; discovery will bump these.
-            self.items = self.items or []
-            self._seen_total = 0
-            self._processed_total = 0
-            self.stats["found"] = 0
-            return True, True  # we can’t know yet; streaming will determine
-        else:
-            if not self.items:
-                self.items = self.discover_trashed_files()
-            has_files = len(self.items) > 0
-            if not has_files:
-                self.reporter.print_no_files_to_process()
-            return True, has_files
+            return True, self._init_streaming_counters()
+        return True, self._eager_discover_and_report()
+
+    def _apply_pre_run_reset(self) -> None:
+        """Dispatch to --fresh-run reset or the --overwrite deprecation shim."""
+        if getattr(self.args, "fresh_run", False):
+            self._fresh_run_reset()
+        elif getattr(self.args, "overwrite", False):
+            self._overwrite_deprecation_reset()
+
+    def _reset_prefix(self) -> str:
+        return "🔄" if not getattr(self.args, "no_emoji", False) else "INFO"
+
+    def _fresh_run_reset(self) -> None:
+        cleared = self.state_manager._reset_state()
+        if cleared:
+            print(
+                f"{self._reset_prefix()} --fresh-run: cleared {cleared} previously "
+                "processed item(s) from state and regenerated run identity"
+            )
+        self.ops._clear_failed_files()
+
+    def _overwrite_deprecation_reset(self) -> None:
+        print(
+            "WARN --overwrite no longer implies state/failed-file reset in a future "
+            "release. Use --fresh-run to clear state and the failed-file CSV. "
+            "This combined behavior will be removed in v1.23.0.",
+            file=sys.stderr,
+        )
+        cleared = self.state_manager._clear_processed_items()
+        if cleared:
+            print(
+                f"{self._reset_prefix()} --overwrite: cleared {cleared} previously "
+                "processed item(s) from state"
+            )
+        self.ops._clear_failed_files()
+
+    def _init_streaming_counters(self) -> bool:
+        """Reset counters for streaming; streaming discovery determines the count."""
+        self.items = self.items or []
+        self._seen_total = 0
+        self._processed_total = 0
+        self.stats["found"] = 0
+        return True
+
+    def _eager_discover_and_report(self) -> bool:
+        if not self.items:
+            self.items = self.discover_trashed_files()
+        has_files = len(self.items) > 0
+        if not has_files:
+            self.reporter.print_no_files_to_process()
+        return has_files
 
     def _get_safety_confirmation(self) -> bool:
         if self.args.yes:
