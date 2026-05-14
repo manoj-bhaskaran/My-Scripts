@@ -58,7 +58,24 @@ class DriveDownloader:
         self.stats_lock = stats_lock
 
     def download(self, item: RecoveryItem) -> bool:
-        """Download item to item.target_path. Returns True on success."""
+        """Download item to item.target_path. Returns True on success.
+
+        When ``--skip-existing`` is set and the target path already exists on
+        disk, no bytes are written: the item is marked as successfully
+        downloaded so that per-step state advances and the post-restore step
+        still runs, and ``stats["skipped_existing"]`` is incremented for the
+        run summary.
+        """
+        if getattr(self.args, "skip_existing", False):
+            target = Path(item.target_path)
+            if target.exists():
+                item.status = "downloaded"
+                with self.stats_lock:
+                    self.stats["skipped_existing"] += 1
+                self.logger.info(
+                    "Skipped existing file (--skip-existing): %s", item.target_path
+                )
+                return True
         return self._download_file(item)
 
     def _atomic_replace_with_retry(

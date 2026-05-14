@@ -414,12 +414,13 @@ class RecoveryReporter:
         try:
             self.logger.info(
                 "Run interrupted: mode=%s found=%d recovered=%d downloaded=%d "
-                "skipped=%d errors=%d",
+                "skipped=%d skipped_existing=%d errors=%d",
                 getattr(self.args, "mode", ""),
                 self.stats.get("found", 0),
                 self.stats.get("recovered", 0),
                 self.stats.get("downloaded", 0),
                 self.stats.get("skipped", 0),
+                self.stats.get("skipped_existing", 0),
                 self.stats.get("errors", 0),
             )
         except Exception:
@@ -444,6 +445,11 @@ class RecoveryReporter:
             print(f"  - Moved to trash: {self.stats['post_restore_trashed']}")
             print(f"  - Permanently deleted: {self.stats['post_restore_deleted']}")
         print(f"Files skipped (already processed successfully): {self.stats['skipped']}")
+        if self.stats.get("skipped_existing", 0) > 0:
+            print(
+                f"Files skipped (already on disk, --skip-existing): "
+                f"{self.stats['skipped_existing']}"
+            )
         print(f"Errors encountered: {self.stats['errors']}")
         print(f"Execution time: {elapsed_time:.1f} seconds")
         if self.stats["errors"] > 0:
@@ -460,19 +466,23 @@ class RecoveryReporter:
             success_count = self.stats["recovered"]
             success_label = "Recovery success rate"
         else:
-            success_count = self.stats["downloaded"]
+            # Files that --skip-existing left untouched are still logical
+            # successes (the target is on disk and post-restore was applied),
+            # so include them in the numerator alongside fresh downloads.
+            success_count = self.stats["downloaded"] + self.stats.get("skipped_existing", 0)
             success_label = "Download success rate"
         success_rate = (success_count / self.stats["found"] * 100) if self.stats["found"] > 0 else 0
         print(f"\n{self._sym_done()} {success_label}: {success_rate:.1f}%")
         try:
             self.logger.info(
                 "Run complete: mode=%s found=%d recovered=%d downloaded=%d "
-                "skipped=%d errors=%d elapsed=%.1fs success_rate=%.1f%%",
+                "skipped=%d skipped_existing=%d errors=%d elapsed=%.1fs success_rate=%.1f%%",
                 getattr(self.args, "mode", ""),
                 self.stats["found"],
                 self.stats["recovered"],
                 self.stats["downloaded"],
                 self.stats["skipped"],
+                self.stats.get("skipped_existing", 0),
                 self.stats["errors"],
                 elapsed_time,
                 success_rate,

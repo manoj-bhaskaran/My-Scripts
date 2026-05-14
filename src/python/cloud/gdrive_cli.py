@@ -61,6 +61,7 @@ Examples:
     %(prog)s recover-and-download --download-dir ./recovered --state-file ./state.json --yes
     %(prog)s recover-and-download --download-dir ./recovered --direct-download --post-restore-policy retain
     %(prog)s recover-and-download --download-dir ./recovered --overwrite --post-restore-policy retain
+    %(prog)s recover-and-download --download-dir ./recovered --skip-existing --post-restore-policy retain
 
   Folder-scoped download (download a live Drive folder and all subfolders):
     %(prog)s dry-run --folder-id FOLDER_ID --download-dir ./backup --post-restore-policy retain
@@ -310,13 +311,27 @@ For the compatibility matrix, transport notes, and performance presets: see READ
             "but an interruption may leave a partially written file."
         ),
     )
-    download_parser.add_argument(
+    collision_group = download_parser.add_mutually_exclusive_group()
+    collision_group.add_argument(
         "--overwrite",
         action="store_true",
         help=(
             "Overwrite existing local files instead of generating a conflict-safe name. "
             "By default, if a file already exists at the target path a short unique suffix "
-            "is appended; this flag disables that behaviour and replaces the existing file."
+            "is appended; this flag disables that behaviour and replaces the existing file. "
+            "Mutually exclusive with --skip-existing."
+        ),
+    )
+    collision_group.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help=(
+            "Skip the download if a file already exists at the target path. The item is "
+            "still counted as a successful operation (post-restore policy is applied as "
+            "usual) but no bytes are written and the existing file is left untouched. "
+            "Skips are reported in the summary under 'Files skipped (already on disk)'. "
+            "Mutually exclusive with --overwrite. Without either flag, the default "
+            "behaviour appends a short unique suffix to avoid the collision."
         ),
     )
     download_parser.add_argument(
