@@ -270,9 +270,7 @@ def test_load_v2_mismatched_scope_with_fresh_run_does_not_raise(tmp_path):
     state_path = Path(tmp_path) / "state.json"
     saved_scope = RecoveryStateScope(source="folder_id", command="recover_only", key="OTHER")
     _write_v2_state(state_path, saved_scope, processed_items=["a"])
-    manager = _build_state_manager(
-        tmp_path, mode="recover_only", folder_id="F1", fresh_run=True
-    )
+    manager = _build_state_manager(tmp_path, mode="recover_only", folder_id="F1", fresh_run=True)
 
     # No exception — fresh-run bypasses the guard.
     assert manager._load_state() is True

@@ -556,9 +556,7 @@ def test_no_log_file_when_not_specified(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_prepare_recovery_overwrite_alone_does_not_clear_failed_file(
-    tmp_path, monkeypatch, capsys
-):
+def test_prepare_recovery_overwrite_alone_does_not_clear_failed_file(tmp_path, monkeypatch, capsys):
     """v1.23.0: --overwrite is strictly a local-file collision policy and no
     longer truncates the failed-file CSV. Use --fresh-run for that."""
     monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())

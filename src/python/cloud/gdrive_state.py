@@ -11,7 +11,6 @@ from typing import Any, Dict, Callable, Optional
 
 from gdrive_models import RecoveryState, RecoveryStateScope
 
-
 CURRENT_SCHEMA_VERSION = 2
 
 
