@@ -60,6 +60,8 @@ class DriveOperations:
                 writer.writerow([item.source_folder_id, item.id, target])
 
     def _recover_file(self, item: RecoveryItem) -> bool:
+        # Invariant: this method never calls state_manager._mark_processed.
+        # Only _process_item marks state, and only on full success.
         if not getattr(self.args, "overwrite", False) and self.state_manager._is_processed(item.id):
             with self.stats_lock:
                 self.stats["skipped"] += 1
@@ -195,6 +197,6 @@ class DriveOperations:
 
         if not success:
             self._write_failed_file(item)
-
-        self.state_manager._mark_processed(item.id)
+        else:
+            self.state_manager._mark_processed(item.id)
         return success

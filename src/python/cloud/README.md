@@ -122,6 +122,10 @@ python gdrive_recover.py recover-only --file-ids FILE_ID_1 FILE_ID_2 --yes
 python gdrive_recover.py recover-only --state-file ./my_state.json --yes
 ```
 
+> **Resume semantics:** the state file records only **successfully** processed items.
+> Items that failed mid-run are written to `--failed-file` (when configured) and are
+> retried automatically on the next rerun against the same state file.
+
 > **Note:** `--folder-id` cannot be used with `recover-only`. Folder-scoped files are not in trash,
 > so there is nothing to untrash. Use `recover-and-download --post-restore-policy retain` instead.
 
