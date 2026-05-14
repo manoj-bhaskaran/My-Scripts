@@ -311,6 +311,28 @@ def test_update_tty_uses_carriage_return(capsys, monkeypatch):
     assert not out.endswith("\n")
 
 
+def test_update_force_bypasses_throttle(capsys):
+    """force=True must emit a render even when the throttle interval has not elapsed."""
+    bar = _pb(no_emoji=True, total=None)  # streaming mode (no fixed total)
+    bar._is_tty = False
+    bar._last_render = time.time()  # would normally be throttled
+    bar.update(57513, time.time() - 1, discovered=57513, force=True)
+    out = capsys.readouterr().out
+    assert "processed=57513" in out
+
+
+def test_reporter_print_stream_progress_force_passes_through(capsys):
+    """RecoveryReporter._print_stream_progress(force=True) must propagate to ProgressBar.update."""
+    r = _reporter(mode="recover_and_download")
+    r._start_progress(total=None)
+    r._progress_bar._is_tty = False
+    r._progress_bar._last_render = time.time()  # throttled
+    r._print_stream_progress(57513, time.time() - 1, 57513, file_ids=None, force=True)
+    out = capsys.readouterr().out
+    assert "processed=57513" in out
+    assert "discovered=57513" not in out  # equal counts → no "discovered=" suffix
+
+
 # ---------------------------------------------------------------------------
 # ProgressBar — close
 # ---------------------------------------------------------------------------
@@ -421,9 +443,13 @@ def test_print_stream_progress_delegates_to_bar(monkeypatch):
     r = _reporter()
     r._start_progress(total=None)
     called_with = []
-    monkeypatch.setattr(r._progress_bar, "update", lambda c, st, d=0: called_with.append((c, d)))
+    monkeypatch.setattr(
+        r._progress_bar,
+        "update",
+        lambda c, st, d=0, force=False: called_with.append((c, d, force)),
+    )
     r._print_stream_progress(42, time.time() - 1, 100, None)
-    assert called_with == [(42, 100)]
+    assert called_with == [(42, 100, False)]
 
 
 def test_print_stream_progress_fallback_when_no_bar(capsys):

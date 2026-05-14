@@ -603,3 +603,48 @@ def test_prepare_recovery_does_not_clear_failed_file_without_overwrite(tmp_path,
     assert (
         failed_file.read_text() == existing
     ), "failed-file should not be touched without --overwrite"
+
+
+# ---------------------------------------------------------------------------
+# End-of-stream forced final progress render
+# ---------------------------------------------------------------------------
+
+
+def test_print_final_stream_progress_invokes_force_render(tmp_path, monkeypatch):
+    """At end of streaming the tool must force one last progress render so the
+    displayed totals are not stale (regression: trailing ``processed=`` count
+    was off by up to one worker-batch from the true totals)."""
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    args = _build_dummy_args(tmp_path)
+    tool = DriveTrashRecoveryTool(args)
+    tool.reporter._should_show_progress = MagicMock(return_value=True)
+    tool.reporter._print_stream_progress = MagicMock()
+    tool._seen_total = 57513
+    tool._processed_total = 57513
+
+    tool._print_final_stream_progress(start_time=0.0)
+
+    tool.reporter._print_stream_progress.assert_called_once()
+    _, kwargs = tool.reporter._print_stream_progress.call_args
+    args_call, _ = tool.reporter._print_stream_progress.call_args
+    # processed_total, start_time, seen_total, file_ids, force=True
+    assert args_call[0] == 57513
+    assert args_call[2] == 57513
+    assert kwargs.get("force") is True
+
+
+def test_print_final_stream_progress_skipped_when_progress_disabled(tmp_path, monkeypatch):
+    """No render is attempted when progress display is disabled (non-TTY, no -v)."""
+    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
+    from gdrive_recover import DriveTrashRecoveryTool
+
+    args = _build_dummy_args(tmp_path)
+    tool = DriveTrashRecoveryTool(args)
+    tool.reporter._should_show_progress = MagicMock(return_value=False)
+    tool.reporter._print_stream_progress = MagicMock()
+
+    tool._print_final_stream_progress(start_time=0.0)
+
+    tool.reporter._print_stream_progress.assert_not_called()

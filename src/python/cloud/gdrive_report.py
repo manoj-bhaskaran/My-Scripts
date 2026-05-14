@@ -63,11 +63,17 @@ class ProgressBar:
             return f"{sym} processed={count} discovered={discovered} {sep} {rate:.1f}/sec"
         return f"{sym} processed={count} {sep} {rate:.1f}/sec"
 
-    def update(self, count: int, start_time: float, discovered: int = 0) -> None:
-        """Emit a progress update, throttled to avoid flooding output."""
+    def update(
+        self, count: int, start_time: float, discovered: int = 0, force: bool = False
+    ) -> None:
+        """Emit a progress update, throttled to avoid flooding output.
+
+        Pass ``force=True`` to bypass the throttle (e.g. for the final render
+        at end-of-run so the displayed totals match the true totals).
+        """
         now = time.time()
         interval = self.TTY_INTERVAL if self._is_tty else self.LOG_INTERVAL
-        if now - self._last_render < interval:
+        if not force and now - self._last_render < interval:
             return
         self._last_render = now
         line = self._format_line(count, start_time, discovered)
@@ -345,9 +351,10 @@ class RecoveryReporter:
         start_time: float,
         seen_total: int,
         file_ids: Optional[List[str]],
+        force: bool = False,
     ) -> None:
         if self._progress_bar is not None:
-            self._progress_bar.update(processed_total, start_time, seen_total)
+            self._progress_bar.update(processed_total, start_time, seen_total, force=force)
             return
         elapsed = time.time() - start_time
         rate = processed_total / elapsed if elapsed > 0 else 0
