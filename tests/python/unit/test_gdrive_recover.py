@@ -471,7 +471,11 @@ def test_prepare_recovery_clears_failed_file_on_overwrite(tmp_path, monkeypatch,
 
     tool._prepare_recovery(streaming_mode=True)
 
-    assert failed_file.read_text() == "", "failed-file should be truncated on --overwrite"
+    # _clear_failed_files now writes a CSV header so the file is a valid empty CSV, not truly empty.
+    lines = failed_file.read_text(encoding="utf-8").splitlines()
+    assert lines == ["source_folder_id,file_id,target_path"], (
+        "failed-file should be reset to a bare CSV header on --overwrite"
+    )
 
 
 def test_prepare_recovery_does_not_clear_failed_file_without_overwrite(tmp_path, monkeypatch):
