@@ -122,12 +122,6 @@ For the compatibility matrix, transport notes, and performance presets: see READ
         default=None,
         help="Local directory for downloads (optional; shown in plan output when provided)",
     )
-    recover_parser.add_argument(
-        "--download-dir",
-        default=None,
-        help="Local directory for downloads (optional; shown in plan output when provided)",
-    )
-
     for subparser in [dry_run_parser, recover_parser, download_parser]:
         subparser.add_argument(
             "--no-emoji",

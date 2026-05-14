@@ -65,7 +65,7 @@ def test_folder_id_with_dry_run_passes():
 
 
 # ---------------------------------------------------------------------------
-# --download-dir accepted by dry-run and recover-only
+# --download-dir accepted by dry-run (optional); required for recover-and-download
 # ---------------------------------------------------------------------------
 
 
@@ -75,21 +75,9 @@ def test_dry_run_accepts_download_dir():
     assert args.download_dir == "./out"
 
 
-def test_recover_only_accepts_download_dir():
-    parser = create_parser()
-    args = parser.parse_args(["recover-only", "--download-dir", "./out"])
-    assert args.download_dir == "./out"
-
-
 def test_dry_run_download_dir_defaults_to_none():
     parser = create_parser()
     args = parser.parse_args(["dry-run"])
-    assert args.download_dir is None
-
-
-def test_recover_only_download_dir_defaults_to_none():
-    parser = create_parser()
-    args = parser.parse_args(["recover-only"])
     assert args.download_dir is None
 
 
