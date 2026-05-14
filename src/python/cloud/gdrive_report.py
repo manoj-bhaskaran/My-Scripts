@@ -404,6 +404,19 @@ class RecoveryReporter:
     def print_interrupted_state_saved(self) -> None:
         self._close_progress()
         self._print_warn("Operation interrupted. State saved for resume.")
+        try:
+            self.logger.info(
+                "Run interrupted: mode=%s found=%d recovered=%d downloaded=%d "
+                "skipped=%d errors=%d",
+                getattr(self.args, "mode", ""),
+                self.stats.get("found", 0),
+                self.stats.get("recovered", 0),
+                self.stats.get("downloaded", 0),
+                self.stats.get("skipped", 0),
+                self.stats.get("errors", 0),
+            )
+        except Exception:
+            pass
 
     def _print_summary(self, elapsed_time: float, state: RecoveryState) -> None:
         self._close_progress()
@@ -444,3 +457,18 @@ class RecoveryReporter:
             success_label = "Download success rate"
         success_rate = (success_count / self.stats["found"] * 100) if self.stats["found"] > 0 else 0
         print(f"\n{self._sym_done()} {success_label}: {success_rate:.1f}%")
+        try:
+            self.logger.info(
+                "Run complete: mode=%s found=%d recovered=%d downloaded=%d "
+                "skipped=%d errors=%d elapsed=%.1fs success_rate=%.1f%%",
+                getattr(self.args, "mode", ""),
+                self.stats["found"],
+                self.stats["recovered"],
+                self.stats["downloaded"],
+                self.stats["skipped"],
+                self.stats["errors"],
+                elapsed_time,
+                success_rate,
+            )
+        except Exception:
+            pass

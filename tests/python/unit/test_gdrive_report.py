@@ -484,3 +484,61 @@ def test_interrupted_state_saved_closes_bar(capsys):
     r.print_interrupted_state_saved()
     assert r._progress_bar is None
     capsys.readouterr()
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — end-of-run summary is logged at INFO (for log files)
+# ---------------------------------------------------------------------------
+
+
+def test_print_summary_emits_structured_info_log(capsys):
+    stats = _make_stats(found=57513, recovered=0, downloaded=12, skipped=57501, errors=0)
+    r = _reporter(mode="recover_and_download")
+    r.stats = stats
+    r._print_summary(2432.8, RecoveryState())
+    capsys.readouterr()
+    # Find the structured "Run complete" log call.
+    matches = [
+        call
+        for call in r.logger.info.call_args_list
+        if call.args and "Run complete" in call.args[0]
+    ]
+    assert len(matches) == 1, "expected exactly one structured Run complete INFO log"
+    fmt, *fmt_args = matches[0].args
+    rendered = fmt % tuple(fmt_args)
+    assert "mode=recover_and_download" in rendered
+    assert "found=57513" in rendered
+    assert "downloaded=12" in rendered
+    assert "skipped=57501" in rendered
+    assert "errors=0" in rendered
+    assert "elapsed=2432.8s" in rendered
+
+
+def test_print_summary_logger_failure_is_swallowed(capsys):
+    """A misbehaving logger must not break the user-facing summary."""
+    r = _reporter(mode="recover_only")
+    r.stats = _make_stats(found=1, recovered=1)
+    r.logger.info.side_effect = RuntimeError("logger down")
+    # Must not raise; stdout summary still rendered.
+    r._print_summary(1.0, RecoveryState())
+    out = capsys.readouterr().out
+    assert "Recovery success rate" in out
+
+
+def test_print_interrupted_emits_structured_info_log(capsys):
+    r = _reporter(mode="recover_and_download")
+    r.stats = _make_stats(found=10, recovered=0, downloaded=3, skipped=2, errors=1)
+    r.print_interrupted_state_saved()
+    capsys.readouterr()
+    matches = [
+        call
+        for call in r.logger.info.call_args_list
+        if call.args and "Run interrupted" in call.args[0]
+    ]
+    assert len(matches) == 1
+    fmt, *fmt_args = matches[0].args
+    rendered = fmt % tuple(fmt_args)
+    assert "mode=recover_and_download" in rendered
+    assert "downloaded=3" in rendered
+    assert "skipped=2" in rendered
+    assert "errors=1" in rendered
