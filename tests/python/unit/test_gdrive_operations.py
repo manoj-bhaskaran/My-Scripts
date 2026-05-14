@@ -138,7 +138,7 @@ def test_recover_file_skips_untrash_when_step_already_done():
     ok = ops._recover_file(item)
 
     assert ok is True
-    assert ops.stats["skipped"] == 0   # not skipped, just resuming
+    assert ops.stats["skipped"] == 0  # not skipped, just resuming
     assert ops.stats["recovered"] == 0  # no API call
     # No Drive service call
     ops.auth._get_service.assert_not_called()

@@ -65,8 +65,8 @@ class ProcessedRecord:
     ``_mark_step`` call and is useful for diagnostics.
     """
 
-    recovered: bool = False      # untrash succeeded (or will_recover=False)
-    downloaded: bool = False     # local download completed (or will_download=False)
+    recovered: bool = False  # untrash succeeded (or will_recover=False)
+    downloaded: bool = False  # local download completed (or will_download=False)
     post_restored: bool = False  # post-restore policy applied (including retain no-op)
     last_attempt_iso: str = ""
 
