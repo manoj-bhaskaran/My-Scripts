@@ -288,3 +288,154 @@ def test_save_state_writes_v2_with_scope(tmp_path):
     assert saved["scope"]["command"] == "recover_and_download"
     assert saved["scope"]["key"] == "F2"
     assert "owner_pid" not in saved
+
+
+def test_load_v2_state_missing_scope_block_rebuilds_from_args(tmp_path):
+    """A v2 file with schema_version=2 but no scope block (corrupted) should be
+    repaired by synthesizing the scope from current args rather than raising."""
+    state_path = Path(tmp_path) / "state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "processed_items": ["a"],
+                "run_id": "rid",
+                # no scope field
+            }
+        )
+    )
+    manager = _build_state_manager(tmp_path, mode="recover_only", folder_id="F9")
+
+    assert manager._load_state() is True
+    assert manager.state.scope is not None
+    assert manager.state.scope.key == "F9"
+
+
+def test_load_state_corrupted_scope_dict_falls_through_to_rebuild(tmp_path):
+    """If the JSON scope dict can't be coerced (e.g. non-string fields), the
+    loader leaves scope=None and the loader rebuilds it from current args."""
+    state_path = Path(tmp_path) / "state.json"
+    # processed_items field is intentionally wrong type to exercise the
+    # broad except in _assign_recovery_state_fields (post_init repairs it).
+    state_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "processed_items": ["a"],
+                "scope": {"source": "folder_id", "command": "recover_only", "key": "OLD"},
+            }
+        )
+    )
+    # Saved scope matches current → loads cleanly.
+    manager = _build_state_manager(tmp_path, mode="recover_only", folder_id="OLD")
+    assert manager._load_state() is True
+    assert manager.state.scope is not None
+
+
+def test_load_newer_schema_falls_back_to_current(tmp_path, caplog):
+    """A state file with schema_version > 2 logs an info line and resets the
+    in-memory schema_version to the current value."""
+    import logging
+
+    state_path = Path(tmp_path) / "state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 99,
+                "processed_items": ["a"],
+            }
+        )
+    )
+    manager = _build_state_manager(tmp_path, mode="recover_only")
+    with caplog.at_level(logging.INFO):
+        manager.logger = logging.getLogger("test-newer-schema")
+        assert manager._load_state() is True
+    assert manager.state.schema_version == gdrive_state.CURRENT_SCHEMA_VERSION
+
+
+def test_load_state_corrupt_json_invokes_error_callback(tmp_path):
+    """A malformed JSON file should not raise out of _load_state; it should
+    return False and invoke the on_state_load_error callback if provided."""
+    state_path = Path(tmp_path) / "state.json"
+    state_path.write_text("{not valid json")
+    args = _default_args(tmp_path)
+    callback_calls = []
+    manager = gdrive_state.RecoveryStateManager(
+        args, MagicMock(), on_state_load_error=lambda: callback_calls.append(1)
+    )
+    assert manager._load_state() is False
+    assert callback_calls == [1]
+
+
+def test_load_state_no_file_returns_false(tmp_path):
+    """If the state file does not exist, _load_state returns False with no side effects."""
+    manager = _build_state_manager(tmp_path)
+    assert not Path(manager.args.state_file).exists()
+    assert manager._load_state() is False
+
+
+def test_save_state_sets_scope_when_initially_none(tmp_path):
+    """_save_state must derive a scope when state.scope is None at save time."""
+    state_path = Path(tmp_path) / "state.json"
+    manager = _build_state_manager(tmp_path, mode="recover_only", folder_id="FX")
+    assert manager.state.scope is None
+    manager._save_state()
+    saved = json.loads(state_path.read_text())
+    assert saved["scope"]["key"] == "FX"
+
+
+def test_derive_scope_dry_run_mode_falls_back_label(tmp_path):
+    """`dry_run` mode (which never persists state) should still produce a
+    RecoveryStateScope without raising — guards against accidental save paths."""
+    manager = _build_state_manager(tmp_path, mode="dry_run")
+    scope = manager._derive_scope_from_args()
+    assert scope.source == "trash_query"
+    assert scope.command == "dry_run"
+
+
+def test_load_v1_migration_tolerates_logger_exception(tmp_path):
+    """The info log inside _print_migration_notice must not surface a logger error."""
+    state_path = Path(tmp_path) / "state.json"
+    _write_v1_state(state_path, processed_items=["a"])
+    args = _default_args(tmp_path, mode="recover_only")
+    logger = MagicMock()
+    logger.info.side_effect = RuntimeError("logger boom")
+    manager = gdrive_state.RecoveryStateManager(args, logger)
+    # Should not raise — the exception path inside _print_migration_notice is swallowed.
+    assert manager._load_state() is True
+    assert manager.state.schema_version == 2
+
+
+def test_load_newer_schema_tolerates_logger_exception(tmp_path):
+    """The info log inside _log_newer_schema must not surface a logger error."""
+    state_path = Path(tmp_path) / "state.json"
+    state_path.write_text(json.dumps({"schema_version": 99, "processed_items": []}))
+    args = _default_args(tmp_path, mode="recover_only")
+    logger = MagicMock()
+    logger.info.side_effect = RuntimeError("logger boom")
+    manager = gdrive_state.RecoveryStateManager(args, logger)
+    assert manager._load_state() is True
+    assert manager.state.schema_version == 2
+
+
+def test_load_state_callback_exception_is_swallowed(tmp_path):
+    """If the on_state_load_error callback itself raises, _load_state should
+    still return False rather than propagating the secondary failure."""
+    state_path = Path(tmp_path) / "state.json"
+    state_path.write_text("{not valid json")
+    args = _default_args(tmp_path)
+    manager = gdrive_state.RecoveryStateManager(
+        args,
+        MagicMock(),
+        on_state_load_error=lambda: (_ for _ in ()).throw(RuntimeError("cb boom")),
+    )
+    assert manager._load_state() is False
+
+
+def test_state_scope_mismatch_error_carries_both_scopes():
+    saved = RecoveryStateScope(source="folder_id", command="recover_only", key="A")
+    current = RecoveryStateScope(source="folder_id", command="recover_only", key="B")
+    err = gdrive_state.StateScopeMismatchError(saved, current)
+    assert err.saved_scope is saved
+    assert err.current_scope is current
+    assert "scope mismatch" in str(err)

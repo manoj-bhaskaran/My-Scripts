@@ -140,39 +140,56 @@ class RecoveryStateManager:
         except Exception:
             pass
 
+    def _apply_loaded_schema(self, raw_version: int) -> None:
+        """Reconcile the loaded state with the current schema version.
+
+        Splits the v0/v1 migration path, the v2 scope-check path, and the
+        forward-compatible "newer schema" path out of `_load_state` so the
+        latter stays under the cognitive-complexity budget.
+        """
+        if raw_version < CURRENT_SCHEMA_VERSION:
+            # v0/v1: synthesize a scope from current args; promote to v2 on next save.
+            self._print_migration_notice()
+            self.state.scope = self._derive_scope_from_args()
+            self.state.schema_version = CURRENT_SCHEMA_VERSION
+        elif raw_version == CURRENT_SCHEMA_VERSION:
+            if self.state.scope is None:
+                # v2 file without a scope block (corrupted/truncated); rebuild from args.
+                self.state.scope = self._derive_scope_from_args()
+            else:
+                self._check_scope_or_raise(self.state.scope)
+        else:
+            self._log_newer_schema(raw_version)
+            self.state.schema_version = CURRENT_SCHEMA_VERSION
+
+    def _log_newer_schema(self, raw_version: int) -> None:
+        try:
+            self.logger.info(
+                "Loaded state with schema v%d (newer than v%d); "
+                "proceeding with tolerant parsing.",
+                raw_version,
+                CURRENT_SCHEMA_VERSION,
+            )
+        except Exception:
+            pass
+
+    def _handle_load_failure(self) -> None:
+        self.logger.exception(f"Unexpected error while loading state file '{self.args.state_file}'")
+        if self.on_state_load_error:
+            try:
+                self.on_state_load_error()
+            except Exception:
+                pass
+
     def _load_state(self) -> bool:
         if not os.path.exists(self.args.state_file):
             return False
         try:
             with open(self.args.state_file, "r") as f:
                 data = json.load(f)
-
             raw_version = self._parse_schema_version(data)
             self.state = self._assign_recovery_state_fields(data)
-
-            if raw_version < CURRENT_SCHEMA_VERSION:
-                # v0/v1: synthesize a scope from current args; promote to v2 on next save.
-                self._print_migration_notice()
-                self.state.scope = self._derive_scope_from_args()
-                self.state.schema_version = CURRENT_SCHEMA_VERSION
-            elif raw_version == CURRENT_SCHEMA_VERSION:
-                if self.state.scope is None:
-                    # v2 file without a scope block (corrupted/truncated); rebuild from args.
-                    self.state.scope = self._derive_scope_from_args()
-                else:
-                    self._check_scope_or_raise(self.state.scope)
-            else:
-                try:
-                    self.logger.info(
-                        "Loaded state with schema v%d (newer than v%d); "
-                        "proceeding with tolerant parsing.",
-                        raw_version,
-                        CURRENT_SCHEMA_VERSION,
-                    )
-                except Exception:
-                    pass
-                self.state.schema_version = CURRENT_SCHEMA_VERSION
-
+            self._apply_loaded_schema(raw_version)
             prefix = "📂" if not getattr(self.args, "no_emoji", False) else "STATE"
             print(
                 f"{prefix} Loaded previous state: "
@@ -182,14 +199,7 @@ class RecoveryStateManager:
         except StateScopeMismatchError:
             raise
         except Exception:
-            self.logger.exception(
-                f"Unexpected error while loading state file '{self.args.state_file}'"
-            )
-            if self.on_state_load_error:
-                try:
-                    self.on_state_load_error()
-                except Exception:
-                    pass
+            self._handle_load_failure()
         return False
 
     def _acquire_state_lock(self) -> bool:
