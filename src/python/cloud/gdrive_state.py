@@ -194,11 +194,37 @@ class RecoveryStateManager:
             self.logger.error(f"Failed to save state: {e}")
 
     def _clear_processed_items(self) -> int:
-        """Clear all processed IDs from state; returns the count removed."""
+        """Clear all processed IDs from state; returns the count removed.
+
+        Deprecated: prefer `_reset_state` for a full fresh-run reset. This helper
+        is retained for the `--overwrite` deprecation shim and will be removed
+        when the deprecation period ends.
+        """
         items = self.state.processed_items or []
         count = len(items)
         self.state.processed_items = []
         return count
+
+    def _reset_state(self) -> int:
+        """Reset in-memory state to a brand-new `RecoveryState`, preserving only
+        the schema version.
+
+        After calling this the caller is expected to run
+        `_initialize_recovery_state` so that a new `run_id`, `start_time`, and
+        `owner_pid` are generated for the current process (the "if not X"
+        guards there naturally take the fresh path because every identity
+        field has been wiped here).
+
+        Returns the count of previously processed items so callers can log it.
+        """
+        prev_count = len(self.state.processed_items or [])
+        prev_schema = getattr(self.state, "schema_version", 1)
+        self.state = RecoveryState()
+        try:
+            self.state.schema_version = int(prev_schema or 1)
+        except Exception:
+            self.state.schema_version = 1
+        return prev_count
 
     def _is_processed(self, item_id: str) -> bool:
         return item_id in self.state.processed_items

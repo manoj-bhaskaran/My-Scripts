@@ -81,3 +81,46 @@ def test_clear_processed_items_tolerates_null_from_json(tmp_path):
 
     assert count == 0
     assert manager.state.processed_items == []
+
+
+def test_reset_state_wipes_all_fields_except_schema_version(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    manager.state.processed_items = ["a", "b"]
+    manager.state.run_id = "r"
+    manager.state.start_time = "2020-01-01T00:00:00+00:00"
+    manager.state.last_checkpoint = "2020-01-01T00:00:01+00:00"
+    manager.state.owner_pid = 12345
+    manager.state.total_found = 7
+    manager.state.schema_version = 1
+
+    prev_count = manager._reset_state()
+
+    assert prev_count == 2
+    assert manager.state.processed_items == []
+    assert manager.state.run_id == ""
+    assert manager.state.start_time == ""
+    assert manager.state.last_checkpoint == ""
+    assert manager.state.owner_pid is None
+    assert manager.state.total_found == 0
+    assert manager.state.schema_version == 1
+
+
+def test_reset_state_with_empty_processed_items_returns_zero(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    manager.state.processed_items = []
+    manager.state.run_id = "r"
+
+    prev_count = manager._reset_state()
+
+    assert prev_count == 0
+    assert manager.state.run_id == ""
+
+
+def test_reset_state_preserves_schema_version_value(tmp_path):
+    manager = _build_state_manager(tmp_path)
+    manager.state.schema_version = 2  # imagine a hypothetical v2 file
+    manager.state.processed_items = ["x"]
+
+    manager._reset_state()
+
+    assert manager.state.schema_version == 2

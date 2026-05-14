@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.22.0] - 2026-05-14
+
+### Added
+
+- **`--fresh-run` flag (#1028):** New flag available on **both** `recover-only` and `recover-and-download`. When set, the recovery tool ignores prior progress in the state file, regenerates run identity (`run_id`, `start_time`, `owner_pid`), and (if `--failed-file` is set) truncates the failed-file CSV before the run starts. Use this when resuming would target the wrong scope or when you want to retry everything from scratch.
+  - Mutually exclusive with `--retry-failed-file`: passing both is rejected with a clear error message (fresh-run starts from nothing; retry resumes a specific list).
+  - Implemented via a new `RecoveryStateManager._reset_state` helper that replaces the in-memory state with a fresh `RecoveryState` (preserving only `schema_version`). The subsequent `_initialize_recovery_state` call naturally regenerates identity fields because every "if not X" guard now takes the fresh path.
+
+### Changed
+
+- **`--overwrite` is narrowed to its documented meaning (local-file collision policy).** It no longer logically owns state reset and failed-file truncation; those are now `--fresh-run`'s job. For one release the old combined behavior is preserved as a **deprecation shim**: `--overwrite` alone still clears `processed_items` and truncates the failed-file CSV, but prints a deprecation warning to stderr naming v1.23.0 as the removal target.
+- `--overwrite --fresh-run` combination: both effects apply (local-file overwrite + state/failed-file reset); no deprecation warning is printed.
+- `DriveOperations._recover_file` and `DriveOperations._process_item` no longer reference `args.overwrite` for the `_is_processed` short-circuit. The short-circuit is bypassed naturally on a fresh run because `_reset_state` empties `processed_items`. The deprecation shim achieves the same effect via `_clear_processed_items`.
+- CLI epilog gains a `--fresh-run` example; `--failed-file` help text now refers to `--fresh-run` instead of `--overwrite`; `--overwrite` help text describes the deprecation.
+
+### Deprecated
+
+- The combined "clear state + truncate failed-file + bypass `_is_processed`" behavior of `--overwrite`. It continues to work in this release behind a stderr warning. Migrate to `--fresh-run` (alone or combined with `--overwrite`) before v1.23.0.
+
+### Notes
+
+- **No schema change.** Existing state files load and resume normally. Without `--fresh-run`, behavior is identical to before. With `--fresh-run`, the state file is rewritten on first save with a fresh `run_id`/`start_time` and an empty `processed_items` list, and the user's failed-file CSV (if `--failed-file` is set) is truncated.
+
 ## [1.21.2] - 2026-05-14
 
 ### Fixed

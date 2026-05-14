@@ -137,10 +137,18 @@ def test_recover_file_skips_when_already_processed_no_overwrite():
     assert ops.stats["recovered"] == 0
 
 
-def test_recover_file_proceeds_when_overwrite_and_already_processed():
+def test_recover_file_proceeds_when_processed_items_cleared():
+    """After issue #1028, --overwrite no longer gates the _is_processed check.
+
+    The bypass is now achieved by clearing `processed_items` upfront in
+    `_prepare_recovery` (via `_reset_state` on --fresh-run or
+    `_clear_processed_items` on the --overwrite deprecation shim). Once
+    cleared, `_is_processed` naturally returns False and the operation
+    proceeds.
+    """
     ops = _make_ops()
-    ops.args.overwrite = True
-    ops.state_manager._is_processed.return_value = True
+    # Simulate state cleared by _prepare_recovery: _is_processed returns False.
+    ops.state_manager._is_processed.return_value = False
 
     service = MagicMock()
     ops.auth._get_service.return_value = service
@@ -155,7 +163,8 @@ def test_recover_file_proceeds_when_overwrite_and_already_processed():
     assert ops.stats["skipped"] == 0
 
 
-def test_process_item_skips_when_already_processed_no_overwrite():
+def test_process_item_skips_when_already_processed():
+    """`_is_processed` short-circuit is no longer gated on args.overwrite."""
     ops = _make_ops()
     ops.state_manager._is_processed.return_value = True
     item = _item()
@@ -167,10 +176,28 @@ def test_process_item_skips_when_already_processed_no_overwrite():
     ops.state_manager._mark_processed.assert_not_called()
 
 
-def test_process_item_proceeds_when_overwrite_and_already_processed():
+def test_process_item_overwrite_does_not_bypass_short_circuit():
+    """Setting args.overwrite alone does NOT bypass `_is_processed` anymore.
+
+    State must be cleared upstream by `_prepare_recovery` for the item to
+    be reprocessed. This test pins the new contract.
+    """
     ops = _make_ops()
     ops.args.overwrite = True
     ops.state_manager._is_processed.return_value = True
+    item = _item()
+
+    ok = ops._process_item(item)
+
+    assert ok is True
+    ops.downloader.download.assert_not_called()
+    ops.state_manager._mark_processed.assert_not_called()
+
+
+def test_process_item_proceeds_when_processed_items_cleared():
+    """Once `_prepare_recovery` clears `processed_items`, items run as new."""
+    ops = _make_ops()
+    ops.state_manager._is_processed.return_value = False
 
     service = MagicMock()
     ops.auth._get_service.return_value = service

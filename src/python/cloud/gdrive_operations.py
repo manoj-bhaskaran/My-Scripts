@@ -31,7 +31,11 @@ class DriveOperations:
         return self.auth._execute(request)
 
     def _clear_failed_files(self) -> None:
-        """Truncate the failed-file CSV and write a fresh header (called when --overwrite is set)."""
+        """Truncate the failed-file CSV and write a fresh header.
+
+        Called from `_prepare_recovery` on `--fresh-run` (and on the
+        `--overwrite` deprecation shim path).
+        """
         if not self._failed_file_path:
             return
         p = Path(self._failed_file_path)
@@ -62,7 +66,13 @@ class DriveOperations:
     def _recover_file(self, item: RecoveryItem) -> bool:
         # Invariant: this method never calls state_manager._mark_processed.
         # Only _process_item marks state, and only on full success.
-        if not getattr(self.args, "overwrite", False) and self.state_manager._is_processed(item.id):
+        #
+        # Fresh-run handling: --fresh-run clears state.processed_items in
+        # _prepare_recovery, so the _is_processed check below naturally bypasses
+        # the short-circuit on a fresh run without needing to reference
+        # args.fresh_run here. (--overwrite no longer gates this check; see the
+        # deprecation shim in DriveTrashRecoveryTool._prepare_recovery.)
+        if self.state_manager._is_processed(item.id):
             with self.stats_lock:
                 self.stats["skipped"] += 1
             return True
@@ -183,7 +193,12 @@ class DriveOperations:
         return False
 
     def _process_item(self, item: RecoveryItem) -> bool:
-        if not getattr(self.args, "overwrite", False) and self.state_manager._is_processed(item.id):
+        # Fresh-run handling: --fresh-run clears state.processed_items in
+        # _prepare_recovery, so the _is_processed check below naturally
+        # bypasses the short-circuit. --overwrite no longer gates this check
+        # (its deprecation shim also clears processed_items, achieving the
+        # same effect via an empty list).
+        if self.state_manager._is_processed(item.id):
             return True
 
         success = True
