@@ -3,10 +3,14 @@ State persistence and lock management for the Google Drive Trash Recovery Tool.
 
 Thread safety
 -------------
-``RecoveryStateManager._mark_step`` serialises mutations to
-``state.processed_items`` (a dict) with an internal ``_state_lock``.  All
-other public methods are either read-only or called from a single thread, so
-they do not acquire ``_state_lock``.
+``_state_lock`` (a ``threading.Lock``) protects all accesses to
+``state.processed_items`` that could race with concurrent worker threads:
+
+* ``_mark_step`` holds the lock while inserting or updating a record.
+* ``_save_state`` holds the lock only for the ``asdict(self.state)`` snapshot,
+  releasing it before any file I/O.  This prevents a ``RuntimeError: dictionary
+  changed size during iteration`` when a worker calls ``_mark_step`` while the
+  main thread is checkpointing.
 
 Callers that hold their own lock (e.g. ``stats_lock`` in ``DriveOperations``)
 must *not* call ``_mark_step`` while holding it, to avoid deadlock.
@@ -364,11 +368,17 @@ class RecoveryStateManager:
         try:
             tmp_path = f"{self.args.state_file}.tmp"
             os.makedirs(os.path.dirname(os.path.abspath(tmp_path)), exist_ok=True)
-            with open(tmp_path, "w") as f:
+            # Snapshot the state dict under _state_lock so that worker threads
+            # calling _mark_step cannot mutate processed_items while asdict()
+            # iterates it, which would raise RuntimeError on dict size change.
+            # File I/O happens outside the lock to avoid blocking workers.
+            with self._state_lock:
                 self.state.schema_version = CURRENT_SCHEMA_VERSION
                 if self.state.scope is None:
                     self.state.scope = self._derive_scope_from_args()
-                json.dump(asdict(self.state), f, indent=2)
+                state_snapshot = asdict(self.state)
+            with open(tmp_path, "w") as f:
+                json.dump(state_snapshot, f, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_path, self.args.state_file)
