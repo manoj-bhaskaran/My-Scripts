@@ -60,15 +60,22 @@ class DriveDownloader:
     def download(self, item: RecoveryItem) -> bool:
         """Download item to item.target_path. Returns True on success.
 
-        When ``--skip-existing`` is set and the target path already exists on
-        disk, no bytes are written: the item is marked as successfully
-        downloaded so that per-step state advances and the post-restore step
-        still runs, and ``stats["skipped_existing"]`` is incremented for the
-        run summary.
+        When ``--skip-existing`` is set and the target path already resolves
+        to a regular file, no bytes are written: the item is marked as
+        successfully downloaded so that per-step state advances and the
+        post-restore step still runs, and ``stats["skipped_existing"]`` is
+        incremented for the run summary.
+
+        The check uses ``Path.is_file()`` rather than ``Path.exists()`` so a
+        directory or other non-file entry at the same path does not trigger
+        a silent skip — that would otherwise mark the item complete and let
+        the post-restore policy (notably ``delete``) act on the Drive file
+        without any local copy ever existing. Non-file collisions fall
+        through to the normal download path so the error surfaces.
         """
         if getattr(self.args, "skip_existing", False):
             target = Path(item.target_path)
-            if target.exists():
+            if target.is_file():
                 item.status = "downloaded"
                 with self.stats_lock:
                     self.stats["skipped_existing"] += 1
