@@ -194,10 +194,10 @@ class DriveOperations:
     def _process_item(self, item: RecoveryItem) -> bool:
         # Fresh-run handling: --fresh-run clears state.processed_items in
         # _prepare_recovery, so the _is_processed check below naturally
-        # bypasses the short-circuit. --overwrite no longer gates this check
-        # (its deprecation shim also clears processed_items, achieving the
-        # same effect via an empty list).
+        # bypasses the short-circuit on a fresh run.
         if self.state_manager._is_processed(item.id):
+            with self.stats_lock:
+                self.stats["skipped"] += 1
             return True
 
         success = True

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.23.1] - 2026-05-14
+
+### Fixed
+
+- **Resume-mode summary no longer reports zero skipped items:** `DriveOperations._process_item` short-circuited via `_is_processed` and returned without bumping `stats["skipped"]`. In folder-id mode (and any other mode where `will_recover=False`, e.g. `--retry-failed-file`), `_recover_file` — which does increment the counter — is never invoked, so a resume run where every discovered item was already processed produced a summary with `Files downloaded: 0`, `Files skipped: 0`, and `Errors encountered: 0` despite having processed tens of thousands of items. The short-circuit now bumps `stats["skipped"]` under `stats_lock` so the summary truthfully reflects how many items were skipped because they were already in the state file. Trash-recover mode was unaffected because the redundant `_is_processed` check inside `_recover_file` happened to bump the counter; the in-line check in `_process_item` was the missing one.
+
 ## [1.23.0] - 2026-05-14
 
 ### Added
