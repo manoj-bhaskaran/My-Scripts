@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.23.3] - 2026-05-14
+
+### Fixed
+
+- **Final streaming progress line no longer reports a stale `processed=` count.** `ProgressBar.update` throttles redraws by time interval (TTY interval on a terminal, log interval otherwise) and `close()` only emitted a newline, so the last visible progress line could be off by up to one batch from the true totals. A run discovering 57,513 items would commonly end with `processed=57501 discovered=57513` even after every item was actually processed. `DriveTrashRecoveryTool._process_streaming` now invokes a new `_print_final_stream_progress` helper just before `_print_summary` (and before `print_interrupted_state_saved` on Ctrl-C); it calls `ProgressBar.update(..., force=True)` to bypass the throttle and render the true final counts.
+
 ## [1.23.2] - 2026-05-14
 
 ### Added

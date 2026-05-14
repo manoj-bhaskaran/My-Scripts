@@ -667,13 +667,33 @@ class DriveTrashRecoveryTool:
                 ok = self.discovery._stream_stream_query(batch_n, start_time)
         except KeyboardInterrupt:
             self.state.total_found = self._seen_total
+            self._print_final_stream_progress(start_time)
             self.reporter.print_interrupted_state_saved()
             self.state_manager._save_state()
             return False
         self.state.total_found = self._seen_total
+        self._print_final_stream_progress(start_time)
         self.state_manager._save_state()
         self.reporter._print_summary(time.time() - start_time, self.state)
         return ok
+
+    def _print_final_stream_progress(self, start_time: float) -> None:
+        """Force-render the streaming progress line with the true final totals.
+
+        Progress updates are throttled to avoid flooding output; without this
+        call the last render reflects whatever counts were live at the most
+        recent throttle interval boundary, which can be off by up to one
+        worker-batch from the true totals.
+        """
+        if not self.reporter._should_show_progress():
+            return
+        self.reporter._print_stream_progress(
+            self._processed_total,
+            start_time,
+            self._seen_total,
+            self.args.file_ids,
+            force=True,
+        )
 
     def _run_parallel_processing(self, start_time: float):
         processed_count = 0
