@@ -9,7 +9,7 @@ All imports are standard-library only; no Google API dependencies.
 
 import re
 from typing import Dict, List, Optional, TypedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 # -------------------- Minimal structural types --------------------
@@ -57,6 +57,21 @@ class RecoveryItem:
 
 
 @dataclass
+class ProcessedRecord:
+    """Per-item step-completion record stored in v3 state files.
+
+    Each flag is set to True only after the corresponding pipeline step
+    succeeds for the item.  ``last_attempt_iso`` is updated on every
+    ``_mark_step`` call and is useful for diagnostics.
+    """
+
+    recovered: bool = False      # untrash succeeded (or will_recover=False)
+    downloaded: bool = False     # local download completed (or will_download=False)
+    post_restored: bool = False  # post-restore policy applied (including retain no-op)
+    last_attempt_iso: str = ""
+
+
+@dataclass
 class RecoveryStateScope:
     """Identifies what a recovery run is doing so resumes are scope-checked.
 
@@ -76,9 +91,11 @@ class RecoveryStateScope:
 class RecoveryState:
     """Persistent state for resume capability."""
 
-    schema_version: int = 2  # v1.23.0: v2 adds the `scope` block; v1 files auto-migrate.
+    # v1.24.0: v3 replaces processed_items List[str] with Dict[str, ProcessedRecord]
+    # for per-step resume granularity and O(1) membership checks.
+    schema_version: int = 3
     total_found: int = 0
-    processed_items: Optional[List[str]] = None  # List of processed file IDs
+    processed_items: Optional[Dict[str, ProcessedRecord]] = None
     start_time: str = ""
     last_checkpoint: str = ""
     run_id: str = ""
@@ -86,7 +103,7 @@ class RecoveryState:
 
     def __post_init__(self):
         if self.processed_items is None:
-            self.processed_items = []
+            self.processed_items = {}
 
 
 class PostRestorePolicy:

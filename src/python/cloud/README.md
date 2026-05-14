@@ -198,9 +198,30 @@ These two flags do different things and can be combined:
 
 Pass both to start over completely *and* overwrite any pre-existing local files.
 
-### State file scope (schema v2)
+### State file schema (v3) and per-step resume
 
-Each state file records the **scope** it was created under:
+State files now track **per-pipeline-step completion** for each item via a `ProcessedRecord` with three boolean flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `recovered` | Untrash API call succeeded (or `will_recover=False` — file already live) |
+| `downloaded` | Local download completed |
+| `post_restored` | Post-restore policy applied (including the retain no-op) |
+
+On rerun, a partially-processed item is resumed from the first incomplete step:
+- If `recovered=True` but `downloaded=False`, the untrash call is skipped and only the download is retried.
+- If `recovered=True, downloaded=True` but `post_restored=False`, only the post-restore action is retried.
+- An item is considered **fully complete** (and skipped entirely) only when all steps required by the current command are flagged.
+
+Which steps are **required** depends on the item:
+
+| Mode | `will_recover` | Required steps |
+| --- | --- | --- |
+| recover-only | True | `recovered` |
+| recover-and-download | True | `recovered`, `downloaded`, `post_restored` |
+| folder-id / retry-failed-file | False | `downloaded`, `post_restored` |
+
+Each state file also records the **scope** it was created under:
 
 - `source` — `trash_query`, `folder_id`, `file_ids`, or `retry_failed_file`
 - `command` — `recover_only` or `recover_and_download`
@@ -215,9 +236,12 @@ ERROR State file 'gdrive_recovery_state.json' was created for a different scope;
    Remediation: pass --fresh-run to reset this state file, or use --state-file <path> to keep a separate file for this invocation.
 ```
 
-This replaces the prior silent-failure mode in which the tool would skip IDs that had been recovered-only and never download them.
+**v1/v2 → v3 migration is automatic and non-destructive.** State files written by older versions are upgraded on first load:
+- v1 → v2: a `scope` block is synthesized from the current invocation's CLI args.
+- v2 → v3: the flat `processed_items` list is converted to a dict of per-step records; every existing ID is treated as **fully complete** so no item is reprocessed.
+- Both migrations happen in a single load pass; the file is rewritten at v3 on the next save.
 
-**v1 → v2 migration is automatic and non-destructive.** State files written by older versions are upgraded on first load: a `scope` block is synthesized from the current invocation's CLI args, the file is rewritten with `schema_version = 2` on the next save, and `processed_items` is preserved verbatim — no items are reprocessed.
+**Migration is one-way.** There is no v3 → v2 downgrade. If you want to retry items that were previously marked as processed, use `--retry-failed-file <csv>` (if you have a failed-file CSV) or `--fresh-run` (to reset all state and start over).
 
 ### Folder-scoped download (download a live Drive folder)
 

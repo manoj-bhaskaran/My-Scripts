@@ -63,17 +63,12 @@ class DriveOperations:
                 writer.writerow([item.source_folder_id, item.id, target])
 
     def _recover_file(self, item: RecoveryItem) -> bool:
-        # Invariant: this method never calls state_manager._mark_processed.
-        # Only _process_item marks state, and only on full success.
-        #
-        # Fresh-run handling: --fresh-run clears state.processed_items in
-        # _prepare_recovery, so the _is_processed check below naturally bypasses
-        # the short-circuit on a fresh run without needing to reference
-        # args.fresh_run here. (--overwrite no longer gates this check; see the
-        # deprecation shim in DriveTrashRecoveryTool._prepare_recovery.)
-        if self.state_manager._is_processed(item.id):
-            with self.stats_lock:
-                self.stats["skipped"] += 1
+        # Per-step resume: if "recovered" was already recorded in a prior run,
+        # skip the untrash API call and return True so the caller can continue
+        # with the download or post-restore step.  No "skipped" stat bump here —
+        # the item is still being processed; only _process_item's top-level
+        # _is_processed check treats an item as fully skipped.
+        if self.state_manager._step_is_done(item.id, "recovered"):
             return True
 
         service = self.auth._get_service()
@@ -192,25 +187,43 @@ class DriveOperations:
         return False
 
     def _process_item(self, item: RecoveryItem) -> bool:
-        # Fresh-run handling: --fresh-run clears state.processed_items in
-        # _prepare_recovery, so the _is_processed check below naturally
-        # bypasses the short-circuit on a fresh run.
-        if self.state_manager._is_processed(item.id):
+        # All required steps complete → skip entirely and count as skipped.
+        # --fresh-run clears state.processed_items upstream so this check
+        # naturally takes the False path on a fresh run.
+        if self.state_manager._is_processed(item):
             with self.stats_lock:
                 self.stats["skipped"] += 1
             return True
 
         success = True
-        if item.will_recover and not self._recover_file(item):
-            success = False
-        if success and item.will_download and not self.downloader.download(item):
-            success = False
+
+        # Step 1: untrash.  _recover_file internally skips the API call when
+        # the "recovered" step is already flagged (per-step resume).
+        if item.will_recover:
+            if not self._recover_file(item):
+                success = False
+            else:
+                self.state_manager._mark_step(item.id, "recovered")
+        else:
+            # will_recover=False (folder-id / retry-failed-file mode): the file
+            # is already live, so the recover step is a no-op — mark as done so
+            # the record is consistent.
+            self.state_manager._mark_step(item.id, "recovered")
+
+        # Step 2: download.
+        if success and item.will_download:
+            if not self.downloader.download(item):
+                success = False
+            else:
+                self.state_manager._mark_step(item.id, "downloaded")
+
+        # Step 3: post-restore.
         if success and item.will_download and item.status == "downloaded":
             if not self._apply_post_restore_policy(item):
                 success = False
+            else:
+                self.state_manager._mark_step(item.id, "post_restored")
 
         if not success:
             self._write_failed_file(item)
-        else:
-            self.state_manager._mark_processed(item.id)
         return success

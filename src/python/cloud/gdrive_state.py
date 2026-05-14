@@ -1,5 +1,17 @@
 """
 State persistence and lock management for the Google Drive Trash Recovery Tool.
+
+Thread safety
+-------------
+``RecoveryStateManager._mark_step`` serialises mutations to
+``state.processed_items`` (a dict) with an internal ``_state_lock``.  All
+other public methods are either read-only or called from a single thread, so
+they do not acquire ``_state_lock``.
+
+Callers that hold their own lock (e.g. ``stats_lock`` in ``DriveOperations``)
+must *not* call ``_mark_step`` while holding it, to avoid deadlock.
+``_process_item`` is structured so that ``_mark_step`` is invoked after any
+``stats_lock``-protected block has already been released.
 """
 
 import hashlib
@@ -7,11 +19,12 @@ import json
 import os
 from dataclasses import asdict, fields
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Any, Dict, Callable, Optional
 
-from gdrive_models import RecoveryState, RecoveryStateScope
+from gdrive_models import ProcessedRecord, RecoveryState, RecoveryStateScope
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 class StateScopeMismatchError(Exception):
@@ -38,6 +51,7 @@ class RecoveryStateManager:
         self.state = RecoveryState()
         self._state_lock_path = f"{self.args.state_file}.lock"
         self._state_lock_fh = None
+        self._state_lock = Lock()  # serialises _mark_step dict mutations
 
     @staticmethod
     def _parse_schema_version(data: Dict[str, Any]) -> int:
@@ -50,8 +64,10 @@ class RecoveryStateManager:
     def _assign_recovery_state_fields(self, data: Dict[str, Any]) -> RecoveryState:
         """Assign only known fields from data to a RecoveryState instance.
 
-        Unknown keys present in the JSON (e.g. the retired ``owner_pid`` field
-        in v1 files) are silently dropped.
+        Unknown keys (e.g. the retired ``owner_pid`` field in v1 files) are
+        silently dropped.  ``processed_items`` may arrive as a list (v2 wire
+        format) or a dict (v3 wire format) — both are accepted; a list is left
+        as-is so ``_migrate_v2_to_v3`` can convert it in a single pass.
         """
         new_state = RecoveryState()
         rs_fields = {f.name for f in fields(RecoveryState)}
@@ -68,6 +84,27 @@ class RecoveryStateManager:
                     )
                 except Exception:
                     value = None
+            elif k == "processed_items" and isinstance(value, dict):
+                # v3 wire format: convert each entry to a ProcessedRecord.
+                converted: Dict[str, ProcessedRecord] = {}
+                for id_, rec in value.items():
+                    if isinstance(rec, dict):
+                        try:
+                            converted[str(id_)] = ProcessedRecord(
+                                recovered=bool(rec.get("recovered", False)),
+                                downloaded=bool(rec.get("downloaded", False)),
+                                post_restored=bool(rec.get("post_restored", False)),
+                                last_attempt_iso=str(rec.get("last_attempt_iso", "")),
+                            )
+                        except Exception:
+                            converted[str(id_)] = ProcessedRecord(
+                                recovered=True, downloaded=True, post_restored=True
+                            )
+                    elif isinstance(rec, ProcessedRecord):
+                        converted[str(id_)] = rec
+                value = converted
+            # If value is a list (v2 wire format) it is kept as-is; _migrate_v2_to_v3
+            # converts it later.
             try:
                 setattr(new_state, k, value)
             except Exception:
@@ -116,7 +153,7 @@ class RecoveryStateManager:
         return RecoveryStateScope(source=source, command=command, key=key)
 
     def _check_scope_or_raise(self, saved_scope: RecoveryStateScope) -> None:
-        """Compare a loaded v2 scope against the current invocation."""
+        """Compare a loaded scope against the current invocation."""
         if getattr(self.args, "fresh_run", False):
             return
         current_scope = self._derive_scope_from_args()
@@ -140,26 +177,68 @@ class RecoveryStateManager:
         except Exception:
             pass
 
+    def _migrate_v2_to_v3(self) -> None:
+        """Convert a v2 ``List[str]`` ``processed_items`` to a v3 ``Dict[str, ProcessedRecord]``.
+
+        All existing IDs are mapped to fully-flagged records so no item is
+        reprocessed.  If ``processed_items`` is already a dict (i.e. the file
+        is v3 or was already migrated) this is a no-op.
+        """
+        items = self.state.processed_items
+        if not isinstance(items, list):
+            return  # Already v3 format.
+        count = len(items)
+        now = datetime.now(timezone.utc).isoformat()
+        self.state.processed_items = {
+            item_id: ProcessedRecord(
+                recovered=True, downloaded=True, post_restored=True, last_attempt_iso=now
+            )
+            for item_id in items
+        }
+        msg = (
+            f"Migrating state file from schema v2 to v3 "
+            f"({count} items converted to per-step records)."
+        )
+        prefix = "ℹ️" if not getattr(self.args, "no_emoji", False) else "INFO"
+        print(f"{prefix} {msg}")
+        try:
+            self.logger.info(msg)
+        except Exception:
+            pass
+
     def _apply_loaded_schema(self, raw_version: int) -> None:
         """Reconcile the loaded state with the current schema version.
 
-        Splits the v0/v1 migration path, the v2 scope-check path, and the
-        forward-compatible "newer schema" path out of `_load_state` so the
-        latter stays under the cognitive-complexity budget.
+        Migration chain:
+          v0/v1 → v2: synthesise scope from current args
+          v2    → v3: convert ``List[str]`` processed_items to ``Dict[str, ProcessedRecord]``
+          v3        : scope-check only
+          v3+       : tolerate, downgrade in-memory schema_version
         """
-        if raw_version < CURRENT_SCHEMA_VERSION:
-            # v0/v1: synthesize a scope from current args; promote to v2 on next save.
+        if raw_version < 2:
+            # v0/v1 → v2 → v3 in one pass.
             self._print_migration_notice()
             self.state.scope = self._derive_scope_from_args()
+            self._migrate_v2_to_v3()
+            self.state.schema_version = CURRENT_SCHEMA_VERSION
+        elif raw_version == 2:
+            # v2 → v3: scope already present; migrate processed_items list → dict.
+            if self.state.scope is None:
+                self.state.scope = self._derive_scope_from_args()
+            else:
+                self._check_scope_or_raise(self.state.scope)
+            self._migrate_v2_to_v3()
             self.state.schema_version = CURRENT_SCHEMA_VERSION
         elif raw_version == CURRENT_SCHEMA_VERSION:
             if self.state.scope is None:
-                # v2 file without a scope block (corrupted/truncated); rebuild from args.
                 self.state.scope = self._derive_scope_from_args()
             else:
                 self._check_scope_or_raise(self.state.scope)
         else:
             self._log_newer_schema(raw_version)
+            # Safety net: normalise any legacy list format that may appear in
+            # a file written by a future version that reverted the schema.
+            self._migrate_v2_to_v3()
             self.state.schema_version = CURRENT_SCHEMA_VERSION
 
     def _log_newer_schema(self, raw_version: int) -> None:
@@ -193,7 +272,7 @@ class RecoveryStateManager:
             prefix = "📂" if not getattr(self.args, "no_emoji", False) else "STATE"
             print(
                 f"{prefix} Loaded previous state: "
-                f"{len(self.state.processed_items)} items successfully processed (will be skipped)"
+                f"{len(self.state.processed_items)} item record(s) (will be skipped if complete)"
             )
             return True
         except StateScopeMismatchError:
@@ -297,18 +376,12 @@ class RecoveryStateManager:
             self.logger.error(f"Failed to save state: {e}")
 
     def _reset_state(self) -> int:
-        """Reset in-memory state to a brand-new `RecoveryState`, preserving only
+        """Reset in-memory state to a brand-new ``RecoveryState``, preserving only
         the schema version.
 
-        After calling this the caller is expected to run
-        `_initialize_recovery_state` so that a new `run_id` and `start_time`
-        are generated for the current process (the "if not X" guards there
-        naturally take the fresh path because every identity field has been
-        wiped here). The scope block is repopulated from current args.
-
-        Returns the count of previously processed items so callers can log it.
+        Returns the count of previously recorded item records so callers can log it.
         """
-        prev_count = len(self.state.processed_items or [])
+        prev_count = len(self.state.processed_items or {})
         prev_schema = getattr(self.state, "schema_version", CURRENT_SCHEMA_VERSION)
         self.state = RecoveryState()
         try:
@@ -317,13 +390,68 @@ class RecoveryStateManager:
             self.state.schema_version = CURRENT_SCHEMA_VERSION
         return prev_count
 
-    def _is_processed(self, item_id: str) -> bool:
-        return item_id in self.state.processed_items
+    # ---------------------------------------------------------------------------
+    # Per-step query / mutation API (v3)
+    # ---------------------------------------------------------------------------
 
-    def _mark_processed(self, item_id: str):
-        if item_id not in self.state.processed_items:
-            self.state.processed_items.append(item_id)
-            self.state.last_checkpoint = datetime.now(timezone.utc).isoformat()
+    def _required_steps(self, item) -> set:
+        """Return the set of step names that must be True for item to be complete.
+
+        Steps are determined by the item's ``will_recover`` and ``will_download``
+        flags:
+          - ``recovered``    — if ``will_recover=True``
+          - ``downloaded``   — if ``will_download=True``
+          - ``post_restored``— if ``will_download=True``
+        """
+        steps: set = set()
+        if getattr(item, "will_recover", True):
+            steps.add("recovered")
+        if getattr(item, "will_download", False):
+            steps.add("downloaded")
+            steps.add("post_restored")
+        return steps
+
+    def _step_is_done(self, item_id: str, step: str) -> bool:
+        """Return True if ``step`` is recorded as complete for ``item_id``."""
+        record = self.state.processed_items.get(item_id)
+        if record is None:
+            return False
+        return bool(getattr(record, step, False))
+
+    def _is_processed(self, item) -> bool:
+        """Return True iff all required steps for item are recorded as done.
+
+        ``item`` must be a ``RecoveryItem`` so that ``_required_steps`` can
+        compute which steps apply to this particular pipeline invocation.
+        """
+        record = self.state.processed_items.get(item.id)
+        if record is None:
+            return False
+        return all(getattr(record, step, False) for step in self._required_steps(item))
+
+    def _mark_step(self, item_id: str, step: str) -> None:
+        """Record that ``step`` succeeded for ``item_id``.
+
+        Thread-safe: acquires ``_state_lock`` before mutating the dict.
+        The record is created if it does not yet exist.
+        """
+        with self._state_lock:
+            record = self.state.processed_items.get(item_id)
+            if record is None:
+                record = ProcessedRecord()
+                self.state.processed_items[item_id] = record
+            setattr(record, step, True)
+            now = datetime.now(timezone.utc).isoformat()
+            record.last_attempt_iso = now
+            self.state.last_checkpoint = now
+
+    def _mark_processed(self, item_id: str) -> None:
+        """Backward-compat wrapper: marks all three steps as done for ``item_id``.
+
+        New code should call ``_mark_step`` for each completed step individually.
+        """
+        for step in ("recovered", "downloaded", "post_restored"):
+            self._mark_step(item_id, step)
 
     def _pid_is_alive(self, pid: int) -> bool:
         """

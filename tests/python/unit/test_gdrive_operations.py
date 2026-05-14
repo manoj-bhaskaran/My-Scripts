@@ -2,7 +2,7 @@ import csv
 from pathlib import Path
 from threading import Lock
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import sys
 
@@ -21,6 +21,7 @@ def _make_ops():
     downloader = MagicMock()
     state_manager = MagicMock()
     state_manager._is_processed.return_value = False
+    state_manager._step_is_done.return_value = False
     stats = {
         "recovered": 0,
         "errors": 0,
@@ -124,29 +125,29 @@ def test_apply_post_restore_policy_terminal_failure(monkeypatch):
     ops.logger.error.assert_called()
 
 
-def test_recover_file_skips_when_already_processed_no_overwrite():
+def test_recover_file_skips_untrash_when_step_already_done():
+    """Per-step resume: if 'recovered' is flagged, skip untrash API call.
+
+    No 'skipped' stat bump — the item is still being processed; only the
+    untrash step is being skipped.
+    """
     ops = _make_ops()
-    ops.state_manager._is_processed.return_value = True
-    # overwrite not set on args → defaults to False via getattr
+    ops.state_manager._step_is_done.return_value = True  # "recovered" already done
     item = _item()
 
     ok = ops._recover_file(item)
 
     assert ok is True
-    assert ops.stats["skipped"] == 1
-    assert ops.stats["recovered"] == 0
+    assert ops.stats["skipped"] == 0   # not skipped, just resuming
+    assert ops.stats["recovered"] == 0  # no API call
+    # No Drive service call
+    ops.auth._get_service.assert_not_called()
 
 
-def test_recover_file_proceeds_when_processed_items_cleared():
-    """After issue #1028, --overwrite no longer gates the _is_processed check.
-
-    The bypass is now achieved by clearing `processed_items` upfront in
-    `_prepare_recovery` (via `_reset_state` on --fresh-run). Once cleared,
-    `_is_processed` naturally returns False and the operation proceeds.
-    """
+def test_recover_file_proceeds_when_step_not_done():
+    """When 'recovered' step is not yet recorded, the untrash call is made."""
     ops = _make_ops()
-    # Simulate state cleared by _prepare_recovery: _is_processed returns False.
-    ops.state_manager._is_processed.return_value = False
+    ops.state_manager._step_is_done.return_value = False
 
     service = MagicMock()
     ops.auth._get_service.return_value = service
@@ -162,13 +163,7 @@ def test_recover_file_proceeds_when_processed_items_cleared():
 
 
 def test_process_item_skips_when_already_processed():
-    """`_is_processed` short-circuit is no longer gated on args.overwrite.
-
-    The short-circuit must bump `stats["skipped"]` so the summary correctly
-    accounts for items that were skipped because they were already processed
-    on a prior run (regression test for the resume-mode summary showing all
-    zeros).
-    """
+    """`_is_processed` short-circuit bumps `stats["skipped"]` and skips all steps."""
     ops = _make_ops()
     ops.state_manager._is_processed.return_value = True
     item = _item()
@@ -178,15 +173,11 @@ def test_process_item_skips_when_already_processed():
     assert ok is True
     assert ops.stats["skipped"] == 1
     ops.downloader.download.assert_not_called()
-    ops.state_manager._mark_processed.assert_not_called()
+    ops.state_manager._mark_step.assert_not_called()
 
 
 def test_process_item_overwrite_does_not_bypass_short_circuit():
-    """Setting args.overwrite alone does NOT bypass `_is_processed` anymore.
-
-    State must be cleared upstream by `_prepare_recovery` for the item to
-    be reprocessed. This test pins the new contract.
-    """
+    """Setting args.overwrite alone does NOT bypass `_is_processed` anymore."""
     ops = _make_ops()
     ops.args.overwrite = True
     ops.state_manager._is_processed.return_value = True
@@ -196,7 +187,7 @@ def test_process_item_overwrite_does_not_bypass_short_circuit():
 
     assert ok is True
     ops.downloader.download.assert_not_called()
-    ops.state_manager._mark_processed.assert_not_called()
+    ops.state_manager._mark_step.assert_not_called()
 
 
 def test_process_item_proceeds_when_processed_items_cleared():
@@ -216,7 +207,112 @@ def test_process_item_proceeds_when_processed_items_cleared():
 
     assert ok is True
     assert item.status == "recovered"
-    ops.state_manager._mark_processed.assert_called_once_with(item.id)
+    # "recovered" step must be marked; no download so no other steps.
+    ops.state_manager._mark_step.assert_called_once_with(item.id, "recovered")
+
+
+def test_process_item_marks_all_steps_on_full_success(monkeypatch):
+    """A full recover+download+post-restore pipeline marks all three steps."""
+    ops = _make_ops()
+    ops.state_manager._is_processed.return_value = False
+
+    service = MagicMock()
+    ops.auth._get_service.return_value = service
+    service.files.return_value.update.return_value = MagicMock()
+
+    def _mock_download(item):
+        item.status = "downloaded"
+        return True
+
+    ops.downloader.download.side_effect = _mock_download
+    ops._apply_post_restore_policy = MagicMock(return_value=True)
+
+    item = _item(post_restore_action="retain")
+    item.will_recover = True
+    item.will_download = True
+
+    ok = ops._process_item(item)
+
+    assert ok is True
+    mark_calls = [c.args for c in ops.state_manager._mark_step.call_args_list]
+    assert (item.id, "recovered") in mark_calls
+    assert (item.id, "downloaded") in mark_calls
+    assert (item.id, "post_restored") in mark_calls
+
+
+def test_process_item_marks_recovered_no_op_when_will_recover_false():
+    """folder-id mode: will_recover=False means 'recovered' is marked as a no-op."""
+    ops = _make_ops()
+    ops.state_manager._is_processed.return_value = False
+
+    def _mock_download(item):
+        item.status = "downloaded"
+        return True
+
+    ops.downloader.download.side_effect = _mock_download
+    ops._apply_post_restore_policy = MagicMock(return_value=True)
+
+    item = _item(post_restore_action="retain")
+    item.will_recover = False
+    item.will_download = True
+
+    ok = ops._process_item(item)
+
+    assert ok is True
+    mark_calls = [c.args for c in ops.state_manager._mark_step.call_args_list]
+    # "recovered" is marked (no-op) even when will_recover=False.
+    assert (item.id, "recovered") in mark_calls
+    assert (item.id, "downloaded") in mark_calls
+    assert (item.id, "post_restored") in mark_calls
+    # Drive untrash API must not be called.
+    ops.auth._get_service.assert_not_called()
+
+
+def test_process_item_does_not_mark_steps_when_recover_fails(monkeypatch):
+    """Issue #1027: failed recover must not result in any step being marked."""
+    ops = _make_ops()
+
+    monkeypatch.setattr(
+        "gdrive_operations.with_retries",
+        lambda *args, **kwargs: (None, "HTTP 404: not found", 404),
+    )
+
+    item = _item()
+    item.will_recover = True
+    item.will_download = False
+
+    ok = ops._process_item(item)
+
+    assert ok is False
+    ops.state_manager._mark_step.assert_not_called()
+
+
+def test_process_item_marks_recovered_but_not_downloaded_when_download_fails(tmp_path):
+    """A failed download: 'recovered' step is marked, 'downloaded' is not."""
+    ops = _make_ops()
+    failed_file = tmp_path / "failed.csv"
+    ops._failed_file_path = str(failed_file)
+
+    service = MagicMock()
+    ops.auth._get_service.return_value = service
+    service.files.return_value.update.return_value = MagicMock()
+    ops.downloader.download.return_value = False
+
+    item = _item()
+    item.will_recover = True
+    item.will_download = True
+    item.target_path = "/downloads/file.txt"
+
+    ok = ops._process_item(item)
+
+    assert ok is False
+    mark_calls = [c.args for c in ops.state_manager._mark_step.call_args_list]
+    # "recovered" was marked because untrash succeeded.
+    assert (item.id, "recovered") in mark_calls
+    # "downloaded" must NOT be marked.
+    assert (item.id, "downloaded") not in mark_calls
+    _, rows = _parse_csv_rows(str(failed_file))
+    assert len(rows) == 1 and rows[0]["file_id"] == item.id
 
 
 # ---------------------------------------------------------------------------
@@ -370,8 +466,8 @@ def test_process_item_writes_failed_file_on_failure(tmp_path, monkeypatch):
     assert ok is False
     _, rows = _parse_csv_rows(str(failed_file))
     assert len(rows) == 1 and rows[0]["target_path"] == "/downloads/file.txt"
-    # Failed items must NOT be marked processed in state.
-    ops.state_manager._mark_processed.assert_not_called()
+    # No steps should be marked since recover itself failed.
+    ops.state_manager._mark_step.assert_not_called()
 
 
 def test_process_item_does_not_write_failed_file_on_success(tmp_path):
@@ -388,50 +484,8 @@ def test_process_item_does_not_write_failed_file_on_success(tmp_path):
 
     assert ok is True
     assert not failed_file.exists(), "failed-file should not be created on success"
-    ops.state_manager._mark_processed.assert_called_once_with(item.id)
-
-
-def test_process_item_does_not_mark_processed_when_recover_fails(monkeypatch):
-    """Issue #1027: failed recover must not be recorded as processed."""
-    ops = _make_ops()
-
-    monkeypatch.setattr(
-        "gdrive_operations.with_retries",
-        lambda *args, **kwargs: (None, "HTTP 404: not found", 404),
-    )
-
-    item = _item()
-    item.will_recover = True
-    item.will_download = False
-
-    ok = ops._process_item(item)
-
-    assert ok is False
-    ops.state_manager._mark_processed.assert_not_called()
-
-
-def test_process_item_does_not_mark_processed_when_download_fails(tmp_path):
-    """Issue #1027: a failed download produces a failed-file row but no processed_items entry."""
-    ops = _make_ops()
-    failed_file = tmp_path / "failed.csv"
-    ops._failed_file_path = str(failed_file)
-
-    service = MagicMock()
-    ops.auth._get_service.return_value = service
-    service.files.return_value.update.return_value = MagicMock()
-    ops.downloader.download.return_value = False
-
-    item = _item()
-    item.will_recover = True
-    item.will_download = True
-    item.target_path = "/downloads/file.txt"
-
-    ok = ops._process_item(item)
-
-    assert ok is False
-    ops.state_manager._mark_processed.assert_not_called()
-    _, rows = _parse_csv_rows(str(failed_file))
-    assert len(rows) == 1 and rows[0]["file_id"] == item.id
+    # "recovered" step must be marked (recover-only item).
+    ops.state_manager._mark_step.assert_called_with(item.id, "recovered")
 
 
 def test_process_item_writes_failed_file_on_post_restore_failure(tmp_path, monkeypatch):
@@ -465,6 +519,11 @@ def test_process_item_writes_failed_file_on_post_restore_failure(tmp_path, monke
     assert ok is False
     _, rows = _parse_csv_rows(str(failed_file))
     assert len(rows) == 1 and rows[0]["target_path"] == "/downloads/file.txt"
+    # "recovered" and "downloaded" were marked; "post_restored" must not be.
+    mark_calls = [c.args for c in ops.state_manager._mark_step.call_args_list]
+    assert (item.id, "recovered") in mark_calls
+    assert (item.id, "downloaded") in mark_calls
+    assert (item.id, "post_restored") not in mark_calls
 
 
 # ---------------------------------------------------------------------------
