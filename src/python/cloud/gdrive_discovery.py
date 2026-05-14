@@ -458,8 +458,10 @@ class DriveTrashDiscovery:
             self.logger.debug("Skipping file metadata without id: %s", file_data)
             return None
 
-        # Files discovered via --folder-id are not in trash; skip the untrash step.
-        will_recover = not bool(getattr(self.args, "folder_id", None))
+        # Files discovered via --folder-id or from a retry CSV are already live; skip untrash.
+        will_recover = not bool(getattr(self.args, "folder_id", None)) and not bool(
+            getattr(self.args, "_retry_mode", False)
+        )
 
         dry_run_with_dir = self.args.mode == "dry_run" and bool(
             getattr(self.args, "download_dir", None)

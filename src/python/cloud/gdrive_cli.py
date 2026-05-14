@@ -424,6 +424,14 @@ def _validate_retry_failed_file_arg(args) -> Tuple[bool, int]:
             file=sys.stderr,
         )
         return False, 2
+    failed_out = getattr(args, "failed_file", None) or ""
+    if failed_out and Path(failed_out).resolve() == p.resolve():
+        print(
+            "ERROR --failed-file and --retry-failed-file cannot point to the same path "
+            "(reading and writing the same CSV in one run would corrupt it).",
+            file=sys.stderr,
+        )
+        return False, 2
     return True, 0
 
 
@@ -648,6 +656,10 @@ def _validate_folder_id_args(args) -> Tuple[bool, int]:
 
 
 def _validate_file_ids_if_present(tool, args) -> Tuple[bool, int]:
+    # Skip trash-specific prefetch validation when retrying from a failed-file CSV;
+    # those IDs are already live (not in trash) so the non-trashed filter would drop them.
+    if getattr(args, "_retry_mode", False):
+        return True, 0
     if hasattr(args, "file_ids") and args.file_ids:
         ok = tool._validate_file_ids()
         if not ok:
@@ -719,10 +731,19 @@ def main() -> int:
         ok, code, target_path_overrides = _load_retry_failed_file(retry_path)
         if not ok:
             return code
+        if not target_path_overrides:
+            print(
+                f"ERROR --retry-failed-file '{retry_path}' contains no actionable file IDs; "
+                "nothing to retry.",
+                file=sys.stderr,
+            )
+            return 1
         args.file_ids = list(target_path_overrides.keys())
         args._target_path_overrides = target_path_overrides
+        args._retry_mode = True
     else:
         args._target_path_overrides = {}
+        args._retry_mode = False
 
     ok, code = _normalize_and_validate_extensions(args)
     if not ok:

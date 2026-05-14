@@ -190,6 +190,15 @@ def test_validate_retry_failed_file_arg_valid_file_passes(tmp_path):
     assert ok and code == 0
 
 
+def test_validate_retry_failed_file_same_as_failed_file_rejected(tmp_path):
+    csv_file = tmp_path / "failed.csv"
+    csv_file.write_text("source_folder_id,file_id,target_path\nf1,id1,/p1\n")
+    ok, code = _validate_retry_failed_file_arg(
+        _args(retry_failed_file=str(csv_file), failed_file=str(csv_file))
+    )
+    assert not ok and code == 2
+
+
 # ---------------------------------------------------------------------------
 # _load_retry_failed_file
 # ---------------------------------------------------------------------------
@@ -212,10 +221,11 @@ def test_load_retry_failed_file_missing_file_id_column_rejected(tmp_path):
     assert not ok and code == 2
 
 
-def test_load_retry_failed_file_empty_rows_warns(tmp_path, capsys):
+def test_load_retry_failed_file_empty_rows_returns_empty_overrides(tmp_path):
     csv_file = tmp_path / "empty.csv"
     csv_file.write_text("source_folder_id,file_id,target_path\n")
     ok, code, overrides = _load_retry_failed_file(str(csv_file))
+    # _load_retry_failed_file succeeds; main() is responsible for the early exit on empty result.
     assert ok and code == 0
     assert overrides == {}
 
