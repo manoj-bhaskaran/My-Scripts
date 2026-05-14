@@ -655,6 +655,37 @@ def _validate_folder_id_args(args) -> Tuple[bool, int]:
     return True, 0
 
 
+def _apply_retry_failed_file(args) -> Tuple[bool, int]:
+    """Load the retry CSV and wire up args for a retry run.
+
+    When --retry-failed-file is absent, sets safe defaults and returns True.
+    When present, validates the path, loads file IDs and target-path overrides,
+    and sets args._retry_mode = True so downstream code skips trash-specific logic.
+    """
+    retry_path = getattr(args, "retry_failed_file", None) or ""
+    if not retry_path:
+        args._target_path_overrides = {}
+        args._retry_mode = False
+        return True, 0
+    ok, code = _validate_retry_failed_file_arg(args)
+    if not ok:
+        return False, code
+    ok, code, target_path_overrides = _load_retry_failed_file(retry_path)
+    if not ok:
+        return False, code
+    if not target_path_overrides:
+        print(
+            f"ERROR --retry-failed-file '{retry_path}' contains no actionable file IDs; "
+            "nothing to retry.",
+            file=sys.stderr,
+        )
+        return False, 1
+    args.file_ids = list(target_path_overrides.keys())
+    args._target_path_overrides = target_path_overrides
+    args._retry_mode = True
+    return True, 0
+
+
 def _validate_file_ids_if_present(tool, args) -> Tuple[bool, int]:
     # Skip trash-specific prefetch validation when retrying from a failed-file CSV;
     # those IDs are already live (not in trash) so the non-trashed filter would drop them.
@@ -723,27 +754,9 @@ def main() -> int:
     if not ok:
         return code
 
-    retry_path = getattr(args, "retry_failed_file", None) or ""
-    if retry_path:
-        ok, code = _validate_retry_failed_file_arg(args)
-        if not ok:
-            return code
-        ok, code, target_path_overrides = _load_retry_failed_file(retry_path)
-        if not ok:
-            return code
-        if not target_path_overrides:
-            print(
-                f"ERROR --retry-failed-file '{retry_path}' contains no actionable file IDs; "
-                "nothing to retry.",
-                file=sys.stderr,
-            )
-            return 1
-        args.file_ids = list(target_path_overrides.keys())
-        args._target_path_overrides = target_path_overrides
-        args._retry_mode = True
-    else:
-        args._target_path_overrides = {}
-        args._retry_mode = False
+    ok, code = _apply_retry_failed_file(args)
+    if not ok:
+        return code
 
     ok, code = _normalize_and_validate_extensions(args)
     if not ok:

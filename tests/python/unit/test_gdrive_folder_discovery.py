@@ -314,3 +314,108 @@ def test_stream_folder_fetch_error_returns_false():
     disc._fetch_folder_page = MagicMock(side_effect=RuntimeError("fail"))
     ok = disc._stream_stream_folder(batch_n=10, start_time=0.0)
     assert not ok
+
+
+# ---------------------------------------------------------------------------
+# _process_file_data — source_folder_id and will_recover
+# ---------------------------------------------------------------------------
+
+
+def _make_discovery_trash(mode="recover_and_download", extra_args=None):
+    """Make a DriveTrashDiscovery without --folder-id for trash-recovery scenarios."""
+    kwargs = dict(
+        folder_id=None,
+        file_ids=None,
+        mode=mode,
+        after_date=None,
+        extensions=None,
+        post_restore_policy="retain",
+        download_dir="/tmp/dl",
+        verbose=0,
+        limit=0,
+    )
+    if extra_args:
+        kwargs.update(extra_args)
+    args = SimpleNamespace(**kwargs)
+    return DriveTrashDiscovery(
+        args,
+        logger=MagicMock(),
+        auth=MagicMock(),
+        execute_fn=MagicMock(),
+        stats={"found": 0, "errors": 0},
+        stats_lock=Lock(),
+        seen_total_ref=[0],
+        generate_target_path=lambda item: f"/tmp/dl/{item.name}",
+        run_parallel_processing_for_batch=lambda batch, ts: None,
+    )
+
+
+def test_process_file_data_extracts_source_folder_id():
+    disc = _make_discovery_trash()
+    fd = {
+        "id": "file1",
+        "name": "doc.pdf",
+        "mimeType": "application/pdf",
+        "createdTime": "2024-01-01T00:00:00Z",
+        "size": 100,
+        "parents": ["parent-folder-id"],
+    }
+    item = disc._process_file_data(fd)
+    assert item is not None
+    assert item.source_folder_id == "parent-folder-id"
+
+
+def test_process_file_data_source_folder_id_empty_when_no_parents():
+    disc = _make_discovery_trash()
+    fd = {
+        "id": "file2",
+        "name": "doc.pdf",
+        "mimeType": "application/pdf",
+        "createdTime": "2024-01-01T00:00:00Z",
+        "size": 0,
+    }
+    item = disc._process_file_data(fd)
+    assert item is not None
+    assert item.source_folder_id == ""
+
+
+def test_process_file_data_will_recover_true_in_normal_trash_mode():
+    disc = _make_discovery_trash()
+    fd = {
+        "id": "file3",
+        "name": "a.txt",
+        "mimeType": "text/plain",
+        "createdTime": "2024-01-01T00:00:00Z",
+        "size": 1,
+    }
+    item = disc._process_file_data(fd)
+    assert item is not None
+    assert item.will_recover is True
+
+
+def test_process_file_data_will_recover_false_in_retry_mode():
+    disc = _make_discovery_trash(extra_args={"_retry_mode": True})
+    fd = {
+        "id": "file4",
+        "name": "b.txt",
+        "mimeType": "text/plain",
+        "createdTime": "2024-01-01T00:00:00Z",
+        "size": 1,
+    }
+    item = disc._process_file_data(fd)
+    assert item is not None
+    assert item.will_recover is False
+
+
+def test_process_file_data_will_recover_false_with_folder_id():
+    disc = _make_discovery(folder_id="some-folder", mode="recover_and_download")
+    fd = {
+        "id": "file5",
+        "name": "c.txt",
+        "mimeType": "text/plain",
+        "createdTime": "2024-01-01T00:00:00Z",
+        "size": 1,
+    }
+    item = disc._process_file_data(fd)
+    assert item is not None
+    assert item.will_recover is False
