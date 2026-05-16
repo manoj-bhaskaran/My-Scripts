@@ -222,10 +222,24 @@ pg_restore -U backup_user -d job_scheduler -c D:\pgbackup\job_scheduler\job_sche
 
 ## Configuration
 
-The module uses these hardcoded paths (configurable by editing the module):
+`pg_dump` is **auto-detected** at module load by `Resolve-PgDumpPath`
+(`Private/Config.ps1`). Resolution order:
+
+1. `PGBACKUP_PGDUMP` environment variable (explicit override — full path to `pg_dump`/`pg_dump.exe`).
+2. `PGBIN` environment variable (libpq convention) + `pg_dump[.exe]`.
+3. `pg_dump` on `PATH`.
+4. Standard Windows install roots (`%ProgramFiles%\PostgreSQL\<ver>\bin`), newest major version first.
+
+If `pg_dump` cannot be located, a warning is emitted at module load. To pin a
+specific binary on any machine:
 
 ```powershell
-$pg_dump_path = "D:\Program Files\PostgreSQL\17\bin\pg_dump.exe"
+$env:PGBACKUP_PGDUMP = 'D:\Program Files\PostgreSQL\17\bin\pg_dump.exe'
+```
+
+The remaining settings are configured by editing `Private/Config.ps1`:
+
+```powershell
 $service_name = "postgresql-x64-17"
 $service_start_wait = 5   # seconds to wait after service start
 $max_wait_time = 15       # maximum wait for service readiness
@@ -253,9 +267,10 @@ $max_wait_time = 15       # maximum wait for service readiness
 
 ## Troubleshooting
 
-### "pg_dump not found"
-- Verify PostgreSQL is installed at `D:\Program Files\PostgreSQL\17\`
-- Update `$pg_dump_path` in the module if using a different version or location
+### "pg_dump not found" / "Could not auto-detect pg_dump"
+- Verify PostgreSQL client tools are installed
+- Add the PostgreSQL `bin` directory to `PATH`, or set `PGBIN` to it
+- Or set `PGBACKUP_PGDUMP` to the full path of `pg_dump`/`pg_dump.exe`
 
 ### "Password authentication failed"
 - Check `.pgpass` file exists and has correct format

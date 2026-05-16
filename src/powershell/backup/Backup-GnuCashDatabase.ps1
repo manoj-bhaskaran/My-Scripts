@@ -1,6 +1,6 @@
 <#
  .VERSION
-     3.0.0
+     3.0.1
 .SYNOPSIS
     Runs a PostgreSQL backup for the gnucash_db database via the PostgresBackup module.
 
@@ -15,6 +15,14 @@
 
 .NOTES
     CHANGELOG
+    ## 3.0.1 - 2026-05-16
+    ### Fixed
+    - Added a script-level param() block so parameters passed when invoking the
+      script (e.g. -BackupRoot/-LogsRoot/-Database from Task Scheduler or a
+      machine without a D: drive) are honoured instead of being silently
+      ignored. Previously only Invoke-BackupMain declared parameters and it was
+      always called with no arguments, so the hardcoded defaults always won.
+
     ## 3.0.0 - 2026-01-12
     ### Changed
     - Migrated from encrypted password file to .pgpass authentication
@@ -37,6 +45,21 @@
     Author: Manoj Bhaskaran
     Last Updated: 2026-01-12
 #>
+
+[CmdletBinding()]
+param(
+    # Override defaults if needed when calling from Task Scheduler or on a
+    # machine where the D: drive (or default install layout) is unavailable.
+    [string]$Database = 'gnucash_db',
+    [string]$BackupRoot = 'D:\pgbackup\gnucash_db',          # where .backup files go
+    [string]$LogsRoot = 'D:\pgbackup\gnucash_db\logs',      # where .log files go
+    [string]$UserName = 'backup_user',                      # PG user
+    [int]   $RetentionDays = 90,
+    [int]   $MinBackups = 3,
+
+    # If you want to force a specific PostgresBackup version, set this (e.g., '1.0.4')
+    [string]$ModuleVersion
+)
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
@@ -180,7 +203,7 @@ function Invoke-BackupMain {
 }
 
 try {
-    Invoke-BackupMain
+    Invoke-BackupMain @PSBoundParameters
     exit 0
 }
 catch {
