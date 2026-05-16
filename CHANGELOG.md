@@ -11,6 +11,12 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.15.2] - 2026-05-16
+
+### Changed
+
+- **[PostgresBackup] Refactored `Resolve-PgDumpPath` to reduce cognitive complexity (PostgresBackup 2.1.2)** – SonarCloud flagged the function's cognitive complexity at 18 (limit 15). Each resolution strategy (env override, `PGBIN`, `PATH`, install-root scan) and the version-name parser were extracted into dedicated helpers, leaving `Resolve-PgDumpPath` as a simple ordered dispatch loop. Pure refactor — resolution order and the "newest major version first" selection are unchanged.
+
 ## [2.15.1] - 2026-05-16
 
 ### Fixed

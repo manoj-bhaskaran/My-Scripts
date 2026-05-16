@@ -6,6 +6,16 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.2] - 2026-05-16
+### Changed
+- Refactored `Resolve-PgDumpPath` into four single-purpose helpers
+  (`Resolve-PgDumpFromEnvOverride`, `Resolve-PgDumpFromPgBin`,
+  `Resolve-PgDumpFromPath`, `Resolve-PgDumpFromInstallRoots`) plus a
+  `Get-PgVersionFromName` parser. The entry function is now an ordered
+  dispatch loop, reducing its cognitive complexity from 18 to within the
+  allowed 15. No behavioural change — resolution order and version
+  selection are identical.
+
 ## [2.1.1] - 2026-05-16
 ### Fixed
 - `Resolve-PgDumpPath` now collects version directories across **all** Windows

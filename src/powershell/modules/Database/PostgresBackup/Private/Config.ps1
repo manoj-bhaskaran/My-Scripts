@@ -1,3 +1,55 @@
+function Get-PgVersionFromName {
+    # Parse a PostgreSQL install-dir name (e.g. '17', '9.6') into a [version].
+    param([Parameter(Mandatory = $true)][string]$Name)
+    $v = $null
+    $match = [regex]::Match($Name, '^\d+(\.\d+)?').Value
+    if ($match -and [version]::TryParse(($match + '.0'), [ref]$v)) { return $v }
+    return [version]'0.0'
+}
+
+function Resolve-PgDumpFromEnvOverride {
+    # 1. PGBACKUP_PGDUMP environment variable (explicit override).
+    if ($env:PGBACKUP_PGDUMP -and (Test-Path -LiteralPath $env:PGBACKUP_PGDUMP)) {
+        return $env:PGBACKUP_PGDUMP
+    }
+}
+
+function Resolve-PgDumpFromPgBin {
+    # 2. PGBIN environment variable (libpq convention) + pg_dump[.exe].
+    if (-not $env:PGBIN) { return }
+    foreach ($exe in @('pg_dump.exe', 'pg_dump')) {
+        $candidate = Join-Path $env:PGBIN $exe
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+}
+
+function Resolve-PgDumpFromPath {
+    # 3. pg_dump on PATH.
+    $cmd = Get-Command -Name 'pg_dump' -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($cmd) { return $cmd.Source }
+}
+
+function Resolve-PgDumpFromInstallRoots {
+    # 4. Standard Windows install roots, newest major version first. Candidate
+    #    directories from all roots are pooled and sorted globally so the newest
+    #    version wins regardless of which root it lives under.
+    $roots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) |
+        Where-Object { $_ } |
+        ForEach-Object { Join-Path $_ 'PostgreSQL' }
+
+    $candidates = foreach ($root in $roots) {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue
+    }
+
+    $candidates |
+        Sort-Object { Get-PgVersionFromName $_.Name } -Descending |
+        ForEach-Object { Join-Path $_.FullName 'bin\pg_dump.exe' } |
+        Where-Object { Test-Path -LiteralPath $_ } |
+        Select-Object -First 1
+}
+
 function Resolve-PgDumpPath {
     <#
     .SYNOPSIS
@@ -14,42 +66,17 @@ function Resolve-PgDumpPath {
     [CmdletBinding()]
     param()
 
-    if ($env:PGBACKUP_PGDUMP -and (Test-Path -LiteralPath $env:PGBACKUP_PGDUMP)) {
-        return $env:PGBACKUP_PGDUMP
+    $resolvers = @(
+        ${function:Resolve-PgDumpFromEnvOverride},
+        ${function:Resolve-PgDumpFromPgBin},
+        ${function:Resolve-PgDumpFromPath},
+        ${function:Resolve-PgDumpFromInstallRoots}
+    )
+
+    foreach ($resolver in $resolvers) {
+        $found = & $resolver
+        if ($found) { return $found }
     }
-
-    if ($env:PGBIN) {
-        foreach ($exe in @('pg_dump.exe', 'pg_dump')) {
-            $candidate = Join-Path $env:PGBIN $exe
-            if (Test-Path -LiteralPath $candidate) { return $candidate }
-        }
-    }
-
-    $cmd = Get-Command -Name 'pg_dump' -CommandType Application -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if ($cmd) { return $cmd.Source }
-
-    $roots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) |
-        Where-Object { $_ } |
-        ForEach-Object { Join-Path $_ 'PostgreSQL' }
-
-    $candidates = foreach ($root in $roots) {
-        if (-not (Test-Path -LiteralPath $root)) { continue }
-        Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue
-    }
-
-    $found = $candidates |
-        Sort-Object {
-            $v = $null
-            $name = [regex]::Match($_.Name, '^\d+(\.\d+)?').Value
-            if ($name -and [version]::TryParse(($name + '.0'), [ref]$v)) { $v }
-            else { [version]'0.0' }
-        } -Descending |
-        ForEach-Object { Join-Path $_.FullName 'bin\pg_dump.exe' } |
-        Where-Object { Test-Path -LiteralPath $_ } |
-        Select-Object -First 1
-
-    if ($found) { return $found }
 
     return $null
 }
