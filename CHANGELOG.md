@@ -11,6 +11,12 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.15.1] - 2026-05-16
+
+### Fixed
+
+- **[PostgresBackup] pg_dump auto-detection now compares versions across all install roots (PostgresBackup 2.1.1)** – `Resolve-PgDumpPath` returned the newest `pg_dump` found under the *first* existing Windows install root and never compared it against versions under later roots (`%ProgramFiles(x86)%`). On hosts with PostgreSQL installs split across both roots this could select an older client binary even when a newer major version existed elsewhere, contradicting the documented "newest major version first" behaviour. Fixed by collecting version directories from all roots into a single set and sorting globally before selecting.
+
 ## [2.15.0] - 2026-05-16
 
 ### Fixed

@@ -33,20 +33,23 @@ function Resolve-PgDumpPath {
         Where-Object { $_ } |
         ForEach-Object { Join-Path $_ 'PostgreSQL' }
 
-    foreach ($root in $roots) {
+    $candidates = foreach ($root in $roots) {
         if (-not (Test-Path -LiteralPath $root)) { continue }
-        $found = Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
-            Sort-Object {
-                $v = $null
-                $name = [regex]::Match($_.Name, '^\d+(\.\d+)?').Value
-                if ($name -and [version]::TryParse(($name + '.0'), [ref]$v)) { $v }
-                else { [version]'0.0' }
-            } -Descending |
-            ForEach-Object { Join-Path $_.FullName 'bin\pg_dump.exe' } |
-            Where-Object { Test-Path -LiteralPath $_ } |
-            Select-Object -First 1
-        if ($found) { return $found }
+        Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue
     }
+
+    $found = $candidates |
+        Sort-Object {
+            $v = $null
+            $name = [regex]::Match($_.Name, '^\d+(\.\d+)?').Value
+            if ($name -and [version]::TryParse(($name + '.0'), [ref]$v)) { $v }
+            else { [version]'0.0' }
+        } -Descending |
+        ForEach-Object { Join-Path $_.FullName 'bin\pg_dump.exe' } |
+        Where-Object { Test-Path -LiteralPath $_ } |
+        Select-Object -First 1
+
+    if ($found) { return $found }
 
     return $null
 }

@@ -6,6 +6,15 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.1] - 2026-05-16
+### Fixed
+- `Resolve-PgDumpPath` now collects version directories across **all** Windows
+  install roots (`%ProgramFiles%` and `%ProgramFiles(x86)%`) and sorts them
+  globally before selecting. Previously the scan returned the newest version
+  found under the *first* existing root, which could pick an older `pg_dump`
+  when a newer major version was installed only under a later root —
+  contradicting the documented "newest major version first" behaviour.
+
 ## [2.1.0] - 2026-05-16
 ### Changed
 - `pg_dump` path is no longer hardcoded to `D:\Program Files\PostgreSQL\17\bin\pg_dump.exe`.
