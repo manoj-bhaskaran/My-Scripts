@@ -11,6 +11,16 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.15.0] - 2026-05-16
+
+### Fixed
+
+- **[Backup-GnuCashDatabase] Script-level parameters were silently ignored (Backup-GnuCashDatabase 3.0.1)** – `src/powershell/backup/Backup-GnuCashDatabase.ps1` declared its parameters only on the internal `Invoke-BackupMain` function, which was always called with no arguments, and the script itself had no top-level `param()` block. As a result any parameters passed when invoking the script (e.g. `-BackupRoot`, `-LogsRoot`, `-Database`, `-UserName`, `-RetentionDays`, `-MinBackups`, `-ModuleVersion` from Task Scheduler) were rejected/ignored and the hardcoded `D:\pgbackup\gnucash_db` defaults always won. This only surfaced when running on a spare machine with no `D:` drive, where path overrides were required. Fixed by adding a script-level `[CmdletBinding()] param()` block mirroring the function's parameters and forwarding caller-supplied values to `Invoke-BackupMain` via `@PSBoundParameters` splatting (so unspecified parameters still fall back to the documented defaults).
+
+### Changed
+
+- **[PostgresBackup] `pg_dump` path is now auto-detected instead of hardcoded (PostgresBackup 2.1.0)** – `Private/Config.ps1` previously hardcoded `$pg_dump_path = "D:\Program Files\PostgreSQL\17\bin\pg_dump.exe"`, a machine-specific path that broke the module on any host without that exact drive layout / PostgreSQL version. A new `Resolve-PgDumpPath` private helper now resolves the executable in order: `PGBACKUP_PGDUMP` environment variable (explicit override), `PGBIN` environment variable (libpq convention), `pg_dump` on `PATH`, then the standard Windows install roots (`%ProgramFiles%[ (x86)]\PostgreSQL\<ver>\bin`, newest major version first). A warning is emitted at module load if `pg_dump` cannot be located so misconfiguration surfaces clearly rather than failing opaquely later. Module manifest bumped to `2.1.0`; README configuration/troubleshooting sections updated accordingly.
+
 ## [2.14.0] - 2026-05-14
 
 ### Added
