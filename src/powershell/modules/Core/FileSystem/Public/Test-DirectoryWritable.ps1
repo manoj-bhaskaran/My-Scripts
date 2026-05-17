@@ -58,7 +58,7 @@ function Test-DirectoryWritable {
         Write-Verbose "Write probe failed for '$Path': $($_.Exception.Message)"
     } finally {
         if (Test-Path -LiteralPath $probe) {
-            try { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue } catch { }
+            try { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue } catch { Write-Verbose "Probe cleanup failed for '$probe': $($_.Exception.Message)" }
         }
     }
 
