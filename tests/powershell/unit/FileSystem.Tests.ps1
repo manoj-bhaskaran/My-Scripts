@@ -323,6 +323,96 @@ Describe "FileSystem Module" {
         }
     }
 
+    Context "Add-TrailingSeparator" {
+        It "Appends platform separator when missing" {
+            $sep = [IO.Path]::DirectorySeparatorChar
+            $result = Add-TrailingSeparator -Path "C:\Temp"
+            $result | Should -Be ("C:\Temp" + $sep)
+        }
+
+        It "Does not append when separator already present" {
+            $sep = [IO.Path]::DirectorySeparatorChar
+            $path = "C:\Temp" + $sep
+            Add-TrailingSeparator -Path $path | Should -Be $path
+        }
+
+        It "Does not append when alternate separator already present" {
+            $altSep = [IO.Path]::AltDirectorySeparatorChar
+            $path = "C:/Temp" + $altSep
+            Add-TrailingSeparator -Path $path | Should -Be $path
+        }
+
+        It "Accepts pipeline input" {
+            $sep = [IO.Path]::DirectorySeparatorChar
+            $result = "C:\Temp" | Add-TrailingSeparator
+            $result | Should -Be ("C:\Temp" + $sep)
+        }
+    }
+
+    Context "Test-DirectoryWritable" {
+        It "Returns true for an existing writable directory" {
+            $dir = "TestDrive:/WritableDir"
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            Test-DirectoryWritable -Path $dir | Should -Be $true
+        }
+
+        It "Returns false for a non-existent directory" {
+            Test-DirectoryWritable -Path "TestDrive:/DoesNotExist" | Should -Be $false
+        }
+
+        It "Throws with -ThrowOnFailure for a non-existent directory" {
+            { Test-DirectoryWritable -Path "TestDrive:/NoSuchDir" -ThrowOnFailure } |
+                Should -Throw "*Directory is not writable*"
+        }
+
+        It "Leaves no probe directory behind after a successful check" {
+            $dir = "TestDrive:/CleanProbeDir"
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            Test-DirectoryWritable -Path $dir | Out-Null
+            $leftover = Get-ChildItem -LiteralPath $dir -ErrorAction SilentlyContinue
+            $leftover | Should -BeNullOrEmpty
+        }
+
+        It "Returns [bool] output type" {
+            $dir = "TestDrive:/BoolTypeDir"
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            $result = Test-DirectoryWritable -Path $dir
+            $result -is [bool] | Should -Be $true
+        }
+    }
+
+    Context "Test-PathContainment" {
+        It "Returns true when candidate is directly inside container" {
+            Test-PathContainment -Container "C:\Source" -Candidate "C:\Source\Sub" |
+                Should -Be $true
+        }
+
+        It "Returns true when candidate is deeply nested inside container" {
+            Test-PathContainment -Container "C:\Source" -Candidate "C:\Source\A\B\C" |
+                Should -Be $true
+        }
+
+        It "Returns false for a shared prefix that is not containment" {
+            Test-PathContainment -Container "C:\Source" -Candidate "C:\SourceExtra" |
+                Should -Be $false
+        }
+
+        It "Returns false when candidate equals container" {
+            Test-PathContainment -Container "C:\Source" -Candidate "C:\Source" |
+                Should -Be $false
+        }
+
+        It "Is case-insensitive" {
+            Test-PathContainment -Container "C:\source" -Candidate "C:\SOURCE\sub" |
+                Should -Be $true
+        }
+
+        It "Returns false when candidate is the parent of the container" {
+            Test-PathContainment -Container "C:\Source\Sub" -Candidate "C:\Source" |
+                Should -Be $false
+        }
+    }
+
     Context "Module Exports" {
         It "Exports expected functions" {
             $commands = Get-Command -Module FileSystem
@@ -336,6 +426,9 @@ Describe "FileSystem Module" {
             $commands.Name | Should -Contain 'Resolve-UniqueDirectoryPath'
             $commands.Name | Should -Contain 'Get-SafeName'
             $commands.Name | Should -Contain 'Test-LongPathsEnabled'
+            $commands.Name | Should -Contain 'Test-DirectoryWritable'
+            $commands.Name | Should -Contain 'Add-TrailingSeparator'
+            $commands.Name | Should -Contain 'Test-PathContainment'
         }
 
         It "Does not export private functions" {
