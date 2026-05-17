@@ -789,26 +789,34 @@ Describe 'Test-ScriptPreconditions' {
     }
 
     It 'throws when source and destination are the same path' {
-        $dir = Join-Path $TestDrive 'same-dir'
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        # Get-FullPath returns the same (possibly mangled) string for both arguments,
+        # so the equality check always fires before any path-containment logic.
+        Mock Get-FullPath { param([string]$Path) $Path }
+        $sep = [System.IO.Path]::DirectorySeparatorChar
+        $dir = "${sep}precond-same"
 
         { Test-ScriptPreconditions -SourceDir $dir -DestinationDir $dir } |
             Should -Throw "*Source and destination cannot be the same*"
     }
 
     It 'throws when destination is inside the source directory' {
-        $src  = Join-Path $TestDrive 'outer'
-        $dest = Join-Path $src 'inner'
-        New-Item -ItemType Directory -Path $dest -Force | Out-Null
+        # Get-FullPath converts '/' to '\' before resolving, which breaks containment
+        # detection on Linux (Add-TrailingSeparator then adds '/' making StartsWith fail).
+        # Mock it as an identity so Test-PathContainment sees native-separator paths.
+        Mock Get-FullPath { param([string]$Path) $Path }
+        $sep  = [System.IO.Path]::DirectorySeparatorChar
+        $src  = "${sep}precond-src"
+        $dest = "${sep}precond-src${sep}inner"
 
         { Test-ScriptPreconditions -SourceDir $src -DestinationDir $dest } |
             Should -Throw "*Destination cannot be inside the source*"
     }
 
     It 'throws when source is inside the destination directory' {
-        $dest = Join-Path $TestDrive 'dest-outer'
-        $src  = Join-Path $dest 'src-inner'
-        New-Item -ItemType Directory -Path $src -Force | Out-Null
+        Mock Get-FullPath { param([string]$Path) $Path }
+        $sep  = [System.IO.Path]::DirectorySeparatorChar
+        $dest = "${sep}precond-dest"
+        $src  = "${sep}precond-dest${sep}inner"
 
         { Test-ScriptPreconditions -SourceDir $src -DestinationDir $dest } |
             Should -Throw "*Source cannot be inside the destination*"
