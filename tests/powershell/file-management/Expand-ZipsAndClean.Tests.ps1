@@ -689,19 +689,10 @@ Describe 'Write-ExtractionSummary' {
     }
 
     It 'summary view contains expected fields (SrcDir, ZipsFound, Ratio, Duration)' {
-        # Use a List to capture pipeline input from whichever of Format-Table/Format-List
-        # is invoked (headless CI returns Width=0, so Format-List is used; interactive
-        # terminals use Format-Table). Both mocks add to the same list.
-        $capturedItems = [System.Collections.Generic.List[object]]::new()
-        Mock Write-Host { }
-        Mock Format-Table {
-            param([Parameter(ValueFromPipeline = $true)]$InputObject, [switch]$AutoSize)
-            process { $capturedItems.Add($InputObject) }
-        }
-        Mock Format-List {
-            param([Parameter(ValueFromPipeline = $true)]$InputObject)
-            process { $capturedItems.Add($InputObject) }
-        }
+        # Pass -ConsoleWidth 120 to guarantee Format-Table is used regardless of the
+        # CI host's actual console width (headless Linux returns Width=0).
+        Mock Write-Host  { }
+        Mock Format-Table { }
 
         Write-ExtractionSummary `
             -SourceDirectory 'C:\mysrc' -DestinationDirectory 'C:\mydest' `
@@ -709,16 +700,17 @@ Describe 'Write-ExtractionSummary' {
             -ZipCount 7 -ProcessedZips 6 -FilesExtracted 30 `
             -UncompressedBytes ([int64]2000000) -CompressedBytes ([int64]600000) `
             -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
-            -Elapsed ([timespan]::FromSeconds(10)) -HostName 'ConsoleHost'
+            -Elapsed ([timespan]::FromSeconds(10)) -HostName 'ConsoleHost' -ConsoleWidth 120
 
-        $capturedItems.Count | Should -BeGreaterThan 0
-        $view = $capturedItems[0]
-        $view.SrcDir    | Should -Be 'C:\mysrc'
-        $view.DestDir   | Should -Be 'C:\mydest'
-        $view.ZipsFound | Should -Be 7
-        $view.ZipsDone  | Should -Be 6
-        $view.Files     | Should -Be 30
-        $view.Ratio     | Should -Be '3.3x'
-        $view.Duration  | Should -BeLike '00:00:10*'
+        Should -Invoke Format-Table -Times 1 -Exactly -ParameterFilter {
+            $InputObject -ne $null -and
+            $InputObject.SrcDir    -eq 'C:\mysrc' -and
+            $InputObject.DestDir   -eq 'C:\mydest' -and
+            $InputObject.ZipsFound -eq 7 -and
+            $InputObject.ZipsDone  -eq 6 -and
+            $InputObject.Files     -eq 30 -and
+            $InputObject.Ratio     -eq '3.3x' -and
+            ($InputObject.Duration -like '00:00:10*')
+        }
     }
 }

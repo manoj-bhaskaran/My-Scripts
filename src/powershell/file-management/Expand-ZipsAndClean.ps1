@@ -884,6 +884,11 @@ function Move-ZipFilesToParent {
 .PARAMETER HostName
     Name of the current host. Defaults to $Host.Name. Accepted as a parameter
     so that tests can inject a synthetic value without spawning a new host.
+.PARAMETER ConsoleWidth
+    Override the detected console width. 0 (default) means auto-detect via
+    $Host.UI.RawUI.WindowSize.Width. Pass a positive value to force Format-Table
+    (>= 120) or Format-List (< 120) regardless of the actual terminal width.
+    Useful in tests and when piping output to a fixed-width formatter.
 .NOTES
     Error notes are always emitted when errors exist, regardless of host type,
     so that failures are never silently swallowed in scheduled tasks or
@@ -902,9 +907,10 @@ function Write-ExtractionSummary {
         [Parameter(Mandatory)][int64]$UncompressedBytes,
         [Parameter(Mandatory)][int64]$CompressedBytes,
         [Parameter(Mandatory)][pscustomobject]$MoveSummary,
-        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$Errors,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$Errors,
         [Parameter(Mandatory)][timespan]$Elapsed,
-        [string]$HostName = $Host.Name
+        [string]$HostName = $Host.Name,
+        [int]$ConsoleWidth = 0
     )
 
     $isInteractive = $HostName -in ('ConsoleHost', 'Visual Studio Code Host')
@@ -938,10 +944,11 @@ function Write-ExtractionSummary {
         Write-Host ""
         Write-Host "==== Expand-ZipsAndClean Summary ===="
 
-        $consoleWidth = try { $Host.UI.RawUI.WindowSize.Width } catch { $null }
-        $consoleWidth = $consoleWidth ?? 120
+        $effectiveWidth = if ($ConsoleWidth -gt 0) { $ConsoleWidth } else {
+            (try { $Host.UI.RawUI.WindowSize.Width } catch { $null }) ?? 120
+        }
 
-        if ($consoleWidth -lt 120) {
+        if ($effectiveWidth -lt 120) {
             $summaryView | Format-List
         } else {
             $summaryView | Format-Table -AutoSize
