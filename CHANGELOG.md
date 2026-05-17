@@ -376,81 +376,17 @@ Entries older than the current minor release line are condensed to architectural
 - **FileDistributor startup binding safety**
   - Removed unsupported `-WarningsSoFar` / `-ErrorsSoFar` arguments from `New-FileQueue` calls in parameter validation.
 
-## [2.11.x]
-
-- No 2.11.x patches — next release was [2.12.0].
-
-## [2.11.0] - 2026-03-26
-
-### Added
-
-- **ErrorHandling v1.1.0: optional file-not-found skip in `Invoke-WithRetry`**
-  - Added `-IgnoreFileNotFound` switch to `Invoke-WithRetry` in `Core/ErrorHandling`
-  - When enabled, `ItemNotFoundException` and matching "Cannot find path ... does not exist" errors now log a warning and return without retry/rethrow
-  - Default behavior remains unchanged for existing callers that do not set the switch
-  - Updated ErrorHandling module documentation and tests to cover the new switch behavior
-
-## [2.10.6] - 2026-03-26
-
-### Fixed
-
-- **FileDistributor.ps1 v4.6.7: accept scalar checkpoint payload inputs**
-  - Updated `New-CheckpointPayload` parameter typing so single `FileInfo`/`DirectoryInfo` values for `sourceFiles` or `subfolders` bind correctly
-  - Prevents valid one-item scenarios (for example `MaxFilesToCopy=1` or a single target subfolder) from failing before `SaveState`
-
-## [2.10.5] - 2026-03-26
+## [2.10.0]–[2.11.0] - 2026-03-26
 
 ### Changed
 
-- **FileDistributor.ps1 v4.6.6: deduplicate checkpoint payload creation**
-  - Added `New-CheckpointPayload` to build standard checkpoint state keys (`totalSourceFiles`, `totalSourceFilesAll`, `totalTargetFilesBefore`, `subfolders`, `deleteMode`, `SourceFolder`, `MaxFilesToCopy`) with optional inclusion of `sourceFiles` and `FilesToDelete`
-  - Updated `Invoke-DistributionPhase` and `Invoke-PostProcessingPhase` to use the helper for checkpoints 2-8, removing repeated hashtable assembly logic
-
-## [2.10.4] - 2026-03-26
-
-### Fixed
-
-- **FileDistributor.ps1 v4.6.5: restore containment and fallback safety in shared subfolder helper**
-  - `Get-SubfolderFileCounts` now enforces target-root containment for resolved candidate subfolders before they are used as destinations
-  - Fresh-scan enumeration failures no longer force an early empty return; the helper now continues with existing candidates and still allows emergency-subfolder fallback when requested
-
-## [2.10.3] - 2026-03-26
-
-### Changed
-
-- **FileDistributor.ps1 v4.6.4: shared subfolder enumerate/count helper refactor**
-  - Added `Get-SubfolderFileCounts` to centralize subfolder normalization, per-folder file counting, empty-candidate handling, and aggregate counting
-  - Updated all five distribution algorithms to consume the shared helper for their enumerate-and-count setup sequence, removing duplicated prolog logic
-
-## [2.10.2] - 2026-03-26
-
-### Fixed
-
-- **FileDistributor.ps1 v4.6.3: preserve EndOfScript queue-failure signal**
-  - `Invoke-FileMove` now surfaces EndOfScript queue outcome and logs a warning when `Add-FileToQueue` fails
-  - `DistributeFilesToSubfolders` now emits "pending deletion" only when queue insertion succeeds; otherwise it logs a warning for easier troubleshooting
-
-## [2.10.1] - 2026-03-26
-
-### Changed
-
-- **FileDistributor.ps1 v4.6.2: shared move helper refactor**
-  - Extracted a private `Invoke-FileMove` helper in `FileDistributor.ps1` to unify file-name conflict resolution, retried copy, delete-mode handling (`RecycleBin` / `Immediate` / `EndOfScript` queue), global counter updates, and progress reporting
-  - Updated all five distribution algorithms (`DistributeFilesToSubfolders`, `RedistributeFilesInTarget` via `DistributeFilesToSubfolders`, `RebalanceSubfoldersByAverage`, `RandomizeDistributionAcrossFolders`, and `ConsolidateSubfoldersToMinimum`) to reuse the shared helper and remove duplicated move-loop logic
-
-## [2.10.0] - 2026-03-26
-
-### Changed
-
-- **FileDistributor.ps1 v4.6.0: decomposed Main into orchestration sub-functions**
-  - Extracted Main into targeted phase functions to improve readability and maintainability:
-    - `Invoke-ParameterValidation`
-    - `Invoke-RestoreCheckpoint`
-    - `Invoke-DistributionPhase`
-    - `Invoke-PostProcessingPhase`
-    - `Invoke-EndOfScriptDeletion`
-    - `Invoke-PostRunCleanup`
-  - Main now acts as orchestration glue while checkpoint, restart, deletion-queue, and post-run cleanup behavior remains structured by phase
+- **FileDistributor Main decomposition + shared helpers**
+  - `Main` decomposed into 6 phase functions: `Invoke-ParameterValidation`, `Invoke-RestoreCheckpoint`, `Invoke-DistributionPhase`, `Invoke-PostProcessingPhase`, `Invoke-EndOfScriptDeletion`, `Invoke-PostRunCleanup`.
+  - `Invoke-FileMove` private helper unifying conflict resolution, retry, delete-mode handling, and progress reporting across all 5 distribution algorithms.
+  - `Get-SubfolderFileCounts` shared enumerate/count helper centralizing subfolder normalization and per-folder file counting.
+  - `New-CheckpointPayload` helper for standardized checkpoint state across distribution and post-processing phases.
+  - `Core/ErrorHandling` v1.1.0: `-IgnoreFileNotFound` switch on `Invoke-WithRetry` — skips with a warning log on `ItemNotFoundException` without retry or rethrow.
+  - Plus targeted bug fixes for checkpoint binding, target-root containment, and EndOfScript signalling.
 
 ## [2.9.1] - 2026-03-25
 
