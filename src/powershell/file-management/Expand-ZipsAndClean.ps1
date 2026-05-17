@@ -851,11 +851,8 @@ function Move-ZipFilesToParent {
       header, Format-Table/-List view, and error notes.
     - Non-interactive hosts (scheduled tasks, redirected streams): the
       formatted table is suppressed, but any accumulated errors are still
-      written so failures are never silent in automation logs.
-
-    The Write-Host calls in this function are intentional terminal output, not
-    logging. This is documented here so future maintainers do not replace them
-    with Write-Output or Write-Information without considering the intent.
+      written to the success stream so failures are never silent in
+      automation logs.
 .PARAMETER SourceDirectory
     Source directory passed to the script.
 .PARAMETER DestinationDirectory
@@ -921,9 +918,7 @@ function Write-ExtractionSummary {
     $isInteractive = $HostName -in ('ConsoleHost', 'Visual Studio Code Host')
 
     if ($isInteractive) {
-        $compressionRatio = if ($CompressedBytes -gt 0) {
-            "{0:N1}x" -f ($UncompressedBytes / [double]$CompressedBytes)
-        } else { "n/a" }
+        $compressionRatio = ($CompressedBytes -gt 0) ? ("{0:N1}x" -f ($UncompressedBytes / [double]$CompressedBytes)) : "n/a"
 
         $summaryView = [pscustomobject]@{
             SrcDir          = $SourceDirectory
@@ -946,11 +941,11 @@ function Write-ExtractionSummary {
             Duration        = ("{0:hh\:mm\:ss\.fff}" -f $Elapsed)
         }
 
-        Write-Host ""
-        Write-Host "==== Expand-ZipsAndClean Summary ===="
+        Write-Output ""
+        Write-Output "==== Expand-ZipsAndClean Summary ===="
 
         $rawWidth = try { $Host.UI.RawUI.WindowSize.Width } catch { $null }
-        $effectiveWidth = if ($ConsoleWidth -gt 0) { $ConsoleWidth } else { $rawWidth ?? 120 }
+        $effectiveWidth = ($ConsoleWidth -gt 0) ? $ConsoleWidth : ($rawWidth ?? 120)
 
         if ($effectiveWidth -lt 120) {
             $summaryView | Format-List
@@ -962,8 +957,9 @@ function Write-ExtractionSummary {
     }
 
     if ($Errors.Count -gt 0) {
-        Write-Host $(if ($isInteractive) { "`nNotes / Errors:" } else { "Notes / Errors:" })
-        $Errors | ForEach-Object { Write-Host " - $_" }
+        if ($isInteractive) { Write-Output "" }
+        Write-Output "Notes / Errors:"
+        $Errors | ForEach-Object { Write-Output " - $_" }
     }
 }
 

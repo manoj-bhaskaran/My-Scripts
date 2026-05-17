@@ -612,36 +612,33 @@ Describe 'Write-ExtractionSummary' {
     }
 
     It 'emits summary header when host is interactive (ConsoleHost)' {
-        $script:captured = [System.Collections.Generic.List[string]]::new()
-        Mock Write-Host { $script:captured.Add([string]$Object) }
         Mock Format-Table { }
         Mock Format-List  { }
 
-        Write-ExtractionSummary `
+        $output = @(Write-ExtractionSummary `
             -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
             -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
             -ZipCount 5 -ProcessedZips 5 -FilesExtracted 20 `
             -UncompressedBytes ([int64]1000000) -CompressedBytes ([int64]300000) `
             -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
-            -Elapsed $script:testElapsed -HostName 'ConsoleHost'
+            -Elapsed $script:testElapsed -HostName 'ConsoleHost')
 
-        $script:captured | Should -Contain '==== Expand-ZipsAndClean Summary ===='
+        $output | Should -Contain '==== Expand-ZipsAndClean Summary ===='
     }
 
     It 'suppresses summary table and header when non-interactive and no errors' {
-        Mock Write-Host  { }
         Mock Format-Table { }
         Mock Format-List  { }
 
-        Write-ExtractionSummary `
+        $output = @(Write-ExtractionSummary `
             -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
             -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
             -ZipCount 5 -ProcessedZips 5 -FilesExtracted 20 `
             -UncompressedBytes ([int64]1000000) -CompressedBytes ([int64]300000) `
             -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
-            -Elapsed $script:testElapsed -HostName 'DefaultHost'
+            -Elapsed $script:testElapsed -HostName 'DefaultHost')
 
-        Should -Invoke Write-Host   -Times 0
+        $output.Count   | Should -Be 0
         Should -Invoke Format-Table -Times 0
         Should -Invoke Format-List  -Times 0
     }
@@ -649,59 +646,56 @@ Describe 'Write-ExtractionSummary' {
     It 'emits error notes even when host is non-interactive' {
         $errList = [System.Collections.Generic.List[string]]::new()
         $errList.Add('Archive is corrupt')
-        $script:captured = [System.Collections.Generic.List[string]]::new()
-        Mock Write-Host  { $script:captured.Add([string]$Object) }
         Mock Format-Table { }
         Mock Format-List  { }
 
-        Write-ExtractionSummary `
+        $output = @(Write-ExtractionSummary `
             -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
             -ExtractMode 'Flat' -CollisionPolicy 'Skip' `
             -ZipCount 1 -ProcessedZips 0 -FilesExtracted 0 `
             -UncompressedBytes ([int64]0) -CompressedBytes ([int64]0) `
             -MoveSummary $script:defaultMoveSummary -Errors $errList `
-            -Elapsed $script:testElapsed -HostName 'DefaultHost'
+            -Elapsed $script:testElapsed -HostName 'DefaultHost')
 
         Should -Invoke Format-Table -Times 0
         Should -Invoke Format-List  -Times 0
-        ($script:captured | Where-Object { $_ -like '*Notes / Errors*' }) | Should -Not -BeNullOrEmpty
-        ($script:captured | Where-Object { $_ -like '* - Archive is corrupt' }) | Should -Not -BeNullOrEmpty
+        ($output | Where-Object { $_ -like '*Notes / Errors*' }) | Should -Not -BeNullOrEmpty
+        ($output | Where-Object { $_ -like '* - Archive is corrupt' }) | Should -Not -BeNullOrEmpty
     }
 
     It 'emits error notes when interactive and error list is non-empty' {
         $errList = [System.Collections.Generic.List[string]]::new()
         $errList.Add('Something went wrong')
-        $script:captured = [System.Collections.Generic.List[string]]::new()
-        Mock Write-Host  { $script:captured.Add([string]$Object) }
         Mock Format-Table { }
         Mock Format-List  { }
 
-        Write-ExtractionSummary `
+        $output = @(Write-ExtractionSummary `
             -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
             -ExtractMode 'Flat' -CollisionPolicy 'Skip' `
             -ZipCount 2 -ProcessedZips 2 -FilesExtracted 4 `
             -UncompressedBytes ([int64]500) -CompressedBytes ([int64]200) `
             -MoveSummary $script:defaultMoveSummary -Errors $errList `
-            -Elapsed $script:testElapsed -HostName 'ConsoleHost'
+            -Elapsed $script:testElapsed -HostName 'ConsoleHost')
 
-        ($script:captured | Where-Object { $_ -like '*Notes / Errors*' }) | Should -Not -BeNullOrEmpty
-        ($script:captured | Where-Object { $_ -like '* - Something went wrong' }) | Should -Not -BeNullOrEmpty
+        ($output | Where-Object { $_ -like '*Notes / Errors*' }) | Should -Not -BeNullOrEmpty
+        ($output | Where-Object { $_ -like '* - Something went wrong' }) | Should -Not -BeNullOrEmpty
     }
 
     It 'summary view contains expected fields (SrcDir, ZipsFound, Ratio, Duration)' {
-        # -PassThru returns the PSCustomObject directly so field values can be
-        # asserted without relying on Pester's pipeline-input capture in mocks.
-        Mock Write-Host  { }
+        # -PassThru emits the PSCustomObject to the pipeline alongside string output;
+        # filter by type to extract it without relying on Format-Table/-List mocks.
         Mock Format-Table { }
         Mock Format-List  { }
 
-        $view = Write-ExtractionSummary `
+        $allOutput = @(Write-ExtractionSummary `
             -SourceDirectory 'C:\mysrc' -DestinationDirectory 'C:\mydest' `
             -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
             -ZipCount 7 -ProcessedZips 6 -FilesExtracted 30 `
             -UncompressedBytes ([int64]2000000) -CompressedBytes ([int64]600000) `
             -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
-            -Elapsed ([timespan]::FromSeconds(10)) -HostName 'ConsoleHost' -PassThru
+            -Elapsed ([timespan]::FromSeconds(10)) -HostName 'ConsoleHost' -PassThru)
+
+        $view = $allOutput | Where-Object { $_ -isnot [string] } | Select-Object -First 1
 
         $view             | Should -Not -BeNullOrEmpty
         $view.SrcDir      | Should -Be 'C:\mysrc'

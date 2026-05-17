@@ -19,21 +19,26 @@
 
 - Main script body: replaced the 45-line inline summary block with a single
   `Write-ExtractionSummary` call. `Main` is now focused on orchestration only.
+- `Write-ExtractionSummary`: replaced `Write-Host` with `Write-Output` throughout so
+  summary text is pipeline-capturable (SonarCloud S2228).
+- `Write-ExtractionSummary`: converted two nested `if/else` branches (compression-ratio
+  and effective-width selection) to PS7 ternary `?:`, and restructured the `Notes / Errors:`
+  header to eliminate an `else` branch — reduces Cognitive Complexity from 18 to ≤15
+  (SonarCloud S3776).
 
 ### Tests
 
 - Added `Describe 'Write-ExtractionSummary'` with five `It` blocks:
   - `emits summary header when host is interactive (ConsoleHost)`.
   - `suppresses summary table and header when non-interactive and no errors` — passes
-    `HostName 'DefaultHost'` with an empty error list; asserts `Write-Host`,
-    `Format-Table`, and `Format-List` are each called zero times.
+    `HostName 'DefaultHost'` with an empty error list; asserts output is empty and
+    `Format-Table` / `Format-List` are each called zero times.
   - `emits error notes even when host is non-interactive` — passes `HostName 'DefaultHost'`
-    with a non-empty error list; asserts the table is suppressed but errors are written.
+    with a non-empty error list; asserts the table is suppressed but errors appear in output.
   - `emits error notes when interactive and error list is non-empty`.
-  - `summary view contains expected fields` — uses `[Parameter(ValueFromPipeline)]` +
-    `process {}` mocks for both `Format-Table` and `Format-List` (CI headless hosts return
-    Width=0, so `Format-List` is called instead of `Format-Table`); asserts `SrcDir`,
-    `DestDir`, `ZipsFound`, `ZipsDone`, `Files`, `Ratio`, and `Duration`.
+  - `summary view contains expected fields` — uses `-PassThru` switch and filters pipeline
+    output by type to extract the `PSCustomObject`; asserts `SrcDir`, `DestDir`, `ZipsFound`,
+    `ZipsDone`, `Files`, `Ratio`, and `Duration`.
 
 ### Versioning
 
