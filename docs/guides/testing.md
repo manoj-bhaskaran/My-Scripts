@@ -460,6 +460,31 @@ Quarterly review of:
 - Flaky tests
 - Test code quality
 
+## ZIP Fixture Generation (Expand-ZipsAndClean tests)
+
+Tests for `Expand-ZipsAndClean` create ZIP archives **programmatically** via
+`[System.IO.Compression.ZipFile]` / `[System.IO.Compression.ZipArchive]` inside
+the test body rather than committing binary fixtures to source control.  This keeps
+the repository free of opaque binary blobs and makes the fixture content explicit
+and reviewable:
+
+```powershell
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+$zipPath = Join-Path $TestDrive 'example.zip'
+$archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    $entry  = $archive.CreateEntry('hello.txt')
+    $stream = $entry.Open()
+    $writer = New-Object System.IO.StreamWriter($stream)
+    try { $writer.Write('hello world') } finally { $writer.Dispose() }
+} finally {
+    $archive.Dispose()
+}
+```
+
+All test files under `tests/powershell/file-management/` follow this pattern.
+
 ## Resources
 
 - [pytest documentation](https://docs.pytest.org/)

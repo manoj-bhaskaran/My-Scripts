@@ -1,5 +1,36 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.3.3 — 2026-05-17
+
+### Tests
+
+- Added `Flat Overwrite: incoming file replaces existing file` — creates a zip with one
+  entry whose name collides with an existing file, calls `Expand-ZipFlat` with
+  `CollisionPolicy Overwrite`, and asserts the existing file is replaced with the
+  incoming content.
+- Added `Flat Rename: existing file untouched and incoming written under a unique name` —
+  same collision setup but with `CollisionPolicy Rename`; asserts the original file is
+  untouched, two `.txt` files exist in the root, and the renamed file holds the
+  incoming content.
+- Added `Describe 'Test-ScriptPreconditions'` with three `It` blocks:
+  - `throws when source and destination are the same path`.
+  - `throws when destination is inside the source directory`.
+  - `throws when source is inside the destination directory`.
+  Each test dot-sources the `#region Helpers` block directly from the script, creates
+  real temporary directories under `$TestDrive`, and asserts that `Test-ScriptPreconditions`
+  throws with the expected message pattern.
+- Added `Describe 'Smoke — Expand-ZipsAndClean.ps1 parse check'` with two `It` blocks:
+  - `parses without error under pwsh 7.x` — uses the PowerShell AST parser
+    (`[System.Management.Automation.Language.Parser]::ParseFile`) to assert zero
+    parse errors.
+  - `contains #requires -Version 7.0 directive` — reads the first line of the script
+    and asserts it matches the directive exactly.
+
+### Versioning
+
+- Bumped `Expand-ZipsAndClean.ps1` version to `2.3.3` (patch — test coverage only,
+  no production behavior change).
+
 ## 2.3.2 — 2026-05-17
 
 ### Added
