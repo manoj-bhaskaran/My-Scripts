@@ -1,5 +1,50 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.3.2 — 2026-05-17
+
+### Added
+
+- `Write-ExtractionSummary` private helper that accepts all run-state parameters and writes
+  the formatted summary to the host. Encapsulates:
+  - Compression-ratio computation.
+  - Console-width detection (`try/catch` + `?? 120` default via PS 7 null-coalescing).
+  - `Format-Table -AutoSize` (wide) / `Format-List` (narrow) branching.
+  - Split interactive/non-interactive behavior: the formatted table and header are shown
+    only for `ConsoleHost` / `Visual Studio Code Host`; the `Notes / Errors:` block is
+    always written when errors exist, so failures are never silent in scheduled tasks or
+    automation pipelines.
+  - `$HostName` parameter (default `$Host.Name`) for test injection without a real host.
+
+### Changed
+
+- Main script body: replaced the 45-line inline summary block with a single
+  `Write-ExtractionSummary` call. `Main` is now focused on orchestration only.
+- `Write-ExtractionSummary`: replaced `Write-Host` with `Write-Output` throughout so
+  summary text is pipeline-capturable (SonarCloud S2228).
+- `Write-ExtractionSummary`: converted two nested `if/else` branches (compression-ratio
+  and effective-width selection) to PS7 ternary `?:`, and restructured the `Notes / Errors:`
+  header to eliminate an `else` branch — reduces Cognitive Complexity from 18 to ≤15
+  (SonarCloud S3776).
+
+### Tests
+
+- Added `Describe 'Write-ExtractionSummary'` with five `It` blocks:
+  - `emits summary header when host is interactive (ConsoleHost)`.
+  - `suppresses summary table and header when non-interactive and no errors` — passes
+    `HostName 'DefaultHost'` with an empty error list; asserts output is empty and
+    `Format-Table` / `Format-List` are each called zero times.
+  - `emits error notes even when host is non-interactive` — passes `HostName 'DefaultHost'`
+    with a non-empty error list; asserts the table is suppressed but errors appear in output.
+  - `emits error notes when interactive and error list is non-empty`.
+  - `summary view contains expected fields` — uses `-PassThru` switch and filters pipeline
+    output by type to extract the `PSCustomObject`; asserts `SrcDir`, `DestDir`, `ZipsFound`,
+    `ZipsDone`, `Files`, `Ratio`, and `Duration`.
+
+### Versioning
+
+- Bumped `Expand-ZipsAndClean.ps1` version to `2.3.2` (patch — internal refactor, no
+  behaviour change for interactive runs).
+
 ## 2.3.0 — 2026-05-17
 
 ### Changed

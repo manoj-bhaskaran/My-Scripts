@@ -102,13 +102,25 @@ using namespace System.Collections.Generic
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.3.1
+    Version  : 2.3.2
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.3.2  Extracted Write-ExtractionSummary helper (issue #978):
+           - Moved inline summary block (compression ratio, Format-Table/Format-List
+             branching, error notes) into a private Write-ExtractionSummary function.
+           - Encapsulated console-width detection (try/catch + ?? 120 default) inside
+             the helper.
+           - Added split interactive/non-interactive behavior: the formatted table and
+             header are shown only for ConsoleHost/VS Code Host; error notes are always
+             written so failures are never silent in scheduled tasks or automation logs.
+           - Used PS 7 ?? for the console-width default.
+           - Main script body replaced with a single Write-ExtractionSummary call.
+           Version bump: patch.
+
     2.3.1  Replaced inline path-separator and writability patterns with shared
            FileSystem module helpers (issue #977):
            - Removed the EndsWith('\') ? p : p+'\' trailing-separator idiom from
@@ -827,6 +839,130 @@ function Move-ZipFilesToParent {
     [pscustomobject]@{ Count = $moved; Bytes = $bytes; Destination = $parent; Skipped = $skipped; Overwritten = $overwritten; Renamed = $renamed }
 }
 
+<#
+.SYNOPSIS
+    Writes the end-of-run extraction summary to the host.
+.DESCRIPTION
+    Formats and displays a summary table (or list on narrow consoles) of all
+    extraction, move, and error statistics collected during the run.
+
+    Behavior varies by host interactivity:
+    - Interactive hosts (ConsoleHost, Visual Studio Code Host): full output —
+      header, Format-Table/-List view, and error notes.
+    - Non-interactive hosts (scheduled tasks, redirected streams): the
+      formatted table is suppressed, but any accumulated errors are still
+      written to the success stream so failures are never silent in
+      automation logs.
+.PARAMETER SourceDirectory
+    Source directory passed to the script.
+.PARAMETER DestinationDirectory
+    Destination directory passed to the script.
+.PARAMETER ExtractMode
+    Extraction mode used (PerArchiveSubfolder or Flat).
+.PARAMETER CollisionPolicy
+    Collision policy used (Skip, Overwrite, or Rename).
+.PARAMETER ZipCount
+    Total number of zip files found.
+.PARAMETER ProcessedZips
+    Number of zip files successfully processed.
+.PARAMETER FilesExtracted
+    Total number of files extracted across all archives.
+.PARAMETER UncompressedBytes
+    Total uncompressed bytes extracted.
+.PARAMETER CompressedBytes
+    Total compressed (on-disk) bytes of the zip files processed.
+.PARAMETER MoveSummary
+    PSCustomObject returned by Move-ZipFilesToParent containing Count, Bytes,
+    Destination, Skipped, Overwritten, and Renamed.
+.PARAMETER Errors
+    List of non-fatal error messages accumulated during the run.
+.PARAMETER Elapsed
+    Total elapsed time for the run.
+.PARAMETER HostName
+    Name of the current host. Defaults to $Host.Name. Accepted as a parameter
+    so that tests can inject a synthetic value without spawning a new host.
+.PARAMETER ConsoleWidth
+    Override the detected console width. 0 (default) means auto-detect via
+    $Host.UI.RawUI.WindowSize.Width. Pass a positive value to force Format-Table
+    (>= 120) or Format-List (< 120) regardless of the actual terminal width.
+    Useful in tests and when piping output to a fixed-width formatter.
+.PARAMETER PassThru
+    Switch. When set, emits the summary PSCustomObject to the pipeline in addition
+    to writing it to the host. Intended for testing so callers can inspect the
+    computed fields without needing to intercept Format-Table/-List.
+.NOTES
+    Error notes are always emitted when errors exist, regardless of host type,
+    so that failures are never silently swallowed in scheduled tasks or
+    automation pipelines.
+#>
+function Write-ExtractionSummary {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SourceDirectory,
+        [Parameter(Mandatory)][string]$DestinationDirectory,
+        [Parameter(Mandatory)][string]$ExtractMode,
+        [Parameter(Mandatory)][string]$CollisionPolicy,
+        [Parameter(Mandatory)][int]$ZipCount,
+        [Parameter(Mandatory)][int]$ProcessedZips,
+        [Parameter(Mandatory)][int]$FilesExtracted,
+        [Parameter(Mandatory)][int64]$UncompressedBytes,
+        [Parameter(Mandatory)][int64]$CompressedBytes,
+        [Parameter(Mandatory)][pscustomobject]$MoveSummary,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$Errors,
+        [Parameter(Mandatory)][timespan]$Elapsed,
+        [string]$HostName = $Host.Name,
+        [int]$ConsoleWidth = 0,
+        [switch]$PassThru
+    )
+
+    $isInteractive = $HostName -in ('ConsoleHost', 'Visual Studio Code Host')
+
+    if ($isInteractive) {
+        $compressionRatio = ($CompressedBytes -gt 0) ? ("{0:N1}x" -f ($UncompressedBytes / [double]$CompressedBytes)) : "n/a"
+
+        $summaryView = [pscustomobject]@{
+            SrcDir          = $SourceDirectory
+            DestDir         = $DestinationDirectory
+            Mode            = $ExtractMode
+            Policy          = $CollisionPolicy
+            ZipsFound       = $ZipCount
+            ZipsDone        = $ProcessedZips
+            Files           = $FilesExtracted
+            Uncompressed    = (Format-Bytes $UncompressedBytes)
+            Compressed      = (Format-Bytes $CompressedBytes)
+            Ratio           = $compressionRatio
+            ZipsMoved       = ($MoveSummary.Count)
+            MoveSkipped     = ($MoveSummary.Skipped)
+            MoveOverwritten = ($MoveSummary.Overwritten)
+            MoveRenamed     = ($MoveSummary.Renamed)
+            MovedBytes      = (Format-Bytes $MoveSummary.Bytes)
+            MovedTo         = ($MoveSummary.Destination)
+            Errors          = ($Errors.Count)
+            Duration        = ("{0:hh\:mm\:ss\.fff}" -f $Elapsed)
+        }
+
+        Write-Output ""
+        Write-Output "==== Expand-ZipsAndClean Summary ===="
+
+        $rawWidth = try { $Host.UI.RawUI.WindowSize.Width } catch { $null }
+        $effectiveWidth = ($ConsoleWidth -gt 0) ? $ConsoleWidth : ($rawWidth ?? 120)
+
+        if ($effectiveWidth -lt 120) {
+            $summaryView | Format-List
+        } else {
+            $summaryView | Format-Table -AutoSize
+        }
+
+        if ($PassThru) { $summaryView }
+    }
+
+    if ($Errors.Count -gt 0) {
+        if ($isInteractive) { Write-Output "" }
+        Write-Output "Notes / Errors:"
+        $Errors | ForEach-Object { Write-Output " - $_" }
+    }
+}
+
 #endregion Helpers
 
 #------------------------------- Main -------------------------------#
@@ -885,52 +1021,18 @@ try {
 
 #------------------------------ Summary -----------------------------#
 
-# Always print a summary (even if no zips)
-$compressionRatio = if ($totalCompressedZipBytes -gt 0) {
-    # Show as multiplier, one decimal (e.g., 3.3x). >1 means compression saved space.
-    "{0:N1}x" -f ($totalUncompressedBytes / [double]$totalCompressedZipBytes)
-} else { "n/a" }
-
-# Build a view with shorter column names to avoid wrapping on narrow consoles
-$summaryView = [pscustomobject]@{
-    SrcDir          = $SourceDirectory
-    DestDir         = $DestinationDirectory
-    Mode            = $ExtractMode
-    Policy          = $CollisionPolicy
-    ZipsFound       = $zipCount
-    ZipsDone        = $processedZips
-    Files           = $totalFilesExtracted
-    Uncompressed    = (Format-Bytes $totalUncompressedBytes)
-    Compressed      = (Format-Bytes $totalCompressedZipBytes)
-    Ratio           = $compressionRatio
-    ZipsMoved       = ($moveSummary.Count)
-    MoveSkipped     = ($moveSummary.Skipped)
-    MoveOverwritten = ($moveSummary.Overwritten)
-    MoveRenamed     = ($moveSummary.Renamed)
-    MovedBytes      = (Format-Bytes $moveSummary.Bytes)
-    MovedTo         = ($moveSummary.Destination)
-    Errors          = ($errors.Count)
-    Duration        = ("{0:hh\:mm\:ss\.fff}" -f $stopwatch.Elapsed)
-}
-
-Write-Host ""
-Write-Host "==== Expand-ZipsAndClean Summary ===="
-
-# Detect console width; for narrow consoles, use a clean list view
-$consoleWidth = 120
-try { $consoleWidth = $Host.UI.RawUI.WindowSize.Width } catch {
-    # Console width unavailable (non-interactive or headless mode), using default
-}
-
-if ($consoleWidth -lt 120) {
-    $summaryView | Format-List
-} else {
-    $summaryView | Format-Table -AutoSize
-}
-
-if ($errors.Count -gt 0) {
-    Write-Host "`nNotes / Errors:"
-    $errors | ForEach-Object { Write-Host " - $_" }
-}
+Write-ExtractionSummary `
+    -SourceDirectory    $SourceDirectory `
+    -DestinationDirectory $DestinationDirectory `
+    -ExtractMode        $ExtractMode `
+    -CollisionPolicy    $CollisionPolicy `
+    -ZipCount           $zipCount `
+    -ProcessedZips      $processedZips `
+    -FilesExtracted     $totalFilesExtracted `
+    -UncompressedBytes  $totalUncompressedBytes `
+    -CompressedBytes    $totalCompressedZipBytes `
+    -MoveSummary        $moveSummary `
+    -Errors             $errors `
+    -Elapsed            $stopwatch.Elapsed
 
 # End of script
