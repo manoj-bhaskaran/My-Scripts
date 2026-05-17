@@ -116,9 +116,8 @@ using namespace System.Collections.Generic
              Resolve-ZipEntryDestinationPath to src/powershell/modules/Core/Zip/Private/.
            - Added Import-Module for Core/Zip/Zip.psm1 after the FileSystem import.
            - Removed 'using namespace System.IO.Compression' (no longer needed in script body).
-           - Updated Pester tests to import the Zip module instead of extracting helpers
-             from the script's #region Helpers block; private-function tests now use
-             InModuleScope Zip and module-internal mocks use -ModuleName Zip.
+           - Updated Pester tests to import the Zip module directly; private-function
+             tests use InModuleScope Zip; intra-module dispatcher mocks use InModuleScope.
            Version bump: minor (import contract change — Zip helpers are now module-provided).
 
     2.2.3  Centralized Write-Progress wrapper and fixed off-by-one byte counter (issue #975):

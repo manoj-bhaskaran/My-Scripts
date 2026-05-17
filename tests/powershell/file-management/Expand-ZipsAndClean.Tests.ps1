@@ -15,38 +15,44 @@ Describe 'Core/Zip module — public extraction functions' {
     }
 
     It 'dispatches PerArchiveSubfolder mode to Expand-ZipToSubfolder' {
-        Mock New-DirectoryIfMissing { }
-        Mock Get-FullPath { '/tmp/dest' }
-        Mock Get-SafeName { 'safe-name' }
-        Mock Expand-ZipToSubfolder { 7 } -ModuleName Zip
-        Mock Expand-ZipFlat { 0 } -ModuleName Zip
+        # Mocks for intra-module calls must live inside InModuleScope so they intercept
+        # calls made from within the Zip module (Expand-ZipSmart -> Expand-ZipToSubfolder).
+        InModuleScope Zip {
+            Mock New-DirectoryIfMissing { }
+            Mock Get-FullPath { '/tmp/dest' }
+            Mock Get-SafeName { 'safe-name' }
+            Mock Expand-ZipToSubfolder { 7 }
+            Mock Expand-ZipFlat { 0 }
 
-        $result = Expand-ZipSmart -ZipPath '/tmp/a.zip' -DestinationRoot '/tmp/dest' -ExtractMode PerArchiveSubfolder -SafeNameMaxLen 80 -ExpectedFileCount 7
+            $result = Expand-ZipSmart -ZipPath '/tmp/a.zip' -DestinationRoot '/tmp/dest' -ExtractMode PerArchiveSubfolder -SafeNameMaxLen 80 -ExpectedFileCount 7
 
-        $result | Should -Be 7
-        Should -Invoke Expand-ZipToSubfolder -Times 1 -Exactly -ModuleName Zip -ParameterFilter {
-            $ZipPath -eq '/tmp/a.zip' -and
-            $DestinationRoot -eq '/tmp/dest' -and
-            $SafeSubfolderName -eq 'safe-name' -and
-            $ExpectedFileCount -eq 7
+            $result | Should -Be 7
+            Should -Invoke Expand-ZipToSubfolder -Times 1 -Exactly -ParameterFilter {
+                $ZipPath -eq '/tmp/a.zip' -and
+                $DestinationRoot -eq '/tmp/dest' -and
+                $SafeSubfolderName -eq 'safe-name' -and
+                $ExpectedFileCount -eq 7
+            }
+            Should -Invoke Expand-ZipFlat -Times 0
         }
-        Should -Invoke Expand-ZipFlat -Times 0 -ModuleName Zip
     }
 
     It 'dispatches Flat mode to Expand-ZipFlat with computed destination root' {
-        Mock New-DirectoryIfMissing { }
-        Mock Get-FullPath { '/tmp/dest-full' }
-        Mock Get-SafeName { 'unused-safe-name' }
-        Mock Expand-ZipFlat { 3 } -ModuleName Zip
+        InModuleScope Zip {
+            Mock New-DirectoryIfMissing { }
+            Mock Get-FullPath { '/tmp/dest-full' }
+            Mock Get-SafeName { 'unused-safe-name' }
+            Mock Expand-ZipFlat { 3 }
 
-        $result = Expand-ZipSmart -ZipPath '/tmp/b.zip' -DestinationRoot '/tmp/dest' -ExtractMode Flat -CollisionPolicy Rename
+            $result = Expand-ZipSmart -ZipPath '/tmp/b.zip' -DestinationRoot '/tmp/dest' -ExtractMode Flat -CollisionPolicy Rename
 
-        $result | Should -Be 3
-        Should -Invoke Expand-ZipFlat -Times 1 -Exactly -ModuleName Zip -ParameterFilter {
-            $ZipPath -eq '/tmp/b.zip' -and
-            $DestinationRoot -eq '/tmp/dest' -and
-            $DestinationRootFull -eq '/tmp/dest-full' -and
-            $CollisionPolicy -eq 'Rename'
+            $result | Should -Be 3
+            Should -Invoke Expand-ZipFlat -Times 1 -Exactly -ParameterFilter {
+                $ZipPath -eq '/tmp/b.zip' -and
+                $DestinationRoot -eq '/tmp/dest' -and
+                $DestinationRootFull -eq '/tmp/dest-full' -and
+                $CollisionPolicy -eq 'Rename'
+            }
         }
     }
 
