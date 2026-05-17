@@ -30,11 +30,13 @@ graph TD
         ADBH[AdbHelpers<br/>v1.0.0]
         ERR[ErrorHandling<br/>v1.0.0]
         FOPS[FileOperations<br/>v1.0.0]
+        FS[FileSystem<br/>v1.1.0]
         PGBAK[PostgresBackup<br/>v2.0.0]
         PROG[ProgressReporter<br/>v1.0.0]
         PURGE[PurgeLogs<br/>v2.0.0]
         RND[RandomName<br/>v2.1.0]
         VID[Videoscreenshot<br/>v3.0.2]
+        ZIP[Zip<br/>v1.0.0]
     end
 
     subgraph "External Dependencies"
@@ -50,6 +52,8 @@ graph TD
     FILE --> ADBH
     FILE --> FOPS
     FILE --> LOG
+    FILE --> FS
+    FILE --> ZIP
     MEDIA --> VID
     MEDIA --> LOG
     SYSTEM --> LOG
@@ -64,6 +68,8 @@ graph TD
     PROG -.Optional.-> LOG
     VID --> RND
     VID --> LOG
+    ZIP -.Optional.-> LOG
+    ZIP --> FS
 
     %% Module to External Dependencies
     PGBAK --> PGCLIENT
@@ -76,7 +82,7 @@ graph TD
     classDef script fill:#50C878,stroke:#2E7D4E,color:#fff
     classDef external fill:#F5A623,stroke:#D68910,color:#fff
 
-    class LOG,ADBH,ERR,FOPS,PGBAK,PROG,PURGE,RND,VID module
+    class LOG,ADBH,ERR,FOPS,FS,PGBAK,PROG,PURGE,RND,VID,ZIP module
     class BACKUP,FILE,MEDIA,SYSTEM,CLOUD,GIT script
     class ADBCLI,PGCLIENT,VLCPLAYER,PYCROP external
 ```
@@ -170,7 +176,30 @@ Invoke-WithRetry -ScriptBlock { Copy-Item $src $dest } -MaxRetries 3
 
 ---
 
-#### 4. ProgressReporter (v1.0.0)
+#### 4. Zip (v1.0.0)
+
+**Purpose**: Reusable ZIP archive primitives extracted from `Expand-ZipsAndClean.ps1`.
+
+**Dependencies**:
+- FileSystem (required — path normalization, safe naming, unique path resolution, directory creation)
+- PowerShellLoggingFramework (optional — no-op stub is used when not loaded)
+
+**Dependents**:
+- `Expand-ZipsAndClean.ps1` (file management scripts)
+
+**Key Features**:
+- `Get-ZipFileStats`: entry count + byte totals without extraction
+- `Expand-ZipToSubfolder`: per-archive subfolder extraction via `Expand-Archive`
+- `Expand-ZipFlat`: flat streaming extraction via `ZipArchive` with collision handling
+- `Expand-ZipSmart`: mode dispatcher routing to the above two helpers
+- `Resolve-ZipEntryDestinationPath` (private): Zip Slip path traversal protection
+- `Test-IsEncryptedZipError` / `Resolve-ExtractionError` (private): unified encryption detection
+
+**Location**: `src/powershell/modules/Core/Zip/`
+
+---
+
+#### 5. ProgressReporter (v1.0.0)
 
 **Purpose**: Standardized progress reporting with logging integration.
 

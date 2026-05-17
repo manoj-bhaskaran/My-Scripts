@@ -24,6 +24,23 @@ Fundamental modules used across multiple scripts:
   - Multiple purge strategies
   - Integration with PowerShellLoggingFramework
 
+#### FileSystem (`Core/FileSystem/`)
+
+- **FileSystem** - Path normalization, safe naming, unique path resolution, and directory helpers
+  - `Get-FullPath`, `Get-SafeName`, `New-DirectoryIfMissing`
+  - `Resolve-UniquePath`, `Resolve-UniqueDirectoryPath`
+  - `Test-FileAccessible`, `Test-FileLocked`, `Test-LongPathsEnabled`, `Test-PathValid`
+  - `Format-Bytes`
+
+#### Zip (`Core/Zip/`)
+
+- **Zip** - ZIP archive primitives with Zip Slip protection and collision handling
+  - `Get-ZipFileStats` — entry count and byte totals without extraction
+  - `Expand-ZipToSubfolder` — per-archive subfolder extraction (PerArchiveSubfolder mode)
+  - `Expand-ZipFlat` — flat streaming extraction via `ZipArchive` (Flat mode)
+  - `Expand-ZipSmart` — mode dispatcher
+  - Private: `Resolve-ZipEntryDestinationPath`, `Test-IsEncryptedZipError`, `Resolve-ExtractionError`
+
 ### Database Modules (`Database/`)
 
 Database-related functionality:

@@ -1,76 +1,58 @@
 Set-StrictMode -Version Latest
 
-Describe 'Expand-ZipsAndClean helper extraction refactor' {
+Describe 'Core/Zip module — public extraction functions' {
     BeforeAll {
-        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
-        $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
-        $scriptText = Get-Content -LiteralPath $scriptPath -Raw
-
-        $helpersStart = $scriptText.IndexOf('#region Helpers')
-        $helpersEnd = $scriptText.IndexOf('#endregion Helpers')
-        if ($helpersStart -lt 0 -or $helpersEnd -lt 0) {
-            throw 'Failed to locate helpers region in Expand-ZipsAndClean.ps1'
-        }
-
-        $helpers = $scriptText.Substring($helpersStart, $helpersEnd - $helpersStart)
-
-        # Prepend using-namespace declarations so that short type aliases (e.g. [ZipFile],
-        # [List[string]]) resolve when the helpers block is evaluated via Invoke-Expression.
-        $usingLines = ($scriptText -split "`n" |
-            Where-Object { $_ -match '^\s*using\s+namespace\s+' }) -join "`n"
-        $helpersWithUsing = $usingLines + "`n" + $helpers
-
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
-
-        # Assembly must be loaded before helpers are dot-sourced; Add-Type now lives
-        # at script start (outside #region Helpers) so the test loads it explicitly.
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
-
-        function Write-LogDebug { param([string]$Message) }
-        . ([ScriptBlock]::Create($helpersWithUsing))
     }
 
-    It 'defines mode-specific helper functions and dispatcher' {
-        Get-Command Expand-ZipToSubfolder -ErrorAction Stop | Should -Not -BeNullOrEmpty
-        Get-Command Expand-ZipFlat -ErrorAction Stop | Should -Not -BeNullOrEmpty
-        Get-Command Expand-ZipSmart -ErrorAction Stop | Should -Not -BeNullOrEmpty
-        Get-Command Resolve-ZipEntryDestinationPath -ErrorAction Stop | Should -Not -BeNullOrEmpty
-        Get-Command Test-IsEncryptedZipError -ErrorAction Stop | Should -Not -BeNullOrEmpty
+    It 'exports public extraction functions from the Zip module' {
+        Get-Command Get-ZipFileStats      -Module Zip -ErrorAction Stop | Should -Not -BeNullOrEmpty
+        Get-Command Expand-ZipToSubfolder -Module Zip -ErrorAction Stop | Should -Not -BeNullOrEmpty
+        Get-Command Expand-ZipFlat        -Module Zip -ErrorAction Stop | Should -Not -BeNullOrEmpty
+        Get-Command Expand-ZipSmart       -Module Zip -ErrorAction Stop | Should -Not -BeNullOrEmpty
     }
 
     It 'dispatches PerArchiveSubfolder mode to Expand-ZipToSubfolder' {
-        Mock New-DirectoryIfMissing { }
-        Mock Get-FullPath { '/tmp/dest' }
-        Mock Get-SafeName { 'safe-name' }
-        Mock Expand-ZipToSubfolder { 7 }
-        Mock Expand-ZipFlat { 0 }
+        # Mocks for intra-module calls must live inside InModuleScope so they intercept
+        # calls made from within the Zip module (Expand-ZipSmart -> Expand-ZipToSubfolder).
+        InModuleScope Zip {
+            Mock New-DirectoryIfMissing { }
+            Mock Get-FullPath { '/tmp/dest' }
+            Mock Get-SafeName { 'safe-name' }
+            Mock Expand-ZipToSubfolder { 7 }
+            Mock Expand-ZipFlat { 0 }
 
-        $result = Expand-ZipSmart -ZipPath '/tmp/a.zip' -DestinationRoot '/tmp/dest' -ExtractMode PerArchiveSubfolder -SafeNameMaxLen 80 -ExpectedFileCount 7
+            $result = Expand-ZipSmart -ZipPath '/tmp/a.zip' -DestinationRoot '/tmp/dest' -ExtractMode PerArchiveSubfolder -SafeNameMaxLen 80 -ExpectedFileCount 7
 
-        $result | Should -Be 7
-        Should -Invoke Expand-ZipToSubfolder -Times 1 -Exactly -ParameterFilter {
-            $ZipPath -eq '/tmp/a.zip' -and
-            $DestinationRoot -eq '/tmp/dest' -and
-            $SafeSubfolderName -eq 'safe-name' -and
-            $ExpectedFileCount -eq 7
+            $result | Should -Be 7
+            Should -Invoke Expand-ZipToSubfolder -Times 1 -Exactly -ParameterFilter {
+                $ZipPath -eq '/tmp/a.zip' -and
+                $DestinationRoot -eq '/tmp/dest' -and
+                $SafeSubfolderName -eq 'safe-name' -and
+                $ExpectedFileCount -eq 7
+            }
+            Should -Invoke Expand-ZipFlat -Times 0
         }
-        Should -Invoke Expand-ZipFlat -Times 0
     }
 
     It 'dispatches Flat mode to Expand-ZipFlat with computed destination root' {
-        Mock New-DirectoryIfMissing { }
-        Mock Get-FullPath { '/tmp/dest-full' }
-        Mock Get-SafeName { 'unused-safe-name' }
-        Mock Expand-ZipFlat { 3 }
+        InModuleScope Zip {
+            Mock New-DirectoryIfMissing { }
+            Mock Get-FullPath { '/tmp/dest-full' }
+            Mock Get-SafeName { 'unused-safe-name' }
+            Mock Expand-ZipFlat { 3 }
 
-        $result = Expand-ZipSmart -ZipPath '/tmp/b.zip' -DestinationRoot '/tmp/dest' -ExtractMode Flat -CollisionPolicy Rename
+            $result = Expand-ZipSmart -ZipPath '/tmp/b.zip' -DestinationRoot '/tmp/dest' -ExtractMode Flat -CollisionPolicy Rename
 
-        $result | Should -Be 3
-        Should -Invoke Expand-ZipFlat -Times 1 -Exactly -ParameterFilter {
-            $ZipPath -eq '/tmp/b.zip' -and
-            $DestinationRoot -eq '/tmp/dest' -and
-            $DestinationRootFull -eq '/tmp/dest-full' -and
-            $CollisionPolicy -eq 'Rename'
+            $result | Should -Be 3
+            Should -Invoke Expand-ZipFlat -Times 1 -Exactly -ParameterFilter {
+                $ZipPath -eq '/tmp/b.zip' -and
+                $DestinationRoot -eq '/tmp/dest' -and
+                $DestinationRootFull -eq '/tmp/dest-full' -and
+                $CollisionPolicy -eq 'Rename'
+            }
         }
     }
 
@@ -135,26 +117,30 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
     }
 
     It 'rejects rooted entry names while allowing valid relative names' {
-        $root = [System.IO.Path]::GetFullPath((Join-Path $TestDrive 'zipslip-rooted'))
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        InModuleScope Zip {
+            $root = [System.IO.Path]::GetFullPath((Join-Path $TestDrive 'zipslip-rooted'))
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
 
-        $valid = Resolve-ZipEntryDestinationPath -DestinationRootFull $root -EntryFullName 'nested/file.txt'
-        $rooted = Resolve-ZipEntryDestinationPath -DestinationRootFull $root -EntryFullName '/etc/passwd'
+            $valid  = Resolve-ZipEntryDestinationPath -DestinationRootFull $root -EntryFullName 'nested/file.txt'
+            $rooted = Resolve-ZipEntryDestinationPath -DestinationRootFull $root -EntryFullName '/etc/passwd'
 
-        $valid | Should -Not -BeNullOrEmpty
-        $valid.StartsWith($root) | Should -BeTrue
-        $rooted | Should -BeNullOrEmpty
+            $valid  | Should -Not -BeNullOrEmpty
+            $valid.StartsWith($root) | Should -BeTrue
+            $rooted | Should -BeNullOrEmpty
+        }
     }
 
     It 'detects encrypted archive errors through nested exceptions' {
-        $inner = [System.Exception]::new('Entry is encrypted and cannot be extracted')
-        $outer = [System.Exception]::new('Extraction failed', $inner)
-        $err = [System.Management.Automation.ErrorRecord]::new($outer, 'EncryptedZip', [System.Management.Automation.ErrorCategory]::InvalidData, $null)
+        InModuleScope Zip {
+            $inner = [System.Exception]::new('Entry is encrypted and cannot be extracted')
+            $outer = [System.Exception]::new('Extraction failed', $inner)
+            $err   = [System.Management.Automation.ErrorRecord]::new($outer, 'EncryptedZip', [System.Management.Automation.ErrorCategory]::InvalidData, $null)
 
-        (Test-IsEncryptedZipError -ErrorObject $err) | Should -BeTrue
-        {
-            Resolve-ExtractionError -ZipPath '/tmp/test.zip' -ErrorRecord $err
-        } | Should -Throw "*zip may be encrypted*"
+            (Test-IsEncryptedZipError -ErrorObject $err) | Should -BeTrue
+            {
+                Resolve-ExtractionError -ZipPath '/tmp/test.zip' -ErrorRecord $err
+            } | Should -Throw "*zip may be encrypted*"
+        }
     }
 
     It 'PerArchiveSubfolder: file count returned matches archive entry count' {
@@ -174,10 +160,10 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
             $archive.Dispose()
         }
 
-        # Mock Expand-Archive so the test is CI-independent; we are verifying that
-        # Expand-ZipToSubfolder returns ExpectedFileCount directly (not a Get-ChildItem
-        # walk), not that the extraction itself succeeds.
-        Mock Expand-Archive { }
+        # Mock Expand-Archive so the test is CI-independent; verifies that
+        # Expand-ZipToSubfolder returns ExpectedFileCount directly rather than
+        # performing a post-extraction Get-ChildItem walk.
+        Mock Expand-Archive { } -ModuleName Zip
 
         $stats = Get-ZipFileStats -ZipPath $zipPath
         $count = Expand-ZipToSubfolder -ZipPath $zipPath -DestinationRoot $root -SafeSubfolderName 'subfolder-count' -ExpectedFileCount $stats.FileCount
@@ -227,12 +213,12 @@ Describe 'Expand-ZipsAndClean helper extraction refactor' {
             $archive.Dispose()
         }
 
-        # Mock Expand-Archive so the test is CI-independent; we are verifying that
+        # Mock Expand-Archive so the test is CI-independent; verifies that
         # Expand-ZipSmart falls back to Get-ZipFileStats when ExpectedFileCount is
-        # omitted and returns the correct count — not that extraction itself succeeds.
-        Mock Expand-Archive { }
+        # omitted and returns the correct count.
+        Mock Expand-Archive { } -ModuleName Zip
 
-        # Call without -ExpectedFileCount to exercise the Get-ZipFileStats fallback
+        # Call without -ExpectedFileCount to exercise the Get-ZipFileStats fallback.
         $count = Expand-ZipSmart -ZipPath $zipPath -DestinationRoot $root -ExtractMode PerArchiveSubfolder
 
         $count | Should -Be 2
@@ -257,6 +243,7 @@ Describe 'Remove-SourceDirectory' {
         $helpersWithUsing = $usingLines + "`n" + $helpers
 
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         function Write-LogDebug { param([string]$Message) }
@@ -377,6 +364,7 @@ Describe 'Move-ZipFilesToParent' {
         $helpersWithUsing = $usingLines + "`n" + $helpers
 
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         function Write-LogDebug { param([string]$Message) }
@@ -505,6 +493,7 @@ Describe 'Write-PhaseProgress' {
         $helpersWithUsing = $usingLines + "`n" + $helpers
 
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         function Write-LogDebug { param([string]$Message) }
