@@ -18,6 +18,8 @@ Scripts for file operations, distribution, copying, and archiving.
 ### PowerShell Modules
 
 - **PowerShellLoggingFramework** (`src/powershell/modules/Core/Logging/`) - Structured logging
+- **FileSystem** (`src/powershell/modules/Core/FileSystem/`) - Path normalization, safe naming, unique path resolution
+- **Zip** (`src/powershell/modules/Core/Zip/`) - ZIP archive primitives used by `Expand-ZipsAndClean.ps1`
 - **AdbHelpers** (`src/powershell/modules/Android/AdbHelpers/`) - Shared ADB/device helpers used by `Copy-AndroidFiles.ps1`
 
 ### External Tools
@@ -44,6 +46,14 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 - These versions are intentionally independent and may advance separately under SemVer.
 
 ## Recent Updates
+
+- **Expand-ZipsAndClean.ps1 v2.3.0** (2026-05-17)
+  - Extracted archive primitives (`Get-ZipFileStats`, `Expand-ZipToSubfolder`, `Expand-ZipFlat`,
+    `Expand-ZipSmart`) and their private helpers (`Test-IsEncryptedZipError`,
+    `Resolve-ExtractionError`, `Resolve-ZipEntryDestinationPath`) into the new
+    `Core/Zip` module (`src/powershell/modules/Core/Zip/`), following the same layout as
+    `Core/FileSystem`. The script now imports the Zip module instead of carrying the helpers inline.
+  - Version bump: `2.3.0` (minor — import contract change, no behavior change).
 
 - **Expand-ZipsAndClean.ps1 v2.2.1** (2026-04-25)
   - Hardened Flat-mode Zip Slip handling by introducing a dedicated `Resolve-ZipEntryDestinationPath` helper that normalizes entry separators, rejects rooted entry paths, and validates destination containment with OS-appropriate path comparison semantics.
