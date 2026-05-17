@@ -365,7 +365,7 @@ Describe "FileSystem Module" {
                 Should -Throw "*Directory is not writable*"
         }
 
-        It "Leaves no probe directory behind after a successful check" {
+        It "Leaves no probe file behind after a successful check" {
             $dir = "TestDrive:/CleanProbeDir"
             New-Item -ItemType Directory -Path $dir | Out-Null
             Test-DirectoryWritable -Path $dir | Out-Null
@@ -382,34 +382,44 @@ Describe "FileSystem Module" {
     }
 
     Context "Test-PathContainment" {
+        BeforeAll {
+            $s = [IO.Path]::DirectorySeparatorChar
+        }
+
         It "Returns true when candidate is directly inside container" {
-            Test-PathContainment -Container "C:\Source" -Candidate "C:\Source\Sub" |
-                Should -Be $true
+            $container = "root${s}Source"
+            $candidate = "root${s}Source${s}Sub"
+            Test-PathContainment -Container $container -Candidate $candidate | Should -Be $true
         }
 
         It "Returns true when candidate is deeply nested inside container" {
-            Test-PathContainment -Container "C:\Source" -Candidate "C:\Source\A\B\C" |
-                Should -Be $true
+            $container = "root${s}Source"
+            $candidate = "root${s}Source${s}A${s}B${s}C"
+            Test-PathContainment -Container $container -Candidate $candidate | Should -Be $true
         }
 
         It "Returns false for a shared prefix that is not containment" {
-            Test-PathContainment -Container "C:\Source" -Candidate "C:\SourceExtra" |
-                Should -Be $false
+            $sep = [IO.Path]::DirectorySeparatorChar
+            $container = "root${sep}Source"
+            $candidate = "root${sep}SourceExtra"
+            Test-PathContainment -Container $container -Candidate $candidate | Should -Be $false
         }
 
         It "Returns false when candidate equals container" {
-            Test-PathContainment -Container "C:\Source" -Candidate "C:\Source" |
-                Should -Be $false
+            $container = "root${s}Source"
+            Test-PathContainment -Container $container -Candidate $container | Should -Be $false
         }
 
         It "Is case-insensitive" {
-            Test-PathContainment -Container "C:\source" -Candidate "C:\SOURCE\sub" |
-                Should -Be $true
+            $container = "root${s}source"
+            $candidate = "root${s}SOURCE${s}sub"
+            Test-PathContainment -Container $container -Candidate $candidate | Should -Be $true
         }
 
         It "Returns false when candidate is the parent of the container" {
-            Test-PathContainment -Container "C:\Source\Sub" -Candidate "C:\Source" |
-                Should -Be $false
+            $container = "root${s}Source${s}Sub"
+            $candidate = "root${s}Source"
+            Test-PathContainment -Container $container -Candidate $candidate | Should -Be $false
         }
     }
 

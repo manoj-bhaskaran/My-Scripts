@@ -8,10 +8,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
 ## [1.2.0] – 2026-05-17
 
 ### Added
-- **`Test-DirectoryWritable`** – Creates a uniquely named probe subdirectory inside
-  the target path and removes it inside `try/finally`, guaranteeing no probe leaks.
+- **`Test-DirectoryWritable`** – Creates a uniquely named probe file inside the
+  target path and removes it inside `try/finally`, guaranteeing no probe leaks. A file
+  probe is used so the check validates the "Create files / write data" ACE, which is
+  the permission actually required for file-write operations such as `Move-Item`.
   Accepts optional `-ThrowOnFailure` to raise a terminating error when the directory
-  is not writable. Works cross-platform.
+  is not writable. Works cross-platform via PowerShell cmdlets.
 - **`Add-TrailingSeparator`** – Appends `[IO.Path]::DirectorySeparatorChar` to a path
   string if no trailing separator is present. Idempotent (no double separator added).
   Accepts pipeline input. Works cross-platform.

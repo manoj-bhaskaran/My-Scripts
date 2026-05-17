@@ -38,5 +38,7 @@ function Test-PathContainment {
 
     $containerWithSep = Add-TrailingSeparator -Path $Container
     $candidateWithSep = Add-TrailingSeparator -Path $Candidate
-    return $candidateWithSep.StartsWith($containerWithSep, [System.StringComparison]::OrdinalIgnoreCase)
+    # Candidate must be strictly longer: equal paths are not "inside" each other.
+    return ($candidateWithSep.Length -gt $containerWithSep.Length) -and
+        $candidateWithSep.StartsWith($containerWithSep, [System.StringComparison]::OrdinalIgnoreCase)
 }
