@@ -6,6 +6,12 @@
 
 - **`--timestamped-output` flag for per-run log and failed-file names:** `dry-run`, `recover-only`, and `recover-and-download` now accept `--timestamped-output`. When set, a single run timestamp with microsecond precision (`YYYYMMDD_HHMMSS_ffffff`, local time) is inserted before the final extension of both the `--log-file` and `--failed-file` paths (e.g. `run.log` → `run_20260517_142530_123456.log`, `logs/failed.csv` → `logs/failed_20260517_142530_123456.csv`), so each run writes to its own files even when explicit (or default) paths are provided and would otherwise be appended to / overwritten. Microsecond precision ensures rapid sequential or parallel runs sharing the same base paths do not collide on a whole-second boundary. The transformation is applied once in `gdrive_cli.main` (new `_apply_timestamped_output` helper) before failed-file validation and before `DriveTrashRecoveryTool` is constructed, so every downstream consumer (logging setup, failed-file recording, `--fresh-run` truncation) sees the final path. The same timestamp is shared by both files so a run's log and failed-file have a correlatable suffix. Extension-less names just get the suffix appended; disabled (empty) paths are left untouched so the flag never silently enables file logging or failure tracking. The flag is independent of `--fresh-run`: `--timestamped-output` gives every run a *new* file, whereas `--fresh-run` truncates the *configured* file in place.
 
+## [1.25.0] - 2026-05-14
+
+### Added
+
+- **`--skip-existing` flag for `recover-and-download`:** When the computed local target path already resolves to a regular file (`Path.is_file()`), the download is skipped; the item is still treated as a logical success (per-step state advances, post-restore policy still applied) and counted in a new `stats["skipped_existing"]` counter. `is_file()` is used rather than `exists()` so a directory collision does not silently satisfy the skip and allow `post-restore-policy=delete` to remove the Drive file without a local copy. Mutually exclusive with `--overwrite`; default collision behaviour (uuid-rename suffix) is unchanged when neither flag is set. Run summary and structured log line include `skipped_existing` when non-zero.
+
 ## [1.24.1] - 2026-05-14
 
 ### Removed
@@ -196,143 +202,24 @@
   - `RecoveryReporter` gains `_start_progress(total)`, `_close_progress()`, and `_should_show_progress()` helpers. The bar is started in `print_streaming_start` / `print_processing_start` and finalised (cursor moved to a new line) in `_print_summary` and `print_interrupted_state_saved`.
   - The `verbose >= 1` guard in `_handle_item_result_stream` and `_handle_item_result` is replaced with `reporter._should_show_progress()` so the bar appears on TTY without requiring `-v`.
 
-## [1.18.17] - 2026-05-12
-
-### Changed
-
-- **`--overwrite` now clears the state file's processed-items list before execution begins:** Previously, re-running with `--overwrite` would bypass the per-item skip check but leave all IDs in `processed_items`, so an interrupted overwrite run could not be resumed — without `--overwrite` every item would be skipped again, and with it the whole run restarted from scratch. Now `_prepare_recovery` calls `RecoveryStateManager._clear_processed_items()` immediately after loading state whenever `--overwrite` is set, and prints an `--overwrite: cleared N previously processed item(s) from state` notice. A resumed overwrite run will therefore only re-process items that were not yet completed.
-
-## [1.18.16] - 2026-05-12
-
-### Fixed
-
-- **`--overwrite` now re-processes items that were previously recorded in the state file:** `_process_item` and `_recover_file` both checked `_is_processed` unconditionally and exited early, causing every file to be silently skipped when a state file existed — even when `--overwrite` was explicitly requested. Both checks now honour the flag: when `--overwrite` is set, state-file entries are ignored and items are recovered and downloaded again.
-
-## [1.18.15] - 2026-05-13
-
-### Fixed
-
-- **Token write no longer fails with `ERROR_ACCESS_DENIED` on Windows when `token.json` is hidden** – `_harden_token_permissions_windows` marks the token file with `FILE_ATTRIBUTE_HIDDEN` after each write. Windows's `CreateFile(CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL)` — the call underlying Python's `open(path, "w")` — returns `ERROR_ACCESS_DENIED` when the target already has `FILE_ATTRIBUTE_HIDDEN` set. This caused every OAuth token refresh after the first run to fail with `[Errno 13] Permission denied`, regardless of NTFS ACLs. Fixed by writing credentials to a sibling temp file (`tempfile.mkstemp`) and atomically renaming it into place with `os.replace()` (`MoveFileExW`), which is not subject to the same attribute restriction. The temp file is unlinked on any failure before the exception propagates.
-
-## [1.18.14] - 2026-05-12
-
-### Fixed
-
-- **`_load_creds_from_token` and `_refresh_or_flow_creds` now log distinct messages on `PermissionError`** – Previously both paths propagated the error to `authenticate()`'s outer handler, which logged only the generic `Authentication failed: [Errno 13] Permission denied` message. It was impossible to tell from the log whether the OS had denied a read (token file unreadable) or a write (refreshed token could not be persisted). Fixed by logging `Permission denied reading token file: <path>` before re-raising in `_load_creds_from_token`, and wrapping `open(token_file, "w")` in `_refresh_or_flow_creds` with an equivalent `Permission denied writing token file: <path>` log entry.
-
-## [1.18.13] - 2026-05-12
-
-### Fixed
-
-- **`_load_creds_from_token` no longer silently swallows `PermissionError`** – See project CHANGELOG `[2.13.7]` for full details.
-
-## [1.18.12] - 2026-05-12
-
-### Fixed
-
-- **Success rate no longer shows 0 % after a successful `--folder-id` download:** The final-line metric was computed as `recovered / found`. When `--folder-id` is used, all discovered files are already live (not trashed), so `recovered` stays 0 even when every download succeeds — producing a misleading "Success rate: 0.0 %". The metric is now mode-aware: `recover-and-download` reports **Download success rate** (`downloaded / found`), while `recover-only` continues to report **Recovery success rate** (`recovered / found`).
-
-## [1.18.11] - 2026-05-12
-
-### Fixed
-
-- **`_save_state` no longer fails when the state-file directory does not exist:** `open()` was called on the `.tmp` path without first ensuring the parent directory exists. If `--state-file` pointed to a path whose parent had not been created (e.g. `C:\Users\...\scripts\log\gdrive_recover_state.json`), every periodic state save raised `[Errno 2] No such file or directory` and progress was never persisted. Added `os.makedirs(..., exist_ok=True)` before the `open()` call so the directory is created automatically on first save.
-
-## [1.18.10] - 2026-05-12
-
-### Tests
-
-- **Improved `DriveDownloader` unit-test coverage:** Added four test cases to close the gaps introduced by the `_download_direct` / `_download_via_partial` refactor:
-  - `test_download_direct_download_failure` — covers the `except` handler in `_download_direct` when streaming raises.
-  - `test_rename_failure_marks_item_failed` — covers the path where `_atomic_replace_with_retry` returns `False`, triggering the `PermissionError` and its `except` handler in `_download_via_partial`.
-  - `test_atomic_replace_with_retry_oserror_winerror_32` — covers the `OSError` branch that treats Windows sharing-violation (winerror 32) as retryable.
-  - `test_atomic_replace_with_retry_oserror_non_32_reraises` — covers the `raise` path for non-sharing-violation `OSError`s.
-
-## [1.18.9] - 2026-05-12
-
-### Changed
-
-- **`_download_file` refactored to reduce cognitive complexity:** The direct-download and partial-download branches have been extracted into `_download_direct` and `_download_via_partial` respectively, eliminating deeply nested try/except blocks. `_download_file` now delegates to one of these helpers and handles only HTTP-level errors and directory setup. No behaviour change.
-
-## [1.18.8] - 2026-05-12
+## [1.18.x] - 2026-05-12/13 (Consolidated)
 
 ### Added
 
-- **`--overwrite` flag for `recover-and-download`:** When set, existing local files at the computed target path are replaced instead of being renamed with a short unique suffix. Without the flag the existing conflict-safe behaviour (appending a `_<hex6>` suffix) is unchanged. Useful when re-downloading a Drive folder to refresh a local mirror.
-
-## [1.18.7] - 2026-05-12
-
-### Fixed
-
-- **WinError 32 on `.partial` → final rename eliminated:** `_atomic_replace_with_retry` was called while the `.partial` file's write handle was still open (inside the `with open(partial, "wb")` block). On Windows, holding an open handle prevents renaming the file, causing every rename attempt to fail with `[WinError 32] The process cannot access the file because it is being used by another process`. The rename is now performed after the `with` block exits and the handle is fully closed.
-
-## [1.18.6] - 2026-05-12
+- **Folder-scoped download (`--folder-id`):** New argument for all three subcommands. Scopes discovery to a specific Google Drive folder via BFS traversal; targets non-trashed, live files (`will_recover=False`); reconstructs the full subfolder hierarchy under `--download-dir`. Added `_fetch_folder_page`, `_discover_folder_recursively`, and `_stream_stream_folder` to `DriveTrashDiscovery`; `relative_path` field on `RecoveryItem`; `FOLDER_MIME_TYPE` constant in `gdrive_constants.py`. Prints a warning when combined with the default `trash` post-restore policy. Recommended usage: `recover-and-download --folder-id <id> --download-dir <path> --post-restore-policy retain`.
+- **Comprehensive usage examples:** `gdrive_recover.py` docstring, `gdrive_cli.py` epilog, and `README.md` expanded with full scenario coverage (dry-run, recover-only, recover-and-download, folder-scoped, extension filtering, performance presets, locking, automation).
+- **`--overwrite` flag (`recover-and-download`):** Replaces existing local files instead of appending a `_<hex6>` suffix. *(Superseded by the `--fresh-run` redesign in [1.22.0]–[1.23.0]; retained here for history only.)*
 
 ### Fixed
 
-- **Dry-run execution command is now valid when `--folder-id` is used without `--download-dir`:** Previously the suggested command fell through to `recover-only`, which the CLI rejects when `--folder-id` is present. The command now emits `recover-and-download --download-dir <DOWNLOAD_DIR>` in that case, with a warning prompting the user to substitute the placeholder with their intended local path.
-
-## [1.18.5] - 2026-05-12
-
-### Fixed
-
-- **Execution command in dry-run now reflects the actual subcommand to run:** `_generate_execution_command` was unconditionally emitting `dry-run` as the subcommand, so the suggested command would not execute the plan. It now emits `recover-and-download --download-dir <dir>` when `--download-dir` is set, or `recover-only` otherwise. `--folder-id` was also missing from the generated command entirely; it is now included whenever it was part of the dry-run invocation.
-- **Untrash privilege check suppressed when no files will be recovered:** When `--folder-id` is used, all discovered items have `will_recover=False` (they are not in trash). `_test_operation_privileges` previously ran the untrash check unconditionally, producing a confusing "Test file is not trashed — cannot validate untrash permission" warning. The check is now skipped when the sample item has `will_recover=False`, and the "Untrash" row is omitted from the privilege-checks output.
-
-## [1.18.4] - 2026-05-12
-
-### Fixed
-
-- **Dry-run no longer writes to disk when `--download-dir` is passed:** `_check_privileges()` previously created the target directory and wrote a probe file whenever `args.download_dir` was set, which violated the dry-run "no changes" contract. The write test is now skipped in dry-run mode; the privilege-checks output prints the target directory path as informational text instead of a pass/fail writability result.
-- **Dry-run plan now shows per-item target paths when `--download-dir` is provided:** `will_download` and `target_path` were only populated for `recover_and_download` mode in `gdrive_discovery.py`, so passing `--download-dir` to `dry-run` had no visible effect on per-item plan output. Discovery now sets `will_download=True` and computes `target_path` for dry-run items when `--download-dir` is set, and also requests the `size` field from the Drive API in that case (previously only fetched for `recover_and_download`).
-
-## [1.18.3] - 2026-05-12
-
-### Fixed
-
-- **`--download-dir` now accepted by `dry-run` and `recover-only` subcommands:** Previously the argument was registered only on `recover-and-download`, causing argparse to reject it with "unrecognized arguments" when passed to `dry-run` or `recover-only`. Both subcommands now accept `--download-dir` as an optional argument; when provided during a dry-run it is surfaced in plan output to show where files would be saved.
-
-## [1.18.2] - 2026-05-12
-
-### Added
-
-- **Comprehensive usage examples** for all scenarios covering the full feature surface of `gdrive_recover.py`:
-  - `gdrive_recover.py` module docstring now includes an `Examples` section with runnable commands for: dry-run (all variants), recover-only (all variants), recover-and-download (all variants), folder-scoped download (`--folder-id`) with dry-run preview, extension filtering, large-folder throughput presets, performance/rate-limiter presets, HTTP transport selection, locking/automation, and `--direct-download`.
-  - `gdrive_cli.py` argparse epilog expanded with grouped, labeled examples for every subcommand and flag combination, including a policy reference table and a note on `--folder-id` constraints.
-  - `README.md` examples section replaced the single "Folder Download" sub-section with a full `## Examples` section covering all eight scenario groups (dry-run, recover-only, recover-and-download, folder-scoped download, post-restore policy table, performance presets, locking, and automation).
-
-## [1.18.1] - 2026-05-12
-
-### Fixed
-
-- **Import resolution for `validators`:** `gdrive_cli.py` was importing `validate_extensions` and `normalize_policy_token` from a bare `validators` module that only existed in the sibling `data/` directory, causing a `ModuleNotFoundError` at runtime. Extracted the gdrive-specific validators and all their private helpers into a new `gdrive_validators.py` co-located in `cloud/`, updated the import in `gdrive_cli.py`, and trimmed `data/validators.py` to its intended scope (geographic coordinate and timestamp validators).
-
-## [1.18.0] - 2026-05-12
-
-### Added
-
-- **Folder-scoped download (`--folder-id`):** New argument accepted by all three subcommands (`dry-run`, `recover-only`, `recover-and-download`).
-  - Scopes discovery to a specific Google Drive folder and all its subfolders via BFS traversal.
-  - Targets **non-trashed, live files** — no untrash step is performed (`will_recover=False`).
-  - Reconstructs the full subfolder hierarchy under `--download-dir` so each file lands at `<download-dir>/<relative/path/to/file>`.
-  - Folder names are sanitized for local filesystems (keeps alphanumeric, space, hyphen, underscore, period; falls back to `unknown` for empty results).
-  - Added `_fetch_folder_page`, `_discover_folder_recursively` (non-streaming / dry-run path), and `_stream_stream_folder` (streaming path) to `DriveTrashDiscovery`.
-  - `_process_streaming` in `DriveTrashRecoveryTool` routes to `_stream_stream_folder` when `--folder-id` is set.
-- **`relative_path` field on `RecoveryItem`:** Stores each file's subfolder path relative to the `--folder-id` root; used by `_generate_target_path` to place downloads in the correct subdirectory.
-- **`FOLDER_MIME_TYPE` constant** (`application/vnd.google-apps.folder`) added to `gdrive_constants.py`.
-- **Post-restore policy warning:** When `--folder-id` is combined with the default `trash` post-restore policy (which would move downloaded files to Drive Trash), the CLI now prints a prominent warning and suggests `--post-restore-policy retain`.
-
-### Changed
-
-- `_generate_target_path` now places files under `<download-dir>/<relative_path>/<filename>` when `item.relative_path` is set, otherwise falls back to the existing flat layout.
-- `_process_file_data` accepts an optional `relative_path` parameter (default `""`) and sets `will_recover=False` when `--folder-id` is provided.
-- `_sanitize_path_component` extracted as a static helper on `DriveTrashDiscovery` and reused by both the recursive and streaming folder traversal paths.
-
-### Notes
-
-- Existing trash-recovery workflows (`recover-only`, `recover-and-download` without `--folder-id`) are unchanged.
-- Use `dry-run --folder-id <id>` to preview the file tree and target paths before downloading.
-- Recommended usage: `recover-and-download --folder-id <id> --download-dir <path> --post-restore-policy retain`
+- **`gdrive_validators.py` extracted:** Resolved `ModuleNotFoundError` caused by `gdrive_cli.py` importing from a bare `validators` module in a sibling directory; gdrive-specific validators now live in `gdrive_validators.py` co-located in `cloud/`.
+- **Dry-run correctness:** `--download-dir` now accepted by `dry-run` and `recover-only`; dry-run no longer writes to disk when `--download-dir` is passed; execution-command generation corrected to emit the actual subcommand (`recover-and-download` or `recover-only`) instead of always `dry-run`; `--folder-id` now included in generated commands.
+- **WinError 32 on `.partial` → final rename:** `_atomic_replace_with_retry` moved to after the `with open(partial, "wb")` block so no open handle blocks the rename on Windows.
+- **Download refactor + tests:** `_download_file` split into `_download_direct` / `_download_via_partial`; four unit-test cases added covering failure paths and OSError branches.
+- **State-save robustness:** `os.makedirs(..., exist_ok=True)` added before `open()` in `_save_state` so missing state-file parent directories are created automatically.
+- **Mode-aware success rate:** `recover-and-download` now reports **Download success rate** (`downloaded / found`) so `--folder-id` runs no longer show 0 % despite successful downloads.
+- **Windows token/permission hardening (2026-05-12/13):** Token writes now use `tempfile.mkstemp` + `os.replace()` (`MoveFileExW`) to avoid `ERROR_ACCESS_DENIED` on hidden `token.json`; distinct `PermissionError` log messages emitted for read vs. write failures; `PermissionError` re-raised from `_load_creds_from_token` instead of silently swallowed.
+- **`--overwrite` skip behaviour:** `_process_item` and `_recover_file` honour `--overwrite` when skipping already-processed items; `_prepare_recovery` calls `_clear_processed_items()` on startup. *(Superseded by [1.22.0]–[1.23.0]; retained here for history only.)*
 
 ## [1.17.0] - 2026-04-11
 
