@@ -225,8 +225,8 @@
 
 ### Module extraction refactor (Issues #789–#856)
 
-No behaviour changes across all releases in this arc; each extraction is a
-structural refactor only.
+The primary extraction releases are structural refactors with no intended
+behaviour changes; follow-up patches (listed below) include targeted runtime fixes.
 
 - **Constants/models extracted** — `gdrive_constants.py`, `gdrive_models.py` (`[1.9.0]`, `[1.10.0]`).
 - **CLI layer extracted** — `gdrive_cli.py` with `create_parser()`/`main()`; `gdrive_recover.py` reduced to a shim (`[1.11.0]`).
