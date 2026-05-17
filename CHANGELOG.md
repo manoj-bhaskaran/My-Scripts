@@ -11,6 +11,12 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.16.0] - 2026-05-17
+
+### Added
+
+- **[gdrive_recover] `--timestamped-output` flag for per-run log and failed-file names (gdrive_recover 1.26.0)** – `dry-run`, `recover-only`, and `recover-and-download` now accept `--timestamped-output`. When set, a single run timestamp (`YYYYMMDD_HHMMSS`, local time) is inserted before the final extension of both the `--log-file` and `--failed-file` paths (e.g. `run.log` → `run_20260517_142530.log`), so each run writes to its own files even when explicit or default paths are provided and would otherwise be appended to / overwritten. The transformation is applied once in `gdrive_cli.main` (new `_apply_timestamped_output` helper) before failed-file validation and before `DriveTrashRecoveryTool` is constructed, so every downstream consumer (logging setup, failed-file recording, `--fresh-run` truncation) sees the final path. The same timestamp is shared by both files for correlation; extension-less names get the suffix appended; disabled (empty) paths are left untouched so the flag never silently enables file logging or failure tracking. Independent of `--fresh-run`, which truncates the *configured* file in place rather than creating a new one.
+
 ## [2.15.2] - 2026-05-16
 
 ### Changed

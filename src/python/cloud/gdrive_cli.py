@@ -7,7 +7,7 @@ import logging
 import os
 import sys
 import time
-from datetime import timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -227,6 +227,17 @@ For the compatibility matrix, transport notes, and performance presets: see READ
             ),
         )
         subparser.add_argument(
+            "--timestamped-output",
+            action="store_true",
+            help=(
+                "Append a run timestamp (YYYYMMDD_HHMMSS) to the --log-file and "
+                "--failed-file names so every run writes to its own files, even "
+                "when explicit paths are provided. The timestamp is inserted "
+                "before the file extension (e.g. run.log -> run_20260517_142530.log). "
+                "Paths that are left disabled (empty) are unaffected."
+            ),
+        )
+        subparser.add_argument(
             "--verbose",
             "-v",
             action="count",
@@ -412,6 +423,32 @@ def _validate_download_dir_arg(args) -> Tuple[bool, int]:
     except Exception as e:
         print(f"ERROR --download-dir is not writable or cannot be created: {e}", file=sys.stderr)
         return False, 2
+
+
+def _apply_timestamped_output(args) -> None:
+    """When --timestamped-output is set, append a single run timestamp to the
+    --log-file and --failed-file names so each run writes to its own files even
+    when explicit/default paths are provided.
+
+    The same timestamp is applied to both files so a run's log and failed-file
+    share a correlatable suffix. The suffix is inserted before the final
+    extension (``run.log`` -> ``run_20260517_142530.log``); extension-less
+    names just get the suffix appended. Disabled (empty) paths are left
+    untouched so the feature never silently enables logging or failure
+    tracking.
+    """
+    if not getattr(args, "timestamped_output", False):
+        return
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    def _stamp(path_str: str) -> str:
+        if not path_str:
+            return path_str
+        p = Path(path_str)
+        return str(p.with_name(f"{p.stem}_{stamp}{p.suffix}"))
+
+    args.log_file = _stamp(getattr(args, "log_file", "") or "")
+    args.failed_file = _stamp(getattr(args, "failed_file", "") or "")
 
 
 def _validate_failed_file_arg(args) -> Tuple[bool, int]:
@@ -812,6 +849,8 @@ def main() -> int:
     ok, code = _validate_after_date_arg(args)
     if not ok:
         return code
+
+    _apply_timestamped_output(args)
 
     ok, code = _validate_failed_file_arg(args)
     if not ok:
