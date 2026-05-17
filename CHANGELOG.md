@@ -580,54 +580,16 @@ Archived script-only history from before numbered project releases. For consolid
 
 ---
 
-## [Pre-release] - 2024
+## [Pre-release] — 2024 Foundation
 
-### Added
+- Testing framework — pytest + Pester + SonarCloud integration.
+- Git hooks + pre-commit framework — PSScriptAnalyzer, Pylint, Bandit, Black, SQLFluff, Commitizen.
+- Module deployment — `.psd1` manifests, `Deploy-Modules.ps1`, `install-modules.sh`.
+- Shared utilities — `ErrorHandling`, `FileOperations`, `ProgressReporter` (PowerShell) + Python equivalents.
+- `ARCHITECTURE.md` + `docs/architecture/` diagrams.
+- Automated release workflow + `bump-version.sh`.
+- Centralised env vars (`.env.example`, `scripts/*-Environment.ps1`) + portable Task Scheduler templates.
+- CI quality gates (blocking pre-commit, Pylint, Bandit, PSScriptAnalyzer, SonarCloud).
+- Pinned Python dependencies + automated dependency security scanning.
 
-- **Testing Framework** — Python (pytest) and PowerShell (Pester) test suites with `pytest.ini`, shared fixtures, SonarCloud CI integration, and initial tests for validators, logging, CSV-to-GPX, RandomName, and FileDistributor.
-  - `tests/python/conftest.py`, `tests/README.md`, and `docs/guides/testing.md` set up shared fixtures and testing standards.
-  - Coverage reporting integrated with SonarCloud; XML reports uploaded as CI artifacts.
-- **Git Hooks for Quality Enforcement** (#455) — Tracked `hooks/` templates covering pre-commit linting, commit-msg Conventional Commits validation, and post-commit/merge automation.
-  - Pre-commit runs PSScriptAnalyzer and Pylint; commit-msg enforces `type(scope): description` format.
-  - Post-commit and post-merge hooks call PowerShell scripts for file mirroring and module deployment.
-  - `scripts/install-hooks.sh` installs hooks into `.git/hooks/` and makes them executable.
-- **Module Deployment Configuration** (#456) — `.psd1` manifests for `PostgresBackup`, `PowerShellLoggingFramework`, and `PurgeLogs` (v2.0.0); `config/module-deployment-config.txt` lists all five modules.
-  - `scripts/Deploy-Modules.ps1` validates manifests and deploys to System, User, or custom paths with cross-platform support.
-  - `scripts/install-modules.sh` installs both PowerShell and Python modules with selective and force-overwrite options.
-- **Test Coverage Infrastructure** (#459) — `tests/powershell/Invoke-Tests.ps1` runs Pester with JaCoCo output for SonarCloud/Codecov upload.
-  - Python coverage enforced via `pytest.ini`; both languages upload to Codecov with per-language flags.
-  - Phased ramp-up roadmap in `docs/COVERAGE_ROADMAP.md` (baseline → 30% over six months); coverage badges added to README.
-- **Shared Utilities Modules** (#461) — PowerShell `ErrorHandling` (retry with exponential backoff, privilege detection), `FileOperations` (resilient ops with retry), and `ProgressReporter` (progress bars with logging).
-  - Python equivalents: `error_handling` (decorators for retry/error handling) and `file_operations` (resilient file I/O with atomic writes).
-  - All five modules have ≥70% unit test coverage; usage guide at `docs/guides/using-shared-utilities.md`.
-- **Architecture Documentation** (#462) — `ARCHITECTURE.md` covers design principles, component architecture, and six key design decisions with rationale.
-  - `docs/architecture/` contains database ER diagrams, PowerShell/Python module dependency graphs, external integration guides, and seven Mermaid data-flow sequence diagrams.
-- **Pre-Commit Framework** (#463) — `.pre-commit-config.yaml` integrates Black, Pylint, Bandit, PSScriptAnalyzer, SQLFluff, Commitizen, and general hooks (whitespace, YAML/JSON validation, large-file detection).
-  - CI workflow runs hooks on all files; weekly automated hook-update PR via `.github/workflows/pre-commit-autoupdate.yml`.
-- **Code Formatting Automation** (#464) — Black (Python), PSScriptAnalyzer OTBS (PowerShell), and SQLFluff PostgreSQL (SQL) configured via `.editorconfig` and `.vscode/settings.json`.
-  - `scripts/format-all.sh` formats all languages in one command; `.github/workflows/code-formatting.yml` fails CI on formatting violations.
-- **Automated Release Workflow** (#465) — `.github/workflows/release.yml` validates version format, extracts CHANGELOG entry, and publishes a GitHub Release on version tag push.
-  - `scripts/bump-version.sh` bumps `VERSION` and adds a dated CHANGELOG section (major/minor/patch).
-  - `.github/RELEASE_CHECKLIST.md` and `docs/guides/versioning.md` cover the full release and rollback process.
-- **Configuration Guide and Validation Tools** (#517) — `config/CONFIG_GUIDE.md` with quick-start, platform-specific instructions, and troubleshooting for common setup issues.
-  - `scripts/Initialize-Configuration.ps1` interactive wizard covers deployment config, environment variables, and PostgreSQL secrets (Windows DPAPI).
-  - `scripts/Verify-Configuration.ps1` validates staging mirror, git hooks, PowerShell modules, and env vars with CI-friendly exit codes.
-- **Centralized Environment Configuration** (#510) — `.env.example` documents all variables; Bash/PowerShell loaders in `scripts/`; `docs/guides/environment-variables.md` for cross-platform setup.
-  - Google Drive credential paths made configurable via `GDRIVE_CREDENTIALS_PATH`/`GDRIVE_TOKEN_PATH` environment variables. (#506)
-- **Portable Task Scheduler Templates** (#512) — Nine Windows Task Scheduler XML files converted to `.xml.template` with `{{SCRIPT_ROOT}}` placeholder.
-  - `scripts/Install-ScheduledTasks.ps1` generates, validates, and registers tasks; `scripts/Uninstall-ScheduledTasks.ps1` removes them.
-- `Sync-Directory.ps1` v1.1.0: `ExcludeFromDeletion` glob patterns preserve non-repository files (logs, virtual environments, configs) during repository-to-working-copy sync.
-- Automated Python dependency security scanning (Safety, pip-audit, GitHub Dependency Review) on push, PR, and weekly schedule. (#520)
-- Pester unit tests for `PostgresBackup` (#507), Git hooks (#508), `ErrorHandling` (#516), and `FileOperations` (#515); pytest tests for Google Drive auth, module logger initialisation, Bandit B113 compliance, and GPS/timeline data transformations.
-
-### Changed
-
-- Unified version management: `setup.py` reads `VERSION` file as single source of truth; `pyproject.toml` aligned. (#518)
-- `create_github_issues.sh` processes all files in the issues directory (not just `issue*`-prefixed) with a configurable `--issues-dir` parameter. (#500, #504)
-- Replaced `Write-Host` with the centralised logging framework in backup and maintenance scripts; standardised PowerShell modules to Public/Private folder structure.
-
-### Fixed
-
-- Removed hardcoded paths from PowerShell scripts and batch files; credentials configured via `PGBACKUP_PASSWORD_FILE`, `HANDLE_EXE_PATH`, and related environment variables. (#513)
-- Replaced hardcoded paths in documentation with `<REPO_PATH>`/`<SCRIPT_ROOT>` placeholders; `scripts/Check-DocumentationPaths.ps1` enforces this in CI. (#514)
-- Python modules no longer raise `AttributeError` on standalone import; each calls `plog.initialise_logger(__name__)` at module level. (#511)
+*See #455–#521 for issue-by-issue detail.*
