@@ -1,5 +1,38 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.2.3 — 2026-05-17
+
+### Added
+
+- `Write-PhaseProgress` private helper that accepts `Activity`, `Status`, `Current`, `Total`,
+  `QuietMode`, optional `CurrentOperation`, and a `Completed` switch. It centralizes percentage
+  math (`[int]($Current / [math]::Max(1, $Total) * 100)`) and `-Quiet` suppression so neither
+  caller has to hand-roll those two concerns.
+
+### Changed
+
+- `Invoke-ZipExtractions`: replaced two inline `Write-Progress` / `if (-not $QuietMode)` blocks
+  with `Write-PhaseProgress` calls.
+- `Move-ZipFilesToParent`: replaced inline `Write-Progress` / `if (-not $QuietMode)` blocks with
+  `Write-PhaseProgress` calls. The `CurrentOperation` caption now reads
+  `"Moving: X of Y bytes"` (was `"Moved X of Y"`), and the byte total shown for the current file
+  is `$bytes + $zf.Length` rather than `$bytes`. This fixes the off-by-one display where the
+  caption previously showed only the cumulative bytes from already-completed files, omitting the
+  file currently being moved.
+
+### Tests
+
+- Added `Describe 'Write-PhaseProgress'` with eight It blocks covering:
+  - QuietMode suppression (both normal and Completed paths).
+  - Correct `PercentComplete` computation (50 % at midpoint, 100 % at end).
+  - `CurrentOperation` included when supplied, omitted when not.
+  - `Completed` switch invokes `Write-Progress -Completed`.
+  - Zero `Total` guard (no division-by-zero error).
+
+### Versioning
+
+- Bumped `Expand-ZipsAndClean.ps1` version to `2.2.3`.
+
 ## 2.2.2 — 2026-05-12
 
 ### Changed
