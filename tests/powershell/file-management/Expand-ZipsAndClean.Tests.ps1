@@ -486,3 +486,106 @@ Describe 'Move-ZipFilesToParent' {
         $parentZips.Count | Should -Be 2
     }
 }
+
+Describe 'Write-PhaseProgress' {
+    BeforeAll {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
+        $scriptText = Get-Content -LiteralPath $scriptPath -Raw
+
+        $helpersStart = $scriptText.IndexOf('#region Helpers')
+        $helpersEnd   = $scriptText.IndexOf('#endregion Helpers')
+        if ($helpersStart -lt 0 -or $helpersEnd -lt 0) {
+            throw 'Failed to locate helpers region in Expand-ZipsAndClean.ps1'
+        }
+
+        $helpers = $scriptText.Substring($helpersStart, $helpersEnd - $helpersStart)
+        $usingLines = ($scriptText -split "`n" |
+            Where-Object { $_ -match '^\s*using\s+namespace\s+' }) -join "`n"
+        $helpersWithUsing = $usingLines + "`n" + $helpers
+
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+
+        function Write-LogDebug { param([string]$Message) }
+        . ([ScriptBlock]::Create($helpersWithUsing))
+    }
+
+    It 'suppresses Write-Progress when QuietMode is true' {
+        Mock Write-Progress { }
+
+        Write-PhaseProgress -Activity 'Test' -Status 'Running' -Current 1 -Total 5 -QuietMode $true
+
+        Should -Invoke Write-Progress -Times 0
+    }
+
+    It 'calls Write-Progress with computed percentage when QuietMode is false' {
+        Mock Write-Progress { }
+
+        Write-PhaseProgress -Activity 'Extracting' -Status 'file.zip' -Current 2 -Total 4 -QuietMode $false
+
+        Should -Invoke Write-Progress -Times 1 -Exactly -ParameterFilter {
+            $Activity -eq 'Extracting' -and
+            $Status -eq 'file.zip' -and
+            $PercentComplete -eq 50
+        }
+    }
+
+    It 'includes CurrentOperation when provided' {
+        Mock Write-Progress { }
+
+        Write-PhaseProgress -Activity 'Moving' -Status '1 / 3 : a.zip' `
+            -Current 1 -Total 3 -QuietMode $false -CurrentOperation 'Moving: 10 B of 30 B bytes'
+
+        Should -Invoke Write-Progress -Times 1 -Exactly -ParameterFilter {
+            $CurrentOperation -eq 'Moving: 10 B of 30 B bytes'
+        }
+    }
+
+    It 'omits CurrentOperation when not provided' {
+        $capturedParams = @{}
+        Mock Write-Progress { $capturedParams['keys'] = $PSBoundParameters.Keys -join ',' }
+
+        Write-PhaseProgress -Activity 'Moving' -Status '1 / 3 : a.zip' `
+            -Current 1 -Total 3 -QuietMode $false
+
+        $capturedParams['keys'] | Should -Not -BeLike '*CurrentOperation*'
+    }
+
+    It 'calls Write-Progress -Completed and suppresses update parameters' {
+        Mock Write-Progress { }
+
+        Write-PhaseProgress -Activity 'Extracting' -Status 'Done' `
+            -Current 5 -Total 5 -QuietMode $false -Completed
+
+        Should -Invoke Write-Progress -Times 1 -Exactly -ParameterFilter {
+            $Activity -eq 'Extracting' -and $Completed -eq $true
+        }
+    }
+
+    It 'suppresses Completed call when QuietMode is true' {
+        Mock Write-Progress { }
+
+        Write-PhaseProgress -Activity 'Extracting' -Status 'Done' `
+            -Current 5 -Total 5 -QuietMode $true -Completed
+
+        Should -Invoke Write-Progress -Times 0
+    }
+
+    It 'clamps percentage to 100 when Current equals Total' {
+        Mock Write-Progress { }
+
+        Write-PhaseProgress -Activity 'Test' -Status 'All done' -Current 7 -Total 7 -QuietMode $false
+
+        Should -Invoke Write-Progress -Times 1 -Exactly -ParameterFilter {
+            $PercentComplete -eq 100
+        }
+    }
+
+    It 'uses Total=1 guard so zero Total does not cause division error' {
+        Mock Write-Progress { }
+
+        { Write-PhaseProgress -Activity 'Test' -Status 'Empty' -Current 0 -Total 0 -QuietMode $false } |
+            Should -Not -Throw
+    }
+}

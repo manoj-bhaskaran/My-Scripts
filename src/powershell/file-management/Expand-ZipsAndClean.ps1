@@ -103,13 +103,29 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.2.2
+    Version  : 2.2.3
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.2.3  Centralized Write-Progress wrapper and fixed off-by-one byte counter (issue #975):
+           - Added private Write-PhaseProgress helper accepting Activity, Status,
+             Current, Total, QuietMode, optional CurrentOperation, and Completed switch.
+             Percentage math and -Quiet suppression are now in one place.
+           - Refactored Invoke-ZipExtractions and Move-ZipFilesToParent to call
+             Write-PhaseProgress instead of hand-rolling Write-Progress calls.
+           - Fixed off-by-one byte counter in Move-ZipFilesToParent: the CurrentOperation
+             caption now shows bytes including the current file being processed
+             (using $bytes + $zf.Length in the display), so the progress reflects
+             the running total up to and including the current file.
+           - Used PS 7 null-coalescing (??) in Write-PhaseProgress for the
+             optional CurrentOperation guard.
+           - Added Pester tests for Write-PhaseProgress covering QuietMode suppression,
+             progress invocation with parameters, Completed behavior, and percentage math.
+           Version bump: patch.
+
     2.2.2  De-duplicated stat computations and consolidated assembly load (issue #974):
            - Moved single Add-Type -AssemblyName System.IO.Compression.FileSystem
              call to script start; removed per-invocation calls from Get-ZipFileStats
@@ -386,6 +402,60 @@ Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
 #region Helpers
+
+<#
+.SYNOPSIS
+    Centralized Write-Progress wrapper that respects -Quiet mode.
+.DESCRIPTION
+    Consolidates percentage math and -Quiet suppression for all phase progress bars.
+    Callers pass raw Current/Total counts; the helper computes PercentComplete.
+.PARAMETER Activity
+    The progress-bar activity label.
+.PARAMETER Status
+    The status message shown on the progress bar.
+.PARAMETER Current
+    Current item index used to compute the percentage complete.
+.PARAMETER Total
+    Total item count (denominator for percentage).
+.PARAMETER QuietMode
+    When $true, all progress output is suppressed and the function returns immediately.
+.PARAMETER CurrentOperation
+    Optional sub-operation text shown beneath the status line.
+.PARAMETER Completed
+    Switch. When set, closes the named progress bar instead of updating it.
+#>
+function Write-PhaseProgress {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Activity,
+        [Parameter(Mandatory)][string]$Status,
+        [Parameter(Mandatory)][int]$Current,
+        [Parameter(Mandatory)][int]$Total,
+        [Parameter(Mandatory)][bool]$QuietMode,
+        [string]$CurrentOperation,
+        [switch]$Completed
+    )
+
+    if ($QuietMode) { return }
+
+    if ($Completed) {
+        Write-Progress -Activity $Activity -Completed
+        return
+    }
+
+    $pct = [int]($Current / [math]::Max(1, $Total) * 100)
+    $params = @{
+        Activity        = $Activity
+        Status          = $Status
+        PercentComplete = $pct
+    }
+    # Use ?? so that a null CurrentOperation gracefully collapses to '' (falsy),
+    # avoiding a spurious empty -CurrentOperation on the progress bar.
+    if ($CurrentOperation ?? '') {
+        $params['CurrentOperation'] = $CurrentOperation
+    }
+    Write-Progress @params
+}
 
 <#
 .SYNOPSIS
@@ -780,10 +850,8 @@ function Invoke-ZipExtractions {
         foreach ($zip in $zips) {
             $index++
             try {
-                if (-not $QuietMode) {
-                    $pct = [int](($index - 1) / [math]::Max(1, $zipCount) * 100)
-                    Write-Progress -Activity "Extracting archives" -Status $zip.Name -PercentComplete $pct
-                }
+                Write-PhaseProgress -Activity "Extracting archives" -Status $zip.Name `
+                    -Current ($index - 1) -Total $zipCount -QuietMode $QuietMode
 
                 if ($PSCmdlet.ShouldProcess($zip.FullName, "Extract")) {
                     $stats = Get-ZipFileStats -ZipPath $zip.FullName
@@ -812,9 +880,8 @@ function Invoke-ZipExtractions {
             }
         }
 
-        if (-not $QuietMode) {
-            Write-Progress -Activity "Extracting archives" -Completed
-        }
+        Write-PhaseProgress -Activity "Extracting archives" -Status "Done" `
+            -Current $zipCount -Total $zipCount -QuietMode $QuietMode -Completed
     }
 
     return [pscustomobject]@{
@@ -1017,13 +1084,13 @@ function Move-ZipFilesToParent {
 
     foreach ($zf in $zipsToMove) {
         $idx++
-        if (-not $QuietMode) {
-            $pct = [int](($idx) / [math]::Max(1, $total) * 100)
-            Write-Progress -Activity "Moving zip files to parent" `
-                -Status "$idx / $total : $($zf.Name) ($(Format-Bytes $zf.Length))" `
-                -CurrentOperation ("Moved {0} of {1}" -f (Format-Bytes $bytes), (Format-Bytes $totalBytes)) `
-                -PercentComplete $pct
-        }
+        # Include the current file's size in the display so the byte counter reflects
+        # the running total up to and including the file being processed (fixes the
+        # off-by-one where the caption previously showed only bytes from prior files).
+        Write-PhaseProgress -Activity "Moving zip files to parent" `
+            -Status "$idx / $total : $($zf.Name) ($(Format-Bytes $zf.Length))" `
+            -Current $idx -Total $total -QuietMode $QuietMode `
+            -CurrentOperation ("Moving: {0} of {1} bytes" -f (Format-Bytes ($bytes + $zf.Length)), (Format-Bytes $totalBytes))
 
         $target = Join-Path $parent $zf.Name
         $collides = [System.IO.File]::Exists($target)
@@ -1052,7 +1119,8 @@ function Move-ZipFilesToParent {
         $bytes += $zf.Length
     }
 
-    if (-not $QuietMode) { Write-Progress -Activity "Moving zip files to parent" -Completed }
+    Write-PhaseProgress -Activity "Moving zip files to parent" -Status "Done" `
+        -Current $total -Total $total -QuietMode $QuietMode -Completed
 
     [pscustomobject]@{ Count = $moved; Bytes = $bytes; Destination = $parent; Skipped = $skipped; Overwritten = $overwritten; Renamed = $renamed }
 }
