@@ -578,3 +578,118 @@ Describe 'Write-PhaseProgress' {
             Should -Not -Throw
     }
 }
+
+Describe 'Write-ExtractionSummary' {
+    BeforeAll {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
+        $scriptText = Get-Content -LiteralPath $scriptPath -Raw
+
+        $helpersStart = $scriptText.IndexOf('#region Helpers')
+        $helpersEnd   = $scriptText.IndexOf('#endregion Helpers')
+        if ($helpersStart -lt 0 -or $helpersEnd -lt 0) {
+            throw 'Failed to locate helpers region in Expand-ZipsAndClean.ps1'
+        }
+
+        $helpers = $scriptText.Substring($helpersStart, $helpersEnd - $helpersStart)
+        $usingLines = ($scriptText -split "`n" |
+            Where-Object { $_ -match '^\s*using\s+namespace\s+' }) -join "`n"
+        $helpersWithUsing = $usingLines + "`n" + $helpers
+
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+
+        function Write-LogDebug { param([string]$Message) }
+        . ([ScriptBlock]::Create($helpersWithUsing))
+
+        $script:defaultMoveSummary = [pscustomobject]@{
+            Count = 3; Bytes = [int64]5000; Destination = 'C:\parent'
+            Skipped = 0; Overwritten = 0; Renamed = 1
+        }
+        $script:emptyErrors  = [System.Collections.Generic.List[string]]::new()
+        $script:testElapsed  = [timespan]::FromSeconds(2.5)
+    }
+
+    It 'emits summary header when host is interactive (ConsoleHost)' {
+        $script:captured = [System.Collections.Generic.List[string]]::new()
+        Mock Write-Host { $script:captured.Add([string]$Object) }
+        Mock Format-Table { }
+
+        Write-ExtractionSummary `
+            -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
+            -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
+            -ZipCount 5 -ProcessedZips 5 -FilesExtracted 20 `
+            -UncompressedBytes ([int64]1000000) -CompressedBytes ([int64]300000) `
+            -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
+            -Elapsed $script:testElapsed -HostName 'ConsoleHost'
+
+        $script:captured | Should -Contain '==== Expand-ZipsAndClean Summary ===='
+    }
+
+    It 'suppresses all output when host is non-interactive' {
+        Mock Write-Host { }
+        Mock Format-Table { }
+        Mock Format-List  { }
+
+        Write-ExtractionSummary `
+            -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
+            -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
+            -ZipCount 5 -ProcessedZips 5 -FilesExtracted 20 `
+            -UncompressedBytes ([int64]1000000) -CompressedBytes ([int64]300000) `
+            -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
+            -Elapsed $script:testElapsed -HostName 'DefaultHost'
+
+        Should -Invoke Write-Host   -Times 0
+        Should -Invoke Format-Table -Times 0
+        Should -Invoke Format-List  -Times 0
+    }
+
+    It 'emits error notes when the error list is non-empty' {
+        $errList = [System.Collections.Generic.List[string]]::new()
+        $errList.Add('Something went wrong')
+        $script:captured = [System.Collections.Generic.List[string]]::new()
+        Mock Write-Host { $script:captured.Add([string]$Object) }
+        Mock Format-Table { }
+
+        Write-ExtractionSummary `
+            -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
+            -ExtractMode 'Flat' -CollisionPolicy 'Skip' `
+            -ZipCount 2 -ProcessedZips 2 -FilesExtracted 4 `
+            -UncompressedBytes ([int64]500) -CompressedBytes ([int64]200) `
+            -MoveSummary $script:defaultMoveSummary -Errors $errList `
+            -Elapsed $script:testElapsed -HostName 'ConsoleHost'
+
+        $script:captured | Should -Contain "`nNotes / Errors:"
+        ($script:captured | Where-Object { $_ -like '* - Something went wrong' }) | Should -Not -BeNullOrEmpty
+    }
+
+    It 'summary view contains expected fields (SrcDir, ZipsFound, Duration)' {
+        $script:capturedView = $null
+        Mock Write-Host { }
+        Mock Format-Table {
+            param([switch]$AutoSize)
+            $script:capturedView = $_
+        }
+        Mock Format-List {
+            $script:capturedView = $_
+        }
+
+        Write-ExtractionSummary `
+            -SourceDirectory 'C:\mysrc' -DestinationDirectory 'C:\mydest' `
+            -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
+            -ZipCount 7 -ProcessedZips 6 -FilesExtracted 30 `
+            -UncompressedBytes ([int64]2000000) -CompressedBytes ([int64]600000) `
+            -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
+            -Elapsed ([timespan]::FromSeconds(10)) -HostName 'ConsoleHost'
+
+        $script:capturedView | Should -Not -BeNullOrEmpty
+        $script:capturedView.SrcDir   | Should -Be 'C:\mysrc'
+        $script:capturedView.DestDir  | Should -Be 'C:\mydest'
+        $script:capturedView.ZipsFound | Should -Be 7
+        $script:capturedView.ZipsDone  | Should -Be 6
+        $script:capturedView.Files     | Should -Be 30
+        $script:capturedView.Ratio     | Should -Be '3.3x'
+        $script:capturedView.Duration  | Should -BeLike '00:00:10*'
+    }
+}

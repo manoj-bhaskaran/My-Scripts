@@ -1,5 +1,41 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.3.2 — 2026-05-17
+
+### Added
+
+- `Write-ExtractionSummary` private helper that accepts all run-state parameters and writes
+  the formatted summary to the host. Encapsulates:
+  - Compression-ratio computation.
+  - Console-width detection (`try/catch` + `?? 120` default via PS 7 null-coalescing).
+  - `Format-Table -AutoSize` (wide) / `Format-List` (narrow) branching.
+  - Error-notes block (`Notes / Errors:` + per-error lines).
+  - Interactive-host guard: summary is emitted only when `$Host.Name` is `ConsoleHost` or
+    `Visual Studio Code Host`; suppressed silently for scheduled tasks and redirected streams.
+
+### Changed
+
+- Main script body: replaced the 45-line inline summary block with a single
+  `Write-ExtractionSummary` call. `Main` is now focused on orchestration only.
+
+### Tests
+
+- Added `Describe 'Write-ExtractionSummary'` with four `It` blocks:
+  - `emits summary header when host is interactive (ConsoleHost)` — verifies the
+    `==== Expand-ZipsAndClean Summary ====` line is written.
+  - `suppresses all output when host is non-interactive` — passes `HostName 'DefaultHost'`
+    and asserts `Write-Host`, `Format-Table`, and `Format-List` are each called zero times.
+  - `emits error notes when the error list is non-empty` — verifies the `Notes / Errors:`
+    header and individual error line appear.
+  - `summary view contains expected fields` — captures the object piped to `Format-Table`/
+    `Format-List` and asserts `SrcDir`, `DestDir`, `ZipsFound`, `ZipsDone`, `Files`,
+    `Ratio`, and `Duration` are correct.
+
+### Versioning
+
+- Bumped `Expand-ZipsAndClean.ps1` version to `2.3.2` (patch — internal refactor, no
+  behaviour change for interactive runs).
+
 ## 2.3.0 — 2026-05-17
 
 ### Changed
