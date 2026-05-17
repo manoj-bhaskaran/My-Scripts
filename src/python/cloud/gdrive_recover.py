@@ -245,6 +245,17 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
         --failed-file ./logs/failed.csv \
         --post-restore-policy retain
 
+    # Give every run its own log/failed-file by appending a timestamp to the
+    # provided names (run.log -> run_YYYYMMDD_HHMMSS_ffffff.log). Unlike
+    # --fresh-run, this creates a NEW file per run instead of truncating the
+    # configured one.
+    python gdrive_recover.py recover-and-download \
+        --download-dir ./recovered \
+        --log-file ./logs/run.log \
+        --failed-file ./logs/failed.csv \
+        --timestamped-output \
+        --post-restore-policy retain
+
     # Retry only the failed items from a previous run using the CSV
     python gdrive_recover.py recover-and-download \
         --download-dir ./recovered \

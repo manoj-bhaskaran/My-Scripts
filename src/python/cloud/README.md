@@ -185,18 +185,29 @@ python gdrive_recover.py recover-and-download \
   --fresh-run \
   --failed-file ./logs/failed.csv \
   --post-restore-policy retain --yes
+
+# Give every run its own log/failed-file by appending a timestamp to the names
+# (run.log -> run_YYYYMMDD_HHMMSS_ffffff.log); creates a NEW file per run rather
+# than truncating the configured one
+python gdrive_recover.py recover-and-download \
+  --download-dir ./recovered \
+  --log-file ./logs/run.log \
+  --failed-file ./logs/failed.csv \
+  --timestamped-output \
+  --post-restore-policy retain --yes
 ```
 
-### `--fresh-run` vs. `--overwrite`
+### `--fresh-run` vs. `--overwrite` vs. `--timestamped-output`
 
-These two flags do different things and can be combined:
+These flags do different things and can be combined:
 
 | Flag | Effect |
 | --- | --- |
 | `--overwrite` | Replace existing **local files** instead of generating a conflict-safe name (`name_<hex>.ext`). Does **not** touch state or the failed-file CSV. |
 | `--fresh-run` | Ignore prior progress in the **state file**, regenerate `run_id`/`start_time` and the saved scope, and (if `--failed-file` is set) truncate the failed-file CSV. Also bypasses the scope-mismatch guard. Does **not** force local-file overwrite. |
+| `--timestamped-output` | Append a single run timestamp with microsecond precision (`YYYYMMDD_HHMMSS_ffffff`) before the extension of the `--log-file` and `--failed-file` names so each run writes to its own files, even when runs start within the same second (e.g. `run.log` → `run_20260517_142530_123456.log`). Unlike `--fresh-run`, it creates a **new** file per run rather than truncating the configured one. Disabled (empty) paths are left untouched. Does **not** touch state. |
 
-Pass both to start over completely *and* overwrite any pre-existing local files.
+Pass `--fresh-run` and `--overwrite` together to start over completely *and* overwrite any pre-existing local files.
 
 ### State file schema (v3) and per-step resume
 
