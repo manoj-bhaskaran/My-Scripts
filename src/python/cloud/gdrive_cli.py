@@ -230,10 +230,12 @@ For the compatibility matrix, transport notes, and performance presets: see READ
             "--timestamped-output",
             action="store_true",
             help=(
-                "Append a run timestamp (YYYYMMDD_HHMMSS) to the --log-file and "
-                "--failed-file names so every run writes to its own files, even "
-                "when explicit paths are provided. The timestamp is inserted "
-                "before the file extension (e.g. run.log -> run_20260517_142530.log). "
+                "Append a run timestamp (YYYYMMDD_HHMMSS_ffffff, microsecond "
+                "precision) to the --log-file and --failed-file names so every "
+                "run writes to its own files, even when explicit paths are "
+                "provided and runs start within the same second. The timestamp "
+                "is inserted before the file extension "
+                "(e.g. run.log -> run_20260517_142530_123456.log). "
                 "Paths that are left disabled (empty) are unaffected."
             ),
         )
@@ -431,15 +433,17 @@ def _apply_timestamped_output(args) -> None:
     when explicit/default paths are provided.
 
     The same timestamp is applied to both files so a run's log and failed-file
-    share a correlatable suffix. The suffix is inserted before the final
-    extension (``run.log`` -> ``run_20260517_142530.log``); extension-less
-    names just get the suffix appended. Disabled (empty) paths are left
-    untouched so the feature never silently enables logging or failure
-    tracking.
+    share a correlatable suffix. The suffix includes microsecond precision
+    (``YYYYMMDD_HHMMSS_ffffff``) so rapid sequential or parallel runs sharing
+    the same base paths do not collide on a whole-second boundary. It is
+    inserted before the final extension (``run.log`` ->
+    ``run_20260517_142530_123456.log``); extension-less names just get the
+    suffix appended. Disabled (empty) paths are left untouched so the feature
+    never silently enables logging or failure tracking.
     """
     if not getattr(args, "timestamped_output", False):
         return
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
     def _stamp(path_str: str) -> str:
         if not path_str:

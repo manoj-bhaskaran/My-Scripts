@@ -246,8 +246,9 @@ All commands are invoked via ``python gdrive_recover.py <subcommand> [options]``
         --post-restore-policy retain
 
     # Give every run its own log/failed-file by appending a timestamp to the
-    # provided names (run.log -> run_YYYYMMDD_HHMMSS.log). Unlike --fresh-run,
-    # this creates a NEW file per run instead of truncating the configured one.
+    # provided names (run.log -> run_YYYYMMDD_HHMMSS_ffffff.log). Unlike
+    # --fresh-run, this creates a NEW file per run instead of truncating the
+    # configured one.
     python gdrive_recover.py recover-and-download \
         --download-dir ./recovered \
         --log-file ./logs/run.log \
