@@ -35,40 +35,8 @@ function Expand-ZipFlat {
         $zip = [ZipFile]::OpenRead($ZipPath)
         try {
             foreach ($entry in $zip.Entries) {
-                if ([string]::IsNullOrEmpty($entry.Name)) { continue }
-                if ($entry.FullName.Contains('..') -or $entry.FullName -match '(^|[\\/])\.\.([\\/]|$)') {
-                    Write-LogDebug "Skipped traversal-segment entry: $($entry.FullName)"
-                    continue
-                }
-
-                $destFull = Resolve-ZipEntryDestinationPath -DestinationRootFull $DestinationRootFull -EntryFullName $entry.FullName
-                if ($null -eq $destFull) {
-                    Write-LogDebug "Skipped path traversal: $($entry.FullName)"
-                    continue
-                }
-
-                $destDir = Split-Path -Path $destFull -Parent
-                if (-not (Test-Path -LiteralPath $destDir)) {
-                    New-DirectoryIfMissing -Path $destDir -Force | Out-Null
-                }
-
-                $targetPath = $destFull
-                if ([System.IO.File]::Exists($targetPath)) {
-                    switch ($CollisionPolicy) {
-                        'Skip'      { continue }
-                        'Rename'    { $targetPath = Resolve-UniquePath -Path $targetPath }
-                        'Overwrite' { }
-                    }
-                }
-
-                try {
-                    [ZipFileExtensions]::ExtractToFile($entry, $targetPath, ($CollisionPolicy -eq 'Overwrite'))
+                if (Invoke-ZipEntryWrite -Entry $entry -DestinationRootFull $DestinationRootFull -CollisionPolicy $CollisionPolicy) {
                     $written++
-                } catch {
-                    # Defensive fallback: if a race or path normalization mismatch causes
-                    # a late "already exists" exception under Skip policy, honor Skip.
-                    if ($CollisionPolicy -eq 'Skip' -and $_.Exception.Message -imatch 'already exists') { continue }
-                    Resolve-ExtractionError -ZipPath $ZipPath -ErrorRecord $_
                 }
             }
         } finally {
