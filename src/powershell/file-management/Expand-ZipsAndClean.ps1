@@ -1,6 +1,5 @@
 #requires -Version 7.0
 using namespace System.Collections.Generic
-using namespace System.IO.Compression
 
 <#
 .SYNOPSIS
@@ -103,13 +102,24 @@ using namespace System.IO.Compression
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.2.3
+    Version  : 2.3.0
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.3.0  Extracted archive primitives into Core/Zip module (issue #976):
+           - Moved Get-ZipFileStats, Expand-ZipToSubfolder, Expand-ZipFlat, Expand-ZipSmart
+             to src/powershell/modules/Core/Zip/Public/.
+           - Moved Test-IsEncryptedZipError, Resolve-ExtractionError,
+             Resolve-ZipEntryDestinationPath to src/powershell/modules/Core/Zip/Private/.
+           - Added Import-Module for Core/Zip/Zip.psm1 after the FileSystem import.
+           - Removed 'using namespace System.IO.Compression' (no longer needed in script body).
+           - Updated Pester tests to import the Zip module directly; private-function
+             tests use InModuleScope Zip; intra-module dispatcher mocks use InModuleScope.
+           Version bump: minor (import contract change — Zip helpers are now module-provided).
+
     2.2.3  Centralized Write-Progress wrapper and fixed off-by-one byte counter (issue #975):
            - Added private Write-PhaseProgress helper accepting Activity, Status,
              Current, Total, QuietMode, optional CurrentOperation, and Completed switch.
@@ -396,6 +406,7 @@ param(
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\FileSystem\FileSystem.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\Core\Zip\Zip.psm1" -Force
 
 # Initialize logger (script name will be extracted from the script file name)
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
@@ -455,315 +466,6 @@ function Write-PhaseProgress {
         $params['CurrentOperation'] = $CurrentOperation
     }
     Write-Progress @params
-}
-
-<#
-.SYNOPSIS
-    Returns quick stats for a zip (file count, uncompressed total, compressed bytes).
-.DESCRIPTION
-    Caches the FileInfo once to avoid redundant Get-Item/Length calls in loops.
-.PARAMETER ZipPath
-    Full path to the .zip file.
-#>
-function Get-ZipFileStats {
-    [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$ZipPath)
-
-    # Precompute to avoid repeated Get-Item lookups (minor optimisation)
-    $zipItem = Get-Item -LiteralPath $ZipPath
-    $compressedLen = [int64]$zipItem.Length
-
-    $result = [pscustomobject]@{
-        FileCount         = 0;
-        UncompressedBytes = [int64]0;
-        CompressedBytes   = $compressedLen
-    }
-
-    try {
-        $zip = [ZipFile]::OpenRead($ZipPath)
-        try {
-            foreach ($entry in $zip.Entries) {
-                if ($entry.Name) {
-                    $result.FileCount++
-                    $result.UncompressedBytes += [int64]$entry.Length
-                }
-            }
-        } finally {
-            $zip.Dispose()
-        }
-    } catch {
-        Write-LogDebug "Failed to read zip stats for: $ZipPath. $_"
-    }
-    return $result
-}
-
-<#
-.SYNOPSIS
-    Returns $true when an exception/message indicates archive encryption/password protection.
-#>
-function Test-IsEncryptedZipError {
-    [CmdletBinding()]
-    param([Parameter(Mandatory)][AllowNull()][object]$ErrorObject)
-
-    $encryptionPattern = '(?i)encrypt(?:ed|ion)?|password|protected|unsupported compression method'
-
-    if ($ErrorObject -is [System.Management.Automation.ErrorRecord]) {
-        if ($ErrorObject.Exception -and (Test-IsEncryptedZipError -ErrorObject $ErrorObject.Exception)) {
-            return $true
-        }
-        if ([string]$ErrorObject -match $encryptionPattern) { return $true }
-        return $false
-    }
-
-    if ($ErrorObject -is [System.Exception]) {
-        $ex = [System.Exception]$ErrorObject
-        while ($null -ne $ex) {
-            if (($ex.Message ?? '') -match $encryptionPattern) { return $true }
-            $ex = $ex.InnerException
-        }
-        return $false
-    }
-
-    return ([string]$ErrorObject -match $encryptionPattern)
-}
-
-<#
-.SYNOPSIS
-    Throws a normalized encrypted-archive extraction error when applicable.
-#>
-function Resolve-ExtractionError {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$ZipPath,
-        [Parameter(Mandatory)][System.Management.Automation.ErrorRecord]$ErrorRecord
-    )
-
-    if (Test-IsEncryptedZipError -ErrorObject $ErrorRecord) {
-        throw "Extraction failed for '$ZipPath' (zip may be encrypted): $($ErrorRecord.Exception.Message)"
-    }
-    throw $ErrorRecord
-}
-
-<#
-.SYNOPSIS
-    Resolves a ZipArchive entry destination and blocks path traversal (Zip Slip).
-#>
-function Resolve-ZipEntryDestinationPath {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$DestinationRootFull,
-        [Parameter(Mandatory)][string]$EntryFullName
-    )
-
-    if ([string]::IsNullOrWhiteSpace($EntryFullName)) { return $null }
-
-    # Reject rooted/archive-absolute inputs before normalization/trimming.
-    if (
-        $EntryFullName.StartsWith('/') -or
-        $EntryFullName.StartsWith('\') -or
-        $EntryFullName -match '^[A-Za-z]:[\\/]' -or
-        $EntryFullName.StartsWith('//') -or
-        $EntryFullName.StartsWith('\\')
-    ) {
-        return $null
-    }
-
-    # Normalize separators and explicitly reject traversal segments.
-    $directorySeparator = [System.IO.Path]::DirectorySeparatorChar
-    $normalizedEntry = ($EntryFullName -replace '\\', '/')
-    $segments = @($normalizedEntry -split '/+' | Where-Object { $_ -ne '' -and $_ -ne '.' })
-    if ($segments.Count -eq 0) { return $null }
-    if (@($segments | Where-Object { $_ -eq '..' }).Count -gt 0) { return $null }
-
-    $relativePath = ($segments -join [string]$directorySeparator)
-    if ([System.IO.Path]::IsPathRooted($relativePath)) { return $null }
-
-    # Compute canonical paths from fully-qualified roots to compare like-for-like.
-    $rootFull = [System.IO.Path]::GetFullPath($DestinationRootFull)
-    $candidate = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($rootFull, $relativePath))
-    $rootWithSep = if ($rootFull.EndsWith($directorySeparator)) { $rootFull } else { $rootFull + $directorySeparator }
-    $comparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
-
-    if ($candidate.StartsWith($rootWithSep, $comparison)) {
-        return $candidate
-    }
-
-    return $null
-}
-
-<#
-.SYNOPSIS
-    Extracts one ZIP archive into a unique subfolder under the destination root.
-.DESCRIPTION
-    This helper implements `PerArchiveSubfolder` mode. It uses `Expand-Archive` to extract
-    into a sanitized subfolder name and resolves collisions by creating a unique directory path.
-.PARAMETER ZipPath
-    Path to the zip archive.
-.PARAMETER DestinationRoot
-    Root folder for extraction.
-.PARAMETER SafeSubfolderName
-    Safe destination subfolder name derived from the zip file name.
-.PARAMETER ExpectedFileCount
-    Pre-computed file count from Get-ZipFileStats. Returned directly to avoid
-    a post-extraction Get-ChildItem walk of the destination folder.
-.OUTPUTS
-    Int ($ExpectedFileCount as supplied by the caller).
-#>
-function Expand-ZipToSubfolder {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$ZipPath,
-        [Parameter(Mandatory)][string]$DestinationRoot,
-        [Parameter(Mandatory)][string]$SafeSubfolderName,
-        [Parameter(Mandatory)][int]$ExpectedFileCount
-    )
-
-    try {
-        $target = Join-Path $DestinationRoot $SafeSubfolderName
-        $target = Resolve-UniqueDirectoryPath -Path $target
-        if (-not (Test-Path -LiteralPath $target)) {
-            New-DirectoryIfMissing -Path $target -Force | Out-Null
-        }
-
-        Expand-Archive -LiteralPath $ZipPath -DestinationPath $target -Force
-        Write-LogDebug "Expand-ZipToSubfolder: '$($ZipPath | Split-Path -Leaf)' -> '$target' ($ExpectedFileCount file(s) per archive manifest)"
-        return $ExpectedFileCount
-
-    } catch { Resolve-ExtractionError -ZipPath $ZipPath -ErrorRecord $_ }
-}
-
-<#
-.SYNOPSIS
-    Streams one ZIP archive directly into the destination root (flat mode).
-.DESCRIPTION
-    Implements `Flat` extraction mode using `ZipArchive` streaming extraction. The function:
-    - Normalizes each entry path and enforces a destination-root prefix check to prevent Zip Slip.
-    - Applies per-file collision policy (`Skip`, `Overwrite`, `Rename`) before writing.
-    - Creates required destination directories on demand.
-.PARAMETER ZipPath
-    Path to the zip archive.
-.PARAMETER DestinationRoot
-    Root folder for extraction.
-.PARAMETER DestinationRootFull
-    Fully-qualified destination root path used for Zip Slip boundary validation.
-.PARAMETER CollisionPolicy
-    File collision behavior: `Skip`, `Overwrite`, or `Rename`.
-.OUTPUTS
-    Int (number of files extracted).
-#>
-function Expand-ZipFlat {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$ZipPath,
-        [Parameter(Mandatory)][string]$DestinationRoot,
-        [Parameter(Mandatory)][string]$DestinationRootFull,
-        [ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy = 'Rename'
-    )
-
-    $written = 0
-
-    try {
-        $zip = [ZipFile]::OpenRead($ZipPath)
-        try {
-            foreach ($entry in $zip.Entries) {
-                if ([string]::IsNullOrEmpty($entry.Name)) { continue }
-                if ($entry.FullName.Contains('..') -or $entry.FullName -match '(^|[\\/])\.\.([\\/]|$)') {
-                    Write-LogDebug "Skipped traversal-segment entry: $($entry.FullName)"
-                    continue
-                }
-
-                $destFull = Resolve-ZipEntryDestinationPath -DestinationRootFull $DestinationRootFull -EntryFullName $entry.FullName
-                if ($null -eq $destFull) {
-                    Write-LogDebug "Skipped path traversal: $($entry.FullName)"
-                    continue
-                }
-
-                $destDir = Split-Path -Path $destFull -Parent
-                if (-not (Test-Path -LiteralPath $destDir)) {
-                    New-DirectoryIfMissing -Path $destDir -Force | Out-Null
-                }
-
-                $targetPath = $destFull
-                if ([System.IO.File]::Exists($targetPath)) {
-                    switch ($CollisionPolicy) {
-                        'Skip' { continue }
-                        'Rename' { $targetPath = Resolve-UniquePath -Path $targetPath }
-                        'Overwrite' { }
-                    }
-                }
-
-                try {
-                    [ZipFileExtensions]::ExtractToFile($entry, $targetPath, ($CollisionPolicy -eq 'Overwrite'))
-                    $written++
-                } catch {
-                    # Defensive fallback: if a race or path normalization mismatch causes
-                    # a late "already exists" exception under Skip policy, honor Skip.
-                    if ($CollisionPolicy -eq 'Skip' -and $_.Exception.Message -imatch 'already exists') { continue }
-                    Resolve-ExtractionError -ZipPath $ZipPath -ErrorRecord $_
-                }
-            }
-        } finally {
-            $zip.Dispose()
-        }
-
-        return $written
-
-    } catch { Resolve-ExtractionError -ZipPath $ZipPath -ErrorRecord $_ }
-}
-
-<#
-.SYNOPSIS
-    Dispatches zip extraction to the configured extraction mode helper.
-.DESCRIPTION
-    Public-facing compatibility wrapper that preserves the existing signature and routes
-    extraction to either `Expand-ZipToSubfolder` (`PerArchiveSubfolder`) or `Expand-ZipFlat` (`Flat`).
-.PARAMETER ZipPath
-    Path to the zip archive.
-.PARAMETER DestinationRoot
-    Root folder for extraction.
-.PARAMETER ExtractMode
-    `PerArchiveSubfolder` or `Flat`.
-.PARAMETER CollisionPolicy
-    `Skip` | `Overwrite` | `Rename`.
-.PARAMETER SafeNameMaxLen
-    Maximum safe-name length used to derive per-archive subfolder names.
-.PARAMETER ExpectedFileCount
-    Pre-computed file count from Get-ZipFileStats, threaded to Expand-ZipToSubfolder
-    for PerArchiveSubfolder mode so it can be returned without a post-extraction
-    directory walk.
-.OUTPUTS
-    Int (number of files written by the selected mode helper).
-#>
-function Expand-ZipSmart {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$ZipPath,
-        [Parameter(Mandatory)][string]$DestinationRoot,
-        [ValidateSet('PerArchiveSubfolder', 'Flat')][string]$ExtractMode = 'PerArchiveSubfolder',
-        [ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy = 'Rename',
-        [int]$SafeNameMaxLen = 0,
-        [int]$ExpectedFileCount = 0
-    )
-
-    if (-not (Test-Path -LiteralPath $DestinationRoot)) {
-        New-DirectoryIfMissing -Path $DestinationRoot -Force | Out-Null
-    }
-
-    $destRootFull = Get-FullPath -Path $DestinationRoot
-    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($ZipPath)
-    $safeSub = Get-SafeName -Name $baseName -MaxLength $SafeNameMaxLen
-
-    if ($ExtractMode -eq 'PerArchiveSubfolder') {
-        # Callers that pre-compute stats pass ExpectedFileCount > 0 to avoid a
-        # second zip open; fall back to Get-ZipFileStats so the return value is
-        # correct when ExpectedFileCount is omitted (default 0).
-        if ($ExpectedFileCount -le 0) {
-            $ExpectedFileCount = (Get-ZipFileStats -ZipPath $ZipPath).FileCount
-        }
-        return Expand-ZipToSubfolder -ZipPath $ZipPath -DestinationRoot $DestinationRoot -SafeSubfolderName $safeSub -ExpectedFileCount $ExpectedFileCount
-    }
-
-    return Expand-ZipFlat -ZipPath $ZipPath -DestinationRoot $DestinationRoot -DestinationRootFull $destRootFull -CollisionPolicy $CollisionPolicy
 }
 
 <#

@@ -1,5 +1,36 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.3.0 — 2026-05-17
+
+### Changed
+
+- Extracted archive primitives into the new `Core/Zip` module (issue #976):
+  - `Get-ZipFileStats`, `Expand-ZipToSubfolder`, `Expand-ZipFlat`, `Expand-ZipSmart` moved to
+    `src/powershell/modules/Core/Zip/Public/`.
+  - `Test-IsEncryptedZipError`, `Resolve-ExtractionError`, `Resolve-ZipEntryDestinationPath`
+    moved to `src/powershell/modules/Core/Zip/Private/`.
+- Added `Import-Module Core/Zip/Zip.psm1` after the `FileSystem` import.
+- Removed `using namespace System.IO.Compression` from the script (no longer needed in the
+  script body after the zip helpers moved to the module).
+
+### Tests
+
+- Updated `Describe 'Expand-ZipsAndClean helper extraction refactor'` → renamed to
+  `'Core/Zip module — public extraction functions'`.
+- `BeforeAll` now imports `Core/Zip/Zip.psm1` directly instead of extracting the
+  `#region Helpers` block from the script source.
+- Module-internal function mocks (`Expand-ZipToSubfolder`, `Expand-ZipFlat`, `Expand-Archive`)
+  updated to use `-ModuleName Zip`.
+- Tests for private module functions (`Resolve-ZipEntryDestinationPath`,
+  `Test-IsEncryptedZipError`, `Resolve-ExtractionError`) now run inside `InModuleScope Zip`.
+- The three remaining `Describe` blocks (`Remove-SourceDirectory`, `Move-ZipFilesToParent`,
+  `Write-PhaseProgress`) each import `Core/Zip/Zip.psm1` in their `BeforeAll` so
+  `Invoke-ZipExtractions` (which calls the module functions) resolves correctly if exercised.
+
+### Versioning
+
+- Bumped `Expand-ZipsAndClean.ps1` version to `2.3.0` (minor — import contract changes).
+
 ## 2.2.3 — 2026-05-17
 
 ### Added
