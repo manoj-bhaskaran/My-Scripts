@@ -889,6 +889,10 @@ function Move-ZipFilesToParent {
     $Host.UI.RawUI.WindowSize.Width. Pass a positive value to force Format-Table
     (>= 120) or Format-List (< 120) regardless of the actual terminal width.
     Useful in tests and when piping output to a fixed-width formatter.
+.PARAMETER PassThru
+    Switch. When set, emits the summary PSCustomObject to the pipeline in addition
+    to writing it to the host. Intended for testing so callers can inspect the
+    computed fields without needing to intercept Format-Table/-List.
 .NOTES
     Error notes are always emitted when errors exist, regardless of host type,
     so that failures are never silently swallowed in scheduled tasks or
@@ -910,7 +914,8 @@ function Write-ExtractionSummary {
         [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$Errors,
         [Parameter(Mandatory)][timespan]$Elapsed,
         [string]$HostName = $Host.Name,
-        [int]$ConsoleWidth = 0
+        [int]$ConsoleWidth = 0,
+        [switch]$PassThru
     )
 
     $isInteractive = $HostName -in ('ConsoleHost', 'Visual Studio Code Host')
@@ -953,6 +958,8 @@ function Write-ExtractionSummary {
         } else {
             $summaryView | Format-Table -AutoSize
         }
+
+        if ($PassThru) { $summaryView }
     }
 
     if ($Errors.Count -gt 0) {

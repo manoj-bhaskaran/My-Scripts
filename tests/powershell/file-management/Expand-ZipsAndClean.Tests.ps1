@@ -689,28 +689,27 @@ Describe 'Write-ExtractionSummary' {
     }
 
     It 'summary view contains expected fields (SrcDir, ZipsFound, Ratio, Duration)' {
-        # Pass -ConsoleWidth 120 to guarantee Format-Table is used regardless of the
-        # CI host's actual console width (headless Linux returns Width=0).
+        # -PassThru returns the PSCustomObject directly so field values can be
+        # asserted without relying on Pester's pipeline-input capture in mocks.
         Mock Write-Host  { }
         Mock Format-Table { }
+        Mock Format-List  { }
 
-        Write-ExtractionSummary `
+        $view = Write-ExtractionSummary `
             -SourceDirectory 'C:\mysrc' -DestinationDirectory 'C:\mydest' `
             -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
             -ZipCount 7 -ProcessedZips 6 -FilesExtracted 30 `
             -UncompressedBytes ([int64]2000000) -CompressedBytes ([int64]600000) `
             -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
-            -Elapsed ([timespan]::FromSeconds(10)) -HostName 'ConsoleHost' -ConsoleWidth 120
+            -Elapsed ([timespan]::FromSeconds(10)) -HostName 'ConsoleHost' -PassThru
 
-        Should -Invoke Format-Table -Times 1 -Exactly -ParameterFilter {
-            $InputObject -ne $null -and
-            $InputObject.SrcDir    -eq 'C:\mysrc' -and
-            $InputObject.DestDir   -eq 'C:\mydest' -and
-            $InputObject.ZipsFound -eq 7 -and
-            $InputObject.ZipsDone  -eq 6 -and
-            $InputObject.Files     -eq 30 -and
-            $InputObject.Ratio     -eq '3.3x' -and
-            ($InputObject.Duration -like '00:00:10*')
-        }
+        $view             | Should -Not -BeNullOrEmpty
+        $view.SrcDir      | Should -Be 'C:\mysrc'
+        $view.DestDir     | Should -Be 'C:\mydest'
+        $view.ZipsFound   | Should -Be 7
+        $view.ZipsDone    | Should -Be 6
+        $view.Files       | Should -Be 30
+        $view.Ratio       | Should -Be '3.3x'
+        $view.Duration    | Should -BeLike '00:00:10*'
     }
 }
