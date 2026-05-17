@@ -770,7 +770,7 @@ function Move-ZipFilesToParent {
 
     # Writability probe (skip if WhatIf)
     if (-not $WhatIfPreference) {
-        Test-DirectoryWritable -Path $parent -ThrowOnFailure
+        $null = Test-DirectoryWritable -Path $parent -ThrowOnFailure
     }
 
     $zipsToMove = @(Get-ChildItem -LiteralPath $SourceDir -Filter *.zip -File)
