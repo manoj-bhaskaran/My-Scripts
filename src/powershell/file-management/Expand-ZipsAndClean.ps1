@@ -102,13 +102,24 @@ using namespace System.Collections.Generic
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.3.0
+    Version  : 2.3.1
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.3.1  Replaced inline path-separator and writability patterns with shared
+           FileSystem module helpers (issue #977):
+           - Removed the EndsWith('\') ? p : p+'\' trailing-separator idiom from
+             Test-ScriptPreconditions; both containment checks now delegate to
+             Test-PathContainment (which in turn calls Add-TrailingSeparator).
+           - Replaced the inline writability probe (New-Item + Remove-Item) in
+             Move-ZipFilesToParent with Test-DirectoryWritable -ThrowOnFailure.
+           - No behaviour change; error messages are normalised to
+             "Directory is not writable: <path>" (previously the same wording).
+           Version bump: patch.
+
     2.3.0  Extracted archive primitives into Core/Zip module (issue #976):
            - Moved Get-ZipFileStats, Expand-ZipToSubfolder, Expand-ZipFlat, Expand-ZipSmart
              to src/powershell/modules/Core/Zip/Public/.
@@ -486,13 +497,10 @@ function Test-ScriptPreconditions {
         throw "Source and destination cannot be the same: $srcFull"
     }
 
-    $srcWithSep = if ($srcFull.EndsWith('\')) { $srcFull } else { $srcFull + '\' }
-    $dstWithSep = if ($dstFull.EndsWith('\')) { $dstFull } else { $dstFull + '\' }
-
-    if ($dstWithSep.StartsWith($srcWithSep, [System.StringComparison]::OrdinalIgnoreCase)) {
+    if (Test-PathContainment -Container $srcFull -Candidate $dstFull) {
         throw "Destination cannot be inside the source directory."
     }
-    if ($srcWithSep.StartsWith($dstWithSep, [System.StringComparison]::OrdinalIgnoreCase)) {
+    if (Test-PathContainment -Container $dstFull -Candidate $srcFull) {
         throw "Source cannot be inside the destination directory."
     }
 
@@ -760,17 +768,9 @@ function Move-ZipFilesToParent {
         throw "Parent directory not found: $parent"
     }
 
-    # Writability probe using a temporary file (skip if WhatIf)
+    # Writability probe (skip if WhatIf)
     if (-not $WhatIfPreference) {
-        $probe = Join-Path $parent ("_write_test_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
-        try {
-            New-Item -ItemType File -Path $probe -Force | Out-Null
-            Remove-Item -LiteralPath $probe -Force
-        } catch {
-            # Clean up probe file even on failure
-            try { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue } catch { }
-            throw "Parent directory is not writable: $parent"
-        }
+        $null = Test-DirectoryWritable -Path $parent -ThrowOnFailure
     }
 
     $zipsToMove = @(Get-ChildItem -LiteralPath $SourceDir -Filter *.zip -File)
