@@ -21,6 +21,8 @@ tests/
 │   │   └── test_csv_to_gpx.py
 │   └── conftest.py        # Pytest configuration and fixtures
 ├── powershell/
+│   ├── file-management/   # Tests for file-management scripts
+│   │   └── Expand-ZipsAndClean.Tests.ps1   # Extraction helpers, collision policies, preconditions, smoke
 │   ├── unit/              # PowerShell unit tests
 │   │   ├── ErrorHandling.Tests.ps1
 │   │   ├── FileDistributor.Tests.ps1

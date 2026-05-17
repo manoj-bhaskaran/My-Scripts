@@ -102,13 +102,21 @@ using namespace System.Collections.Generic
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.3.2
+    Version  : 2.3.3
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
                Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
                System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.3.3  Added Pester tests for extraction helpers (issue #979):
+           - Added Flat/Overwrite and Flat/Rename collision policy tests.
+           - Added Test-ScriptPreconditions tests (same path, dest inside src,
+             src inside dest).
+           - Added smoke parse tests verifying clean AST parse and the
+             #requires -Version 7.0 directive.
+           Version bump: patch.
+
     2.3.2  Extracted Write-ExtractionSummary helper (issue #978):
            - Moved inline summary block (compression ratio, Format-Table/Format-List
              branching, error notes) into a private Write-ExtractionSummary function.

@@ -223,6 +223,61 @@ Describe 'Core/Zip module — public extraction functions' {
 
         $count | Should -Be 2
     }
+
+    It 'Flat Overwrite: incoming file replaces existing file' {
+        $root = Join-Path $TestDrive 'flat-overwrite'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+        $existingPath = Join-Path $root 'same.txt'
+        Set-Content -LiteralPath $existingPath -Value 'existing' -NoNewline
+
+        $zipPath = Join-Path $TestDrive 'flat-overwrite.zip'
+        $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            $entry  = $archive.CreateEntry('same.txt')
+            $stream = $entry.Open()
+            $writer = New-Object System.IO.StreamWriter($stream)
+            try { $writer.Write('incoming') } finally { $writer.Dispose() }
+        } finally {
+            $archive.Dispose()
+        }
+
+        $written = Expand-ZipFlat -ZipPath $zipPath -DestinationRoot $root -DestinationRootFull ([System.IO.Path]::GetFullPath($root)) -CollisionPolicy Overwrite
+
+        $written | Should -Be 1
+        (Get-Content -LiteralPath $existingPath -Raw) | Should -Be 'incoming'
+    }
+
+    It 'Flat Rename: existing file untouched and incoming written under a unique name' {
+        $root = Join-Path $TestDrive 'flat-rename'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+        $existingPath = Join-Path $root 'same.txt'
+        Set-Content -LiteralPath $existingPath -Value 'existing' -NoNewline
+
+        $zipPath = Join-Path $TestDrive 'flat-rename.zip'
+        $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            $entry  = $archive.CreateEntry('same.txt')
+            $stream = $entry.Open()
+            $writer = New-Object System.IO.StreamWriter($stream)
+            try { $writer.Write('incoming') } finally { $writer.Dispose() }
+        } finally {
+            $archive.Dispose()
+        }
+
+        $written = Expand-ZipFlat -ZipPath $zipPath -DestinationRoot $root -DestinationRootFull ([System.IO.Path]::GetFullPath($root)) -CollisionPolicy Rename
+
+        $written | Should -Be 1
+        # Original must be untouched
+        (Get-Content -LiteralPath $existingPath -Raw) | Should -Be 'existing'
+        # A second .txt file with the incoming content must exist in the root
+        $allTxt = @(Get-ChildItem -LiteralPath $root -Filter '*.txt' -File)
+        $allTxt.Count | Should -Be 2
+        $renamedFile = $allTxt | Where-Object { $_.Name -ne 'same.txt' } | Select-Object -First 1
+        $renamedFile | Should -Not -BeNullOrEmpty
+        (Get-Content -LiteralPath $renamedFile.FullName -Raw) | Should -Be 'incoming'
+    }
 }
 
 Describe 'Remove-SourceDirectory' {
@@ -705,5 +760,85 @@ Describe 'Write-ExtractionSummary' {
         $view.Files       | Should -Be 30
         $view.Ratio       | Should -Be '3.3x'
         $view.Duration    | Should -BeLike '00:00:10*'
+    }
+}
+
+Describe 'Test-ScriptPreconditions' {
+    BeforeAll {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
+        $scriptText = Get-Content -LiteralPath $scriptPath -Raw
+
+        $helpersStart = $scriptText.IndexOf('#region Helpers')
+        $helpersEnd   = $scriptText.IndexOf('#endregion Helpers')
+        if ($helpersStart -lt 0 -or $helpersEnd -lt 0) {
+            throw 'Failed to locate helpers region in Expand-ZipsAndClean.ps1'
+        }
+
+        $helpers = $scriptText.Substring($helpersStart, $helpersEnd - $helpersStart)
+        $usingLines = ($scriptText -split "`n" |
+            Where-Object { $_ -match '^\s*using\s+namespace\s+' }) -join "`n"
+        $helpersWithUsing = $usingLines + "`n" + $helpers
+
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+
+        function Write-LogDebug { param([string]$Message) }
+        . ([ScriptBlock]::Create($helpersWithUsing))
+    }
+
+    It 'throws when source and destination are the same path' {
+        # Get-FullPath returns the same (possibly mangled) string for both arguments,
+        # so the equality check always fires before any path-containment logic.
+        Mock Get-FullPath { param([string]$Path) $Path }
+        $sep = [System.IO.Path]::DirectorySeparatorChar
+        $dir = "${sep}precond-same"
+
+        { Test-ScriptPreconditions -SourceDir $dir -DestinationDir $dir } |
+            Should -Throw "*Source and destination cannot be the same*"
+    }
+
+    It 'throws when destination is inside the source directory' {
+        # Get-FullPath converts '/' to '\' before resolving, which breaks containment
+        # detection on Linux (Add-TrailingSeparator then adds '/' making StartsWith fail).
+        # Mock it as an identity so Test-PathContainment sees native-separator paths.
+        Mock Get-FullPath { param([string]$Path) $Path }
+        $sep  = [System.IO.Path]::DirectorySeparatorChar
+        $src  = "${sep}precond-src"
+        $dest = "${sep}precond-src${sep}inner"
+
+        { Test-ScriptPreconditions -SourceDir $src -DestinationDir $dest } |
+            Should -Throw "*Destination cannot be inside the source*"
+    }
+
+    It 'throws when source is inside the destination directory' {
+        Mock Get-FullPath { param([string]$Path) $Path }
+        $sep  = [System.IO.Path]::DirectorySeparatorChar
+        $dest = "${sep}precond-dest"
+        $src  = "${sep}precond-dest${sep}inner"
+
+        { Test-ScriptPreconditions -SourceDir $src -DestinationDir $dest } |
+            Should -Throw "*Source cannot be inside the destination*"
+    }
+}
+
+Describe 'Smoke — Expand-ZipsAndClean.ps1 parse check' {
+    It 'parses without error under pwsh 7.x (#requires -Version 7.0 is honoured)' {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
+
+        $errors = $null
+        $null = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$null, [ref]$errors)
+
+        $errors | Should -BeNullOrEmpty
+    }
+
+    It 'contains #requires -Version 7.0 directive' {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
+        $firstLine = (Get-Content -LiteralPath $scriptPath -TotalCount 1).Trim()
+
+        $firstLine | Should -Be '#requires -Version 7.0'
     }
 }
