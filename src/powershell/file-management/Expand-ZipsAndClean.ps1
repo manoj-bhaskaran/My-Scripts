@@ -949,9 +949,8 @@ function Write-ExtractionSummary {
         Write-Host ""
         Write-Host "==== Expand-ZipsAndClean Summary ===="
 
-        $effectiveWidth = if ($ConsoleWidth -gt 0) { $ConsoleWidth } else {
-            (try { $Host.UI.RawUI.WindowSize.Width } catch { $null }) ?? 120
-        }
+        $rawWidth = try { $Host.UI.RawUI.WindowSize.Width } catch { $null }
+        $effectiveWidth = if ($ConsoleWidth -gt 0) { $ConsoleWidth } else { $rawWidth ?? 120 }
 
         if ($effectiveWidth -lt 120) {
             $summaryView | Format-List
