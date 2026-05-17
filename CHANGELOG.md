@@ -388,116 +388,39 @@ Entries older than the current minor release line are condensed to architectural
   - `Core/ErrorHandling` v1.1.0: `-IgnoreFileNotFound` switch on `Invoke-WithRetry` — skips with a warning log on `ItemNotFoundException` without retry or rethrow.
   - Plus targeted bug fixes for checkpoint binding, target-root containment, and EndOfScript signalling.
 
-## [2.9.1] - 2026-03-25
+## [2.9.0]–[2.9.1] - 2026-03-25
 
-### Fixed
-
-- **Security scan: ignore pygments ReDoS advisory `GHSA-5239-wwwm-4pmq`**
-  - No patched version of pygments has been released; upstream has not yet responded to the disclosure
-  - Added `--ignore-vuln GHSA-5239-wwwm-4pmq` to the `pip-audit` invocation in `security-scan.yml` and `.pre-commit-config.yaml` to unblock CI until a fix is available, following the same pattern as the existing `CVE-2026-0994` ignore
-  - Comment added as a reminder to remove the ignore once pygments ships a patched release
-
-## [2.9.0] - 2026-03-25
-
-### Added
-
-- **FileDistributor.ps1 v4.5.0: support `.mp4` files**
-  - Added `.mp4` to the list of allowed extensions so MP4 video files are distributed alongside `.jpg` and `.png` images
+- Added `.mp4` support to FileDistributor (v4.5.0).
+- Ignored pygments ReDoS `GHSA-5239-wwwm-4pmq` in pip-audit until patch available.
 
 ## [2.8.0] - 2026-03-24
 
-### Changed
+- Renamed `Convert-ImageFile.ps1` → `Move-ImageFileToBatch.ps1` to reflect actual behavior; updated docs.
 
-- Renamed `Convert-ImageFile.ps1` to `Move-ImageFileToBatch.ps1` to match actual behavior (batching/moving, not format conversion) and approved PowerShell verb guidance.
-- Updated repository documentation and migration mapping references to use the new script name.
+## [2.7.0]–[2.7.6] — CI/logging cleanup series
 
-## [2.7.6] - 2026-03-23
-
-### Fixed
-
-- Includes internal v2.7.3–v2.7.5 iterations.
-- Removed Safety from repository security tooling due to a vulnerable transitive `nltk` chain; standardized dependency scanning on `pip-audit` in pre-commit and CI.
-- Resolved lockfile and resolver issues across follow-up fixes (v2.7.5/v2.7.4), including compatible `virtualenv`/`filelock` pins and lockfile-aligned scanning.
-- Sync-MacriumBackups fixes from v2.6.1-v2.6.6: corrected `MaxChunkMB` handling, improved rclone flag compatibility, refined sanitised/logged command output, and fixed AutoResume `reason` state handling (see archived pre-2.7.6 script history below).
-- Remove-MergedGitBranch fix (v2.7.3): dry-run no longer prunes remote-tracking refs, and `-LogFile` output routing was corrected.
-- FileDistributor v4.4.1 output fixes: clearer rebalance skip reasons and reduced console noise in rebalance-only mode.
-- Repository maintenance fixes tracked in this cycle: duplicate commit-validation cleanup (#653) and hook-permission cleanup completed through pre-commit migration (#648, #655, #647).
-
-### Added
-
-- Added scheduled PostgreSQL backup automation for the `lift_simulator` database (script, task template, and setup/restore documentation).
-- Added the `FileManagement/FileQueue` module for reusable queue state/metadata operations used by distribution workflows. (#602)
-- Added Sync-MacriumBackups logging enhancements to improve command traceability and timestamp consistency.
-
-### Changed
-
-- Refactored FileDistributor Phase 2 to use FileQueue module abstractions while preserving compatibility with existing queue state files. (#602, #008)
-
-## [2.7.2] - 2025-12-07
-
-### Changed
-
-- Replaced `Write-Host` with `Write-Information` in `scripts/Load-Environment.ps1` to keep environment-loading messages redirectable while remaining user-visible.
-- Documented intentional `Write-Host` usage in `scripts/Check-DocumentationPaths.ps1` with PSScriptAnalyzer suppression for interactive color-coded diagnostics.
-- Added console output stream guidelines to `README.md` and `CONTRIBUTING.md`, including code review checks for logging and `Write-Host` justification.
+- Removed Safety; standardized on `pip-audit`; fixed Remove-MergedGitBranch dry-run and FileDistributor v4.4.1 output.
+- Added `FileManagement/FileQueue` module (#602), `docs/ENVIRONMENT.md` (#606), and PostgreSQL backup automation; replaced `Write-Host` → `Write-Information` with stream guidelines (#632).
 
 ## [2.7.1] - 2025-12-06
 
-### Fixed
-
-- Replaced 33 empty catch blocks across PowerShell scripts/modules with explicit intent (debug logging for best-effort failures or comments for intentionally silent cleanup paths). (#1)
-- Improved troubleshooting signal without changing runtime behavior, and shipped related module patches for PurgeLogs and Videoscreenshot.
-
-## [2.7.0] - 2025-12-06
-
-### Added
-
-- Added repository environment-variable reference documentation (`docs/ENVIRONMENT.md`) and linked onboarding/security guidance. (#606, #010)
-- Added CI checks investigation report documenting that missing PR checks were caused by repository settings rather than workflow definitions. (#632)
+- Replaced 33 empty catch blocks with explicit intent across PowerShell scripts/modules. (#1)
 
 ## [2.6.0] - 2025-12-06
 
-### Added
-
-- Replaced legacy module deployment config files with TOML-based configuration (`psmodule.toml`) plus optional local overrides (`psmodule.local.toml`). (#604, #009)
-- Added migration/reader scripts and updated deployment docs so module metadata, dependencies, and validation settings are managed from a single source of truth.
+- Replaced legacy module deployment config with TOML (`psmodule.toml`) and optional local overrides. (#604)
 
 ## [2.5.0] - 2025-12-06
 
-### Added
-
-- Added `FileSystem` core module with reusable directory/path/file-access helpers to reduce duplicated script-level filesystem logic. (#601, #008)
-- Migrated key scripts to shared module functions and covered the module with unit tests for PowerShell 5.1+ compatibility.
+- Added `FileSystem` core module with directory/path helpers; migrated key scripts with unit tests. (#601)
 
 ## [2.4.1] - 2025-12-06
 
-### Added
-
-- Established repository type-hinting infrastructure with mypy/stubs and CI/pre-commit integration for gradual adoption. (#5, #594)
-- Added substantial Python typing coverage for error-handling and logging modules, including generic retry/decorator pathways and strict-mode compatibility updates. (#596)
-- Added type annotations for key data-processing scripts (`csv_to_gpx.py`, `validators.py`, `extract_timeline_locations.py`) to improve static validation and IDE feedback.
-- Expanded shared-infrastructure test coverage across Python and PowerShell modules, including logging, error handling, file operations, progress reporting, and backup workflows.
-- Added Google Drive destructive-operation safeguards and PostgreSQL backup reliability tests to reduce data-loss risk in critical automation paths.
-
-> **2026-04-11 note:** The release timeline gap between [2.4.1] (2025-12-06) and [2.3.1] (2024-06-07) reflects a project hiatus; regular development resumed in December 2025.
+- Established mypy/typing infrastructure with CI/pre-commit integration; added coverage for error-handling, logging, data-processing, and backup reliability tests. (#594)
 
 ## [2.3.1] - 2024-06-07
 
-### Added
-
-- Enabled pip caching across CI workflows (formatting, security, SonarCloud, module validation) with cache hit/miss reporting. (#519)
-- npm cache restoration for `sql-lint` in SonarCloud workflow.
-- User-scoped PowerShell module caching for linting and deployment jobs.
-
-### Changed
-
-- Documented CI/CD caching strategy in README.
-
-### Security
-
-- Updated vulnerable packages: `requests` 2.31→2.32.4, `tqdm` 4.66.1→4.66.3, `black` 24.1.1→24.3.0, `bandit` 1.7.5→1.7.9. (#520)
-- Removed `continue-on-error` from CI quality gates; pre-commit, Pylint, Bandit, PSScriptAnalyzer, Safety, pip-audit, and SonarCloud quality gate are now blocking. (#521)
-- Pinned all 23 Python dependencies to exact versions in `requirements.txt` for reproducible builds. (#519)
+- Enabled pip, npm, and PowerShell module caching; pinned all 23 Python dependencies; updated vulnerable packages; CI quality gates made blocking. (#519, #520, #521)
 
 ---
 
