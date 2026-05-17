@@ -607,14 +607,15 @@ Describe 'Write-ExtractionSummary' {
             Count = 3; Bytes = [int64]5000; Destination = 'C:\parent'
             Skipped = 0; Overwritten = 0; Renamed = 1
         }
-        $script:emptyErrors  = [System.Collections.Generic.List[string]]::new()
-        $script:testElapsed  = [timespan]::FromSeconds(2.5)
+        $script:emptyErrors = [System.Collections.Generic.List[string]]::new()
+        $script:testElapsed = [timespan]::FromSeconds(2.5)
     }
 
     It 'emits summary header when host is interactive (ConsoleHost)' {
         $script:captured = [System.Collections.Generic.List[string]]::new()
         Mock Write-Host { $script:captured.Add([string]$Object) }
         Mock Format-Table { }
+        Mock Format-List  { }
 
         Write-ExtractionSummary `
             -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
@@ -627,8 +628,8 @@ Describe 'Write-ExtractionSummary' {
         $script:captured | Should -Contain '==== Expand-ZipsAndClean Summary ===='
     }
 
-    It 'suppresses all output when host is non-interactive' {
-        Mock Write-Host { }
+    It 'suppresses summary table and header when non-interactive and no errors' {
+        Mock Write-Host  { }
         Mock Format-Table { }
         Mock Format-List  { }
 
@@ -645,12 +646,35 @@ Describe 'Write-ExtractionSummary' {
         Should -Invoke Format-List  -Times 0
     }
 
-    It 'emits error notes when the error list is non-empty' {
+    It 'emits error notes even when host is non-interactive' {
+        $errList = [System.Collections.Generic.List[string]]::new()
+        $errList.Add('Archive is corrupt')
+        $script:captured = [System.Collections.Generic.List[string]]::new()
+        Mock Write-Host  { $script:captured.Add([string]$Object) }
+        Mock Format-Table { }
+        Mock Format-List  { }
+
+        Write-ExtractionSummary `
+            -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
+            -ExtractMode 'Flat' -CollisionPolicy 'Skip' `
+            -ZipCount 1 -ProcessedZips 0 -FilesExtracted 0 `
+            -UncompressedBytes ([int64]0) -CompressedBytes ([int64]0) `
+            -MoveSummary $script:defaultMoveSummary -Errors $errList `
+            -Elapsed $script:testElapsed -HostName 'DefaultHost'
+
+        Should -Invoke Format-Table -Times 0
+        Should -Invoke Format-List  -Times 0
+        ($script:captured | Where-Object { $_ -like '*Notes / Errors*' }) | Should -Not -BeNullOrEmpty
+        ($script:captured | Where-Object { $_ -like '* - Archive is corrupt' }) | Should -Not -BeNullOrEmpty
+    }
+
+    It 'emits error notes when interactive and error list is non-empty' {
         $errList = [System.Collections.Generic.List[string]]::new()
         $errList.Add('Something went wrong')
         $script:captured = [System.Collections.Generic.List[string]]::new()
-        Mock Write-Host { $script:captured.Add([string]$Object) }
+        Mock Write-Host  { $script:captured.Add([string]$Object) }
         Mock Format-Table { }
+        Mock Format-List  { }
 
         Write-ExtractionSummary `
             -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
@@ -660,19 +684,23 @@ Describe 'Write-ExtractionSummary' {
             -MoveSummary $script:defaultMoveSummary -Errors $errList `
             -Elapsed $script:testElapsed -HostName 'ConsoleHost'
 
-        $script:captured | Should -Contain "`nNotes / Errors:"
+        ($script:captured | Where-Object { $_ -like '*Notes / Errors*' }) | Should -Not -BeNullOrEmpty
         ($script:captured | Where-Object { $_ -like '* - Something went wrong' }) | Should -Not -BeNullOrEmpty
     }
 
-    It 'summary view contains expected fields (SrcDir, ZipsFound, Duration)' {
-        $script:capturedView = $null
+    It 'summary view contains expected fields (SrcDir, ZipsFound, Ratio, Duration)' {
+        # Use a List to capture pipeline input from whichever of Format-Table/Format-List
+        # is invoked (headless CI returns Width=0, so Format-List is used; interactive
+        # terminals use Format-Table). Both mocks add to the same list.
+        $capturedItems = [System.Collections.Generic.List[object]]::new()
         Mock Write-Host { }
         Mock Format-Table {
-            param([switch]$AutoSize)
-            $script:capturedView = $_
+            param([Parameter(ValueFromPipeline = $true)]$InputObject, [switch]$AutoSize)
+            process { $capturedItems.Add($InputObject) }
         }
         Mock Format-List {
-            $script:capturedView = $_
+            param([Parameter(ValueFromPipeline = $true)]$InputObject)
+            process { $capturedItems.Add($InputObject) }
         }
 
         Write-ExtractionSummary `
@@ -683,13 +711,14 @@ Describe 'Write-ExtractionSummary' {
             -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
             -Elapsed ([timespan]::FromSeconds(10)) -HostName 'ConsoleHost'
 
-        $script:capturedView | Should -Not -BeNullOrEmpty
-        $script:capturedView.SrcDir   | Should -Be 'C:\mysrc'
-        $script:capturedView.DestDir  | Should -Be 'C:\mydest'
-        $script:capturedView.ZipsFound | Should -Be 7
-        $script:capturedView.ZipsDone  | Should -Be 6
-        $script:capturedView.Files     | Should -Be 30
-        $script:capturedView.Ratio     | Should -Be '3.3x'
-        $script:capturedView.Duration  | Should -BeLike '00:00:10*'
+        $capturedItems.Count | Should -BeGreaterThan 0
+        $view = $capturedItems[0]
+        $view.SrcDir    | Should -Be 'C:\mysrc'
+        $view.DestDir   | Should -Be 'C:\mydest'
+        $view.ZipsFound | Should -Be 7
+        $view.ZipsDone  | Should -Be 6
+        $view.Files     | Should -Be 30
+        $view.Ratio     | Should -Be '3.3x'
+        $view.Duration  | Should -BeLike '00:00:10*'
     }
 }

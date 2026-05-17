@@ -9,9 +9,11 @@
   - Compression-ratio computation.
   - Console-width detection (`try/catch` + `?? 120` default via PS 7 null-coalescing).
   - `Format-Table -AutoSize` (wide) / `Format-List` (narrow) branching.
-  - Error-notes block (`Notes / Errors:` + per-error lines).
-  - Interactive-host guard: summary is emitted only when `$Host.Name` is `ConsoleHost` or
-    `Visual Studio Code Host`; suppressed silently for scheduled tasks and redirected streams.
+  - Split interactive/non-interactive behavior: the formatted table and header are shown
+    only for `ConsoleHost` / `Visual Studio Code Host`; the `Notes / Errors:` block is
+    always written when errors exist, so failures are never silent in scheduled tasks or
+    automation pipelines.
+  - `$HostName` parameter (default `$Host.Name`) for test injection without a real host.
 
 ### Changed
 
@@ -20,16 +22,18 @@
 
 ### Tests
 
-- Added `Describe 'Write-ExtractionSummary'` with four `It` blocks:
-  - `emits summary header when host is interactive (ConsoleHost)` — verifies the
-    `==== Expand-ZipsAndClean Summary ====` line is written.
-  - `suppresses all output when host is non-interactive` — passes `HostName 'DefaultHost'`
-    and asserts `Write-Host`, `Format-Table`, and `Format-List` are each called zero times.
-  - `emits error notes when the error list is non-empty` — verifies the `Notes / Errors:`
-    header and individual error line appear.
-  - `summary view contains expected fields` — captures the object piped to `Format-Table`/
-    `Format-List` and asserts `SrcDir`, `DestDir`, `ZipsFound`, `ZipsDone`, `Files`,
-    `Ratio`, and `Duration` are correct.
+- Added `Describe 'Write-ExtractionSummary'` with five `It` blocks:
+  - `emits summary header when host is interactive (ConsoleHost)`.
+  - `suppresses summary table and header when non-interactive and no errors` — passes
+    `HostName 'DefaultHost'` with an empty error list; asserts `Write-Host`,
+    `Format-Table`, and `Format-List` are each called zero times.
+  - `emits error notes even when host is non-interactive` — passes `HostName 'DefaultHost'`
+    with a non-empty error list; asserts the table is suppressed but errors are written.
+  - `emits error notes when interactive and error list is non-empty`.
+  - `summary view contains expected fields` — uses `[Parameter(ValueFromPipeline)]` +
+    `process {}` mocks for both `Format-Table` and `Format-List` (CI headless hosts return
+    Width=0, so `Format-List` is called instead of `Format-Table`); asserts `SrcDir`,
+    `DestDir`, `ZipsFound`, `ZipsDone`, `Files`, `Ratio`, and `Duration`.
 
 ### Versioning
 

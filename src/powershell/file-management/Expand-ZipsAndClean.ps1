@@ -114,9 +114,9 @@ using namespace System.Collections.Generic
              branching, error notes) into a private Write-ExtractionSummary function.
            - Encapsulated console-width detection (try/catch + ?? 120 default) inside
              the helper.
-           - Added interactive-host guard: summary is emitted only when $Host.Name is
-             ConsoleHost or Visual Studio Code Host; suppressed otherwise (scheduled
-             tasks, redirected streams).
+           - Added split interactive/non-interactive behavior: the formatted table and
+             header are shown only for ConsoleHost/VS Code Host; error notes are always
+             written so failures are never silent in scheduled tasks or automation logs.
            - Used PS 7 ?? for the console-width default.
            - Main script body replaced with a single Write-ExtractionSummary call.
            Version bump: patch.
@@ -846,10 +846,16 @@ function Move-ZipFilesToParent {
     Formats and displays a summary table (or list on narrow consoles) of all
     extraction, move, and error statistics collected during the run.
 
-    This function uses Write-Host intentionally — the summary is terminal output
-    meant for interactive sessions. It is suppressed automatically when the host
-    is non-interactive (e.g., a scheduled task, redirected output stream, or any
-    host whose name is not in the known interactive set).
+    Behavior varies by host interactivity:
+    - Interactive hosts (ConsoleHost, Visual Studio Code Host): full output —
+      header, Format-Table/-List view, and error notes.
+    - Non-interactive hosts (scheduled tasks, redirected streams): the
+      formatted table is suppressed, but any accumulated errors are still
+      written so failures are never silent in automation logs.
+
+    The Write-Host calls in this function are intentional terminal output, not
+    logging. This is documented here so future maintainers do not replace them
+    with Write-Output or Write-Information without considering the intent.
 .PARAMETER SourceDirectory
     Source directory passed to the script.
 .PARAMETER DestinationDirectory
@@ -879,9 +885,9 @@ function Move-ZipFilesToParent {
     Name of the current host. Defaults to $Host.Name. Accepted as a parameter
     so that tests can inject a synthetic value without spawning a new host.
 .NOTES
-    The Write-Host calls in this function are intentional terminal output, not
-    logging. Summary is suppressed when $HostName is not one of the known
-    interactive host names (ConsoleHost, Visual Studio Code Host).
+    Error notes are always emitted when errors exist, regardless of host type,
+    so that failures are never silently swallowed in scheduled tasks or
+    automation pipelines.
 #>
 function Write-ExtractionSummary {
     [CmdletBinding()]
@@ -901,48 +907,49 @@ function Write-ExtractionSummary {
         [string]$HostName = $Host.Name
     )
 
-    $interactiveHosts = 'ConsoleHost', 'Visual Studio Code Host'
-    if ($HostName -notin $interactiveHosts) { return }
+    $isInteractive = $HostName -in ('ConsoleHost', 'Visual Studio Code Host')
 
-    $compressionRatio = if ($CompressedBytes -gt 0) {
-        "{0:N1}x" -f ($UncompressedBytes / [double]$CompressedBytes)
-    } else { "n/a" }
+    if ($isInteractive) {
+        $compressionRatio = if ($CompressedBytes -gt 0) {
+            "{0:N1}x" -f ($UncompressedBytes / [double]$CompressedBytes)
+        } else { "n/a" }
 
-    $summaryView = [pscustomobject]@{
-        SrcDir          = $SourceDirectory
-        DestDir         = $DestinationDirectory
-        Mode            = $ExtractMode
-        Policy          = $CollisionPolicy
-        ZipsFound       = $ZipCount
-        ZipsDone        = $ProcessedZips
-        Files           = $FilesExtracted
-        Uncompressed    = (Format-Bytes $UncompressedBytes)
-        Compressed      = (Format-Bytes $CompressedBytes)
-        Ratio           = $compressionRatio
-        ZipsMoved       = ($MoveSummary.Count)
-        MoveSkipped     = ($MoveSummary.Skipped)
-        MoveOverwritten = ($MoveSummary.Overwritten)
-        MoveRenamed     = ($MoveSummary.Renamed)
-        MovedBytes      = (Format-Bytes $MoveSummary.Bytes)
-        MovedTo         = ($MoveSummary.Destination)
-        Errors          = ($Errors.Count)
-        Duration        = ("{0:hh\:mm\:ss\.fff}" -f $Elapsed)
-    }
+        $summaryView = [pscustomobject]@{
+            SrcDir          = $SourceDirectory
+            DestDir         = $DestinationDirectory
+            Mode            = $ExtractMode
+            Policy          = $CollisionPolicy
+            ZipsFound       = $ZipCount
+            ZipsDone        = $ProcessedZips
+            Files           = $FilesExtracted
+            Uncompressed    = (Format-Bytes $UncompressedBytes)
+            Compressed      = (Format-Bytes $CompressedBytes)
+            Ratio           = $compressionRatio
+            ZipsMoved       = ($MoveSummary.Count)
+            MoveSkipped     = ($MoveSummary.Skipped)
+            MoveOverwritten = ($MoveSummary.Overwritten)
+            MoveRenamed     = ($MoveSummary.Renamed)
+            MovedBytes      = (Format-Bytes $MoveSummary.Bytes)
+            MovedTo         = ($MoveSummary.Destination)
+            Errors          = ($Errors.Count)
+            Duration        = ("{0:hh\:mm\:ss\.fff}" -f $Elapsed)
+        }
 
-    Write-Host ""
-    Write-Host "==== Expand-ZipsAndClean Summary ===="
+        Write-Host ""
+        Write-Host "==== Expand-ZipsAndClean Summary ===="
 
-    $consoleWidth = try { $Host.UI.RawUI.WindowSize.Width } catch { $null }
-    $consoleWidth = $consoleWidth ?? 120
+        $consoleWidth = try { $Host.UI.RawUI.WindowSize.Width } catch { $null }
+        $consoleWidth = $consoleWidth ?? 120
 
-    if ($consoleWidth -lt 120) {
-        $summaryView | Format-List
-    } else {
-        $summaryView | Format-Table -AutoSize
+        if ($consoleWidth -lt 120) {
+            $summaryView | Format-List
+        } else {
+            $summaryView | Format-Table -AutoSize
+        }
     }
 
     if ($Errors.Count -gt 0) {
-        Write-Host "`nNotes / Errors:"
+        Write-Host $(if ($isInteractive) { "`nNotes / Errors:" } else { "Notes / Errors:" })
         $Errors | ForEach-Object { Write-Host " - $_" }
     }
 }
