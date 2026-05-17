@@ -221,212 +221,25 @@
 - **Windows token/permission hardening (2026-05-12/13):** Token writes now use `tempfile.mkstemp` + `os.replace()` (`MoveFileExW`) to avoid `ERROR_ACCESS_DENIED` on hidden `token.json`; distinct `PermissionError` log messages emitted for read vs. write failures; `PermissionError` re-raised from `_load_creds_from_token` instead of silently swallowed.
 - **`--overwrite` skip behaviour:** `_process_item` and `_recover_file` honour `--overwrite` when skipping already-processed items; `_prepare_recovery` calls `_clear_processed_items()` on startup. *(Superseded by [1.22.0]–[1.23.0]; retained here for history only.)*
 
-## [1.17.0] - 2026-04-11
-
-### Changed
-
-- **Issue #856:** Extracted dry-run privilege checks from `gdrive_recover.py` into new `gdrive_privileges.py` with `DrivePrivilegeChecker`.
-  - `DriveTrashRecoveryTool` now delegates `_check_privileges`, `_check_untrash_privilege`, `_check_download_privilege`, `_check_trash_delete_privileges`, and `_test_operation_privileges` through `self.privileges`.
-- Added server-side `modifiedTime >` clause to Drive discovery query when `--after-date` is set, while keeping client-side filtering as a guard.
-- Improved target download-path collision handling by switching from iterative `exists()` probing to a single collision fallback using a short UUID suffix.
-- Aligned `DEFAULT_WORKERS` with documented guidance by setting it to `min(8, (os.cpu_count() or 1) * 2)`.
-- `RecoveryItem.post_restore_action` now defaults via `PostRestorePolicy.TRASH`.
-
-### Fixed
-
-- Prevented unnecessary duplicate file-ID prefetch API calls by reusing existing prefetch caches when metadata has already been collected.
-- Added explicit warning when `--clear-id-cache` is enabled to clarify that metadata will be re-fetched in discovery/streaming phases.
-
-## [1.16.0] - 2026-04-11
-
-### Changed
-
-- **Issue #855:** Extracted reporting/presentation concerns into new `gdrive_report.py` with `RecoveryReporter`.
-  - Moved dry-run presentation, privilege/scope plan output, execution command rendering, progress output, and execution summary rendering out of `gdrive_recover.py`.
-  - `DriveTrashRecoveryTool` now constructs `self.reporter = RecoveryReporter(args, logger, stats)` and routes console presentation through it.
-- Completed `--no-emoji` behavior across recovery-related console output:
-  - Replaced hard-coded emoji output in `gdrive_recover.py`, `gdrive_discovery.py`, and `gdrive_cli.py` with symbol helpers that honor `--no-emoji`.
-  - Updated `gdrive_state.py` and `gdrive_auth.py` informational console messages to respect `--no-emoji` as well.
-- Trimmed `gdrive_cli.create_parser()` epilog to a short quick-reference section and moved detailed compatibility/performance guidance to `README.md`.
-
-## [1.15.4] - 2026-04-06
-
-### Fixed
-
-- Refactored `gdrive_retry.with_retries(...)` into smaller helper steps (`_plan_http_error`, `_plan_generic_error`, and retry-log helpers) to reduce cognitive complexity for static analysis while preserving behavior.
-
-## [1.15.3] - 2026-04-06
-
-### Fixed
-
-- Reduced cognitive complexity of `gdrive_retry.with_retries(...)` by extracting internal helper functions for retry gating, error parsing, and delay computation.
-- Replaced duplicated `"HTTP 404"` / `"HTTP 403"` string literals in `gdrive_discovery.py` with module-level constants to satisfy static-analysis duplication checks.
-- Expanded unit coverage for the retry/discovery changes:
-  - Added additional `gdrive_retry` tests for non-HTTP failures and retry logging path.
-  - Added additional discovery classification tests for explicit 404 and 403 routing.
-
-## [1.15.2] - 2026-04-06
-
-### Fixed
-
-- Updated `gdrive_retry.with_retries(...)` to return HTTP status alongside result/error so callers can branch on status without parsing message text.
-- Fixed ID prefetch error classification in `gdrive_discovery._fetch_and_handle_metadata()` to route on returned status code (`403`/`404`) instead of substring matching.
-- Added regression test `tests/python/unit/test_gdrive_discovery_retry_classification.py` to ensure `HTTP 500` payload text containing `HTTP 404` is still classified as transient.
-
-## [1.15.1] - 2026-04-06
-
-### Fixed
-
-- Fixed lint/runtime regression in `gdrive_discovery.py` by restoring the required `time` import used by progress and streaming timers.
-- Applied formatting fixes (Black) for:
-  - `src/python/cloud/gdrive_retry.py`
-  - `src/python/cloud/gdrive_operations.py`
-  - `tests/python/unit/test_gdrive_operations.py`
-
-## [1.15.0] - 2026-04-06
-
-### Changed
-
-- **Refactor (Issue #854):** Extracted recovery operations into a new `gdrive_operations.py` module with a `DriveOperations` class.
-  - Moved `_recover_file`, `_apply_post_restore_policy`, and post-restore helper methods out of `gdrive_recover.py`.
-  - `DriveTrashRecoveryTool` now creates `self.ops = DriveOperations(...)` and delegates `_process_item()` plus operation helpers through this object.
-- Added shared retry utility `gdrive_retry.py` with `with_retries(...)` and replaced duplicated retry loops in recovery/discovery call sites.
-  - `gdrive_discovery.py` now uses `with_retries(...)` in `_fetch_file_metadata()` and `_fetch_and_handle_metadata()`.
-- Added unit tests:
-  - `tests/python/unit/test_gdrive_retry.py` for success, retry-then-succeed, terminal failure, and max-retries paths.
-  - `tests/python/unit/test_gdrive_operations.py` for recovery and post-restore policy behaviors.
-
-## [1.14.0] - 2026-04-06
-
-### Changed
-
-- **Refactor (Issue #853):** Extracted file download subsystem from `DriveTrashRecoveryTool` into a new `gdrive_download.py` module with a `DriveDownloader` class.
-  - Moved `_download_file`, `_download_with_downloader`, `_atomic_replace_with_retry`, `_cleanup_partial_file`, `_handle_download_success`, and `_handle_download_failure` out of `gdrive_recover.py`.
-  - `DriveDownloader.__init__` accepts `args`, `logger`, `rate_limiter` (a `RateLimiter`), `auth` (a `DriveAuthManager`), `stats`, and `stats_lock`.
-  - `DriveTrashRecoveryTool.__init__` now constructs `self.downloader = DriveDownloader(...)` and delegates download calls via `self.downloader.download(item)`.
-  - `MediaIoBaseDownload` and `DOWNLOAD_CHUNK_BYTES` are imported only in `gdrive_download.py`; removed from `gdrive_recover.py`.
-  - `DriveDownloader` is independently importable with no dependency on `DriveTrashRecoveryTool`.
-- Added unit tests in `tests/python/unit/test_gdrive_download.py` covering: success path, `direct_download` flag, partial cleanup on failure, `HttpError` during download, and atomic replace with retry.
-
-## [1.13.0] - 2026-04-05
-
-### Changed
-
-- **Refactor (Issue #852):** Eliminated bidirectional `__getattr__` coupling between `DriveTrashRecoveryTool` and `DriveTrashDiscovery`.
-  - `DriveTrashDiscovery.__init__` now accepts all tool-side dependencies explicitly: `stats`, `stats_lock`, `seen_total_ref`, `generate_target_path`, and `run_parallel_processing_for_batch`.
-  - Added `_matches_extension_filter`, `_matches_time_filter`, and `_progress_interval` as direct methods on `DriveTrashDiscovery` (only use `self.args` / `self.logger`, no back-reference needed).
-  - Removed `DriveTrashDiscovery.__getattr__` and `self.tool` from `DriveTrashDiscovery` entirely.
-  - Removed `DriveTrashRecoveryTool.__getattr__`; `discover_trashed_files` remains an explicit delegation method; all other discovery internals are accessed via `self.discovery.*`.
-  - `DriveTrashRecoveryTool._seen_total` is now backed by an injected `List[int]` reference (`_seen_total_ref`) shared with `DriveTrashDiscovery`, preserving atomic updates under `stats_lock`.
-  - Added full type annotations to `DriveTrashDiscovery.__init__` parameters.
-- Updated unit tests to invoke discovery-specific methods via `tool.discovery.*` rather than through the tool proxy.
-
-## [1.12.7] - 2026-04-05
-
-### Fixed
-
-- **Issue #851 follow-up:** Restored required streaming helper methods in `DriveTrashDiscovery` (`_handle_streaming_file`, `_should_stop_for_limit`, `_process_streaming_batch`, `_should_flush_streaming_batch`) so streaming query/ID execution no longer relies on cross-class fallback lookups.
-- Prevented runtime delegation recursion/missing-attribute failures in non-`dry_run` streaming modes by keeping helper ownership co-located with discovery streaming paths.
-- Added unit coverage asserting `DriveTrashDiscovery` owns the required streaming helper methods.
-
-## [1.12.6] - 2026-04-05
-
-### Changed
-
-- **Issue #851:** Removed stale duplicated streaming helper implementations from `DriveTrashRecoveryTool`; streaming discovery now lives only in `DriveTrashDiscovery`.
-- Removed an unused module-level helper (`get_recoverable_files`) from `gdrive_recover.py`.
-- Removed temporary back-compat rate-limiter shim members from `DriveTrashRecoveryTool` (`_rate_limit`, `_rl_diag_tick`, `_tb_initialized`, `_rl_diag_enabled`) so request pacing is accessed through `self.rate_limiter`.
-- Updated unit tests to stop depending on removed shims/helpers and to assert that `DriveTrashRecoveryTool._execute()` delegates pacing to `RateLimiter.wait()`.
-
-## [1.12.5] - 2026-04-05
-
-### Fixed
-
-- **Issue #850:** Collapsed `DriveAuthManager._build_and_test_service()` to a single Drive `files().list(pageSize=1)` smoke-test call and reused that response for the optional media probe, eliminating duplicate quota consumption during authentication.
-- Replaced the module-level `_PRINTED_REQUESTS_FALLBACK` guard with an instance attribute on `DriveAuthManager`, removing shared mutable module state from `gdrive_constants.py`.
-- Added POSIX PID liveness checks in `RecoveryStateManager._pid_is_alive()` using `os.kill(pid, 0)` while keeping the Windows `ctypes` implementation behind an `os.name == "nt"` guard.
-- Aligned `DriveTrashRecoveryTool._check_privileges()` with actual behavior by sampling only the single item whose privileges are tested.
-
-## [1.12.4] - 2026-04-05
-
-### Fixed
-
-- **Issue #849:** Added `DriveTrashDiscovery._fetch_files_page(query, page_token)` and wired query discovery/streaming paths to the real implementation so non-ID discovery no longer crashes with `AttributeError`.
-- Corrected validation output for HTTP 404 file-ID checks from `"Invalid file ID format"` to `"File IDs not found"`.
-- Guarded streaming `stats["found"]` updates with `stats_lock` in both streaming item handlers to keep stats mutation consistent and thread-safe.
-- Eliminated version drift by moving the authoritative module version to `gdrive_constants.VERSION` and importing it from both `gdrive_recover.py` and `gdrive_cli.py`.
-- Updated unit coverage to exercise the real `_fetch_files_page()` path instead of mocking the method directly.
-- Applied Black formatting to `gdrive_recover.py` so Python formatting checks pass in CI.
-
-## [1.12.3] - 2026-04-01
-
-### Changed
-
-- **Refactor (Issue #791):** Extracted discovery and file-ID validation from `gdrive_recover.py` into a new `gdrive_discovery.py` module with `DriveTrashDiscovery`.
-- `DriveTrashRecoveryTool` now delegates discovery calls (`discover_trashed_files`, streaming query/ID paths) to `DriveTrashDiscovery`.
-- Added helper delegation for method reuse and cleaner module responsibilities.
-
-## [1.12.2] - 2026-04-01
-
-### Fixed
-
-- **Issue #790 follow-up:** Restored backwards-compatible rate-limiter hooks on `DriveTrashRecoveryTool` after extraction to `gdrive_rate_limiter.py`.
-- Reintroduced shim methods/attributes (`_rate_limit()`, `_rl_diag_tick()`, `_tb_initialized`, `_rl_diag_enabled`) that delegate to `self.rate_limiter`, preserving existing tests and internal call patterns.
-- No pacing behavior changes; this patch only restores compatibility with the previous `DriveTrashRecoveryTool` internal interface.
-
-## [1.12.1] - 2026-04-01
-
-### Changed
-
-- **Refactor (Issue #790):** Extracted rate-limiting logic from `DriveTrashRecoveryTool` into a new `gdrive_rate_limiter.py` module with a `RateLimiter` class.
-- Moved token-bucket and fixed-interval pacing internals (`_should_use_token_bucket`, `_init_token_bucket`, `_refill_token_bucket`, `_can_consume_token`, `_consume_token`, `_token_deficit`, `_legacy_pacing`, `_token_bucket_sleep`, `_legacy_pacing_sleep`, `_rl_diag_tick`) out of `gdrive_recover.py`.
-- `DriveTrashRecoveryTool.__init__` now creates `self.rate_limiter = RateLimiter(args, logger)`, and request execution delegates pacing via `self.rate_limiter.wait()`.
-- No logic changes; token refill/sleep behavior, legacy pacing behavior, and `--rl-diagnostics` output are unchanged.
-
-## [1.12.0] - 2026-04-01
-
-### Changed
-
-- **Refactor (Issue #789):** Extracted authentication logic from `DriveTrashRecoveryTool` into a new `gdrive_auth.py` module with a `DriveAuthManager` class.
-- Moved `authenticate()`, `_load_creds_from_token()`, `_refresh_or_flow_creds()`, `_build_and_test_service()`, `_get_service()`, `_build_http()`, `_RequestsHttpAdapter`, and `_harden_token_permissions_windows()` out of `DriveTrashRecoveryTool`.
-- `DriveTrashRecoveryTool.__init__` now creates `self.auth = DriveAuthManager(args, logger, execute_fn)` and all auth call sites delegate to `self.auth`.
-- Auth-related instance fields (`_service`, `_creds`, `_thread_local`, `_client_per_thread`, `_http_transport`, `_http_pool_maxsize`, `_authenticated`, `_credentials_file`, `_token_file`) moved to `DriveAuthManager`.
-- No logic changes; OAuth flow, token caching, HTTP transport, and Windows token hardening behaviour are unchanged.
-
-## [1.11.2] - 2026-04-01
-
-### Fixed
-
-- **Issue #788 follow-up:** Restored error accounting when recovery state loading fails (for example malformed/unreadable state file). `RecoveryStateManager._load_state()` now triggers the tool-level error counter callback so execution summaries continue to reflect state-load failures.
-
-## [1.11.1] - 2026-04-01
-
-### Changed
-
-- **Refactor (Issue #788):** Extracted state persistence and locking logic from `gdrive_recover.py` into a new `gdrive_state.py` module with `RecoveryStateManager`.
-- `DriveTrashRecoveryTool` now delegates state lifecycle operations (`load/save`, lock acquire/release, processed-item tracking) through `self.state_manager`.
-- Updated CLI lock helpers in `gdrive_cli.py` to use `tool.state_manager` for lock and PID liveness checks.
-- Retained existing state schema, lock metadata format (`pid` / `run_id`), and atomic write behavior (`flush` + `fsync` + `os.replace`) with no intended functional change.
-
-## [1.11.0] - 2026-03-31
-
-### Changed
-
-- **Refactor:** Extracted the CLI layer from `gdrive_recover.py` into a new module `gdrive_cli.py` (`create_parser()`, argument validation helpers, lock orchestration helpers, and `main()`).
-- **Entrypoint:** `gdrive_recover.py` now delegates script execution to `gdrive_cli.main()` via a thin `if __name__ == "__main__"` shim.
-- **Behavior:** No logic changes intended; this is a structural refactor to isolate CLI concerns from `DriveTrashRecoveryTool`.
-
-## [1.10.0] - 2026-03-31
-
-### Changed
-
-- **Refactor:** Extracted all data model types (`FileMeta`, `LockInfo`, `RecoveryItem`, `RecoveryState`, `PostRestorePolicy`) from `gdrive_recover.py` into a new dedicated module `gdrive_models.py`. `gdrive_recover.py` now imports these from `gdrive_models`. No logic changes; existing behaviour is unchanged.
-
-## [1.9.0] - 2026-03-29
-
-### Changed
-
-- **Refactor:** Extracted all static configuration constants and the `EXTENSION_MIME_TYPES` lookup table from `gdrive_recover.py` into a new dedicated module `gdrive_constants.py`. `gdrive_recover.py` now imports these from `gdrive_constants`. No logic changes; existing behaviour is unchanged.
+## [1.9.0] – [1.17.0] - 2026-03-29 → 2026-04-11 (Consolidated)
+
+### Module extraction refactor (Issues #789–#856)
+
+No behaviour changes across all releases in this arc; each extraction is a
+structural refactor only.
+
+- **Constants/models extracted** — `gdrive_constants.py`, `gdrive_models.py` (`[1.9.0]`, `[1.10.0]`).
+- **CLI layer extracted** — `gdrive_cli.py` with `create_parser()`/`main()`; `gdrive_recover.py` reduced to a shim (`[1.11.0]`).
+- **State + locking extracted** — `gdrive_state.py` / `RecoveryStateManager` (`[1.11.1]`).
+- **Auth extracted** — `gdrive_auth.py` / `DriveAuthManager` (`[1.12.0]`).
+- **Rate limiting extracted** — `gdrive_rate_limiter.py` / `RateLimiter` (`[1.12.1]`).
+- **Discovery extracted** — `gdrive_discovery.py` / `DriveTrashDiscovery`; `__getattr__` coupling eliminated (`[1.12.3]`, `[1.13.0]`).
+- **Download extracted** — `gdrive_download.py` / `DriveDownloader` (`[1.14.0]`).
+- **Operations + shared retry extracted** — `gdrive_operations.py` / `DriveOperations`, `gdrive_retry.py` / `with_retries(...)` (`[1.15.0]`).
+- **Reporting + privilege checks extracted** — `gdrive_report.py` / `RecoveryReporter`, `gdrive_privileges.py` / `DrivePrivilegeChecker`; `--no-emoji` completed (`[1.16.0]`, `[1.17.0]`).
+- Plus follow-up patches restoring back-compat shims, error-accounting fixes, retry/error-classification hardening, cognitive-complexity reductions, and Black/CI formatting fixes (`[1.11.2]`, `[1.12.2]`, `[1.12.4]`, `[1.12.5]`, `[1.12.6]`, `[1.12.7]`, `[1.15.1]`, `[1.15.2]`, `[1.15.3]`, `[1.15.4]`).
+
+See #789–#856 for issue-by-issue detail.
 
 ## [1.8.3] - 2026-03-26
 
