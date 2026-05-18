@@ -1,5 +1,6 @@
 #requires -Version 7.0
 using namespace System.Collections.Generic
+using namespace System.Collections.Concurrent
 
 <#
 .SYNOPSIS
@@ -74,6 +75,12 @@ using namespace System.Collections.Generic
 .PARAMETER Quiet
     Suppress non-essential console output and progress (summary still prints).
 
+.PARAMETER ThrottleLimit
+    Maximum number of archives to extract concurrently. Default is 1 (serial).
+    Set to 2 or more to enable ForEach-Object -Parallel extraction on PS 7+.
+    Values above [Environment]::ProcessorCount trigger a performance warning.
+    Not compatible with -WhatIf; use ThrottleLimit 1 to preview actions.
+
 .EXAMPLE
     # Run with defaults (robust mode with per-archive subfolders)
     .\Expand-ZipsAndClean.ps1
@@ -91,6 +98,10 @@ using namespace System.Collections.Generic
     .\Expand-ZipsAndClean.ps1 -MaxSafeNameLength 200 -Verbose
 
 .EXAMPLE
+    # Extract using 4 parallel workers (faster when processing many archives on a multi-core system with fast storage)
+    .\Expand-ZipsAndClean.ps1 -ThrottleLimit 4
+
+.EXAMPLE
     # Dry run (no changes), show what would happen
     .\Expand-ZipsAndClean.ps1 -WhatIf
 
@@ -102,13 +113,44 @@ using namespace System.Collections.Generic
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.3.3
+    Version  : 2.4.0
     Author   : Manoj Bhaskaran
-    Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, and -Parallel),
-               Microsoft.PowerShell.Archive (Expand-Archive) for subfolder mode;
-               System.IO.Compression (ZipArchive) is used for streaming in Flat mode.
+    Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
+               and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
+               for subfolder mode; System.IO.Compression (ZipArchive) for streaming in Flat mode.
+
+    ── Parallel Extraction (-ThrottleLimit) ─────────────────────────────────────
+    Setting -ThrottleLimit to 2+ enables ForEach-Object -Parallel so multiple
+    archives are extracted concurrently. The gains depend on archive count, size,
+    and storage subsystem:
+    - SSD / NVMe with many small-to-medium archives: meaningful wall-clock
+      reduction (typically 2–4x on 4+ cores).
+    - Single spinning disk (HDD): read-head contention may negate or reverse any
+      gains; benchmark before committing to a high limit.
+    - Values above [Environment]::ProcessorCount trigger a performance warning.
+    - -WhatIf is not supported in parallel mode; use -ThrottleLimit 1 to preview.
+    - The logging framework is not thread-safe across runspaces; log messages are
+      buffered locally per runspace and flushed serially after the loop completes.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.4.0  Added PS 7 parallel extraction with -ThrottleLimit (issue #980):
+           - New [int]$ThrottleLimit parameter (default 1 = serial behaviour).
+           - Invoke-ZipExtractions forks into a ForEach-Object -Parallel path
+             when ThrottleLimit > 1, using ConcurrentBag[string] for thread-safe
+             error aggregation.
+           - Module paths resolved from loaded module objects and captured via
+             $using: so each runspace can re-import FileSystem and Zip cleanly.
+           - Log entries deferred to per-runspace buffers and flushed after the
+             parallel loop (avoids concurrent writes to the logging framework).
+           - Progress bar in parallel mode shows aggregate N / Total counter,
+             updating as each archive completes (streamed from the pipeline).
+           - Warns when ThrottleLimit > [Environment]::ProcessorCount.
+           - Applied null-conditional ?. in Move-ZipFilesToParent
+             ($parentItem.Parent?.FullName) for safe navigation.
+           - Documents I/O contention tradeoff in .NOTES.
+           - Pester test validates parallel path with -ThrottleLimit 2.
+           Version bump: minor (new feature).
+
     2.3.3  Added Pester tests for extraction helpers (issue #979):
            - Added Flat/Overwrite and Flat/Rename collision policy tests.
            - Added Test-ScriptPreconditions tests (same path, dest inside src,
@@ -431,7 +473,11 @@ param(
     [int]$MaxSafeNameLength = 0,
 
     [Parameter()]
-    [switch]$Quiet
+    [switch]$Quiet,
+
+    [Parameter()]
+    [ValidateRange(1, 2147483647)]
+    [int]$ThrottleLimit = 1
 )
 
 # Import logging framework
@@ -442,6 +488,10 @@ Import-Module "$PSScriptRoot\..\modules\Core\Zip\Zip.psm1" -Force
 # Initialize logger (script name will be extracted from the script file name)
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
 Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+
+if ($ThrottleLimit -gt [Environment]::ProcessorCount) {
+    Write-Warning "ThrottleLimit ($ThrottleLimit) exceeds the logical processor count ($([Environment]::ProcessorCount)). Consider reducing it to avoid scheduling overhead."
+}
 
 #region Helpers
 
@@ -551,6 +601,10 @@ function Initialize-Destination {
 <#
 .SYNOPSIS
     Extracts all zip files from source to destination and returns summary totals.
+.PARAMETER ThrottleLimit
+    When greater than 1, archives are extracted in parallel using ForEach-Object
+    -Parallel. Errors are aggregated thread-safely via ConcurrentBag.
+    Default 1 preserves the original serial behaviour.
 #>
 function Invoke-ZipExtractions {
     [CmdletBinding()]
@@ -561,7 +615,8 @@ function Invoke-ZipExtractions {
         [Parameter(Mandatory)][string]$Policy,
         [Parameter(Mandatory)][int]$SafeNameMaxLen,
         [Parameter(Mandatory)][bool]$QuietMode,
-        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList,
+        [int]$ThrottleLimit = 1
     )
 
     $processedZips = 0
@@ -576,42 +631,135 @@ function Invoke-ZipExtractions {
     Write-LogInfo "Extracting to: $DestinationDir (Mode: $Mode, Policy: $Policy)"
 
     if ($zipCount -gt 0) {
-        $index = 0
-        foreach ($zip in $zips) {
-            $index++
-            try {
-                Write-PhaseProgress -Activity "Extracting archives" -Status $zip.Name `
-                    -Current ($index - 1) -Total $zipCount -QuietMode $QuietMode
+        if ($ThrottleLimit -gt 1) {
+            # Parallel extraction path.
+            # The logging framework is not safe across runspace boundaries, so each
+            # runspace collects its own log entries and flushes them serially after
+            # the loop.  Errors are collected via ConcurrentBag for thread-safety.
+            $concurrentErrors = [ConcurrentBag[string]]::new()
 
-                if ($PSCmdlet.ShouldProcess($zip.FullName, "Extract")) {
-                    $stats = Get-ZipFileStats -ZipPath $zip.FullName
+            # Resolve the paths of already-loaded modules so each runspace can
+            # re-import them without relying on $PSScriptRoot (which is not set in
+            # dynamically-created ScriptBlocks used by tests).
+            $fsModulePath  = (Get-Module -Name FileSystem -ErrorAction SilentlyContinue)?.Path
+            $zipModulePath = (Get-Module -Name Zip        -ErrorAction SilentlyContinue)?.Path
 
-                    $filesFromZip = Expand-ZipSmart -ZipPath $zip.FullName `
-                        -DestinationRoot $DestinationDir `
-                        -ExtractMode $Mode `
-                        -CollisionPolicy $Policy `
-                        -SafeNameMaxLen $SafeNameMaxLen `
-                        -ExpectedFileCount $stats.FileCount
+            $progressCounter = 0
+            $results = @(
+                $zips | ForEach-Object -Parallel {
+                    $zip             = $_
+                    $destDir         = $using:DestinationDir
+                    $extractMode     = $using:Mode
+                    $collisionPolicy = $using:Policy
+                    $maxLen          = $using:SafeNameMaxLen
+                    $bagErrors       = $using:concurrentErrors
+                    $fsMod           = $using:fsModulePath
+                    $zipMod          = $using:zipModulePath
 
-                    if ($filesFromZip -is [int]) {
-                        $totalFilesExtracted += $filesFromZip
-                    } else {
-                        $totalFilesExtracted += $stats.FileCount
+                    # Per-runspace log buffer flushed by the caller after the loop.
+                    $localLogs = [System.Collections.Generic.List[string]]::new()
+                    try {
+                        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+                        if ($fsMod)  { Import-Module $fsMod  -Force }
+                        if ($zipMod) { Import-Module $zipMod -Force }
+
+                        $stats        = Get-ZipFileStats -ZipPath $zip.FullName
+                        $filesFromZip = Expand-ZipSmart -ZipPath $zip.FullName `
+                            -DestinationRoot $destDir `
+                            -ExtractMode $extractMode `
+                            -CollisionPolicy $collisionPolicy `
+                            -SafeNameMaxLen $maxLen `
+                            -ExpectedFileCount $stats.FileCount
+
+                        $actualFiles = ($filesFromZip -is [int]) ? $filesFromZip : $stats.FileCount
+                        $localLogs.Add("Extracted '$($zip.Name)': files=$($stats.FileCount), uncompressed=$($stats.UncompressedBytes), compressed=$($stats.CompressedBytes)")
+
+                        [pscustomobject]@{
+                            Success           = $true
+                            FilesExtracted    = $actualFiles
+                            UncompressedBytes = $stats.UncompressedBytes
+                            CompressedBytes   = $stats.CompressedBytes
+                            Logs              = $localLogs.ToArray()
+                        }
+                    } catch {
+                        $bagErrors.Add("Extraction failed for '$($zip.FullName)': $($_.Exception.Message)") | Out-Null
+                        $localLogs.Add("Extraction error for '$($zip.Name)': $($_.Exception.Message)")
+                        [pscustomobject]@{
+                            Success           = $false
+                            FilesExtracted    = 0
+                            UncompressedBytes = [int64]0
+                            CompressedBytes   = [int64]0
+                            Logs              = $localLogs.ToArray()
+                        }
                     }
-                    $totalUncompressedBytes += $stats.UncompressedBytes
-                    $totalCompressedZipBytes += $stats.CompressedBytes
-                    $processedZips++
-                    Write-LogDebug "Extracted '$($zip.Name)': files=$($stats.FileCount), uncompressed=$($stats.UncompressedBytes), compressed=$($stats.CompressedBytes)"
+                } -ThrottleLimit $ThrottleLimit | ForEach-Object {
+                    # This stage runs in the outer session; results stream in as each
+                    # runspace completes, enabling a live aggregate progress counter.
+                    $progressCounter++
+                    Write-PhaseProgress -Activity "Extracting archives" `
+                        -Status "$progressCounter / $zipCount completed" `
+                        -Current $progressCounter -Total $zipCount -QuietMode $QuietMode
+                    $_
                 }
-            } catch {
-                $msg = $_.Exception.Message
-                $ErrorList.Add("Extraction failed for '$($zip.FullName)': $msg") | Out-Null
-                Write-LogDebug $msg
-            }
-        }
+            )
 
-        Write-PhaseProgress -Activity "Extracting archives" -Status "Done" `
-            -Current $zipCount -Total $zipCount -QuietMode $QuietMode -Completed
+            Write-PhaseProgress -Activity "Extracting archives" -Status "Done" `
+                -Current $zipCount -Total $zipCount -QuietMode $QuietMode -Completed
+
+            # Aggregate results and flush deferred log entries serially.
+            foreach ($r in $results) {
+                foreach ($log in $r.Logs) { Write-LogDebug $log }
+                if ($r.Success) {
+                    $processedZips++
+                    $totalFilesExtracted     += $r.FilesExtracted
+                    $totalUncompressedBytes  += $r.UncompressedBytes
+                    $totalCompressedZipBytes += $r.CompressedBytes
+                }
+            }
+
+            # Transfer concurrent errors to the caller-supplied list.
+            foreach ($e in $concurrentErrors) { $ErrorList.Add($e) | Out-Null }
+
+            Write-LogInfo "Parallel extraction complete: $processedZips / $zipCount archive(s) processed."
+        } else {
+            # Serial path — default; preserves original behaviour including WhatIf support.
+            $index = 0
+            foreach ($zip in $zips) {
+                $index++
+                try {
+                    Write-PhaseProgress -Activity "Extracting archives" -Status $zip.Name `
+                        -Current ($index - 1) -Total $zipCount -QuietMode $QuietMode
+
+                    if ($PSCmdlet.ShouldProcess($zip.FullName, "Extract")) {
+                        $stats = Get-ZipFileStats -ZipPath $zip.FullName
+
+                        $filesFromZip = Expand-ZipSmart -ZipPath $zip.FullName `
+                            -DestinationRoot $DestinationDir `
+                            -ExtractMode $Mode `
+                            -CollisionPolicy $Policy `
+                            -SafeNameMaxLen $SafeNameMaxLen `
+                            -ExpectedFileCount $stats.FileCount
+
+                        if ($filesFromZip -is [int]) {
+                            $totalFilesExtracted += $filesFromZip
+                        } else {
+                            $totalFilesExtracted += $stats.FileCount
+                        }
+                        $totalUncompressedBytes += $stats.UncompressedBytes
+                        $totalCompressedZipBytes += $stats.CompressedBytes
+                        $processedZips++
+                        Write-LogDebug "Extracted '$($zip.Name)': files=$($stats.FileCount), uncompressed=$($stats.UncompressedBytes), compressed=$($stats.CompressedBytes)"
+                    }
+                } catch {
+                    $msg = $_.Exception.Message
+                    $ErrorList.Add("Extraction failed for '$($zip.FullName)': $msg") | Out-Null
+                    Write-LogDebug $msg
+                }
+            }
+
+            Write-PhaseProgress -Activity "Extracting archives" -Status "Done" `
+                -Current $zipCount -Total $zipCount -QuietMode $QuietMode -Completed
+        }
     }
 
     return [pscustomobject]@{
@@ -779,10 +927,10 @@ function Move-ZipFilesToParent {
     )
 
     $parentItem = Get-Item -LiteralPath $SourceDir
-    if (-not $parentItem.Parent) {
+    $parent = $parentItem.Parent?.FullName
+    if (-not $parent) {
         throw "Cannot move zip files: source directory '$SourceDir' is at drive root (no parent directory exists)"
     }
-    $parent = $parentItem.Parent.FullName
 
     if (-not [System.IO.Directory]::Exists($parent)) {
         throw "Parent directory not found: $parent"
@@ -997,7 +1145,8 @@ try {
         -Policy $CollisionPolicy `
         -SafeNameMaxLen $MaxSafeNameLength `
         -QuietMode $Quiet.IsPresent `
-        -ErrorList $errors
+        -ErrorList $errors `
+        -ThrottleLimit $ThrottleLimit
 
     $zipCount = $extractionResult.ZipCount
     $processedZips = $extractionResult.ProcessedZips

@@ -11,6 +11,12 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [2.17.0] - 2026-05-18
+
+### Added
+
+- **[Expand-ZipsAndClean] PS 7 parallel extraction with `-ThrottleLimit` (Expand-ZipsAndClean 2.4.0)** – New `[int]$ThrottleLimit` parameter (default `1` = serial, existing behaviour). When set to `2` or more, `Invoke-ZipExtractions` switches to a `ForEach-Object -Parallel` loop so multiple archives are extracted concurrently. Errors are aggregated thread-safely via `ConcurrentBag[string]` and merged into the caller's error list after the loop. Module paths (`FileSystem`, `Zip`) are resolved from the loaded module objects and injected into each runspace via `$using:`, avoiding `$PSScriptRoot`-based assumptions. Log messages are buffered locally per runspace and flushed serially post-loop to prevent concurrent writes to the logging framework. The progress bar in parallel mode displays a live aggregate `N / Total completed` counter, streaming as each archive finishes. Applied null-conditional `?.` in `Move-ZipFilesToParent` (`$parentItem.Parent?.FullName`). Warns at startup when `ThrottleLimit` exceeds `[Environment]::ProcessorCount`. Documents I/O contention tradeoffs (SSD vs. HDD) and WhatIf limitation in `.NOTES`. New `.EXAMPLE` for `-ThrottleLimit 4`. Pester tests validate both the happy path (2 archives, ThrottleLimit 2) and the error-aggregation path (one good + one corrupt archive).
+
 ## [2.16.0] - 2026-05-17
 
 ### Added
