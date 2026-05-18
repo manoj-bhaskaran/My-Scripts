@@ -6,14 +6,14 @@ opencv-python>=4.13.0,<5.0.0
 cloudconvert==2.1.0
 google-auth>=2.50.0,<3.0.0
 google-auth-oauthlib>=1.4.0,<2.0.0
-google-auth-httplib2>=0.2.0,<1.0.0
+google-auth-httplib2>=0.4.0,<1.0.0
 google-api-python-client==2.196.0
 tqdm>=4.67.3,<5.0.0
 srtm==1.0.0; python_version < "3.11"
 networkx>=3.2.1,<4.0.0
 openpyxl>=3.1.5,<4.0.0
 psycopg2-binary>=2.9.9,<3.0.0
-pytz>=2023.3
+pytz>=2026.2
 
 # Development and testing dependencies
 pytest>=9.0.3,<10.0.0
