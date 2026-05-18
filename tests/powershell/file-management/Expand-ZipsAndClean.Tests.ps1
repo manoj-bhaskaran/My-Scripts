@@ -845,9 +845,9 @@ Describe 'Invoke-ZipExtractions — parallel extraction' {
             $archive.Dispose()
         }
 
-        # One corrupt archive (truncated content)
+        # One corrupt archive: random bytes with no ZIP magic so ZipFile.OpenRead throws.
         $badZipPath = Join-Path $sourceDir 'bad.zip'
-        [System.IO.File]::WriteAllBytes($badZipPath, [byte[]](0x50, 0x4B, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+        [System.IO.File]::WriteAllBytes($badZipPath, [byte[]](0xFF, 0xFE, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05))
 
         $errorList = [System.Collections.Generic.List[string]]::new()
         $result = Invoke-ZipExtractions `
