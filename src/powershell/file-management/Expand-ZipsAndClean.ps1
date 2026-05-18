@@ -602,6 +602,18 @@ function Initialize-Destination {
     }
 }
 
+<# Builds the standard extraction-summary object returned by all extraction paths. #>
+function New-ExtractionSummary {
+    param([int]$ZipCount, [int]$ProcessedZips, [int]$FilesExtracted, [int64]$UncompressedBytes, [int64]$CompressedBytes)
+    return [pscustomobject]@{
+        ZipCount          = $ZipCount
+        ProcessedZips     = $ProcessedZips
+        FilesExtracted    = $FilesExtracted
+        UncompressedBytes = $UncompressedBytes
+        CompressedBytes   = $CompressedBytes
+    }
+}
+
 <#
 .SYNOPSIS
     Runs zip extraction inside a ForEach-Object -Parallel runspace.
@@ -682,13 +694,9 @@ function Merge-ParallelZipResults {
     }
     foreach ($e in $ConcurrentErrors) { $ErrorList.Add($e) | Out-Null }
     Write-LogInfo "Parallel extraction complete: $processedZips / $ZipCount archive(s) processed."
-    return [pscustomobject]@{
-        ZipCount          = $ZipCount
-        ProcessedZips     = $processedZips
-        FilesExtracted    = $totalFilesExtracted
-        UncompressedBytes = $totalUncompressedBytes
-        CompressedBytes   = $totalCompressedZipBytes
-    }
+    return New-ExtractionSummary -ZipCount $ZipCount -ProcessedZips $processedZips `
+        -FilesExtracted $totalFilesExtracted -UncompressedBytes $totalUncompressedBytes `
+        -CompressedBytes $totalCompressedZipBytes
 }
 
 <#
@@ -698,14 +706,10 @@ function Merge-ParallelZipResults {
 function Invoke-ParallelZipExtractions {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][System.IO.FileInfo[]]$Zips,
-        [Parameter(Mandatory)][int]$ZipCount,
-        [Parameter(Mandatory)][string]$DestinationDir,
-        [Parameter(Mandatory)][string]$Mode,
-        [Parameter(Mandatory)][string]$Policy,
-        [Parameter(Mandatory)][int]$SafeNameMaxLen,
-        [Parameter(Mandatory)][bool]$QuietMode,
-        [Parameter(Mandatory)][int]$ThrottleLimit,
+        [Parameter(Mandatory)][System.IO.FileInfo[]]$Zips, [Parameter(Mandatory)][int]$ZipCount,
+        [Parameter(Mandatory)][string]$DestinationDir,     [Parameter(Mandatory)][string]$Mode,
+        [Parameter(Mandatory)][string]$Policy,             [Parameter(Mandatory)][int]$SafeNameMaxLen,
+        [Parameter(Mandatory)][bool]$QuietMode,            [Parameter(Mandatory)][int]$ThrottleLimit,
         [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
     )
     $concurrentErrors = [ConcurrentBag[string]]::new()
@@ -749,14 +753,10 @@ function Invoke-ParallelZipExtractions {
 function Invoke-SerialZipExtractions {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
-        [Parameter(Mandatory)][System.IO.FileInfo[]]$Zips,
-        [Parameter(Mandatory)][int]$ZipCount,
-        [Parameter(Mandatory)][string]$DestinationDir,
-        [Parameter(Mandatory)][string]$Mode,
-        [Parameter(Mandatory)][string]$Policy,
-        [Parameter(Mandatory)][int]$SafeNameMaxLen,
-        [Parameter(Mandatory)][bool]$QuietMode,
-        [Parameter(Mandatory)][int]$ThrottleLimit,
+        [Parameter(Mandatory)][System.IO.FileInfo[]]$Zips, [Parameter(Mandatory)][int]$ZipCount,
+        [Parameter(Mandatory)][string]$DestinationDir,     [Parameter(Mandatory)][string]$Mode,
+        [Parameter(Mandatory)][string]$Policy,             [Parameter(Mandatory)][int]$SafeNameMaxLen,
+        [Parameter(Mandatory)][bool]$QuietMode,            [Parameter(Mandatory)][int]$ThrottleLimit,
         [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
     )
     if ($ThrottleLimit -gt 1 -and $WhatIfPreference) {
@@ -794,13 +794,9 @@ function Invoke-SerialZipExtractions {
 
     Write-PhaseProgress -Activity "Extracting archives" -Status "Done" `
         -Current $ZipCount -Total $ZipCount -QuietMode $QuietMode -Completed
-    return [pscustomobject]@{
-        ZipCount          = $ZipCount
-        ProcessedZips     = $processedZips
-        FilesExtracted    = $totalFilesExtracted
-        UncompressedBytes = $totalUncompressedBytes
-        CompressedBytes   = $totalCompressedZipBytes
-    }
+    return New-ExtractionSummary -ZipCount $ZipCount -ProcessedZips $processedZips `
+        -FilesExtracted $totalFilesExtracted -UncompressedBytes $totalUncompressedBytes `
+        -CompressedBytes $totalCompressedZipBytes
 }
 
 <#
@@ -830,13 +826,8 @@ function Invoke-ZipExtractions {
     Write-LogInfo "Extracting to: $DestinationDir (Mode: $Mode, Policy: $Policy)"
 
     if ($zipCount -eq 0) {
-        return [pscustomobject]@{
-            ZipCount          = 0
-            ProcessedZips     = 0
-            FilesExtracted    = 0
-            UncompressedBytes = [int64]0
-            CompressedBytes   = [int64]0
-        }
+        return New-ExtractionSummary -ZipCount 0 -ProcessedZips 0 -FilesExtracted 0 `
+            -UncompressedBytes ([int64]0) -CompressedBytes ([int64]0)
     }
 
     $sharedParams = @{
