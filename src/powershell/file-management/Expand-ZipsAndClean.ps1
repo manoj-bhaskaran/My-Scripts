@@ -79,7 +79,8 @@ using namespace System.Collections.Concurrent
     Maximum number of archives to extract concurrently. Default is 1 (serial).
     Set to 2 or more to enable ForEach-Object -Parallel extraction on PS 7+.
     Values above [Environment]::ProcessorCount trigger a performance warning.
-    Not compatible with -WhatIf; use ThrottleLimit 1 to preview actions.
+    When -WhatIf is active, extraction automatically falls back to serial mode
+    so that -WhatIf/-Confirm are honoured correctly.
 
 .EXAMPLE
     # Run with defaults (robust mode with per-archive subfolders)
@@ -128,7 +129,8 @@ using namespace System.Collections.Concurrent
     - Single spinning disk (HDD): read-head contention may negate or reverse any
       gains; benchmark before committing to a high limit.
     - Values above [Environment]::ProcessorCount trigger a performance warning.
-    - -WhatIf is not supported in parallel mode; use -ThrottleLimit 1 to preview.
+    - When -WhatIf/-Confirm is active, extraction automatically falls back to
+      serial mode so ShouldProcess is honoured correctly.
     - The logging framework is not thread-safe across runspaces; log messages are
       buffered locally per runspace and flushed serially after the loop completes.
 
@@ -148,6 +150,8 @@ using namespace System.Collections.Concurrent
            - Applied null-conditional ?. in Move-ZipFilesToParent
              ($parentItem.Parent?.FullName) for safe navigation.
            - Documents I/O contention tradeoff in .NOTES.
+           - When -WhatIf is active, extraction falls back to serial so
+             ShouldProcess is honoured correctly regardless of ThrottleLimit.
            - Pester test validates parallel path with -ThrottleLimit 2.
            Version bump: minor (new feature).
 
@@ -631,7 +635,7 @@ function Invoke-ZipExtractions {
     Write-LogInfo "Extracting to: $DestinationDir (Mode: $Mode, Policy: $Policy)"
 
     if ($zipCount -gt 0) {
-        if ($ThrottleLimit -gt 1) {
+        if ($ThrottleLimit -gt 1 -and -not $WhatIfPreference) {
             # Parallel extraction path.
             # The logging framework is not safe across runspace boundaries, so each
             # runspace collects its own log entries and flushes them serially after
@@ -722,7 +726,13 @@ function Invoke-ZipExtractions {
 
             Write-LogInfo "Parallel extraction complete: $processedZips / $zipCount archive(s) processed."
         } else {
-            # Serial path — default; preserves original behaviour including WhatIf support.
+            # Serial path — default, and also the WhatIf fallback.
+            # ForEach-Object -Parallel runspaces have no access to $PSCmdlet, so ShouldProcess
+            # cannot be called there; when WhatIf is active we silently use the serial loop
+            # so -WhatIf/-Confirm work correctly regardless of ThrottleLimit.
+            if ($ThrottleLimit -gt 1 -and $WhatIfPreference) {
+                Write-Verbose "WhatIf is active — falling back to serial extraction so -WhatIf/-Confirm are honoured."
+            }
             $index = 0
             foreach ($zip in $zips) {
                 $index++
