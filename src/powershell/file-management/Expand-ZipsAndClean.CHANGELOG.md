@@ -1,5 +1,12 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## Unreleased
+
+### Changed
+
+- Slimmed the script header `.NOTES` block in `Expand-ZipsAndClean.ps1` by removing the duplicated inline multi-version history.
+- Kept only current script metadata, key parallel extraction operational notes, and a direct pointer to this changelog for full release history.
+
 ## 2.5.1 — 2026-05-19
 
 ### Fixed

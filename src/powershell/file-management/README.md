@@ -47,6 +47,10 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 docs cleanup** (2026-05-19)
+  - Slimmed the script header comment-based help `.NOTES` block to keep only current metadata and operational notes.
+  - Removed the long inline version-history duplication from the script header and pointed readers to `Expand-ZipsAndClean.CHANGELOG.md` for the full release history.
+
 - **Expand-ZipsAndClean.ps1 v2.3.0** (2026-05-17)
   - Extracted archive primitives (`Get-ZipFileStats`, `Expand-ZipToSubfolder`, `Expand-ZipFlat`,
     `Expand-ZipSmart`) and their private helpers (`Test-IsEncryptedZipError`,
