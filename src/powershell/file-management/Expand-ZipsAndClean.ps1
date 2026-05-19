@@ -10,10 +10,10 @@ using namespace System.Collections.Concurrent
 
 .DESCRIPTION
     Typical workflow:
-      - Source folder (example): C:\Users\manoj\Downloads\picconvert
-      - Destination folder (example): C:\Users\manoj\OneDrive\Desktop\New folder
+      - Source folder (example): $HOME\Downloads\picconvert   (or $env:EXPAND_ZIPS_SOURCE_DIR)
+      - Destination folder (example): $HOME\Desktop\New folder (or $env:EXPAND_ZIPS_DEST_DIR)
       - After extraction, all .zip files in the source are moved to the source’s parent
-        (example: C:\Users\manoj\Downloads)
+        (example: $HOME\Downloads)
       - Optionally delete/clean the source folder using -DeleteSource (switch) and
         optionally -CleanNonZips to remove non-zip leftovers.
 
@@ -34,11 +34,19 @@ using namespace System.Collections.Concurrent
 
 .PARAMETER SourceDirectory
     Directory containing .zip files to extract.
-    Default: C:\Users\manoj\Downloads\picconvert
+    Default resolved in order:
+      1. Environment variable EXPAND_ZIPS_SOURCE_DIR (if set, non-null, and non-blank)
+      2. Join-Path $HOME 'Downloads/picconvert'
+    Blank or whitespace-only values for EXPAND_ZIPS_SOURCE_DIR are treated as unset
+    and the profile-relative fallback is used instead.
 
 .PARAMETER DestinationDirectory
     Directory to extract contents into.
-    Default: C:\Users\manoj\OneDrive\Desktop\New folder
+    Default resolved in order:
+      1. Environment variable EXPAND_ZIPS_DEST_DIR (if set, non-null, and non-blank)
+      2. Join-Path $HOME 'Desktop/New folder'
+    Blank or whitespace-only values for EXPAND_ZIPS_DEST_DIR are treated as unset
+    and the profile-relative fallback is used instead.
 
 .PARAMETER ExtractMode
     Extraction strategy. One of:
@@ -114,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.4.0
+    Version  : 2.5.1
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -135,6 +143,27 @@ using namespace System.Collections.Concurrent
       buffered locally per runspace and flushed serially after the loop completes.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.5.1  Fixed blank-env-var fallback for Source/Destination defaults (issue #981):
+           - Replaced ?? (null-coalescing) with PS7 ternary in both param defaults.
+             Empty string is falsy in PowerShell, so blank dotenv entries (VAR=)
+             now correctly fall through to the profile-relative path rather than
+             causing [ValidateNotNullOrEmpty()] to abort on first invocation.
+           - Updated .PARAMETER help to state that blank values are treated as unset.
+           - Added Pester test for the empty-string case.
+           Version bump: patch.
+
+    2.5.0  Made default Source/Destination paths configurable via env vars (issue #981):
+           - SourceDirectory default now resolves from $env:EXPAND_ZIPS_SOURCE_DIR,
+             falling back to Join-Path $HOME 'Downloads/picconvert'.
+           - DestinationDirectory default now resolves from $env:EXPAND_ZIPS_DEST_DIR,
+             falling back to Join-Path $HOME 'Desktop/New folder'.
+           - Uses PS 7 null-coalescing (??) for clean fallback chains in param defaults.
+           - No personal hard-coded paths remain.
+           - Updated .PARAMETER help to document env-var precedence.
+           - Added env vars to docs/ENVIRONMENT.md and .env.example.
+           - Pester tests added for env-var resolution and fallback behavior.
+           Version bump: minor (default semantics change).
+
     2.4.0  Added PS 7 parallel extraction with -ThrottleLimit (issue #980):
            - New [int]$ThrottleLimit parameter (default 1 = serial behaviour).
            - Invoke-ZipExtractions forks into a ForEach-Object -Parallel path
@@ -451,12 +480,12 @@ param(
     [Parameter()]
     [Alias('Src')]
     [ValidateNotNullOrEmpty()]
-    [string]$SourceDirectory = "C:\Users\manoj\Downloads\picconvert",
+    [string]$SourceDirectory = ($env:EXPAND_ZIPS_SOURCE_DIR ? $env:EXPAND_ZIPS_SOURCE_DIR : (Join-Path $HOME 'Downloads/picconvert')),
 
     [Parameter()]
     [Alias('Dest')]
     [ValidateNotNullOrEmpty()]
-    [string]$DestinationDirectory = "C:\Users\manoj\OneDrive\Desktop\New folder",
+    [string]$DestinationDirectory = ($env:EXPAND_ZIPS_DEST_DIR ? $env:EXPAND_ZIPS_DEST_DIR : (Join-Path $HOME 'Desktop/New folder')),
 
     [Parameter()]
     [ValidateSet('PerArchiveSubfolder', 'Flat')]

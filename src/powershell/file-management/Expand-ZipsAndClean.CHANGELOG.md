@@ -1,5 +1,76 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.5.1 — 2026-05-19
+
+### Fixed
+
+- `SourceDirectory` and `DestinationDirectory` param defaults now use the PS7 ternary
+  (`$env:VAR ? $env:VAR : fallback`) instead of `??`. The `??` operator only coalesces
+  `$null`; when `.env.example` is sourced as-is, both variables are exported as `""` (empty
+  string), which `??` passes through — causing `[ValidateNotNullOrEmpty()]` to abort the
+  run before the profile-relative fallback could be used. The ternary treats empty string as
+  falsy and correctly falls back to the `$HOME`-relative path.
+- Updated `.PARAMETER` help for both parameters to state that blank or whitespace-only values
+  are treated as unset.
+
+### Tests
+
+- Updated the four existing env-var expression tests to mirror the ternary now used in the
+  param defaults (previously they tested `??` expressions).
+- Added `SourceDirectory default falls back to $HOME/Downloads/picconvert when env var is blank`
+  — sets `EXPAND_ZIPS_SOURCE_DIR=''` and asserts the fallback is used.
+- Added `DestinationDirectory default falls back to $HOME/Desktop/New folder when env var is blank`
+  — same pattern for the destination env var.
+
+### Versioning
+
+- Bumped `Expand-ZipsAndClean.ps1` version to `2.5.1` (patch — bug fix for blank-env-var case).
+
+## 2.5.0 — 2026-05-19
+
+### Changed
+
+- `SourceDirectory` parameter default no longer hard-codes a personal path. It now resolves from
+  `$env:EXPAND_ZIPS_SOURCE_DIR` (when set and non-null) and falls back to
+  `Join-Path $HOME 'Downloads/picconvert'` via PS 7 null-coalescing (`??`).
+- `DestinationDirectory` parameter default no longer hard-codes a personal path. It now resolves
+  from `$env:EXPAND_ZIPS_DEST_DIR` (when set and non-null) and falls back to
+  `Join-Path $HOME 'Desktop/New folder'`.
+- `.PARAMETER SourceDirectory` and `.PARAMETER DestinationDirectory` help updated to document the
+  env-var → profile-relative fallback precedence chain.
+- `.DESCRIPTION` Typical workflow paths updated to use `$HOME`-relative examples instead of a
+  specific user's profile paths.
+- `.NOTES` version history entry added for 2.5.0.
+
+### Docs
+
+- `docs/ENVIRONMENT.md`: added `EXPAND_ZIPS_SOURCE_DIR` and `EXPAND_ZIPS_DEST_DIR` entries to the
+  Optional Variables section and to the Optional Variables Summary table.
+- `.env.example`: added `EXPAND_ZIPS_SOURCE_DIR` and `EXPAND_ZIPS_DEST_DIR` entries under a new
+  `Expand-ZipsAndClean Script` section.
+
+### Tests
+
+- Added `Describe 'Default path resolution from environment variables'` with six `It` blocks:
+  - `SourceDirectory default uses EXPAND_ZIPS_SOURCE_DIR when set` — sets the env var and asserts
+    the null-coalescing expression resolves to it.
+  - `SourceDirectory default falls back to $HOME/Downloads/picconvert when env var is absent` —
+    clears the env var and asserts the fallback path is used.
+  - `DestinationDirectory default uses EXPAND_ZIPS_DEST_DIR when set` — equivalent for the
+    destination env var.
+  - `DestinationDirectory default falls back to $HOME/Desktop/New folder when env var is absent`.
+  - `param block defaults in the script match env-var resolution when vars are set` — creates real
+    directories under `$TestDrive`, sets both env vars to those paths, invokes the script with
+    `-WhatIf`, and asserts no `ValidateNotNullOrEmpty` error is raised.
+  - `param block defaults in the script use profile-relative fallback when vars are absent` — parses
+    the script AST, extracts the default expressions for both parameters, and asserts they reference
+    the env-var names and contain no hard-coded personal path (`manoj`).
+
+### Versioning
+
+- Bumped `Expand-ZipsAndClean.ps1` version to `2.5.0` (minor — default semantics change;
+  back-compat preserved for users who pass parameters explicitly or set the env vars).
+
 ## 2.3.3 — 2026-05-17
 
 ### Tests
