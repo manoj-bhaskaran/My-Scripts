@@ -300,6 +300,28 @@ These variables enable email notifications for script execution results and erro
 
 ---
 
+### Expand-ZipsAndClean Script
+
+#### EXPAND_ZIPS_SOURCE_DIR
+- **Required**: No
+- **Description**: Default source directory for `Expand-ZipsAndClean.ps1` — the folder that contains `.zip` files to extract. When this variable is set, the script uses it as the `-SourceDirectory` default instead of the profile-relative fallback.
+- **Format**: Absolute directory path
+- **Default**: `Join-Path $HOME 'Downloads/picconvert'` (profile-relative fallback when not set)
+- **Example**: `C:\Users\YourName\Downloads\picconvert` (Windows) or `/home/yourname/Downloads/picconvert` (Linux)
+- **Used By**: `src/powershell/file-management/Expand-ZipsAndClean.ps1`
+- **Precedence**: `$env:EXPAND_ZIPS_SOURCE_DIR` → `$HOME/Downloads/picconvert`
+
+#### EXPAND_ZIPS_DEST_DIR
+- **Required**: No
+- **Description**: Default destination directory for `Expand-ZipsAndClean.ps1` — the folder where zip contents are extracted. When this variable is set, the script uses it as the `-DestinationDirectory` default instead of the profile-relative fallback.
+- **Format**: Absolute directory path
+- **Default**: `Join-Path $HOME 'Desktop/New folder'` (profile-relative fallback when not set)
+- **Example**: `C:\Users\YourName\Desktop\New folder` (Windows) or `/home/yourname/Desktop/New folder` (Linux)
+- **Used By**: `src/powershell/file-management/Expand-ZipsAndClean.ps1`
+- **Precedence**: `$env:EXPAND_ZIPS_DEST_DIR` → `$HOME/Desktop/New folder`
+
+---
+
 ### Advanced Settings
 
 #### PARALLEL_JOBS
@@ -923,6 +945,8 @@ pwsh ./scripts/Verify-Environment.ps1 -Verbose
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
+| `EXPAND_ZIPS_SOURCE_DIR` | `$HOME/Downloads/picconvert` | Expand-ZipsAndClean source directory |
+| `EXPAND_ZIPS_DEST_DIR` | `$HOME/Desktop/New folder` | Expand-ZipsAndClean destination directory |
 | `GDRIVE_TOKEN_PATH` | `~/Documents/Scripts/drive_token.json` | Google Drive token cache |
 | `PGHOST` | `localhost` | PostgreSQL server |
 | `PGPORT` | `5432` | PostgreSQL port |

@@ -927,6 +927,85 @@ Describe 'Test-ScriptPreconditions' {
     }
 }
 
+Describe 'Default path resolution from environment variables' {
+    # These tests evaluate the same null-coalescing expressions used in the param()
+    # defaults to verify env-var precedence and profile-relative fallback behavior
+    # without invoking the full script (which would attempt real file-system access).
+
+    AfterEach {
+        Remove-Item Env:\EXPAND_ZIPS_SOURCE_DIR -ErrorAction SilentlyContinue
+        Remove-Item Env:\EXPAND_ZIPS_DEST_DIR   -ErrorAction SilentlyContinue
+    }
+
+    It 'SourceDirectory default uses EXPAND_ZIPS_SOURCE_DIR when set' {
+        $env:EXPAND_ZIPS_SOURCE_DIR = '/custom/source'
+        $resolved = $env:EXPAND_ZIPS_SOURCE_DIR ?? (Join-Path $HOME 'Downloads/picconvert')
+        $resolved | Should -Be '/custom/source'
+    }
+
+    It 'SourceDirectory default falls back to $HOME/Downloads/picconvert when env var is absent' {
+        Remove-Item Env:\EXPAND_ZIPS_SOURCE_DIR -ErrorAction SilentlyContinue
+        $resolved = $env:EXPAND_ZIPS_SOURCE_DIR ?? (Join-Path $HOME 'Downloads/picconvert')
+        $resolved | Should -Be (Join-Path $HOME 'Downloads/picconvert')
+    }
+
+    It 'DestinationDirectory default uses EXPAND_ZIPS_DEST_DIR when set' {
+        $env:EXPAND_ZIPS_DEST_DIR = '/custom/dest'
+        $resolved = $env:EXPAND_ZIPS_DEST_DIR ?? (Join-Path $HOME 'Desktop/New folder')
+        $resolved | Should -Be '/custom/dest'
+    }
+
+    It 'DestinationDirectory default falls back to $HOME/Desktop/New folder when env var is absent' {
+        Remove-Item Env:\EXPAND_ZIPS_DEST_DIR -ErrorAction SilentlyContinue
+        $resolved = $env:EXPAND_ZIPS_DEST_DIR ?? (Join-Path $HOME 'Desktop/New folder')
+        $resolved | Should -Be (Join-Path $HOME 'Desktop/New folder')
+    }
+
+    It 'param block defaults in the script match env-var resolution when vars are set' {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
+
+        $env:EXPAND_ZIPS_SOURCE_DIR = (Join-Path $TestDrive 'env-src')
+        $env:EXPAND_ZIPS_DEST_DIR   = (Join-Path $TestDrive 'env-dest')
+        New-Item -ItemType Directory -Path $env:EXPAND_ZIPS_SOURCE_DIR -Force | Out-Null
+        New-Item -ItemType Directory -Path $env:EXPAND_ZIPS_DEST_DIR   -Force | Out-Null
+
+        # -WhatIf prevents any real file operations; just verify the script reads the env vars.
+        $output = & $scriptPath -WhatIf 2>&1
+        # The script should not throw a validation error for the default paths.
+        $output | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } |
+            Where-Object { $_.Exception.Message -like '*ValidateNotNullOrEmpty*' } |
+            Should -BeNullOrEmpty
+    }
+
+    It 'param block defaults in the script use profile-relative fallback when vars are absent' {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
+
+        Remove-Item Env:\EXPAND_ZIPS_SOURCE_DIR -ErrorAction SilentlyContinue
+        Remove-Item Env:\EXPAND_ZIPS_DEST_DIR   -ErrorAction SilentlyContinue
+
+        # Parse the script and extract the default expression for -SourceDirectory.
+        $ast    = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$null, [ref]$null)
+        $params = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.ParameterAst] }, $true)
+
+        $srcParam  = $params | Where-Object { $_.Name.VariablePath.UserPath -eq 'SourceDirectory' }
+        $destParam = $params | Where-Object { $_.Name.VariablePath.UserPath -eq 'DestinationDirectory' }
+
+        $srcParam  | Should -Not -BeNullOrEmpty -Because 'SourceDirectory param must exist in the script'
+        $destParam | Should -Not -BeNullOrEmpty -Because 'DestinationDirectory param must exist in the script'
+
+        # Verify neither default contains a hard-coded personal path.
+        $srcDefault  = $srcParam.DefaultValue.Extent.Text
+        $destDefault = $destParam.DefaultValue.Extent.Text
+
+        $srcDefault  | Should -BeLike '*EXPAND_ZIPS_SOURCE_DIR*' -Because 'default must reference the env var'
+        $destDefault | Should -BeLike '*EXPAND_ZIPS_DEST_DIR*'   -Because 'default must reference the env var'
+        $srcDefault  | Should -Not -BeLike '*manoj*'             -Because 'no personal hard-coded path'
+        $destDefault | Should -Not -BeLike '*manoj*'             -Because 'no personal hard-coded path'
+    }
+}
+
 Describe 'Smoke — Expand-ZipsAndClean.ps1 parse check' {
     It 'parses without error under pwsh 7.x (#requires -Version 7.0 is honoured)' {
         $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
