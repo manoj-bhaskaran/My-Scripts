@@ -1,5 +1,31 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.5.1 — 2026-05-19
+
+### Fixed
+
+- `SourceDirectory` and `DestinationDirectory` param defaults now use the PS7 ternary
+  (`$env:VAR ? $env:VAR : fallback`) instead of `??`. The `??` operator only coalesces
+  `$null`; when `.env.example` is sourced as-is, both variables are exported as `""` (empty
+  string), which `??` passes through — causing `[ValidateNotNullOrEmpty()]` to abort the
+  run before the profile-relative fallback could be used. The ternary treats empty string as
+  falsy and correctly falls back to the `$HOME`-relative path.
+- Updated `.PARAMETER` help for both parameters to state that blank or whitespace-only values
+  are treated as unset.
+
+### Tests
+
+- Updated the four existing env-var expression tests to mirror the ternary now used in the
+  param defaults (previously they tested `??` expressions).
+- Added `SourceDirectory default falls back to $HOME/Downloads/picconvert when env var is blank`
+  — sets `EXPAND_ZIPS_SOURCE_DIR=''` and asserts the fallback is used.
+- Added `DestinationDirectory default falls back to $HOME/Desktop/New folder when env var is blank`
+  — same pattern for the destination env var.
+
+### Versioning
+
+- Bumped `Expand-ZipsAndClean.ps1` version to `2.5.1` (patch — bug fix for blank-env-var case).
+
 ## 2.5.0 — 2026-05-19
 
 ### Changed

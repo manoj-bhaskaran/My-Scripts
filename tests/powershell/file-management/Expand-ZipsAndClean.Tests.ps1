@@ -928,8 +928,8 @@ Describe 'Test-ScriptPreconditions' {
 }
 
 Describe 'Default path resolution from environment variables' {
-    # These tests evaluate the same null-coalescing expressions used in the param()
-    # defaults to verify env-var precedence and profile-relative fallback behavior
+    # These tests evaluate the same ternary expressions used in the param() defaults to
+    # verify env-var precedence, profile-relative fallback, and blank-value treatment,
     # without invoking the full script (which would attempt real file-system access).
 
     AfterEach {
@@ -939,25 +939,37 @@ Describe 'Default path resolution from environment variables' {
 
     It 'SourceDirectory default uses EXPAND_ZIPS_SOURCE_DIR when set' {
         $env:EXPAND_ZIPS_SOURCE_DIR = '/custom/source'
-        $resolved = $env:EXPAND_ZIPS_SOURCE_DIR ?? (Join-Path $HOME 'Downloads/picconvert')
+        $resolved = $env:EXPAND_ZIPS_SOURCE_DIR ? $env:EXPAND_ZIPS_SOURCE_DIR : (Join-Path $HOME 'Downloads/picconvert')
         $resolved | Should -Be '/custom/source'
     }
 
     It 'SourceDirectory default falls back to $HOME/Downloads/picconvert when env var is absent' {
         Remove-Item Env:\EXPAND_ZIPS_SOURCE_DIR -ErrorAction SilentlyContinue
-        $resolved = $env:EXPAND_ZIPS_SOURCE_DIR ?? (Join-Path $HOME 'Downloads/picconvert')
+        $resolved = $env:EXPAND_ZIPS_SOURCE_DIR ? $env:EXPAND_ZIPS_SOURCE_DIR : (Join-Path $HOME 'Downloads/picconvert')
+        $resolved | Should -Be (Join-Path $HOME 'Downloads/picconvert')
+    }
+
+    It 'SourceDirectory default falls back to $HOME/Downloads/picconvert when env var is blank' {
+        $env:EXPAND_ZIPS_SOURCE_DIR = ''
+        $resolved = $env:EXPAND_ZIPS_SOURCE_DIR ? $env:EXPAND_ZIPS_SOURCE_DIR : (Join-Path $HOME 'Downloads/picconvert')
         $resolved | Should -Be (Join-Path $HOME 'Downloads/picconvert')
     }
 
     It 'DestinationDirectory default uses EXPAND_ZIPS_DEST_DIR when set' {
         $env:EXPAND_ZIPS_DEST_DIR = '/custom/dest'
-        $resolved = $env:EXPAND_ZIPS_DEST_DIR ?? (Join-Path $HOME 'Desktop/New folder')
+        $resolved = $env:EXPAND_ZIPS_DEST_DIR ? $env:EXPAND_ZIPS_DEST_DIR : (Join-Path $HOME 'Desktop/New folder')
         $resolved | Should -Be '/custom/dest'
     }
 
     It 'DestinationDirectory default falls back to $HOME/Desktop/New folder when env var is absent' {
         Remove-Item Env:\EXPAND_ZIPS_DEST_DIR -ErrorAction SilentlyContinue
-        $resolved = $env:EXPAND_ZIPS_DEST_DIR ?? (Join-Path $HOME 'Desktop/New folder')
+        $resolved = $env:EXPAND_ZIPS_DEST_DIR ? $env:EXPAND_ZIPS_DEST_DIR : (Join-Path $HOME 'Desktop/New folder')
+        $resolved | Should -Be (Join-Path $HOME 'Desktop/New folder')
+    }
+
+    It 'DestinationDirectory default falls back to $HOME/Desktop/New folder when env var is blank' {
+        $env:EXPAND_ZIPS_DEST_DIR = ''
+        $resolved = $env:EXPAND_ZIPS_DEST_DIR ? $env:EXPAND_ZIPS_DEST_DIR : (Join-Path $HOME 'Desktop/New folder')
         $resolved | Should -Be (Join-Path $HOME 'Desktop/New folder')
     }
 

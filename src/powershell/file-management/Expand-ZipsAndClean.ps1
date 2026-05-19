@@ -35,14 +35,18 @@ using namespace System.Collections.Concurrent
 .PARAMETER SourceDirectory
     Directory containing .zip files to extract.
     Default resolved in order:
-      1. Environment variable EXPAND_ZIPS_SOURCE_DIR (if set and non-null)
+      1. Environment variable EXPAND_ZIPS_SOURCE_DIR (if set, non-null, and non-blank)
       2. Join-Path $HOME 'Downloads/picconvert'
+    Blank or whitespace-only values for EXPAND_ZIPS_SOURCE_DIR are treated as unset
+    and the profile-relative fallback is used instead.
 
 .PARAMETER DestinationDirectory
     Directory to extract contents into.
     Default resolved in order:
-      1. Environment variable EXPAND_ZIPS_DEST_DIR (if set and non-null)
+      1. Environment variable EXPAND_ZIPS_DEST_DIR (if set, non-null, and non-blank)
       2. Join-Path $HOME 'Desktop/New folder'
+    Blank or whitespace-only values for EXPAND_ZIPS_DEST_DIR are treated as unset
+    and the profile-relative fallback is used instead.
 
 .PARAMETER ExtractMode
     Extraction strategy. One of:
@@ -118,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.5.0
+    Version  : 2.5.1
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -139,6 +143,15 @@ using namespace System.Collections.Concurrent
       buffered locally per runspace and flushed serially after the loop completes.
 
     ── Version History ───────────────────────────────────────────────────────────
+    2.5.1  Fixed blank-env-var fallback for Source/Destination defaults (issue #981):
+           - Replaced ?? (null-coalescing) with PS7 ternary in both param defaults.
+             Empty string is falsy in PowerShell, so blank dotenv entries (VAR=)
+             now correctly fall through to the profile-relative path rather than
+             causing [ValidateNotNullOrEmpty()] to abort on first invocation.
+           - Updated .PARAMETER help to state that blank values are treated as unset.
+           - Added Pester test for the empty-string case.
+           Version bump: patch.
+
     2.5.0  Made default Source/Destination paths configurable via env vars (issue #981):
            - SourceDirectory default now resolves from $env:EXPAND_ZIPS_SOURCE_DIR,
              falling back to Join-Path $HOME 'Downloads/picconvert'.
@@ -467,12 +480,12 @@ param(
     [Parameter()]
     [Alias('Src')]
     [ValidateNotNullOrEmpty()]
-    [string]$SourceDirectory = ($env:EXPAND_ZIPS_SOURCE_DIR ?? (Join-Path $HOME 'Downloads/picconvert')),
+    [string]$SourceDirectory = ($env:EXPAND_ZIPS_SOURCE_DIR ? $env:EXPAND_ZIPS_SOURCE_DIR : (Join-Path $HOME 'Downloads/picconvert')),
 
     [Parameter()]
     [Alias('Dest')]
     [ValidateNotNullOrEmpty()]
-    [string]$DestinationDirectory = ($env:EXPAND_ZIPS_DEST_DIR ?? (Join-Path $HOME 'Desktop/New folder')),
+    [string]$DestinationDirectory = ($env:EXPAND_ZIPS_DEST_DIR ? $env:EXPAND_ZIPS_DEST_DIR : (Join-Path $HOME 'Desktop/New folder')),
 
     [Parameter()]
     [ValidateSet('PerArchiveSubfolder', 'Flat')]
