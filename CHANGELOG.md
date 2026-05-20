@@ -11,6 +11,16 @@ Entries older than the current minor release line are condensed to architectural
 
 - `#NNN` references GitHub issues in this repository unless explicitly prefixed otherwise.
 
+## [Unreleased]
+
+### Removed
+
+- **[Expand-ZipsAndClean] Removed non-behavioral env-var and smoke tests from the PowerShell test suite (#1068)** – Deleted the `Default path resolution from environment variables` and `Smoke — Expand-ZipsAndClean.ps1 parse check` Pester blocks from `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1` to keep the suite focused on runtime behavior rather than configuration-expression duplication and parser/syntax smoke checks.
+
+### Security
+
+- **[Dependencies] Raised `sqlfluff` to secure 4.2.0+ across constraints and lockfile** – Updated `requirements.txt` from `sqlfluff>=3.5.0,<5.0.0` to `sqlfluff>=4.2.0,<5.0.0` and `requirements.lock` from `sqlfluff==3.5.0` to `sqlfluff==4.2.0` to remediate GHSA-wmhf-fqc8-vxhh and GHSA-73jc-5mrq-prw7 (parser resource-exhaustion DoS advisories).
+
 ## [2.17.0] - 2026-05-18
 
 ### Added
