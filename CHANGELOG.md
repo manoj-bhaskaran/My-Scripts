@@ -19,7 +19,7 @@ Entries older than the current minor release line are condensed to architectural
 
 ### Security
 
-- **[Dependencies] Raised `sqlfluff` minimum version to `4.2.0`** – Updated `requirements.txt` from `sqlfluff>=3.5.0,<5.0.0` to `sqlfluff>=4.2.0,<5.0.0` to remediate GHSA-wmhf-fqc8-vxhh and GHSA-73jc-5mrq-prw7 (parser resource-exhaustion DoS advisories).
+- **[Dependencies] Raised `sqlfluff` to secure 4.2.0+ across constraints and lockfile** – Updated `requirements.txt` from `sqlfluff>=3.5.0,<5.0.0` to `sqlfluff>=4.2.0,<5.0.0` and `requirements.lock` from `sqlfluff==3.5.0` to `sqlfluff==4.2.0` to remediate GHSA-wmhf-fqc8-vxhh and GHSA-73jc-5mrq-prw7 (parser resource-exhaustion DoS advisories).
 
 ## [2.17.0] - 2026-05-18
 
