@@ -2,14 +2,21 @@
 
 ## Unreleased
 
+## 2.5.3 — 2026-05-21
+
 ### Changed
 
+- `Move-ZipFilesToParent` now delegates the file-move operation to `Move-FileWithRetry` (from `Core/FileOperations`) instead of calling `Move-Item` directly. The `Overwrite` collision branch maps to `-Force:$true`; all other branches use `-Force:$false`. Adds transient-lock resilience (AV scanner / network handle) to zip moves.
+- Per-item non-zip cleanup in `Remove-SourceDirectory` now calls `Remove-FileWithRetry` instead of bare `Remove-Item`. Items are still processed deepest-first, so directories are empty before deletion and no `-Recurse` flag is needed.
+- `Core/FileOperations/FileOperations.psm1` is now imported in the script header alongside the existing Core module imports.
 - Slimmed the script header `.NOTES` block in `Expand-ZipsAndClean.ps1` by removing the duplicated inline multi-version history.
 - Kept only current script metadata, key parallel extraction operational notes, and a direct pointer to this changelog for full release history.
 
 ### Fixed
 
 - `Show-ProgressPhase` now gracefully falls back to native `Write-Progress` when `Show-Progress` is not present in session scope (for helper-only test dot-sourcing and other partial-load scenarios). This restores test/runtime compatibility without changing script behavior when `Core/Progress` is imported.
+- Final `[System.IO.Directory]::Delete` / `Remove-Item` fallback sequence for root-directory deletion is unchanged (Linux/CI PowerShell #8211 workaround preserved).
+- `Move-FileWithRetry` and `Remove-FileWithRetry` in `Core/FileOperations` now use `-LiteralPath` for all `Test-Path`, `Move-Item`, and `Remove-Item` calls, preserving literal-path semantics for filenames that contain wildcard characters (`[`, `]`, `*`, `?`).
 
 ### Tests
 
@@ -32,6 +39,13 @@
   - `emits error notes when interactive and error list is non-empty` — the error-notes block is
     not gated by interactivity; `emits error notes even when host is non-interactive` already
     proves it fires unconditionally.
+- `Remove-SourceDirectory` and `Move-ZipFilesToParent` test `BeforeAll` blocks define inline stubs for `Remove-FileWithRetry` and `Move-FileWithRetry` (using `-LiteralPath` internally) instead of importing the `FileOperations` module directly, avoiding a transitive `ErrorHandling` path resolution failure on CI.
+- Added `delegates move operation to Move-FileWithRetry` test to verify the retry helper is wired up in `Move-ZipFilesToParent`.
+- Added `delegates per-item non-zip removal to Remove-FileWithRetry` test to verify retry helper delegation in `Remove-SourceDirectory`.
+
+### Versioning
+
+- Bumped `Expand-ZipsAndClean.ps1` version to `2.5.3` (patch — internal robustness refactor; no behavior change for callers).
 
 ## 2.5.2 — 2026-05-21
 

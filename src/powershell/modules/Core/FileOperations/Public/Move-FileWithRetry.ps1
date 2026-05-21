@@ -52,7 +52,7 @@ function Move-FileWithRetry {
         [int]$MaxBackoff = 60
     )
 
-    if (-not (Test-Path $Source)) {
+    if (-not (Test-Path -LiteralPath $Source)) {
         throw "Source file not found: $Source"
     }
 
@@ -63,7 +63,7 @@ function Move-FileWithRetry {
     }
 
     $operation = {
-        Move-Item -Path $Source -Destination $Destination -Force:$Force -ErrorAction Stop
+        Move-Item -LiteralPath $Source -Destination $Destination -Force:$Force -ErrorAction Stop
     }
 
     if (Get-Command Invoke-WithRetry -ErrorAction SilentlyContinue) {
