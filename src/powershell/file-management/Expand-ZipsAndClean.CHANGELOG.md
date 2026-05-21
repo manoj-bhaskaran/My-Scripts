@@ -7,6 +7,28 @@
 - Slimmed the script header `.NOTES` block in `Expand-ZipsAndClean.ps1` by removing the duplicated inline multi-version history.
 - Kept only current script metadata, key parallel extraction operational notes, and a direct pointer to this changelog for full release history.
 
+### Tests
+
+- Removed six duplicate `It` blocks from the test suite (no script logic changed; no version bump required):
+  - `exports public extraction functions from the Zip module` — redundant smoke check; every other
+    test in the same `Describe` block exercises the exported commands and would fail with
+    `CommandNotFoundException` if an export were missing.
+  - `rejects rooted entry names while allowing valid relative names` — narrow subset of the
+    Zip Slip containment guard already exercised end-to-end by `blocks Zip Slip traversal entries
+    in Flat mode` (test 5).
+  - `handles non-existent parent gracefully` (in `Move-ZipFilesToParent`) — identical mock
+    (`Get-Item` returns `Parent = $null`) and identical assertion to `throws clear error for drive
+    root source directory`; the two tests execute the same code path.
+  - `suppresses Completed call when QuietMode is true` — the `QuietMode` early-return fires before
+    the `-Completed` branch is reached; the guard is already proven by `suppresses Write-Progress
+    when QuietMode is true`.
+  - `clamps percentage to 100 when Current equals Total` — pure arithmetic on the same expression
+    already covered by `calls Write-Progress with computed percentage when QuietMode is false`;
+    no distinct branch.
+  - `emits error notes when interactive and error list is non-empty` — the error-notes block is
+    not gated by interactivity; `emits error notes even when host is non-interactive` already
+    proves it fires unconditionally.
+
 ## 2.5.1 — 2026-05-19
 
 ### Fixed

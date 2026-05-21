@@ -7,13 +7,6 @@ Describe 'Core/Zip module — public extraction functions' {
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
     }
 
-    It 'exports public extraction functions from the Zip module' {
-        Get-Command Get-ZipFileStats      -Module Zip -ErrorAction Stop | Should -Not -BeNullOrEmpty
-        Get-Command Expand-ZipToSubfolder -Module Zip -ErrorAction Stop | Should -Not -BeNullOrEmpty
-        Get-Command Expand-ZipFlat        -Module Zip -ErrorAction Stop | Should -Not -BeNullOrEmpty
-        Get-Command Expand-ZipSmart       -Module Zip -ErrorAction Stop | Should -Not -BeNullOrEmpty
-    }
-
     It 'dispatches PerArchiveSubfolder mode to Expand-ZipToSubfolder' {
         # Mocks for intra-module calls must live inside InModuleScope so they intercept
         # calls made from within the Zip module (Expand-ZipSmart -> Expand-ZipToSubfolder).
@@ -114,20 +107,6 @@ Describe 'Core/Zip module — public extraction functions' {
             Get-ChildItem -LiteralPath $outsideParent -Filter 'evil*.txt' -File |
             Where-Object { $_.Name -ne 'evil.txt' }
         ).Count | Should -Be 0
-    }
-
-    It 'rejects rooted entry names while allowing valid relative names' {
-        InModuleScope Zip {
-            $root = [System.IO.Path]::GetFullPath((Join-Path $TestDrive 'zipslip-rooted'))
-            New-Item -ItemType Directory -Path $root -Force | Out-Null
-
-            $valid  = Resolve-ZipEntryDestinationPath -DestinationRootFull $root -EntryFullName 'nested/file.txt'
-            $rooted = Resolve-ZipEntryDestinationPath -DestinationRootFull $root -EntryFullName '/etc/passwd'
-
-            $valid  | Should -Not -BeNullOrEmpty
-            $valid.StartsWith($root) | Should -BeTrue
-            $rooted | Should -BeNullOrEmpty
-        }
     }
 
     It 'detects encrypted archive errors through nested exceptions' {
@@ -453,18 +432,6 @@ Describe 'Move-ZipFilesToParent' {
         { Move-ZipFilesToParent -SourceDir 'C:\' -QuietMode $true } | Should -Throw "*drive root*"
     }
 
-    It 'handles non-existent parent gracefully' {
-        $sourceDir = Join-Path $TestDrive 'orphan'
-        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
-
-        # Mock Get-Item to return an item with no parent
-        Mock Get-Item {
-            [pscustomobject]@{ Parent = $null; FullName = $sourceDir }
-        }
-
-        { Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true } | Should -Throw "*drive root*"
-    }
-
     It 'Skip policy: leaves source zip and existing parent zip untouched on collision' {
         $parentDir = Join-Path $TestDrive 'parent-skip'
         $sourceDir = Join-Path $parentDir 'source'
@@ -607,25 +574,6 @@ Describe 'Write-PhaseProgress' {
         }
     }
 
-    It 'suppresses Completed call when QuietMode is true' {
-        Mock Write-Progress { }
-
-        Write-PhaseProgress -Activity 'Extracting' -Status 'Done' `
-            -Current 5 -Total 5 -QuietMode $true -Completed
-
-        Should -Invoke Write-Progress -Times 0
-    }
-
-    It 'clamps percentage to 100 when Current equals Total' {
-        Mock Write-Progress { }
-
-        Write-PhaseProgress -Activity 'Test' -Status 'All done' -Current 7 -Total 7 -QuietMode $false
-
-        Should -Invoke Write-Progress -Times 1 -Exactly -ParameterFilter {
-            $PercentComplete -eq 100
-        }
-    }
-
     It 'uses Total=1 guard so zero Total does not cause division error' {
         Mock Write-Progress { }
 
@@ -716,24 +664,6 @@ Describe 'Write-ExtractionSummary' {
         Should -Invoke Format-List  -Times 0
         ($output | Where-Object { $_ -like '*Notes / Errors*' }) | Should -Not -BeNullOrEmpty
         ($output | Where-Object { $_ -like '* - Archive is corrupt' }) | Should -Not -BeNullOrEmpty
-    }
-
-    It 'emits error notes when interactive and error list is non-empty' {
-        $errList = [System.Collections.Generic.List[string]]::new()
-        $errList.Add('Something went wrong')
-        Mock Format-Table { }
-        Mock Format-List  { }
-
-        $output = @(Write-ExtractionSummary `
-            -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
-            -ExtractMode 'Flat' -CollisionPolicy 'Skip' `
-            -ZipCount 2 -ProcessedZips 2 -FilesExtracted 4 `
-            -UncompressedBytes ([int64]500) -CompressedBytes ([int64]200) `
-            -MoveSummary $script:defaultMoveSummary -Errors $errList `
-            -Elapsed $script:testElapsed -HostName 'ConsoleHost')
-
-        ($output | Where-Object { $_ -like '*Notes / Errors*' }) | Should -Not -BeNullOrEmpty
-        ($output | Where-Object { $_ -like '* - Something went wrong' }) | Should -Not -BeNullOrEmpty
     }
 
     It 'summary view contains expected fields (SrcDir, ZipsFound, Ratio, Duration)' {
