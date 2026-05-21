@@ -7,6 +7,10 @@
 - Slimmed the script header `.NOTES` block in `Expand-ZipsAndClean.ps1` by removing the duplicated inline multi-version history.
 - Kept only current script metadata, key parallel extraction operational notes, and a direct pointer to this changelog for full release history.
 
+### Fixed
+
+- `Show-ProgressPhase` now gracefully falls back to native `Write-Progress` when `Show-Progress` is not present in session scope (for helper-only test dot-sourcing and other partial-load scenarios). This restores test/runtime compatibility without changing script behavior when `Core/Progress` is imported.
+
 ### Tests
 
 - Removed six duplicate `It` blocks from the test suite (no script logic changed; no version bump required):

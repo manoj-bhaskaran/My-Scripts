@@ -229,9 +229,30 @@ function Show-ProgressPhase {
         [switch]$Completed
     )
 
+    if ($QuietMode) { return }
+
     $pct = [int]($Current / [math]::Max(1, $Total) * 100)
-    Show-Progress -Activity $Activity -Status $Status -PercentComplete $pct `
-        -CurrentOperation $CurrentOperation -Completed:$Completed -Suppress:$QuietMode
+
+    if (Get-Command -Name Show-Progress -ErrorAction SilentlyContinue) {
+        Show-Progress -Activity $Activity -Status $Status -PercentComplete $pct `
+            -CurrentOperation $CurrentOperation -Completed:$Completed
+        return
+    }
+
+    if ($Completed) {
+        Write-Progress -Activity $Activity -Completed
+        return
+    }
+
+    $params = @{
+        Activity        = $Activity
+        Status          = $Status
+        PercentComplete = $pct
+    }
+    if ($CurrentOperation ?? '') {
+        $params['CurrentOperation'] = $CurrentOperation
+    }
+    Write-Progress @params
 }
 
 <#

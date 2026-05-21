@@ -47,6 +47,9 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 progress helper compatibility fix** (2026-05-21)
+  - `Show-ProgressPhase` now falls back to native `Write-Progress` when `Show-Progress` is unavailable in helper-only load contexts (e.g., region-dot-sourced tests), preventing `CommandNotFoundException` while preserving normal shared-module behavior.
+
 - **Expand-ZipsAndClean.ps1 v2.5.2** (2026-05-21)
   - Replaced script-local progress writer usage with shared `Core/Progress` `Show-Progress` through a compatibility adapter (`Show-ProgressPhase`) to keep call-site semantics unchanged.
   - Added `Show-Progress -Suppress` in the shared Progress module for quiet-mode scenarios.
