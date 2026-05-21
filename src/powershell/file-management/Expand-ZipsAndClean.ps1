@@ -122,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.5.2
+    Version  : 2.5.3
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -181,6 +181,7 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 Import-Module "$PSScriptRoot\..\modules\Core\FileSystem\FileSystem.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\Zip\Zip.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\Progress\ProgressReporter.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psm1" -Force
 
 # Initialize logger (script name will be extracted from the script file name)
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
@@ -621,11 +622,7 @@ function Remove-SourceDirectory {
                 $item = $_
                 try {
                     if (Test-Path -LiteralPath $item.FullName) {
-                        if ($item.PSIsContainer) {
-                            Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction Stop
-                        } else {
-                            Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop
-                        }
+                        Remove-FileWithRetry -Path $item.FullName
                     }
                 } catch {
                     Write-LogDebug "Best-effort cleanup skip for '$($item.FullName)': $($_.Exception.Message)"
@@ -759,11 +756,7 @@ function Move-ZipFilesToParent {
             }
         }
 
-        if ($useForce) {
-            Move-Item -LiteralPath $zf.FullName -Destination $target -Force
-        } else {
-            Move-Item -LiteralPath $zf.FullName -Destination $target
-        }
+        Move-FileWithRetry -Source $zf.FullName -Destination $target -Force:$useForce
         $moved++
         $bytes += $zf.Length
     }
