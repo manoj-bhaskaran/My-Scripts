@@ -122,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.5.1
+    Version  : 2.5.2
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -180,6 +180,7 @@ param(
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\FileSystem\FileSystem.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\Zip\Zip.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\Core\Progress\ProgressReporter.psm1" -Force
 
 # Initialize logger (script name will be extracted from the script file name)
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
@@ -212,7 +213,11 @@ if ($ThrottleLimit -gt [Environment]::ProcessorCount) {
 .PARAMETER Completed
     Switch. When set, closes the named progress bar instead of updating it.
 #>
-function Write-PhaseProgress {
+<#
+.SYNOPSIS
+    Validates source/destination safety constraints before any file operations.
+#>
+function Show-ProgressPhase {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Activity,
@@ -226,19 +231,24 @@ function Write-PhaseProgress {
 
     if ($QuietMode) { return }
 
+    $pct = [int]($Current / [math]::Max(1, $Total) * 100)
+
+    if (Get-Command -Name Show-Progress -ErrorAction SilentlyContinue) {
+        Show-Progress -Activity $Activity -Status $Status -PercentComplete $pct `
+            -CurrentOperation $CurrentOperation -Completed:$Completed
+        return
+    }
+
     if ($Completed) {
         Write-Progress -Activity $Activity -Completed
         return
     }
 
-    $pct = [int]($Current / [math]::Max(1, $Total) * 100)
     $params = @{
         Activity        = $Activity
         Status          = $Status
         PercentComplete = $pct
     }
-    # Use ?? so that a null CurrentOperation gracefully collapses to '' (falsy),
-    # avoiding a spurious empty -CurrentOperation on the progress bar.
     if ($CurrentOperation ?? '') {
         $params['CurrentOperation'] = $CurrentOperation
     }
@@ -421,14 +431,14 @@ function Invoke-ParallelZipExtractions {
                 -ErrorBag $using:concurrentErrors
         } -ThrottleLimit $ThrottleLimit | ForEach-Object {
             $progressCounter++
-            Write-PhaseProgress -Activity "Extracting archives" `
+            Show-ProgressPhase -Activity "Extracting archives" `
                 -Status "$progressCounter / $ZipCount completed" `
                 -Current $progressCounter -Total $ZipCount -QuietMode $QuietMode
             $_
         }
     )
 
-    Write-PhaseProgress -Activity "Extracting archives" -Status "Done" `
+    Show-ProgressPhase -Activity "Extracting archives" -Status "Done" `
         -Current $ZipCount -Total $ZipCount -QuietMode $QuietMode -Completed
     return Merge-ParallelZipResults -Results $results -ZipCount $ZipCount `
         -ErrorList $ErrorList -ConcurrentErrors $concurrentErrors
@@ -463,7 +473,7 @@ function Invoke-SerialZipExtractions {
     foreach ($zip in $Zips) {
         $index++
         try {
-            Write-PhaseProgress -Activity "Extracting archives" -Status $zip.Name `
+            Show-ProgressPhase -Activity "Extracting archives" -Status $zip.Name `
                 -Current ($index - 1) -Total $ZipCount -QuietMode $QuietMode
             if ($PSCmdlet.ShouldProcess($zip.FullName, "Extract")) {
                 $stats        = Get-ZipFileStats -ZipPath $zip.FullName
@@ -484,7 +494,7 @@ function Invoke-SerialZipExtractions {
         }
     }
 
-    Write-PhaseProgress -Activity "Extracting archives" -Status "Done" `
+    Show-ProgressPhase -Activity "Extracting archives" -Status "Done" `
         -Current $ZipCount -Total $ZipCount -QuietMode $QuietMode -Completed
     return New-ExtractionSummary -ZipCount $ZipCount -ProcessedZips $processedZips `
         -FilesExtracted $totalFilesExtracted -UncompressedBytes $totalUncompressedBytes `
@@ -726,7 +736,7 @@ function Move-ZipFilesToParent {
         # Include the current file's size in the display so the byte counter reflects
         # the running total up to and including the file being processed (fixes the
         # off-by-one where the caption previously showed only bytes from prior files).
-        Write-PhaseProgress -Activity "Moving zip files to parent" `
+        Show-ProgressPhase -Activity "Moving zip files to parent" `
             -Status "$idx / $total : $($zf.Name) ($(Format-Bytes $zf.Length))" `
             -Current $idx -Total $total -QuietMode $QuietMode `
             -CurrentOperation ("Moving: {0} of {1} bytes" -f (Format-Bytes ($bytes + $zf.Length)), (Format-Bytes $totalBytes))
@@ -758,7 +768,7 @@ function Move-ZipFilesToParent {
         $bytes += $zf.Length
     }
 
-    Write-PhaseProgress -Activity "Moving zip files to parent" -Status "Done" `
+    Show-ProgressPhase -Activity "Moving zip files to parent" -Status "Done" `
         -Current $total -Total $total -QuietMode $QuietMode -Completed
 
     [pscustomobject]@{ Count = $moved; Bytes = $bytes; Destination = $parent; Skipped = $skipped; Overwritten = $overwritten; Renamed = $renamed }

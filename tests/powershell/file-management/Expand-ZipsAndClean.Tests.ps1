@@ -497,7 +497,7 @@ Describe 'Move-ZipFilesToParent' {
     }
 }
 
-Describe 'Write-PhaseProgress' {
+Describe 'Show-ProgressPhase' {
     BeforeAll {
         $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
         $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
@@ -525,7 +525,7 @@ Describe 'Write-PhaseProgress' {
     It 'suppresses Write-Progress when QuietMode is true' {
         Mock Write-Progress { }
 
-        Write-PhaseProgress -Activity 'Test' -Status 'Running' -Current 1 -Total 5 -QuietMode $true
+        Show-ProgressPhase -Activity 'Test' -Status 'Running' -Current 1 -Total 5 -QuietMode $true
 
         Should -Invoke Write-Progress -Times 0
     }
@@ -533,7 +533,7 @@ Describe 'Write-PhaseProgress' {
     It 'calls Write-Progress with computed percentage when QuietMode is false' {
         Mock Write-Progress { }
 
-        Write-PhaseProgress -Activity 'Extracting' -Status 'file.zip' -Current 2 -Total 4 -QuietMode $false
+        Show-ProgressPhase -Activity 'Extracting' -Status 'file.zip' -Current 2 -Total 4 -QuietMode $false
 
         Should -Invoke Write-Progress -Times 1 -Exactly -ParameterFilter {
             $Activity -eq 'Extracting' -and
@@ -545,7 +545,7 @@ Describe 'Write-PhaseProgress' {
     It 'includes CurrentOperation when provided' {
         Mock Write-Progress { }
 
-        Write-PhaseProgress -Activity 'Moving' -Status '1 / 3 : a.zip' `
+        Show-ProgressPhase -Activity 'Moving' -Status '1 / 3 : a.zip' `
             -Current 1 -Total 3 -QuietMode $false -CurrentOperation 'Moving: 10 B of 30 B bytes'
 
         Should -Invoke Write-Progress -Times 1 -Exactly -ParameterFilter {
@@ -557,7 +557,7 @@ Describe 'Write-PhaseProgress' {
         $capturedParams = @{}
         Mock Write-Progress { $capturedParams['keys'] = $PSBoundParameters.Keys -join ',' }
 
-        Write-PhaseProgress -Activity 'Moving' -Status '1 / 3 : a.zip' `
+        Show-ProgressPhase -Activity 'Moving' -Status '1 / 3 : a.zip' `
             -Current 1 -Total 3 -QuietMode $false
 
         $capturedParams['keys'] | Should -Not -BeLike '*CurrentOperation*'
@@ -566,7 +566,7 @@ Describe 'Write-PhaseProgress' {
     It 'calls Write-Progress -Completed and suppresses update parameters' {
         Mock Write-Progress { }
 
-        Write-PhaseProgress -Activity 'Extracting' -Status 'Done' `
+        Show-ProgressPhase -Activity 'Extracting' -Status 'Done' `
             -Current 5 -Total 5 -QuietMode $false -Completed
 
         Should -Invoke Write-Progress -Times 1 -Exactly -ParameterFilter {
@@ -577,7 +577,7 @@ Describe 'Write-PhaseProgress' {
     It 'uses Total=1 guard so zero Total does not cause division error' {
         Mock Write-Progress { }
 
-        { Write-PhaseProgress -Activity 'Test' -Status 'Empty' -Current 0 -Total 0 -QuietMode $false } |
+        { Show-ProgressPhase -Activity 'Test' -Status 'Empty' -Current 0 -Total 0 -QuietMode $false } |
             Should -Not -Throw
     }
 }

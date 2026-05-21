@@ -7,6 +7,10 @@
 - Slimmed the script header `.NOTES` block in `Expand-ZipsAndClean.ps1` by removing the duplicated inline multi-version history.
 - Kept only current script metadata, key parallel extraction operational notes, and a direct pointer to this changelog for full release history.
 
+### Fixed
+
+- `Show-ProgressPhase` now gracefully falls back to native `Write-Progress` when `Show-Progress` is not present in session scope (for helper-only test dot-sourcing and other partial-load scenarios). This restores test/runtime compatibility without changing script behavior when `Core/Progress` is imported.
+
 ### Tests
 
 - Removed six duplicate `It` blocks from the test suite (no script logic changed; no version bump required):
@@ -28,6 +32,25 @@
   - `emits error notes when interactive and error list is non-empty` — the error-notes block is
     not gated by interactivity; `emits error notes even when host is non-interactive` already
     proves it fires unconditionally.
+
+## 2.5.2 — 2026-05-21
+
+### Changed
+
+- Replaced script-local `Write-PhaseProgress` usage with `Show-Progress` from `Core/Progress` via a thin `Show-ProgressPhase` adapter that keeps existing call-site arguments (`Current`/`Total`/`QuietMode`) while delegating progress rendering to the shared utility.
+- `Expand-ZipsAndClean.ps1` now imports `Core/Progress/ProgressReporter.psm1` alongside existing shared modules.
+
+### Enhanced
+
+- Added `-Suppress` switch to `Core/Progress` `Show-Progress` so callers can centrally suppress progress output without bespoke quiet-mode wrappers around `Write-Progress`.
+
+### Tests
+
+- Updated `Expand-ZipsAndClean` helper tests from `Write-PhaseProgress` to `Show-ProgressPhase` with equivalent coverage for quiet suppression, percentage math, completion behavior, and optional current-operation forwarding.
+
+### Versioning
+
+- Bumped `Expand-ZipsAndClean.ps1` version to `2.5.2` (patch — internal progress abstraction refactor with backward-compatible behavior).
 
 ## 2.5.1 — 2026-05-19
 

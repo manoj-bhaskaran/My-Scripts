@@ -39,6 +39,8 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[Expand-ZipsAndClean 2.5.2]** Replaced script-local `Write-PhaseProgress` usage with shared `Core/Progress` `Show-Progress` (via `Show-ProgressPhase` adapter) and added `Show-Progress -Suppress` for quiet-mode suppression (issue #1063).
+  → Full detail: [Expand-ZipsAndClean.CHANGELOG.md](src/powershell/file-management/Expand-ZipsAndClean.CHANGELOG.md)
 - **[FileDistributor]** `SupportsShouldProcess` added to the entry script and to all
   distribution, post-processing, and deletion phase functions (issues #932, #933); `EndOfScript`
   queue no longer consumed by denied `ShouldProcess`.

@@ -49,8 +49,13 @@ function Show-Progress {
         [string]$CurrentOperation = "",
 
         [Parameter(Mandatory = $false)]
-        [switch]$Completed
+        [switch]$Completed,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Suppress
     )
+
+    if ($Suppress) { return }
 
     if ($Completed) {
         Write-Progress -Activity $Activity -Id $Id -Completed
