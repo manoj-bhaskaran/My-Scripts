@@ -278,10 +278,13 @@ Describe 'Remove-SourceDirectory' {
 
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileOperations\FileOperations.psm1') -Force
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         function Write-LogDebug { param([string]$Message) }
+        function Remove-FileWithRetry {
+            param([string]$Path)
+            if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Force -ErrorAction Stop }
+        }
         . ([ScriptBlock]::Create($helpersWithUsing))
     }
 
@@ -419,10 +422,13 @@ Describe 'Move-ZipFilesToParent' {
 
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileOperations\FileOperations.psm1') -Force
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         function Write-LogDebug { param([string]$Message) }
+        function Move-FileWithRetry {
+            param([string]$Source, [string]$Destination, [switch]$Force)
+            Move-Item -LiteralPath $Source -Destination $Destination -Force:$Force
+        }
         . ([ScriptBlock]::Create($helpersWithUsing))
     }
 

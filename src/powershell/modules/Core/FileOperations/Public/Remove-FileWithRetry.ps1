@@ -40,13 +40,13 @@ function Remove-FileWithRetry {
         [int]$MaxBackoff = 60
     )
 
-    if (-not (Test-Path $Path)) {
+    if (-not (Test-Path -LiteralPath $Path)) {
         Write-Warning "Path does not exist: $Path"
         return $true
     }
 
     $operation = {
-        Remove-Item -Path $Path -Force -ErrorAction Stop
+        Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
     }
 
     if (Get-Command Invoke-WithRetry -ErrorAction SilentlyContinue) {

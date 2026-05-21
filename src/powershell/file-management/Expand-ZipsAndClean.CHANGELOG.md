@@ -16,6 +16,7 @@
 
 - `Show-ProgressPhase` now gracefully falls back to native `Write-Progress` when `Show-Progress` is not present in session scope (for helper-only test dot-sourcing and other partial-load scenarios). This restores test/runtime compatibility without changing script behavior when `Core/Progress` is imported.
 - Final `[System.IO.Directory]::Delete` / `Remove-Item` fallback sequence for root-directory deletion is unchanged (Linux/CI PowerShell #8211 workaround preserved).
+- `Move-FileWithRetry` and `Remove-FileWithRetry` in `Core/FileOperations` now use `-LiteralPath` for all `Test-Path`, `Move-Item`, and `Remove-Item` calls, preserving literal-path semantics for filenames that contain wildcard characters (`[`, `]`, `*`, `?`).
 
 ### Tests
 
@@ -38,7 +39,7 @@
   - `emits error notes when interactive and error list is non-empty` — the error-notes block is
     not gated by interactivity; `emits error notes even when host is non-interactive` already
     proves it fires unconditionally.
-- Added `Core/FileOperations` module import to `Remove-SourceDirectory` and `Move-ZipFilesToParent` `BeforeAll` blocks so retry helpers are available when helpers are dot-sourced.
+- `Remove-SourceDirectory` and `Move-ZipFilesToParent` test `BeforeAll` blocks define inline stubs for `Remove-FileWithRetry` and `Move-FileWithRetry` (using `-LiteralPath` internally) instead of importing the `FileOperations` module directly, avoiding a transitive `ErrorHandling` path resolution failure on CI.
 - Added `delegates move operation to Move-FileWithRetry` test to verify the retry helper is wired up in `Move-ZipFilesToParent`.
 - Added `delegates per-item non-zip removal to Remove-FileWithRetry` test to verify retry helper delegation in `Remove-SourceDirectory`.
 
