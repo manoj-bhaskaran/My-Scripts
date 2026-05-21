@@ -29,6 +29,25 @@
     not gated by interactivity; `emits error notes even when host is non-interactive` already
     proves it fires unconditionally.
 
+## 2.5.2 — 2026-05-21
+
+### Changed
+
+- Replaced script-local `Write-PhaseProgress` usage with `Show-Progress` from `Core/Progress` via a thin `Show-ProgressPhase` adapter that keeps existing call-site arguments (`Current`/`Total`/`QuietMode`) while delegating progress rendering to the shared utility.
+- `Expand-ZipsAndClean.ps1` now imports `Core/Progress/ProgressReporter.psm1` alongside existing shared modules.
+
+### Enhanced
+
+- Added `-Suppress` switch to `Core/Progress` `Show-Progress` so callers can centrally suppress progress output without bespoke quiet-mode wrappers around `Write-Progress`.
+
+### Tests
+
+- Updated `Expand-ZipsAndClean` helper tests from `Write-PhaseProgress` to `Show-ProgressPhase` with equivalent coverage for quiet suppression, percentage math, completion behavior, and optional current-operation forwarding.
+
+### Versioning
+
+- Bumped `Expand-ZipsAndClean.ps1` version to `2.5.2` (patch — internal progress abstraction refactor with backward-compatible behavior).
+
 ## 2.5.1 — 2026-05-19
 
 ### Fixed

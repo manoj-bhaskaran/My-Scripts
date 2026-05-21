@@ -47,6 +47,11 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 v2.5.2** (2026-05-21)
+  - Replaced script-local progress writer usage with shared `Core/Progress` `Show-Progress` through a compatibility adapter (`Show-ProgressPhase`) to keep call-site semantics unchanged.
+  - Added `Show-Progress -Suppress` in the shared Progress module for quiet-mode scenarios.
+  - Version bump: `2.5.2` (patch — internal refactor/enhancement, no breaking behavior change).
+
 - **Expand-ZipsAndClean.ps1 docs cleanup** (2026-05-19)
   - Slimmed the script header comment-based help `.NOTES` block to keep only current metadata and operational notes.
   - Removed the long inline version-history duplication from the script header and pointed readers to `Expand-ZipsAndClean.CHANGELOG.md` for the full release history.
