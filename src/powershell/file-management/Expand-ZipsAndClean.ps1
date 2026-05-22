@@ -122,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.5.3
+    Version  : 2.5.4
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)

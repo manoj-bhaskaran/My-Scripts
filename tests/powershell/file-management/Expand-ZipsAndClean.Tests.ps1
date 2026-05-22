@@ -151,30 +151,6 @@ Describe 'Core/Zip module — public extraction functions' {
         $count | Should -Be 3
     }
 
-    It 'Flat: file count returned matches archive entry count' {
-        $root = Join-Path $TestDrive 'flat-filecount'
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
-
-        $zipPath = Join-Path $TestDrive 'flat-filecount.zip'
-        $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
-        try {
-            foreach ($name in 'x.txt', 'y.txt') {
-                $entry  = $archive.CreateEntry($name)
-                $stream = $entry.Open()
-                $writer = New-Object System.IO.StreamWriter($stream)
-                try { $writer.Write("content-$name") } finally { $writer.Dispose() }
-            }
-        } finally {
-            $archive.Dispose()
-        }
-
-        $stats = Get-ZipFileStats -ZipPath $zipPath
-        $count = Expand-ZipFlat -ZipPath $zipPath -DestinationRoot $root -DestinationRootFull ([System.IO.Path]::GetFullPath($root)) -CollisionPolicy Rename
-
-        $count | Should -Be $stats.FileCount
-        $count | Should -Be 2
-    }
-
     It 'Expand-ZipSmart PerArchiveSubfolder: returns correct count when ExpectedFileCount is omitted' {
         $root = Join-Path $TestDrive 'smart-fallback'
         New-Item -ItemType Directory -Path $root -Force | Out-Null
@@ -383,24 +359,6 @@ Describe 'Remove-SourceDirectory' {
         Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -like '*scan*' }
     }
 
-    It 'delegates per-item non-zip removal to Remove-FileWithRetry' {
-        $sourceDir = Join-Path $TestDrive 'source-retry-delegate'
-        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
-        $leftover = Join-Path $sourceDir 'leftover.txt'
-        Set-Content -LiteralPath $leftover -Value 'data'
-
-        # Mock Remove-FileWithRetry to actually delete so the source dir can be removed.
-        Mock Remove-FileWithRetry {
-            param([string]$Path)
-            if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Force }
-        }
-
-        $errors = [System.Collections.Generic.List[string]]::new()
-        Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $true -ErrorList $errors
-
-        Should -Invoke Remove-FileWithRetry -Times 1 -Exactly -ParameterFilter { $Path -eq $leftover }
-        $errors.Count | Should -Be 0
-    }
 }
 
 Describe 'Move-ZipFilesToParent' {
@@ -523,26 +481,6 @@ Describe 'Move-ZipFilesToParent' {
         $parentZips.Count | Should -Be 2
     }
 
-    It 'delegates move operation to Move-FileWithRetry' {
-        $parentDir = Join-Path $TestDrive 'parent-retry-delegate'
-        $sourceDir = Join-Path $parentDir 'source'
-        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
-        $srcZip = Join-Path $sourceDir 'test.zip'
-        Set-Content -LiteralPath $srcZip -Value 'dummy' -NoNewline
-
-        # Mock Move-FileWithRetry to actually move so result.Count stays correct.
-        Mock Move-FileWithRetry {
-            param([string]$Source, [string]$Destination, [switch]$Force)
-            Move-Item -LiteralPath $Source -Destination $Destination -Force:$Force
-        }
-
-        $result = Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true
-
-        Should -Invoke Move-FileWithRetry -Times 1 -Exactly -ParameterFilter {
-            $Source -eq $srcZip -and $Destination -eq (Join-Path $parentDir 'test.zip')
-        }
-        $result.Count | Should -Be 1
-    }
 }
 
 Describe 'Show-ProgressPhase' {
@@ -599,16 +537,6 @@ Describe 'Show-ProgressPhase' {
         Should -Invoke Write-Progress -Times 1 -Exactly -ParameterFilter {
             $CurrentOperation -eq 'Moving: 10 B of 30 B bytes'
         }
-    }
-
-    It 'omits CurrentOperation when not provided' {
-        $capturedParams = @{}
-        Mock Write-Progress { $capturedParams['keys'] = $PSBoundParameters.Keys -join ',' }
-
-        Show-ProgressPhase -Activity 'Moving' -Status '1 / 3 : a.zip' `
-            -Current 1 -Total 3 -QuietMode $false
-
-        $capturedParams['keys'] | Should -Not -BeLike '*CurrentOperation*'
     }
 
     It 'calls Write-Progress -Completed and suppresses update parameters' {

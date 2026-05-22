@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 2.5.4 — 2026-05-22
+
+### Tests
+
+- Removed four duplicate/low-value `It` blocks from `Expand-ZipsAndClean.Tests.ps1`; no script logic changed:
+  - `Flat: file count returned matches archive entry count` — redundant with `Flat Overwrite` and `Flat Rename`, which already exercise `Expand-ZipFlat` write-count paths; `Get-ZipFileStats` is already covered by `PerArchiveSubfolder: file count returned matches archive entry count` and the `Expand-ZipSmart` fallback test.
+  - `delegates per-item non-zip removal to Remove-FileWithRetry` — overlaps with `deletes nested non-zip files deepest-first …`, which drives the same per-item removal path over a richer tree; `Remove-FileWithRetry` is a test stub so the delegation assertion verifies harness wiring only.
+  - `delegates move operation to Move-FileWithRetry` — identical single-zip, no-collision scenario to `moves zip files from source to parent directory`; `Move-FileWithRetry` is likewise a test stub, so the `Should -Invoke` assertion verifies harness wiring rather than script logic.
+  - `omits CurrentOperation when not provided` — redundant with `calls Write-Progress with computed percentage when QuietMode is false`, which already invokes the function with no `-CurrentOperation`, exercising the same branch.
+- Suite now contains 33 tests (was 37).
+
+### Versioning
+
+- Bumped version to `2.5.4` (patch — test-suite maintenance only; no script behaviour change).
+
 ## 2.5.3 — 2026-05-21
 
 ### Changed
