@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- Reworked module `Invoke-ZipExtractions` parameter dispatch construction to derive shared argument payload from `$PSBoundParameters` (excluding `SourceDir`) and append `Zips`/`ZipCount`, reducing duplicated new-code blocks flagged by SonarCloud while preserving behavior.
 - Refactored `ZipExtraction/Public/Invoke-ZipExtractions.ps1` dispatch flow (logging text composition, empty-archive guard, and runner selection) to reduce duplicated new-code blocks reported by SonarCloud while preserving behavior.
 - Fixed wrapper delegation binding in `Invoke-ZipExtractionDelegate` by splatting any `IDictionary` (including `$PSBoundParameters`), preventing mandatory-parameter prompts when dispatching `Invoke-ZipExtractions` to the extracted module command.
 - Reduced new-code duplication by simplifying script-local `Invoke-ParallelZipExtractions`/`Invoke-SerialZipExtractions` wrappers to argument-pass-through delegators and extending `Invoke-ZipExtractionDelegate` to handle non-hashtable forwarded arguments.
@@ -60,6 +61,7 @@
 
 ### Fixed
 
+- Reworked module `Invoke-ZipExtractions` parameter dispatch construction to derive shared argument payload from `$PSBoundParameters` (excluding `SourceDir`) and append `Zips`/`ZipCount`, reducing duplicated new-code blocks flagged by SonarCloud while preserving behavior.
 - Refactored `ZipExtraction/Public/Invoke-ZipExtractions.ps1` dispatch flow (logging text composition, empty-archive guard, and runner selection) to reduce duplicated new-code blocks reported by SonarCloud while preserving behavior.
 - Fixed wrapper delegation binding in `Invoke-ZipExtractionDelegate` by splatting any `IDictionary` (including `$PSBoundParameters`), preventing mandatory-parameter prompts when dispatching `Invoke-ZipExtractions` to the extracted module command.
 - Reduced new-code duplication by simplifying script-local `Invoke-ParallelZipExtractions`/`Invoke-SerialZipExtractions` wrappers to argument-pass-through delegators and extending `Invoke-ZipExtractionDelegate` to handle non-hashtable forwarded arguments.
@@ -130,6 +132,7 @@
 
 ### Fixed
 
+- Reworked module `Invoke-ZipExtractions` parameter dispatch construction to derive shared argument payload from `$PSBoundParameters` (excluding `SourceDir`) and append `Zips`/`ZipCount`, reducing duplicated new-code blocks flagged by SonarCloud while preserving behavior.
 - Refactored `ZipExtraction/Public/Invoke-ZipExtractions.ps1` dispatch flow (logging text composition, empty-archive guard, and runner selection) to reduce duplicated new-code blocks reported by SonarCloud while preserving behavior.
 - Fixed wrapper delegation binding in `Invoke-ZipExtractionDelegate` by splatting any `IDictionary` (including `$PSBoundParameters`), preventing mandatory-parameter prompts when dispatching `Invoke-ZipExtractions` to the extracted module command.
 - Reduced new-code duplication by simplifying script-local `Invoke-ParallelZipExtractions`/`Invoke-SerialZipExtractions` wrappers to argument-pass-through delegators and extending `Invoke-ZipExtractionDelegate` to handle non-hashtable forwarded arguments.

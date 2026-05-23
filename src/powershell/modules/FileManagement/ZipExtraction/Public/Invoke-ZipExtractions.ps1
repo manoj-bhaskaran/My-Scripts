@@ -21,19 +21,17 @@ function Invoke-ZipExtractions {
         return New-ExtractionSummary -ZipCount 0 -ProcessedZips 0 -FilesExtracted 0 -UncompressedBytes 0L -CompressedBytes 0L
     }
 
-    $dispatch = @{
-        Zips           = $zips
-        ZipCount       = $zipCount
-        DestinationDir = $DestinationDir
-        Mode           = $Mode
-        Policy         = $Policy
-        SafeNameMaxLen = $SafeNameMaxLen
-        QuietMode      = $QuietMode
-        ThrottleLimit  = $ThrottleLimit
-        ErrorList      = $ErrorList
-    }
+    $dispatch = @($PSBoundParameters.GetEnumerator() |
+        Where-Object { $_.Key -ne 'SourceDir' } |
+        ForEach-Object { @{ Key = $_.Key; Value = $_.Value } })
 
-    $canParallel = ($ThrottleLimit -gt 1) -and (-not $WhatIfPreference)
-    $runner = if ($canParallel) { 'Invoke-ParallelZipExtractions' } else { 'Invoke-SerialZipExtractions' }
-    return & $runner @dispatch
+    $sharedParams = @{}
+    foreach ($item in $dispatch) { $sharedParams[$item.Key] = $item.Value }
+    $sharedParams['Zips'] = $zips
+    $sharedParams['ZipCount'] = $zipCount
+
+    if ($ThrottleLimit -gt 1 -and -not $WhatIfPreference) {
+        return Invoke-ParallelZipExtractions @sharedParams
+    }
+    return Invoke-SerialZipExtractions @sharedParams
 }
