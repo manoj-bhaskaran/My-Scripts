@@ -10,6 +10,25 @@ if (-not (Get-Command -Name Write-LogDebug -ErrorAction SilentlyContinue)) {
     function Write-LogDebug { param([string]$Message) }
 }
 
+if (-not (Get-Command -Name New-ExtractionSummary -ErrorAction SilentlyContinue)) {
+    function New-ExtractionSummary {
+        param(
+            [int]$ZipCount,
+            [int]$ProcessedZips,
+            [int]$FilesExtracted,
+            [int64]$UncompressedBytes,
+            [int64]$CompressedBytes
+        )
+        return [pscustomobject]@{
+            ZipCount          = $ZipCount
+            ProcessedZips     = $ProcessedZips
+            FilesExtracted    = $FilesExtracted
+            UncompressedBytes = $UncompressedBytes
+            CompressedBytes   = $CompressedBytes
+        }
+    }
+}
+
 if (-not (Get-Command -Name Show-ProgressPhase -ErrorAction SilentlyContinue)) {
     function Show-ProgressPhase {
         param(
