@@ -1,12 +1,9 @@
 function Invoke-ZipExtractions {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
-        [Parameter(Mandatory)][string]$SourceDir,
-        [Parameter(Mandatory)][string]$DestinationDir,
-        [Parameter(Mandatory)][string]$Mode,
-        [Parameter(Mandatory)][string]$Policy,
-        [Parameter(Mandatory)][int]$SafeNameMaxLen,
-        [Parameter(Mandatory)][bool]$QuietMode,
+        [Parameter(Mandatory)][string]$SourceDir, [Parameter(Mandatory)][string]$DestinationDir,
+        [Parameter(Mandatory)][string]$Mode, [Parameter(Mandatory)][string]$Policy,
+        [Parameter(Mandatory)][int]$SafeNameMaxLen, [Parameter(Mandatory)][bool]$QuietMode,
         [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList,
         [int]$ThrottleLimit = 1
     )
@@ -21,17 +18,13 @@ function Invoke-ZipExtractions {
         return New-ExtractionSummary -ZipCount 0 -ProcessedZips 0 -FilesExtracted 0 -UncompressedBytes 0L -CompressedBytes 0L
     }
 
-    $dispatch = @($PSBoundParameters.GetEnumerator() |
-        Where-Object { $_.Key -ne 'SourceDir' } |
-        ForEach-Object { @{ Key = $_.Key; Value = $_.Value } })
-
     $sharedParams = @{}
-    foreach ($item in $dispatch) { $sharedParams[$item.Key] = $item.Value }
-    $sharedParams['Zips'] = $zips
-    $sharedParams['ZipCount'] = $zipCount
-
-    if ($ThrottleLimit -gt 1 -and -not $WhatIfPreference) {
-        return Invoke-ParallelZipExtractions @sharedParams
+    foreach ($entry in $PSBoundParameters.GetEnumerator()) {
+        if ($entry.Key -ne 'SourceDir') { $sharedParams[$entry.Key] = $entry.Value }
     }
+    $sharedParams.Zips = $zips
+    $sharedParams.ZipCount = $zipCount
+
+    if ($ThrottleLimit -gt 1 -and -not $WhatIfPreference) { return Invoke-ParallelZipExtractions @sharedParams }
     return Invoke-SerialZipExtractions @sharedParams
 }

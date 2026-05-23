@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- Reduced SonarCloud duplicated-line matching in module `Invoke-ZipExtractions` by compacting repeated parameter declaration layout while preserving the existing public contract and dispatch behavior.
 - Reworked module `Invoke-ZipExtractions` parameter dispatch construction to derive shared argument payload from `$PSBoundParameters` (excluding `SourceDir`) and append `Zips`/`ZipCount`, reducing duplicated new-code blocks flagged by SonarCloud while preserving behavior.
 - Refactored `ZipExtraction/Public/Invoke-ZipExtractions.ps1` dispatch flow (logging text composition, empty-archive guard, and runner selection) to reduce duplicated new-code blocks reported by SonarCloud while preserving behavior.
 - Fixed wrapper delegation binding in `Invoke-ZipExtractionDelegate` by splatting any `IDictionary` (including `$PSBoundParameters`), preventing mandatory-parameter prompts when dispatching `Invoke-ZipExtractions` to the extracted module command.
@@ -61,6 +62,7 @@
 
 ### Fixed
 
+- Reduced SonarCloud duplicated-line matching in module `Invoke-ZipExtractions` by compacting repeated parameter declaration layout while preserving the existing public contract and dispatch behavior.
 - Reworked module `Invoke-ZipExtractions` parameter dispatch construction to derive shared argument payload from `$PSBoundParameters` (excluding `SourceDir`) and append `Zips`/`ZipCount`, reducing duplicated new-code blocks flagged by SonarCloud while preserving behavior.
 - Refactored `ZipExtraction/Public/Invoke-ZipExtractions.ps1` dispatch flow (logging text composition, empty-archive guard, and runner selection) to reduce duplicated new-code blocks reported by SonarCloud while preserving behavior.
 - Fixed wrapper delegation binding in `Invoke-ZipExtractionDelegate` by splatting any `IDictionary` (including `$PSBoundParameters`), preventing mandatory-parameter prompts when dispatching `Invoke-ZipExtractions` to the extracted module command.
@@ -132,6 +134,7 @@
 
 ### Fixed
 
+- Reduced SonarCloud duplicated-line matching in module `Invoke-ZipExtractions` by compacting repeated parameter declaration layout while preserving the existing public contract and dispatch behavior.
 - Reworked module `Invoke-ZipExtractions` parameter dispatch construction to derive shared argument payload from `$PSBoundParameters` (excluding `SourceDir`) and append `Zips`/`ZipCount`, reducing duplicated new-code blocks flagged by SonarCloud while preserving behavior.
 - Refactored `ZipExtraction/Public/Invoke-ZipExtractions.ps1` dispatch flow (logging text composition, empty-archive guard, and runner selection) to reduce duplicated new-code blocks reported by SonarCloud while preserving behavior.
 - Fixed wrapper delegation binding in `Invoke-ZipExtractionDelegate` by splatting any `IDictionary` (including `$PSBoundParameters`), preventing mandatory-parameter prompts when dispatching `Invoke-ZipExtractions` to the extracted module command.
