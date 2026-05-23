@@ -29,11 +29,9 @@ except ImportError:
     print("Install with: pip install python-dateutil")
     sys.exit(1)
 
-from gdrive_constants import EXTENSION_MIME_TYPES, FOLDER_MIME_TYPE, MAX_RETRIES, PAGE_SIZE
+from gdrive_constants import EXTENSION_MIME_TYPES, FOLDER_MIME_TYPE, PAGE_SIZE
 from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
 from gdrive_retry import with_retries
-from googleapiclient.errors import HttpError
-
 if TYPE_CHECKING:
     from gdrive_auth import DriveAuthManager
 
@@ -145,17 +143,6 @@ class DriveTrashDiscovery:
         """Quick format check: Drive IDs are 25+ chars, [A-Za-z0-9_-]."""
         return re.match(r"[a-zA-Z0-9_-]{25,}$", file_id) is not None
 
-    def _extract_status_from_http_error(self, e: Exception):
-        return getattr(getattr(e, "resp", None), "status", None)
-
-    def _log_terminal_id_validation_error(self, e, file_id, status):
-        if isinstance(e, HttpError):
-            self.logger.error(
-                f"files.get(fileId={file_id}) failed during validation: HTTP {status}: {e}"
-            )
-        else:
-            self.logger.error(f"Validation error for fileId {file_id}: {e}")
-
     def _report_validation_outcome(
         self,
         buckets: Dict[str, List[str]],
@@ -210,37 +197,6 @@ class DriveTrashDiscovery:
         else:
             self._id_prefetch_non_trashed[fid] = True
             skipped_non_trashed[0] += 1
-
-    def _handle_prefetch_error(
-        self,
-        fid,
-        status,
-        e,
-        attempt,
-        buckets,
-        transient_errors,
-        transient_ids,
-        err_count,
-    ):
-        if status == 404:
-            buckets["not_found"].append(fid)
-            self._id_prefetch_errors[fid] = HTTP_404_LABEL
-            return True
-        if status == 403:
-            buckets["no_access"].append(fid)
-            self._id_prefetch_errors[fid] = HTTP_403_LABEL
-            return True
-        should_retry = status in (429, 500, 502, 503, 504)
-        if should_retry and attempt < MAX_RETRIES - 1:
-            self._log_fetch_metadata_retry(fid, e, status, attempt)
-            return False
-        transient_errors[0] += 1
-        transient_ids.append(fid)
-        self._id_prefetch_errors[fid] = self._format_fetch_metadata_error_with_context(
-            e, status, fid
-        )
-        err_count[0] += 1
-        return True
 
     def _should_skip_invalid_id(self, fid, buckets):
         if not self._is_valid_file_id_format(fid):
@@ -506,54 +462,6 @@ class DriveTrashDiscovery:
         if bool(self.args.after_date):
             base_fields.append("modifiedTime")
         return ", ".join(base_fields)
-
-    def _format_fetch_metadata_error_with_context(
-        self, e: Exception, status: Optional[int], fid: str
-    ) -> str:
-        if status is not None:
-            detail = getattr(e, "content", b"")
-            detail_str = detail.decode(errors="ignore") if hasattr(detail, "decode") else str(e)
-            return f"files.get(fileId={fid}) failed: HTTP {status}: {detail_str}"
-        else:
-            return f"files.get(fileId={fid}) failed: {e}"
-
-    def _log_fetch_metadata_retry(
-        self, fid: str, e: Exception, status: Optional[int], attempt: int
-    ):
-        self.logger.warning(
-            "Retry helper superseded this path for %s (HTTP %s, attempt %d): %s",
-            fid,
-            status,
-            attempt + 1,
-            e,
-        )
-
-    def _fetch_file_metadata(
-        self, service, fid: str, fields: str
-    ) -> Tuple[Optional[Dict[str, Any]], bool, Optional[str]]:
-        data, error, _ = with_retries(
-            lambda: self._execute(service.files().get(fileId=fid, fields=fields)),
-            logger=self.logger,
-            ctx=f"files.get(fileId={fid})",
-        )
-        if error is not None:
-            return None, False, error
-        if data.get("trashed", False):
-            return data, False, None
-        return None, True, None
-
-    def _handle_discover_id_result(
-        self, items, data, non_trashed, err, fid, skipped_non_trashed_ref, errors_ref
-    ):
-        if non_trashed:
-            skipped_non_trashed_ref[0] += 1
-            self.logger.debug(f"Skipping non-trashed file {fid}")
-            return
-        if err:
-            errors_ref[0] += 1
-            self.logger.error(f"Error fetching file {fid}: {err}")
-            return
-        self._append_item_if_valid(items, data)  # type: ignore[arg-type]
 
     def _maybe_print_discover_progress(self, idx, total, items, skipped, errors, start_time):
         if self.args.verbose < 1:

@@ -383,7 +383,6 @@ class DriveTrashRecoveryTool:
         self._streaming: bool = False
         self._processed_total: int = 0
         self._seen_total_ref: List[int] = [0]
-        self._last_discover_progress_ts: Optional[float] = None
         self._last_exec_progress_ts: Optional[float] = None
         # v1.12.0: authentication delegated to DriveAuthManager (issue #789)
         self.rate_limiter = RateLimiter(args, self.logger)

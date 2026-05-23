@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.2] - 2026-05-23
+
+### Removed
+
+- **Dead discovery helpers removed from `gdrive_discovery.py`:** Six private methods that were never reached in production have been deleted: `_extract_status_from_http_error`, `_log_terminal_id_validation_error`, `_handle_prefetch_error`, `_log_fetch_metadata_retry`, `_format_fetch_metadata_error_with_context`, and `_fetch_file_metadata`. All were leftovers from the migration to the shared `with_retries` helper; error classification and metadata fetching are handled entirely by `_fetch_and_handle_metadata` via `with_retries`. `_handle_discover_id_result` is also removed — it had no caller anywhere.
+- **Unused `_last_discover_progress_ts` attribute removed from `gdrive_recover.py`:** The attribute was declared in `DriveTrashRecoveryTool.__init__` but never read or written after discovery was extracted to `DriveTrashDiscovery` (which owns its own copy). No behavioural change.
+- **`HttpError` and `MAX_RETRIES` imports dropped from `gdrive_discovery.py`:** Both imports became unused once the dead helpers above were removed.
+- **Unit tests for the removed helpers deleted:** `test_handle_prefetch_error_retry_and_terminal`, `test_fetch_file_metadata_error_path`, and `test_error_formatting_and_status_extract` in `test_gdrive_recover.py` existed solely to exercise the deleted methods. Error-classification behaviour is already covered by `test_gdrive_discovery_retry_classification.py` via `_fetch_and_handle_metadata`.
+
 ## [1.26.1] - 2026-05-23
 
 ### Fixed
