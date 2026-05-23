@@ -39,6 +39,7 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[Core/Zip tests]** Relocated Zip module extraction tests from `Expand-ZipsAndClean.Tests.ps1` into dedicated `tests/powershell/modules/Core/Zip/Zip.Tests.ps1` for module-scoped ownership and clearer suite boundaries (issue #1076).
 - **[Expand-ZipsAndClean 2.5.2]** Replaced script-local `Write-PhaseProgress` usage with shared `Core/Progress` `Show-Progress` (via `Show-ProgressPhase` adapter) and added `Show-Progress -Suppress` for quiet-mode suppression (issue #1063).
   → Full detail: [Expand-ZipsAndClean.CHANGELOG.md](src/powershell/file-management/Expand-ZipsAndClean.CHANGELOG.md)
 - **[FileDistributor]** `SupportsShouldProcess` added to the entry script and to all
@@ -97,6 +98,7 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[Core/Zip tests]** Relocated Zip module extraction tests from `Expand-ZipsAndClean.Tests.ps1` into dedicated `tests/powershell/modules/Core/Zip/Zip.Tests.ps1` for module-scoped ownership and clearer suite boundaries (issue #1076).
 - **[PostgresBackup 2.1.0–2.1.2]** `pg_dump` path auto-detected (env override → `PGBIN` →
   `PATH` → Windows install roots, newest major first) replacing a hardcoded drive-specific path;
   cross-install-root version comparison fixed; `Resolve-PgDumpPath` refactored into single-
@@ -130,6 +132,7 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[Core/Zip tests]** Relocated Zip module extraction tests from `Expand-ZipsAndClean.Tests.ps1` into dedicated `tests/powershell/modules/Core/Zip/Zip.Tests.ps1` for module-scoped ownership and clearer suite boundaries (issue #1076).
 - **[requirements / tooling]** Python 3.14 compatibility pass: numpy widened to
   `>=2.3.0,<3.0.0`; opencv relaxed to `>=4.13.0,<5.0.0`; `psycopg2` switched to
   `psycopg2-binary`; `oauth2client` removed (unmaintained, covered by `google-auth`);
@@ -179,6 +182,7 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[Core/Zip tests]** Relocated Zip module extraction tests from `Expand-ZipsAndClean.Tests.ps1` into dedicated `tests/powershell/modules/Core/Zip/Zip.Tests.ps1` for module-scoped ownership and clearer suite boundaries (issue #1076).
 - **FileDistributor state/lock modularization + PurgeLogs integration**
   - Moved state helpers to `FileManagement/FileDistributor/Private/State.ps1` and lock helpers
     to `Private/FileLock.ps1`.
@@ -199,6 +203,7 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[Core/Zip tests]** Relocated Zip module extraction tests from `Expand-ZipsAndClean.Tests.ps1` into dedicated `tests/powershell/modules/Core/Zip/Zip.Tests.ps1` for module-scoped ownership and clearer suite boundaries (issue #1076).
 - **FileDistributor Main decomposition + shared helpers**
   - `Main` decomposed into 6 phase functions: `Invoke-ParameterValidation`,
     `Invoke-RestoreCheckpoint`, `Invoke-DistributionPhase`, `Invoke-PostProcessingPhase`,

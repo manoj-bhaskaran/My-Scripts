@@ -120,3 +120,16 @@ $count = Expand-ZipSmart -ZipPath 'C:\archives\data.zip' `
     -ExtractMode PerArchiveSubfolder `
     -ExpectedFileCount $stats.FileCount
 ```
+
+
+## Tests
+
+Core/Zip module tests live in:
+
+- `tests/powershell/modules/Core/Zip/Zip.Tests.ps1`
+
+Run only this module's tests with:
+
+```powershell
+Invoke-Pester -Path tests/powershell/modules/Core/Zip/Zip.Tests.ps1
+```

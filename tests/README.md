@@ -22,7 +22,9 @@ tests/
 │   └── conftest.py        # Pytest configuration and fixtures
 ├── powershell/
 │   ├── file-management/   # Tests for file-management scripts
-│   │   └── Expand-ZipsAndClean.Tests.ps1   # Extraction helpers, collision policies, preconditions, smoke
+│   │   └── Expand-ZipsAndClean.Tests.ps1   # Script orchestration, cleanup helpers, preconditions, smoke
+│   ├── modules/
+│   │   └── Core/Zip/Zip.Tests.ps1          # Core/Zip module extraction helpers and collision policies
 │   ├── unit/              # PowerShell unit tests
 │   │   ├── ErrorHandling.Tests.ps1
 │   │   ├── FileDistributor.Tests.ps1
