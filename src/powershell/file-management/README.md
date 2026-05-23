@@ -56,6 +56,7 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
   - Improved wrapper module discovery by deriving the ZipExtraction path from the loaded `FileSystem` module root when direct script/cwd-relative resolution is unavailable.
   - Added a helper-load fallback that dot-sources `ZipExtraction` Public/Private function files directly when module-name resolution is unavailable in test harness contexts, with non-wrapper command resolution to avoid recursive wrapper dispatch.
   - Added module-scope no-op logging fallbacks (`Write-LogInfo`/`Write-LogDebug`) so helper-load/test contexts can run extraction orchestration even when logging framework functions are not present in module scope.
+  - Added module-scope `Show-ProgressPhase` fallback so extracted orchestration functions run when script-local progress helpers are unavailable in helper-load contexts.
 
 - **Expand-ZipsAndClean.ps1 v2.6.0** (2026-05-23)
   - Extracted ZIP extraction orchestration helpers into new `FileManagement/ZipExtraction` module.

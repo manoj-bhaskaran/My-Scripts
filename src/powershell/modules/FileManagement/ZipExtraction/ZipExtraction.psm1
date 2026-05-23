@@ -10,6 +10,20 @@ if (-not (Get-Command -Name Write-LogDebug -ErrorAction SilentlyContinue)) {
     function Write-LogDebug { param([string]$Message) }
 }
 
+if (-not (Get-Command -Name Show-ProgressPhase -ErrorAction SilentlyContinue)) {
+    function Show-ProgressPhase {
+        param(
+            [Parameter(Mandatory)][string]$Activity,
+            [Parameter(Mandatory)][string]$Status,
+            [Parameter(Mandatory)][int]$Current,
+            [Parameter(Mandatory)][int]$Total,
+            [Parameter(Mandatory)][bool]$QuietMode,
+            [switch]$Completed
+        )
+        if ($QuietMode) { return }
+    }
+}
+
 $privateDir = Join-Path $PSScriptRoot 'Private'
 if (Test-Path -LiteralPath $privateDir) {
     Get-ChildItem -Path $privateDir -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
