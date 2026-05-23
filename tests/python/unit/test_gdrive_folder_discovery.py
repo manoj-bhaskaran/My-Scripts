@@ -463,8 +463,20 @@ def test_discover_via_query_returns_partial_on_exception():
     """Items collected before a pagination error must not be discarded."""
     disc = _make_discovery_trash()
     page1 = [
-        {"id": "a", "name": "a.txt", "mimeType": "text/plain", "createdTime": "2024-01-01T00:00:00Z", "size": 1},
-        {"id": "b", "name": "b.txt", "mimeType": "text/plain", "createdTime": "2024-01-01T00:00:00Z", "size": 2},
+        {
+            "id": "a",
+            "name": "a.txt",
+            "mimeType": "text/plain",
+            "createdTime": "2024-01-01T00:00:00Z",
+            "size": 1,
+        },
+        {
+            "id": "b",
+            "name": "b.txt",
+            "mimeType": "text/plain",
+            "createdTime": "2024-01-01T00:00:00Z",
+            "size": 2,
+        },
     ]
 
     def _pages(_query):
