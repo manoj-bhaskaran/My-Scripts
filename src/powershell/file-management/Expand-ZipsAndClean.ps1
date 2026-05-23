@@ -416,7 +416,7 @@ function Invoke-ZipExtractionDelegate {
         [Parameter(Mandatory)]$Parameters
     )
     $cmd = Get-ZipExtractionCommand -Name $Name
-    if ($Parameters -is [hashtable]) { return (& $cmd @Parameters) }
+    if ($Parameters -is [System.Collections.IDictionary]) { return (& $cmd @Parameters) }
     if ($Parameters -is [array]) { return (& $cmd @Parameters) }
     return (& $cmd $Parameters)
 }

@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- Fixed wrapper delegation binding in `Invoke-ZipExtractionDelegate` by splatting any `IDictionary` (including `$PSBoundParameters`), preventing mandatory-parameter prompts when dispatching `Invoke-ZipExtractions` to the extracted module command.
 - Reduced new-code duplication by simplifying script-local `Invoke-ParallelZipExtractions`/`Invoke-SerialZipExtractions` wrappers to argument-pass-through delegators and extending `Invoke-ZipExtractionDelegate` to handle non-hashtable forwarded arguments.
 - Refactored `Get-ZipExtractionCommand` into smaller helper functions (`Resolve-NonWrapperZipExtractionCommand`, `Get-ZipExtractionModuleCandidates`, `Import-ZipExtractionFallbackFiles`) to reduce cognitive complexity while preserving helper-load resilience and non-wrapper command selection safeguards.
 - Reduced wrapper duplication by introducing `Invoke-ZipExtractionDelegate` and routing wrapper calls through `@PSBoundParameters` delegation.
@@ -58,6 +59,7 @@
 
 ### Fixed
 
+- Fixed wrapper delegation binding in `Invoke-ZipExtractionDelegate` by splatting any `IDictionary` (including `$PSBoundParameters`), preventing mandatory-parameter prompts when dispatching `Invoke-ZipExtractions` to the extracted module command.
 - Reduced new-code duplication by simplifying script-local `Invoke-ParallelZipExtractions`/`Invoke-SerialZipExtractions` wrappers to argument-pass-through delegators and extending `Invoke-ZipExtractionDelegate` to handle non-hashtable forwarded arguments.
 - Refactored `Get-ZipExtractionCommand` into smaller helper functions (`Resolve-NonWrapperZipExtractionCommand`, `Get-ZipExtractionModuleCandidates`, `Import-ZipExtractionFallbackFiles`) to reduce cognitive complexity while preserving helper-load resilience and non-wrapper command selection safeguards.
 - Reduced wrapper duplication by introducing `Invoke-ZipExtractionDelegate` and routing wrapper calls through `@PSBoundParameters` delegation.
@@ -126,6 +128,7 @@
 
 ### Fixed
 
+- Fixed wrapper delegation binding in `Invoke-ZipExtractionDelegate` by splatting any `IDictionary` (including `$PSBoundParameters`), preventing mandatory-parameter prompts when dispatching `Invoke-ZipExtractions` to the extracted module command.
 - Reduced new-code duplication by simplifying script-local `Invoke-ParallelZipExtractions`/`Invoke-SerialZipExtractions` wrappers to argument-pass-through delegators and extending `Invoke-ZipExtractionDelegate` to handle non-hashtable forwarded arguments.
 - Refactored `Get-ZipExtractionCommand` into smaller helper functions (`Resolve-NonWrapperZipExtractionCommand`, `Get-ZipExtractionModuleCandidates`, `Import-ZipExtractionFallbackFiles`) to reduce cognitive complexity while preserving helper-load resilience and non-wrapper command selection safeguards.
 - Reduced wrapper duplication by introducing `Invoke-ZipExtractionDelegate` and routing wrapper calls through `@PSBoundParameters` delegation.

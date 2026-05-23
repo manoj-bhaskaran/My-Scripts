@@ -60,6 +60,7 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
   - Added module-scope `New-ExtractionSummary` fallback so extracted orchestration helpers can build summary payloads even when script-local summary helpers are unavailable in helper-load contexts.
   - Refactored wrapper resolver logic into smaller helper functions and centralized wrapper delegation through a shared helper to reduce complexity/duplication while preserving behavior.
   - Simplified serial/parallel script wrappers to pass-through argument delegation to further reduce duplication on new code for static analysis quality gates.
+  - Fixed delegate splatting to treat `$PSBoundParameters` as an `IDictionary`, restoring proper mandatory-parameter binding when wrappers call extracted module commands.
 
 - **Expand-ZipsAndClean.ps1 v2.6.0** (2026-05-23)
   - Extracted ZIP extraction orchestration helpers into new `FileManagement/ZipExtraction` module.
