@@ -597,3 +597,89 @@ Describe 'Test-ScriptPreconditions' {
             Should -Throw "*Source cannot be inside the destination*"
     }
 }
+
+Describe 'Resolve-MoveTarget' {
+    BeforeAll {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
+        $scriptText = Get-Content -LiteralPath $scriptPath -Raw
+
+        $helpersStart = $scriptText.IndexOf('#region Helpers')
+        $helpersEnd   = $scriptText.IndexOf('#endregion Helpers')
+        if ($helpersStart -lt 0 -or $helpersEnd -lt 0) {
+            throw 'Failed to locate helpers region in Expand-ZipsAndClean.ps1'
+        }
+
+        $helpers = $scriptText.Substring($helpersStart, $helpersEnd - $helpersStart)
+        $usingLines = ($scriptText -split "`n" |
+            Where-Object { $_ -match '^\s*using\s+namespace\s+' }) -join "`n"
+        $helpersWithUsing = $usingLines + "`n" + $helpers
+
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+
+        function Write-LogDebug { param([string]$Message) }
+        . ([ScriptBlock]::Create($helpersWithUsing))
+    }
+
+    It 'returns PolicyTag None and canonical TargetPath when no collision' {
+        $parentDir = Join-Path $TestDrive 'rmt-no-coll'
+        New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+        $zipPath = Join-Path $TestDrive 'rmt-no-coll-src.zip'
+        Set-Content -LiteralPath $zipPath -Value 'x' -NoNewline
+        $zip = Get-Item -LiteralPath $zipPath
+
+        $result = Resolve-MoveTarget -Zip $zip -Parent $parentDir -CollisionPolicy 'Rename'
+
+        $result.PolicyTag  | Should -Be 'None'
+        $result.TargetPath | Should -Be (Join-Path $parentDir 'rmt-no-coll-src.zip')
+    }
+
+    It 'returns PolicyTag Skip and unchanged TargetPath when collision and policy is Skip' {
+        $parentDir = Join-Path $TestDrive 'rmt-skip'
+        New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $parentDir 'dup.zip') -Value 'existing' -NoNewline
+        $zipPath = Join-Path $TestDrive 'rmt-skip-src.zip'
+        Set-Content -LiteralPath $zipPath -Value 'new' -NoNewline
+        # Rename to collide with the parent file
+        Rename-Item -LiteralPath $zipPath -NewName 'dup.zip'
+        $zip = Get-Item -LiteralPath (Join-Path $TestDrive 'dup.zip')
+
+        $result = Resolve-MoveTarget -Zip $zip -Parent $parentDir -CollisionPolicy 'Skip'
+
+        $result.PolicyTag  | Should -Be 'Skip'
+        $result.TargetPath | Should -Be (Join-Path $parentDir 'dup.zip')
+    }
+
+    It 'returns PolicyTag Overwrite and unchanged TargetPath when collision and policy is Overwrite' {
+        $parentDir = Join-Path $TestDrive 'rmt-overwrite'
+        New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $parentDir 'ow.zip') -Value 'existing' -NoNewline
+        $zipPath = Join-Path $TestDrive 'rmt-overwrite-src.zip'
+        Set-Content -LiteralPath $zipPath -Value 'new' -NoNewline
+        Rename-Item -LiteralPath $zipPath -NewName 'ow.zip'
+        $zip = Get-Item -LiteralPath (Join-Path $TestDrive 'ow.zip')
+
+        $result = Resolve-MoveTarget -Zip $zip -Parent $parentDir -CollisionPolicy 'Overwrite'
+
+        $result.PolicyTag  | Should -Be 'Overwrite'
+        $result.TargetPath | Should -Be (Join-Path $parentDir 'ow.zip')
+    }
+
+    It 'returns PolicyTag Rename and a unique TargetPath when collision and policy is Rename' {
+        $parentDir = Join-Path $TestDrive 'rmt-rename'
+        New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $parentDir 'rn.zip') -Value 'existing' -NoNewline
+        $zipPath = Join-Path $TestDrive 'rmt-rename-src.zip'
+        Set-Content -LiteralPath $zipPath -Value 'new' -NoNewline
+        Rename-Item -LiteralPath $zipPath -NewName 'rn.zip'
+        $zip = Get-Item -LiteralPath (Join-Path $TestDrive 'rn.zip')
+
+        $result = Resolve-MoveTarget -Zip $zip -Parent $parentDir -CollisionPolicy 'Rename'
+
+        $result.PolicyTag  | Should -Be 'Rename'
+        $result.TargetPath | Should -Not -Be (Join-Path $parentDir 'rn.zip')
+        $result.TargetPath | Should -BeLike (Join-Path $parentDir 'rn*')
+    }
+}

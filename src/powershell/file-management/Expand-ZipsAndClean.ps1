@@ -122,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.6.0
+    Version  : 2.6.1
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -575,6 +575,38 @@ function Remove-SourceDirectory {
 
 <#
 .SYNOPSIS
+    Resolves the move target path and collision policy for a single zip file.
+.DESCRIPTION
+    Determines the destination path for moving a zip file to the parent directory,
+    applying the collision policy when a file with the same name already exists.
+    Returns an object with TargetPath (the resolved destination) and PolicyTag
+    (None / Skip / Overwrite / Rename). The caller is responsible for performing
+    the actual move and updating counters.
+#>
+function Resolve-MoveTarget {
+    param(
+        [Parameter(Mandatory)][System.IO.FileInfo]$Zip,
+        [Parameter(Mandatory)][string]$Parent,
+        [Parameter(Mandatory)][ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy
+    )
+
+    $target    = Join-Path $Parent $Zip.Name
+    $policyTag = 'None'
+
+    if ([System.IO.File]::Exists($target)) {
+        $policyTag = $CollisionPolicy
+        if ($CollisionPolicy -eq 'Skip') {
+            Write-LogDebug "Move skip (collision): '$($Zip.Name)' already exists in parent."
+        } elseif ($CollisionPolicy -eq 'Rename') {
+            $target = Resolve-UniquePath -Path $target
+        }
+    }
+
+    return [pscustomobject]@{ TargetPath = $target; PolicyTag = $policyTag }
+}
+
+<#
+.SYNOPSIS
     Moves .zip files from SourceDir to its parent folder with per-file progress.
 
 .PARAMETER SourceDir
@@ -633,25 +665,16 @@ function Move-ZipFilesToParent {
             -Current $idx -Total $total -QuietMode $QuietMode `
             -CurrentOperation ("Moving: {0} of {1} bytes" -f (Format-Bytes ($bytes + $zf.Length)), (Format-Bytes $totalBytes))
 
-        $target = Join-Path $parent $zf.Name
-        $collides = [System.IO.File]::Exists($target)
-        $useForce = $false
+        $mt = Resolve-MoveTarget -Zip $zf -Parent $parent -CollisionPolicy $CollisionPolicy
 
-        if ($collides) {
-            if ($CollisionPolicy -eq 'Skip') {
-                Write-LogDebug "Move skip (collision): '$($zf.Name)' already exists in parent."
-                $skipped++
-                continue
-            } elseif ($CollisionPolicy -eq 'Overwrite') {
-                $useForce = $true
-                $overwritten++
-            } elseif ($CollisionPolicy -eq 'Rename') {
-                $target = Resolve-UniquePath -Path $target
-                $renamed++
-            }
+        if ($mt.PolicyTag -eq 'Skip') {
+            $skipped++
+            continue
         }
 
-        Move-FileWithRetry -Source $zf.FullName -Destination $target -Force:$useForce
+        Move-FileWithRetry -Source $zf.FullName -Destination $mt.TargetPath -Force:($mt.PolicyTag -eq 'Overwrite')
+        if ($mt.PolicyTag -eq 'Overwrite') { $overwritten++ }
+        elseif ($mt.PolicyTag -eq 'Rename') { $renamed++ }
         $moved++
         $bytes += $zf.Length
     }
