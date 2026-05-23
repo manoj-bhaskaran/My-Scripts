@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- Strengthened `Get-ZipExtractionCommand` with upward directory probing from `$PSScriptRoot`, current directory, and loaded `FileSystem` module path to locate `src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1` across helper-only test execution contexts where previous direct candidates could still miss.
 - Added a final fallback module locator in `Get-ZipExtractionCommand` that searches from loaded-module/cwd roots for `ZipExtraction.psm1` when direct candidates are unavailable, preventing remaining helper-load `ZipExtraction` resolution failures in parallel extraction tests.
 - Improved `Get-ZipExtractionCommand` module discovery to derive a `ZipExtraction.psm1` candidate from the already-loaded `FileSystem` module path, ensuring helper-region test loads can resolve module commands when neither `$PSScriptRoot` nor working-directory relative candidates are valid.
 - Hardened `Get-ZipExtractionCommand` candidate-path construction to avoid passing empty base paths to `Join-Path` in helper-only test loads, fixing `Cannot bind argument to parameter 'Path' because it is an empty string.` failures in parallel extraction tests.
@@ -49,6 +50,7 @@
 
 ### Fixed
 
+- Strengthened `Get-ZipExtractionCommand` with upward directory probing from `$PSScriptRoot`, current directory, and loaded `FileSystem` module path to locate `src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1` across helper-only test execution contexts where previous direct candidates could still miss.
 - Added a final fallback module locator in `Get-ZipExtractionCommand` that searches from loaded-module/cwd roots for `ZipExtraction.psm1` when direct candidates are unavailable, preventing remaining helper-load `ZipExtraction` resolution failures in parallel extraction tests.
 - Improved `Get-ZipExtractionCommand` module discovery to derive a `ZipExtraction.psm1` candidate from the already-loaded `FileSystem` module path, ensuring helper-region test loads can resolve module commands when neither `$PSScriptRoot` nor working-directory relative candidates are valid.
 - Hardened `Get-ZipExtractionCommand` candidate-path construction to avoid passing empty base paths to `Join-Path` in helper-only test loads, fixing `Cannot bind argument to parameter 'Path' because it is an empty string.` failures in parallel extraction tests.
@@ -108,6 +110,7 @@
 
 ### Fixed
 
+- Strengthened `Get-ZipExtractionCommand` with upward directory probing from `$PSScriptRoot`, current directory, and loaded `FileSystem` module path to locate `src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1` across helper-only test execution contexts where previous direct candidates could still miss.
 - Added a final fallback module locator in `Get-ZipExtractionCommand` that searches from loaded-module/cwd roots for `ZipExtraction.psm1` when direct candidates are unavailable, preventing remaining helper-load `ZipExtraction` resolution failures in parallel extraction tests.
 - Improved `Get-ZipExtractionCommand` module discovery to derive a `ZipExtraction.psm1` candidate from the already-loaded `FileSystem` module path, ensuring helper-region test loads can resolve module commands when neither `$PSScriptRoot` nor working-directory relative candidates are valid.
 - Hardened `Get-ZipExtractionCommand` candidate-path construction to avoid passing empty base paths to `Join-Path` in helper-only test loads, fixing `Cannot bind argument to parameter 'Path' because it is an empty string.` failures in parallel extraction tests.

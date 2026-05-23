@@ -327,61 +327,52 @@ function Get-ZipExtractionCommand {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Name)
 
-    $module = Get-Module -Name ZipExtraction -ErrorAction SilentlyContinue
-    if (-not $module) {
-        $candidates = [System.Collections.Generic.List[string]]::new()
-        if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
-            $candidates.Add((Join-Path $PSScriptRoot '..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1')) | Out-Null
-        }
-
-        $fileSystemModulePath = (Get-Module -Name FileSystem -ErrorAction SilentlyContinue)?.Path
-        if (-not [string]::IsNullOrWhiteSpace($fileSystemModulePath)) {
-            $modulesRoot = Split-Path -Path (Split-Path -Path (Split-Path -Path $fileSystemModulePath -Parent) -Parent) -Parent
-            if (-not [string]::IsNullOrWhiteSpace($modulesRoot)) {
-                $candidates.Add((Join-Path $modulesRoot 'FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
-            }
-        }
-
-        $cwdPath = (Get-Location).Path
-        if (-not [string]::IsNullOrWhiteSpace($cwdPath)) {
-            $candidates.Add((Join-Path $cwdPath 'src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
-        }
-
-        $imported = $false
-        foreach ($candidate in ($candidates | Select-Object -Unique)) {
-            if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate)) {
-                Import-Module -Name $candidate -Force -ErrorAction Stop
-                $imported = $true
-                break
-            }
-        }
-
-        if (-not $imported) {
-            $searchRoots = [System.Collections.Generic.List[string]]::new()
-            if (-not [string]::IsNullOrWhiteSpace($fileSystemModulePath)) {
-                $searchRoots.Add((Split-Path -Path $fileSystemModulePath -Parent)) | Out-Null
-            }
-            if (-not [string]::IsNullOrWhiteSpace($cwdPath)) {
-                $searchRoots.Add($cwdPath) | Out-Null
-            }
-
-            foreach ($root in ($searchRoots | Select-Object -Unique)) {
-                if (-not [string]::IsNullOrWhiteSpace($root) -and (Test-Path -LiteralPath $root)) {
-                    $found = Get-ChildItem -LiteralPath $root -Filter 'ZipExtraction.psm1' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
-                    if ($found) {
-                        Import-Module -Name $found.FullName -Force -ErrorAction Stop
-                        break
-                    }
-                }
-            }
-        }
-    }
-
     $cmd = Get-Command -Name $Name -Module ZipExtraction -ErrorAction SilentlyContinue
-    if (-not $cmd) {
-        throw "The module 'ZipExtraction' could not be loaded. For more information, run 'Import-Module ZipExtraction'."
+    if ($cmd) { return $cmd }
+
+    function Add-CandidateFromUpwardSearch {
+        param(
+            [Parameter(Mandatory)][string]$StartPath,
+            [Parameter(Mandatory)][System.Collections.Generic.List[string]]$Candidates
+        )
+        if ([string]::IsNullOrWhiteSpace($StartPath) -or -not (Test-Path -LiteralPath $StartPath)) { return }
+        $dir = if (Test-Path -LiteralPath $StartPath -PathType Leaf) { Split-Path -Path $StartPath -Parent } else { $StartPath }
+        while (-not [string]::IsNullOrWhiteSpace($dir)) {
+            $candidate = Join-Path $dir 'src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1'
+            $Candidates.Add($candidate) | Out-Null
+            $parent = Split-Path -Path $dir -Parent
+            if ($parent -eq $dir) { break }
+            $dir = $parent
+        }
     }
-    return $cmd
+
+    $candidates = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        $candidates.Add((Join-Path $PSScriptRoot '..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1')) | Out-Null
+        Add-CandidateFromUpwardSearch -StartPath $PSScriptRoot -Candidates $candidates
+    }
+
+    $fileSystemModulePath = (Get-Module -Name FileSystem -ErrorAction SilentlyContinue)?.Path
+    if (-not [string]::IsNullOrWhiteSpace($fileSystemModulePath)) {
+        $candidates.Add((Join-Path (Split-Path -Path (Split-Path -Path $fileSystemModulePath -Parent) -Parent) 'FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
+        Add-CandidateFromUpwardSearch -StartPath $fileSystemModulePath -Candidates $candidates
+    }
+
+    $cwdPath = (Get-Location).Path
+    if (-not [string]::IsNullOrWhiteSpace($cwdPath)) {
+        $candidates.Add((Join-Path $cwdPath 'src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
+        Add-CandidateFromUpwardSearch -StartPath $cwdPath -Candidates $candidates
+    }
+
+    foreach ($candidate in ($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)) {
+        if (Test-Path -LiteralPath $candidate) {
+            Import-Module -Name $candidate -Force -ErrorAction SilentlyContinue
+            $cmd = Get-Command -Name $Name -Module ZipExtraction -ErrorAction SilentlyContinue
+            if ($cmd) { return $cmd }
+        }
+    }
+
+    throw "The module 'ZipExtraction' could not be loaded. For more information, run 'Import-Module ZipExtraction'."
 }
 
 function Invoke-ParallelZipExtractions {
