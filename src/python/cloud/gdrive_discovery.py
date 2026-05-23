@@ -132,7 +132,7 @@ class DriveTrashDiscovery:
             if after_dt.tzinfo is None:
                 after_dt = after_dt.replace(tzinfo=timezone.utc)
             return modified_dt > after_dt
-        except Exception as e:
+        except (ValueError, TypeError, OverflowError) as e:
             self.logger.warning(f"Error applying time filter: {e}")
             return True
 
@@ -375,7 +375,7 @@ class DriveTrashDiscovery:
             out_file = getattr(self.args, "parity_metrics_file", None)
             if out_file:
                 try:
-                    with open(out_file, "w") as fh:
+                    with open(out_file, "w", encoding="utf-8") as fh:
                         json.dump(metrics, fh, indent=2)
                 except Exception as e:
                     self.logger.warning(
@@ -474,7 +474,7 @@ class DriveTrashDiscovery:
         item = RecoveryItem(
             id=str(file_id),
             name=file_data.get("name", "Unknown"),
-            size=int(file_data.get("size", 0)),
+            size=int(file_data.get("size") or 0),
             mime_type=file_data.get("mimeType", ""),
             created_time=file_data.get("createdTime", ""),
             will_recover=will_recover,
@@ -667,7 +667,6 @@ class DriveTrashDiscovery:
                     break
         except Exception as e:
             self.logger.error(f"Error discovering files: {e}")
-            return []
         return items
 
     def discover_trashed_files(self) -> List[RecoveryItem]:
@@ -930,7 +929,19 @@ class DriveTrashDiscovery:
         total_ids = len(self.args.file_ids or [])
         start_ts = time.time()
         for idx, fid in enumerate(self.args.file_ids, start=1):
+            if fid in self._id_prefetch_errors:
+                self.logger.error("Error fetching file %s: %s", fid, self._id_prefetch_errors[fid])
+                with self._stats_lock:
+                    self._stats["errors"] += 1
+                ok = False
+                start_ts = self._maybe_print_streaming_id_progress(idx, total_ids, start_ts)
+                continue
+            if self._id_prefetch_non_trashed.get(fid, False):
+                start_ts = self._maybe_print_streaming_id_progress(idx, total_ids, start_ts)
+                continue
             data = self._handle_streaming_id_fetch(fid, fields, service)
+            if data is None:
+                ok = False
             item = self._process_file_data(data) if data else None
             self._handle_streaming_id_item(item, batch, batch_n, start_time)
             start_ts = self._maybe_print_streaming_id_progress(idx, total_ids, start_ts)
