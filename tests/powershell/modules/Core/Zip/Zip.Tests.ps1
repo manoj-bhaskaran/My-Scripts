@@ -2,8 +2,8 @@ Set-StrictMode -Version Latest
 
 Describe 'Core/Zip module — public extraction functions' {
     BeforeAll {
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
     }
 

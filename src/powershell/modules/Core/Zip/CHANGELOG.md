@@ -8,6 +8,10 @@ All notable changes to this module are documented here.
 
 - Test suite extraction: moved Core/Zip behavioural tests out of `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1` into dedicated `tests/powershell/modules/Core/Zip/Zip.Tests.ps1` (issue #1076).
 
+### Fixed
+
+- Corrected relative import paths in `tests/powershell/modules/Core/Zip/Zip.Tests.ps1` so module imports resolve from the new test directory depth (issue #1076).
+
 ## [1.0.0] — 2026-05-17
 
 ### Added
