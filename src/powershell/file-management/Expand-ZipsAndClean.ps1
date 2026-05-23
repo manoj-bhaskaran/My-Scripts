@@ -122,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.5.4
+    Version  : 2.6.0
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -182,6 +182,7 @@ Import-Module "$PSScriptRoot\..\modules\Core\FileSystem\FileSystem.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\Zip\Zip.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\Progress\ProgressReporter.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1" -Force
 
 # Initialize logger (script name will be extracted from the script file name)
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
@@ -319,197 +320,117 @@ function New-ExtractionSummary {
 
 <#
 .SYNOPSIS
-    Runs zip extraction inside a ForEach-Object -Parallel runspace.
-.NOTES
-    Serialized via ${function:Expand-ZipInRunspace} and dot-sourced inside each
-    runspace. The logging framework is not thread-safe, so log lines are
-    collected in $localLogs and flushed by the caller after the parallel loop.
-    I/O contention: concurrent writes to the same DestDir may degrade throughput
-    on spinning-disk systems; SSDs and NVMe drives are not materially affected.
-#>
-function Expand-ZipInRunspace {
-    param(
-        [Parameter(Mandatory)][System.IO.FileInfo]$Zip,
-        [Parameter(Mandatory)][string]$DestDir,
-        [Parameter(Mandatory)][string]$Mode,
-        [Parameter(Mandatory)][string]$Policy,
-        [Parameter(Mandatory)][int]$MaxLen,
-        [string]$FsModulePath,
-        [string]$ZipModulePath,
-        [Parameter(Mandatory)][System.Collections.Concurrent.ConcurrentBag[string]]$ErrorBag
-    )
-    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
-    if ($FsModulePath)  { Import-Module $FsModulePath  -Force }
-    if ($ZipModulePath) { Import-Module $ZipModulePath -Force }
-
-    $localLogs = [System.Collections.Generic.List[string]]::new()
-    try {
-        $stats        = Get-ZipFileStats -ZipPath $Zip.FullName
-        $filesFromZip = Expand-ZipSmart -ZipPath $Zip.FullName -DestinationRoot $DestDir `
-            -ExtractMode $Mode -CollisionPolicy $Policy -SafeNameMaxLen $MaxLen `
-            -ExpectedFileCount $stats.FileCount
-        $actualFiles  = ($filesFromZip -is [int]) ? $filesFromZip : $stats.FileCount
-        $localLogs.Add("Extracted '$($Zip.Name)': files=$($stats.FileCount), uncompressed=$($stats.UncompressedBytes), compressed=$($stats.CompressedBytes)")
-        return [pscustomobject]@{
-            Success           = $true
-            FilesExtracted    = $actualFiles
-            UncompressedBytes = $stats.UncompressedBytes
-            CompressedBytes   = $stats.CompressedBytes
-            Logs              = $localLogs.ToArray()
-        }
-    } catch {
-        $ErrorBag.Add("Extraction failed for '$($Zip.FullName)': $($_.Exception.Message)") | Out-Null
-        $localLogs.Add("Extraction error for '$($Zip.Name)': $($_.Exception.Message)")
-        return [pscustomobject]@{
-            Success           = $false
-            FilesExtracted    = 0
-            UncompressedBytes = [int64]0
-            CompressedBytes   = [int64]0
-            Logs              = $localLogs.ToArray()
-        }
-    }
-}
-
-<#
-.SYNOPSIS
     Aggregates per-runspace results into a single summary object.
 #>
-function Merge-ParallelZipResults {
+# ZIP extraction orchestration moved to FileManagement/ZipExtraction module (issue #1065).
+function Resolve-NonWrapperZipExtractionCommand {
     param(
-        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Results,
-        [Parameter(Mandatory)][int]$ZipCount,
-        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList,
-        [Parameter(Mandatory)][System.Collections.Concurrent.ConcurrentBag[string]]$ConcurrentErrors
+        [Parameter(Mandatory)][string]$CommandName,
+        [string]$ExcludeScriptPath
     )
-    $processedZips           = 0
-    $totalFilesExtracted     = 0
-    $totalUncompressedBytes  = [int64]0
-    $totalCompressedZipBytes = [int64]0
 
-    foreach ($r in $Results) {
-        foreach ($log in $r.Logs) { Write-LogDebug $log }
-        if ($r.Success) {
-            $processedZips++
-            $totalFilesExtracted     += $r.FilesExtracted
-            $totalUncompressedBytes  += $r.UncompressedBytes
-            $totalCompressedZipBytes += $r.CompressedBytes
+    $all = @(Get-Command -Name $CommandName -All -ErrorAction SilentlyContinue)
+    foreach ($candidate in $all) {
+        if ($candidate.Source -eq 'ZipExtraction') { return $candidate }
+        $file = $candidate.ScriptBlock?.File
+        if (-not [string]::IsNullOrWhiteSpace($file) -and $file -ne $ExcludeScriptPath -and $file -like '*modules*FileManagement*ZipExtraction*') {
+            return $candidate
         }
     }
-    foreach ($e in $ConcurrentErrors) { $ErrorList.Add($e) | Out-Null }
-    Write-LogInfo "Parallel extraction complete: $processedZips / $ZipCount archive(s) processed."
-    return New-ExtractionSummary -ZipCount $ZipCount -ProcessedZips $processedZips `
-        -FilesExtracted $totalFilesExtracted -UncompressedBytes $totalUncompressedBytes `
-        -CompressedBytes $totalCompressedZipBytes
+    return $null
 }
 
-<#
-.SYNOPSIS
-    Runs ForEach-Object -Parallel extraction and returns aggregated summary totals.
-#>
+function Get-ZipExtractionModuleCandidates {
+    param([string]$FileSystemModulePath)
+
+    $candidates = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        $candidates.Add((Join-Path $PSScriptRoot '..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1')) | Out-Null
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($FileSystemModulePath)) {
+        $modulesRoot = Split-Path -Path (Split-Path -Path $FileSystemModulePath -Parent) -Parent
+        if (-not [string]::IsNullOrWhiteSpace($modulesRoot)) {
+            $candidates.Add((Join-Path $modulesRoot 'FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
+        }
+    }
+
+    $cwdPath = (Get-Location).Path
+    if (-not [string]::IsNullOrWhiteSpace($cwdPath)) {
+        $candidates.Add((Join-Path $cwdPath 'src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
+    }
+
+    return @($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+function Import-ZipExtractionFallbackFiles {
+    param([string]$FileSystemModulePath)
+
+    $cwdPath = (Get-Location).Path
+    $zipExtractionRoot = $null
+    if (-not [string]::IsNullOrWhiteSpace($FileSystemModulePath)) {
+        $coreModulesRoot = Split-Path -Path (Split-Path -Path $FileSystemModulePath -Parent) -Parent
+        if ($coreModulesRoot) { $zipExtractionRoot = Join-Path $coreModulesRoot 'FileManagement/ZipExtraction' }
+    }
+    if (-not $zipExtractionRoot -and -not [string]::IsNullOrWhiteSpace($cwdPath)) {
+        $zipExtractionRoot = Join-Path $cwdPath 'src/powershell/modules/FileManagement/ZipExtraction'
+    }
+
+    if (-not $zipExtractionRoot -or -not (Test-Path -LiteralPath $zipExtractionRoot)) { return }
+
+    foreach ($subdir in 'Private','Public') {
+        $dir = Join-Path $zipExtractionRoot $subdir
+        if (Test-Path -LiteralPath $dir) {
+            Get-ChildItem -LiteralPath $dir -Filter '*.ps1' -File -ErrorAction SilentlyContinue | ForEach-Object { . $_.FullName }
+        }
+    }
+}
+
+function Get-ZipExtractionCommand {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Name)
+
+    $excludePath = $PSCommandPath
+    $resolved = Resolve-NonWrapperZipExtractionCommand -CommandName $Name -ExcludeScriptPath $excludePath
+    if ($resolved) { return $resolved }
+
+    $fsModulePath = (Get-Module -Name FileSystem -ErrorAction SilentlyContinue)?.Path
+    foreach ($candidate in (Get-ZipExtractionModuleCandidates -FileSystemModulePath $fsModulePath)) {
+        if (Test-Path -LiteralPath $candidate) {
+            Import-Module -Name $candidate -Force -ErrorAction SilentlyContinue
+            $resolved = Resolve-NonWrapperZipExtractionCommand -CommandName $Name -ExcludeScriptPath $excludePath
+            if ($resolved) { return $resolved }
+        }
+    }
+
+    Import-ZipExtractionFallbackFiles -FileSystemModulePath $fsModulePath
+    $resolved = Resolve-NonWrapperZipExtractionCommand -CommandName $Name -ExcludeScriptPath $excludePath
+    if ($resolved) { return $resolved }
+
+    throw "The module 'ZipExtraction' could not be loaded. For more information, run 'Import-Module ZipExtraction'."
+}
+
+function Invoke-ZipExtractionDelegate {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)]$Parameters
+    )
+    $cmd = Get-ZipExtractionCommand -Name $Name
+    if ($Parameters -is [System.Collections.IDictionary]) { return (& $cmd @Parameters) }
+    if ($Parameters -is [array]) { return (& $cmd @Parameters) }
+    return (& $cmd $Parameters)
+}
+
 function Invoke-ParallelZipExtractions {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][System.IO.FileInfo[]]$Zips, [Parameter(Mandatory)][int]$ZipCount,
-        [Parameter(Mandatory)][string]$DestinationDir,     [Parameter(Mandatory)][string]$Mode,
-        [Parameter(Mandatory)][string]$Policy,             [Parameter(Mandatory)][int]$SafeNameMaxLen,
-        [Parameter(Mandatory)][bool]$QuietMode,            [Parameter(Mandatory)][int]$ThrottleLimit,
-        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
-    )
-    $concurrentErrors = [ConcurrentBag[string]]::new()
-    $fsModulePath     = (Get-Module -Name FileSystem -ErrorAction SilentlyContinue)?.Path
-    $zipModulePath    = (Get-Module -Name Zip        -ErrorAction SilentlyContinue)?.Path
-    # Serialize the helper so each runspace can dot-source it (session functions are
-    # not available in ForEach-Object -Parallel runspaces by default).
-    $runspaceFnDef    = "function Expand-ZipInRunspace { ${function:Expand-ZipInRunspace} }"
-    $progressCounter  = 0
-
-    $results = @(
-        $Zips | ForEach-Object -Parallel {
-            . ([ScriptBlock]::Create($using:runspaceFnDef))
-            Expand-ZipInRunspace -Zip $_ -DestDir $using:DestinationDir -Mode $using:Mode `
-                -Policy $using:Policy -MaxLen $using:SafeNameMaxLen `
-                -FsModulePath $using:fsModulePath -ZipModulePath $using:zipModulePath `
-                -ErrorBag $using:concurrentErrors
-        } -ThrottleLimit $ThrottleLimit | ForEach-Object {
-            $progressCounter++
-            Show-ProgressPhase -Activity "Extracting archives" `
-                -Status "$progressCounter / $ZipCount completed" `
-                -Current $progressCounter -Total $ZipCount -QuietMode $QuietMode
-            $_
-        }
-    )
-
-    Show-ProgressPhase -Activity "Extracting archives" -Status "Done" `
-        -Current $ZipCount -Total $ZipCount -QuietMode $QuietMode -Completed
-    return Merge-ParallelZipResults -Results $results -ZipCount $ZipCount `
-        -ErrorList $ErrorList -ConcurrentErrors $concurrentErrors
+    param([Parameter(ValueFromRemainingArguments = $true)]$Arguments)
+    return Invoke-ZipExtractionDelegate -Name 'Invoke-ParallelZipExtractions' -Parameters $Arguments
 }
-
-<#
-.SYNOPSIS
-    Runs serial extraction and returns aggregated summary totals.
-.NOTES
-    Also used as the WhatIf fallback: ForEach-Object -Parallel runspaces have no
-    access to $PSCmdlet, so ShouldProcess cannot be called there. When WhatIf is
-    active, the dispatcher routes here regardless of ThrottleLimit.
-#>
 function Invoke-SerialZipExtractions {
     [CmdletBinding(SupportsShouldProcess = $true)]
-    param(
-        [Parameter(Mandatory)][System.IO.FileInfo[]]$Zips, [Parameter(Mandatory)][int]$ZipCount,
-        [Parameter(Mandatory)][string]$DestinationDir,     [Parameter(Mandatory)][string]$Mode,
-        [Parameter(Mandatory)][string]$Policy,             [Parameter(Mandatory)][int]$SafeNameMaxLen,
-        [Parameter(Mandatory)][bool]$QuietMode,            [Parameter(Mandatory)][int]$ThrottleLimit,
-        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
-    )
-    if ($ThrottleLimit -gt 1 -and $WhatIfPreference) {
-        Write-Verbose "WhatIf is active — falling back to serial extraction so -WhatIf/-Confirm are honoured."
-    }
-    $processedZips           = 0
-    $totalFilesExtracted     = 0
-    $totalUncompressedBytes  = [int64]0
-    $totalCompressedZipBytes = [int64]0
-    $index                   = 0
-
-    foreach ($zip in $Zips) {
-        $index++
-        try {
-            Show-ProgressPhase -Activity "Extracting archives" -Status $zip.Name `
-                -Current ($index - 1) -Total $ZipCount -QuietMode $QuietMode
-            if ($PSCmdlet.ShouldProcess($zip.FullName, "Extract")) {
-                $stats        = Get-ZipFileStats -ZipPath $zip.FullName
-                $filesFromZip = Expand-ZipSmart -ZipPath $zip.FullName -DestinationRoot $DestinationDir `
-                    -ExtractMode $Mode -CollisionPolicy $Policy -SafeNameMaxLen $SafeNameMaxLen `
-                    -ExpectedFileCount $stats.FileCount
-                if ($filesFromZip -is [int]) { $totalFilesExtracted += $filesFromZip }
-                else                         { $totalFilesExtracted += $stats.FileCount }
-                $totalUncompressedBytes  += $stats.UncompressedBytes
-                $totalCompressedZipBytes += $stats.CompressedBytes
-                $processedZips++
-                Write-LogDebug "Extracted '$($zip.Name)': files=$($stats.FileCount), uncompressed=$($stats.UncompressedBytes), compressed=$($stats.CompressedBytes)"
-            }
-        } catch {
-            $msg = $_.Exception.Message
-            $ErrorList.Add("Extraction failed for '$($zip.FullName)': $msg") | Out-Null
-            Write-LogDebug $msg
-        }
-    }
-
-    Show-ProgressPhase -Activity "Extracting archives" -Status "Done" `
-        -Current $ZipCount -Total $ZipCount -QuietMode $QuietMode -Completed
-    return New-ExtractionSummary -ZipCount $ZipCount -ProcessedZips $processedZips `
-        -FilesExtracted $totalFilesExtracted -UncompressedBytes $totalUncompressedBytes `
-        -CompressedBytes $totalCompressedZipBytes
+    param([Parameter(ValueFromRemainingArguments = $true)]$Arguments)
+    return Invoke-ZipExtractionDelegate -Name 'Invoke-SerialZipExtractions' -Parameters $Arguments
 }
-
-<#
-.SYNOPSIS
-    Extracts all zip files from source to destination and returns summary totals.
-.PARAMETER ThrottleLimit
-    When greater than 1, archives are extracted in parallel using ForEach-Object
-    -Parallel. Errors are aggregated thread-safely via ConcurrentBag.
-    Default 1 preserves the original serial behaviour.
-#>
 function Invoke-ZipExtractions {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
@@ -522,33 +443,7 @@ function Invoke-ZipExtractions {
         [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList,
         [int]$ThrottleLimit = 1
     )
-
-    $zips     = @(Get-ChildItem -LiteralPath $SourceDir -Filter *.zip -File -ErrorAction Stop)
-    $zipCount = $zips.Count
-    Write-LogInfo "Found $zipCount zip file(s) in: $SourceDir"
-    Write-LogInfo "Extracting to: $DestinationDir (Mode: $Mode, Policy: $Policy)"
-
-    if ($zipCount -eq 0) {
-        return New-ExtractionSummary -ZipCount 0 -ProcessedZips 0 -FilesExtracted 0 `
-            -UncompressedBytes ([int64]0) -CompressedBytes ([int64]0)
-    }
-
-    $sharedParams = @{
-        Zips           = $zips
-        ZipCount       = $zipCount
-        DestinationDir = $DestinationDir
-        Mode           = $Mode
-        Policy         = $Policy
-        SafeNameMaxLen = $SafeNameMaxLen
-        QuietMode      = $QuietMode
-        ThrottleLimit  = $ThrottleLimit
-        ErrorList      = $ErrorList
-    }
-
-    if ($ThrottleLimit -gt 1 -and -not $WhatIfPreference) {
-        return Invoke-ParallelZipExtractions @sharedParams
-    }
-    return Invoke-SerialZipExtractions @sharedParams
+    return Invoke-ZipExtractionDelegate -Name 'Invoke-ZipExtractions' -Parameters $PSBoundParameters
 }
 
 <#

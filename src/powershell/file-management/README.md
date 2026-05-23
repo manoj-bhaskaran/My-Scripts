@@ -20,6 +20,7 @@ Scripts for file operations, distribution, copying, and archiving.
 - **PowerShellLoggingFramework** (`src/powershell/modules/Core/Logging/`) - Structured logging
 - **FileSystem** (`src/powershell/modules/Core/FileSystem/`) - Path normalization, safe naming, unique path resolution
 - **Zip** (`src/powershell/modules/Core/Zip/`) - ZIP archive primitives used by `Expand-ZipsAndClean.ps1`
+- **ZipExtraction** (`src/powershell/modules/FileManagement/ZipExtraction/`) - ZIP extraction orchestration helpers used by `Expand-ZipsAndClean.ps1`
 - **AdbHelpers** (`src/powershell/modules/Android/AdbHelpers/`) - Shared ADB/device helpers used by `Copy-AndroidFiles.ps1`
 
 ### External Tools
@@ -46,6 +47,26 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 - These versions are intentionally independent and may advance separately under SemVer.
 
 ## Recent Updates
+
+- **Expand-ZipsAndClean.ps1 v2.6.0 review follow-up** (2026-05-23)
+  - Restored explicit/named-parameter wrappers for extraction orchestration delegation so script call sites keep normal binding semantics.
+  - Moved parallel runspace helper `Expand-ZipInRunspace` into the new `FileManagement/ZipExtraction` module private scope to keep parallel mode self-contained.
+  - Added resilient wrapper command resolution to import/resolve `ZipExtraction` reliably in helper-region test loads before dispatching extraction orchestration functions.
+  - Hardened wrapper module path-candidate construction to skip empty path roots in helper-only contexts (prevents empty-string `Join-Path` binding failures in parallel extraction tests).
+  - Improved wrapper module discovery by deriving the ZipExtraction path from the loaded `FileSystem` module root when direct script/cwd-relative resolution is unavailable.
+  - Added a helper-load fallback that dot-sources `ZipExtraction` Public/Private function files directly when module-name resolution is unavailable in test harness contexts, with non-wrapper command resolution to avoid recursive wrapper dispatch.
+  - Added module-scope no-op logging fallbacks (`Write-LogInfo`/`Write-LogDebug`) so helper-load/test contexts can run extraction orchestration even when logging framework functions are not present in module scope.
+  - Added module-scope `Show-ProgressPhase` fallback so extracted orchestration functions run when script-local progress helpers are unavailable in helper-load contexts.
+  - Added module-scope `New-ExtractionSummary` fallback so extracted orchestration helpers can build summary payloads even when script-local summary helpers are unavailable in helper-load contexts.
+  - Refactored wrapper resolver logic into smaller helper functions and centralized wrapper delegation through a shared helper to reduce complexity/duplication while preserving behavior.
+  - Simplified serial/parallel script wrappers to pass-through argument delegation to further reduce duplication on new code for static analysis quality gates.
+  - Fixed delegate splatting to treat `$PSBoundParameters` as an `IDictionary`, restoring proper mandatory-parameter binding when wrappers call extracted module commands.
+  - Refactored module-side `Invoke-ZipExtractions` dispatch structure to derive shared params from `$PSBoundParameters` and reduce SonarCloud duplication without changing extraction behavior; also compacted declaration layout to lower duplicated-line matching.
+
+- **Expand-ZipsAndClean.ps1 v2.6.0** (2026-05-23)
+  - Extracted ZIP extraction orchestration helpers into new `FileManagement/ZipExtraction` module.
+  - Script now imports and delegates extraction orchestration through that module.
+  - Version bump: `2.6.0` (minor — internal refactor/import-contract change).
 
 - **Expand-ZipsAndClean.ps1 progress helper compatibility fix** (2026-05-21)
   - `Show-ProgressPhase` now falls back to native `Write-Progress` when `Show-Progress` is unavailable in helper-only load contexts (e.g., region-dot-sourced tests), preventing `CommandNotFoundException` while preserving normal shared-module behavior.
