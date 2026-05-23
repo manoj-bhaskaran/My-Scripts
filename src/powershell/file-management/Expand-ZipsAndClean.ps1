@@ -330,38 +330,22 @@ function Get-ZipExtractionCommand {
     $cmd = Get-Command -Name $Name -Module ZipExtraction -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd }
 
-    function Add-CandidateFromUpwardSearch {
-        param(
-            [Parameter(Mandatory)][string]$StartPath,
-            [Parameter(Mandatory)][System.Collections.Generic.List[string]]$Candidates
-        )
-        if ([string]::IsNullOrWhiteSpace($StartPath) -or -not (Test-Path -LiteralPath $StartPath)) { return }
-        $dir = if (Test-Path -LiteralPath $StartPath -PathType Leaf) { Split-Path -Path $StartPath -Parent } else { $StartPath }
-        while (-not [string]::IsNullOrWhiteSpace($dir)) {
-            $candidate = Join-Path $dir 'src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1'
-            $Candidates.Add($candidate) | Out-Null
-            $parent = Split-Path -Path $dir -Parent
-            if ($parent -eq $dir) { break }
-            $dir = $parent
-        }
-    }
-
     $candidates = [System.Collections.Generic.List[string]]::new()
     if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
         $candidates.Add((Join-Path $PSScriptRoot '..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1')) | Out-Null
-        Add-CandidateFromUpwardSearch -StartPath $PSScriptRoot -Candidates $candidates
     }
 
     $fileSystemModulePath = (Get-Module -Name FileSystem -ErrorAction SilentlyContinue)?.Path
     if (-not [string]::IsNullOrWhiteSpace($fileSystemModulePath)) {
-        $candidates.Add((Join-Path (Split-Path -Path (Split-Path -Path $fileSystemModulePath -Parent) -Parent) 'FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
-        Add-CandidateFromUpwardSearch -StartPath $fileSystemModulePath -Candidates $candidates
+        $modulesRoot = Split-Path -Path (Split-Path -Path $fileSystemModulePath -Parent) -Parent
+        if (-not [string]::IsNullOrWhiteSpace($modulesRoot)) {
+            $candidates.Add((Join-Path $modulesRoot 'FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
+        }
     }
 
     $cwdPath = (Get-Location).Path
     if (-not [string]::IsNullOrWhiteSpace($cwdPath)) {
         $candidates.Add((Join-Path $cwdPath 'src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
-        Add-CandidateFromUpwardSearch -StartPath $cwdPath -Candidates $candidates
     }
 
     foreach ($candidate in ($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)) {
@@ -370,6 +354,35 @@ function Get-ZipExtractionCommand {
             $cmd = Get-Command -Name $Name -Module ZipExtraction -ErrorAction SilentlyContinue
             if ($cmd) { return $cmd }
         }
+    }
+
+    # Helper-region test fallback: dot-source ZipExtraction files directly when module discovery is unavailable.
+    $zipExtractionRoot = $null
+    if ($fileSystemModulePath) {
+        $coreModulesRoot = Split-Path -Path (Split-Path -Path $fileSystemModulePath -Parent) -Parent
+        if ($coreModulesRoot) {
+            $zipExtractionRoot = Join-Path $coreModulesRoot 'FileManagement/ZipExtraction'
+        }
+    }
+    if (-not $zipExtractionRoot -and -not [string]::IsNullOrWhiteSpace($cwdPath)) {
+        $zipExtractionRoot = Join-Path $cwdPath 'src/powershell/modules/FileManagement/ZipExtraction'
+    }
+
+    if ($zipExtractionRoot -and (Test-Path -LiteralPath $zipExtractionRoot)) {
+        $privateDir = Join-Path $zipExtractionRoot 'Private'
+        $publicDir  = Join-Path $zipExtractionRoot 'Public'
+
+        if (Test-Path -LiteralPath $privateDir) {
+            Get-ChildItem -LiteralPath $privateDir -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
+                ForEach-Object { . $_.FullName }
+        }
+        if (Test-Path -LiteralPath $publicDir) {
+            Get-ChildItem -LiteralPath $publicDir -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
+                ForEach-Object { . $_.FullName }
+        }
+
+        $cmd = Get-Command -Name $Name -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd }
     }
 
     throw "The module 'ZipExtraction' could not be loaded. For more information, run 'Import-Module ZipExtraction'."
