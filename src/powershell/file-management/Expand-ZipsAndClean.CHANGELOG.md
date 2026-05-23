@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- Hardened `Get-ZipExtractionCommand` candidate-path construction to avoid passing empty base paths to `Join-Path` in helper-only test loads, fixing `Cannot bind argument to parameter 'Path' because it is an empty string.` failures in parallel extraction tests.
 - Restored named-parameter wrapper signatures in `Expand-ZipsAndClean.ps1` for `Invoke-ZipExtractions`, `Invoke-SerialZipExtractions`, and `Invoke-ParallelZipExtractions` so existing call sites continue to bind correctly when delegating to the `ZipExtraction` module.
 - Added resilient wrapper command resolution (`Get-ZipExtractionCommand`) that imports the `ZipExtraction` module by path when necessary (including helper-region test loads) before dispatching module functions.
 - Moved `Expand-ZipInRunspace` into `FileManagement/ZipExtraction` module private scope so parallel extraction (`-ThrottleLimit > 1`) no longer depends on script-scope helper discovery.
@@ -46,6 +47,7 @@
 
 ### Fixed
 
+- Hardened `Get-ZipExtractionCommand` candidate-path construction to avoid passing empty base paths to `Join-Path` in helper-only test loads, fixing `Cannot bind argument to parameter 'Path' because it is an empty string.` failures in parallel extraction tests.
 - `Show-ProgressPhase` now gracefully falls back to native `Write-Progress` when `Show-Progress` is not present in session scope (for helper-only test dot-sourcing and other partial-load scenarios). This restores test/runtime compatibility without changing script behavior when `Core/Progress` is imported.
 - Final `[System.IO.Directory]::Delete` / `Remove-Item` fallback sequence for root-directory deletion is unchanged (Linux/CI PowerShell #8211 workaround preserved).
 - `Move-FileWithRetry` and `Remove-FileWithRetry` in `Core/FileOperations` now use `-LiteralPath` for all `Test-Path`, `Move-Item`, and `Remove-Item` calls, preserving literal-path semantics for filenames that contain wildcard characters (`[`, `]`, `*`, `?`).
@@ -102,6 +104,7 @@
 
 ### Fixed
 
+- Hardened `Get-ZipExtractionCommand` candidate-path construction to avoid passing empty base paths to `Join-Path` in helper-only test loads, fixing `Cannot bind argument to parameter 'Path' because it is an empty string.` failures in parallel extraction tests.
 - `SourceDirectory` and `DestinationDirectory` param defaults now use the PS7 ternary
   (`$env:VAR ? $env:VAR : fallback`) instead of `??`. The `??` operator only coalesces
   `$null`; when `.env.example` is sourced as-is, both variables are exported as `""` (empty

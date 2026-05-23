@@ -329,12 +329,18 @@ function Get-ZipExtractionCommand {
 
     $module = Get-Module -Name ZipExtraction -ErrorAction SilentlyContinue
     if (-not $module) {
-        $candidates = @(
-            (Join-Path $PSScriptRoot '..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1'),
-            (Join-Path (Get-Location) 'src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1')
-        )
+        $candidates = [System.Collections.Generic.List[string]]::new()
+        if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+            $candidates.Add((Join-Path $PSScriptRoot '..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1')) | Out-Null
+        }
+
+        $cwdPath = (Get-Location).Path
+        if (-not [string]::IsNullOrWhiteSpace($cwdPath)) {
+            $candidates.Add((Join-Path $cwdPath 'src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
+        }
+
         foreach ($candidate in $candidates) {
-            if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate)) {
                 Import-Module -Name $candidate -Force -ErrorAction Stop
                 break
             }
