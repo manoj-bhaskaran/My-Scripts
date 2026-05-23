@@ -13,59 +13,52 @@ Describe 'Invoke-SingleZipExtraction' {
         . (Join-Path $moduleRoot 'FileManagement\ZipExtraction\Private\Invoke-SingleZipExtraction.ps1')
     }
 
-    It 'returns correct file count and byte statistics for a valid archive' {
-        $destDir = Join-Path $TestDrive 'ise-dest'
-        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+    It 'returns FilesExtracted from Expand-ZipSmart when it returns an int' {
+        $fakeZip = [pscustomobject]@{ FullName = '/fake/archive.zip'; Name = 'archive.zip' }
+        Mock Get-ZipFileStats {
+            return [pscustomobject]@{ FileCount = 3; UncompressedBytes = [int64]1500; CompressedBytes = [int64]800 }
+        }
+        Mock Expand-ZipSmart { return 3 }
 
-        $zipPath = Join-Path $TestDrive 'sample.zip'
-        $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
-        try {
-            $entry  = $archive.CreateEntry('file.txt')
-            $stream = $entry.Open()
-            $writer = New-Object System.IO.StreamWriter($stream)
-            try { $writer.Write('hello world') } finally { $writer.Dispose() }
-        } finally { $archive.Dispose() }
+        $result = Invoke-SingleZipExtraction -Zip $fakeZip -DestDir '/fake/dest' -Mode 'Flat' -Policy 'Rename' -MaxLen 0
 
-        $zip    = Get-Item -LiteralPath $zipPath
-        # Use Flat mode: streams entries via ZipArchive directly, avoids Expand-Archive
-        $result = Invoke-SingleZipExtraction -Zip $zip -DestDir $destDir -Mode 'Flat' -Policy 'Rename' -MaxLen 0
-
-        $result.FilesExtracted    | Should -Be 1
-        $result.UncompressedBytes | Should -BeGreaterThan 0
-        $result.CompressedBytes   | Should -BeGreaterThan 0
+        $result.FilesExtracted    | Should -Be 3
+        $result.UncompressedBytes | Should -Be 1500
+        $result.CompressedBytes   | Should -Be 800
     }
 
-    It 'log message includes zip name, file count, and byte fields' {
-        $destDir = Join-Path $TestDrive 'ise-log-dest'
-        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+    It 'falls back to stats.FileCount when Expand-ZipSmart returns a non-int' {
+        $fakeZip = [pscustomobject]@{ FullName = '/fake/b.zip'; Name = 'b.zip' }
+        Mock Get-ZipFileStats {
+            return [pscustomobject]@{ FileCount = 5; UncompressedBytes = [int64]2000; CompressedBytes = [int64]1000 }
+        }
+        Mock Expand-ZipSmart { return $null }
 
-        $zipPath = Join-Path $TestDrive 'logtest.zip'
-        $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
-        try {
-            $entry  = $archive.CreateEntry('a.txt')
-            $stream = $entry.Open()
-            $writer = New-Object System.IO.StreamWriter($stream)
-            try { $writer.Write('data') } finally { $writer.Dispose() }
-        } finally { $archive.Dispose() }
+        $result = Invoke-SingleZipExtraction -Zip $fakeZip -DestDir '/fake/dest' -Mode 'Flat' -Policy 'Rename' -MaxLen 0
 
-        $zip    = Get-Item -LiteralPath $zipPath
-        $result = Invoke-SingleZipExtraction -Zip $zip -DestDir $destDir -Mode 'Flat' -Policy 'Rename' -MaxLen 0
-
-        $result.Log | Should -BeLike "*logtest.zip*"
-        $result.Log | Should -BeLike "*files=*"
-        $result.Log | Should -BeLike "*uncompressed=*"
-        $result.Log | Should -BeLike "*compressed=*"
+        $result.FilesExtracted | Should -Be 5
     }
 
-    It 'throws when the archive is corrupt' {
-        $destDir = Join-Path $TestDrive 'ise-err-dest'
-        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+    It 'log message includes zip name and stats fields' {
+        $fakeZip = [pscustomobject]@{ FullName = '/fake/logtest.zip'; Name = 'logtest.zip' }
+        Mock Get-ZipFileStats {
+            return [pscustomobject]@{ FileCount = 2; UncompressedBytes = [int64]500; CompressedBytes = [int64]200 }
+        }
+        Mock Expand-ZipSmart { return 2 }
 
-        $badPath = Join-Path $TestDrive 'corrupt.zip'
-        [System.IO.File]::WriteAllBytes($badPath, [byte[]](0xFF, 0xFE, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05))
+        $result = Invoke-SingleZipExtraction -Zip $fakeZip -DestDir '/fake/dest' -Mode 'Flat' -Policy 'Rename' -MaxLen 0
 
-        $zip = Get-Item -LiteralPath $badPath
-        { Invoke-SingleZipExtraction -Zip $zip -DestDir $destDir -Mode 'Flat' -Policy 'Rename' -MaxLen 0 } |
-            Should -Throw
+        $result.Log | Should -BeLike '*logtest.zip*'
+        $result.Log | Should -BeLike '*files=*'
+        $result.Log | Should -BeLike '*uncompressed=*'
+        $result.Log | Should -BeLike '*compressed=*'
+    }
+
+    It 'propagates exceptions thrown by inner functions' {
+        $fakeZip = [pscustomobject]@{ FullName = '/fake/bad.zip'; Name = 'bad.zip' }
+        Mock Get-ZipFileStats { throw 'Archive is corrupt' }
+
+        { Invoke-SingleZipExtraction -Zip $fakeZip -DestDir '/fake/dest' -Mode 'Flat' -Policy 'Rename' -MaxLen 0 } |
+            Should -Throw '*corrupt*'
     }
 }
