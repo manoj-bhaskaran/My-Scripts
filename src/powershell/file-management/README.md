@@ -53,6 +53,7 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
   - Moved parallel runspace helper `Expand-ZipInRunspace` into the new `FileManagement/ZipExtraction` module private scope to keep parallel mode self-contained.
   - Added resilient wrapper command resolution to import/resolve `ZipExtraction` reliably in helper-region test loads before dispatching extraction orchestration functions.
   - Hardened wrapper module path-candidate construction to skip empty path roots in helper-only contexts (prevents empty-string `Join-Path` binding failures in parallel extraction tests).
+  - Improved wrapper module discovery by deriving the ZipExtraction path from the loaded `FileSystem` module root when direct script/cwd-relative resolution is unavailable.
 
 - **Expand-ZipsAndClean.ps1 v2.6.0** (2026-05-23)
   - Extracted ZIP extraction orchestration helpers into new `FileManagement/ZipExtraction` module.

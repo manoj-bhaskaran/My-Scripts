@@ -334,12 +334,20 @@ function Get-ZipExtractionCommand {
             $candidates.Add((Join-Path $PSScriptRoot '..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1')) | Out-Null
         }
 
+        $fileSystemModulePath = (Get-Module -Name FileSystem -ErrorAction SilentlyContinue)?.Path
+        if (-not [string]::IsNullOrWhiteSpace($fileSystemModulePath)) {
+            $modulesRoot = Split-Path -Path (Split-Path -Path (Split-Path -Path $fileSystemModulePath -Parent) -Parent) -Parent
+            if (-not [string]::IsNullOrWhiteSpace($modulesRoot)) {
+                $candidates.Add((Join-Path $modulesRoot 'FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
+            }
+        }
+
         $cwdPath = (Get-Location).Path
         if (-not [string]::IsNullOrWhiteSpace($cwdPath)) {
             $candidates.Add((Join-Path $cwdPath 'src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
         }
 
-        foreach ($candidate in $candidates) {
+        foreach ($candidate in ($candidates | Select-Object -Unique)) {
             if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate)) {
                 Import-Module -Name $candidate -Force -ErrorAction Stop
                 break
