@@ -1,5 +1,12 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
 ## [1.26.1] - 2026-05-23
 
 ### Fixed
@@ -15,202 +22,219 @@
 
 ### Added
 
-- **`--timestamped-output` flag for per-run log and failed-file names:** `dry-run`, `recover-only`, and `recover-and-download` now accept `--timestamped-output`. When set, a single run timestamp with microsecond precision (`YYYYMMDD_HHMMSS_ffffff`, local time) is inserted before the final extension of both the `--log-file` and `--failed-file` paths (e.g. `run.log` → `run_20260517_142530_123456.log`, `logs/failed.csv` → `logs/failed_20260517_142530_123456.csv`), so each run writes to its own files even when explicit (or default) paths are provided and would otherwise be appended to / overwritten. Microsecond precision ensures rapid sequential or parallel runs sharing the same base paths do not collide on a whole-second boundary. The transformation is applied once in `gdrive_cli.main` (new `_apply_timestamped_output` helper) before failed-file validation and before `DriveTrashRecoveryTool` is constructed, so every downstream consumer (logging setup, failed-file recording, `--fresh-run` truncation) sees the final path. The same timestamp is shared by both files so a run's log and failed-file have a correlatable suffix. Extension-less names just get the suffix appended; disabled (empty) paths are left untouched so the flag never silently enables file logging or failure tracking. The flag is independent of `--fresh-run`: `--timestamped-output` gives every run a *new* file, whereas `--fresh-run` truncates the *configured* file in place.
+- **`--timestamped-output` flag:** Inserts a per-run timestamp (`YYYYMMDD_HHMMSS_ffffff`, local time, microsecond precision) before the final extension of both `--log-file` and `--failed-file` paths, giving each run its own files without requiring explicit unique names.
+  - Accepted by `dry-run`, `recover-only`, and `recover-and-download`.
+  - Path transformation: `run.log` → `run_20260517_142530_123456.log`; `logs/failed.csv` → `logs/failed_20260517_142530_123456.csv`; extension-less names have the suffix appended; disabled (empty) paths are left untouched.
+  - Microsecond precision prevents collisions between rapid sequential or parallel runs sharing the same base paths.
+  - Applied once in `gdrive_cli.main` via the new `_apply_timestamped_output` helper, before failed-file validation and before `DriveTrashRecoveryTool` construction, so every downstream consumer sees the final path; log file and failed-file share the same timestamp for easy correlation.
+  - Independent of `--fresh-run`: `--timestamped-output` routes each run to a *new* file; `--fresh-run` truncates the *configured* file in place.
 
 ## [1.25.0] - 2026-05-14
 
 ### Added
 
-- **`--skip-existing` flag for `recover-and-download`:** When the computed local target path already resolves to a regular file (`Path.is_file()`), the download is skipped; the item is still treated as a logical success (per-step state advances, post-restore policy still applied) and counted in a new `stats["skipped_existing"]` counter. `is_file()` is used rather than `exists()` so a directory collision does not silently satisfy the skip and allow `post-restore-policy=delete` to remove the Drive file without a local copy. Mutually exclusive with `--overwrite`; default collision behaviour (uuid-rename suffix) is unchanged when neither flag is set. Run summary and structured log line include `skipped_existing` when non-zero.
+- **`--skip-existing` flag for `recover-and-download`:** Skips the download when the computed local target path already resolves to a regular file.
+  - The item is still treated as a logical success: per-step state advances, post-restore policy still applied, and the skip is counted in a new `stats["skipped_existing"]` counter.
+  - Uses `Path.is_file()` rather than `exists()` so a directory collision does not silently satisfy the skip and allow `post-restore-policy=delete` to remove the Drive file without a local copy.
+  - Mutually exclusive with `--overwrite`; default collision behaviour (uuid-rename suffix) is unchanged when neither flag is set.
+  - Run summary and structured log line include `skipped_existing` when non-zero.
 
 ## [1.24.1] - 2026-05-14
 
 ### Removed
 
-- **`--download-dir` removed from `recover-only`:** The argument was accepted by the parser but had no effect — `will_download` is only set to `True` for `recover_and_download` mode (or `dry-run` with `--download-dir`), never for `recover-only`. Keeping it was a footgun: a user could pass `--download-dir ./out` expecting files to appear there, see no error or warning, and not realise nothing was downloaded. The argument is now rejected by the `recover-only` subparser. It remains optional on `dry-run` (where it causes target paths to be shown in the plan) and required on `recover-and-download`.
+- **`--download-dir` removed from `recover-only`:** The argument was accepted by the parser but had no effect, silently discarding any supplied path instead of warning the user.
+  - `will_download` is set to `True` only for `recover-and-download` (or `dry-run` with `--download-dir`), never for `recover-only`.
+  - The argument is now rejected by the `recover-only` subparser; it remains optional on `dry-run` and required on `recover-and-download`.
 
 ## [1.24.0] - 2026-05-14
 
 ### Added
 
-- **Per-item step records with v2 → v3 schema migration (#1030):** `processed_items` has been promoted from a flat `List[str]` (O(n) membership) to a `Dict[str, ProcessedRecord]` (O(1) membership) where each record carries three boolean flags — `recovered`, `downloaded`, `post_restored` — and a `last_attempt_iso` timestamp for diagnostics.
-  - `_process_item` now calls `_mark_step(item_id, step)` after each individual pipeline step succeeds instead of marking the item as a whole only at the end. This means an interrupted run that completed the untrash step but not the download step will skip the untrash API call on the next run and retry only the download.
-  - `_recover_file` checks `_step_is_done(item_id, "recovered")` and skips the `files.update(trashed=False)` call when the untrash step is already recorded, preventing redundant (and noisy) 4xx calls against live files.
-  - `_is_processed(item)` now takes the full `RecoveryItem` so it can compute which steps are required for that item (e.g. `recovered` only for recover-only mode; `recovered + downloaded + post_restored` for recover-and-download; `downloaded + post_restored` for folder-id / retry-failed-file items where `will_recover=False`).
-  - New `_required_steps(item)` helper encapsulates this logic; new `_step_is_done(item_id, step)` exposes individual step checks.
-  - `_mark_step` serialises dict mutations with an internal `_state_lock` (`threading.Lock`); callers must not hold `stats_lock` when calling it to avoid deadlock (see module docstring in `gdrive_state.py`).
-- **New `ProcessedRecord` dataclass** in `gdrive_models.py` with fields `recovered`, `downloaded`, `post_restored` (bool, default `False`) and `last_attempt_iso` (str).
+- **Per-item step records with v2 → v3 schema migration (#1030):** `processed_items` promoted from `List[str]` (O(n) membership) to `Dict[str, ProcessedRecord]` (O(1) membership), where each record tracks three boolean steps and a timestamp.
+  - `_process_item` calls `_mark_step(item_id, step)` after each individual pipeline step succeeds; an interrupted run that completed untrash but not download will skip the untrash API call on resume and retry only the download.
+  - `_recover_file` checks `_step_is_done(item_id, "recovered")` and skips the `files.update(trashed=False)` call when the untrash step is already recorded, preventing redundant API calls.
+  - `_is_processed(item)` now takes the full `RecoveryItem` to determine which steps are required (e.g. `recovered` only for recover-only; `recovered + downloaded + post_restored` for recover-and-download; `downloaded + post_restored` for folder-id / retry-failed-file items where `will_recover=False`).
+  - New `_required_steps(item)` helper encapsulates step-requirement logic; `_step_is_done(item_id, step)` exposes individual step checks.
+  - `_mark_step` serialises mutations with an internal `_state_lock`; callers must not hold `stats_lock` when calling it (see `gdrive_state.py` module docstring).
+- **New `ProcessedRecord` dataclass** in `gdrive_models.py`: fields `recovered`, `downloaded`, `post_restored` (bool, default `False`) and `last_attempt_iso` (str).
 
 ### Changed
 
 - **`RecoveryState.schema_version` default is now 3.** New state files are written at v3 immediately.
-- **`RecoveryState.processed_items` type changed** from `Optional[List[str]]` to `Optional[Dict[str, ProcessedRecord]]`; `__post_init__` initialises it to `{}` instead of `[]`.
-- **`_mark_processed(item_id)` is now a backward-compat wrapper** that marks all three steps as done. New code uses `_mark_step` per step.
+- **`RecoveryState.processed_items` type changed** from `Optional[List[str]]` to `Optional[Dict[str, ProcessedRecord]]`; `__post_init__` initialises to `{}`.
+- **`_mark_processed(item_id)` is now a backward-compat wrapper** that marks all three steps as done; new code uses `_mark_step` per step.
 
 ### Migration
 
-- **v2 → v3 is automatic and non-destructive.** On first load of a v2 state file, every ID in the `processed_items` list is converted to a `ProcessedRecord(recovered=True, downloaded=True, post_restored=True)` — all steps are treated as fully complete so no item is reprocessed.
-- **v0/v1 → v3 chained migration** also works in a single load: the v1 → v2 scope-synthesis step runs first, then the v2 → v3 list-to-dict conversion.
-- **Migration is one-way.** There is no v3 → v2 downgrade. Keep a copy of your state file before running v1.24.0 for the first time if you want to be able to roll back. If you need to retry previously-failed items use `--retry-failed-file <csv>` or `--fresh-run`.
+- **v2 → v3 is automatic and non-destructive.** On first load of a v2 state file, every ID in `processed_items` is converted to `ProcessedRecord(recovered=True, downloaded=True, post_restored=True)` — all steps treated as fully complete, so no item is reprocessed.
+- **v0/v1 → v3 chained migration** works in a single load: the v1 → v2 scope-synthesis step runs first, then the v2 → v3 list-to-dict conversion.
+- **Migration is one-way.** Keep a copy of your state file before running v1.24.0 for the first time if rollback is needed. To retry previously-failed items use `--retry-failed-file <csv>` or `--fresh-run`.
 
 ## [1.23.3] - 2026-05-14
 
 ### Fixed
 
-- **Final streaming progress line no longer reports a stale `processed=` count.** `ProgressBar.update` throttles redraws by time interval (TTY interval on a terminal, log interval otherwise) and `close()` only emitted a newline, so the last visible progress line could be off by up to one batch from the true totals. A run discovering 57,513 items would commonly end with `processed=57501 discovered=57513` even after every item was actually processed. `DriveTrashRecoveryTool._process_streaming` now invokes a new `_print_final_stream_progress` helper just before `_print_summary` (and before `print_interrupted_state_saved` on Ctrl-C); it calls `ProgressBar.update(..., force=True)` to bypass the throttle and render the true final counts.
+- **Final streaming progress line no longer reports a stale `processed=` count.** `ProgressBar.update` throttles redraws by time interval and `close()` only emitted a newline, so the last visible progress line could be off by up to one batch from the true totals.
+  - `DriveTrashRecoveryTool._process_streaming` now calls a new `_print_final_stream_progress` helper just before `_print_summary` (and before `print_interrupted_state_saved` on Ctrl-C).
+  - The helper calls `ProgressBar.update(..., force=True)` to bypass the throttle and render the true final counts.
 
 ## [1.23.2] - 2026-05-14
 
 ### Added
 
-- **End-of-run summary is now written to the log file as a structured INFO line.** `RecoveryReporter._print_summary` previously used bare `print()` calls, so when `--log-file` was set the log ended abruptly with no record of how the run concluded. A single grep-friendly `Run complete: mode=… found=… recovered=… downloaded=… skipped=… errors=… elapsed=…s success_rate=…%` line is now emitted at INFO level alongside the stdout summary box. `print_interrupted_state_saved` mirrors this with a `Run interrupted: …` line so the log file unambiguously records the outcome of Ctrl-C'd runs as well. Logger errors are swallowed so a misbehaving handler can't break the user-facing summary.
+- **End-of-run summary written to the log file as a structured INFO line.** `RecoveryReporter._print_summary` previously used bare `print()` calls, leaving the log file without a record of how the run concluded.
+  - Emits a single grep-friendly `Run complete: mode=… found=… recovered=… downloaded=… skipped=… errors=… elapsed=…s success_rate=…%` line at INFO level alongside the stdout summary box.
+  - `print_interrupted_state_saved` mirrors this with a `Run interrupted: …` line so interrupted runs are also unambiguously recorded.
+  - Logger errors are swallowed so a misbehaving handler cannot break the user-facing summary.
 
 ## [1.23.1] - 2026-05-14
 
 ### Fixed
 
-- **Resume-mode summary no longer reports zero skipped items:** `DriveOperations._process_item` short-circuited via `_is_processed` and returned without bumping `stats["skipped"]`. In folder-id mode (and any other mode where `will_recover=False`, e.g. `--retry-failed-file`), `_recover_file` — which does increment the counter — is never invoked, so a resume run where every discovered item was already processed produced a summary with `Files downloaded: 0`, `Files skipped: 0`, and `Errors encountered: 0` despite having processed tens of thousands of items. The short-circuit now bumps `stats["skipped"]` under `stats_lock` so the summary truthfully reflects how many items were skipped because they were already in the state file. Trash-recover mode was unaffected because the redundant `_is_processed` check inside `_recover_file` happened to bump the counter; the in-line check in `_process_item` was the missing one.
+- **Resume-mode summary no longer reports zero skipped items.** `DriveOperations._process_item` short-circuited via `_is_processed` without bumping `stats["skipped"]`; in folder-id mode and `--retry-failed-file` mode (`will_recover=False`), `_recover_file` is never invoked, so a full-resume run produced `Files downloaded: 0`, `Files skipped: 0`, and `Errors encountered: 0` despite processing tens of thousands of items.
+  - The short-circuit now bumps `stats["skipped"]` under `stats_lock` so the summary truthfully reflects how many items were already in the state file.
+  - Trash-recover mode was unaffected because a redundant `_is_processed` check inside `_recover_file` happened to increment the counter; the missing increment was in `_process_item`.
 
 ## [1.23.0] - 2026-05-14
 
 ### Added
 
-- **Scope-aware state file with v1→v2 schema migration (#1029):** State files now record a `scope` block (`source`, `command`, `key`) that captures *what* the run was doing. `source` is one of `trash_query | folder_id | file_ids | retry_failed_file`; `command` is `recover_only | recover_and_download`; `key` is a discriminating fingerprint (folder ID, retry-CSV absolute path, or a 16-char sha256 prefix over the file IDs / trash-query parameters). On load, the scope is compared to the current invocation; on mismatch, the tool refuses to resume and exits with code 2 unless `--fresh-run` is passed. This closes the silent failure where a `recover-only` state file was reused by `recover-and-download` and caused the same IDs to be skipped without being downloaded.
-- New `RecoveryStateScope` dataclass in `gdrive_models.py`; new `StateScopeMismatchError` exception in `gdrive_state.py`; new `RecoveryStateManager._derive_scope_from_args` helper.
-- CLI now renders a clear remediation message on scope mismatch (saved scope, current scope, suggestion to pass `--fresh-run` or `--state-file <path>`).
+- **Scope-aware state file with v1→v2 schema migration (#1029):** State files now record a `scope` block (`source`, `command`, `key`) capturing what the run was doing.
+  - `source` is one of `trash_query | folder_id | file_ids | retry_failed_file`; `command` is `recover_only | recover_and_download`; `key` is a discriminating fingerprint — the raw folder ID for `folder_id`, the absolute CSV path for `retry_failed_file`, or a 16-char sha256 prefix over the file IDs / trash-query parameters for `file_ids` / `trash_query`.
+  - On load, scope is compared to the current invocation; a mismatch causes the tool to exit with code 2 unless `--fresh-run` is passed — closing the silent failure where a `recover-only` state file was reused by `recover-and-download` and caused the same IDs to be skipped without being downloaded.
+  - CLI renders a clear remediation message on mismatch: saved scope, current scope, and a suggestion to pass `--fresh-run` or `--state-file <path>`.
+  - New `RecoveryStateScope` dataclass in `gdrive_models.py`; new `StateScopeMismatchError` exception in `gdrive_state.py`; new `RecoveryStateManager._derive_scope_from_args` helper.
 
 ### Changed
 
-- **`RecoveryState.schema_version` default is now 2.** v0/v1 state files load successfully, synthesize a `scope` from the current invocation, and are rewritten as v2 on next save. `processed_items` is preserved verbatim — no items are reprocessed.
-- **`RecoveryState.owner_pid` removed.** The lock file remains the source of truth for the live PID; the stale field has been retired. v1 files containing `owner_pid` load fine — the unknown field is silently dropped during migration.
-- **`state.total_found` is updated from `_seen_total` in streaming mode** at each periodic save and on completion/interruption, so the persisted number reflects how many items have been discovered so far.
-- **`--overwrite` deprecation shim removed (per v1.22.0 timing).** `--overwrite` is now strictly a local-file collision policy. It no longer clears `processed_items`, no longer truncates the failed-file CSV, and no longer emits a deprecation warning. Use `--fresh-run` (alone or combined with `--overwrite`) for the fresh-run effects.
-- `RecoveryStateManager._clear_processed_items` was removed (only the now-deleted overwrite shim called it). `_reset_state` remains and is the canonical fresh-run primitive.
-- `--fresh-run` help text updated: scope reset is mentioned, `owner_pid` is no longer referenced, and the flag is documented as bypassing the scope-mismatch guard.
-- Module docstring (`gdrive_recover.py`) and README updated to describe scope semantics and v1 → v2 migration behavior.
+- **`RecoveryState.schema_version` default is now 2.** v0/v1 state files synthesize a scope from the current invocation and are rewritten as v2 on next save; `processed_items` preserved verbatim.
+- **`RecoveryState.owner_pid` removed.** The lock file remains the source of truth for the live PID; the stale field is retired. v1 files containing `owner_pid` load fine — the unknown field is silently dropped.
+- **`state.total_found` updated from `_seen_total` in streaming mode** at each periodic save and on completion/interruption.
+- **`--overwrite` deprecation shim removed (per v1.22.0 timing).** `--overwrite` is now strictly a local-file collision policy: it no longer clears `processed_items`, truncates the failed-file CSV, or emits a deprecation warning. Use `--fresh-run` for fresh-run effects.
+- `RecoveryStateManager._clear_processed_items` removed; `_reset_state` is the canonical fresh-run primitive.
+- `--fresh-run` help text updated: scope reset mentioned, `owner_pid` no longer referenced.
+- Module docstring (`gdrive_recover.py`) and README updated with scope semantics and v1 → v2 migration behaviour.
 
-### Notes
+### Migration
 
-- **Migration is automatic and non-destructive.** Existing v1 state files load on first run after the upgrade; the synthesized scope reflects the current invocation. On a subsequent run with the same scope, resume proceeds normally. If a different scope is used, the new guard rejects it with a clear message instead of silently skipping work.
+- **v1 → v2 is automatic and non-destructive.** Existing v1 state files load on first run after the upgrade; the synthesized scope reflects the current invocation. A subsequent run with the same scope resumes normally; a different scope is rejected with a clear message instead of silently skipping work.
 
 ## [1.22.0] - 2026-05-14
 
 ### Added
 
-- **`--fresh-run` flag (#1028):** New flag available on **both** `recover-only` and `recover-and-download`. When set, the recovery tool ignores prior progress in the state file, regenerates run identity (`run_id`, `start_time`, `owner_pid`), and (if `--failed-file` is set) truncates the failed-file CSV before the run starts. Use this when resuming would target the wrong scope or when you want to retry everything from scratch.
-  - Mutually exclusive with `--retry-failed-file`: passing both is rejected with a clear error message (fresh-run starts from nothing; retry resumes a specific list).
-  - Implemented via a new `RecoveryStateManager._reset_state` helper that replaces the in-memory state with a fresh `RecoveryState` (preserving only `schema_version`). The subsequent `_initialize_recovery_state` call naturally regenerates identity fields because every "if not X" guard now takes the fresh path.
+- **`--fresh-run` flag (#1028):** Ignores prior progress in the state file, regenerates run identity (`run_id`, `start_time`, `owner_pid`), and (if `--failed-file` is set) truncates the failed-file CSV before the run starts.
+  - Available on both `recover-only` and `recover-and-download`.
+  - Mutually exclusive with `--retry-failed-file`: fresh-run starts from nothing; retry resumes a specific list.
+  - Implemented via `RecoveryStateManager._reset_state`, which replaces the in-memory state with a fresh `RecoveryState` (preserving only `schema_version`); every "if not X" guard in `_initialize_recovery_state` naturally regenerates identity fields.
 
 ### Changed
 
-- **`--overwrite` is narrowed to its documented meaning (local-file collision policy).** It no longer logically owns state reset and failed-file truncation; those are now `--fresh-run`'s job. For one release the old combined behavior is preserved as a **deprecation shim**: `--overwrite` alone still clears `processed_items` and truncates the failed-file CSV, but prints a deprecation warning to stderr naming v1.23.0 as the removal target.
-- `--overwrite --fresh-run` combination: both effects apply (local-file overwrite + state/failed-file reset); no deprecation warning is printed.
-- `DriveOperations._recover_file` and `DriveOperations._process_item` no longer reference `args.overwrite` for the `_is_processed` short-circuit. The short-circuit is bypassed naturally on a fresh run because `_reset_state` empties `processed_items`. The deprecation shim achieves the same effect via `_clear_processed_items`.
-- CLI epilog gains a `--fresh-run` example; `--failed-file` help text now refers to `--fresh-run` instead of `--overwrite`; `--overwrite` help text describes the deprecation.
+- **`--overwrite` narrowed to local-file collision policy only.** State reset and failed-file truncation are now `--fresh-run`'s responsibility.
+  - For this release, the old combined behaviour is preserved as a **deprecation shim**: `--overwrite` alone still clears `processed_items` and truncates the failed-file CSV, but prints a deprecation warning to stderr naming v1.23.0 as the removal target.
+  - `--overwrite --fresh-run` combination: both effects apply; no deprecation warning is printed.
+  - `DriveOperations._recover_file` and `_process_item` no longer reference `args.overwrite` for the `_is_processed` short-circuit; the shim achieves the same effect via `_clear_processed_items`.
+  - CLI epilog, `--failed-file` help text, and `--overwrite` help text updated to describe the new split.
 
 ### Deprecated
 
-- The combined "clear state + truncate failed-file + bypass `_is_processed`" behavior of `--overwrite`. It continues to work in this release behind a stderr warning. Migrate to `--fresh-run` (alone or combined with `--overwrite`) before v1.23.0.
-
-### Notes
-
-- **No schema change.** Existing state files load and resume normally. Without `--fresh-run`, behavior is identical to before. With `--fresh-run`, the state file is rewritten on first save with a fresh `run_id`/`start_time` and an empty `processed_items` list, and the user's failed-file CSV (if `--failed-file` is set) is truncated.
+- **Combined "clear state + truncate failed-file" behaviour of `--overwrite`.** Continues to work in this release with a stderr warning. Migrate to `--fresh-run` (alone or combined with `--overwrite`) before v1.23.0.
 
 ## [1.21.2] - 2026-05-14
 
 ### Fixed
 
-- **Failed items are no longer marked as processed in the state file (#1027):** `DriveOperations._process_item` previously called `state_manager._mark_processed(item.id)` unconditionally, regardless of whether the recover/download/post-restore steps succeeded. Failed items ended up in both the `--failed-file` CSV *and* `state.processed_items`; on a subsequent rerun they were silently skipped by `_is_processed`, defeating the stated purpose of resume ("rerun and concentrate on what is remaining"). The mark-processed call is now made only on full success. Failed items continue to be appended to `--failed-file` and are reattempted automatically on the next rerun against the same state file.
-- Module docstring (`gdrive_recover.py`) and README updated to spell out the new resume semantics; the `_load_state` and summary output now reference `processed_items` as the count of **successfully** processed items.
-- Added a clarifying comment on `_recover_file` documenting the invariant that only `_process_item` writes to state.
-
-### Notes
-
-- **No schema change.** Existing state files load and resume normally. Entries written under the old (buggy) semantics may include IDs of items that previously failed; those entries are still treated as "processed" and will be skipped on rerun — there is no way to distinguish them post-hoc. To retry items already marked processed under the old semantics, use `--retry-failed-file` (if the failed-file CSV is available) or trim the state file manually.
+- **Failed items are no longer marked as processed in the state file (#1027).** `DriveOperations._process_item` previously called `_mark_processed(item.id)` unconditionally; failed items ended up in both `--failed-file` and `state.processed_items`, causing them to be silently skipped on rerun and defeating resume.
+  - The mark-processed call is now made only on full success.
+  - Failed items continue to be appended to `--failed-file` and are reattempted on the next rerun against the same state file.
+  - Module docstring (`gdrive_recover.py`) and README updated to describe the corrected resume semantics; `processed_items` is now documented as the count of **successfully** processed items.
+  - Entries written under the old semantics may include IDs of previously-failed items that will still be skipped on rerun. To retry them use `--retry-failed-file` (if the failed-file CSV is available) or trim the state file manually.
 
 ## [1.21.1] - 2026-05-14
 
 ### Fixed
 
-- **`--retry-failed-file` now sets `will_recover=False` for all retried items:** Files written to the failed-file CSV are already live in Drive (the untrash step either succeeded or was not needed); previously they inherited `will_recover=True` and triggered a redundant — and in edge cases incorrect — `files.update(trashed=False)` call before download. A new `_retry_mode` flag (set on `args` by `main()`) tells `_process_file_data` to skip the recover step.
-- **`--retry-failed-file` no longer falls back to a full trash query when the CSV has no actionable rows:** `main()` now exits with code 1 and a clear message instead of continuing with an empty `args.file_ids` list, which previously caused the tool to discover and process all trashed files.
-- **Trash-prefetch validation skipped in retry mode:** `_validate_file_ids_if_present` is a no-op when `_retry_mode` is set; the prefetch classifies live files as "skipped_non_trashed" which would have caused confusing log output and potentially dropped all retry IDs from streaming.
-- **`--failed-file` and `--retry-failed-file` cannot point to the same path:** Reading and writing the same CSV in one run would silently corrupt it. A new check in `_validate_retry_failed_file_arg` rejects this combination with an informative error message.
-- **Removed unused `import io`** from `gdrive_operations.py` (leftover from draft implementation).
+- **`--retry-failed-file` now sets `will_recover=False` for all retried items:** Files in the failed-file CSV are already live in Drive; previously they inherited `will_recover=True` and triggered a redundant `files.update(trashed=False)` call. A new `_retry_mode` flag on `args` tells `_process_file_data` to skip the recover step.
+- **`--retry-failed-file` no longer falls back to a full trash query when the CSV has no actionable rows:** `main()` now exits with code 1 and a clear message instead of continuing with an empty `args.file_ids` list and discovering all trashed files.
+- **Trash-prefetch validation skipped in retry mode:** `_validate_file_ids_if_present` is a no-op when `_retry_mode` is set, preventing "skipped_non_trashed" misclassification of already-live files.
+- **`--failed-file` and `--retry-failed-file` cannot point to the same path:** A new check in `_validate_retry_failed_file_arg` rejects this combination with an informative error message.
+- **Removed unused `import io`** from `gdrive_operations.py`.
 
 ## [1.21.0] - 2026-05-14
 
+> **Breaking change for `--failed-file` consumers:** The output is now CSV, not plain text. Update any scripts that read it line-by-line to use a CSV reader; the `target_path` column contains the same value as the previous plain-text entry.
+
 ### Added
 
-- **CSV failed-file output (`--failed-file`):** The file written by `--failed-file` is now a proper CSV instead of a plain text list.  Each row contains three columns:
-  - `source_folder_id` — Drive ID of the parent folder the file was discovered in
-  - `file_id` — Drive file ID (stable identifier, suitable for retry)
-  - `target_path` — full local path where the file was (or would be) saved
+- **CSV failed-file output (`--failed-file`):** The file written by `--failed-file` is now a proper CSV. Each row contains three columns: `source_folder_id` (Drive ID of the parent folder), `file_id` (stable Drive file ID, suitable for retry), and `target_path` (full local path where the file was or would be saved).
+  - A header row is written automatically on the first entry of each run; when `--overwrite` truncates the file the header is written immediately so the file is always a valid CSV.
+  - `source_folder_id` is populated from the `parents` field returned by the Drive API for all discovery modes (trash query, `--file-ids`, and `--folder-id` BFS traversal).
 
-  A header row is written automatically on the first entry of each run.  When `--overwrite` truncates the file, the header is written immediately so the file is always a valid CSV.  The `source_folder_id` is populated from the `parents` field returned by the Drive API for every discovery mode (trash query, `--file-ids`, and `--folder-id` BFS traversal).
+- **`--retry-failed-file <csv>` for `recover-and-download`:** Accepts a CSV produced by `--failed-file` and retries only the file IDs it contains, restoring each to its original target path.
+  - Mutually exclusive with `--file-ids` and `--folder-id`; validation rejects missing files, directories, and conflicting flags.
+  - Sets `will_recover=False`; issues download-only requests. If a file was moved back to trash between the original run and the retry, the download will fail with HTTP 403/404 and be recorded in the (new) `--failed-file` if one is supplied.
 
-- **`--retry-failed-file <csv>` for `recover-and-download`:** New argument that accepts a CSV produced by `--failed-file` and retries only the file IDs it contains, restoring each file to its original target path.  The flag is mutually exclusive with `--file-ids` and `--folder-id`; validation rejects missing files, directories, and conflicting flags.
+- **`source_folder_id` field on `RecoveryItem`:** Populated at discovery time with the first element of the Drive `parents` array.
 
-- **`source_folder_id` field on `RecoveryItem`:** Populated at discovery time with the first element of the Drive `parents` array; exposed for downstream consumers and used when writing the failed-file CSV.
-
-- **`parents` requested from Drive API in all discovery modes:** `_id_discovery_fields()` now unconditionally includes `parents` so `source_folder_id` is available regardless of whether the run uses `--file-ids`, `--folder-id`, or a trash query.
+- **`parents` requested from Drive API in all discovery modes:** `_id_discovery_fields()` now unconditionally includes `parents`.
 
 ### Changed
 
-- `DriveOperations._write_failed_file` rewrites plain-text append logic to use `csv.writer`; writes a header row when the destination file is new or empty.
+- `DriveOperations._write_failed_file` rewritten to use `csv.writer`; writes a header row when the destination file is new or empty.
 - `DriveOperations._clear_failed_files` writes the CSV header row (instead of an empty file) so the cleared file remains a valid CSV.
 - `DriveTrashRecoveryTool._generate_target_path` checks `args._target_path_overrides` (populated from the retry CSV) before computing a new path, ensuring retried files land exactly where the original run intended.
-- Module docstring updated with retry example; CLI epilog updated with retry examples and CSV file extension.
-
-### Notes
-
-- **Breaking change for `--failed-file` consumers:** The output file is now CSV, not plain text.  Update any scripts that read the failed-file line-by-line to use a CSV reader; the `target_path` column contains the same value as the previous plain-text entry.
-- Retry mode (`--retry-failed-file`) sets `will_recover=False`; it issues download-only requests.  If a file was moved back to trash between the original run and the retry, the download will fail with HTTP 403/404 and be recorded in the (new) `--failed-file` if one is supplied.
+- Module docstring and CLI epilog updated with retry examples and CSV file extension.
 
 ## [1.20.2] - 2026-05-12
 
-### Tests
+### Changed
 
-- **Increased new-code coverage to ≥ 80 %:** Added targeted tests to close gaps identified by SonarCloud (74.2 % → ≥ 80 %):
-  - `test_gdrive_operations.py`: added 9 tests covering previously-missed branches in `_do_post_restore_action` (`deleted` action and unknown-action fallback), `_log_post_restore_success` (`deleted` branch), `_handle_post_restore_retry`, `_extract_http_error_detail` (no-separator path), `_log_post_restore_final_error`, `_apply_post_restore_policy` non-terminal-error path (HTTP 5xx), and `_process_item` download-failure path.
-  - `test_gdrive_cli_folder_id.py`: imported `_validate_failed_file_arg` alongside the existing stub pattern and added 7 tests covering empty input, valid path with parent-dir creation, existing file, directory-rejection, and `--failed-file` argument acceptance on all three subcommands.
+- **Increased new-code coverage to ≥ 80 %** (74.2 % → ≥ 80 %): added targeted tests to close gaps identified by SonarCloud.
+  - `test_gdrive_operations.py`: 9 new tests covering `_do_post_restore_action` (`deleted` action and unknown-action fallback), `_log_post_restore_success` (`deleted` branch), `_handle_post_restore_retry`, `_extract_http_error_detail` (no-separator path), `_log_post_restore_final_error`, `_apply_post_restore_policy` non-terminal-error path (HTTP 5xx), and `_process_item` download-failure path.
+  - `test_gdrive_cli_folder_id.py`: 7 new tests covering empty input, valid path with parent-dir creation, existing file, directory-rejection, and `--failed-file` argument acceptance on all three subcommands.
 
 ## [1.20.1] - 2026-05-12
 
 ### Fixed
 
-- **Post-restore failures now propagate into item failure state:** `_process_item` was discarding the return value of `_apply_post_restore_policy`, so a failed trash or delete API call left `success = True`. Items whose post-restore action failed were therefore not written to `--failed-file` and not counted as errors, making retry lists incomplete. The return value is now folded into `success`; a post-restore failure marks the item as failed and triggers `_write_failed_file`.
+- **Post-restore failures now propagate into item failure state.** `_process_item` discarded the return value of `_apply_post_restore_policy`, so a failed trash or delete API call left `success = True`.
+  - Items whose post-restore action failed were not written to `--failed-file` and not counted as errors, making retry lists incomplete.
+  - The return value is now folded into `success`; a post-restore failure marks the item as failed and triggers `_write_failed_file`.
 
 ## [1.20.0] - 2026-05-12
 
 ### Added
 
-- **Optional log file (`--log-file`):** When supplied, a `FileHandler` is attached to the root logger at `DEBUG` level so every per-operation message is captured in the file regardless of console verbosity (`-v` / `-vv`).  Previously a log file was always written to `gdrive_recovery.log` with the same level as the console.  Now the default is no file logging; pass `--log-file <path>` to enable it.  The file and any missing parent directories are created automatically.
-- **Failed-file log (`--failed-file`):** New optional argument accepted by all three subcommands (`dry-run`, `recover-only`, `recover-and-download`).  When supplied, the full local path (or Drive file name for recover-only operations) of every failed item is appended to the file, one entry per line, as soon as the failure is detected.  The file and any missing parent directories are created automatically.  When `--overwrite` is active the file is truncated to zero bytes before processing begins, keeping it consistent with the fresh state of the run.
+- **Optional log file (`--log-file`):** Attaches a `FileHandler` at `DEBUG` level when supplied, capturing every per-operation message regardless of console verbosity (`-v` / `-vv`).
+  - Previously a log file was always written to `gdrive_recovery.log` at the same level as the console; now the default is no file logging.
+  - The file and any missing parent directories are created automatically.
+
+- **Failed-file log (`--failed-file`):** Appends the full local path (or Drive file name for recover-only operations) of every failed item to a file as soon as the failure is detected.
+  - Accepted by all three subcommands (`dry-run`, `recover-only`, `recover-and-download`).
+  - The file and any missing parent directories are created automatically.
+  - When `--overwrite` is active the file is truncated to zero bytes before processing begins.
+
 - **`DEFAULT_FAILED_FILE = ""`** constant added to `gdrive_constants.py`.
 
 ### Changed
 
-- `DEFAULT_LOG_FILE` in `gdrive_constants.py` changed from `"gdrive_recovery.log"` to `""` (empty string = disabled by default).
-- `DriveTrashRecoveryTool._setup_logging` rewritten to use explicit handler objects instead of `logging.basicConfig`, allowing the console handler and the file handler to carry independent log levels.  Console level continues to follow `-v` / `-vv`; the file handler (when enabled) is always `DEBUG`.
+- `DEFAULT_LOG_FILE` in `gdrive_constants.py` changed from `"gdrive_recovery.log"` to `""` (disabled by default). Existing workflows that relied on automatic log-file creation must now pass `--log-file gdrive_recovery.log` explicitly.
+- `DriveTrashRecoveryTool._setup_logging` rewritten to use explicit handler objects, allowing the console and file handlers to carry independent log levels; file handler (when enabled) is always `DEBUG`.
 - `DriveOperations.__init__` acquires `failed_file` from `args` and stores a dedicated `threading.Lock` for thread-safe writes.
-
-### Notes
-
-- Existing workflows that relied on `gdrive_recovery.log` being written automatically must now pass `--log-file gdrive_recovery.log` explicitly.
-- The `--failed-file` path is appended to on every non-overwrite run, so consecutive partial runs accumulate all failures.  Pass `--overwrite` to start fresh.
+- `--failed-file` path is appended to on every non-overwrite run; pass `--overwrite` to start fresh on each run.
 
 ## [1.19.0] - 2026-05-12
 
 ### Added
 
-- **Progress bar for recovery and download operations:** A new `ProgressBar` class (in `gdrive_report.py`) renders an animated in-place progress bar during streaming execution and batch processing.
-  - **TTY (interactive terminal):** The bar overwrites the current line via carriage-return, updating every 0.5 s so the display animates smoothly without scrolling. Example rendering:
+- **Progress bar for recovery and download operations:** New `ProgressBar` class in `gdrive_report.py` renders an animated in-place progress bar during streaming execution and batch processing.
+  - **TTY (interactive terminal):** Overwrites the current line via carriage-return, updating every 0.5 s.
     - Known total (e.g. `--file-ids`): `[████████░░░░░░░░░░░░] 400/1000 (40.0%) │ 5.2/sec │ ETA: 115s`
     - Streaming (unknown total): `▶ processed=800 discovered=1234 │ 5.2/sec`
-  - **Non-TTY (CI / log files):** A plain text line is written at most every 10 s when `--verbose` (`-v`) is active, preserving the previous behaviour and keeping log files tidy.
-  - **`--no-emoji` compatibility:** Unicode block characters (`█░▶│`) are replaced with ASCII equivalents (`#->`).
-  - `RecoveryReporter` gains `_start_progress(total)`, `_close_progress()`, and `_should_show_progress()` helpers. The bar is started in `print_streaming_start` / `print_processing_start` and finalised (cursor moved to a new line) in `_print_summary` and `print_interrupted_state_saved`.
+  - **Non-TTY (CI / log files):** Plain text line written at most every 10 s when `--verbose` (`-v`) is active, preserving the previous behaviour and keeping log files tidy.
+  - **`--no-emoji` compatibility:** Unicode block characters (`█░▶│`) replaced with ASCII equivalents (`#->`).
+  - `RecoveryReporter` gains `_start_progress(total)`, `_close_progress()`, and `_should_show_progress()` helpers; the bar is started in `print_streaming_start` / `print_processing_start` and finalised in `_print_summary` and `print_interrupted_state_saved`.
   - The `verbose >= 1` guard in `_handle_item_result_stream` and `_handle_item_result` is replaced with `reporter._should_show_progress()` so the bar appears on TTY without requiring `-v`.
 
 ## [1.18.x] - 2026-05-12/13 (Consolidated)
