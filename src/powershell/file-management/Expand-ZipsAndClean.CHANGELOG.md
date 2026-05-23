@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Restored named-parameter wrapper signatures in `Expand-ZipsAndClean.ps1` for `Invoke-ZipExtractions`, `Invoke-SerialZipExtractions`, and `Invoke-ParallelZipExtractions` so existing call sites continue to bind correctly when delegating to the `ZipExtraction` module.
+- Moved `Expand-ZipInRunspace` into `FileManagement/ZipExtraction` module private scope so parallel extraction (`-ThrottleLimit > 1`) no longer depends on script-scope helper discovery.
+
 ## 2.6.0 — 2026-05-23
 
 ### Changed

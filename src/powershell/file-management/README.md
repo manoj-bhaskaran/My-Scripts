@@ -48,6 +48,10 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean.ps1 v2.6.0 review follow-up** (2026-05-23)
+  - Restored explicit/named-parameter wrappers for extraction orchestration delegation so script call sites keep normal binding semantics.
+  - Moved parallel runspace helper `Expand-ZipInRunspace` into the new `FileManagement/ZipExtraction` module private scope to keep parallel mode self-contained.
+
 - **Expand-ZipsAndClean.ps1 v2.6.0** (2026-05-23)
   - Extracted ZIP extraction orchestration helpers into new `FileManagement/ZipExtraction` module.
   - Script now imports and delegates extraction orchestration through that module.
