@@ -413,41 +413,23 @@ function Get-ZipExtractionCommand {
 function Invoke-ZipExtractionDelegate {
     param(
         [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)][hashtable]$Parameters
+        [Parameter(Mandatory)]$Parameters
     )
     $cmd = Get-ZipExtractionCommand -Name $Name
-    return (& $cmd @Parameters)
+    if ($Parameters -is [hashtable]) { return (& $cmd @Parameters) }
+    if ($Parameters -is [array]) { return (& $cmd @Parameters) }
+    return (& $cmd $Parameters)
 }
 
 function Invoke-ParallelZipExtractions {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][System.IO.FileInfo[]]$Zips,
-        [Parameter(Mandatory)][int]$ZipCount,
-        [Parameter(Mandatory)][string]$DestinationDir,
-        [Parameter(Mandatory)][string]$Mode,
-        [Parameter(Mandatory)][string]$Policy,
-        [Parameter(Mandatory)][int]$SafeNameMaxLen,
-        [Parameter(Mandatory)][bool]$QuietMode,
-        [Parameter(Mandatory)][int]$ThrottleLimit,
-        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
-    )
-    return Invoke-ZipExtractionDelegate -Name 'Invoke-ParallelZipExtractions' -Parameters $PSBoundParameters
+    param([Parameter(ValueFromRemainingArguments = $true)]$Arguments)
+    return Invoke-ZipExtractionDelegate -Name 'Invoke-ParallelZipExtractions' -Parameters $Arguments
 }
 function Invoke-SerialZipExtractions {
     [CmdletBinding(SupportsShouldProcess = $true)]
-    param(
-        [Parameter(Mandatory)][System.IO.FileInfo[]]$Zips,
-        [Parameter(Mandatory)][int]$ZipCount,
-        [Parameter(Mandatory)][string]$DestinationDir,
-        [Parameter(Mandatory)][string]$Mode,
-        [Parameter(Mandatory)][string]$Policy,
-        [Parameter(Mandatory)][int]$SafeNameMaxLen,
-        [Parameter(Mandatory)][bool]$QuietMode,
-        [Parameter(Mandatory)][int]$ThrottleLimit,
-        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
-    )
-    return Invoke-ZipExtractionDelegate -Name 'Invoke-SerialZipExtractions' -Parameters $PSBoundParameters
+    param([Parameter(ValueFromRemainingArguments = $true)]$Arguments)
+    return Invoke-ZipExtractionDelegate -Name 'Invoke-SerialZipExtractions' -Parameters $Arguments
 }
 function Invoke-ZipExtractions {
     [CmdletBinding(SupportsShouldProcess = $true)]

@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- Reduced new-code duplication by simplifying script-local `Invoke-ParallelZipExtractions`/`Invoke-SerialZipExtractions` wrappers to argument-pass-through delegators and extending `Invoke-ZipExtractionDelegate` to handle non-hashtable forwarded arguments.
 - Refactored `Get-ZipExtractionCommand` into smaller helper functions (`Resolve-NonWrapperZipExtractionCommand`, `Get-ZipExtractionModuleCandidates`, `Import-ZipExtractionFallbackFiles`) to reduce cognitive complexity while preserving helper-load resilience and non-wrapper command selection safeguards.
 - Reduced wrapper duplication by introducing `Invoke-ZipExtractionDelegate` and routing wrapper calls through `@PSBoundParameters` delegation.
 - Added a module-scope `New-ExtractionSummary` fallback in `ZipExtraction.psm1` so extracted orchestration helpers can return summary objects in helper-load contexts where the script-local summary builder is not present.
@@ -57,6 +58,7 @@
 
 ### Fixed
 
+- Reduced new-code duplication by simplifying script-local `Invoke-ParallelZipExtractions`/`Invoke-SerialZipExtractions` wrappers to argument-pass-through delegators and extending `Invoke-ZipExtractionDelegate` to handle non-hashtable forwarded arguments.
 - Refactored `Get-ZipExtractionCommand` into smaller helper functions (`Resolve-NonWrapperZipExtractionCommand`, `Get-ZipExtractionModuleCandidates`, `Import-ZipExtractionFallbackFiles`) to reduce cognitive complexity while preserving helper-load resilience and non-wrapper command selection safeguards.
 - Reduced wrapper duplication by introducing `Invoke-ZipExtractionDelegate` and routing wrapper calls through `@PSBoundParameters` delegation.
 - Added a module-scope `New-ExtractionSummary` fallback in `ZipExtraction.psm1` so extracted orchestration helpers can return summary objects in helper-load contexts where the script-local summary builder is not present.
@@ -124,6 +126,7 @@
 
 ### Fixed
 
+- Reduced new-code duplication by simplifying script-local `Invoke-ParallelZipExtractions`/`Invoke-SerialZipExtractions` wrappers to argument-pass-through delegators and extending `Invoke-ZipExtractionDelegate` to handle non-hashtable forwarded arguments.
 - Refactored `Get-ZipExtractionCommand` into smaller helper functions (`Resolve-NonWrapperZipExtractionCommand`, `Get-ZipExtractionModuleCandidates`, `Import-ZipExtractionFallbackFiles`) to reduce cognitive complexity while preserving helper-load resilience and non-wrapper command selection safeguards.
 - Reduced wrapper duplication by introducing `Invoke-ZipExtractionDelegate` and routing wrapper calls through `@PSBoundParameters` delegation.
 - Added a module-scope `New-ExtractionSummary` fallback in `ZipExtraction.psm1` so extracted orchestration helpers can return summary objects in helper-load contexts where the script-local summary builder is not present.
