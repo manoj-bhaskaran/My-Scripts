@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.6.0 — 2026-05-23
+
+### Changed
+
+- Extracted ZIP extraction orchestration helpers (`Invoke-ParallelZipExtractions`, `Invoke-SerialZipExtractions`, `Invoke-ZipExtractions`, and aggregation helper logic) into a new `FileManagement/ZipExtraction` module.
+- `Expand-ZipsAndClean.ps1` now imports `src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1` and delegates ZIP extraction orchestration to that module.
+
+### Versioning
+
+- Bumped version to `2.6.0` (minor — internal module-boundary refactor/import contract expansion; no intentional behavior change).
+
 ## 2.5.4 — 2026-05-22
 
 ### Tests

@@ -20,6 +20,7 @@ Scripts for file operations, distribution, copying, and archiving.
 - **PowerShellLoggingFramework** (`src/powershell/modules/Core/Logging/`) - Structured logging
 - **FileSystem** (`src/powershell/modules/Core/FileSystem/`) - Path normalization, safe naming, unique path resolution
 - **Zip** (`src/powershell/modules/Core/Zip/`) - ZIP archive primitives used by `Expand-ZipsAndClean.ps1`
+- **ZipExtraction** (`src/powershell/modules/FileManagement/ZipExtraction/`) - ZIP extraction orchestration helpers used by `Expand-ZipsAndClean.ps1`
 - **AdbHelpers** (`src/powershell/modules/Android/AdbHelpers/`) - Shared ADB/device helpers used by `Copy-AndroidFiles.ps1`
 
 ### External Tools
@@ -46,6 +47,11 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 - These versions are intentionally independent and may advance separately under SemVer.
 
 ## Recent Updates
+
+- **Expand-ZipsAndClean.ps1 v2.6.0** (2026-05-23)
+  - Extracted ZIP extraction orchestration helpers into new `FileManagement/ZipExtraction` module.
+  - Script now imports and delegates extraction orchestration through that module.
+  - Version bump: `2.6.0` (minor — internal refactor/import-contract change).
 
 - **Expand-ZipsAndClean.ps1 progress helper compatibility fix** (2026-05-21)
   - `Show-ProgressPhase` now falls back to native `Write-Progress` when `Show-Progress` is unavailable in helper-only load contexts (e.g., region-dot-sourced tests), preventing `CommandNotFoundException` while preserving normal shared-module behavior.
