@@ -323,6 +323,31 @@ function New-ExtractionSummary {
     Aggregates per-runspace results into a single summary object.
 #>
 # ZIP extraction orchestration moved to FileManagement/ZipExtraction module (issue #1065).
+function Get-ZipExtractionCommand {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Name)
+
+    $module = Get-Module -Name ZipExtraction -ErrorAction SilentlyContinue
+    if (-not $module) {
+        $candidates = @(
+            (Join-Path $PSScriptRoot '..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1'),
+            (Join-Path (Get-Location) 'src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1')
+        )
+        foreach ($candidate in $candidates) {
+            if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+                Import-Module -Name $candidate -Force -ErrorAction Stop
+                break
+            }
+        }
+    }
+
+    $cmd = Get-Command -Name $Name -Module ZipExtraction -ErrorAction SilentlyContinue
+    if (-not $cmd) {
+        throw "The module 'ZipExtraction' could not be loaded. For more information, run 'Import-Module ZipExtraction'."
+    }
+    return $cmd
+}
+
 function Invoke-ParallelZipExtractions {
     [CmdletBinding()]
     param(
@@ -336,7 +361,7 @@ function Invoke-ParallelZipExtractions {
         [Parameter(Mandatory)][int]$ThrottleLimit,
         [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
     )
-    return ZipExtraction\Invoke-ParallelZipExtractions -Zips $Zips -ZipCount $ZipCount -DestinationDir $DestinationDir -Mode $Mode -Policy $Policy -SafeNameMaxLen $SafeNameMaxLen -QuietMode $QuietMode -ThrottleLimit $ThrottleLimit -ErrorList $ErrorList
+    return (& (Get-ZipExtractionCommand -Name Invoke-ParallelZipExtractions) -Zips $Zips -ZipCount $ZipCount -DestinationDir $DestinationDir -Mode $Mode -Policy $Policy -SafeNameMaxLen $SafeNameMaxLen -QuietMode $QuietMode -ThrottleLimit $ThrottleLimit -ErrorList $ErrorList)
 }
 function Invoke-SerialZipExtractions {
     [CmdletBinding(SupportsShouldProcess = $true)]
@@ -351,7 +376,7 @@ function Invoke-SerialZipExtractions {
         [Parameter(Mandatory)][int]$ThrottleLimit,
         [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
     )
-    return ZipExtraction\Invoke-SerialZipExtractions -Zips $Zips -ZipCount $ZipCount -DestinationDir $DestinationDir -Mode $Mode -Policy $Policy -SafeNameMaxLen $SafeNameMaxLen -QuietMode $QuietMode -ThrottleLimit $ThrottleLimit -ErrorList $ErrorList
+    return (& (Get-ZipExtractionCommand -Name Invoke-SerialZipExtractions) -Zips $Zips -ZipCount $ZipCount -DestinationDir $DestinationDir -Mode $Mode -Policy $Policy -SafeNameMaxLen $SafeNameMaxLen -QuietMode $QuietMode -ThrottleLimit $ThrottleLimit -ErrorList $ErrorList)
 }
 function Invoke-ZipExtractions {
     [CmdletBinding(SupportsShouldProcess = $true)]
@@ -365,7 +390,7 @@ function Invoke-ZipExtractions {
         [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList,
         [int]$ThrottleLimit = 1
     )
-    return ZipExtraction\Invoke-ZipExtractions -SourceDir $SourceDir -DestinationDir $DestinationDir -Mode $Mode -Policy $Policy -SafeNameMaxLen $SafeNameMaxLen -QuietMode $QuietMode -ErrorList $ErrorList -ThrottleLimit $ThrottleLimit
+    return (& (Get-ZipExtractionCommand -Name Invoke-ZipExtractions) -SourceDir $SourceDir -DestinationDir $DestinationDir -Mode $Mode -Policy $Policy -SafeNameMaxLen $SafeNameMaxLen -QuietMode $QuietMode -ErrorList $ErrorList -ThrottleLimit $ThrottleLimit)
 }
 
 <#

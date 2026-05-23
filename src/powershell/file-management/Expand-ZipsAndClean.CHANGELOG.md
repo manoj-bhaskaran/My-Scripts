@@ -2,17 +2,18 @@
 
 ## Unreleased
 
-### Fixed
-
-- Restored named-parameter wrapper signatures in `Expand-ZipsAndClean.ps1` for `Invoke-ZipExtractions`, `Invoke-SerialZipExtractions`, and `Invoke-ParallelZipExtractions` so existing call sites continue to bind correctly when delegating to the `ZipExtraction` module.
-- Moved `Expand-ZipInRunspace` into `FileManagement/ZipExtraction` module private scope so parallel extraction (`-ThrottleLimit > 1`) no longer depends on script-scope helper discovery.
-
 ## 2.6.0 — 2026-05-23
 
 ### Changed
 
 - Extracted ZIP extraction orchestration helpers (`Invoke-ParallelZipExtractions`, `Invoke-SerialZipExtractions`, `Invoke-ZipExtractions`, and aggregation helper logic) into a new `FileManagement/ZipExtraction` module.
 - `Expand-ZipsAndClean.ps1` now imports `src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1` and delegates ZIP extraction orchestration to that module.
+
+### Fixed
+
+- Restored named-parameter wrapper signatures in `Expand-ZipsAndClean.ps1` for `Invoke-ZipExtractions`, `Invoke-SerialZipExtractions`, and `Invoke-ParallelZipExtractions` so existing call sites continue to bind correctly when delegating to the `ZipExtraction` module.
+- Added resilient wrapper command resolution (`Get-ZipExtractionCommand`) that imports the `ZipExtraction` module by path when necessary (including helper-region test loads) before dispatching module functions.
+- Moved `Expand-ZipInRunspace` into `FileManagement/ZipExtraction` module private scope so parallel extraction (`-ThrottleLimit > 1`) no longer depends on script-scope helper discovery.
 
 ### Versioning
 
