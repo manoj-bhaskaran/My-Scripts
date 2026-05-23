@@ -347,10 +347,32 @@ function Get-ZipExtractionCommand {
             $candidates.Add((Join-Path $cwdPath 'src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
         }
 
+        $imported = $false
         foreach ($candidate in ($candidates | Select-Object -Unique)) {
             if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate)) {
                 Import-Module -Name $candidate -Force -ErrorAction Stop
+                $imported = $true
                 break
+            }
+        }
+
+        if (-not $imported) {
+            $searchRoots = [System.Collections.Generic.List[string]]::new()
+            if (-not [string]::IsNullOrWhiteSpace($fileSystemModulePath)) {
+                $searchRoots.Add((Split-Path -Path $fileSystemModulePath -Parent)) | Out-Null
+            }
+            if (-not [string]::IsNullOrWhiteSpace($cwdPath)) {
+                $searchRoots.Add($cwdPath) | Out-Null
+            }
+
+            foreach ($root in ($searchRoots | Select-Object -Unique)) {
+                if (-not [string]::IsNullOrWhiteSpace($root) -and (Test-Path -LiteralPath $root)) {
+                    $found = Get-ChildItem -LiteralPath $root -Filter 'ZipExtraction.psm1' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                    if ($found) {
+                        Import-Module -Name $found.FullName -Force -ErrorAction Stop
+                        break
+                    }
+                }
             }
         }
     }
