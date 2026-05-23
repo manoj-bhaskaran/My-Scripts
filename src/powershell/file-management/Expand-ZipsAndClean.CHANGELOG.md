@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 2.6.1 — 2026-05-23
+
+### Changed
+
+- Extracted shared private `Invoke-SingleZipExtraction` (`FileManagement/ZipExtraction/Private/`) that performs `Get-ZipFileStats` + `Expand-ZipSmart` and returns a per-zip result object. Both the serial loop (`Invoke-SerialZipExtractions`) and the parallel runspace helper (`Expand-ZipInRunspace`) now delegate to it, eliminating the duplicated stats-extract-tally sequence.
+- Updated `Invoke-ParallelZipExtractions` to pass `Invoke-SingleZipExtraction` into each runspace alongside `Expand-ZipInRunspace`, so the new shared helper is available in parallel execution contexts.
+- Extracted private `Resolve-MoveTarget` from `Move-ZipFilesToParent` (in `Expand-ZipsAndClean.ps1`). It accepts the source zip, the parent directory, and `CollisionPolicy`, and returns `{ TargetPath, PolicyTag }`. `Move-ZipFilesToParent` now only performs the actual move and counter updates, with collision logic independently testable.
+
+### Tests
+
+- Added `tests/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.Tests.ps1` covering `Invoke-SingleZipExtraction`: valid archive stats/log output, and throw on corrupt input.
+- Added four `Resolve-MoveTarget` tests in `Expand-ZipsAndClean.Tests.ps1`: no-collision path (`PolicyTag=None`), Skip, Overwrite, and Rename policy tags.
+
+### Versioning
+
+- Bumped version to `2.6.1` (patch — internal refactor; no behavior change).
+
 ## 2.6.0 — 2026-05-23
 
 ### Changed
