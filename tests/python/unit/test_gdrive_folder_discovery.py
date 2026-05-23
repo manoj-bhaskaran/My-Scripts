@@ -419,3 +419,181 @@ def test_process_file_data_will_recover_false_with_folder_id():
     item = disc._process_file_data(fd)
     assert item is not None
     assert item.will_recover is False
+
+
+# ---------------------------------------------------------------------------
+# _process_file_data — null/missing size (issue #1083 fix 4)
+# ---------------------------------------------------------------------------
+
+
+def test_process_file_data_null_size_defaults_to_zero():
+    """API returning size:null must not raise TypeError."""
+    disc = _make_discovery_trash()
+    fd = {
+        "id": "native1",
+        "name": "doc.gdoc",
+        "mimeType": "application/vnd.google-apps.document",
+        "createdTime": "2024-01-01T00:00:00Z",
+        "size": None,
+    }
+    item = disc._process_file_data(fd)
+    assert item is not None
+    assert item.size == 0
+
+
+def test_process_file_data_missing_size_defaults_to_zero():
+    disc = _make_discovery_trash()
+    fd = {
+        "id": "native2",
+        "name": "sheet.gsheet",
+        "mimeType": "application/vnd.google-apps.spreadsheet",
+        "createdTime": "2024-01-01T00:00:00Z",
+    }
+    item = disc._process_file_data(fd)
+    assert item is not None
+    assert item.size == 0
+
+
+# ---------------------------------------------------------------------------
+# _discover_via_query — partial results retained on exception (issue #1083 fix 3)
+# ---------------------------------------------------------------------------
+
+
+def test_discover_via_query_returns_partial_on_exception():
+    """Items collected before a pagination error must not be discarded."""
+    disc = _make_discovery_trash()
+    page1 = [
+        {
+            "id": "a",
+            "name": "a.txt",
+            "mimeType": "text/plain",
+            "createdTime": "2024-01-01T00:00:00Z",
+            "size": 1,
+        },
+        {
+            "id": "b",
+            "name": "b.txt",
+            "mimeType": "text/plain",
+            "createdTime": "2024-01-01T00:00:00Z",
+            "size": 2,
+        },
+    ]
+
+    def _pages(_query):
+        yield 1, page1
+        raise RuntimeError("network failure on page 2")
+
+    disc._iter_query_pages = _pages
+    items = disc._discover_via_query("trashed=true")
+    assert len(items) == 2
+
+
+def test_discover_via_query_returns_empty_on_first_page_exception():
+    disc = _make_discovery_trash()
+
+    def _pages(_query):
+        raise RuntimeError("immediate failure")
+        yield  # make it a generator
+
+    disc._iter_query_pages = _pages
+    items = disc._discover_via_query("trashed=true")
+    assert items == []
+
+
+# ---------------------------------------------------------------------------
+# _stream_stream_ids — prefetch cache consulting + ok flag (issue #1083 fixes 1+2)
+# ---------------------------------------------------------------------------
+
+
+def _make_discovery_streaming(file_ids):
+    """DriveTrashDiscovery configured for streaming-ID tests."""
+    processed: list = []
+    args = SimpleNamespace(
+        folder_id=None,
+        file_ids=file_ids,
+        mode="recover_and_download",
+        after_date=None,
+        extensions=None,
+        post_restore_policy="retain",
+        download_dir="/tmp/dl",
+        verbose=0,
+        limit=0,
+    )
+    disc = DriveTrashDiscovery(
+        args,
+        logger=MagicMock(),
+        auth=MagicMock(),
+        execute_fn=MagicMock(),
+        stats={"found": 0, "errors": 0},
+        stats_lock=Lock(),
+        seen_total_ref=[0],
+        generate_target_path=lambda item: f"/tmp/dl/{item.name}",
+        run_parallel_processing_for_batch=lambda batch, ts: processed.extend(list(batch)),
+    )
+    disc._processed = processed
+    return disc
+
+
+def test_stream_ids_skips_prefetch_error_and_sets_ok_false():
+    """IDs in _id_prefetch_errors must not be re-fetched; ok must be False."""
+    fid = "a" * 28
+    disc = _make_discovery_streaming([fid])
+    disc._id_prefetch_errors[fid] = "HTTP 404"
+
+    execute_mock = MagicMock(side_effect=AssertionError("should not be called"))
+    disc._execute = execute_mock
+
+    ok = disc._stream_stream_ids(batch_n=10, start_time=0.0)
+
+    assert not ok
+    assert disc._stats["errors"] == 1
+    execute_mock.assert_not_called()
+
+
+def test_stream_ids_skips_non_trashed_and_ok_stays_true():
+    """IDs marked non-trashed must be skipped silently; ok must remain True."""
+    fid = "b" * 28
+    disc = _make_discovery_streaming([fid])
+    disc._id_prefetch_non_trashed[fid] = True
+
+    execute_mock = MagicMock(side_effect=AssertionError("should not be called"))
+    disc._execute = execute_mock
+
+    ok = disc._stream_stream_ids(batch_n=10, start_time=0.0)
+
+    assert ok
+    assert disc._stats["errors"] == 0
+    execute_mock.assert_not_called()
+
+
+def test_stream_ids_ok_false_on_live_fetch_failure():
+    """A live fetch exception must surface as ok=False."""
+    fid = "c" * 28
+    disc = _make_discovery_streaming([fid])
+
+    disc._execute = MagicMock(side_effect=RuntimeError("network error"))
+
+    ok = disc._stream_stream_ids(batch_n=10, start_time=0.0)
+
+    assert not ok
+    assert disc._stats["errors"] == 1
+
+
+def test_stream_ids_processes_valid_cached_item():
+    """An ID in _id_prefetch with valid data must be processed normally."""
+    fid = "d" * 28
+    disc = _make_discovery_streaming([fid])
+    disc._id_prefetch[fid] = {
+        "id": fid,
+        "name": "photo.jpg",
+        "mimeType": "image/jpeg",
+        "createdTime": "2024-01-01T00:00:00Z",
+        "size": 512,
+    }
+    disc._id_prefetch_non_trashed[fid] = False
+
+    ok = disc._stream_stream_ids(batch_n=10, start_time=0.0)
+
+    assert ok
+    assert len(disc._processed) == 1
+    assert disc._processed[0].id == fid

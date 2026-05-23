@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.26.1] - 2026-05-23
+
+### Fixed
+
+- **Streaming ID path now skips prefetch-cached errors and non-trashed IDs:** `_stream_stream_ids` previously ignored `_id_prefetch_errors` and `_id_prefetch_non_trashed`, causing IDs already known to be 404/403 to be re-fetched (wasted API calls, duplicated error logging) and non-trashed IDs to potentially leak through. The streaming path now mirrors the batch path (`_discover_via_ids`) by consulting both caches before attempting a live fetch.
+- **Streaming ID failures now surface `ok=False`:** `_stream_stream_ids` always returned `True` even when `_handle_streaming_id_fetch` recorded errors. The method now returns `False` whenever a prefetch-cached error is replayed or a live fetch fails, consistent with `_stream_stream_query` and `_stream_stream_folder`.
+- **`_discover_via_query` retains partial results on pagination error:** An exception during query pagination previously discarded all items collected from earlier pages (`return []`). The method now returns whatever items were gathered before the failure, matching the folder traversal path's behaviour.
+- **Size parsing hardened against `null` values:** `_process_file_data` used `int(file_data.get("size", 0))`, which raises `TypeError` if the API returns `"size": null` (possible for Google-native files). Changed to `int(file_data.get("size") or 0)`.
+- **Parity metrics file written with explicit UTF-8 encoding:** `_emit_parity_metrics` now passes `encoding="utf-8"` to `open()` to avoid platform-dependent encoding on Windows.
+- **Time filter exception handling narrowed:** `_matches_time_filter` caught bare `Exception`, masking programmer errors. Narrowed to `(ValueError, TypeError, OverflowError)` — the only exceptions that `dateutil.parser.parse` and timezone arithmetic can legitimately raise. Fail-open behaviour (include the file) is preserved.
+
 ## [1.26.0] - 2026-05-17
 
 ### Added
