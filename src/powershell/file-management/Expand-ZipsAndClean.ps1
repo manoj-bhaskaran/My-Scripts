@@ -330,6 +330,20 @@ function Get-ZipExtractionCommand {
     $cmd = Get-Command -Name $Name -Module ZipExtraction -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd }
 
+    $thisScriptPath = $PSCommandPath
+    function Resolve-NonWrapperCommand {
+        param([Parameter(Mandatory)][string]$CommandName,[string]$ExcludeScriptPath)
+        $all = @(Get-Command -Name $CommandName -All -ErrorAction SilentlyContinue)
+        foreach ($candidate in $all) {
+            if ($candidate.Source -eq 'ZipExtraction') { return $candidate }
+            $file = $candidate.ScriptBlock?.File
+            if (-not [string]::IsNullOrWhiteSpace($file) -and -not [string]::IsNullOrWhiteSpace($ExcludeScriptPath) -and $file -ne $ExcludeScriptPath) {
+                if ($file -like '*modules*FileManagement*ZipExtraction*') { return $candidate }
+            }
+        }
+        return $null
+    }
+
     $candidates = [System.Collections.Generic.List[string]]::new()
     if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
         $candidates.Add((Join-Path $PSScriptRoot '..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1')) | Out-Null
@@ -351,7 +365,7 @@ function Get-ZipExtractionCommand {
     foreach ($candidate in ($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)) {
         if (Test-Path -LiteralPath $candidate) {
             Import-Module -Name $candidate -Force -ErrorAction SilentlyContinue
-            $cmd = Get-Command -Name $Name -Module ZipExtraction -ErrorAction SilentlyContinue
+            $cmd = Resolve-NonWrapperCommand -CommandName $Name -ExcludeScriptPath $thisScriptPath
             if ($cmd) { return $cmd }
         }
     }
@@ -381,7 +395,7 @@ function Get-ZipExtractionCommand {
                 ForEach-Object { . $_.FullName }
         }
 
-        $cmd = Get-Command -Name $Name -ErrorAction SilentlyContinue
+        $cmd = Resolve-NonWrapperCommand -CommandName $Name -ExcludeScriptPath $thisScriptPath
         if ($cmd) { return $cmd }
     }
 

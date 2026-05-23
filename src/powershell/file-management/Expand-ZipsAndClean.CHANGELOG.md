@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- Prevented wrapper recursion/call-depth overflow in helper-load fallback by resolving only non-wrapper extraction commands (prefer `Source=ZipExtraction` or commands defined under the ZipExtraction module path) instead of re-selecting script-local wrapper functions.
 - Added a helper-region fallback in `Get-ZipExtractionCommand` that dot-sources `FileManagement/ZipExtraction` `Private/*.ps1` and `Public/*.ps1` directly when module-name discovery/import cannot resolve `ZipExtraction` in test harness contexts.
 - Strengthened `Get-ZipExtractionCommand` with upward directory probing from `$PSScriptRoot`, current directory, and loaded `FileSystem` module path to locate `src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1` across helper-only test execution contexts where previous direct candidates could still miss.
 - Added a final fallback module locator in `Get-ZipExtractionCommand` that searches from loaded-module/cwd roots for `ZipExtraction.psm1` when direct candidates are unavailable, preventing remaining helper-load `ZipExtraction` resolution failures in parallel extraction tests.
@@ -51,6 +52,7 @@
 
 ### Fixed
 
+- Prevented wrapper recursion/call-depth overflow in helper-load fallback by resolving only non-wrapper extraction commands (prefer `Source=ZipExtraction` or commands defined under the ZipExtraction module path) instead of re-selecting script-local wrapper functions.
 - Added a helper-region fallback in `Get-ZipExtractionCommand` that dot-sources `FileManagement/ZipExtraction` `Private/*.ps1` and `Public/*.ps1` directly when module-name discovery/import cannot resolve `ZipExtraction` in test harness contexts.
 - Strengthened `Get-ZipExtractionCommand` with upward directory probing from `$PSScriptRoot`, current directory, and loaded `FileSystem` module path to locate `src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1` across helper-only test execution contexts where previous direct candidates could still miss.
 - Added a final fallback module locator in `Get-ZipExtractionCommand` that searches from loaded-module/cwd roots for `ZipExtraction.psm1` when direct candidates are unavailable, preventing remaining helper-load `ZipExtraction` resolution failures in parallel extraction tests.
@@ -112,6 +114,7 @@
 
 ### Fixed
 
+- Prevented wrapper recursion/call-depth overflow in helper-load fallback by resolving only non-wrapper extraction commands (prefer `Source=ZipExtraction` or commands defined under the ZipExtraction module path) instead of re-selecting script-local wrapper functions.
 - Added a helper-region fallback in `Get-ZipExtractionCommand` that dot-sources `FileManagement/ZipExtraction` `Private/*.ps1` and `Public/*.ps1` directly when module-name discovery/import cannot resolve `ZipExtraction` in test harness contexts.
 - Strengthened `Get-ZipExtractionCommand` with upward directory probing from `$PSScriptRoot`, current directory, and loaded `FileSystem` module path to locate `src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1` across helper-only test execution contexts where previous direct candidates could still miss.
 - Added a final fallback module locator in `Get-ZipExtractionCommand` that searches from loaded-module/cwd roots for `ZipExtraction.psm1` when direct candidates are unavailable, preventing remaining helper-load `ZipExtraction` resolution failures in parallel extraction tests.
