@@ -15,16 +15,14 @@ function Expand-ZipInRunspace {
 
     $localLogs = [System.Collections.Generic.List[string]]::new()
     try {
-        $stats = Get-ZipFileStats -ZipPath $Zip.FullName
-        $filesFromZip = Expand-ZipSmart -ZipPath $Zip.FullName -DestinationRoot $DestDir -ExtractMode $Mode -CollisionPolicy $Policy -SafeNameMaxLen $MaxLen -ExpectedFileCount $stats.FileCount
-        $actualFiles = if ($filesFromZip -is [int]) { $filesFromZip } else { $stats.FileCount }
-        $localLogs.Add("Extracted '$($Zip.Name)': files=$($stats.FileCount), uncompressed=$($stats.UncompressedBytes), compressed=$($stats.CompressedBytes)") | Out-Null
+        $r = Invoke-SingleZipExtraction -Zip $Zip -DestDir $DestDir -Mode $Mode -Policy $Policy -MaxLen $MaxLen
+        $localLogs.Add($r.Log) | Out-Null
 
         return [pscustomobject]@{
             Success           = $true
-            FilesExtracted    = $actualFiles
-            UncompressedBytes = $stats.UncompressedBytes
-            CompressedBytes   = $stats.CompressedBytes
+            FilesExtracted    = $r.FilesExtracted
+            UncompressedBytes = $r.UncompressedBytes
+            CompressedBytes   = $r.CompressedBytes
             Logs              = $localLogs.ToArray()
         }
     } catch {

@@ -15,11 +15,10 @@ function Invoke-SerialZipExtractions {
         try {
             Show-ProgressPhase -Activity "Extracting archives" -Status $zip.Name -Current ($index - 1) -Total $ZipCount -QuietMode $QuietMode
             if ($PSCmdlet.ShouldProcess($zip.FullName, "Extract")) {
-                $stats = Get-ZipFileStats -ZipPath $zip.FullName
-                $filesFromZip = Expand-ZipSmart -ZipPath $zip.FullName -DestinationRoot $DestinationDir -ExtractMode $Mode -CollisionPolicy $Policy -SafeNameMaxLen $SafeNameMaxLen -ExpectedFileCount $stats.FileCount
-                if ($filesFromZip -is [int]) { $totalFilesExtracted += $filesFromZip } else { $totalFilesExtracted += $stats.FileCount }
-                $totalUncompressedBytes += $stats.UncompressedBytes; $totalCompressedZipBytes += $stats.CompressedBytes; $processedZips++
-                Write-LogDebug "Extracted '$($zip.Name)': files=$($stats.FileCount), uncompressed=$($stats.UncompressedBytes), compressed=$($stats.CompressedBytes)"
+                $r = Invoke-SingleZipExtraction -Zip $zip -DestDir $DestinationDir -Mode $Mode -Policy $Policy -MaxLen $SafeNameMaxLen
+                $totalFilesExtracted += $r.FilesExtracted
+                $totalUncompressedBytes += $r.UncompressedBytes; $totalCompressedZipBytes += $r.CompressedBytes; $processedZips++
+                Write-LogDebug $r.Log
             }
         } catch { $msg = $_.Exception.Message; $ErrorList.Add("Extraction failed for '$($zip.FullName)': $msg") | Out-Null; Write-LogDebug $msg }
     }
