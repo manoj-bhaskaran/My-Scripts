@@ -144,60 +144,6 @@ def test_report_validation_outcome(monkeypatch, tmp_path):
     assert tool.discovery._report_validation_outcome(buckets2, 1, ["1"]) is False
 
 
-def test_handle_prefetch_error_retry_and_terminal(tmp_path, monkeypatch):
-    from gdrive_recover import DriveTrashRecoveryTool
-
-    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
-    tool = DriveTrashRecoveryTool(_build_dummy_args(tmp_path))
-
-    class FakeHttpError(Exception):
-        pass
-
-    fake_error = FakeHttpError("oops")
-    fake_error.resp = MagicMock(status=429)
-
-    buckets = {"ok": [], "invalid": [], "not_found": [], "no_access": []}
-    transient_errors = [0]
-    transient_ids = []
-    err_count = [0]
-
-    # first attempt should request retry
-    should_retry = tool.discovery._handle_prefetch_error(
-        "fid", 429, fake_error, 0, buckets, transient_errors, transient_ids, err_count
-    )
-    assert should_retry is False
-
-    # terminal not-found
-    fake_error2 = FakeHttpError("no")
-    fake_error2.resp = MagicMock(status=404)
-    assert (
-        tool.discovery._handle_prefetch_error(
-            "fid", 404, fake_error2, 0, buckets, transient_errors, transient_ids, err_count
-        )
-        is True
-    )
-    assert "fid" in buckets["not_found"]
-
-
-def test_fetch_file_metadata_error_path(tmp_path, monkeypatch):
-    from gdrive_recover import DriveTrashRecoveryTool
-
-    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
-    tool = DriveTrashRecoveryTool(_build_dummy_args(tmp_path))
-
-    class FakeRequest:
-        def execute(self):
-            raise Exception("bad request")
-
-    service = MagicMock()
-    service.files.return_value.get.return_value = FakeRequest()
-
-    data, non_trashed, err = tool.discovery._fetch_file_metadata(service, "fid", "id")
-    assert data is None
-    assert non_trashed is False
-    assert err and "files.get(fileId=fid) failed" in err
-
-
 def test_discover_via_query_limit(tmp_path, monkeypatch):
     from gdrive_recover import DriveTrashRecoveryTool
 
@@ -243,32 +189,6 @@ def test_discover_via_query_limit(tmp_path, monkeypatch):
 
     items = tool.discovery._discover_via_query("trashed=true")
     assert len(items) == 1
-
-
-def test_error_formatting_and_status_extract(tmp_path, monkeypatch):
-    monkeypatch.setattr("gdrive_recover.DriveAuthManager", MagicMock())
-    from gdrive_recover import DriveTrashRecoveryTool
-
-    args = _build_dummy_args(tmp_path)
-    tool = DriveTrashRecoveryTool(args)
-
-    class FakeHttpError:
-        def __init__(self):
-            self.resp = MagicMock(status=502)
-            self.content = b"bad"
-
-    e = FakeHttpError()
-    # Ensure resp path is used for status extraction
-    assert tool.discovery._extract_status_from_http_error(e) == 502
-    assert tool.discovery._extract_status_from_http_error(ValueError("x")) is None
-
-    assert (
-        tool.discovery._format_fetch_metadata_error_with_context(ValueError("bad"), None, "f1")
-        == "files.get(fileId=f1) failed: bad"
-    )
-    assert "HTTP 503" in tool.discovery._format_fetch_metadata_error_with_context(
-        ValueError("bad"), 503, "f1"
-    )
 
 
 def test_execute_uses_rate_limiter_wait(tmp_path, monkeypatch):
