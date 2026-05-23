@@ -10,12 +10,12 @@ function Invoke-ParallelZipExtractions {
     $concurrentErrors = [ConcurrentBag[string]]::new()
     $fsModulePath     = (Get-Module -Name FileSystem -ErrorAction SilentlyContinue)?.Path
     $zipModulePath    = (Get-Module -Name Zip -ErrorAction SilentlyContinue)?.Path
-    $runspaceFnDef    = "function Expand-ZipInRunspace { ${function:Expand-ZipInRunspace} }"
+    $runspaceDefs     = "function Invoke-SingleZipExtraction { ${function:Invoke-SingleZipExtraction} }`nfunction Expand-ZipInRunspace { ${function:Expand-ZipInRunspace} }"
     $progressCounter  = 0
 
     $results = @(
         $Zips | ForEach-Object -Parallel {
-            . ([ScriptBlock]::Create($using:runspaceFnDef))
+            . ([ScriptBlock]::Create($using:runspaceDefs))
             Expand-ZipInRunspace -Zip $_ -DestDir $using:DestinationDir -Mode $using:Mode -Policy $using:Policy -MaxLen $using:SafeNameMaxLen -FsModulePath $using:fsModulePath -ZipModulePath $using:zipModulePath -ErrorBag $using:concurrentErrors
         } -ThrottleLimit $ThrottleLimit | ForEach-Object {
             $progressCounter++
