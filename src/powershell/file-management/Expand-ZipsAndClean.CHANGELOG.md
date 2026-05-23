@@ -11,6 +11,8 @@
 
 ### Fixed
 
+- Refactored `Get-ZipExtractionCommand` into smaller helper functions (`Resolve-NonWrapperZipExtractionCommand`, `Get-ZipExtractionModuleCandidates`, `Import-ZipExtractionFallbackFiles`) to reduce cognitive complexity while preserving helper-load resilience and non-wrapper command selection safeguards.
+- Reduced wrapper duplication by introducing `Invoke-ZipExtractionDelegate` and routing wrapper calls through `@PSBoundParameters` delegation.
 - Added a module-scope `New-ExtractionSummary` fallback in `ZipExtraction.psm1` so extracted orchestration helpers can return summary objects in helper-load contexts where the script-local summary builder is not present.
 - Added a module-scope `Show-ProgressPhase` compatibility fallback in `ZipExtraction.psm1` so parallel/serial orchestration can run in helper-load test contexts where script-local progress helpers are not present.
 - Added no-op `Write-LogInfo`/`Write-LogDebug` fallbacks in `FileManagement/ZipExtraction/ZipExtraction.psm1` so helper-load contexts can execute module orchestration functions without requiring logging-framework scope injection.
@@ -55,6 +57,8 @@
 
 ### Fixed
 
+- Refactored `Get-ZipExtractionCommand` into smaller helper functions (`Resolve-NonWrapperZipExtractionCommand`, `Get-ZipExtractionModuleCandidates`, `Import-ZipExtractionFallbackFiles`) to reduce cognitive complexity while preserving helper-load resilience and non-wrapper command selection safeguards.
+- Reduced wrapper duplication by introducing `Invoke-ZipExtractionDelegate` and routing wrapper calls through `@PSBoundParameters` delegation.
 - Added a module-scope `New-ExtractionSummary` fallback in `ZipExtraction.psm1` so extracted orchestration helpers can return summary objects in helper-load contexts where the script-local summary builder is not present.
 - Added a module-scope `Show-ProgressPhase` compatibility fallback in `ZipExtraction.psm1` so parallel/serial orchestration can run in helper-load test contexts where script-local progress helpers are not present.
 - Added no-op `Write-LogInfo`/`Write-LogDebug` fallbacks in `FileManagement/ZipExtraction/ZipExtraction.psm1` so helper-load contexts can execute module orchestration functions without requiring logging-framework scope injection.
@@ -120,6 +124,8 @@
 
 ### Fixed
 
+- Refactored `Get-ZipExtractionCommand` into smaller helper functions (`Resolve-NonWrapperZipExtractionCommand`, `Get-ZipExtractionModuleCandidates`, `Import-ZipExtractionFallbackFiles`) to reduce cognitive complexity while preserving helper-load resilience and non-wrapper command selection safeguards.
+- Reduced wrapper duplication by introducing `Invoke-ZipExtractionDelegate` and routing wrapper calls through `@PSBoundParameters` delegation.
 - Added a module-scope `New-ExtractionSummary` fallback in `ZipExtraction.psm1` so extracted orchestration helpers can return summary objects in helper-load contexts where the script-local summary builder is not present.
 - Added a module-scope `Show-ProgressPhase` compatibility fallback in `ZipExtraction.psm1` so parallel/serial orchestration can run in helper-load test contexts where script-local progress helpers are not present.
 - Added no-op `Write-LogInfo`/`Write-LogDebug` fallbacks in `FileManagement/ZipExtraction/ZipExtraction.psm1` so helper-load contexts can execute module orchestration functions without requiring logging-framework scope injection.
