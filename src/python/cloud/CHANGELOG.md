@@ -101,7 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Scope-aware state file with v1→v2 schema migration (#1029):** State files now record a `scope` block (`source`, `command`, `key`) capturing what the run was doing.
-  - `source` is one of `trash_query | folder_id | file_ids | retry_failed_file`; `command` is `recover_only | recover_and_download`; `key` is a 16-char sha256 prefix over the discriminating parameters.
+  - `source` is one of `trash_query | folder_id | file_ids | retry_failed_file`; `command` is `recover_only | recover_and_download`; `key` is a discriminating fingerprint — the raw folder ID for `folder_id`, the absolute CSV path for `retry_failed_file`, or a 16-char sha256 prefix over the file IDs / trash-query parameters for `file_ids` / `trash_query`.
   - On load, scope is compared to the current invocation; a mismatch causes the tool to exit with code 2 unless `--fresh-run` is passed — closing the silent failure where a `recover-only` state file was reused by `recover-and-download` and caused the same IDs to be skipped without being downloaded.
   - CLI renders a clear remediation message on mismatch: saved scope, current scope, and a suggestion to pass `--fresh-run` or `--state-file <path>`.
   - New `RecoveryStateScope` dataclass in `gdrive_models.py`; new `StateScopeMismatchError` exception in `gdrive_state.py`; new `RecoveryStateManager._derive_scope_from_args` helper.
