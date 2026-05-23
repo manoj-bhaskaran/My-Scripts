@@ -27,7 +27,8 @@ Describe 'Invoke-SingleZipExtraction' {
         } finally { $archive.Dispose() }
 
         $zip    = Get-Item -LiteralPath $zipPath
-        $result = Invoke-SingleZipExtraction -Zip $zip -DestDir $destDir -Mode 'PerArchiveSubfolder' -Policy 'Rename' -MaxLen 0
+        # Use Flat mode: streams entries via ZipArchive directly, avoids Expand-Archive
+        $result = Invoke-SingleZipExtraction -Zip $zip -DestDir $destDir -Mode 'Flat' -Policy 'Rename' -MaxLen 0
 
         $result.FilesExtracted    | Should -Be 1
         $result.UncompressedBytes | Should -BeGreaterThan 0
@@ -48,7 +49,7 @@ Describe 'Invoke-SingleZipExtraction' {
         } finally { $archive.Dispose() }
 
         $zip    = Get-Item -LiteralPath $zipPath
-        $result = Invoke-SingleZipExtraction -Zip $zip -DestDir $destDir -Mode 'PerArchiveSubfolder' -Policy 'Rename' -MaxLen 0
+        $result = Invoke-SingleZipExtraction -Zip $zip -DestDir $destDir -Mode 'Flat' -Policy 'Rename' -MaxLen 0
 
         $result.Log | Should -BeLike "*logtest.zip*"
         $result.Log | Should -BeLike "*files=*"
@@ -64,7 +65,7 @@ Describe 'Invoke-SingleZipExtraction' {
         [System.IO.File]::WriteAllBytes($badPath, [byte[]](0xFF, 0xFE, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05))
 
         $zip = Get-Item -LiteralPath $badPath
-        { Invoke-SingleZipExtraction -Zip $zip -DestDir $destDir -Mode 'PerArchiveSubfolder' -Policy 'Rename' -MaxLen 0 } |
+        { Invoke-SingleZipExtraction -Zip $zip -DestDir $destDir -Mode 'Flat' -Policy 'Rename' -MaxLen 0 } |
             Should -Throw
     }
 }
