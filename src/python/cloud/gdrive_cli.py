@@ -728,7 +728,7 @@ def _validate_folder_id_args(args) -> Tuple[bool, int]:
             file=sys.stderr,
         )
         return False, 2
-    if args.post_restore_policy == PostRestorePolicy.TRASH:
+    if getattr(args, "post_restore_policy", None) == PostRestorePolicy.TRASH:
         print(
             f"{console.sym_warn()} --folder-id is set with the default post-restore-policy 'trash'. "
             "Files will be moved to Drive Trash after downloading. "
