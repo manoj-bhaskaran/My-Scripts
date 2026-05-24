@@ -6,7 +6,7 @@ documented in this file. The authoritative version is defined in `gdrive_constan
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-> **SemVer note (historical):** A small subset of pre-2.0 releases included documented breaking changes under a minor-version bump. Known cases are `1.20.0` (default `--log-file` behavior changed), `1.21.0` (`--failed-file` format changed plain text → CSV), and one-way state-schema migrations in `1.23.0` (v1→v2) and `1.24.0` (v2→v3). Per maintainer decision, historical version numbers are retained as published.
+> **SemVer note (historical):** A small subset of pre-2.0 releases documented breaking behavior under a minor-version bump. Under SemVer 2.0 this is only expected before `1.0.0`; for `1.x` lines, breaking changes should increment the major version. Known historical exceptions retained as-published are `1.20.0` (default `--log-file` behavior changed), `1.21.0` (`--failed-file` format changed plain text → CSV), and one-way state-schema migrations in `1.23.0` (v1→v2) and `1.24.0` (v2→v3).
 
 > **Out of scope:** `cloudconvert_utils.py`, `drive_space_monitor.py`, and
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
@@ -302,7 +302,7 @@ See #789–#856 for issue-by-issue detail.
 
 - Moved embedded `CHANGELOG` block out of `gdrive_recover.py` into this `CHANGELOG.md` file. No logic changes.
 
-## [1.8.1] - 2025-09-23
+## [1.8.1] - 2026-03-26
 
 ### Fixed
 
@@ -320,7 +320,7 @@ See #789–#856 for issue-by-issue detail.
 - No CLI or API changes; backward-compatible patch.
 - Dry-run behavior unchanged (it still performs one-shot discovery and reports counts once).
 
-## [1.8.0] - 2025-09-23
+## [1.8.0] - 2026-03-26
 
 ### Added
 
