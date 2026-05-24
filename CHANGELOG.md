@@ -39,6 +39,8 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[Expand-ZipsAndClean tests]** Collapsed redundant helper assertions in `Show-ProgressPhase` and `Write-ExtractionSummary` blocks to keep script-helper coverage behavior-focused while reducing duplicate setup/output checks (issue #1080).
+- **[Expand-ZipsAndClean tests]** Restored explicit interactive (ConsoleHost) header assertion for `Write-ExtractionSummary` without `-PassThru`, protecting the default output path from regressions after helper-test consolidation (issue #1080 follow-up).
 - **[Core/Zip tests]** Relocated Zip module extraction tests from `Expand-ZipsAndClean.Tests.ps1` into dedicated `tests/powershell/modules/Core/Zip/Zip.Tests.ps1` for module-scoped ownership and clearer suite boundaries (issue #1076).
 - **[gdrive_recover docs]** Moved `gdrive_recover.py` embedded usage examples to `docs/gdrive-recover-usage.md` and linked the new page from README (issue #1117).
 - **[Expand-ZipsAndClean 2.5.2]** Replaced script-local `Write-PhaseProgress` usage with shared `Core/Progress` `Show-Progress` (via `Show-ProgressPhase` adapter) and added `Show-Progress -Suppress` for quiet-mode suppression (issue #1063).

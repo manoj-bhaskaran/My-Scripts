@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Tests
+
+- Collapsed redundant script-helper assertions in `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1` for:
+  - `Describe 'Show-ProgressPhase'`: merged duplicate active-mode `Write-Progress` checks (percent and `CurrentOperation`) into one consolidated payload test; retained quiet-mode suppression, completed-state, and zero-total guard coverage.
+  - `Describe 'Write-ExtractionSummary'`: merged interactive header emission and `-PassThru` summary-object field assertions into one test; retained non-interactive no-output behavior and non-interactive error-note emission coverage.
+- Follow-up coverage hardening: added a dedicated `Write-ExtractionSummary` assertion that `ConsoleHost` emits the summary header **without** `-PassThru`, preserving explicit validation of the default interactive output path.
+- Net result: lower duplication in helper-focused tests with equivalent behavioral coverage intent (issue #1080).
+
 ## 2.6.2 — 2026-05-24
 
 ### Removed
