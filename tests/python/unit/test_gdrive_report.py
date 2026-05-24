@@ -711,9 +711,7 @@ def test_print_single_operation_privilege_no_error_line_when_none(capsys):
 
 def test_local_dir_status_writable_pass(capsys):
     r = _reporter(mode="recover_only", download_dir="/out", no_emoji=True)
-    r._print_local_directory_status(
-        {"local_writable": True, "local_error": None, "disk_space": 0}
-    )
+    r._print_local_directory_status({"local_writable": True, "local_error": None, "disk_space": 0})
     out = capsys.readouterr().out
     assert "PASS" in out
 
@@ -757,9 +755,7 @@ def test_print_privilege_checks_renders_header(capsys):
 
 def test_print_disk_space_info_sufficient(capsys):
     r = _reporter(no_emoji=True)
-    r._print_disk_space_info(
-        {"disk_space": 10 * 1024**3, "estimated_needed": 5 * 1024**3}
-    )
+    r._print_disk_space_info({"disk_space": 10 * 1024**3, "estimated_needed": 5 * 1024**3})
     out = capsys.readouterr().out
     assert "SUFFICIENT" in out
     assert "Available" in out
@@ -767,9 +763,7 @@ def test_print_disk_space_info_sufficient(capsys):
 
 def test_print_disk_space_info_insufficient(capsys):
     r = _reporter(no_emoji=True)
-    r._print_disk_space_info(
-        {"disk_space": 1 * 1024**3, "estimated_needed": 5 * 1024**3}
-    )
+    r._print_disk_space_info({"disk_space": 1 * 1024**3, "estimated_needed": 5 * 1024**3})
     out = capsys.readouterr().out
     assert "INSUFFICIENT" in out
 
