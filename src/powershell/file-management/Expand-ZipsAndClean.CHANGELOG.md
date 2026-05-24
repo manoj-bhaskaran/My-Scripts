@@ -18,9 +18,12 @@
 
 ### Added
 
-- Import-success guard after the `ZipExtraction` module import: throws a clear error if
-  `Invoke-ZipExtractions` is not available after `Import-Module`, catching mis-configured
-  or missing module installs early.
+- Import-success guard after the `ZipExtraction` module import: verifies that
+  `Get-Command Invoke-ZipExtractions` returns a command whose `Source -eq 'ZipExtraction'`,
+  throwing a clear error if the module failed to import or if only a session-level name
+  collision would satisfy an unqualified lookup.
+- `Main` now calls `ZipExtraction\Invoke-ZipExtractions` (module-qualified) so the correct
+  export is resolved even when a same-named function exists elsewhere in the session.
 
 ### Tests
 

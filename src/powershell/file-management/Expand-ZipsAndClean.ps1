@@ -184,9 +184,11 @@ Import-Module "$PSScriptRoot\..\modules\Core\Progress\ProgressReporter.psm1" -Fo
 Import-Module "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1" -Force
 
-if (-not (Get-Command Invoke-ZipExtractions -ErrorAction SilentlyContinue)) {
+$_zipExtractionCmd = Get-Command Invoke-ZipExtractions -ErrorAction SilentlyContinue
+if (-not $_zipExtractionCmd -or $_zipExtractionCmd.Source -ne 'ZipExtraction') {
     throw "ZipExtraction module failed to import."
 }
+Remove-Variable _zipExtractionCmd
 
 # Initialize logger (script name will be extracted from the script file name)
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
@@ -705,7 +707,7 @@ try {
     Test-ScriptPreconditions -SourceDir $SourceDirectory -DestinationDir $DestinationDirectory
     Initialize-Destination -DestinationDir $DestinationDirectory
 
-    $extractionResult = Invoke-ZipExtractions `
+    $extractionResult = ZipExtraction\Invoke-ZipExtractions `
         -SourceDir $SourceDirectory `
         -DestinationDir $DestinationDirectory `
         -Mode $ExtractMode `
