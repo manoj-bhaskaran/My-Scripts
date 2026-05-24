@@ -208,6 +208,8 @@ See [docs/logging_specification.md](docs/logging_specification.md) for the full 
   - Documentation: `src/powershell/module/Videoscreenshot/README.md`
   - Location: `src/powershell/module/Videoscreenshot/`
 
+For Google Drive recovery usage examples, see [docs/gdrive-recover-usage.md](docs/gdrive-recover-usage.md).
+
 For detailed documentation on specific scripts, see the `docs/` directory or the script headers.
 
 ---
