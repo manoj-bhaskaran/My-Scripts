@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.3] - 2026-05-24
+
+### Changed
+
+- Refactored Drive ID prefetch/validation internals by extracting them into `IdMetadataPrefetcher` (`gdrive_id_prefetch.py`), replacing list-ref/tuple flow with typed counters/results, and unifying HTTP error classification logic; no behavioural change intended.
+
 ## [1.26.2] - 2026-05-23
 
 ### Removed
