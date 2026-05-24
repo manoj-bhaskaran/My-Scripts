@@ -122,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.6.4
+    Version  : 2.6.5
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -202,69 +202,6 @@ if ($ThrottleLimit -gt [Environment]::ProcessorCount) {
 
 <#
 .SYNOPSIS
-    Centralized Write-Progress wrapper that respects -Quiet mode.
-.DESCRIPTION
-    Consolidates percentage math and -Quiet suppression for all phase progress bars.
-    Callers pass raw Current/Total counts; the helper computes PercentComplete.
-.PARAMETER Activity
-    The progress-bar activity label.
-.PARAMETER Status
-    The status message shown on the progress bar.
-.PARAMETER Current
-    Current item index used to compute the percentage complete.
-.PARAMETER Total
-    Total item count (denominator for percentage).
-.PARAMETER QuietMode
-    When $true, all progress output is suppressed and the function returns immediately.
-.PARAMETER CurrentOperation
-    Optional sub-operation text shown beneath the status line.
-.PARAMETER Completed
-    Switch. When set, closes the named progress bar instead of updating it.
-#>
-<#
-.SYNOPSIS
-    Validates source/destination safety constraints before any file operations.
-#>
-function Show-ProgressPhase {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$Activity,
-        [Parameter(Mandatory)][string]$Status,
-        [Parameter(Mandatory)][int]$Current,
-        [Parameter(Mandatory)][int]$Total,
-        [Parameter(Mandatory)][bool]$QuietMode,
-        [string]$CurrentOperation,
-        [switch]$Completed
-    )
-
-    if ($QuietMode) { return }
-
-    $pct = [int]($Current / [math]::Max(1, $Total) * 100)
-
-    if (Get-Command -Name Show-Progress -ErrorAction SilentlyContinue) {
-        Show-Progress -Activity $Activity -Status $Status -PercentComplete $pct `
-            -CurrentOperation $CurrentOperation -Completed:$Completed
-        return
-    }
-
-    if ($Completed) {
-        Write-Progress -Activity $Activity -Completed
-        return
-    }
-
-    $params = @{
-        Activity        = $Activity
-        Status          = $Status
-        PercentComplete = $pct
-    }
-    if ($CurrentOperation ?? '') {
-        $params['CurrentOperation'] = $CurrentOperation
-    }
-    Write-Progress @params
-}
-
-<#
-.SYNOPSIS
     Validates source/destination safety constraints before any file operations.
 #>
 function Test-ScriptPreconditions {
@@ -311,19 +248,6 @@ function Initialize-Destination {
         }
     }
 }
-
-<# Builds the standard extraction-summary object returned by all extraction paths. #>
-function New-ExtractionSummary {
-    param([int]$ZipCount, [int]$ProcessedZips, [int]$FilesExtracted, [int64]$UncompressedBytes, [int64]$CompressedBytes)
-    return [pscustomobject]@{
-        ZipCount          = $ZipCount
-        ProcessedZips     = $ProcessedZips
-        FilesExtracted    = $FilesExtracted
-        UncompressedBytes = $UncompressedBytes
-        CompressedBytes   = $CompressedBytes
-    }
-}
-
 
 <#
 .SYNOPSIS

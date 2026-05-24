@@ -549,6 +549,67 @@ Describe "Progress Workflow Integration" {
     }
 }
 
+Describe 'Show-ProgressPhase' {
+    Context 'QuietMode suppression' {
+        It 'returns immediately and never calls Write-Progress when QuietMode is true' {
+            Mock Write-Progress {} -ModuleName ProgressReporter
+
+            Show-ProgressPhase -Activity 'Test' -Status 'Running' -Current 1 -Total 5 -QuietMode $true
+
+            Should -Invoke Write-Progress -ModuleName ProgressReporter -Times 0
+        }
+    }
+
+    Context 'Active-mode output' {
+        It 'passes computed PercentComplete and Status to Write-Progress' {
+            Mock Write-Progress {} -ModuleName ProgressReporter
+
+            Show-ProgressPhase -Activity 'Extracting' -Status 'file.zip' -Current 2 -Total 4 -QuietMode $false
+
+            Should -Invoke Write-Progress -ModuleName ProgressReporter -Times 1 -Exactly -ParameterFilter {
+                $Activity -eq 'Extracting' -and $Status -eq 'file.zip' -and $PercentComplete -eq 50
+            }
+        }
+
+        It 'passes CurrentOperation when supplied' {
+            Mock Write-Progress {} -ModuleName ProgressReporter
+
+            Show-ProgressPhase -Activity 'Moving' -Status '1 / 3 : a.zip' `
+                -Current 1 -Total 3 -QuietMode $false -CurrentOperation 'Moving: 10 B of 30 B bytes'
+
+            Should -Invoke Write-Progress -ModuleName ProgressReporter -Times 1 -Exactly -ParameterFilter {
+                $CurrentOperation -eq 'Moving: 10 B of 30 B bytes'
+            }
+        }
+
+        It 'calls Write-Progress -Completed when Completed switch is set' {
+            Mock Write-Progress {} -ModuleName ProgressReporter
+
+            Show-ProgressPhase -Activity 'Extracting' -Status 'Done' `
+                -Current 5 -Total 5 -QuietMode $false -Completed
+
+            Should -Invoke Write-Progress -ModuleName ProgressReporter -Times 1 -Exactly -ParameterFilter {
+                $Activity -eq 'Extracting' -and $Completed -eq $true
+            }
+        }
+
+        It 'does not throw when Total is zero (division-by-zero guard)' {
+            { Show-ProgressPhase -Activity 'Test' -Status 'Empty' -Current 0 -Total 0 -QuietMode $false } |
+                Should -Not -Throw
+        }
+
+        It 'clamps PercentComplete to 100 when Current exceeds Total' {
+            Mock Write-Progress {} -ModuleName ProgressReporter
+
+            Show-ProgressPhase -Activity 'Test' -Status 'Over' -Current 10 -Total 5 -QuietMode $false
+
+            Should -Invoke Write-Progress -ModuleName ProgressReporter -Times 1 -Exactly -ParameterFilter {
+                $PercentComplete -eq 100
+            }
+        }
+    }
+}
+
 AfterAll {
     # Clean up
     Remove-Module ProgressReporter -Force -ErrorAction SilentlyContinue
