@@ -64,6 +64,11 @@ kept here — see the linked file for details.
 
 ### Fixed
 
+- **[Expand-ZipsAndClean 2.6.4]** Fixed misattributed comment-help for env-var default
+  overrides (`SourceDirectory` → `EXPAND_ZIPS_SOURCE_DIR`, `DestinationDirectory` →
+  `EXPAND_ZIPS_DEST_DIR`) and corrected parameter-default resolution so whitespace-only
+  env-var values are treated as unset and correctly fall back to profile-relative defaults
+  (issue #1094).
 - **[Core/Zip tests]** Corrected relative `Import-Module` paths in `tests/powershell/modules/Core/Zip/Zip.Tests.ps1` after relocation so `Invoke-Pester` resolves `src/powershell/modules/...` correctly from `tests/powershell/modules/Core/Zip` (issue #1076).
 - **[Expand-ZipsAndClean]** `Remove-SourceDirectory` reliability series (v2.1.2–v2.1.8):
   iterative fixes to non-zip filter logic, deepest-first deletion ordering, transient

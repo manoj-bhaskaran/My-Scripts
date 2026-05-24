@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed
+
+- Corrected comment-based help attribution for default override environment variables:
+  `SourceDirectory` now explicitly references `EXPAND_ZIPS_SOURCE_DIR` and
+  `DestinationDirectory` references `EXPAND_ZIPS_DEST_DIR`.
+- Fixed parameter default resolution so whitespace-only values in
+  `EXPAND_ZIPS_SOURCE_DIR` / `EXPAND_ZIPS_DEST_DIR` are treated as unset and fall back
+  to profile-relative defaults (`$HOME/Downloads/picconvert`, `$HOME/Desktop/New folder`).
+
 ### Tests
 
 - Removed four low-value/duplicate tests from `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1`:
@@ -16,7 +25,7 @@
 
 ### Versioning
 
-- Bumped version to `2.6.3` (patch — test-suite maintenance only; no runtime behavior change).
+- Bumped version to `2.6.4` (patch — comment-help attribution fix + whitespace env-var default resolution fix).
 
 ## 2.6.2 — 2026-05-24
 
