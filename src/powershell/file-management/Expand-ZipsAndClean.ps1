@@ -33,7 +33,7 @@ using namespace System.Collections.Concurrent
       archive appears to be password-protected.
 
 .PARAMETER SourceDirectory
-    Directory containing .zip files to extract.
+    Directory containing .zip files to extract (default override via EXPAND_ZIPS_SOURCE_DIR).
     Default resolved in order:
       1. Environment variable EXPAND_ZIPS_SOURCE_DIR (if set, non-null, and non-blank)
       2. Join-Path $HOME 'Downloads/picconvert'
@@ -41,7 +41,7 @@ using namespace System.Collections.Concurrent
     and the profile-relative fallback is used instead.
 
 .PARAMETER DestinationDirectory
-    Directory to extract contents into.
+    Directory to extract contents into (default override via EXPAND_ZIPS_DEST_DIR).
     Default resolved in order:
       1. Environment variable EXPAND_ZIPS_DEST_DIR (if set, non-null, and non-blank)
       2. Join-Path $HOME 'Desktop/New folder'
@@ -122,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.6.3
+    Version  : 2.6.4
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -143,12 +143,12 @@ param(
     [Parameter()]
     [Alias('Src')]
     [ValidateNotNullOrEmpty()]
-    [string]$SourceDirectory = ($env:EXPAND_ZIPS_SOURCE_DIR ? $env:EXPAND_ZIPS_SOURCE_DIR : (Join-Path $HOME 'Downloads/picconvert')),
+    [string]$SourceDirectory = ([string]::IsNullOrWhiteSpace($env:EXPAND_ZIPS_SOURCE_DIR) ? (Join-Path $HOME 'Downloads/picconvert') : $env:EXPAND_ZIPS_SOURCE_DIR),
 
     [Parameter()]
     [Alias('Dest')]
     [ValidateNotNullOrEmpty()]
-    [string]$DestinationDirectory = ($env:EXPAND_ZIPS_DEST_DIR ? $env:EXPAND_ZIPS_DEST_DIR : (Join-Path $HOME 'Desktop/New folder')),
+    [string]$DestinationDirectory = ([string]::IsNullOrWhiteSpace($env:EXPAND_ZIPS_DEST_DIR) ? (Join-Path $HOME 'Desktop/New folder') : $env:EXPAND_ZIPS_DEST_DIR),
 
     [Parameter()]
     [ValidateSet('PerArchiveSubfolder', 'Flat')]

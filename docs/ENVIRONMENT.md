@@ -310,6 +310,7 @@ These variables enable email notifications for script execution results and erro
 - **Example**: `C:\Users\YourName\Downloads\picconvert` (Windows) or `/home/yourname/Downloads/picconvert` (Linux)
 - **Used By**: `src/powershell/file-management/Expand-ZipsAndClean.ps1`
 - **Precedence**: `$env:EXPAND_ZIPS_SOURCE_DIR` → `$HOME/Downloads/picconvert`
+- **Blank Handling**: Whitespace-only values are treated as unset and fall back to `$HOME/Downloads/picconvert`
 
 #### EXPAND_ZIPS_DEST_DIR
 - **Required**: No
@@ -319,6 +320,7 @@ These variables enable email notifications for script execution results and erro
 - **Example**: `C:\Users\YourName\Desktop\New folder` (Windows) or `/home/yourname/Desktop/New folder` (Linux)
 - **Used By**: `src/powershell/file-management/Expand-ZipsAndClean.ps1`
 - **Precedence**: `$env:EXPAND_ZIPS_DEST_DIR` → `$HOME/Desktop/New folder`
+- **Blank Handling**: Whitespace-only values are treated as unset and fall back to `$HOME/Desktop/New folder`
 
 ---
 

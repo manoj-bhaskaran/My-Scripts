@@ -48,6 +48,11 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean comment-help and env-var default fix** (2026-05-24)
+  - Corrected comment-help attribution so `SourceDirectory` maps to `EXPAND_ZIPS_SOURCE_DIR` and `DestinationDirectory` maps to `EXPAND_ZIPS_DEST_DIR`.
+  - Fixed default resolution logic to treat whitespace-only `EXPAND_ZIPS_SOURCE_DIR` / `EXPAND_ZIPS_DEST_DIR` values as unset and use profile-relative fallbacks.
+  - Version bump: `2.6.4` (patch — bug fix, no breaking change).
+
 - **Expand-ZipsAndClean test-suite pruning** (2026-05-24)
   - Removed four low-value/duplicate tests from `Expand-ZipsAndClean.Tests.ps1` (28 → 24 tests).
   - Dropped the dedicated `Write-ExtractionSummary` non-`-PassThru` interactive-header test because interactive header output is already asserted by the existing `-PassThru` interactive coverage.
