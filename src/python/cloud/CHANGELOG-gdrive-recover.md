@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed ID-prefetch cache access in discovery/streaming `--file-ids` flows after the prefetcher extraction: removed broken nested dereferences (for example `self._id_prefetcher._id_prefetcher...`) and restored compatibility cache accessors (`_id_prefetch`, `_id_prefetch_non_trashed`, `_id_prefetch_errors`) so cached errors/non-trashed/metadata paths no longer raise `AttributeError`.
 - Reformatted `gdrive_id_prefetch.py` and `gdrive_discovery.py` to satisfy Python formatting checks.
+- Removed duplicated legacy method definitions left in `gdrive_discovery.py` after the refactor (`_fetch_and_handle_metadata`, `_prefetch_ids_metadata`), resolving pylint `function-redefined` errors and ensuring only the delegated/compatibility implementations remain.
 
 ## [1.26.3] - 2026-05-24
 
