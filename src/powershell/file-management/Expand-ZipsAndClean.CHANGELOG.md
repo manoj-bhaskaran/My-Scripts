@@ -4,11 +4,19 @@
 
 ### Tests
 
-- Collapsed redundant script-helper assertions in `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1` for:
-  - `Describe 'Show-ProgressPhase'`: merged duplicate active-mode `Write-Progress` checks (percent and `CurrentOperation`) into one consolidated payload test; retained quiet-mode suppression, completed-state, and zero-total guard coverage.
-  - `Describe 'Write-ExtractionSummary'`: merged interactive header emission and `-PassThru` summary-object field assertions into one test; retained non-interactive no-output behavior and non-interactive error-note emission coverage.
-- Follow-up coverage hardening: added a dedicated `Write-ExtractionSummary` assertion that `ConsoleHost` emits the summary header **without** `-PassThru`, preserving explicit validation of the default interactive output path.
-- Net result: lower duplication in helper-focused tests with equivalent behavioral coverage intent (issue #1080).
+- Removed four low-value/duplicate tests from `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1`:
+  - `Describe 'Move-ZipFilesToParent'`:
+    - Removed `Skip policy: leaves source zip and existing parent zip untouched on collision`.
+    - Removed `Overwrite policy: replaces existing parent zip with source zip on collision`.
+  - `Describe 'Write-ExtractionSummary'`:
+    - Removed `emits interactive summary header without requiring PassThru` (header emission is already asserted by the existing interactive `-PassThru` coverage).
+  - Removed entire `Describe 'Invoke-ZipExtractions resolves to ZipExtraction module'` block (module resolution/usage is already covered by script import guard and parallel extraction tests).
+- Accepted coverage trade-off (documented): removed direct `Move-ZipFilesToParent` checks for `Skipped++/continue` and `Overwritten++ (-Force)` branches because collision-policy decision logic remains covered in `Describe 'Resolve-MoveTarget'` (Skip/Overwrite/Rename).
+- Net test count in this file: 28 → 24.
+
+### Versioning
+
+- Bumped version to `2.6.3` (patch — test-suite maintenance only; no runtime behavior change).
 
 ## 2.6.2 — 2026-05-24
 
