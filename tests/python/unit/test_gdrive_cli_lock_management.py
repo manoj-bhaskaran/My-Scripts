@@ -5,6 +5,12 @@ Covers the three correctness fixes from issue #1122:
   - _print_lockfile_messages stale-lock branches are reachable
   - _run_and_release_lock dispatches all commands through _run_tool
   - _acquire_or_bypass_lock surfaces real exceptions instead of swallowing them
+
+Also covers the wait-loop paths added in issue #1133:
+  - _acquire_or_bypass_lock lock_timeout > 0: acquired on retry
+  - _acquire_or_bypass_lock remaining.is_integer() integer display ("5s")
+  - _acquire_or_bypass_lock remaining.is_integer() fractional display ("2.7s")
+  - _acquire_or_bypass_lock timeout expires without acquiring
 """
 
 import sys
@@ -23,6 +29,7 @@ from gdrive_cli import (  # noqa: E402
     _print_lockfile_messages,
     _run_and_release_lock,
     _acquire_or_bypass_lock,
+    _apply_retry_failed_file,
 )
 from gdrive_state import StateScopeMismatchError  # noqa: E402
 from gdrive_models import RecoveryStateScope  # noqa: E402
@@ -231,3 +238,83 @@ def test_acquire_or_bypass_lock_stale_lock_no_force_emits_stale_message(capsys):
     err = capsys.readouterr().err
     assert not ok
     assert "stale" in err
+
+
+# ---------------------------------------------------------------------------
+# _acquire_or_bypass_lock — wait-loop paths (lock_timeout > 0)
+# ---------------------------------------------------------------------------
+
+
+def test_acquire_or_bypass_lock_acquired_on_retry(capsys):
+    """Lock fails on the first attempt but succeeds after one wait iteration."""
+    tool = MagicMock()
+    tool.state_manager._acquire_state_lock.side_effect = [False, True]
+    args = _args(lock_timeout=5.0)
+    # time.time(): start=100, while-check=100 (enters loop), remaining=100, while-check=100 (exits)
+    with patch("gdrive_cli.time") as mock_time:
+        mock_time.time.side_effect = [100.0, 100.0, 100.0, 100.0]
+        mock_time.sleep = MagicMock()
+        ok, code = _acquire_or_bypass_lock(tool, args)
+    assert ok and code == 0
+    mock_time.sleep.assert_called_once()
+
+
+def test_acquire_or_bypass_lock_wait_loop_integer_remaining_display(capsys):
+    """When remaining time is a whole number, display uses integer format ('5s')."""
+    tool = MagicMock()
+    tool.state_manager._acquire_state_lock.side_effect = [False, True]
+    args = _args(lock_timeout=5.0)
+    # elapsed = 0 at the time remaining is computed → remaining = 5.0 → is_integer() True
+    with patch("gdrive_cli.time") as mock_time:
+        mock_time.time.side_effect = [100.0, 100.0, 100.0, 100.0]
+        mock_time.sleep = MagicMock()
+        _acquire_or_bypass_lock(tool, args)
+    err = capsys.readouterr().err
+    assert "remaining 5s" in err
+
+
+def test_acquire_or_bypass_lock_wait_loop_fractional_remaining_display(capsys):
+    """When remaining time is fractional, display uses one-decimal format ('2.7s')."""
+    tool = MagicMock()
+    tool.state_manager._acquire_state_lock.side_effect = [False, True]
+    args = _args(lock_timeout=5.0)
+    # elapsed = 2.3 when remaining is computed → remaining = 2.7 → is_integer() False
+    with patch("gdrive_cli.time") as mock_time:
+        mock_time.time.side_effect = [100.0, 102.3, 102.3, 102.3]
+        mock_time.sleep = MagicMock()
+        _acquire_or_bypass_lock(tool, args)
+    err = capsys.readouterr().err
+    assert "remaining 2.7s" in err
+
+
+def test_acquire_or_bypass_lock_timeout_expires_returns_failure(capsys):
+    """When lock_timeout expires without acquiring, returns False with code 2."""
+    tool = MagicMock()
+    tool.state_manager._acquire_state_lock.side_effect = [False, False]
+    args = _args(lock_timeout=5.0, force=False)
+    # Last time.time() call returns start+6 so the while condition fails
+    with patch("gdrive_cli.time") as mock_time:
+        mock_time.time.side_effect = [100.0, 100.0, 100.0, 106.0]
+        mock_time.sleep = MagicMock()
+        with patch("gdrive_cli._read_lockfile_metadata", return_value=("999", "run-abc")):
+            with patch("gdrive_cli._check_pid_alive", return_value=""):
+                ok, code = _acquire_or_bypass_lock(tool, args)
+    assert not ok and code == 2
+
+
+# ---------------------------------------------------------------------------
+# _apply_retry_failed_file — empty-CSV error message (issue #1133)
+# ---------------------------------------------------------------------------
+
+
+def test_apply_retry_failed_file_empty_csv_error_on_stderr(tmp_path, capsys):
+    """Empty retry CSV emits a single error to stderr and returns exit code 1."""
+    csv_file = tmp_path / "empty.csv"
+    csv_file.write_text("source_folder_id,file_id,target_path\n")
+    args = _args(retry_failed_file=str(csv_file), failed_file="")
+    ok, code = _apply_retry_failed_file(args)
+    assert not ok and code == 1
+    err = capsys.readouterr().err
+    assert "nothing to retry" in err
+    # Confirm no duplicate message on stdout
+    assert capsys.readouterr().out == ""

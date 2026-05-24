@@ -23,6 +23,7 @@ from gdrive_console import ConsoleHelper
 from gdrive_validators import validate_extensions, normalize_policy_token
 from gdrive_constants import (
     VERSION,
+    HELP_EPILOG,
     EXTENSION_MIME_TYPES,
     DEFAULT_BURST,
     DEFAULT_FAILED_FILE,
@@ -45,73 +46,7 @@ def create_parser():
     parser = argparse.ArgumentParser(
         description=f"Google Drive Trash Recovery Tool v{__version__}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=r"""
-Examples:
-  Dry-run (preview — no changes made):
-    %(prog)s dry-run
-    %(prog)s dry-run --extensions jpg png --no-emoji
-    %(prog)s dry-run --after-date 2024-01-01
-    %(prog)s dry-run --file-ids FILE_ID_1 FILE_ID_2
-    %(prog)s dry-run --folder-id FOLDER_ID --download-dir ./backup --post-restore-policy retain
-    %(prog)s dry-run --download-dir ./recovered --extensions jpg png
-
-  Recover-only (restore trashed files to Drive — no local download):
-    %(prog)s recover-only --extensions pdf docx
-    %(prog)s recover-only --after-date 2024-06-01 --yes
-    %(prog)s recover-only --file-ids FILE_ID_1 FILE_ID_2 --yes
-    %(prog)s recover-only --state-file ./state.json --yes
-
-  Recover-and-download (restore trashed files and save locally):
-    %(prog)s recover-and-download --download-dir ./recovered --post-restore-policy retain
-    %(prog)s recover-and-download --download-dir ./recovered --extensions jpg png --post-restore-policy retain --yes
-    %(prog)s recover-and-download --download-dir ./recovered --file-ids FILE_ID_1 --post-restore-policy retain
-    %(prog)s recover-and-download --download-dir ./recovered --state-file ./state.json --yes
-    %(prog)s recover-and-download --download-dir ./recovered --direct-download --post-restore-policy retain
-    %(prog)s recover-and-download --download-dir ./recovered --overwrite --post-restore-policy retain
-    %(prog)s recover-and-download --download-dir ./recovered --skip-existing --post-restore-policy retain
-
-  Folder-scoped download (download a live Drive folder and all subfolders):
-    %(prog)s dry-run --folder-id FOLDER_ID --download-dir ./backup --post-restore-policy retain
-    %(prog)s recover-and-download --folder-id FOLDER_ID --download-dir ./backup --post-restore-policy retain
-    %(prog)s recover-and-download --folder-id FOLDER_ID --download-dir ./backup --extensions pdf --post-restore-policy retain --yes
-    %(prog)s recover-and-download --folder-id FOLDER_ID --download-dir ./backup --overwrite --post-restore-policy retain --yes
-
-  Performance presets:
-    %(prog)s recover-and-download --download-dir ./out --concurrency 16 --process-batch-size 500 --max-rps 8 --burst 32 --post-restore-policy retain -v
-    %(prog)s recover-and-download --download-dir ./out --http-transport requests --http-pool-maxsize 16 --concurrency 16 --post-restore-policy retain
-
-  Logging and failure tracking:
-    %(prog)s recover-and-download --download-dir ./out --log-file ./run.log
-    %(prog)s recover-and-download --download-dir ./out --failed-file ./failed.csv
-    %(prog)s recover-and-download --download-dir ./out --log-file ./logs/run.log --failed-file ./logs/failed.csv
-    %(prog)s recover-and-download --download-dir ./out --fresh-run --failed-file ./failed.csv  # clears state + failed.csv first
-
-  Fresh run (ignore prior progress, regenerate run identity, truncate failed-file):
-    %(prog)s recover-only --fresh-run --state-file ./state.json --yes
-    %(prog)s recover-and-download --download-dir ./out --fresh-run --failed-file ./failed.csv --yes
-
-  Retry failed downloads from a previous run:
-    %(prog)s recover-and-download --download-dir ./out --retry-failed-file ./failed.csv
-    %(prog)s recover-and-download --download-dir ./out --retry-failed-file ./failed.csv --post-restore-policy retain --yes
-
-  Locking and automation:
-    %(prog)s recover-and-download --download-dir ./out --lock-timeout 60 --state-file ./state.json
-    %(prog)s recover-and-download --download-dir ./out --force --state-file ./state.json
-    %(prog)s recover-and-download --download-dir ./out --yes --no-emoji
-
-Policies: trash (default), retain, delete
-  trash  — move file to Drive Trash after download (WARNING: avoid with --folder-id)
-  retain — leave the file in its current Drive location (recommended with --folder-id)
-  delete — permanently delete from Drive after download (irreversible)
-
-Notes:
-  --folder-id targets non-trashed live files; it cannot be combined with --file-ids or recover-only.
-  Use --post-restore-policy retain with --folder-id to avoid moving live files to Trash.
-  The folder ID is the alphanumeric string at the end of a Drive folder URL:
-    https://drive.google.com/drive/folders/<FOLDER_ID>
-
-For the compatibility matrix, transport notes, and performance presets: see README.md and CHANGELOG-gdrive-recover.md.
-""",
+        epilog=HELP_EPILOG,
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Operation mode")
@@ -385,11 +320,14 @@ def _validate_concurrency_arg(args) -> Tuple[bool, int]:
         cpu = 1
     ceiling = min(cpu * 4, 64)
     if args.concurrency < 1:
-        print(f"{console.sym_fail()} Invalid --concurrency value. It must be >= 1.")
+        print(
+            f"{console.sym_fail()} Invalid --concurrency value. It must be >= 1.", file=sys.stderr
+        )
         return False, 2
     if args.concurrency > ceiling:
         print(
-            f"{console.sym_warn()} --concurrency {args.concurrency} is high; capping to {ceiling} to avoid resource exhaustion and 429s."
+            f"{console.sym_warn()} --concurrency {args.concurrency} is high; capping to {ceiling} to avoid resource exhaustion and 429s.",
+            file=sys.stderr,
         )
         args.concurrency = ceiling
     return True, 0
@@ -531,11 +469,6 @@ def _load_retry_failed_file(
             file=sys.stderr,
         )
         return False, 2, {}
-    if not target_path_overrides:
-        print(
-            f"{console.sym_warn()} --retry-failed-file '{path_str}' contains no actionable rows; nothing to retry.",
-            file=sys.stderr,
-        )
     return True, 0, target_path_overrides
 
 
@@ -687,7 +620,7 @@ def _acquire_or_bypass_lock(tool, args) -> Tuple[bool, int]:
     acquired = tool.state_manager._acquire_state_lock()
     while (not acquired) and timeout > 0 and (time.time() - start_wait) < timeout:
         remaining = max(0.0, timeout - (time.time() - start_wait))
-        if int(remaining) == remaining:
+        if remaining.is_integer():
             remaining_str = f"{int(remaining)}s"
         else:
             remaining_str = f"{remaining:.1f}s"

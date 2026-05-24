@@ -41,22 +41,22 @@ def test_validate_concurrency_arg_below_one_fails(capsys):
     args = _args(concurrency=0)
     ok, code = _validate_concurrency_arg(args)
     assert not ok and code == 2
-    out = capsys.readouterr().out
-    assert "Invalid --concurrency" in out
+    err = capsys.readouterr().err
+    assert "Invalid --concurrency" in err
 
 
 def test_validate_concurrency_arg_below_one_emoji(capsys):
     args = _args(concurrency=0, no_emoji=False)
     ok, code = _validate_concurrency_arg(args)
     assert not ok and code == 2
-    assert "❌" in capsys.readouterr().out
+    assert "❌" in capsys.readouterr().err
 
 
 def test_validate_concurrency_arg_below_one_no_emoji(capsys):
     args = _args(concurrency=0, no_emoji=True)
     ok, code = _validate_concurrency_arg(args)
     assert not ok and code == 2
-    assert "ERROR" in capsys.readouterr().out
+    assert "ERROR" in capsys.readouterr().err
 
 
 def test_validate_concurrency_arg_above_ceiling_caps_and_warns(capsys):
@@ -64,19 +64,19 @@ def test_validate_concurrency_arg_above_ceiling_caps_and_warns(capsys):
     ok, code = _validate_concurrency_arg(args)
     assert ok and code == 0
     assert args.concurrency <= 64
-    assert "high" in capsys.readouterr().out
+    assert "high" in capsys.readouterr().err
 
 
 def test_validate_concurrency_arg_above_ceiling_warn_emoji(capsys):
     args = _args(concurrency=9999, no_emoji=False)
     _validate_concurrency_arg(args)
-    assert "⚠️" in capsys.readouterr().out
+    assert "⚠️" in capsys.readouterr().err
 
 
 def test_validate_concurrency_arg_above_ceiling_warn_no_emoji(capsys):
     args = _args(concurrency=9999, no_emoji=True)
     _validate_concurrency_arg(args)
-    assert "WARN" in capsys.readouterr().out
+    assert "WARN" in capsys.readouterr().err
 
 
 def test_validate_concurrency_arg_valid_passes():
