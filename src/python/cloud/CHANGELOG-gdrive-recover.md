@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.26.7] - 2026-05-24
+
+### Changed
+
+- `gdrive_cli.py` now uses shared file/path utilities from `modules.utils.file_operations` for path validation setup (`ensure_directory`, `is_writable`) instead of maintaining ad-hoc inline write-probe logic for CLI path arguments.
+
 ## [1.26.6] - 2026-05-24
 
 ### Changed
