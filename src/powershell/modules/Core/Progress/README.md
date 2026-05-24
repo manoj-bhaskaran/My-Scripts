@@ -39,6 +39,14 @@ Show-Progress -Activity "Processing files" -PercentComplete 25 -Status "Validati
    ```
 
 ## Parameters
+- **Show-ProgressPhase**
+  - `Activity` (string, required): Progress-bar activity label.
+  - `Status` (string, required): Status message shown on the bar.
+  - `Current` (int, required): Current item index (used to compute percentage).
+  - `Total` (int, required): Total item count (denominator; zero is safe).
+  - `QuietMode` (bool, required): When `$true`, suppresses all output immediately.
+  - `CurrentOperation` (string, optional): Sub-operation text beneath the status line.
+  - `Completed` (switch): Closes the progress bar instead of updating it.
 - **Show-Progress**
   - `Activity` (string, required): Description of the work in progress.
   - `PercentComplete` (int, default `0`): Completion percentage (0–100).
@@ -100,6 +108,28 @@ Import-Module "$PSScriptRoot/path/to/ProgressReporter.psm1"
 ```
 
 ## Functions
+
+### Show-ProgressPhase
+
+Computes `PercentComplete` from `Current`/`Total` counts, respects a `QuietMode` flag, and delegates to `Show-Progress`.
+
+**Parameters:**
+- `Activity` - Progress-bar activity label (required)
+- `Status` - Status message (required)
+- `Current` - Current item index (required)
+- `Total` - Total item count; zero is guarded against division by zero (required)
+- `QuietMode` - Suppress all output when `$true` (required)
+- `CurrentOperation` - Sub-operation text beneath the status line (optional)
+- `Completed` - Close the progress bar instead of updating it (switch)
+
+**Example:**
+```powershell
+Show-ProgressPhase -Activity "Extracting archives" -Status $zip.Name `
+    -Current $idx -Total $total -QuietMode $Quiet.IsPresent `
+    -CurrentOperation "Processing: $($zip.Name)"
+Show-ProgressPhase -Activity "Extracting archives" -Status "Done" `
+    -Current $total -Total $total -QuietMode $Quiet.IsPresent -Completed
+```
 
 ### Show-Progress
 

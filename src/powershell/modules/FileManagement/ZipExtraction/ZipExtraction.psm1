@@ -10,25 +10,26 @@ if (-not (Get-Command -Name Write-LogDebug -ErrorAction SilentlyContinue)) {
     function Write-LogDebug { param([string]$Message) }
 }
 
-if (-not (Get-Command -Name New-ExtractionSummary -ErrorAction SilentlyContinue)) {
-    function New-ExtractionSummary {
-        param(
-            [int]$ZipCount,
-            [int]$ProcessedZips,
-            [int]$FilesExtracted,
-            [int64]$UncompressedBytes,
-            [int64]$CompressedBytes
-        )
-        return [pscustomobject]@{
-            ZipCount          = $ZipCount
-            ProcessedZips     = $ProcessedZips
-            FilesExtracted    = $FilesExtracted
-            UncompressedBytes = $UncompressedBytes
-            CompressedBytes   = $CompressedBytes
-        }
+# Canonical single-source definition — the script-local duplicate was removed in #1095.
+function New-ExtractionSummary {
+    param(
+        [int]$ZipCount,
+        [int]$ProcessedZips,
+        [int]$FilesExtracted,
+        [int64]$UncompressedBytes,
+        [int64]$CompressedBytes
+    )
+    return [pscustomobject]@{
+        ZipCount          = $ZipCount
+        ProcessedZips     = $ProcessedZips
+        FilesExtracted    = $FilesExtracted
+        UncompressedBytes = $UncompressedBytes
+        CompressedBytes   = $CompressedBytes
     }
 }
 
+# No-op fallback for helper-load test contexts where ProgressReporter is not imported.
+# The canonical implementation lives in Core/Progress/Public/Show-ProgressPhase.ps1.
 if (-not (Get-Command -Name Show-ProgressPhase -ErrorAction SilentlyContinue)) {
     function Show-ProgressPhase {
         param(
@@ -37,6 +38,7 @@ if (-not (Get-Command -Name Show-ProgressPhase -ErrorAction SilentlyContinue)) {
             [Parameter(Mandatory)][int]$Current,
             [Parameter(Mandatory)][int]$Total,
             [Parameter(Mandatory)][bool]$QuietMode,
+            [string]$CurrentOperation,
             [switch]$Completed
         )
         if ($QuietMode) { return }

@@ -2,7 +2,46 @@
 
 ## Unreleased
 
-### Fixed
+### Removed
+
+- Script-local `Show-ProgressPhase` function (lines 203–264 of the previous revision):
+  relocated to `Core/Progress/Public/Show-ProgressPhase.ps1` and exported from
+  `ProgressReporter.psm1`. The script now calls the module-provided canonical version,
+  which is always in scope via the existing `Import-Module ProgressReporter.psm1` at
+  script start. The dead `Write-Progress` fallback branch (previously lines 244–257)
+  is removed along with the function.
+- Script-local `New-ExtractionSummary` function: single-sourced in
+  `ZipExtraction.psm1` as the canonical definition (removed the guarded `if (-not
+  (Get-Command ...))` wrapper, as the script-local duplicate no longer exists).
+
+### Fixed (ZipExtraction.psm1)
+
+- Reconciled the `Show-ProgressPhase` no-op stub in `ZipExtraction.psm1` to include
+  the `CurrentOperation` parameter, eliminating the silent divergence where the stub
+  would have dropped sub-operation text in helper-load test contexts.
+
+### Tests
+
+- Removed `Describe 'Show-ProgressPhase'` from `Expand-ZipsAndClean.Tests.ps1`; the
+  four covered scenarios now live in `tests/powershell/unit/ProgressReporter.Tests.ps1`
+  (new `Describe 'Show-ProgressPhase'` block with five `It` blocks, using
+  `-ModuleName ProgressReporter` mocking to correctly intercept module-internal
+  `Write-Progress` calls).
+- `Describe 'Move-ZipFilesToParent'` `BeforeAll`: added `Import-Module
+  ProgressReporter.psm1` so the module-provided `Show-ProgressPhase` is available when
+  the helpers region is dot-sourced.
+- Net test count in `Expand-ZipsAndClean.Tests.ps1`: 24 → 20 (four tests moved to
+  `ProgressReporter.Tests.ps1`; one new clamping test added there; net new tests in
+  ProgressReporter: +5).
+
+### Versioning
+
+- Bumped version to `2.6.5` (patch — internal de-duplication refactor; no behavioural
+  change to progress output, summary objects, or extraction logic).
+
+---
+
+_Previous Unreleased (now part of 2.6.4):_
 
 - Corrected comment-based help attribution for default override environment variables:
   `SourceDirectory` now explicitly references `EXPAND_ZIPS_SOURCE_DIR` and
@@ -10,22 +49,7 @@
 - Fixed parameter default resolution so whitespace-only values in
   `EXPAND_ZIPS_SOURCE_DIR` / `EXPAND_ZIPS_DEST_DIR` are treated as unset and fall back
   to profile-relative defaults (`$HOME/Downloads/picconvert`, `$HOME/Desktop/New folder`).
-
-### Tests
-
-- Removed four low-value/duplicate tests from `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1`:
-  - `Describe 'Move-ZipFilesToParent'`:
-    - Removed `Skip policy: leaves source zip and existing parent zip untouched on collision`.
-    - Removed `Overwrite policy: replaces existing parent zip with source zip on collision`.
-  - `Describe 'Write-ExtractionSummary'`:
-    - Removed `emits interactive summary header without requiring PassThru` (header emission is already asserted by the existing interactive `-PassThru` coverage).
-  - Removed entire `Describe 'Invoke-ZipExtractions resolves to ZipExtraction module'` block (module resolution/usage is already covered by script import guard and parallel extraction tests).
-- Accepted coverage trade-off (documented): removed direct `Move-ZipFilesToParent` checks for `Skipped++/continue` and `Overwritten++ (-Force)` branches because collision-policy decision logic remains covered in `Describe 'Resolve-MoveTarget'` (Skip/Overwrite/Rename).
-- Net test count in this file: 28 → 24.
-
-### Versioning
-
-- Bumped version to `2.6.4` (patch — comment-help attribution fix + whitespace env-var default resolution fix).
+- Removed four low-value/duplicate tests (net: 28 → 24 in this file).
 
 ## 2.6.2 — 2026-05-24
 
