@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.26.10] - 2026-05-24
+
+### Changed
+
+- `gdrive_constants.py`: extracted the argparse help epilog (~66 lines of static example/usage text) from `create_parser()` into a new module-level constant `HELP_EPILOG`; `create_parser()` now references it via `epilog=HELP_EPILOG`. `%(prog)s` substitution is unaffected. `--help` output is byte-for-byte identical to before.
+- `gdrive_cli.py`: `_validate_concurrency_arg` now routes its invalid-value error and its concurrency-cap warning to stderr (`file=sys.stderr`), consistent with every other validator in the module.
+- `gdrive_cli.py`: collapsed duplicate "nothing to retry" messaging — `_load_retry_failed_file` no longer emits a warning when the retry CSV has no actionable rows; the single authoritative error message is now only in `_apply_retry_failed_file`, which also owns the non-zero exit code for that condition.
+- `gdrive_cli.py`: `_acquire_or_bypass_lock` now uses the idiomatic `remaining.is_integer()` instead of `int(remaining) == remaining` to decide between whole-second and fractional lock-wait countdown formatting.
+
 ## [1.26.9] - 2026-05-24
 
 ### Changed
