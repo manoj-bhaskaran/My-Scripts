@@ -148,9 +148,7 @@ def test_normalize_and_validate_extensions_invalid_ext_emoji(capsys):
 
 
 def test_load_retry_failed_file_nonexistent_path_fails(capsys):
-    ok, code, overrides = _load_retry_failed_file(
-        "/nonexistent/path/does_not_exist.csv", _args()
-    )
+    ok, code, overrides = _load_retry_failed_file("/nonexistent/path/does_not_exist.csv", _args())
     assert not ok and code == 2
     assert overrides == {}
     assert "Could not read" in capsys.readouterr().err
