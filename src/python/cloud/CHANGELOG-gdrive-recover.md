@@ -152,18 +152,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`--fresh-run` flag (#1028):** Ignores prior progress in the state file, regenerates run identity (`run_id`, `start_time`, `owner_pid`), and (if `--failed-file` is set) truncates the failed-file CSV before the run starts.
-  - Available on both `recover-only` and `recover-and-download`.
-  - Mutually exclusive with `--retry-failed-file`: fresh-run starts from nothing; retry resumes a specific list.
-  - Implemented via `RecoveryStateManager._reset_state`, which replaces the in-memory state with a fresh `RecoveryState` (preserving only `schema_version`); every "if not X" guard in `_initialize_recovery_state` naturally regenerates identity fields.
+- **`--fresh-run` flag (#1028):** Ignores prior progress in the state file, regenerates run identity (`run_id`, `start_time`, `owner_pid`), and (if `--failed-file` is set) truncates the failed-file CSV before the run starts. Available on both `recover-only` and `recover-and-download`; mutually exclusive with `--retry-failed-file`. Implemented via `RecoveryStateManager._reset_state`.
 
 ### Changed
 
 - **`--overwrite` narrowed to local-file collision policy only.** State reset and failed-file truncation are now `--fresh-run`'s responsibility.
-  - For this release, the old combined behaviour is preserved as a **deprecation shim**: `--overwrite` alone still clears `processed_items` and truncates the failed-file CSV, but prints a deprecation warning to stderr naming v1.23.0 as the removal target.
-  - `--overwrite --fresh-run` combination: both effects apply; no deprecation warning is printed.
-  - `DriveOperations._recover_file` and `_process_item` no longer reference `args.overwrite` for the `_is_processed` short-circuit; the shim achieves the same effect via `_clear_processed_items`.
-  - CLI epilog, `--failed-file` help text, and `--overwrite` help text updated to describe the new split.
 
 ### Deprecated
 
@@ -174,13 +167,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Failed-item resume correctness and retry safety improvements (#1027):**
-  - `--retry-failed-file` now sets `will_recover=False` for all retried items, avoiding redundant `files.update(trashed=False)` calls for already-live files.
-  - `--retry-failed-file` no longer falls back to a full trash query when the CSV has no actionable rows; it now exits with code 1 and a clear error.
-  - Trash-prefetch validation is skipped in retry mode to avoid misclassifying already-live files as `skipped_non_trashed`.
-  - `--failed-file` and `--retry-failed-file` are now validated as distinct paths.
-  - Failed items are no longer marked as processed in the state file; only fully successful items enter `processed_items`, so reruns can reattempt failures as intended.
-  - Documentation was updated to reflect corrected resume semantics and recovery options for historical state files written under the old behavior.
-- Removed unused `import io` from `gdrive_operations.py`.
+  - `--retry-failed-file` sets `will_recover=False` for retried items; exits with code 1 when the CSV has no actionable rows.
+  - Failed items are no longer marked as processed in the state file; only fully successful items enter `processed_items`, allowing reruns to reattempt failures.
+  - `--failed-file` and `--retry-failed-file` are validated as distinct paths.
 
 ## [1.21.0] - 2026-05-14
 
@@ -188,91 +177,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **CSV failed-file output (`--failed-file`):** The file written by `--failed-file` is now a proper CSV. Each row contains three columns: `source_folder_id` (Drive ID of the parent folder), `file_id` (stable Drive file ID, suitable for retry), and `target_path` (full local path where the file was or would be saved).
-  - A header row is written automatically on the first entry of each run; when `--overwrite` truncates the file the header is written immediately so the file is always a valid CSV.
-  - `source_folder_id` is populated from the `parents` field returned by the Drive API for all discovery modes (trash query, `--file-ids`, and `--folder-id` BFS traversal).
+- **CSV failed-file output (`--failed-file`):** The file is now a proper CSV with columns `source_folder_id` (Drive ID of the parent folder), `file_id` (stable Drive file ID), and `target_path` (full local path). A header row is written automatically on the first entry of each run.
 
-- **`--retry-failed-file <csv>` for `recover-and-download`:** Accepts a CSV produced by `--failed-file` and retries only the file IDs it contains, restoring each to its original target path.
-  - Mutually exclusive with `--file-ids` and `--folder-id`; validation rejects missing files, directories, and conflicting flags.
-  - Sets `will_recover=False`; issues download-only requests. If a file was moved back to trash between the original run and the retry, the download will fail with HTTP 403/404 and be recorded in the (new) `--failed-file` if one is supplied.
-
-- **`source_folder_id` field on `RecoveryItem`:** Populated at discovery time with the first element of the Drive `parents` array.
-
-- **`parents` requested from Drive API in all discovery modes:** `_id_discovery_fields()` now unconditionally includes `parents`.
+- **`--retry-failed-file <csv>` for `recover-and-download`:** Accepts a CSV produced by `--failed-file` and retries only the file IDs it contains, restoring each to its original target path. Mutually exclusive with `--file-ids` and `--folder-id`; download-only. Failures are recorded in the new `--failed-file` if one is supplied.
 
 ### Changed
 
 - `DriveOperations._write_failed_file` rewritten to use `csv.writer`; writes a header row when the destination file is new or empty.
-- `DriveOperations._clear_failed_files` writes the CSV header row (instead of an empty file) so the cleared file remains a valid CSV.
-- `DriveTrashRecoveryTool._generate_target_path` checks `args._target_path_overrides` (populated from the retry CSV) before computing a new path, ensuring retried files land exactly where the original run intended.
-- Module docstring and CLI epilog updated with retry examples and CSV file extension.
 
 ## [1.20.2] - 2026-05-12
 
-### Changed
-
-- **Raised new-code coverage 74.2% → ≥ 80%** via targeted tests to close gaps identified by SonarCloud.
+Internal test coverage improvements only; no user-visible changes.
 
 ## [1.20.1] - 2026-05-12
 
 ### Fixed
 
-- **Post-restore failures now propagate into item failure state.** `_process_item` discarded the return value of `_apply_post_restore_policy`, so a failed trash or delete API call left `success = True`.
-  - Items whose post-restore action failed were not written to `--failed-file` and not counted as errors, making retry lists incomplete.
-  - The return value is now folded into `success`; a post-restore failure marks the item as failed and triggers `_write_failed_file`.
+- Post-restore failures (trash/delete API calls) now propagate into item failure state and trigger `--failed-file` output; the return value of `_apply_post_restore_policy` was previously discarded.
 
 ## [1.20.0] - 2026-05-12
 
 ### Added
 
-- **Optional log file (`--log-file`):** Attaches a `FileHandler` at `DEBUG` level when supplied, capturing every per-operation message regardless of console verbosity (`-v` / `-vv`).
-  - Previously a log file was always written to `gdrive_recovery.log` at the same level as the console; now the default is no file logging.
-  - The file and any missing parent directories are created automatically.
+- **Optional log file (`--log-file`):** Attaches a `FileHandler` at `DEBUG` level when supplied; the file and any missing parent directories are created automatically. Previously a log file was always written to `gdrive_recovery.log`; now the default is no file logging.
 
-- **Failed-file log (`--failed-file`):** Appends the full local path (or Drive file name for recover-only operations) of every failed item to a file as soon as the failure is detected.
-  - Accepted by all three subcommands (`dry-run`, `recover-only`, `recover-and-download`).
-  - The file and any missing parent directories are created automatically.
-  - When `--overwrite` is active the file is truncated to zero bytes before processing begins.
-
-- **`DEFAULT_FAILED_FILE = ""`** constant added to `gdrive_constants.py`.
+- **Failed-file log (`--failed-file`):** Appends the full local path (or Drive file name for recover-only) of every failed item to a file; the file and any missing parent directories are created automatically. Accepted by all three subcommands. When `--overwrite` is active the file is truncated before processing begins.
 
 ### Changed
 
 - `DEFAULT_LOG_FILE` in `gdrive_constants.py` changed from `"gdrive_recovery.log"` to `""` (disabled by default). Existing workflows that relied on automatic log-file creation must now pass `--log-file gdrive_recovery.log` explicitly.
-- `DriveTrashRecoveryTool._setup_logging` rewritten to use explicit handler objects, allowing the console and file handlers to carry independent log levels; file handler (when enabled) is always `DEBUG`.
-- `DriveOperations.__init__` acquires `failed_file` from `args` and stores a dedicated `threading.Lock` for thread-safe writes.
-- `--failed-file` path is appended to on every non-overwrite run; pass `--overwrite` to start fresh on each run.
 
 ## [1.19.0] - 2026-05-12
 
 ### Added
 
 - **Progress bar for recovery and download operations:** New `ProgressBar` class in `gdrive_report.py` renders an animated in-place progress bar during streaming execution and batch processing.
-  - **TTY (interactive terminal):** Overwrites the current line via carriage-return, updating every 0.5 s.
-    - Known total (e.g. `--file-ids`): `[████████░░░░░░░░░░░░] 400/1000 (40.0%) │ 5.2/sec │ ETA: 115s`
-    - Streaming (unknown total): `▶ processed=800 discovered=1234 │ 5.2/sec`
-  - **Non-TTY (CI / log files):** Plain text line written at most every 10 s when `--verbose` (`-v`) is active, preserving the previous behaviour and keeping log files tidy.
+  - **TTY (interactive terminal):** `[████████░░░░░░░░░░░░] 400/1000 (40.0%) │ 5.2/sec │ ETA: 115s` (known total) or `▶ processed=800 discovered=1234 │ 5.2/sec` (streaming).
+  - **Non-TTY (CI / log files):** Plain text line written at most every 10 s when `--verbose` (`-v`) is active.
   - **`--no-emoji` compatibility:** Unicode block characters (`█░▶│`) replaced with ASCII equivalents (`#->`).
-  - `RecoveryReporter` gains `_start_progress(total)`, `_close_progress()`, and `_should_show_progress()` helpers; the bar is started in `print_streaming_start` / `print_processing_start` and finalised in `_print_summary` and `print_interrupted_state_saved`.
-  - The `verbose >= 1` guard in `_handle_item_result_stream` and `_handle_item_result` is replaced with `reporter._should_show_progress()` so the bar appears on TTY without requiring `-v`.
 
 ## [1.18.x] - 2026-05-12 (consolidated)
 
 ### Added
 
-- **Folder-scoped download (`--folder-id`):** New argument for all three subcommands. Scopes discovery to a specific Google Drive folder via BFS traversal; targets non-trashed, live files (`will_recover=False`); reconstructs the full subfolder hierarchy under `--download-dir`. Added `_fetch_folder_page`, `_discover_folder_recursively`, and `_stream_stream_folder` to `DriveTrashDiscovery`; `relative_path` field on `RecoveryItem`; `FOLDER_MIME_TYPE` constant in `gdrive_constants.py`. Prints a warning when combined with the default `trash` post-restore policy. Recommended usage: `recover-and-download --folder-id <id> --download-dir <path> --post-restore-policy retain`.
-- **Comprehensive usage examples:** `gdrive_recover.py` docstring, `gdrive_cli.py` epilog, and `README.md` expanded with full scenario coverage (dry-run, recover-only, recover-and-download, folder-scoped, extension filtering, performance presets, locking, automation).
+- **Folder-scoped download (`--folder-id`):** Scopes discovery to a specific Google Drive folder via BFS traversal; targets non-trashed, live files (`will_recover=False`); reconstructs the full subfolder hierarchy under `--download-dir`. Prints a warning when combined with the default `trash` post-restore policy.
 - **`--overwrite` flag (`recover-and-download`):** Replaces existing local files instead of appending a `_<hex6>` suffix. *(Superseded by the `--fresh-run` redesign in [1.22.0]–[1.23.0]; retained here for history only.)*
 
 ### Fixed
 
-- **`gdrive_validators.py` extracted:** Resolved `ModuleNotFoundError` caused by `gdrive_cli.py` importing from a bare `validators` module in a sibling directory; gdrive-specific validators now live in `gdrive_validators.py` co-located in `cloud/`.
-- **Dry-run correctness:** `--download-dir` now accepted by `dry-run` and `recover-only`; dry-run no longer writes to disk when `--download-dir` is passed; execution-command generation corrected to emit the actual subcommand (`recover-and-download` or `recover-only`) instead of always `dry-run`; `--folder-id` now included in generated commands.
-- **WinError 32 on `.partial` → final rename:** Fixed a Windows rename failure caused by an open file handle during the `.partial` → final file rename.
-- **State-save robustness:** Missing state-file parent directories are now created automatically.
-- **Mode-aware success rate:** `recover-and-download` now reports **Download success rate** (`downloaded / found`) so `--folder-id` runs no longer show 0 % despite successful downloads.
-- **Windows token/permission hardening:** Token writes now use `tempfile.mkstemp` + `os.replace()` (`MoveFileExW`) to avoid `ERROR_ACCESS_DENIED` on hidden `token.json`; distinct `PermissionError` log messages emitted for read vs. write failures; `PermissionError` re-raised from `_load_creds_from_token` instead of silently swallowed.
-- **`--overwrite` skip behaviour:** `_process_item` and `_recover_file` honour `--overwrite` when skipping already-processed items; `_prepare_recovery` calls `_clear_processed_items()` on startup. *(Superseded by [1.22.0]–[1.23.0]; retained here for history only.)*
+- **`gdrive_validators.py` extracted:** Resolved `ModuleNotFoundError` caused by `gdrive_cli.py` importing from a bare `validators` module; gdrive-specific validators now live in `gdrive_validators.py`.
+- **Dry-run correctness:** `--download-dir` now accepted by `dry-run` and `recover-only`; dry-run no longer writes to disk when `--download-dir` is passed; execution-command generation corrected to emit the actual subcommand instead of always `dry-run`; `--folder-id` included in generated commands.
 
 ## [1.9.0–1.17.0] - 2026-03-29 → 2026-04-11 (consolidated)
 
