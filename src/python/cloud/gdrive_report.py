@@ -126,7 +126,9 @@ class RecoveryReporter:
 
     def _print_drive_access_status(self, checks: Dict[str, Any]) -> None:
         drive_status = (
-            f"{self._console.sym_ok()} PASS" if checks["drive_access"] else f"{self._console.sym_fail()} FAIL"
+            f"{self._console.sym_ok()} PASS"
+            if checks["drive_access"]
+            else f"{self._console.sym_fail()} FAIL"
         )
         print(f"Drive API Access: {drive_status}")
         if checks["drive_error"]:
@@ -158,7 +160,9 @@ class RecoveryReporter:
             print(f"Download directory: {dl_dir} (informational — no write check in dry-run)")
             return
         local_status = (
-            f"{self._console.sym_ok()} PASS" if checks["local_writable"] else f"{self._console.sym_fail()} FAIL"
+            f"{self._console.sym_ok()} PASS"
+            if checks["local_writable"]
+            else f"{self._console.sym_fail()} FAIL"
         )
         print(f"Local Directory Writable: {local_status}")
         if checks["local_error"]:
@@ -371,7 +375,9 @@ class RecoveryReporter:
 
     def print_processing_start(self, count: int, concurrency: int) -> None:
         self._start_progress(total=count)
-        print(f"\n{self._console.sym_plan()} Processing {count} files with {concurrency} workers...")
+        print(
+            f"\n{self._console.sym_plan()} Processing {count} files with {concurrency} workers..."
+        )
 
     def print_streaming_start(self, batch_n: int, concurrency: int) -> None:
         total = len(self.args.file_ids) if getattr(self.args, "file_ids", None) else None

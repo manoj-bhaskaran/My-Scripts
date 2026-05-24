@@ -371,7 +371,9 @@ class DriveTrashDiscovery:
                 f"Encountered {errors} error(s) while fetching file ID metadata. See log for details."
             )
         if not items:
-            self._console.print_warn("No actionable trashed files were found from the provided --file-ids.")
+            self._console.print_warn(
+                "No actionable trashed files were found from the provided --file-ids."
+            )
             print("   All provided IDs may be invalid, not found, non-trashed, or inaccessible.")
             print(
                 "   Tip: Re-check IDs from their Drive URLs and ensure they are currently in Trash."
@@ -461,7 +463,9 @@ class DriveTrashDiscovery:
             print(f"{self._console.sym_search()} Discovering trashed files...")
             items = self._discover_via_ids()
         elif getattr(self.args, "folder_id", None):
-            print(f"{self._console.sym_search()} Discovering files in folder {self.args.folder_id} ...")
+            print(
+                f"{self._console.sym_search()} Discovering files in folder {self.args.folder_id} ..."
+            )
             items = self._discover_folder_recursively()
         else:
             print(f"{self._console.sym_search()} Discovering trashed files...")
@@ -470,7 +474,9 @@ class DriveTrashDiscovery:
             items = self._discover_via_query(query)
         if self.args.limit and self.args.limit > 0 and len(items) > self.args.limit:
             items = items[: self.args.limit]
-            print(f"{self._console.sym_limit()} Limiting to first {self.args.limit} item(s) as requested.")
+            print(
+                f"{self._console.sym_limit()} Limiting to first {self.args.limit} item(s) as requested."
+            )
         self._stats["found"] = len(items)
         print(f"{self._console.sym_scope()} Total files discovered: {len(items)}")
         return items
