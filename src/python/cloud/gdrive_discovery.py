@@ -29,6 +29,7 @@ except ImportError:
     print("Install with: pip install python-dateutil")
     sys.exit(1)
 
+from gdrive_console import ConsoleHelper
 from gdrive_constants import EXTENSION_MIME_TYPES, FOLDER_MIME_TYPE, PAGE_SIZE
 from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
 from gdrive_id_prefetch import IdMetadataPrefetcher
@@ -63,6 +64,7 @@ class DriveTrashDiscovery:
         run_parallel_processing_for_batch: Callable[..., None],
     ) -> None:
         self.args = args
+        self._console = ConsoleHelper(args)
         self.logger = logger
         self.auth = auth
         self._execute = execute_fn
@@ -86,36 +88,6 @@ class DriveTrashDiscovery:
     @property
     def _id_prefetch_errors(self) -> Dict[str, str]:
         return self._id_prefetcher._id_prefetch_errors
-
-    def _use_emoji(self) -> bool:
-        return not getattr(self.args, "no_emoji", False)
-
-    def _sym_fail(self) -> str:
-        return "❌" if self._use_emoji() else "ERROR"
-
-    def _sym_warn(self) -> str:
-        return "⚠️" if self._use_emoji() else "WARN"
-
-    def _sym_info(self) -> str:
-        return "ℹ️" if self._use_emoji() else "INFO"
-
-    def _sym_scope(self) -> str:
-        return "📊" if self._use_emoji() else "SCOPE"
-
-    def _sym_search(self) -> str:
-        return "🔍" if self._use_emoji() else "SEARCH"
-
-    def _sym_done(self) -> str:
-        return "⛳" if self._use_emoji() else "LIMIT"
-
-    def _print_err(self, msg: str) -> None:
-        print(f"{self._sym_fail()} {msg}", file=sys.stderr)
-
-    def _print_warn(self, msg: str) -> None:
-        print(f"{self._sym_warn()} {msg}", file=sys.stderr)
-
-    def _print_info(self, msg: str) -> None:
-        print(f"{self._sym_info()} {msg}")
 
     @staticmethod
     def _sanitize_path_component(name: str) -> str:
@@ -168,21 +140,21 @@ class DriveTrashDiscovery:
         if buckets["invalid"]:
             joined = ", ".join(buckets["invalid"])
             self.logger.error(f"Invalid file ID format: {joined}")
-            self._print_err(f"Invalid file ID format: {joined}")
+            self._console.print_err(f"Invalid file ID format: {joined}")
         if buckets["not_found"]:
             joined = ", ".join(buckets["not_found"])
             self.logger.error(f"File IDs not found: {joined}")
-            self._print_err(f"File IDs not found: {joined}")
+            self._console.print_err(f"File IDs not found: {joined}")
         if buckets["no_access"]:
             joined = ", ".join(buckets["no_access"])
             self.logger.error(f"Insufficient permissions for file IDs: {joined}")
-            self._print_err(f"Insufficient permissions for file IDs: {joined}")
+            self._console.print_err(f"Insufficient permissions for file IDs: {joined}")
             print(
                 "   Tip: Ensure the authenticated account has access, or re-authenticate with an account that does.",
                 file=sys.stderr,
             )
         if transient_errors:
-            self._print_warn(
+            self._console.print_warn(
                 f"Validation encountered {transient_errors} transient error(s) (rate-limit/server)."
             )
             if transient_ids:
@@ -212,12 +184,12 @@ class DriveTrashDiscovery:
         if getattr(self.args, "debug_parity", False):
             mismatch = self._id_prefetcher.emit_parity_metrics(result)
             if mismatch and getattr(self.args, "fail_on_parity_mismatch", False):
-                self._print_err(
+                self._console.print_err(
                     "Parity check failed during ID prefetch. See logs (use -vv) or --parity-metrics-file."
                 )
                 return False
         if getattr(self.args, "clear_id_cache", False):
-            self._print_warn(
+            self._console.print_warn(
                 "--clear-id-cache enabled: metadata cache will be cleared and IDs re-fetched during discovery/streaming."
             )
             self._clear_id_caches()
@@ -393,13 +365,15 @@ class DriveTrashDiscovery:
 
     def _print_discover_id_summary(self, items, skipped_non_trashed, errors):
         if skipped_non_trashed:
-            self._print_info(f"Skipped {skipped_non_trashed} non-trashed file ID(s).")
+            self._console.print_info(f"Skipped {skipped_non_trashed} non-trashed file ID(s).")
         if errors:
-            self._print_info(
+            self._console.print_info(
                 f"Encountered {errors} error(s) while fetching file ID metadata. See log for details."
             )
         if not items:
-            self._print_warn("No actionable trashed files were found from the provided --file-ids.")
+            self._console.print_warn(
+                "No actionable trashed files were found from the provided --file-ids."
+            )
             print("   All provided IDs may be invalid, not found, non-trashed, or inaccessible.")
             print(
                 "   Tip: Re-check IDs from their Drive URLs and ensure they are currently in Trash."
@@ -486,21 +460,25 @@ class DriveTrashDiscovery:
 
     def discover_trashed_files(self) -> List[RecoveryItem]:
         if self.args.file_ids:
-            print(f"{self._sym_search()} Discovering trashed files...")
+            print(f"{self._console.sym_search()} Discovering trashed files...")
             items = self._discover_via_ids()
         elif getattr(self.args, "folder_id", None):
-            print(f"{self._sym_search()} Discovering files in folder {self.args.folder_id} ...")
+            print(
+                f"{self._console.sym_search()} Discovering files in folder {self.args.folder_id} ..."
+            )
             items = self._discover_folder_recursively()
         else:
-            print(f"{self._sym_search()} Discovering trashed files...")
+            print(f"{self._console.sym_search()} Discovering trashed files...")
             query = self._build_query()
             self.logger.info(f"Using query: {query}")
             items = self._discover_via_query(query)
         if self.args.limit and self.args.limit > 0 and len(items) > self.args.limit:
             items = items[: self.args.limit]
-            print(f"{self._sym_done()} Limiting to first {self.args.limit} item(s) as requested.")
+            print(
+                f"{self._console.sym_limit()} Limiting to first {self.args.limit} item(s) as requested."
+            )
         self._stats["found"] = len(items)
-        print(f"{self._sym_scope()} Total files discovered: {len(items)}")
+        print(f"{self._console.sym_scope()} Total files discovered: {len(items)}")
         return items
 
     def _fetch_folder_page(

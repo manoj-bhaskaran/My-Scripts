@@ -12,7 +12,7 @@ if str(cloud_dir) not in sys.path:
     sys.path.insert(0, str(cloud_dir))
 
 from gdrive_constants import DEFAULT_BURST, DEFAULT_LOG_FILE, DEFAULT_MAX_RPS, DEFAULT_STATE_FILE
-from gdrive_models import RecoveryState
+from gdrive_models import RecoveryItem, RecoveryState
 from gdrive_report import ProgressBar, RecoveryReporter
 
 
@@ -610,3 +610,260 @@ def test_print_interrupted_emits_structured_info_log(capsys):
     assert "downloaded=3" in rendered
     assert "skipped=2" in rendered
     assert "errors=1" in rendered
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _print_err / _print_warn / _print_info shims
+# ---------------------------------------------------------------------------
+
+
+def test_print_err_shim_writes_to_stderr(capsys):
+    r = _reporter(no_emoji=True)
+    r._print_err("disk full")
+    assert "disk full" in capsys.readouterr().err
+
+
+def test_print_info_shim_writes_to_stdout(capsys):
+    r = _reporter(no_emoji=True)
+    r._print_info("ready")
+    assert "ready" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _print_drive_access_status
+# ---------------------------------------------------------------------------
+
+
+def test_print_drive_access_status_pass(capsys):
+    r = _reporter(no_emoji=True)
+    r._print_drive_access_status({"drive_access": True, "drive_error": None})
+    out = capsys.readouterr().out
+    assert "PASS" in out
+    assert "FAIL" not in out
+
+
+def test_print_drive_access_status_fail_with_error(capsys):
+    r = _reporter(no_emoji=True)
+    r._print_drive_access_status({"drive_access": False, "drive_error": "token expired"})
+    out = capsys.readouterr().out
+    assert "FAIL" in out
+    assert "token expired" in out
+
+
+def test_print_drive_access_status_no_error_field_when_none(capsys):
+    r = _reporter(no_emoji=True)
+    r._print_drive_access_status({"drive_access": True, "drive_error": None})
+    assert "Error:" not in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _print_operation_privileges / _print_single_operation_privilege
+# ---------------------------------------------------------------------------
+
+
+def test_print_operation_privileges_skips_when_absent(capsys):
+    r = _reporter(no_emoji=True)
+    r._print_operation_privileges({})
+    assert capsys.readouterr().out == ""
+
+
+def test_print_operation_privileges_skips_when_empty(capsys):
+    r = _reporter(no_emoji=True)
+    r._print_operation_privileges({"operation_privileges": {}})
+    assert capsys.readouterr().out == ""
+
+
+def test_print_operation_privileges_renders_each_op(capsys):
+    r = _reporter(no_emoji=True)
+    privileges = {
+        "operation_privileges": {
+            "untrash": {"status": "pass", "error": None},
+            "download": {"status": "fail", "error": "forbidden"},
+        }
+    }
+    r._print_operation_privileges(privileges)
+    out = capsys.readouterr().out
+    assert "Untrash" in out
+    assert "Download" in out
+    assert "OK" in out
+    assert "ERROR" in out
+    assert "forbidden" in out
+
+
+def test_print_single_operation_privilege_unknown_status(capsys):
+    r = _reporter(no_emoji=True)
+    r._print_single_operation_privilege("check", {"status": "unknown", "error": None})
+    out = capsys.readouterr().out
+    assert "?" in out
+    assert "UNKNOWN" in out
+
+
+def test_print_single_operation_privilege_no_error_line_when_none(capsys):
+    r = _reporter(no_emoji=True)
+    r._print_single_operation_privilege("check", {"status": "pass", "error": None})
+    assert "Error:" not in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _print_local_directory_status (non-dry-run paths)
+# ---------------------------------------------------------------------------
+
+
+def test_local_dir_status_writable_pass(capsys):
+    r = _reporter(mode="recover_only", download_dir="/out", no_emoji=True)
+    r._print_local_directory_status({"local_writable": True, "local_error": None, "disk_space": 0})
+    out = capsys.readouterr().out
+    assert "PASS" in out
+
+
+def test_local_dir_status_not_writable_fail(capsys):
+    r = _reporter(mode="recover_only", download_dir="/out", no_emoji=True)
+    r._print_local_directory_status(
+        {"local_writable": False, "local_error": "permission denied", "disk_space": 0}
+    )
+    out = capsys.readouterr().out
+    assert "FAIL" in out
+    assert "permission denied" in out
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _print_privilege_checks
+# ---------------------------------------------------------------------------
+
+
+def test_print_privilege_checks_renders_header(capsys):
+    r = _reporter(no_emoji=True)
+    checks = {
+        "drive_access": True,
+        "drive_error": None,
+        "local_writable": True,
+        "local_error": None,
+        "disk_space": 0,
+        "estimated_needed": 0,
+        "operation_privileges": {},
+    }
+    r._print_privilege_checks(checks)
+    out = capsys.readouterr().out
+    assert "PRIVILEGE AND ENVIRONMENT CHECKS" in out
+    assert "Drive API Access" in out
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _print_disk_space_info
+# ---------------------------------------------------------------------------
+
+
+def test_print_disk_space_info_sufficient(capsys):
+    r = _reporter(no_emoji=True)
+    r._print_disk_space_info({"disk_space": 10 * 1024**3, "estimated_needed": 5 * 1024**3})
+    out = capsys.readouterr().out
+    assert "SUFFICIENT" in out
+    assert "Available" in out
+
+
+def test_print_disk_space_info_insufficient(capsys):
+    r = _reporter(no_emoji=True)
+    r._print_disk_space_info({"disk_space": 1 * 1024**3, "estimated_needed": 5 * 1024**3})
+    out = capsys.readouterr().out
+    assert "INSUFFICIENT" in out
+
+
+def test_print_disk_space_info_zero_skipped(capsys):
+    r = _reporter(no_emoji=True)
+    r._print_disk_space_info({"disk_space": 0, "estimated_needed": 0})
+    assert capsys.readouterr().out == ""
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _print_scope_summary
+# ---------------------------------------------------------------------------
+
+
+def _make_item(size=1024, will_recover=True, will_download=False, target_path=""):
+    return RecoveryItem(
+        id="abc123",
+        name="file.txt",
+        size=size,
+        mime_type="text/plain",
+        created_time="2024-01-01T00:00:00Z",
+        will_recover=will_recover,
+        will_download=will_download,
+        target_path=target_path,
+    )
+
+
+def test_print_scope_summary_basic(capsys):
+    r = _reporter(no_emoji=True, extensions=None)
+    items = [_make_item(size=1024 * 1024)]
+    r._print_scope_summary(items)
+    out = capsys.readouterr().out
+    assert "Total trashed files found: 1" in out
+    assert "1.00 MB" in out
+
+
+def test_print_scope_summary_with_extension_filter(capsys):
+    r = _reporter(no_emoji=True, extensions=["jpg", "png"])
+    r._print_scope_summary([_make_item()])
+    out = capsys.readouterr().out
+    assert "jpg" in out
+    assert "png" in out
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _print_item_details
+# ---------------------------------------------------------------------------
+
+
+def test_print_item_details_with_download(capsys):
+    r = _reporter(no_emoji=True)
+    item = _make_item(size=2048, will_download=True, target_path="/local/file.txt")
+    r._print_item_details(item, index=1)
+    out = capsys.readouterr().out
+    assert "/local/file.txt" in out
+    assert "Yes" in out
+
+
+def test_print_item_details_without_download(capsys):
+    r = _reporter(no_emoji=True)
+    item = _make_item(will_download=False)
+    r._print_item_details(item, index=1)
+    out = capsys.readouterr().out
+    assert "Download: No" in out
+
+
+# ---------------------------------------------------------------------------
+# RecoveryReporter — _show_detailed_plan (single page — no input required)
+# ---------------------------------------------------------------------------
+
+
+def test_show_detailed_plan_single_page_returns_true(capsys):
+    r = _reporter(no_emoji=True)
+    items = [_make_item() for _ in range(5)]
+    result = r._show_detailed_plan(items)
+    assert result is True
+    out = capsys.readouterr().out
+    assert "DETAILED EXECUTION PLAN" in out
+
+
+def test_show_detailed_plan_multi_page_q_returns_false(capsys, monkeypatch):
+    r = _reporter(no_emoji=True)
+    items = [_make_item() for _ in range(25)]
+    monkeypatch.setattr("builtins.input", lambda _: "q")
+    result = r._show_detailed_plan(items)
+    assert result is False
+
+
+def test_show_detailed_plan_multi_page_s_breaks_and_returns_true(capsys, monkeypatch):
+    r = _reporter(no_emoji=True)
+    items = [_make_item() for _ in range(25)]
+    monkeypatch.setattr("builtins.input", lambda _: "s")
+    result = r._show_detailed_plan(items)
+    assert result is True
+
+
+def test_show_detailed_plan_multi_page_enter_continues(capsys, monkeypatch):
+    r = _reporter(no_emoji=True)
+    items = [_make_item() for _ in range(25)]
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    result = r._show_detailed_plan(items)
+    assert result is True
