@@ -16,10 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- **Dead discovery helpers removed from `gdrive_discovery.py`:** Six private methods that were never reached in production have been deleted: `_extract_status_from_http_error`, `_log_terminal_id_validation_error`, `_handle_prefetch_error`, `_log_fetch_metadata_retry`, `_format_fetch_metadata_error_with_context`, and `_fetch_file_metadata`. All were leftovers from the migration to the shared `with_retries` helper; error classification and metadata fetching are handled entirely by `_fetch_and_handle_metadata` via `with_retries`. `_handle_discover_id_result` is also removed — it had no caller anywhere.
-- **Unused `_last_discover_progress_ts` attribute removed from `gdrive_recover.py`:** The attribute was declared in `DriveTrashRecoveryTool.__init__` but never read or written after discovery was extracted to `DriveTrashDiscovery` (which owns its own copy). No behavioural change.
-- **`HttpError` and `MAX_RETRIES` imports dropped from `gdrive_discovery.py`:** Both imports became unused once the dead helpers above were removed.
-- **Unit tests for the removed helpers deleted:** `test_handle_prefetch_error_retry_and_terminal`, `test_fetch_file_metadata_error_path`, and `test_error_formatting_and_status_extract` in `test_gdrive_recover.py` existed solely to exercise the deleted methods. Error-classification behaviour is already covered by `test_gdrive_discovery_retry_classification.py` via `_fetch_and_handle_metadata`.
+- Removed unreachable discovery/metadata helpers and their tests after the `with_retries` migration; no behavioural change.
 
 ## [1.26.1] - 2026-05-23
 
@@ -204,9 +201,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Increased new-code coverage to ≥ 80 %** (74.2 % → ≥ 80 %): added targeted tests to close gaps identified by SonarCloud.
-  - `test_gdrive_operations.py`: 9 new tests covering `_do_post_restore_action` (`deleted` action and unknown-action fallback), `_log_post_restore_success` (`deleted` branch), `_handle_post_restore_retry`, `_extract_http_error_detail` (no-separator path), `_log_post_restore_final_error`, `_apply_post_restore_policy` non-terminal-error path (HTTP 5xx), and `_process_item` download-failure path.
-  - `test_gdrive_cli_folder_id.py`: 7 new tests covering empty input, valid path with parent-dir creation, existing file, directory-rejection, and `--failed-file` argument acceptance on all three subcommands.
+- **Raised new-code coverage 74.2% → ≥ 80%** via targeted tests to close gaps identified by SonarCloud.
 
 ## [1.20.1] - 2026-05-12
 
@@ -251,7 +246,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `RecoveryReporter` gains `_start_progress(total)`, `_close_progress()`, and `_should_show_progress()` helpers; the bar is started in `print_streaming_start` / `print_processing_start` and finalised in `_print_summary` and `print_interrupted_state_saved`.
   - The `verbose >= 1` guard in `_handle_item_result_stream` and `_handle_item_result` is replaced with `reporter._should_show_progress()` so the bar appears on TTY without requiring `-v`.
 
-## [1.18.x] - 2026-05-12/13 (Consolidated)
+## [1.18.x] - 2026-05-12 (Consolidated)
 
 ### Added
 
@@ -263,11 +258,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`gdrive_validators.py` extracted:** Resolved `ModuleNotFoundError` caused by `gdrive_cli.py` importing from a bare `validators` module in a sibling directory; gdrive-specific validators now live in `gdrive_validators.py` co-located in `cloud/`.
 - **Dry-run correctness:** `--download-dir` now accepted by `dry-run` and `recover-only`; dry-run no longer writes to disk when `--download-dir` is passed; execution-command generation corrected to emit the actual subcommand (`recover-and-download` or `recover-only`) instead of always `dry-run`; `--folder-id` now included in generated commands.
-- **WinError 32 on `.partial` → final rename:** `_atomic_replace_with_retry` moved to after the `with open(partial, "wb")` block so no open handle blocks the rename on Windows.
-- **Download refactor + tests:** `_download_file` split into `_download_direct` / `_download_via_partial`; four unit-test cases added covering failure paths and OSError branches.
-- **State-save robustness:** `os.makedirs(..., exist_ok=True)` added before `open()` in `_save_state` so missing state-file parent directories are created automatically.
+- **WinError 32 on `.partial` → final rename:** Fixed a Windows rename failure caused by an open file handle during the `.partial` → final file rename.
+- **State-save robustness:** Missing state-file parent directories are now created automatically.
 - **Mode-aware success rate:** `recover-and-download` now reports **Download success rate** (`downloaded / found`) so `--folder-id` runs no longer show 0 % despite successful downloads.
-- **Windows token/permission hardening (2026-05-12/13):** Token writes now use `tempfile.mkstemp` + `os.replace()` (`MoveFileExW`) to avoid `ERROR_ACCESS_DENIED` on hidden `token.json`; distinct `PermissionError` log messages emitted for read vs. write failures; `PermissionError` re-raised from `_load_creds_from_token` instead of silently swallowed.
+- **Windows token/permission hardening:** Token writes now use `tempfile.mkstemp` + `os.replace()` (`MoveFileExW`) to avoid `ERROR_ACCESS_DENIED` on hidden `token.json`; distinct `PermissionError` log messages emitted for read vs. write failures; `PermissionError` re-raised from `_load_creds_from_token` instead of silently swallowed.
 - **`--overwrite` skip behaviour:** `_process_item` and `_recover_file` honour `--overwrite` when skipping already-processed items; `_prepare_recovery` calls `_clear_processed_items()` on startup. *(Superseded by [1.22.0]–[1.23.0]; retained here for history only.)*
 
 ## [1.9.0] – [1.17.0] - 2026-03-29 → 2026-04-11 (Consolidated)
