@@ -294,7 +294,7 @@ def test_load_retry_failed_file_parses_rows(tmp_path):
     csv_file.write_text(
         "source_folder_id,file_id,target_path\nfolder1,id1,/a/b.txt\nfolder2,id2,/c/d.jpg\n"
     )
-    ok, code, overrides = _load_retry_failed_file(str(csv_file))
+    ok, code, overrides = _load_retry_failed_file(str(csv_file), _args())
     assert ok and code == 0
     assert overrides == {"id1": "/a/b.txt", "id2": "/c/d.jpg"}
 
@@ -302,14 +302,14 @@ def test_load_retry_failed_file_parses_rows(tmp_path):
 def test_load_retry_failed_file_missing_file_id_column_rejected(tmp_path):
     csv_file = tmp_path / "bad.csv"
     csv_file.write_text("source_folder_id,target_path\nfolder1,/a/b.txt\n")
-    ok, code, overrides = _load_retry_failed_file(str(csv_file))
+    ok, code, overrides = _load_retry_failed_file(str(csv_file), _args())
     assert not ok and code == 2
 
 
 def test_load_retry_failed_file_empty_rows_returns_empty_overrides(tmp_path):
     csv_file = tmp_path / "empty.csv"
     csv_file.write_text("source_folder_id,file_id,target_path\n")
-    ok, code, overrides = _load_retry_failed_file(str(csv_file))
+    ok, code, overrides = _load_retry_failed_file(str(csv_file), _args())
     # _load_retry_failed_file succeeds; main() is responsible for the early exit on empty result.
     assert ok and code == 0
     assert overrides == {}

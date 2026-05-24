@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.26.9] - 2026-05-24
+
+### Changed
+
+- `gdrive_cli.py`: deleted the three module-level symbol helpers `_sym_fail`, `_sym_warn`, `_sym_info` (and `_use_emoji`) in favour of `ConsoleHelper` from `gdrive_console.py`; all former call sites now construct `ConsoleHelper(args)` locally.
+- `gdrive_cli.py`: fixed four locations that were printing hard-coded `"ERROR"` / `"WARN"` ASCII strings regardless of `--no-emoji`: the concurrency-cap warning in `_validate_concurrency_arg`, the lockfile-contention error and `--force` warnings in `_print_lockfile_messages`, and the empty-retry-CSV warning in `_load_retry_failed_file`. All messages now route through `ConsoleHelper` and honour `--no-emoji`.
+- `gdrive_cli.py`: moved the `--folder-id` + `trash` post-restore-policy warning from `main()` into `_validate_folder_id_args`, co-locating all folder-ID constraint checks in one function and removing the last direct console-symbol logic from `main()`.
+- `gdrive_cli.py`: `_load_retry_failed_file` now accepts an `args` parameter so it can construct `ConsoleHelper` for symbol-consistent output; call site in `_apply_retry_failed_file` updated accordingly.
+
 ## [1.26.8] - 2026-05-24
 
 ### Fixed
