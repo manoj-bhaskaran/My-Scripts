@@ -674,39 +674,36 @@ def _check_pid_alive(owner_pid, tool):
         pid_int = int(owner_pid)
         alive = tool.state_manager._pid_is_alive(pid_int)
         if not alive:
-            pid_alive_note = " (note: recorded PID not confirmed; may not be running)"
+            pid_alive_note = " (not running)"
     except Exception:
         pass
     return pid_alive_note
 
 
 def _acquire_or_bypass_lock(tool, args) -> Tuple[bool, int]:
-    try:
-        start_wait = time.time()
-        timeout = float(getattr(args, "lock_timeout", 0.0) or 0.0)
-        poll = 0.5
+    start_wait = time.time()
+    timeout = float(getattr(args, "lock_timeout", 0.0) or 0.0)
+    poll = 0.5
+    acquired = tool.state_manager._acquire_state_lock()
+    while (not acquired) and timeout > 0 and (time.time() - start_wait) < timeout:
+        remaining = max(0.0, timeout - (time.time() - start_wait))
+        if int(remaining) == remaining:
+            remaining_str = f"{int(remaining)}s"
+        else:
+            remaining_str = f"{remaining:.1f}s"
+        print(f"Waiting for state lock (remaining {remaining_str})...", file=sys.stderr)
+        time.sleep(poll)
         acquired = tool.state_manager._acquire_state_lock()
-        while (not acquired) and timeout > 0 and (time.time() - start_wait) < timeout:
-            remaining = max(0.0, timeout - (time.time() - start_wait))
-            if int(remaining) == remaining:
-                remaining_str = f"{int(remaining)}s"
-            else:
-                remaining_str = f"{remaining:.1f}s"
-            print(f"Waiting for state lock (remaining {remaining_str})...", file=sys.stderr)
-            time.sleep(poll)
-            acquired = tool.state_manager._acquire_state_lock()
-        if not acquired:
-            lockfile_path = f"{args.state_file}.lock"
-            owner_pid, run_id = _read_lockfile_metadata(lockfile_path)
-            pid_alive_note = _check_pid_alive(owner_pid, tool)
-            force = getattr(args, "force", False)
-            if not force:
-                _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, False)
-                return False, 2
-            else:
-                _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, True)
-    except Exception:
-        pass
+    if not acquired:
+        lockfile_path = f"{args.state_file}.lock"
+        owner_pid, run_id = _read_lockfile_metadata(lockfile_path)
+        pid_alive_note = _check_pid_alive(owner_pid, tool)
+        force = getattr(args, "force", False)
+        if not force:
+            _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, False)
+            return False, 2
+        else:
+            _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, True)
     return True, 0
 
 
@@ -802,10 +799,7 @@ def _print_scope_mismatch_error(args, exc: "StateScopeMismatchError") -> None:
 def _run_and_release_lock(tool, args) -> int:
     ran_ok = False
     try:
-        if args.command == "dry-run":
-            ran_ok = _run_tool(tool, args)
-        else:
-            ran_ok = tool.execute_recovery()
+        ran_ok = _run_tool(tool, args)
     except StateScopeMismatchError as e:
         _print_scope_mismatch_error(args, e)
         return 2
