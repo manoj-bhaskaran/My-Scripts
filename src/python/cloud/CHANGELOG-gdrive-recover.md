@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Standardised consolidated/range release headings to a single convention: version spans now use one bracketed range (`[a.b.c–x.y.z]`) and consolidated rollups use a lowercase `(consolidated)` suffix for consistency across the gdrive changelog.
 
+- Moved the long in-module usage examples out of `gdrive_recover.py` and into `docs/gdrive-recover-usage.md`; the module docstring now links to the dedicated docs page to reduce source-file noise while preserving discoverable usage guidance.
+
 ## [1.26.2–1.26.5] - 2026-05-24 (consolidated)
 
 ### Changed

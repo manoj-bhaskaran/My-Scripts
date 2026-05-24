@@ -40,6 +40,7 @@ kept here — see the linked file for details.
 ### Changed
 
 - **[Core/Zip tests]** Relocated Zip module extraction tests from `Expand-ZipsAndClean.Tests.ps1` into dedicated `tests/powershell/modules/Core/Zip/Zip.Tests.ps1` for module-scoped ownership and clearer suite boundaries (issue #1076).
+- **[gdrive_recover docs]** Moved `gdrive_recover.py` embedded usage examples to `docs/gdrive-recover-usage.md` and linked the new page from README (issue #1117).
 - **[Expand-ZipsAndClean 2.5.2]** Replaced script-local `Write-PhaseProgress` usage with shared `Core/Progress` `Show-Progress` (via `Show-ProgressPhase` adapter) and added `Show-Progress -Suppress` for quiet-mode suppression (issue #1063).
   → Full detail: [Expand-ZipsAndClean.CHANGELOG.md](src/powershell/file-management/Expand-ZipsAndClean.CHANGELOG.md)
 - **[FileDistributor]** `SupportsShouldProcess` added to the entry script and to all
