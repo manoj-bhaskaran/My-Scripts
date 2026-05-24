@@ -6,6 +6,8 @@ documented in this file. The authoritative version is defined in `gdrive_constan
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+> **SemVer note (historical):** A small subset of pre-2.0 releases included documented breaking changes under a minor-version bump. Known cases are `1.20.0` (default `--log-file` behavior changed), `1.21.0` (`--failed-file` format changed plain text → CSV), and one-way state-schema migrations in `1.23.0` (v1→v2) and `1.24.0` (v2→v3). Per maintainer decision, historical version numbers are retained as published.
+
 > **Out of scope:** `cloudconvert_utils.py`, `drive_space_monitor.py`, and
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
@@ -99,30 +101,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **v0/v1 → v3 chained migration** works in a single load: the v1 → v2 scope-synthesis step runs first, then the v2 → v3 list-to-dict conversion.
 - **Migration is one-way.** Keep a copy of your state file before running v1.24.0 for the first time if rollback is needed. To retry previously-failed items use `--retry-failed-file <csv>` or `--fresh-run`.
 
-## [1.23.3] - 2026-05-14
-
-### Fixed
-
-- **Final streaming progress line no longer reports a stale `processed=` count.** `ProgressBar.update` throttles redraws by time interval and `close()` only emitted a newline, so the last visible progress line could be off by up to one batch from the true totals.
-  - `DriveTrashRecoveryTool._process_streaming` now calls a new `_print_final_stream_progress` helper just before `_print_summary` (and before `print_interrupted_state_saved` on Ctrl-C).
-  - The helper calls `ProgressBar.update(..., force=True)` to bypass the throttle and render the true final counts.
-
-## [1.23.2] - 2026-05-14
+## [1.23.1] - [1.23.3] - 2026-05-14 (Consolidated)
 
 ### Added
 
-- **End-of-run summary written to the log file as a structured INFO line.** `RecoveryReporter._print_summary` previously used bare `print()` calls, leaving the log file without a record of how the run concluded.
-  - Emits a single grep-friendly `Run complete: mode=… found=… recovered=… downloaded=… skipped=… errors=… elapsed=…s success_rate=…%` line at INFO level alongside the stdout summary box.
-  - `print_interrupted_state_saved` mirrors this with a `Run interrupted: …` line so interrupted runs are also unambiguously recorded.
-  - Logger errors are swallowed so a misbehaving handler cannot break the user-facing summary.
-
-## [1.23.1] - 2026-05-14
+- **End-of-run summary now written to the log file as a structured INFO line:** `RecoveryReporter._print_summary` emits a grep-friendly `Run complete: ...` record, and `print_interrupted_state_saved` emits `Run interrupted: ...`; logger errors are swallowed to keep user-facing summary output resilient.
+- **Final streaming progress line now forced to true final counts:** a new `_print_final_stream_progress` helper calls `ProgressBar.update(..., force=True)` before summary/interruption output so the last visible `processed=` line is not stale.
 
 ### Fixed
 
-- **Resume-mode summary no longer reports zero skipped items.** `DriveOperations._process_item` short-circuited via `_is_processed` without bumping `stats["skipped"]`; in folder-id mode and `--retry-failed-file` mode (`will_recover=False`), `_recover_file` is never invoked, so a full-resume run produced `Files downloaded: 0`, `Files skipped: 0`, and `Errors encountered: 0` despite processing tens of thousands of items.
-  - The short-circuit now bumps `stats["skipped"]` under `stats_lock` so the summary truthfully reflects how many items were already in the state file.
-  - Trash-recover mode was unaffected because a redundant `_is_processed` check inside `_recover_file` happened to increment the counter; the missing increment was in `_process_item`.
+- **Resume-mode skipped counts are now accurate:** `_process_item` increments `stats["skipped"]` when `_is_processed` short-circuits, fixing zero-skipped summaries in folder-id and retry-failed-file paths where `will_recover=False`.
 
 ## [1.23.0] - 2026-05-14
 
@@ -169,25 +157,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Combined "clear state + truncate failed-file" behaviour of `--overwrite`.** Continues to work in this release with a stderr warning. Migrate to `--fresh-run` (alone or combined with `--overwrite`) before v1.23.0.
 
-## [1.21.2] - 2026-05-14
+## [1.21.1] - [1.21.2] - 2026-05-14 (Consolidated)
 
 ### Fixed
 
-- **Failed items are no longer marked as processed in the state file (#1027).** `DriveOperations._process_item` previously called `_mark_processed(item.id)` unconditionally; failed items ended up in both `--failed-file` and `state.processed_items`, causing them to be silently skipped on rerun and defeating resume.
-  - The mark-processed call is now made only on full success.
-  - Failed items continue to be appended to `--failed-file` and are reattempted on the next rerun against the same state file.
-  - Module docstring (`gdrive_recover.py`) and README updated to describe the corrected resume semantics; `processed_items` is now documented as the count of **successfully** processed items.
-  - Entries written under the old semantics may include IDs of previously-failed items that will still be skipped on rerun. To retry them use `--retry-failed-file` (if the failed-file CSV is available) or trim the state file manually.
-
-## [1.21.1] - 2026-05-14
-
-### Fixed
-
-- **`--retry-failed-file` now sets `will_recover=False` for all retried items:** Files in the failed-file CSV are already live in Drive; previously they inherited `will_recover=True` and triggered a redundant `files.update(trashed=False)` call. A new `_retry_mode` flag on `args` tells `_process_file_data` to skip the recover step.
-- **`--retry-failed-file` no longer falls back to a full trash query when the CSV has no actionable rows:** `main()` now exits with code 1 and a clear message instead of continuing with an empty `args.file_ids` list and discovering all trashed files.
-- **Trash-prefetch validation skipped in retry mode:** `_validate_file_ids_if_present` is a no-op when `_retry_mode` is set, preventing "skipped_non_trashed" misclassification of already-live files.
-- **`--failed-file` and `--retry-failed-file` cannot point to the same path:** A new check in `_validate_retry_failed_file_arg` rejects this combination with an informative error message.
-- **Removed unused `import io`** from `gdrive_operations.py`.
+- **Failed-item resume correctness and retry safety improvements (#1027):**
+  - `--retry-failed-file` now sets `will_recover=False` for all retried items, avoiding redundant `files.update(trashed=False)` calls for already-live files.
+  - `--retry-failed-file` no longer falls back to a full trash query when the CSV has no actionable rows; it now exits with code 1 and a clear error.
+  - Trash-prefetch validation is skipped in retry mode to avoid misclassifying already-live files as `skipped_non_trashed`.
+  - `--failed-file` and `--retry-failed-file` are now validated as distinct paths.
+  - Failed items are no longer marked as processed in the state file; only fully successful items enter `processed_items`, so reruns can reattempt failures as intended.
+  - Documentation was updated to reflect corrected resume semantics and recovery options for historical state files written under the old behavior.
+- Removed unused `import io` from `gdrive_operations.py`.
 
 ## [1.21.0] - 2026-05-14
 
