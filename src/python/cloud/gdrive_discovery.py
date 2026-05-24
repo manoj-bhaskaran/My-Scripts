@@ -31,7 +31,7 @@ except ImportError:
 
 from gdrive_constants import EXTENSION_MIME_TYPES, FOLDER_MIME_TYPE, PAGE_SIZE
 from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
-from gdrive_id_prefetch import IdMetadataPrefetcher, ValidationBuckets
+from gdrive_id_prefetch import IdMetadataPrefetcher
 from gdrive_retry import with_retries
 
 if TYPE_CHECKING:
@@ -74,6 +74,18 @@ class DriveTrashDiscovery:
         self._with_retries = lambda *args, **kwargs: with_retries(*args, **kwargs)
         self._id_prefetcher = IdMetadataPrefetcher(self)
         self._last_discover_progress_ts: Optional[float] = None
+
+    @property
+    def _id_prefetch(self) -> Dict[str, Dict[str, Any]]:
+        return self._id_prefetcher._id_prefetch
+
+    @property
+    def _id_prefetch_non_trashed(self) -> Dict[str, bool]:
+        return self._id_prefetcher._id_prefetch_non_trashed
+
+    @property
+    def _id_prefetch_errors(self) -> Dict[str, str]:
+        return self._id_prefetcher._id_prefetch_errors
 
     def _use_emoji(self) -> bool:
         return not getattr(self.args, "no_emoji", False)
@@ -193,12 +205,12 @@ class DriveTrashDiscovery:
         return success
 
     def _handle_prefetch_success(self, fid, data, buckets, skipped_non_trashed):
-        self._id_prefetcher._id_prefetch[fid] = data
+        self._id_prefetch[fid] = data
         if data.get("trashed", False):
             buckets["ok"].append(fid)
-            self._id_prefetcher._id_prefetcher._id_prefetch_non_trashed[fid] = False
+            self._id_prefetch_non_trashed[fid] = False
         else:
-            self._id_prefetcher._id_prefetcher._id_prefetch_non_trashed[fid] = True
+            self._id_prefetch_non_trashed[fid] = True
             skipped_non_trashed[0] += 1
 
     def _should_skip_invalid_id(self, fid, buckets):
@@ -230,16 +242,16 @@ class DriveTrashDiscovery:
 
         if status == 404:
             buckets["not_found"].append(fid)
-            self._id_prefetcher._id_prefetcher._id_prefetch_errors[fid] = HTTP_404_LABEL
+            self._id_prefetch_errors[fid] = HTTP_404_LABEL
             return
         if status == 403:
             buckets["no_access"].append(fid)
-            self._id_prefetcher._id_prefetcher._id_prefetch_errors[fid] = HTTP_403_LABEL
+            self._id_prefetch_errors[fid] = HTTP_403_LABEL
             return
 
         transient_errors[0] += 1
         transient_ids.append(fid)
-        self._id_prefetcher._id_prefetcher._id_prefetch_errors[fid] = error
+        self._id_prefetch_errors[fid] = error
         err_count[0] += 1
 
     def _prefetch_ids_metadata(
@@ -294,8 +306,8 @@ class DriveTrashDiscovery:
         skipped_non_trashed: List[int],
         err_count: List[int],
     ) -> bool:
-        if fid in self._id_prefetcher._id_prefetcher._id_prefetch_errors:
-            err = self._id_prefetcher._id_prefetcher._id_prefetch_errors[fid]
+        if fid in self._id_prefetch_errors:
+            err = self._id_prefetch_errors[fid]
             if err == HTTP_404_LABEL:
                 buckets["not_found"].append(fid)
             elif err == HTTP_403_LABEL:
@@ -305,10 +317,10 @@ class DriveTrashDiscovery:
                 transient_ids.append(fid)
                 err_count[0] += 1
             return True
-        if self._id_prefetcher._id_prefetcher._id_prefetch_non_trashed.get(fid, False):
+        if self._id_prefetch_non_trashed.get(fid, False):
             skipped_non_trashed[0] += 1
             return True
-        if fid in self._id_prefetcher._id_prefetch:
+        if fid in self._id_prefetch:
             buckets["ok"].append(fid)
             return True
         return False
@@ -362,18 +374,39 @@ class DriveTrashDiscovery:
         if getattr(self.args, "debug_parity", False):
             mismatch = self._id_prefetcher.emit_parity_metrics(result)
             if mismatch and getattr(self.args, "fail_on_parity_mismatch", False):
-                self._print_err("Parity check failed during ID prefetch. See logs (use -vv) or --parity-metrics-file.")
+                self._print_err(
+                    "Parity check failed during ID prefetch. See logs (use -vv) or --parity-metrics-file."
+                )
                 return False
         if getattr(self.args, "clear_id_cache", False):
-            self._print_warn("--clear-id-cache enabled: metadata cache will be cleared and IDs re-fetched during discovery/streaming.")
+            self._print_warn(
+                "--clear-id-cache enabled: metadata cache will be cleared and IDs re-fetched during discovery/streaming."
+            )
             self._clear_id_caches()
-        buckets = {"ok": result.buckets.ok, "invalid": result.buckets.invalid, "not_found": result.buckets.not_found, "no_access": result.buckets.no_access}
-        return self._report_validation_outcome(buckets, result.counters.transient_errors, result.counters.transient_ids)
+        buckets = {
+            "ok": result.buckets.ok,
+            "invalid": result.buckets.invalid,
+            "not_found": result.buckets.not_found,
+            "no_access": result.buckets.no_access,
+        }
+        return self._report_validation_outcome(
+            buckets, result.counters.transient_errors, result.counters.transient_ids
+        )
 
     def _clear_id_caches(self) -> None:
         self._id_prefetcher.clear_id_caches()
 
-    def _fetch_and_handle_metadata(self, service, fid, fields, buckets, skipped_non_trashed, transient_errors, transient_ids, err_count):
+    def _fetch_and_handle_metadata(
+        self,
+        service,
+        fid,
+        fields,
+        buckets,
+        skipped_non_trashed,
+        transient_errors,
+        transient_ids,
+        err_count,
+    ):
         data, error, status = with_retries(
             lambda: self._execute(service.files().get(fileId=fid, fields=fields)),
             terminal_statuses=(403, 404),
@@ -381,25 +414,38 @@ class DriveTrashDiscovery:
             ctx=f"files.get(fileId={fid})",
         )
         if error is None:
-            self._id_prefetcher._handle_prefetch_success(fid, data, self._id_prefetcher.prefetch_ids_metadata([]))
+            self._id_prefetcher._handle_prefetch_success(
+                fid, data, self._id_prefetcher.prefetch_ids_metadata([])
+            )
             return
         if status == 404:
             buckets["not_found"].append(fid)
-            self._id_prefetcher._id_prefetch_errors[fid] = HTTP_404_LABEL
+            self._id_prefetch_errors[fid] = HTTP_404_LABEL
             return
         if status == 403:
             buckets["no_access"].append(fid)
-            self._id_prefetcher._id_prefetch_errors[fid] = HTTP_403_LABEL
+            self._id_prefetch_errors[fid] = HTTP_403_LABEL
             return
         transient_errors[0] += 1
         transient_ids.append(fid)
         err_count[0] += 1
-        self._id_prefetcher._id_prefetch_errors[fid] = error
+        self._id_prefetch_errors[fid] = error
 
     def _prefetch_ids_metadata(self, fids: List[str]):
         result = self._id_prefetcher.prefetch_ids_metadata(fids)
-        buckets = {"ok": result.buckets.ok, "invalid": result.buckets.invalid, "not_found": result.buckets.not_found, "no_access": result.buckets.no_access}
-        return (buckets, result.counters.transient_errors, result.counters.transient_ids, result.counters.skipped_non_trashed, result.counters.err_count)
+        buckets = {
+            "ok": result.buckets.ok,
+            "invalid": result.buckets.invalid,
+            "not_found": result.buckets.not_found,
+            "no_access": result.buckets.no_access,
+        }
+        return (
+            buckets,
+            result.counters.transient_errors,
+            result.counters.transient_ids,
+            result.counters.skipped_non_trashed,
+            result.counters.err_count,
+        )
 
     def _build_query(self) -> str:
         base_query = "trashed=true"
@@ -529,23 +575,23 @@ class DriveTrashDiscovery:
         errors = [0]
         total = len(self.args.file_ids)
         start_time = time.time()
-        if not self._id_prefetcher._id_prefetch and self.args.file_ids:
+        if not self._id_prefetch and self.args.file_ids:
             self._prefetch_ids_metadata(self.args.file_ids)
         for idx, fid in enumerate(self.args.file_ids, start=1):
-            if fid in self._id_prefetcher._id_prefetcher._id_prefetch_errors:
+            if fid in self._id_prefetch_errors:
                 errors[0] += 1
-                self.logger.error(f"Error fetching file {fid}: {self._id_prefetcher._id_prefetcher._id_prefetch_errors[fid]}")
+                self.logger.error(f"Error fetching file {fid}: {self._id_prefetch_errors[fid]}")
                 self._maybe_print_discover_progress(
                     idx, total, items, skipped_non_trashed[0], errors[0], start_time
                 )
                 continue
-            if self._id_prefetcher._id_prefetcher._id_prefetch_non_trashed.get(fid, False):
+            if self._id_prefetch_non_trashed.get(fid, False):
                 skipped_non_trashed[0] += 1
                 self._maybe_print_discover_progress(
                     idx, total, items, skipped_non_trashed[0], errors[0], start_time
                 )
                 continue
-            data = self._id_prefetcher._id_prefetch.get(fid)
+            data = self._id_prefetch.get(fid)
             if data:
                 self._append_item_if_valid(items, data)
             self._maybe_print_discover_progress(
@@ -822,7 +868,7 @@ class DriveTrashDiscovery:
             self._process_streaming_batch(batch, start_time)
 
     def _handle_streaming_id_fetch(self, fid, fields, service):
-        data = self._id_prefetcher._id_prefetch.get(fid)
+        data = self._id_prefetch.get(fid)
         if data is None:
             try:
                 data = self._execute(service.files().get(fileId=fid, fields=fields))
@@ -861,14 +907,14 @@ class DriveTrashDiscovery:
         total_ids = len(self.args.file_ids or [])
         start_ts = time.time()
         for idx, fid in enumerate(self.args.file_ids, start=1):
-            if fid in self._id_prefetcher._id_prefetcher._id_prefetch_errors:
-                self.logger.error("Error fetching file %s: %s", fid, self._id_prefetcher._id_prefetcher._id_prefetch_errors[fid])
+            if fid in self._id_prefetch_errors:
+                self.logger.error("Error fetching file %s: %s", fid, self._id_prefetch_errors[fid])
                 with self._stats_lock:
                     self._stats["errors"] += 1
                 ok = False
                 start_ts = self._maybe_print_streaming_id_progress(idx, total_ids, start_ts)
                 continue
-            if self._id_prefetcher._id_prefetcher._id_prefetch_non_trashed.get(fid, False):
+            if self._id_prefetch_non_trashed.get(fid, False):
                 start_ts = self._maybe_print_streaming_id_progress(idx, total_ids, start_ts)
                 continue
             data = self._handle_streaming_id_fetch(fid, fields, service)
