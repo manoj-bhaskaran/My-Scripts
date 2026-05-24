@@ -25,6 +25,7 @@ from gdrive_cli import (  # noqa: E402
     _acquire_or_bypass_lock,
 )
 from gdrive_state import StateScopeMismatchError  # noqa: E402
+from gdrive_models import RecoveryStateScope  # noqa: E402
 
 del sys.modules["gdrive_recover"]
 
@@ -167,7 +168,7 @@ def test_run_and_release_lock_releases_lock_on_failure():
 def test_run_and_release_lock_scope_mismatch_returns_2(capsys):
     tool = _tool()
     args = _args(no_emoji=True)
-    err = StateScopeMismatchError("saved", "current")
+    err = StateScopeMismatchError(RecoveryStateScope(), RecoveryStateScope())
     with patch("gdrive_cli._run_tool", side_effect=err):
         result = _run_and_release_lock(tool, args)
     assert result == 2
@@ -177,7 +178,7 @@ def test_run_and_release_lock_scope_mismatch_returns_2(capsys):
 def test_run_and_release_lock_releases_lock_even_on_scope_mismatch(capsys):
     tool = _tool()
     args = _args(no_emoji=True)
-    err = StateScopeMismatchError("saved", "current")
+    err = StateScopeMismatchError(RecoveryStateScope(), RecoveryStateScope())
     with patch("gdrive_cli._run_tool", side_effect=err):
         _run_and_release_lock(tool, args)
     tool.state_manager._release_state_lock.assert_called_once()
