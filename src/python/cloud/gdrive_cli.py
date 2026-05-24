@@ -19,6 +19,7 @@ if str(_PYTHON_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_PYTHON_SRC_DIR))
 from modules.utils.file_operations import ensure_directory, is_writable
 
+from gdrive_console import ConsoleHelper
 from gdrive_validators import validate_extensions, normalize_policy_token
 from gdrive_constants import (
     VERSION,
@@ -376,34 +377,19 @@ def _set_mode(args) -> None:
     args.mode = mode_map.get(args.command)
 
 
-def _use_emoji(args) -> bool:
-    return not getattr(args, "no_emoji", False)
-
-
-def _sym_fail(args) -> str:
-    return "❌" if _use_emoji(args) else "ERROR"
-
-
-def _sym_warn(args) -> str:
-    return "⚠️" if _use_emoji(args) else "WARN"
-
-
-def _sym_info(args) -> str:
-    return "ℹ️" if _use_emoji(args) else "INFO"
-
-
 def _validate_concurrency_arg(args) -> Tuple[bool, int]:
+    console = ConsoleHelper(args)
     try:
         cpu = os.cpu_count() or 1
     except Exception:
         cpu = 1
     ceiling = min(cpu * 4, 64)
     if args.concurrency < 1:
-        print(f"{_sym_fail(args)} Invalid --concurrency value. It must be >= 1.")
+        print(f"{console.sym_fail()} Invalid --concurrency value. It must be >= 1.")
         return False, 2
     if args.concurrency > ceiling:
         print(
-            f"WARN --concurrency {args.concurrency} is high; capping to {ceiling} to avoid resource exhaustion and 429s."
+            f"{console.sym_warn()} --concurrency {args.concurrency} is high; capping to {ceiling} to avoid resource exhaustion and 429s."
         )
         args.concurrency = ceiling
     return True, 0
@@ -515,19 +501,21 @@ def _validate_retry_failed_file_arg(args) -> Tuple[bool, int]:
 
 def _load_retry_failed_file(
     path_str: str,
+    args,
 ) -> Tuple[bool, int, Dict[str, str]]:
     """Read a failed-items CSV and return (ok, exit_code, {file_id: target_path}).
 
     Expected columns: source_folder_id, file_id, target_path
     The header row is skipped automatically.
     """
+    console = ConsoleHelper(args)
     target_path_overrides: Dict[str, str] = {}
     try:
         with open(path_str, newline="", encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
             if reader.fieldnames is None or "file_id" not in reader.fieldnames:
                 print(
-                    f"ERROR --retry-failed-file does not look like a valid failed-items CSV "
+                    f"{console.sym_fail()} --retry-failed-file does not look like a valid failed-items CSV "
                     f"(missing 'file_id' column): {path_str}",
                     file=sys.stderr,
                 )
@@ -538,11 +526,11 @@ def _load_retry_failed_file(
                 if fid:
                     target_path_overrides[fid] = tp
     except Exception as e:
-        print(f"ERROR Could not read --retry-failed-file '{path_str}': {e}", file=sys.stderr)
+        print(f"{console.sym_fail()} Could not read --retry-failed-file '{path_str}': {e}", file=sys.stderr)
         return False, 2, {}
     if not target_path_overrides:
         print(
-            f"WARN --retry-failed-file '{path_str}' contains no actionable rows; nothing to retry.",
+            f"{console.sym_warn()} --retry-failed-file '{path_str}' contains no actionable rows; nothing to retry.",
             file=sys.stderr,
         )
     return True, 0, target_path_overrides
@@ -568,6 +556,7 @@ def _run_tool(tool: "DriveTrashRecoveryTool", args) -> bool:
 
 def _normalize_and_validate_policy(args) -> Tuple[bool, int]:
     """Normalize and validate post-restore policy, print errors/warnings, update args."""
+    console = ConsoleHelper(args)
     strict_env = os.getenv("GDRT_STRICT_POLICY", "").strip().lower()
     strict_from_env = strict_env in ("1", "true", "yes", "on")
     effective_strict = bool(getattr(args, "strict_policy", False) or strict_from_env)
@@ -592,14 +581,14 @@ def _normalize_and_validate_policy(args) -> Tuple[bool, int]:
         pass
     if policy_errors:
         for msg in policy_errors:
-            print(f"{_sym_fail(args)} {msg}", file=sys.stderr)
+            print(f"{console.sym_fail()} {msg}", file=sys.stderr)
             try:
                 logging.getLogger(__name__).error(msg)
             except Exception:
                 pass
         return False, 2
     for msg in policy_warnings:
-        print(f"{_sym_warn(args)} {msg}", file=sys.stderr)
+        print(f"{console.sym_warn()} {msg}", file=sys.stderr)
         try:
             logging.getLogger(__name__).warning(msg)
         except Exception:
@@ -611,18 +600,19 @@ def _normalize_and_validate_policy(args) -> Tuple[bool, int]:
 
 
 def _normalize_and_validate_extensions(args) -> Tuple[bool, int]:
+    console = ConsoleHelper(args)
     cleaned_exts, ext_warnings, ext_errors = validate_extensions(
         getattr(args, "extensions", None),
         EXTENSION_MIME_TYPES,
     )
     if ext_errors:
         for msg in ext_errors:
-            print(f"ERROR {msg}", file=sys.stderr)
+            print(f"{console.sym_fail()} {msg}", file=sys.stderr)
         print("   Use space-separated extensions like: --extensions jpg png pdf tar.gz min.js")
         print("   Do not include wildcards, commas, spaces, or path characters.")
         return False, 2
     for msg in ext_warnings:
-        print(f"{_sym_info(args)} {msg}")
+        print(f"{console.sym_info()} {msg}")
     args.extensions = cleaned_exts
     return True, 0
 
@@ -645,7 +635,8 @@ def _read_lockfile_metadata(lockfile_path):
 
 def _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, force):
     """Print user-facing messages about lockfile status."""
-    print(f"ERROR Another run appears to be active for state '{args.state_file}'.", file=sys.stderr)
+    console = ConsoleHelper(args)
+    print(f"{console.sym_fail()} Another run appears to be active for state '{args.state_file}'.", file=sys.stderr)
     print(f"   Owner PID: {owner_pid}{pid_alive_note}   Run-ID: {run_id}", file=sys.stderr)
     if "(not running)" in pid_alive_note:
         print(
@@ -660,11 +651,11 @@ def _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, force):
     if force:
         if "(not running)" in pid_alive_note:
             print(
-                "WARN --force supplied: taking over a **stale** lock (previous PID not detected).",
+                f"{console.sym_warn()} --force supplied: taking over a **stale** lock (previous PID not detected).",
                 file=sys.stderr,
             )
         else:
-            print("WARN --force supplied: bypassing concurrent-run guardrail.", file=sys.stderr)
+            print(f"{console.sym_warn()} --force supplied: bypassing concurrent-run guardrail.", file=sys.stderr)
 
 
 def _check_pid_alive(owner_pid, tool):
@@ -711,22 +702,30 @@ def _validate_folder_id_args(args) -> Tuple[bool, int]:
     """Reject flag combinations that are incompatible with --folder-id."""
     if not getattr(args, "folder_id", None):
         return True, 0
+    console = ConsoleHelper(args)
     if getattr(args, "file_ids", None):
         print(
-            f"{_sym_fail(args)} --folder-id and --file-ids are mutually exclusive. "
+            f"{console.sym_fail()} --folder-id and --file-ids are mutually exclusive. "
             "Use one source at a time.",
             file=sys.stderr,
         )
         return False, 2
     if getattr(args, "mode", None) == "recover_only":
         print(
-            f"{_sym_fail(args)} --folder-id cannot be used with recover-only: "
+            f"{console.sym_fail()} --folder-id cannot be used with recover-only: "
             "folder-scoped files are not in trash so no action would be taken, "
             "and items would still be recorded as processed in the state file. "
             "Use recover-and-download with --post-restore-policy retain instead.",
             file=sys.stderr,
         )
         return False, 2
+    if args.post_restore_policy == PostRestorePolicy.TRASH:
+        print(
+            f"{console.sym_warn()} --folder-id is set with the default post-restore-policy 'trash'. "
+            "Files will be moved to Drive Trash after downloading. "
+            "Use --post-restore-policy retain to leave them in place.",
+            file=sys.stderr,
+        )
     return True, 0
 
 
@@ -745,7 +744,7 @@ def _apply_retry_failed_file(args) -> Tuple[bool, int]:
     ok, code = _validate_retry_failed_file_arg(args)
     if not ok:
         return False, code
-    ok, code, target_path_overrides = _load_retry_failed_file(retry_path)
+    ok, code, target_path_overrides = _load_retry_failed_file(retry_path, args)
     if not ok:
         return False, code
     if not target_path_overrides:
@@ -774,10 +773,11 @@ def _validate_file_ids_if_present(tool, args) -> Tuple[bool, int]:
 
 
 def _print_scope_mismatch_error(args, exc: "StateScopeMismatchError") -> None:
+    console = ConsoleHelper(args)
     saved = exc.saved_scope
     current = exc.current_scope
     print(
-        f"{_sym_fail(args)} State file '{args.state_file}' was created for a different scope; "
+        f"{console.sym_fail()} State file '{args.state_file}' was created for a different scope; "
         "refusing to resume.",
         file=sys.stderr,
     )
@@ -827,14 +827,6 @@ def main() -> int:
     ok, code = _validate_folder_id_args(args)
     if not ok:
         return code
-
-    if getattr(args, "folder_id", None) and args.post_restore_policy == PostRestorePolicy.TRASH:
-        print(
-            f"{_sym_warn(args)} --folder-id is set with the default post-restore-policy 'trash'. "
-            "Files will be moved to Drive Trash after downloading. "
-            "Use --post-restore-policy retain to leave them in place.",
-            file=sys.stderr,
-        )
 
     ok, code = _validate_concurrency_arg(args)
     if not ok:
