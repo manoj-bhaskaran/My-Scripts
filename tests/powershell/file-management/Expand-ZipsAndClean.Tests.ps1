@@ -281,24 +281,18 @@ Describe 'Show-ProgressPhase' {
         Should -Invoke Write-Progress -Times 0
     }
 
-    It 'calls Write-Progress with computed percentage when QuietMode is false' {
+    It 'passes expected progress payload to Write-Progress in active mode' {
         Mock Write-Progress { }
 
         Show-ProgressPhase -Activity 'Extracting' -Status 'file.zip' -Current 2 -Total 4 -QuietMode $false
+        Show-ProgressPhase -Activity 'Moving' -Status '1 / 3 : a.zip' `
+            -Current 1 -Total 3 -QuietMode $false -CurrentOperation 'Moving: 10 B of 30 B bytes'
 
         Should -Invoke Write-Progress -Times 1 -Exactly -ParameterFilter {
             $Activity -eq 'Extracting' -and
             $Status -eq 'file.zip' -and
             $PercentComplete -eq 50
         }
-    }
-
-    It 'includes CurrentOperation when provided' {
-        Mock Write-Progress { }
-
-        Show-ProgressPhase -Activity 'Moving' -Status '1 / 3 : a.zip' `
-            -Current 1 -Total 3 -QuietMode $false -CurrentOperation 'Moving: 10 B of 30 B bytes'
-
         Should -Invoke Write-Progress -Times 1 -Exactly -ParameterFilter {
             $CurrentOperation -eq 'Moving: 10 B of 30 B bytes'
         }
@@ -355,19 +349,29 @@ Describe 'Write-ExtractionSummary' {
         $script:testElapsed = [timespan]::FromSeconds(2.5)
     }
 
-    It 'emits summary header when host is interactive (ConsoleHost)' {
+    It 'emits interactive summary header and view payload' {
         Mock Format-Table { }
         Mock Format-List  { }
 
-        $output = @(Write-ExtractionSummary `
-            -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
+        $allOutput = @(Write-ExtractionSummary `
+            -SourceDirectory 'C:\mysrc' -DestinationDirectory 'C:\mydest' `
             -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
-            -ZipCount 5 -ProcessedZips 5 -FilesExtracted 20 `
-            -UncompressedBytes ([int64]1000000) -CompressedBytes ([int64]300000) `
+            -ZipCount 7 -ProcessedZips 6 -FilesExtracted 30 `
+            -UncompressedBytes ([int64]2000000) -CompressedBytes ([int64]600000) `
             -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
-            -Elapsed $script:testElapsed -HostName 'ConsoleHost')
+            -Elapsed ([timespan]::FromSeconds(10)) -HostName 'ConsoleHost' -PassThru)
 
-        $output | Should -Contain '==== Expand-ZipsAndClean Summary ===='
+        $allOutput | Should -Contain '==== Expand-ZipsAndClean Summary ===='
+        $view = $allOutput | Where-Object { $_ -isnot [string] } | Select-Object -First 1
+
+        $view             | Should -Not -BeNullOrEmpty
+        $view.SrcDir      | Should -Be 'C:\mysrc'
+        $view.DestDir     | Should -Be 'C:\mydest'
+        $view.ZipsFound   | Should -Be 7
+        $view.ZipsDone    | Should -Be 6
+        $view.Files       | Should -Be 30
+        $view.Ratio       | Should -Be '3.3x'
+        $view.Duration    | Should -BeLike '00:00:10*'
     }
 
     It 'suppresses summary table and header when non-interactive and no errors' {
@@ -407,31 +411,6 @@ Describe 'Write-ExtractionSummary' {
         ($output | Where-Object { $_ -like '* - Archive is corrupt' }) | Should -Not -BeNullOrEmpty
     }
 
-    It 'summary view contains expected fields (SrcDir, ZipsFound, Ratio, Duration)' {
-        # -PassThru emits the PSCustomObject to the pipeline alongside string output;
-        # filter by type to extract it without relying on Format-Table/-List mocks.
-        Mock Format-Table { }
-        Mock Format-List  { }
-
-        $allOutput = @(Write-ExtractionSummary `
-            -SourceDirectory 'C:\mysrc' -DestinationDirectory 'C:\mydest' `
-            -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
-            -ZipCount 7 -ProcessedZips 6 -FilesExtracted 30 `
-            -UncompressedBytes ([int64]2000000) -CompressedBytes ([int64]600000) `
-            -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
-            -Elapsed ([timespan]::FromSeconds(10)) -HostName 'ConsoleHost' -PassThru)
-
-        $view = $allOutput | Where-Object { $_ -isnot [string] } | Select-Object -First 1
-
-        $view             | Should -Not -BeNullOrEmpty
-        $view.SrcDir      | Should -Be 'C:\mysrc'
-        $view.DestDir     | Should -Be 'C:\mydest'
-        $view.ZipsFound   | Should -Be 7
-        $view.ZipsDone    | Should -Be 6
-        $view.Files       | Should -Be 30
-        $view.Ratio       | Should -Be '3.3x'
-        $view.Duration    | Should -BeLike '00:00:10*'
-    }
 }
 
 Describe 'Invoke-ZipExtractions resolves to ZipExtraction module' {
