@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Moved the long in-module usage examples out of `gdrive_recover.py` and into `docs/gdrive-recover-usage.md`; the module docstring now links to the dedicated docs page to reduce source-file noise while preserving discoverable usage guidance.
 
+## [1.26.6] - 2026-05-24
+
+### Fixed
+
+- **Stale-lock detection branches now reachable:** `_check_pid_alive` previously set `pid_alive_note` to a string containing `"may not be running"` rather than `"(not running)"`, so the substring check in `_print_lockfile_messages` was always `False`. The note is now `" (not running)"`, making both the stale-lock hint (no `--force`) and the stale-lock takeover warning (`--force`) reachable for the first time.
+- **`_run_and_release_lock` now dispatches all commands through `_run_tool`:** The previous if/else called `_run_tool` only for `dry-run` and called `tool.execute_recovery()` directly for all other commands, duplicating dispatch logic. Replaced with a single unconditional `ran_ok = _run_tool(tool, args)` call so future dispatch changes only need to be made in one place.
+- **Removed overbroad `except Exception: pass` in `_acquire_or_bypass_lock`:** The entire lock-acquisition body was silently swallowing all exceptions (e.g. filesystem errors on the state-file path), causing the tool to proceed as if it held the lock. The outer try/except has been removed so real errors surface rather than being hidden.
+
 ## [1.26.2–1.26.5] - 2026-05-24 (consolidated)
 
 ### Changed
