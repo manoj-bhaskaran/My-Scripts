@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Standardised consolidated/range release headings to a single convention: version spans now use one bracketed range (`[a.b.c–x.y.z]`) and consolidated rollups use a lowercase `(consolidated)` suffix for consistency across the gdrive changelog.
+
 ## [1.26.5] - 2026-05-24
 
 ### Changed
@@ -107,7 +111,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **v0/v1 → v3 chained migration** works in a single load: the v1 → v2 scope-synthesis step runs first, then the v2 → v3 list-to-dict conversion.
 - **Migration is one-way.** Keep a copy of your state file before running v1.24.0 for the first time if rollback is needed. To retry previously-failed items use `--retry-failed-file <csv>` or `--fresh-run`.
 
-## [1.23.1] - [1.23.3] - 2026-05-14 (Consolidated)
+## [1.23.1–1.23.3] - 2026-05-14 (consolidated)
 
 ### Added
 
@@ -163,7 +167,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Combined "clear state + truncate failed-file" behaviour of `--overwrite`.** Continues to work in this release with a stderr warning. Migrate to `--fresh-run` (alone or combined with `--overwrite`) before v1.23.0.
 
-## [1.21.1] - [1.21.2] - 2026-05-14 (Consolidated)
+## [1.21.1–1.21.2] - 2026-05-14 (consolidated)
 
 ### Fixed
 
@@ -250,7 +254,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `RecoveryReporter` gains `_start_progress(total)`, `_close_progress()`, and `_should_show_progress()` helpers; the bar is started in `print_streaming_start` / `print_processing_start` and finalised in `_print_summary` and `print_interrupted_state_saved`.
   - The `verbose >= 1` guard in `_handle_item_result_stream` and `_handle_item_result` is replaced with `reporter._should_show_progress()` so the bar appears on TTY without requiring `-v`.
 
-## [1.18.x] - 2026-05-12 (Consolidated)
+## [1.18.x] - 2026-05-12 (consolidated)
 
 ### Added
 
@@ -268,7 +272,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows token/permission hardening:** Token writes now use `tempfile.mkstemp` + `os.replace()` (`MoveFileExW`) to avoid `ERROR_ACCESS_DENIED` on hidden `token.json`; distinct `PermissionError` log messages emitted for read vs. write failures; `PermissionError` re-raised from `_load_creds_from_token` instead of silently swallowed.
 - **`--overwrite` skip behaviour:** `_process_item` and `_recover_file` honour `--overwrite` when skipping already-processed items; `_prepare_recovery` calls `_clear_processed_items()` on startup. *(Superseded by [1.22.0]–[1.23.0]; retained here for history only.)*
 
-## [1.9.0] – [1.17.0] - 2026-03-29 → 2026-04-11 (Consolidated)
+## [1.9.0–1.17.0] - 2026-03-29 → 2026-04-11 (consolidated)
 
 ### Module extraction refactor (Issues #789–#856)
 
@@ -374,7 +378,7 @@ See #789–#856 for issue-by-issue detail.
 - Pooling and rate behavior are workload-dependent; treat any throughput gains as directional.
 - Default behavior is unchanged unless new flags are used; existing workflows continue to work.
 
-## [1.5.x] - 2025-09-19 → 2025-09-21 (Consolidated)
+## [1.5.x] - 2025-09-19 → 2025-09-21 (consolidated)
 
 - **Performance & Scale (1.5.9):** added docs with proven presets for `--process-batch-size`,
   `--max-rps`, `--burst`, concurrency heuristics, and client lifecycle tips.
