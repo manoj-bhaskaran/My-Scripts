@@ -434,30 +434,26 @@ Describe 'Write-ExtractionSummary' {
     }
 }
 
-Describe 'Invoke-ZipExtractions — parallel extraction' {
+Describe 'Invoke-ZipExtractions resolves to ZipExtraction module' {
     BeforeAll {
-        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
-        $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
-        $scriptText = Get-Content -LiteralPath $scriptPath -Raw
-
-        $helpersStart = $scriptText.IndexOf('#region Helpers')
-        $helpersEnd   = $scriptText.IndexOf('#endregion Helpers')
-        if ($helpersStart -lt 0 -or $helpersEnd -lt 0) {
-            throw 'Failed to locate helpers region in Expand-ZipsAndClean.ps1'
-        }
-
-        $helpers = $scriptText.Substring($helpersStart, $helpersEnd - $helpersStart)
-        $usingLines = ($scriptText -split "`n" |
-            Where-Object { $_ -match '^\s*using\s+namespace\s+' }) -join "`n"
-        $helpersWithUsing = $usingLines + "`n" + $helpers
-
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
-        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipExtraction\ZipExtraction.psm1') -Force
+    }
 
-        function Write-LogDebug { param([string]$Message) }
-        function Write-LogInfo  { param([string]$Message) }
-        . ([ScriptBlock]::Create($helpersWithUsing))
+    It 'Invoke-ZipExtractions is exported by the ZipExtraction module' {
+        $cmd = Get-Command -Name Invoke-ZipExtractions -ErrorAction SilentlyContinue
+        $cmd | Should -Not -BeNullOrEmpty
+        $cmd.Source | Should -Be 'ZipExtraction'
+    }
+}
+
+Describe 'Invoke-ZipExtractions — parallel extraction' {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipExtraction\ZipExtraction.psm1') -Force
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
     }
 
     It 'parallel path (-ThrottleLimit 2) extracts all archives and aggregates results correctly' {

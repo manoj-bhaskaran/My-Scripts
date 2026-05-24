@@ -122,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.6.1
+    Version  : 2.6.2
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -183,6 +183,10 @@ Import-Module "$PSScriptRoot\..\modules\Core\Zip\Zip.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\Progress\ProgressReporter.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1" -Force
+
+if (-not (Get-Command Invoke-ZipExtractions -ErrorAction SilentlyContinue)) {
+    throw "ZipExtraction module failed to import."
+}
 
 # Initialize logger (script name will be extracted from the script file name)
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
@@ -318,133 +322,6 @@ function New-ExtractionSummary {
     }
 }
 
-<#
-.SYNOPSIS
-    Aggregates per-runspace results into a single summary object.
-#>
-# ZIP extraction orchestration moved to FileManagement/ZipExtraction module (issue #1065).
-function Resolve-NonWrapperZipExtractionCommand {
-    param(
-        [Parameter(Mandatory)][string]$CommandName,
-        [string]$ExcludeScriptPath
-    )
-
-    $all = @(Get-Command -Name $CommandName -All -ErrorAction SilentlyContinue)
-    foreach ($candidate in $all) {
-        if ($candidate.Source -eq 'ZipExtraction') { return $candidate }
-        $file = $candidate.ScriptBlock?.File
-        if (-not [string]::IsNullOrWhiteSpace($file) -and $file -ne $ExcludeScriptPath -and $file -like '*modules*FileManagement*ZipExtraction*') {
-            return $candidate
-        }
-    }
-    return $null
-}
-
-function Get-ZipExtractionModuleCandidates {
-    param([string]$FileSystemModulePath)
-
-    $candidates = [System.Collections.Generic.List[string]]::new()
-    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
-        $candidates.Add((Join-Path $PSScriptRoot '..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1')) | Out-Null
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($FileSystemModulePath)) {
-        $modulesRoot = Split-Path -Path (Split-Path -Path $FileSystemModulePath -Parent) -Parent
-        if (-not [string]::IsNullOrWhiteSpace($modulesRoot)) {
-            $candidates.Add((Join-Path $modulesRoot 'FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
-        }
-    }
-
-    $cwdPath = (Get-Location).Path
-    if (-not [string]::IsNullOrWhiteSpace($cwdPath)) {
-        $candidates.Add((Join-Path $cwdPath 'src/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.psm1')) | Out-Null
-    }
-
-    return @($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
-}
-
-function Import-ZipExtractionFallbackFiles {
-    param([string]$FileSystemModulePath)
-
-    $cwdPath = (Get-Location).Path
-    $zipExtractionRoot = $null
-    if (-not [string]::IsNullOrWhiteSpace($FileSystemModulePath)) {
-        $coreModulesRoot = Split-Path -Path (Split-Path -Path $FileSystemModulePath -Parent) -Parent
-        if ($coreModulesRoot) { $zipExtractionRoot = Join-Path $coreModulesRoot 'FileManagement/ZipExtraction' }
-    }
-    if (-not $zipExtractionRoot -and -not [string]::IsNullOrWhiteSpace($cwdPath)) {
-        $zipExtractionRoot = Join-Path $cwdPath 'src/powershell/modules/FileManagement/ZipExtraction'
-    }
-
-    if (-not $zipExtractionRoot -or -not (Test-Path -LiteralPath $zipExtractionRoot)) { return }
-
-    foreach ($subdir in 'Private','Public') {
-        $dir = Join-Path $zipExtractionRoot $subdir
-        if (Test-Path -LiteralPath $dir) {
-            Get-ChildItem -LiteralPath $dir -Filter '*.ps1' -File -ErrorAction SilentlyContinue | ForEach-Object { . $_.FullName }
-        }
-    }
-}
-
-function Get-ZipExtractionCommand {
-    [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$Name)
-
-    $excludePath = $PSCommandPath
-    $resolved = Resolve-NonWrapperZipExtractionCommand -CommandName $Name -ExcludeScriptPath $excludePath
-    if ($resolved) { return $resolved }
-
-    $fsModulePath = (Get-Module -Name FileSystem -ErrorAction SilentlyContinue)?.Path
-    foreach ($candidate in (Get-ZipExtractionModuleCandidates -FileSystemModulePath $fsModulePath)) {
-        if (Test-Path -LiteralPath $candidate) {
-            Import-Module -Name $candidate -Force -ErrorAction SilentlyContinue
-            $resolved = Resolve-NonWrapperZipExtractionCommand -CommandName $Name -ExcludeScriptPath $excludePath
-            if ($resolved) { return $resolved }
-        }
-    }
-
-    Import-ZipExtractionFallbackFiles -FileSystemModulePath $fsModulePath
-    $resolved = Resolve-NonWrapperZipExtractionCommand -CommandName $Name -ExcludeScriptPath $excludePath
-    if ($resolved) { return $resolved }
-
-    throw "The module 'ZipExtraction' could not be loaded. For more information, run 'Import-Module ZipExtraction'."
-}
-
-function Invoke-ZipExtractionDelegate {
-    param(
-        [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)]$Parameters
-    )
-    $cmd = Get-ZipExtractionCommand -Name $Name
-    if ($Parameters -is [System.Collections.IDictionary]) { return (& $cmd @Parameters) }
-    if ($Parameters -is [array]) { return (& $cmd @Parameters) }
-    return (& $cmd $Parameters)
-}
-
-function Invoke-ParallelZipExtractions {
-    [CmdletBinding()]
-    param([Parameter(ValueFromRemainingArguments = $true)]$Arguments)
-    return Invoke-ZipExtractionDelegate -Name 'Invoke-ParallelZipExtractions' -Parameters $Arguments
-}
-function Invoke-SerialZipExtractions {
-    [CmdletBinding(SupportsShouldProcess = $true)]
-    param([Parameter(ValueFromRemainingArguments = $true)]$Arguments)
-    return Invoke-ZipExtractionDelegate -Name 'Invoke-SerialZipExtractions' -Parameters $Arguments
-}
-function Invoke-ZipExtractions {
-    [CmdletBinding(SupportsShouldProcess = $true)]
-    param(
-        [Parameter(Mandatory)][string]$SourceDir,
-        [Parameter(Mandatory)][string]$DestinationDir,
-        [Parameter(Mandatory)][string]$Mode,
-        [Parameter(Mandatory)][string]$Policy,
-        [Parameter(Mandatory)][int]$SafeNameMaxLen,
-        [Parameter(Mandatory)][bool]$QuietMode,
-        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList,
-        [int]$ThrottleLimit = 1
-    )
-    return Invoke-ZipExtractionDelegate -Name 'Invoke-ZipExtractions' -Parameters $PSBoundParameters
-}
 
 <#
 .SYNOPSIS

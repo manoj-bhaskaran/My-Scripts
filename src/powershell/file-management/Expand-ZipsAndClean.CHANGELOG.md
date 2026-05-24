@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+## 2.6.2 — 2026-05-24
+
+### Removed
+
+- Deleted the script-local ZipExtraction wrapper/command-resolution block (~127 lines):
+  `Resolve-NonWrapperZipExtractionCommand`, `Get-ZipExtractionModuleCandidates`,
+  `Import-ZipExtractionFallbackFiles`, `Get-ZipExtractionCommand`,
+  `Invoke-ZipExtractionDelegate`, and the three thin wrappers
+  (`Invoke-ZipExtractions`, `Invoke-SerialZipExtractions`, `Invoke-ParallelZipExtractions`).
+  These wrappers shadowed the identically-named module exports and required ~120 lines of
+  machinery to re-resolve the "real" command while excluding themselves. The `Main` call to
+  `Invoke-ZipExtractions` (and the serial/parallel runners it dispatches) now resolves
+  directly to the `ZipExtraction` module export, which was already imported at line 185.
+
+### Added
+
+- Import-success guard after the `ZipExtraction` module import: throws a clear error if
+  `Invoke-ZipExtractions` is not available after `Import-Module`, catching mis-configured
+  or missing module installs early.
+
+### Tests
+
+- Replaced the helpers-region dot-source approach in `Invoke-ZipExtractions — parallel
+  extraction` with a direct `Import-Module ZipExtraction` call, since `Invoke-ZipExtractions`
+  is no longer defined in the script helper region.
+- Added `Describe 'Invoke-ZipExtractions resolves to ZipExtraction module'` with one `It`
+  block asserting `Get-Command Invoke-ZipExtractions` returns a command whose `Source` is
+  `ZipExtraction`.
+
+### Documentation
+
+- No comment-based help changes required (helpers described only behavior, not internal
+  resolution machinery).
+- `README.md` in `src/powershell/file-management/` does not reference the removed helper
+  function names; no update needed.
+
+### Versioning
+
+- Bumped version to `2.6.2` (patch — internal refactor; no behavioral change to extraction,
+  move, or summary output).
+
 ## 2.6.1 — 2026-05-23
 
 ### Changed
