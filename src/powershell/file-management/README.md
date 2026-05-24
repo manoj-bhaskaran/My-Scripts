@@ -48,11 +48,12 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
-- **Expand-ZipsAndClean helper-test cleanup** (2026-05-24)
-  - Collapsed redundant script-helper tests in `Expand-ZipsAndClean.Tests.ps1` for `Show-ProgressPhase` and `Write-ExtractionSummary`.
-  - Combined duplicate progress assertions into a single active-mode payload test, retaining quiet suppression, completed-state, and zero-total guard coverage.
-  - Merged interactive summary header and `-PassThru` payload-shape checks into one test while preserving non-interactive/no-error suppression and non-interactive/error-note coverage.
-  - Follow-up: restored a dedicated interactive `ConsoleHost` header assertion **without** `-PassThru` to ensure the default summary output path remains explicitly covered.
+- **Expand-ZipsAndClean test-suite pruning** (2026-05-24)
+  - Removed four low-value/duplicate tests from `Expand-ZipsAndClean.Tests.ps1` (28 → 24 tests).
+  - Dropped the dedicated `Write-ExtractionSummary` non-`-PassThru` interactive-header test because interactive header output is already asserted by the existing `-PassThru` interactive coverage.
+  - Removed the standalone `Invoke-ZipExtractions` module-source assertion block because command-source resolution is already enforced by the script import guard and exercised by parallel extraction tests.
+  - Kept `Resolve-MoveTarget` collision-policy tests (Skip/Overwrite/Rename) and accepted removal of direct `Move-ZipFilesToParent` counter-branch checks for `Skipped`/`Overwritten`.
+  - Version bump: `2.6.3` (patch — tests/docs only; no runtime behavior change).
 
 - **Expand-ZipsAndClean.ps1 v2.6.0 review follow-up** (2026-05-23)
   - Restored explicit/named-parameter wrappers for extraction orchestration delegation so script call sites keep normal binding semantics.

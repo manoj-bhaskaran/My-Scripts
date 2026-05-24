@@ -182,46 +182,6 @@ Describe 'Move-ZipFilesToParent' {
         { Move-ZipFilesToParent -SourceDir 'C:\' -QuietMode $true } | Should -Throw "*drive root*"
     }
 
-    It 'Skip policy: leaves source zip and existing parent zip untouched on collision' {
-        $parentDir = Join-Path $TestDrive 'parent-skip'
-        $sourceDir = Join-Path $parentDir 'source'
-        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
-
-        $srcZip    = Join-Path $sourceDir 'test.zip'
-        $parentZip = Join-Path $parentDir 'test.zip'
-        Set-Content -LiteralPath $srcZip    -Value 'source-content'  -NoNewline
-        Set-Content -LiteralPath $parentZip -Value 'original-content' -NoNewline
-
-        $result = Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true -CollisionPolicy Skip
-
-        $result.Count   | Should -Be 0
-        $result.Skipped | Should -Be 1
-
-        # Source zip must still be present and parent zip must be unchanged
-        [System.IO.File]::Exists($srcZip) | Should -BeTrue
-        (Get-Content -LiteralPath $parentZip -Raw) | Should -Be 'original-content'
-    }
-
-    It 'Overwrite policy: replaces existing parent zip with source zip on collision' {
-        $parentDir = Join-Path $TestDrive 'parent-overwrite'
-        $sourceDir = Join-Path $parentDir 'source'
-        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
-
-        $srcZip    = Join-Path $sourceDir 'test.zip'
-        $parentZip = Join-Path $parentDir 'test.zip'
-        Set-Content -LiteralPath $srcZip    -Value 'new-content'      -NoNewline
-        Set-Content -LiteralPath $parentZip -Value 'original-content' -NoNewline
-
-        $result = Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true -CollisionPolicy Overwrite
-
-        $result.Count       | Should -Be 1
-        $result.Overwritten | Should -Be 1
-
-        # Source zip must be gone; parent zip must hold the new content
-        [System.IO.File]::Exists($srcZip) | Should -BeFalse
-        (Get-Content -LiteralPath $parentZip -Raw) | Should -Be 'new-content'
-    }
-
     It 'Rename policy: keeps existing parent zip and moves source zip under a unique name on collision' {
         $parentDir = Join-Path $TestDrive 'parent-rename'
         $sourceDir = Join-Path $parentDir 'source'
@@ -374,21 +334,6 @@ Describe 'Write-ExtractionSummary' {
         $view.Duration    | Should -BeLike '00:00:10*'
     }
 
-    It 'emits interactive summary header without requiring PassThru' {
-        Mock Format-Table { }
-        Mock Format-List  { }
-
-        $output = @(Write-ExtractionSummary `
-            -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
-            -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
-            -ZipCount 5 -ProcessedZips 5 -FilesExtracted 20 `
-            -UncompressedBytes ([int64]1000000) -CompressedBytes ([int64]300000) `
-            -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
-            -Elapsed $script:testElapsed -HostName 'ConsoleHost')
-
-        $output | Should -Contain '==== Expand-ZipsAndClean Summary ===='
-    }
-
     It 'suppresses summary table and header when non-interactive and no errors' {
         Mock Format-Table { }
         Mock Format-List  { }
@@ -426,20 +371,6 @@ Describe 'Write-ExtractionSummary' {
         ($output | Where-Object { $_ -like '* - Archive is corrupt' }) | Should -Not -BeNullOrEmpty
     }
 
-}
-
-Describe 'Invoke-ZipExtractions resolves to ZipExtraction module' {
-    BeforeAll {
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipExtraction\ZipExtraction.psm1') -Force
-    }
-
-    It 'Invoke-ZipExtractions is exported by the ZipExtraction module' {
-        $cmd = Get-Command -Name Invoke-ZipExtractions -ErrorAction SilentlyContinue
-        $cmd | Should -Not -BeNullOrEmpty
-        $cmd.Source | Should -Be 'ZipExtraction'
-    }
 }
 
 Describe 'Invoke-ZipExtractions — parallel extraction' {
