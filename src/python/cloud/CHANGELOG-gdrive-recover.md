@@ -12,6 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.26.8] - 2026-05-24
+
+### Fixed
+
+- Restored default execution-path import compatibility for `gdrive_cli.py` when run via `python gdrive_recover.py ...` from `src/python/cloud` by adding `src/python` to `sys.path` before importing `modules.utils.file_operations`; this prevents `ModuleNotFoundError` during module import in the documented workflow.
+
+### Tests
+
+- Expanded unit coverage for CLI path validation by adding focused tests for `_validate_download_dir_arg` (happy path, non-directory rejection, non-writable rejection, and utility-failure handling) plus an error-path test for `_validate_failed_file_arg`.
+
+## [1.26.7] - 2026-05-24
+
+### Changed
+
+- `gdrive_cli.py` now uses shared file/path utilities from `modules.utils.file_operations` for path validation setup (`ensure_directory`, `is_writable`) instead of maintaining ad-hoc inline write-probe logic for CLI path arguments.
+
 ## [1.26.6] - 2026-05-24
 
 ### Changed

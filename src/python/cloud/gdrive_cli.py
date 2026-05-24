@@ -13,6 +13,12 @@ from typing import Dict, Tuple
 
 from dateutil import parser as date_parser
 
+_CLOUD_DIR = Path(__file__).resolve().parent
+_PYTHON_SRC_DIR = _CLOUD_DIR.parent
+if str(_PYTHON_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_PYTHON_SRC_DIR))
+from modules.utils.file_operations import ensure_directory, is_writable
+
 from gdrive_validators import validate_extensions, normalize_policy_token
 from gdrive_constants import (
     VERSION,
@@ -411,16 +417,10 @@ def _validate_download_dir_arg(args) -> Tuple[bool, int]:
         if p.exists() and not p.is_dir():
             print(f"ERROR --download-dir points to a file: {p}", file=sys.stderr)
             return False, 2
-        p.mkdir(parents=True, exist_ok=True)
-        probe = p / ".write_test"
-        try:
-            probe.write_text("ok")
-        finally:
-            try:
-                if probe.exists():
-                    probe.unlink()
-            except Exception:
-                pass
+        ensure_directory(p)
+        if not is_writable(p):
+            print(f"ERROR --download-dir is not writable: {p}", file=sys.stderr)
+            return False, 2
         return True, 0
     except Exception as e:
         print(f"ERROR --download-dir is not writable or cannot be created: {e}", file=sys.stderr)
@@ -464,7 +464,7 @@ def _validate_failed_file_arg(args) -> Tuple[bool, int]:
         if p.exists() and not p.is_file():
             print(f"ERROR --failed-file points to a non-file path: {p}", file=sys.stderr)
             return False, 2
-        p.parent.mkdir(parents=True, exist_ok=True)
+        ensure_directory(p.parent)
         return True, 0
     except Exception as e:
         print(f"ERROR --failed-file path is not usable: {e}", file=sys.stderr)
