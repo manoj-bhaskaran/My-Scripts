@@ -320,7 +320,9 @@ def _validate_concurrency_arg(args) -> Tuple[bool, int]:
         cpu = 1
     ceiling = min(cpu * 4, 64)
     if args.concurrency < 1:
-        print(f"{console.sym_fail()} Invalid --concurrency value. It must be >= 1.", file=sys.stderr)
+        print(
+            f"{console.sym_fail()} Invalid --concurrency value. It must be >= 1.", file=sys.stderr
+        )
         return False, 2
     if args.concurrency > ceiling:
         print(
