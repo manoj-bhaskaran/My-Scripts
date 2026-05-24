@@ -22,6 +22,12 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - **drive_space_monitor.py** - Monitors Google Drive storage usage and sends alerts
 - **cloudconvert_utils.py** - CloudConvert API utilities for file conversion
 
+
+## Versioning and changelog
+
+- The Google Drive recovery tool (`gdrive_*` module family) maintains its release history in `CHANGELOG-gdrive-recover.md`.
+- Historical note: a small number of pre-2.0 releases documented breaking behavior under minor-version bumps; the changelog now carries an explicit SemVer caveat while preserving published version numbers.
+
 ## Dependencies
 
 ### Python Modules
