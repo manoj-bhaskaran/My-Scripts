@@ -211,7 +211,7 @@ def test_validate_file_ids_clear_cache_warns(monkeypatch):
         lambda *_: ({"ok": [], "invalid": [], "not_found": [], "no_access": []}, 0, [], 0, 0),
     )
 
-    discovery._print_warn = MagicMock()
+    discovery._console.print_warn = MagicMock()
 
     assert discovery._validate_file_ids() is True
-    discovery._print_warn.assert_called_once()
+    discovery._console.print_warn.assert_called_once()

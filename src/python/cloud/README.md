@@ -17,6 +17,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - **gdrive_operations.py** - Recovery and post-restore execution helpers extracted from gdrive_recover.py (issue #854)
 - **gdrive_privileges.py** - Dry-run privilege-check subsystem (Drive capability checks and local-writability checks) extracted from gdrive_recover.py (issue #856)
 - **gdrive_report.py** - Recovery reporting/presentation layer (dry-run plan output, progress, and summaries) extracted from gdrive_recover.py (issue #855)
+- **gdrive_console.py** - Shared console symbol/print helpers (`ConsoleHelper`) used by discovery and reporting modules; provides emoji/ASCII symbols and stderr/stdout print methods keyed on `--no-emoji`
 - **gdrive_retry.py** - Shared retry/backoff utility used across recovery/discovery operations
 - **google_drive_root_files_delete.py** - Cleans up files in Google Drive root directory
 - **drive_space_monitor.py** - Monitors Google Drive storage usage and sends alerts

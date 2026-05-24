@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.5] - 2026-05-24
+
+### Changed
+
+- Consolidated duplicated emoji/ASCII symbol and stderr/stdout print helpers from `DriveTrashDiscovery` and `RecoveryReporter` into a single shared `ConsoleHelper` class in the new `gdrive_console.py` module. Both classes now construct a `ConsoleHelper` instance and delegate symbol/print calls to it. `RecoveryReporter._print_err/_print_warn/_print_info` are retained as thin shims so that `DriveTrashRecoveryTool`'s delegation path is unchanged. Discovery's `_sym_done` (emoji `⛳`, ASCII `LIMIT`) is now exposed as `sym_limit()` to distinguish it from the reporter's `sym_done()` (`✅`/`DONE`). No change to emitted output.
+
 ## [1.26.4] - 2026-05-24
 
 ### Fixed

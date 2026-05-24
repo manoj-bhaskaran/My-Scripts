@@ -4,6 +4,7 @@ import sys
 import time
 from typing import Any, Dict, List, Optional
 
+from gdrive_console import ConsoleHelper
 from gdrive_constants import (
     DEFAULT_BURST,
     DEFAULT_LOG_FILE,
@@ -93,39 +94,10 @@ class RecoveryReporter:
 
     def __init__(self, args, logger, stats: Dict[str, Any]):
         self.args = args
+        self._console = ConsoleHelper(args)
         self.logger = logger
         self.stats = stats
         self._progress_bar: Optional[ProgressBar] = None
-
-    def _use_emoji(self) -> bool:
-        return not getattr(self.args, "no_emoji", False)
-
-    def _sym_ok(self) -> str:
-        return "✓" if self._use_emoji() else "OK"
-
-    def _sym_fail(self) -> str:
-        return "❌" if self._use_emoji() else "ERROR"
-
-    def _sym_warn(self) -> str:
-        return "⚠️" if self._use_emoji() else "WARN"
-
-    def _sym_info(self) -> str:
-        return "ℹ️" if self._use_emoji() else "INFO"
-
-    def _sym_progress(self) -> str:
-        return "📈" if self._use_emoji() else "PROGRESS"
-
-    def _sym_done(self) -> str:
-        return "✅" if self._use_emoji() else "DONE"
-
-    def _sym_scope(self) -> str:
-        return "📊" if self._use_emoji() else "SCOPE"
-
-    def _sym_plan(self) -> str:
-        return "📋" if self._use_emoji() else "PLAN"
-
-    def _sym_search(self) -> str:
-        return "🔍" if self._use_emoji() else "SEARCH"
 
     def _should_show_progress(self) -> bool:
         """Return True when progress output should be emitted.
@@ -144,17 +116,17 @@ class RecoveryReporter:
             self._progress_bar = None
 
     def _print_err(self, msg: str) -> None:
-        print(f"{self._sym_fail()} {msg}", file=sys.stderr)
+        self._console.print_err(msg)
 
     def _print_warn(self, msg: str) -> None:
-        print(f"{self._sym_warn()} {msg}", file=sys.stderr)
+        self._console.print_warn(msg)
 
     def _print_info(self, msg: str) -> None:
-        print(f"{self._sym_info()} {msg}")
+        self._console.print_info(msg)
 
     def _print_drive_access_status(self, checks: Dict[str, Any]) -> None:
         drive_status = (
-            f"{self._sym_ok()} PASS" if checks["drive_access"] else f"{self._sym_fail()} FAIL"
+            f"{self._console.sym_ok()} PASS" if checks["drive_access"] else f"{self._console.sym_fail()} FAIL"
         )
         print(f"Drive API Access: {drive_status}")
         if checks["drive_error"]:
@@ -169,8 +141,8 @@ class RecoveryReporter:
 
     def _print_single_operation_privilege(self, operation: str, result: Dict[str, Any]) -> None:
         status_symbol = {
-            "pass": self._sym_ok(),
-            "fail": self._sym_fail(),
+            "pass": self._console.sym_ok(),
+            "fail": self._console.sym_fail(),
         }.get(
             result["status"], "?"
         )  # nosec B105
@@ -186,7 +158,7 @@ class RecoveryReporter:
             print(f"Download directory: {dl_dir} (informational — no write check in dry-run)")
             return
         local_status = (
-            f"{self._sym_ok()} PASS" if checks["local_writable"] else f"{self._sym_fail()} FAIL"
+            f"{self._console.sym_ok()} PASS" if checks["local_writable"] else f"{self._console.sym_fail()} FAIL"
         )
         print(f"Local Directory Writable: {local_status}")
         if checks["local_error"]:
@@ -194,7 +166,7 @@ class RecoveryReporter:
         self._print_disk_space_info(checks)
 
     def _print_privilege_checks(self, checks: Dict[str, Any]) -> None:
-        print(f"\n{self._sym_plan()} PRIVILEGE AND ENVIRONMENT CHECKS")
+        print(f"\n{self._console.sym_plan()} PRIVILEGE AND ENVIRONMENT CHECKS")
         print("-" * 50)
         self._print_drive_access_status(checks)
         self._print_operation_privileges(checks)
@@ -205,16 +177,16 @@ class RecoveryReporter:
             free_gb = checks["disk_space"] / (1024**3)
             needed_gb = checks["estimated_needed"] / (1024**3)
             space_status = (
-                f"{self._sym_ok()} SUFFICIENT"
+                f"{self._console.sym_ok()} SUFFICIENT"
                 if checks["disk_space"] > checks["estimated_needed"]
-                else f"{self._sym_warn()} INSUFFICIENT"
+                else f"{self._console.sym_warn()} INSUFFICIENT"
             )
             print(f"Disk Space: {space_status}")
             print(f"  Available: {free_gb:.2f} GB")
             print(f"  Estimated needed: {needed_gb:.2f} GB")
 
     def _print_scope_summary(self, items: List[RecoveryItem]) -> None:
-        print(f"\n{self._sym_scope()} SCOPE SUMMARY")
+        print(f"\n{self._console.sym_scope()} SCOPE SUMMARY")
         print("-" * 50)
         print(f"Total trashed files found: {len(items)}")
         if self.args.extensions:
@@ -240,7 +212,7 @@ class RecoveryReporter:
         print()
 
     def _show_detailed_plan(self, items: List[RecoveryItem]) -> bool:
-        print(f"\n{self._sym_plan()} DETAILED EXECUTION PLAN")
+        print(f"\n{self._console.sym_plan()} DETAILED EXECUTION PLAN")
         print("-" * 50)
         page_size = 20
         total_pages = (len(items) + page_size - 1) // page_size
@@ -266,7 +238,7 @@ class RecoveryReporter:
         return True
 
     def _generate_execution_command(self, policy_warning_message: Optional[str] = None) -> None:
-        print(f"\n{self._sym_plan()} EXECUTION COMMAND")
+        print(f"\n{self._console.sym_plan()} EXECUTION COMMAND")
         print("-" * 50)
         cmd_parts = [sys.argv[0]]
         self._add_mode_arguments(cmd_parts)
@@ -361,11 +333,11 @@ class RecoveryReporter:
         if file_ids:
             pct = processed_total / max(1, len(file_ids)) * 100.0
             print(
-                f"{self._sym_progress()} Progress: {processed_total}/{len(file_ids)} ({pct:.1f}%) Rate: {rate:.1f}/sec"
+                f"{self._console.sym_progress()} Progress: {processed_total}/{len(file_ids)} ({pct:.1f}%) Rate: {rate:.1f}/sec"
             )
         else:
             print(
-                f"{self._sym_progress()} Progress: processed={processed_total} discovered={seen_total} Rate: {rate:.1f}/sec"
+                f"{self._console.sym_progress()} Progress: processed={processed_total} discovered={seen_total} Rate: {rate:.1f}/sec"
             )
 
     def print_progress_update(
@@ -379,13 +351,13 @@ class RecoveryReporter:
         eta = (total_items - processed_count) / rate if rate > 0 else 0
         pct = (processed_count / total_items * 100) if total_items else 100.0
         print(
-            f"{self._sym_progress()} Progress: {processed_count}/{total_items} "
+            f"{self._console.sym_progress()} Progress: {processed_count}/{total_items} "
             f"({pct:.1f}%) Rate: {rate:.1f}/sec ETA: {eta:.0f}s"
         )
 
     def print_dry_run_banner(self) -> None:
         print("\n" + "=" * 80)
-        print(f"{self._sym_search()} DRY RUN MODE - No changes will be made")
+        print(f"{self._console.sym_search()} DRY RUN MODE - No changes will be made")
         print("=" * 80)
 
     def print_no_files_found_matching(self) -> None:
@@ -399,13 +371,13 @@ class RecoveryReporter:
 
     def print_processing_start(self, count: int, concurrency: int) -> None:
         self._start_progress(total=count)
-        print(f"\n{self._sym_plan()} Processing {count} files with {concurrency} workers...")
+        print(f"\n{self._console.sym_plan()} Processing {count} files with {concurrency} workers...")
 
     def print_streaming_start(self, batch_n: int, concurrency: int) -> None:
         total = len(self.args.file_ids) if getattr(self.args, "file_ids", None) else None
         self._start_progress(total=total)
         print(
-            f"\n{self._sym_plan()} Streaming execution with batch size {batch_n} and {concurrency} workers..."
+            f"\n{self._console.sym_plan()} Streaming execution with batch size {batch_n} and {concurrency} workers..."
         )
 
     def print_interrupted_state_saved(self) -> None:
@@ -429,7 +401,7 @@ class RecoveryReporter:
     def _print_summary(self, elapsed_time: float, state: RecoveryState) -> None:
         self._close_progress()
         print("\n" + "=" * 80)
-        print(f"{self._sym_scope()} EXECUTION SUMMARY")
+        print(f"{self._console.sym_scope()} EXECUTION SUMMARY")
         print("=" * 80)
         print(f"Total files found: {self.stats['found']}")
         print(f"Files recovered: {self.stats['recovered']}")
@@ -455,7 +427,7 @@ class RecoveryReporter:
         if self.stats["errors"] > 0:
             self._print_warn(f"Check log file for error details: {self.args.log_file}")
         if state.processed_items:
-            state_symbol = "📂" if self._use_emoji() else "STATE"
+            state_symbol = "📂" if self._console.use_emoji() else "STATE"
             print(f"\n{state_symbol} State file: {self.args.state_file}")
             print("   Use same command to resume if interrupted")
         # For recover-and-download (including folder-id downloads), the final
@@ -472,7 +444,7 @@ class RecoveryReporter:
             success_count = self.stats["downloaded"] + self.stats.get("skipped_existing", 0)
             success_label = "Download success rate"
         success_rate = (success_count / self.stats["found"] * 100) if self.stats["found"] > 0 else 0
-        print(f"\n{self._sym_done()} {success_label}: {success_rate:.1f}%")
+        print(f"\n{self._console.sym_done()} {success_label}: {success_rate:.1f}%")
         try:
             self.logger.info(
                 "Run complete: mode=%s found=%d recovered=%d downloaded=%d "
