@@ -29,7 +29,7 @@ This tool provides:
 Requirements:
 - Python **3.10+** (uses PEP 604 `X | Y` union types across codebase, including `validators.py`)
 
-See CHANGELOG.md in this directory for version history.
+See CHANGELOG-gdrive-recover.md in this directory for version history.
 
 Examples
 --------
