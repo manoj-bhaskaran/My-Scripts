@@ -12,6 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.4] - 2026-05-24
+
+### Fixed
+
+- Fixed ID-prefetch cache access in discovery/streaming `--file-ids` flows after the prefetcher extraction: removed broken nested dereferences (for example `self._id_prefetcher._id_prefetcher...`) and restored compatibility cache accessors (`_id_prefetch`, `_id_prefetch_non_trashed`, `_id_prefetch_errors`) so cached errors/non-trashed/metadata paths no longer raise `AttributeError`.
+- Reformatted `gdrive_id_prefetch.py` and `gdrive_discovery.py` to satisfy Python formatting checks.
+- Removed duplicated legacy method definitions left in `gdrive_discovery.py` after the refactor (`_fetch_and_handle_metadata`, `_prefetch_ids_metadata`), resolving pylint `function-redefined` errors and ensuring only the delegated/compatibility implementations remain.
+- Removed the unused `skipped_non_trashed` parameter from `DriveTrashDiscovery._fetch_and_handle_metadata` (compatibility wrapper), simplifying the method signature without behavior change.
+- Added new unit tests for `gdrive_id_prefetch.py` cache classification/status mapping paths and expanded discovery test coverage for the refactor.
+- Expanded unit test coverage further for `IdMetadataPrefetcher` fetch/classification/parity paths, raising targeted coverage for `gdrive_discovery` + `gdrive_id_prefetch` test run from 61% to 66% (+5 points).
+
+## [1.26.3] - 2026-05-24
+
+### Changed
+
+- Refactored Drive ID prefetch/validation internals by extracting them into `IdMetadataPrefetcher` (`gdrive_id_prefetch.py`), replacing list-ref/tuple flow with typed counters/results, and unifying HTTP error classification logic; no behavioural change intended.
+
 ## [1.26.2] - 2026-05-23
 
 ### Removed

@@ -12,6 +12,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - **gdrive_rate_limiter.py** - Thread-safe request pacing primitives (fixed-interval and token-bucket) used by gdrive_recover.py
 - **gdrive_state.py** - Recovery state persistence, schema handling, and lock file management for gdrive_recover.py
 - **gdrive_discovery.py** - Discovery helpers: trashed-file query/ID resolution and folder-scoped BFS traversal with subfolder hierarchy reconstruction (issue #791)
+- **gdrive_id_prefetch.py** - ID metadata prefetch/validation subsystem for discovery, with typed counters and unified HTTP-status classification
 - **gdrive_download.py** - File download subsystem (chunked streaming, atomic placement, Windows/OneDrive retry, partial cleanup) extracted from gdrive_recover.py (issue #853)
 - **gdrive_operations.py** - Recovery and post-restore execution helpers extracted from gdrive_recover.py (issue #854)
 - **gdrive_privileges.py** - Dry-run privilege-check subsystem (Drive capability checks and local-writability checks) extracted from gdrive_recover.py (issue #856)

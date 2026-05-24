@@ -31,6 +31,7 @@ except ImportError:
 
 from gdrive_constants import EXTENSION_MIME_TYPES, FOLDER_MIME_TYPE, PAGE_SIZE
 from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
+from gdrive_id_prefetch import IdMetadataPrefetcher
 from gdrive_retry import with_retries
 
 if TYPE_CHECKING:
@@ -70,10 +71,21 @@ class DriveTrashDiscovery:
         self._seen_total_ref = seen_total_ref
         self._generate_target_path = generate_target_path
         self._run_parallel_processing_for_batch = run_parallel_processing_for_batch
-        self._id_prefetch: Dict[str, Dict[str, Any]] = {}
-        self._id_prefetch_non_trashed: Dict[str, bool] = {}
-        self._id_prefetch_errors: Dict[str, str] = {}
+        self._with_retries = lambda *args, **kwargs: with_retries(*args, **kwargs)
+        self._id_prefetcher = IdMetadataPrefetcher(self)
         self._last_discover_progress_ts: Optional[float] = None
+
+    @property
+    def _id_prefetch(self) -> Dict[str, Dict[str, Any]]:
+        return self._id_prefetcher._id_prefetch
+
+    @property
+    def _id_prefetch_non_trashed(self) -> Dict[str, bool]:
+        return self._id_prefetcher._id_prefetch_non_trashed
+
+    @property
+    def _id_prefetch_errors(self) -> Dict[str, str]:
+        return self._id_prefetcher._id_prefetch_errors
 
     def _use_emoji(self) -> bool:
         return not getattr(self.args, "no_emoji", False)
@@ -126,6 +138,8 @@ class DriveTrashDiscovery:
         try:
             modified_dt = date_parser.parse(item_data.get("modifiedTime", ""))
             after_dt = date_parser.parse(self.args.after_date)
+            if not hasattr(modified_dt, "tzinfo") or not hasattr(after_dt, "tzinfo"):
+                return True
             if modified_dt.tzinfo is None:
                 modified_dt = modified_dt.replace(tzinfo=timezone.utc)
             if after_dt.tzinfo is None:
@@ -190,20 +204,35 @@ class DriveTrashDiscovery:
             self.logger.info(f"All {len(buckets['ok'])} file IDs validated successfully")
         return success
 
-    def _handle_prefetch_success(self, fid, data, buckets, skipped_non_trashed):
-        self._id_prefetch[fid] = data
-        if data.get("trashed", False):
-            buckets["ok"].append(fid)
-            self._id_prefetch_non_trashed[fid] = False
-        else:
-            self._id_prefetch_non_trashed[fid] = True
-            skipped_non_trashed[0] += 1
-
-    def _should_skip_invalid_id(self, fid, buckets):
-        if not self._is_valid_file_id_format(fid):
-            buckets["invalid"].append(fid)
+    def _validate_file_ids(self) -> bool:
+        if not self.args.file_ids:
             return True
-        return False
+        result = self._id_prefetcher.prefetch_ids_metadata(self.args.file_ids)
+        mismatch = False
+        if getattr(self.args, "debug_parity", False):
+            mismatch = self._id_prefetcher.emit_parity_metrics(result)
+            if mismatch and getattr(self.args, "fail_on_parity_mismatch", False):
+                self._print_err(
+                    "Parity check failed during ID prefetch. See logs (use -vv) or --parity-metrics-file."
+                )
+                return False
+        if getattr(self.args, "clear_id_cache", False):
+            self._print_warn(
+                "--clear-id-cache enabled: metadata cache will be cleared and IDs re-fetched during discovery/streaming."
+            )
+            self._clear_id_caches()
+        buckets = {
+            "ok": result.buckets.ok,
+            "invalid": result.buckets.invalid,
+            "not_found": result.buckets.not_found,
+            "no_access": result.buckets.no_access,
+        }
+        return self._report_validation_outcome(
+            buckets, result.counters.transient_errors, result.counters.transient_ids
+        )
+
+    def _clear_id_caches(self) -> None:
+        self._id_prefetcher.clear_id_caches()
 
     def _fetch_and_handle_metadata(
         self,
@@ -211,7 +240,6 @@ class DriveTrashDiscovery:
         fid,
         fields,
         buckets,
-        skipped_non_trashed,
         transient_errors,
         transient_ids,
         err_count,
@@ -223,9 +251,10 @@ class DriveTrashDiscovery:
             ctx=f"files.get(fileId={fid})",
         )
         if error is None:
-            self._handle_prefetch_success(fid, data, buckets, skipped_non_trashed)
+            self._id_prefetcher._handle_prefetch_success(
+                fid, data, self._id_prefetcher.prefetch_ids_metadata([])
+            )
             return
-
         if status == 404:
             buckets["not_found"].append(fid)
             self._id_prefetch_errors[fid] = HTTP_404_LABEL
@@ -234,149 +263,26 @@ class DriveTrashDiscovery:
             buckets["no_access"].append(fid)
             self._id_prefetch_errors[fid] = HTTP_403_LABEL
             return
-
         transient_errors[0] += 1
         transient_ids.append(fid)
-        self._id_prefetch_errors[fid] = error
         err_count[0] += 1
+        self._id_prefetch_errors[fid] = error
 
-    def _prefetch_ids_metadata(
-        self, fids: List[str]
-    ) -> Tuple[Dict[str, List[str]], int, List[str], int, int]:
-        service = self.auth._get_service()
-        fields = self._id_discovery_fields()
-        buckets: Dict[str, List[str]] = {"ok": [], "invalid": [], "not_found": [], "no_access": []}
-        transient_errors = [0]
-        transient_ids: List[str] = []
-        skipped_non_trashed = [0]
-        err_count = [0]
-
-        for fid in fids:
-            if self._should_skip_invalid_id(fid, buckets):
-                continue
-            cached = self._classify_prefetched_id(
-                fid,
-                buckets,
-                transient_errors,
-                transient_ids,
-                skipped_non_trashed,
-                err_count,
-            )
-            if cached:
-                continue
-            self._fetch_and_handle_metadata(
-                service,
-                fid,
-                fields,
-                buckets,
-                skipped_non_trashed,
-                transient_errors,
-                transient_ids,
-                err_count,
-            )
-
+    def _prefetch_ids_metadata(self, fids: List[str]):
+        result = self._id_prefetcher.prefetch_ids_metadata(fids)
+        buckets = {
+            "ok": result.buckets.ok,
+            "invalid": result.buckets.invalid,
+            "not_found": result.buckets.not_found,
+            "no_access": result.buckets.no_access,
+        }
         return (
             buckets,
-            transient_errors[0],
-            transient_ids,
-            skipped_non_trashed[0],
-            err_count[0],
+            result.counters.transient_errors,
+            result.counters.transient_ids,
+            result.counters.skipped_non_trashed,
+            result.counters.err_count,
         )
-
-    def _classify_prefetched_id(
-        self,
-        fid: str,
-        buckets: Dict[str, List[str]],
-        transient_errors: List[int],
-        transient_ids: List[str],
-        skipped_non_trashed: List[int],
-        err_count: List[int],
-    ) -> bool:
-        if fid in self._id_prefetch_errors:
-            err = self._id_prefetch_errors[fid]
-            if err == HTTP_404_LABEL:
-                buckets["not_found"].append(fid)
-            elif err == HTTP_403_LABEL:
-                buckets["no_access"].append(fid)
-            else:
-                transient_errors[0] += 1
-                transient_ids.append(fid)
-                err_count[0] += 1
-            return True
-        if self._id_prefetch_non_trashed.get(fid, False):
-            skipped_non_trashed[0] += 1
-            return True
-        if fid in self._id_prefetch:
-            buckets["ok"].append(fid)
-            return True
-        return False
-
-    def _emit_parity_metrics(
-        self, buckets: Dict[str, List[str]], skipped_non_trashed: int, err_count: int
-    ) -> bool:
-        try:
-            total_input = len(self.args.file_ids or [])
-            classified = sum(len(v) for v in buckets.values())
-            seen = classified + skipped_non_trashed + err_count
-            mismatch = total_input != seen
-            metrics = {
-                "metric": "parity_check",
-                "total_input": total_input,
-                "classified": classified,
-                "skipped_non_trashed": skipped_non_trashed,
-                "errors": err_count,
-                "seen": seen,
-                "mismatch": mismatch,
-            }
-            self.logger.debug("METRIC %s", json.dumps(metrics))
-            out_file = getattr(self.args, "parity_metrics_file", None)
-            if out_file:
-                try:
-                    with open(out_file, "w", encoding="utf-8") as fh:
-                        json.dump(metrics, fh, indent=2)
-                except Exception as e:
-                    self.logger.warning(
-                        "Failed to write --parity-metrics-file '%s': %s", out_file, e
-                    )
-            if mismatch:
-                self.logger.warning(
-                    "Parity check mismatch: input=%d, seen=%d (classified=%d, skipped_non_trashed=%d, errors=%d).",
-                    total_input,
-                    seen,
-                    classified,
-                    skipped_non_trashed,
-                    err_count,
-                )
-            return mismatch
-        except Exception as e:
-            self.logger.debug("Parity metrics emission failed: %s", e)
-            return False
-
-    def _validate_file_ids(self) -> bool:
-        if not self.args.file_ids:
-            return True
-        buckets, transient_errors, transient_ids, skipped_non_trashed, err_count = (
-            self._prefetch_ids_metadata(self.args.file_ids)
-        )
-        mismatch = False
-        if getattr(self.args, "debug_parity", False):
-            mismatch = self._emit_parity_metrics(buckets, skipped_non_trashed, err_count)
-            if mismatch and getattr(self.args, "fail_on_parity_mismatch", False):
-                self._print_err(
-                    "Parity check failed during ID prefetch. See logs (use -vv) or --parity-metrics-file."
-                )
-                return False
-        if getattr(self.args, "clear_id_cache", False):
-            self._print_warn(
-                "--clear-id-cache enabled: metadata cache will be cleared and IDs re-fetched during discovery/streaming."
-            )
-            self._clear_id_caches()
-        return self._report_validation_outcome(buckets, transient_errors, transient_ids)
-
-    def _clear_id_caches(self) -> None:
-        self._id_prefetch.clear()
-        self._id_prefetch_non_trashed.clear()
-        self._id_prefetch_errors.clear()
 
     def _build_query(self) -> str:
         base_query = "trashed=true"
