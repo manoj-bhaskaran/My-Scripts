@@ -13,10 +13,11 @@ from typing import Dict, Tuple
 
 from dateutil import parser as date_parser
 
-try:
-    from modules.utils.file_operations import ensure_directory, is_writable
-except ImportError:
-    from src.python.modules.utils.file_operations import ensure_directory, is_writable
+_CLOUD_DIR = Path(__file__).resolve().parent
+_PYTHON_SRC_DIR = _CLOUD_DIR.parent
+if str(_PYTHON_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_PYTHON_SRC_DIR))
+from modules.utils.file_operations import ensure_directory, is_writable
 
 from gdrive_validators import validate_extensions, normalize_policy_token
 from gdrive_constants import (

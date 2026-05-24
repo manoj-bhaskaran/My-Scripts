@@ -31,6 +31,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - Changelog heading convention: consolidated rollups use a lowercase `(consolidated)` suffix, and multi-version entries use a single bracketed range like `[1.23.1–1.23.3]`.
 - Recent maintenance refactors from `1.26.2` through `1.26.5` are intentionally grouped as one consolidated release band in the changelog to reduce short-lived refactor churn noise while preserving the key fixes and test deltas.
 - As of `1.26.7`, CLI file-path validation in `gdrive_cli.py` reuses shared utilities from `modules.utils.file_operations` (`ensure_directory`, `is_writable`) instead of local inline write-probe checks.
+- As of `1.26.8`, `gdrive_cli.py` prepends `src/python` to `sys.path` before importing `modules.utils.file_operations`, preserving the documented `python gdrive_recover.py ...` execution path from `src/python/cloud`.
 
 ## Dependencies
 

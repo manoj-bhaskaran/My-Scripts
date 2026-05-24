@@ -18,6 +18,7 @@ if str(cloud_dir) not in sys.path:
 sys.modules["gdrive_recover"] = MagicMock()
 from gdrive_cli import (  # noqa: E402
     _validate_folder_id_args,
+    _validate_download_dir_arg,
     _validate_failed_file_arg,
     _validate_retry_failed_file_arg,
     _load_retry_failed_file,
@@ -124,6 +125,48 @@ def test_neither_collision_flag_defaults_false():
 
 
 # ---------------------------------------------------------------------------
+# _validate_download_dir_arg
+# ---------------------------------------------------------------------------
+
+
+def test_validate_download_dir_arg_non_download_modes_are_skipped():
+    ok, code = _validate_download_dir_arg(_args(mode="dry_run", download_dir=None))
+    assert ok and code == 0
+
+
+def test_validate_download_dir_arg_existing_file_rejected(tmp_path):
+    file_path = tmp_path / "not_a_dir"
+    file_path.write_text("x")
+    ok, code = _validate_download_dir_arg(_args(download_dir=str(file_path)))
+    assert not ok and code == 2
+
+
+def test_validate_download_dir_arg_creates_directory_and_passes(tmp_path):
+    dir_path = tmp_path / "out" / "nested"
+    ok, code = _validate_download_dir_arg(_args(download_dir=str(dir_path)))
+    assert ok and code == 0
+    assert dir_path.exists() and dir_path.is_dir()
+
+
+def test_validate_download_dir_arg_rejects_non_writable_directory(tmp_path, monkeypatch):
+    dir_path = tmp_path / "out"
+    monkeypatch.setattr("gdrive_cli.is_writable", lambda _p: False)
+    ok, code = _validate_download_dir_arg(_args(download_dir=str(dir_path)))
+    assert not ok and code == 2
+
+
+def test_validate_download_dir_arg_handles_ensure_directory_failure(tmp_path, monkeypatch):
+    dir_path = tmp_path / "out"
+
+    def _boom(_p):
+        raise IOError("cannot create")
+
+    monkeypatch.setattr("gdrive_cli.ensure_directory", _boom)
+    ok, code = _validate_download_dir_arg(_args(download_dir=str(dir_path)))
+    assert not ok and code == 2
+
+
+# ---------------------------------------------------------------------------
 # _validate_failed_file_arg
 # ---------------------------------------------------------------------------
 
@@ -149,6 +192,17 @@ def test_validate_failed_file_arg_existing_file_passes(tmp_path):
 
 def test_validate_failed_file_arg_points_to_directory_rejected(tmp_path):
     ok, code = _validate_failed_file_arg(_args(failed_file=str(tmp_path)))
+    assert not ok and code == 2
+
+
+def test_validate_failed_file_arg_handles_parent_creation_failure(tmp_path, monkeypatch):
+    path = tmp_path / "logs" / "failed.txt"
+
+    def _boom(_p):
+        raise IOError("blocked")
+
+    monkeypatch.setattr("gdrive_cli.ensure_directory", _boom)
+    ok, code = _validate_failed_file_arg(_args(failed_file=str(path)))
     assert not ok and code == 2
 
 
