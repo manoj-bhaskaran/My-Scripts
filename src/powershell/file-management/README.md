@@ -52,6 +52,7 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
   - Collapsed redundant script-helper tests in `Expand-ZipsAndClean.Tests.ps1` for `Show-ProgressPhase` and `Write-ExtractionSummary`.
   - Combined duplicate progress assertions into a single active-mode payload test, retaining quiet suppression, completed-state, and zero-total guard coverage.
   - Merged interactive summary header and `-PassThru` payload-shape checks into one test while preserving non-interactive/no-error suppression and non-interactive/error-note coverage.
+  - Follow-up: restored a dedicated interactive `ConsoleHost` header assertion **without** `-PassThru` to ensure the default summary output path remains explicitly covered.
 
 - **Expand-ZipsAndClean.ps1 v2.6.0 review follow-up** (2026-05-23)
   - Restored explicit/named-parameter wrappers for extraction orchestration delegation so script call sites keep normal binding semantics.

@@ -374,6 +374,21 @@ Describe 'Write-ExtractionSummary' {
         $view.Duration    | Should -BeLike '00:00:10*'
     }
 
+    It 'emits interactive summary header without requiring PassThru' {
+        Mock Format-Table { }
+        Mock Format-List  { }
+
+        $output = @(Write-ExtractionSummary `
+            -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
+            -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
+            -ZipCount 5 -ProcessedZips 5 -FilesExtracted 20 `
+            -UncompressedBytes ([int64]1000000) -CompressedBytes ([int64]300000) `
+            -MoveSummary $script:defaultMoveSummary -Errors $script:emptyErrors `
+            -Elapsed $script:testElapsed -HostName 'ConsoleHost')
+
+        $output | Should -Contain '==== Expand-ZipsAndClean Summary ===='
+    }
+
     It 'suppresses summary table and header when non-interactive and no errors' {
         Mock Format-Table { }
         Mock Format-List  { }
