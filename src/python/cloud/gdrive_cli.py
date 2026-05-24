@@ -103,7 +103,7 @@ Notes:
   The folder ID is the alphanumeric string at the end of a Drive folder URL:
     https://drive.google.com/drive/folders/<FOLDER_ID>
 
-For the compatibility matrix, transport notes, and performance presets: see README.md and CHANGELOG.md.
+For the compatibility matrix, transport notes, and performance presets: see README.md and CHANGELOG-gdrive-recover.md.
 """,
     )
 

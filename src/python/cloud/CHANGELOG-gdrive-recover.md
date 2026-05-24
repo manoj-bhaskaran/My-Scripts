@@ -1,9 +1,14 @@
-# Changelog
+# CHANGELOG — Google Drive Trash Recovery Tool
 
-All notable changes to this project will be documented in this file.
+All notable changes to the **Google Drive Trash Recovery tool** (`gdrive_*` module family) are
+documented in this file. The authoritative version is defined in `gdrive_constants.py`.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+> **Out of scope:** `cloudconvert_utils.py`, `drive_space_monitor.py`, and
+> `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
+> unversioned and not covered by this changelog.
 
 ## [Unreleased]
 
