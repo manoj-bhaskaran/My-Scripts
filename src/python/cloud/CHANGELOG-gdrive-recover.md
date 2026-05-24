@@ -12,15 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
-## [Unreleased]
+## [1.26.6] - 2026-05-24
 
 ### Changed
 
-- Standardised consolidated/range release headings to a single convention: version spans now use one bracketed range (`[a.b.c–x.y.z]`) and consolidated rollups use a lowercase `(consolidated)` suffix for consistency across the gdrive changelog.
-
-- Moved the long in-module usage examples out of `gdrive_recover.py` and into `docs/gdrive-recover-usage.md`; the module docstring now links to the dedicated docs page to reduce source-file noise while preserving discoverable usage guidance.
-
-## [1.26.6] - 2026-05-24
+- Standardised consolidated/range release headings to a single convention (`[a.b.c–x.y.z]` for ranges, `(consolidated)` suffix for rollups) for consistency across the gdrive changelog.
+- Moved the long in-module usage examples out of `gdrive_recover.py` into `docs/gdrive-recover-usage.md`; the module docstring now links to the dedicated docs page.
 
 ### Fixed
 
@@ -52,19 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Streaming ID path now skips prefetch-cached errors and non-trashed IDs:** `_stream_stream_ids` previously ignored `_id_prefetch_errors` and `_id_prefetch_non_trashed`, causing IDs already known to be 404/403 to be re-fetched (wasted API calls, duplicated error logging) and non-trashed IDs to potentially leak through. The streaming path now mirrors the batch path (`_discover_via_ids`) by consulting both caches before attempting a live fetch.
 - **Streaming ID failures now surface `ok=False`:** `_stream_stream_ids` always returned `True` even when `_handle_streaming_id_fetch` recorded errors. The method now returns `False` whenever a prefetch-cached error is replayed or a live fetch fails, consistent with `_stream_stream_query` and `_stream_stream_folder`.
 - **`_discover_via_query` retains partial results on pagination error:** An exception during query pagination previously discarded all items collected from earlier pages (`return []`). The method now returns whatever items were gathered before the failure, matching the folder traversal path's behaviour.
-- **Size parsing hardened against `null` values:** `_process_file_data` used `int(file_data.get("size", 0))`, which raises `TypeError` if the API returns `"size": null` (possible for Google-native files). Changed to `int(file_data.get("size") or 0)`.
-- **Parity metrics file written with explicit UTF-8 encoding:** `_emit_parity_metrics` now passes `encoding="utf-8"` to `open()` to avoid platform-dependent encoding on Windows.
-- **Time filter exception handling narrowed:** `_matches_time_filter` caught bare `Exception`, masking programmer errors. Narrowed to `(ValueError, TypeError, OverflowError)` — the only exceptions that `dateutil.parser.parse` and timezone arithmetic can legitimately raise. Fail-open behaviour (include the file) is preserved.
+- **Size parsing hardened against `null` values; parity metrics written with explicit UTF-8 encoding:** `int(file_data.get("size") or 0)` guards against `"size": null` from the API; `_emit_parity_metrics` now passes `encoding="utf-8"` to avoid platform-dependent encoding on Windows.
 
 ## [1.26.0] - 2026-05-17
 
 ### Added
 
 - **`--timestamped-output` flag:** Inserts a per-run timestamp (`YYYYMMDD_HHMMSS_ffffff`, local time, microsecond precision) before the final extension of both `--log-file` and `--failed-file` paths, giving each run its own files without requiring explicit unique names.
-  - Accepted by `dry-run`, `recover-only`, and `recover-and-download`.
   - Path transformation: `run.log` → `run_20260517_142530_123456.log`; `logs/failed.csv` → `logs/failed_20260517_142530_123456.csv`; extension-less names have the suffix appended; disabled (empty) paths are left untouched.
-  - Microsecond precision prevents collisions between rapid sequential or parallel runs sharing the same base paths.
-  - Applied once in `gdrive_cli.main` via the new `_apply_timestamped_output` helper, before failed-file validation and before `DriveTrashRecoveryTool` construction, so every downstream consumer sees the final path; log file and failed-file share the same timestamp for easy correlation.
   - Independent of `--fresh-run`: `--timestamped-output` routes each run to a *new* file; `--fresh-run` truncates the *configured* file in place.
 
 ## [1.25.0] - 2026-05-14
@@ -72,49 +64,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`--skip-existing` flag for `recover-and-download`:** Skips the download when the computed local target path already resolves to a regular file.
-  - The item is still treated as a logical success: per-step state advances, post-restore policy still applied, and the skip is counted in a new `stats["skipped_existing"]` counter.
   - Uses `Path.is_file()` rather than `exists()` so a directory collision does not silently satisfy the skip and allow `post-restore-policy=delete` to remove the Drive file without a local copy.
-  - Mutually exclusive with `--overwrite`; default collision behaviour (uuid-rename suffix) is unchanged when neither flag is set.
-  - Run summary and structured log line include `skipped_existing` when non-zero.
 
 ## [1.24.1] - 2026-05-14
 
 ### Removed
 
-- **`--download-dir` removed from `recover-only`:** The argument was accepted by the parser but had no effect, silently discarding any supplied path instead of warning the user.
-  - `will_download` is set to `True` only for `recover-and-download` (or `dry-run` with `--download-dir`), never for `recover-only`.
-  - The argument is now rejected by the `recover-only` subparser; it remains optional on `dry-run` and required on `recover-and-download`.
+- `--download-dir` removed from `recover-only` subparser; it was silently accepted but had no effect.
 
 ## [1.24.0] - 2026-05-14
 
 ### Added
 
-- **Per-item step records with v2 → v3 schema migration (#1030):** `processed_items` promoted from `List[str]` (O(n) membership) to `Dict[str, ProcessedRecord]` (O(1) membership), where each record tracks three boolean steps and a timestamp.
-  - `_process_item` calls `_mark_step(item_id, step)` after each individual pipeline step succeeds; an interrupted run that completed untrash but not download will skip the untrash API call on resume and retry only the download.
-  - `_recover_file` checks `_step_is_done(item_id, "recovered")` and skips the `files.update(trashed=False)` call when the untrash step is already recorded, preventing redundant API calls.
-  - `_is_processed(item)` now takes the full `RecoveryItem` to determine which steps are required (e.g. `recovered` only for recover-only; `recovered + downloaded + post_restored` for recover-and-download; `downloaded + post_restored` for folder-id / retry-failed-file items where `will_recover=False`).
-  - New `_required_steps(item)` helper encapsulates step-requirement logic; `_step_is_done(item_id, step)` exposes individual step checks.
-  - `_mark_step` serialises mutations with an internal `_state_lock`; callers must not hold `stats_lock` when calling it (see `gdrive_state.py` module docstring).
-- **New `ProcessedRecord` dataclass** in `gdrive_models.py`: fields `recovered`, `downloaded`, `post_restored` (bool, default `False`) and `last_attempt_iso` (str).
+- **Per-item step records with v2 → v3 schema migration (#1030):** `processed_items` promoted from `List[str]` to `Dict[str, ProcessedRecord]`; each record tracks steps `recovered`, `downloaded`, `post_restored`. `_mark_step` / `_required_steps` / `_step_is_done` helpers manage per-step completion; an interrupted run retries only the steps not yet recorded.
 
 ### Changed
 
-- **`RecoveryState.schema_version` default is now 3.** New state files are written at v3 immediately.
-- **`RecoveryState.processed_items` type changed** from `Optional[List[str]]` to `Optional[Dict[str, ProcessedRecord]]`; `__post_init__` initialises to `{}`.
-- **`_mark_processed(item_id)` is now a backward-compat wrapper** that marks all three steps as done; new code uses `_mark_step` per step.
+- **`RecoveryState.processed_items` type changed** from `Optional[List[str]]` to `Optional[Dict[str, ProcessedRecord]]`; `_mark_processed(item_id)` retained as a backward-compat wrapper that marks all three steps done.
 
 ### Migration
 
-- **v2 → v3 is automatic and non-destructive.** On first load of a v2 state file, every ID in `processed_items` is converted to `ProcessedRecord(recovered=True, downloaded=True, post_restored=True)` — all steps treated as fully complete, so no item is reprocessed.
-- **v0/v1 → v3 chained migration** works in a single load: the v1 → v2 scope-synthesis step runs first, then the v2 → v3 list-to-dict conversion.
-- **Migration is one-way.** Keep a copy of your state file before running v1.24.0 for the first time if rollback is needed. To retry previously-failed items use `--retry-failed-file <csv>` or `--fresh-run`.
+- **v2 → v3 is automatic and non-destructive.** On first load of a v2 state file, every ID is converted to `ProcessedRecord(recovered=True, downloaded=True, post_restored=True)`.
+- **v0/v1 → v3 chained migration** works in a single load.
+- **Migration is one-way.** Keep a copy of your state file before upgrading; to retry previously-failed items use `--retry-failed-file <csv>` or `--fresh-run`.
 
 ## [1.23.1–1.23.3] - 2026-05-14 (consolidated)
 
 ### Added
 
-- **End-of-run summary now written to the log file as a structured INFO line:** `RecoveryReporter._print_summary` emits a grep-friendly `Run complete: ...` record, and `print_interrupted_state_saved` emits `Run interrupted: ...`; logger errors are swallowed to keep user-facing summary output resilient.
-- **Final streaming progress line now forced to true final counts:** a new `_print_final_stream_progress` helper calls `ProgressBar.update(..., force=True)` before summary/interruption output so the last visible `processed=` line is not stale.
+- **Structured end-of-run summary + forced final progress line:** `RecoveryReporter._print_summary` emits a grep-friendly `Run complete: ...` log record; `_print_final_stream_progress` forces a true-final `ProgressBar` update before summary/interruption output so the last visible `processed=` line is not stale.
 
 ### Fixed
 
@@ -124,25 +102,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Scope-aware state file with v1→v2 schema migration (#1029):** State files now record a `scope` block (`source`, `command`, `key`) capturing what the run was doing.
-  - `source` is one of `trash_query | folder_id | file_ids | retry_failed_file`; `command` is `recover_only | recover_and_download`; `key` is a discriminating fingerprint — the raw folder ID for `folder_id`, the absolute CSV path for `retry_failed_file`, or a 16-char sha256 prefix over the file IDs / trash-query parameters for `file_ids` / `trash_query`.
-  - On load, scope is compared to the current invocation; a mismatch causes the tool to exit with code 2 unless `--fresh-run` is passed — closing the silent failure where a `recover-only` state file was reused by `recover-and-download` and caused the same IDs to be skipped without being downloaded.
-  - CLI renders a clear remediation message on mismatch: saved scope, current scope, and a suggestion to pass `--fresh-run` or `--state-file <path>`.
-  - New `RecoveryStateScope` dataclass in `gdrive_models.py`; new `StateScopeMismatchError` exception in `gdrive_state.py`; new `RecoveryStateManager._derive_scope_from_args` helper.
+- **Scope-aware state file with v1→v2 schema migration (#1029):** State files now record a `scope` block (`source`, `command`, `key`). A mismatch between the saved scope and the current invocation causes the tool to exit with code 2 (unless `--fresh-run` is passed); the CLI renders a clear remediation message showing saved scope, current scope, and suggested fix.
 
 ### Changed
 
-- **`RecoveryState.schema_version` default is now 2.** v0/v1 state files synthesize a scope from the current invocation and are rewritten as v2 on next save; `processed_items` preserved verbatim.
-- **`RecoveryState.owner_pid` removed.** The lock file remains the source of truth for the live PID; the stale field is retired. v1 files containing `owner_pid` load fine — the unknown field is silently dropped.
-- **`state.total_found` updated from `_seen_total` in streaming mode** at each periodic save and on completion/interruption.
+- **`RecoveryState.schema_version` default is now 2.** v0/v1 state files synthesize a scope from the current invocation and are rewritten as v2 on next save.
+- **`RecoveryState.owner_pid` removed.** The lock file remains the source of truth for the live PID; v1 files containing `owner_pid` load fine — the unknown field is silently dropped.
 - **`--overwrite` deprecation shim removed (per v1.22.0 timing).** `--overwrite` is now strictly a local-file collision policy: it no longer clears `processed_items`, truncates the failed-file CSV, or emits a deprecation warning. Use `--fresh-run` for fresh-run effects.
-- `RecoveryStateManager._clear_processed_items` removed; `_reset_state` is the canonical fresh-run primitive.
-- `--fresh-run` help text updated: scope reset mentioned, `owner_pid` no longer referenced.
-- Module docstring (`gdrive_recover.py`) and README updated with scope semantics and v1 → v2 migration behaviour.
 
 ### Migration
 
-- **v1 → v2 is automatic and non-destructive.** Existing v1 state files load on first run after the upgrade; the synthesized scope reflects the current invocation. A subsequent run with the same scope resumes normally; a different scope is rejected with a clear message instead of silently skipping work.
+- **v1 → v2 is automatic and non-destructive.** Existing v1 state files load on first run; the synthesized scope reflects the current invocation. A different scope on a subsequent run is rejected with a clear message instead of silently skipping work.
 
 ## [1.22.0] - 2026-05-14
 
