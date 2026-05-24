@@ -526,7 +526,10 @@ def _load_retry_failed_file(
                 if fid:
                     target_path_overrides[fid] = tp
     except Exception as e:
-        print(f"{console.sym_fail()} Could not read --retry-failed-file '{path_str}': {e}", file=sys.stderr)
+        print(
+            f"{console.sym_fail()} Could not read --retry-failed-file '{path_str}': {e}",
+            file=sys.stderr,
+        )
         return False, 2, {}
     if not target_path_overrides:
         print(
@@ -636,7 +639,10 @@ def _read_lockfile_metadata(lockfile_path):
 def _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, force):
     """Print user-facing messages about lockfile status."""
     console = ConsoleHelper(args)
-    print(f"{console.sym_fail()} Another run appears to be active for state '{args.state_file}'.", file=sys.stderr)
+    print(
+        f"{console.sym_fail()} Another run appears to be active for state '{args.state_file}'.",
+        file=sys.stderr,
+    )
     print(f"   Owner PID: {owner_pid}{pid_alive_note}   Run-ID: {run_id}", file=sys.stderr)
     if "(not running)" in pid_alive_note:
         print(
@@ -655,7 +661,10 @@ def _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, force):
                 file=sys.stderr,
             )
         else:
-            print(f"{console.sym_warn()} --force supplied: bypassing concurrent-run guardrail.", file=sys.stderr)
+            print(
+                f"{console.sym_warn()} --force supplied: bypassing concurrent-run guardrail.",
+                file=sys.stderr,
+            )
 
 
 def _check_pid_alive(owner_pid, tool):
