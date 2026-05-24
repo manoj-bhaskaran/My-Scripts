@@ -185,6 +185,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `DriveOperations._write_failed_file` rewritten to use `csv.writer`; writes a header row when the destination file is new or empty.
 
+## [1.20.2] - 2026-05-12
+
+Internal test coverage improvements only; no user-visible changes.
+
 ## [1.20.1] - 2026-05-12
 
 ### Fixed
