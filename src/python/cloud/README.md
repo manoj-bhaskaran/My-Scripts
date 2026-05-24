@@ -29,6 +29,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - The Google Drive recovery tool (`gdrive_*` module family) maintains its release history in `CHANGELOG-gdrive-recover.md`.
 - Historical note: a small number of pre-2.0 releases documented breaking behavior under minor-version bumps; the changelog now carries an explicit SemVer caveat while preserving published version numbers.
 - Changelog heading convention: consolidated rollups use a lowercase `(consolidated)` suffix, and multi-version entries use a single bracketed range like `[1.23.1–1.23.3]`.
+- Recent maintenance refactors from `1.26.2` through `1.26.5` are intentionally grouped as one consolidated release band in the changelog to reduce short-lived refactor churn noise while preserving the key fixes and test deltas.
 
 ## Dependencies
 

@@ -18,34 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Standardised consolidated/range release headings to a single convention: version spans now use one bracketed range (`[a.b.c–x.y.z]`) and consolidated rollups use a lowercase `(consolidated)` suffix for consistency across the gdrive changelog.
 
-## [1.26.5] - 2026-05-24
+## [1.26.2–1.26.5] - 2026-05-24 (consolidated)
 
 ### Changed
 
-- Consolidated duplicated emoji/ASCII symbol and stderr/stdout print helpers from `DriveTrashDiscovery` and `RecoveryReporter` into a single shared `ConsoleHelper` class in the new `gdrive_console.py` module. Both classes now construct a `ConsoleHelper` instance and delegate symbol/print calls to it. `RecoveryReporter._print_err/_print_warn/_print_info` are retained as thin shims so that `DriveTrashRecoveryTool`'s delegation path is unchanged. Discovery's `_sym_done` (emoji `⛳`, ASCII `LIMIT`) is now exposed as `sym_limit()` to distinguish it from the reporter's `sym_done()` (`✅`/`DONE`). No change to emitted output.
-
-## [1.26.4] - 2026-05-24
+- Refactor churn across 1.26.2–1.26.5 is now documented as one consolidated maintenance band: unreachable helpers removed, ID prefetch internals extracted into `IdMetadataPrefetcher`, and console symbol/print helpers deduplicated into shared `ConsoleHelper` (`gdrive_console.py`); no intended user-visible behaviour change.
+- Standardized `gdrive_discovery`/`gdrive_id_prefetch` compatibility accessors and delegation seams after the prefetch extraction so discovery and streaming `--file-ids` paths continue to share cached metadata/error/non-trashed decisions.
 
 ### Fixed
 
-- Fixed ID-prefetch cache access in discovery/streaming `--file-ids` flows after the prefetcher extraction: removed broken nested dereferences (for example `self._id_prefetcher._id_prefetcher...`) and restored compatibility cache accessors (`_id_prefetch`, `_id_prefetch_non_trashed`, `_id_prefetch_errors`) so cached errors/non-trashed/metadata paths no longer raise `AttributeError`.
-- Reformatted `gdrive_id_prefetch.py` and `gdrive_discovery.py` to satisfy Python formatting checks.
-- Removed duplicated legacy method definitions left in `gdrive_discovery.py` after the refactor (`_fetch_and_handle_metadata`, `_prefetch_ids_metadata`), resolving pylint `function-redefined` errors and ensuring only the delegated/compatibility implementations remain.
-- Removed the unused `skipped_non_trashed` parameter from `DriveTrashDiscovery._fetch_and_handle_metadata` (compatibility wrapper), simplifying the method signature without behavior change.
-- Added new unit tests for `gdrive_id_prefetch.py` cache classification/status mapping paths and expanded discovery test coverage for the refactor.
-- Expanded unit test coverage further for `IdMetadataPrefetcher` fetch/classification/parity paths, raising targeted coverage for `gdrive_discovery` + `gdrive_id_prefetch` test run from 61% to 66% (+5 points).
+- Repaired post-refactor ID-prefetch cache reads in discovery/streaming `--file-ids` flows by removing invalid nested prefetch dereferences and restoring compatibility fields (`_id_prefetch`, `_id_prefetch_non_trashed`, `_id_prefetch_errors`), preventing `AttributeError` when replaying cached outcomes.
+- Removed duplicated legacy method definitions accidentally retained in `gdrive_discovery.py` (`_fetch_and_handle_metadata`, `_prefetch_ids_metadata`), eliminating `function-redefined` lint failures and keeping a single delegated implementation path.
+- Removed the unused `skipped_non_trashed` argument from the compatibility `_fetch_and_handle_metadata` wrapper to align the signature with actual call sites.
 
-## [1.26.3] - 2026-05-24
+### Tests
 
-### Changed
-
-- Refactored Drive ID prefetch/validation internals by extracting them into `IdMetadataPrefetcher` (`gdrive_id_prefetch.py`), replacing list-ref/tuple flow with typed counters/results, and unifying HTTP error classification logic; no behavioural change intended.
-
-## [1.26.2] - 2026-05-23
-
-### Removed
-
-- Removed unreachable discovery/metadata helpers and their tests after the `with_retries` migration; no behavioural change.
+- Expanded and reformatted targeted unit coverage for `gdrive_id_prefetch.py` and discovery parity/classification flows; focused coverage for the paired test run increased from 61% to 66% (+5 points).
 
 ## [1.26.1] - 2026-05-23
 
