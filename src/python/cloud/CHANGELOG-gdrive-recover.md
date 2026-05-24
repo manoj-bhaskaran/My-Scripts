@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed duplicated legacy method definitions left in `gdrive_discovery.py` after the refactor (`_fetch_and_handle_metadata`, `_prefetch_ids_metadata`), resolving pylint `function-redefined` errors and ensuring only the delegated/compatibility implementations remain.
 - Removed the unused `skipped_non_trashed` parameter from `DriveTrashDiscovery._fetch_and_handle_metadata` (compatibility wrapper), simplifying the method signature without behavior change.
 - Added new unit tests for `gdrive_id_prefetch.py` cache classification/status mapping paths and expanded discovery test coverage for the refactor.
+- Expanded unit test coverage further for `IdMetadataPrefetcher` fetch/classification/parity paths, raising targeted coverage for `gdrive_discovery` + `gdrive_id_prefetch` test run from 61% to 66% (+5 points).
 
 ## [1.26.3] - 2026-05-24
 
