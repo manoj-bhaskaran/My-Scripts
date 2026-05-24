@@ -240,7 +240,6 @@ class DriveTrashDiscovery:
         fid,
         fields,
         buckets,
-        skipped_non_trashed,
         transient_errors,
         transient_ids,
         err_count,
