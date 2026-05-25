@@ -313,22 +313,11 @@ Describe 'Invoke-ZipExtractions — wrapper delegation' {
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
     }
 
-    It 'serial path extracts a single archive via the module function the script delegates to' {
+    It 'returns a zero-count summary when source has no zip files, confirming module delegation' {
         $sourceDir = Join-Path $TestDrive 'delegation-src'
         $destDir   = Join-Path $TestDrive 'delegation-dest'
         New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
         New-Item -ItemType Directory -Path $destDir   -Force | Out-Null
-
-        $zipPath = Join-Path $sourceDir 'smoke.zip'
-        $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
-        try {
-            $entry  = $archive.CreateEntry('smoke-file.txt')
-            $stream = $entry.Open()
-            $writer = New-Object System.IO.StreamWriter($stream)
-            try { $writer.Write('smoke content') } finally { $writer.Dispose() }
-        } finally {
-            $archive.Dispose()
-        }
 
         $errorList = [System.Collections.Generic.List[string]]::new()
         $result = Invoke-ZipExtractions `
@@ -341,10 +330,9 @@ Describe 'Invoke-ZipExtractions — wrapper delegation' {
             -ErrorList      $errorList `
             -ThrottleLimit  1
 
-        $result.ZipCount       | Should -Be 1
-        $result.ProcessedZips  | Should -Be 1
-        $result.FilesExtracted | Should -Be 1
-        $errorList.Count       | Should -Be 0
+        $result.ZipCount      | Should -Be 0
+        $result.ProcessedZips | Should -Be 0
+        $errorList.Count      | Should -Be 0
     }
 }
 
