@@ -338,7 +338,8 @@ Describe 'Invoke-ZipExtractions — wrapper delegation' {
             -Policy         'Rename' `
             -SafeNameMaxLen 0 `
             -QuietMode      $true `
-            -ErrorList      $errorList
+            -ErrorList      $errorList `
+            -ThrottleLimit  1
 
         $result.ZipCount       | Should -Be 1
         $result.ProcessedZips  | Should -Be 1
