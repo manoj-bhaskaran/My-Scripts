@@ -74,3 +74,90 @@ Describe 'Invoke-SingleZipExtraction' {
             Should -Throw '*corrupt*'
     }
 }
+
+Describe 'Invoke-ZipExtractions' {
+    BeforeAll {
+        $moduleRoot = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot '..\..\..\..\..\src\powershell\modules'))
+
+        Import-Module (Join-Path $moduleRoot 'Core\FileSystem\FileSystem.psm1') -Force
+        Import-Module (Join-Path $moduleRoot 'Core\Zip\Zip.psm1') -Force
+        Import-Module (Join-Path $moduleRoot 'FileManagement\ZipExtraction\ZipExtraction.psm1') -Force
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+    }
+
+    It 'parallel path (-ThrottleLimit 2) extracts all archives and aggregates results correctly' {
+        $sourceDir = Join-Path $TestDrive 'parallel-src'
+        $destDir   = Join-Path $TestDrive 'parallel-dest'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $destDir   -Force | Out-Null
+
+        foreach ($name in 'archive1', 'archive2') {
+            $zipPath = Join-Path $sourceDir "$name.zip"
+            $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+            try {
+                $entry  = $archive.CreateEntry("$name-file.txt")
+                $stream = $entry.Open()
+                $writer = New-Object System.IO.StreamWriter($stream)
+                try { $writer.Write("content of $name") } finally { $writer.Dispose() }
+            } finally {
+                $archive.Dispose()
+            }
+        }
+
+        $errorList = [System.Collections.Generic.List[string]]::new()
+        $result = Invoke-ZipExtractions `
+            -SourceDir      $sourceDir `
+            -DestinationDir $destDir `
+            -Mode           'PerArchiveSubfolder' `
+            -Policy         'Rename' `
+            -SafeNameMaxLen 0 `
+            -QuietMode      $true `
+            -ErrorList      $errorList `
+            -ThrottleLimit  2
+
+        $result.ZipCount       | Should -Be 2
+        $result.ProcessedZips  | Should -Be 2
+        $result.FilesExtracted | Should -Be 2
+        $errorList.Count       | Should -Be 0
+
+        @(Get-ChildItem -LiteralPath $destDir -Directory).Count | Should -Be 2
+    }
+
+    It 'parallel path errors are collected and the successful archives still contribute to totals' {
+        $sourceDir = Join-Path $TestDrive 'parallel-err-src'
+        $destDir   = Join-Path $TestDrive 'parallel-err-dest'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $destDir   -Force | Out-Null
+
+        $zipPath = Join-Path $sourceDir 'good.zip'
+        $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            $entry  = $archive.CreateEntry('good-file.txt')
+            $stream = $entry.Open()
+            $writer = New-Object System.IO.StreamWriter($stream)
+            try { $writer.Write('good content') } finally { $writer.Dispose() }
+        } finally {
+            $archive.Dispose()
+        }
+
+        $badZipPath = Join-Path $sourceDir 'bad.zip'
+        [System.IO.File]::WriteAllBytes($badZipPath, [byte[]](0xFF, 0xFE, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05))
+
+        $errorList = [System.Collections.Generic.List[string]]::new()
+        $result = Invoke-ZipExtractions `
+            -SourceDir      $sourceDir `
+            -DestinationDir $destDir `
+            -Mode           'PerArchiveSubfolder' `
+            -Policy         'Rename' `
+            -SafeNameMaxLen 0 `
+            -QuietMode      $true `
+            -ErrorList      $errorList `
+            -ThrottleLimit  2
+
+        $result.ZipCount      | Should -Be 2
+        $result.ProcessedZips | Should -Be 1
+        $errorList.Count      | Should -Be 1
+        $errorList[0]         | Should -BeLike "*bad.zip*"
+    }
+}

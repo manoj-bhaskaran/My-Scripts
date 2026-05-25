@@ -1,5 +1,24 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.6 — 2026-05-25
+
+### Tests
+
+- Relocated `Describe 'Invoke-ZipExtractions — parallel extraction'` (two `It` blocks) from
+  `Expand-ZipsAndClean.Tests.ps1` into a new `Describe 'Invoke-ZipExtractions'` block in
+  `tests/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.Tests.ps1`. The tests
+  now call `Invoke-ZipExtractions` directly from the module (no change in behaviour — they
+  already did so after the 2.6.2 wrapper removal).
+- Replaced the removed block with a thin `Describe 'Invoke-ZipExtractions — wrapper delegation'`
+  smoke test that verifies a single archive extracts successfully via the module function the
+  script delegates to (`ZipExtraction\Invoke-ZipExtractions`). This preserves script-side
+  integration coverage that a pure deletion would have lost.
+- Net `It` count in `Expand-ZipsAndClean.Tests.ps1`: 20 → 19 (two tests moved to the module
+  file; one new delegation smoke test retained here).
+- Module CHANGELOG not yet present (tracked by #1065).
+
+---
+
 ## Unreleased
 
 ### Removed
