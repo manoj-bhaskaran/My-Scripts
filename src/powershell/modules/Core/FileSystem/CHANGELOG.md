@@ -5,6 +5,14 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.2.1] – 2026-05-25
+
+### Fixed
+
+- `Get-FullPath`: guard Unix absolute paths (starting with `/`) from the `'/' → '\'` slash substitution. Previously, a path such as `/tmp/dest` was converted to `\tmp\dest` before being passed to `[System.IO.Path]::GetFullPath()`, which on Linux treats `\` as a regular character and resolves the path relative to CWD, producing a mangled result. The function now calls `GetFullPath` directly (without slash substitution) when the input starts with `/`.
+
+---
+
 ## [1.2.0] – 2026-05-17
 
 ### Added

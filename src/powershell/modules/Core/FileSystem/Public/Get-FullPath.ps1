@@ -35,6 +35,12 @@ function Get-FullPath {
 
     process {
         try {
+            # Unix absolute paths start with '/'; converting '/' to '\' would make them
+            # relative on Linux, so resolve them directly without slash substitution.
+            if ($Path.StartsWith('/')) {
+                return [System.IO.Path]::GetFullPath($Path)
+            }
+
             $normalized = $Path -replace '/', '\'
 
             # If path starts with a drive letter (C:\, D:\, etc.), it's already absolute
