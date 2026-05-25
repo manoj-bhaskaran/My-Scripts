@@ -2,11 +2,12 @@
 
 All notable changes to this module are documented here.
 
-## [Unreleased]
+## [1.0.1]
 
 ### Changed
 
 - Test suite extraction: moved Core/Zip behavioural tests out of `tests/powershell/file-management/Expand-ZipsAndClean.Tests.ps1` into dedicated `tests/powershell/modules/Core/Zip/Zip.Tests.ps1` (issue #1076).
+- Removed two mock-only dispatch tests (`dispatches PerArchiveSubfolder mode to Expand-ZipToSubfolder` and `dispatches Flat mode to Expand-ZipFlat with computed destination root`) that verified implementation detail rather than behaviour (issue #1079). Flat-routing-through-`Expand-ZipSmart` coverage is retained by converting the `Flat Overwrite` behavioural test to call `Expand-ZipSmart -ExtractMode Flat` instead of `Expand-ZipFlat` directly. Net: −2 tests, no reduction in coverage.
 
 ### Fixed
 

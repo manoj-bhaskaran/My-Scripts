@@ -3,7 +3,7 @@
     RootModule        = 'Zip.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.0.0'
+    ModuleVersion     = '1.0.1'
 
     # ID used to uniquely identify this module
     GUID              = 'a1b2c3d4-e5f6-7a8b-9c0d-e1f2a3b4c5d6'
