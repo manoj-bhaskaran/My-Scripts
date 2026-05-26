@@ -44,4 +44,19 @@ The Videoscreenshot module has been moved to `src/powershell/modules/Media/Video
 
 ## Logging
 
-All scripts use the PowerShell Logging Framework and write logs to the standard logs directory.
+All scripts use the PowerShell Logging Framework for structured logging.
+
+### Move-ImageFileToBatch.ps1
+
+Use `-LogDirectory` to control where log files are written:
+
+- **With `-LogDirectory`**: both the framework log and the per-run error log (when errors occur)
+  are written to the supplied directory, which is created if it does not exist.
+- **Without `-LogDirectory`**: the framework log goes to its default location (relative to the
+  module); any error log is auto-created under `-DestDir` as
+  `picconvert_errors_yyyyMMdd_HHmmss.log`.
+
+```powershell
+.\Move-ImageFileToBatch.ps1 -SourceDir "D:\Photos" -DestDir "F:\Media" `
+    -LogDirectory "C:\Logs\picconvert" -ShowProgress
+```
