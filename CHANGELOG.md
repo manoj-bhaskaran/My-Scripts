@@ -64,6 +64,12 @@ kept here — see the linked file for details.
 
 ### Fixed
 
+- **[Move-ImageFileToBatch 2.1.0]** Renamed `-LogFilePath` to `-LogDirectory` and passed it
+  to `Initialize-Logger` so the framework log is written to the caller-supplied directory
+  instead of the module default; fixed error-log path derivation in `Write-RunSummary` to
+  construct a timestamped filename inside `-LogDirectory` rather than treating the directory
+  path as a literal file path (issue #1150).
+
 - **[Expand-ZipsAndClean 2.6.4]** Fixed misattributed comment-help for env-var default
   overrides (`SourceDirectory` → `EXPAND_ZIPS_SOURCE_DIR`, `DestinationDirectory` →
   `EXPAND_ZIPS_DEST_DIR`) and corrected parameter-default resolution so whitespace-only

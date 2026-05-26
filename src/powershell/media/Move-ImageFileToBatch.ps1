@@ -73,15 +73,15 @@
         even if these extensions are listed here.
       • Validation: only alphanumeric extensions are accepted (e.g., .jpg, .heic).
 
-.PARAMETER LogFilePath
-    Optional path to a log file. If provided, **this script appends** each run’s
-    errors with a run header; the directory is created if missing.
-    If omitted and errors occur, a timestamped file
-      'picconvert_errors_yyyyMMdd_HHmmss.log'
-    is created under DestDir.
+.PARAMETER LogDirectory
+    Optional path to a directory where log files are written. When supplied,
+    the framework log and any error log are both placed in this directory;
+    the directory is created if missing.
+    If omitted, the framework log goes to its default location and any error
+    log is created under DestDir as ‘picconvert_errors_yyyyMMdd_HHmmss.log’.
 
 .PARAMETER LogWarnSizeMB
-    Warn if the log file size (when using -LogFilePath) is at or above this many MB
+    Warn if the error log file size (when using -LogDirectory) is at or above this many MB
     before appending a new run. Default: 10 (MB). Set higher to reduce warnings.
 
 .INPUTS
@@ -100,9 +100,15 @@
 
 .NOTES
     VERSION
-      2.0.0
+      2.1.0
 
     CHANGELOG
+      2.1.0
+        - Renamed -LogFilePath to -LogDirectory to match framework semantics (directory, not file).
+        - Pass -LogDirectory to Initialize-Logger so framework log lands in the caller-supplied path.
+        - Fix Write-RunSummary to derive error log file from -LogDirectory instead of treating it
+          as a literal file path.
+
       2.0.0
         - Refactored to use PowerShellLoggingFramework for standardized logging
         - Replaced Write-Info, Write-Warn, Write-ErrTrack with Write-Log* functions
@@ -141,9 +147,9 @@
       - If copies fail due to access being denied, verify read/write permissions.
       - If existing .jpg prevents rename of .jpeg/.jpg_large, the script logs and skips safely.
       - For performance, avoid real-time AV scanning on DestDir during heavy copies.
-      - **Logs with -LogFilePath:** This script APPENDS to the file with a run header
-        per execution. To keep separate files, provide a unique path per run or omit
-        -LogFilePath to use the auto-timestamped file under DestDir.
+      - **Logs with -LogDirectory:** Framework logs and error logs are written to
+        the supplied directory. To keep separate runs distinct, use a new directory
+        per run or omit -LogDirectory to use the auto-timestamped file under DestDir.
       - **Log size warnings:** Use -LogWarnSizeMB to adjust or silence warnings
         about large append-only log files.
 #>
@@ -174,7 +180,7 @@ param(
     [string[]]$IncludeExtensions,
 
     [Parameter(Mandatory = $false)]
-    [string]$LogFilePath,
+    [string]$LogDirectory,
 
     [Parameter(Mandatory = $false)]
     [ValidateRange(1, 1048576)]
@@ -184,8 +190,10 @@ param(
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 
-# Initialize logger
-Initialize-Logger -ScriptName "picconvert" -LogLevel 20
+# Initialize logger — pass caller-supplied directory so framework log lands there
+$script:loggerArgs = @{ ScriptName = "picconvert"; LogLevel = 20 }
+if ($LogDirectory) { $script:loggerArgs['resolvedLogDir'] = $LogDirectory }
+Initialize-Logger @script:loggerArgs
 
 # region: Globals / State -------------------------------------------------------------------------
 
@@ -506,8 +514,8 @@ function Write-RunSummary {
         Number of errors encountered.
     .PARAMETER DestDir
         Destination directory (used for default log creation).
-    .PARAMETER LogFilePath
-        Optional explicit log file path (validated/created if needed).
+    .PARAMETER LogDirectory
+        Optional directory for error log (validated/created if needed).
     .PARAMETER ElapsedRename
         [TimeSpan] Rename phase duration.
     .PARAMETER ElapsedCopy
@@ -526,7 +534,7 @@ function Write-RunSummary {
         [int]$RootDirsCreated,
         [int]$ErrCount,
         [string]$DestDir,
-        [string]$LogFilePath,
+        [string]$LogDirectory,
         [TimeSpan]$ElapsedRename,
         [TimeSpan]$ElapsedCopy,
         [TimeSpan]$ElapsedTotal
@@ -559,8 +567,9 @@ Elapsed (total)       : {2:c}
 
     if ($ErrCount -gt 0) {
         try {
-            $resolvedLogPath = $LogFilePath
-            if (-not $resolvedLogPath) {
+            if ($LogDirectory) {
+                $resolvedLogPath = Join-Path -Path $LogDirectory -ChildPath ("picconvert_errors_{0}.log" -f $script:RunStamp)
+            } else {
                 $resolvedLogPath = Join-Path -Path $DestDir -ChildPath ("picconvert_errors_{0}.log" -f $script:RunStamp)
             }
 
@@ -578,7 +587,7 @@ Elapsed (total)       : {2:c}
             if (Test-Path -LiteralPath $resolvedLogPath) {
                 $sizeMB = ([IO.FileInfo]$resolvedLogPath).Length / 1MB
                 if ($sizeMB -ge $LogWarnSizeMB) {
-                    Write-LogWarning ("Log file is {0:N1} MB (>= {1} MB). Consider rotating or changing -LogFilePath." -f $sizeMB, $LogWarnSizeMB)
+                    Write-LogWarning ("Log file is {0:N1} MB (>= {1} MB). Consider rotating or changing -LogDirectory." -f $sizeMB, $LogWarnSizeMB)
                 }
             }
 
@@ -608,7 +617,7 @@ Elapsed (total)       : {2:c}
 # region: Main ------------------------------------------------------------------------------------
 
 try {
-    Write-LogInfo "Starting picconvert 2.0.0"
+    Write-LogInfo "Starting picconvert 2.1.0"
     Initialize-Directories -SourceDir $SourceDir -DestDir $DestDir
 
     # Phase 1: Gather all source files (for rename); ALWAYS include .jpeg and .jpg_large
@@ -649,7 +658,7 @@ try {
         -RootDirsCreated $script:RootDirsCreated `
         -ErrCount $script:ErrCount `
         -DestDir $DestDir `
-        -LogFilePath $LogFilePath `
+        -LogDirectory $LogDirectory `
         -ElapsedRename $elapsedRename `
         -ElapsedCopy $elapsedCopy `
         -ElapsedTotal $swTotal.Elapsed
@@ -665,7 +674,7 @@ catch {
         -RootDirsCreated $script:RootDirsCreated `
         -ErrCount $script:ErrCount `
         -DestDir $DestDir `
-        -LogFilePath $LogFilePath `
+        -LogDirectory $LogDirectory `
         -ElapsedRename $elapsedRename `
         -ElapsedCopy $elapsedCopy `
         -ElapsedTotal $swTotal.Elapsed
