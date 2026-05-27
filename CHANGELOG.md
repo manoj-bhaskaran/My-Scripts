@@ -39,6 +39,8 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[gdrive_recover 1.26.13]** Unified duplicated folder BFS traversal logic across batch and streaming discovery paths in `gdrive_discovery.py`, reducing drift risk while preserving folder-prefix and limit behaviour (issue #1088).
+  → Full detail: [src/python/cloud/CHANGELOG-gdrive-recover.md](src/python/cloud/CHANGELOG-gdrive-recover.md)
 - **[Expand-ZipsAndClean tests]** Collapsed redundant helper assertions in `Show-ProgressPhase` and `Write-ExtractionSummary` blocks to keep script-helper coverage behavior-focused while reducing duplicate setup/output checks (issue #1080).
 - **[Expand-ZipsAndClean tests]** Restored explicit interactive (ConsoleHost) header assertion for `Write-ExtractionSummary` without `-PassThru`, protecting the default output path from regressions after helper-test consolidation (issue #1080 follow-up).
 - **[Core/Zip tests]** Relocated Zip module extraction tests from `Expand-ZipsAndClean.Tests.ps1` into dedicated `tests/powershell/modules/Core/Zip/Zip.Tests.ps1` for module-scoped ownership and clearer suite boundaries (issue #1076).

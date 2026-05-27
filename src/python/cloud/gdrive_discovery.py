@@ -519,15 +519,26 @@ class DriveTrashDiscovery:
                 break
         return False
 
-    def _discover_folder_recursively(self) -> List[RecoveryItem]:
-        """BFS traversal of a Drive folder tree; returns all matching non-trashed files."""
-        items: List[RecoveryItem] = []
+    def _bfs_traverse_folders(
+        self,
+        visit_folder: Callable[[str, str, Deque[Tuple[str, str]]], bool],
+    ) -> None:
+        """Shared BFS traversal for folder-scoped batch and streaming discovery."""
         queue: Deque[Tuple[str, str]] = deque([(self.args.folder_id, "")])
         while queue:
             folder_id, prefix = queue.popleft()
-            self.logger.info("Traversing folder %s (prefix=%r)", folder_id, prefix)
-            if self._traverse_folder_pages(folder_id, prefix, items, queue):
+            if not visit_folder(folder_id, prefix, queue):
                 break
+
+    def _discover_folder_recursively(self) -> List[RecoveryItem]:
+        """BFS traversal of a Drive folder tree; returns all matching non-trashed files."""
+        items: List[RecoveryItem] = []
+
+        def _visit(folder_id: str, prefix: str, queue: Deque[Tuple[str, str]]) -> bool:
+            self.logger.info("Traversing folder %s (prefix=%r)", folder_id, prefix)
+            return not self._traverse_folder_pages(folder_id, prefix, items, queue)
+
+        self._bfs_traverse_folders(_visit)
         return items
 
     def _stream_files_from_page(
@@ -574,12 +585,17 @@ class DriveTrashDiscovery:
         """BFS streaming traversal of a Drive folder tree, processing items in bounded batches."""
         ok = True
         batch: List[RecoveryItem] = []
-        queue: Deque[Tuple[str, str]] = deque([(self.args.folder_id, "")])
-        while queue and not self._should_stop_for_limit():
-            folder_id, prefix = queue.popleft()
+
+        def _visit(folder_id: str, prefix: str, queue: Deque[Tuple[str, str]]) -> bool:
+            nonlocal ok
+            if self._should_stop_for_limit():
+                return False
             self.logger.info("Streaming folder %s (prefix=%r)", folder_id, prefix)
             if not self._stream_folder_pages(folder_id, prefix, batch, batch_n, start_time, queue):
                 ok = False
+            return ok and not self._should_stop_for_limit()
+
+        self._bfs_traverse_folders(_visit)
         if batch:
             self._process_streaming_batch(batch, start_time)
         return ok

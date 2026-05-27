@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.26.13] - 2026-05-27
+
+### Changed
+
+- `gdrive_discovery.py`: unified duplicated folder BFS traversal into a shared `_bfs_traverse_folders` helper used by both batch discovery (`_discover_folder_recursively`) and streaming discovery (`_stream_stream_folder`), keeping queue/prefix semantics aligned across paths.
+
+### Tests
+
+- Re-ran folder discovery unit coverage to validate both batch and streaming folder traversal flows after BFS unification.
+
 ## [1.26.12] - 2026-05-27
 
 ### Fixed
