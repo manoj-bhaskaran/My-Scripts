@@ -316,6 +316,21 @@ def test_stream_folder_fetch_error_returns_false():
     assert not ok
 
 
+def test_stream_folder_continues_siblings_after_subfolder_fetch_error():
+    disc = _make_discovery()
+    disc._fetch_folder_page = MagicMock(
+        side_effect=[
+            ([], [_folder("Bad", "bad_id"), _folder("Good", "good_id")], None),
+            RuntimeError("subfolder fetch failed"),
+            ([_file("ok.txt", "ok1")], [], None),
+        ]
+    )
+    ok = disc._stream_stream_folder(batch_n=10, start_time=0.0)
+    assert not ok
+    assert len(disc._processed) == 1
+    assert disc._processed[0].id == "ok1"
+
+
 # ---------------------------------------------------------------------------
 # _process_file_data — source_folder_id and will_recover
 # ---------------------------------------------------------------------------
