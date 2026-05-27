@@ -7,29 +7,44 @@ BeforeAll {
     $script:MonitorPath = Join-Path $PSScriptRoot '..' '..' '..' '..' 'src' 'powershell' 'modules' 'Media' 'Videoscreenshot' 'Private' 'Snapshot.Monitor.ps1'
     $script:LoggingPath = Join-Path $PSScriptRoot '..' '..' '..' '..' 'src' 'powershell' 'modules' 'Media' 'Videoscreenshot' 'Private' 'Logging.ps1'
 
-    if (-not (Test-Path -LiteralPath $script:MonitorPath)) {
-        throw "Snapshot.Monitor.ps1 not found: $script:MonitorPath"
-    }
-    if (-not (Test-Path -LiteralPath $script:LoggingPath)) {
-        throw "Logging.ps1 not found: $script:LoggingPath"
+    foreach ($f in $script:MonitorPath, $script:LoggingPath) {
+        if (-not (Test-Path -LiteralPath $f)) { throw "Required file not found: $f" }
     }
 
     . $script:LoggingPath
     . $script:MonitorPath
 
-    function script:New-MockProcess {
-        param([bool]$HasExited = $false)
-        $p = [pscustomobject]@{ HasExited = $HasExited }
-        $p | Add-Member -MemberType ScriptMethod -Name Refresh -Value {}
+    # Locate pwsh for spawning real System.Diagnostics.Process instances
+    $pwsh = Get-Command -Name 'pwsh' -ErrorAction SilentlyContinue
+    if (-not $pwsh) { $pwsh = Get-Command -Name 'powershell' -ErrorAction SilentlyContinue }
+    if (-not $pwsh) { throw 'No PowerShell executable found; cannot spawn real processes for tests.' }
+    $script:PwshExe = $pwsh.Source
+
+    # Starts a real process that stays alive for the duration of a test
+    function script:New-LongRunningProcess {
+        Start-Process -FilePath $script:PwshExe `
+            -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 120' `
+            -WindowStyle Hidden -PassThru
+    }
+
+    # Starts a real process that exits immediately and waits for it to finish
+    function script:New-AlreadyExitedProcess {
+        $p = Start-Process -FilePath $script:PwshExe `
+            -ArgumentList '-NoProfile', '-Command', 'exit 0' `
+            -WindowStyle Hidden -PassThru
+        $p.WaitForExit(10000) | Out-Null
         $p
     }
 
     function script:New-TempSnapshotFolder {
         param([string]$Prefix = 'prefix_', [int]$PngCount = 0)
-        $dir = New-Item -ItemType Directory -Path (Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())) -Force
+        $dir = New-Item -ItemType Directory `
+            -Path (Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())) `
+            -Force
         if ($PngCount -gt 0) {
             1..$PngCount | ForEach-Object {
-                New-Item -Path (Join-Path $dir.FullName ("{0}{1:D4}.png" -f $Prefix, $_)) -ItemType File -Force | Out-Null
+                New-Item -Path (Join-Path $dir.FullName ("{0}{1:D4}.png" -f $Prefix, $_)) `
+                    -ItemType File -Force | Out-Null
             }
         }
         $dir.FullName
@@ -42,9 +57,8 @@ Describe 'Wait-ForSnapshotFrames' {
 
         It 'breaks early when no new frames appear past the idle timeout while process is alive' {
             $folder = script:New-TempSnapshotFolder -Prefix 'vid_' -PngCount 3
+            $proc = script:New-LongRunningProcess
             try {
-                $proc = script:New-MockProcess -HasExited $false
-
                 $sw = [System.Diagnostics.Stopwatch]::StartNew()
                 $result = Wait-ForSnapshotFrames `
                     -SaveFolder $folder -ScenePrefix 'vid_' `
@@ -58,17 +72,17 @@ Describe 'Wait-ForSnapshotFrames' {
                 $result.FramesDelta | Should -Be 0
             }
             finally {
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
                 Remove-Item $folder -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
 
-        It 'does not idle-break when IdleTimeoutSeconds is 0 (disabled)' {
+        It 'does not idle-break when IdleTimeoutSeconds is 0 (detection disabled)' {
             $folder = script:New-TempSnapshotFolder -Prefix 'vid_' -PngCount 2
+            $proc = script:New-LongRunningProcess
             try {
-                $proc = script:New-MockProcess -HasExited $false
-
                 $sw = [System.Diagnostics.Stopwatch]::StartNew()
-                # MaxSeconds=3 caps the run; idle detection disabled → should run ~3s
+                # MaxSeconds=3 is the only exit; idle detection is off
                 $result = Wait-ForSnapshotFrames `
                     -SaveFolder $folder -ScenePrefix 'vid_' `
                     -MaxSeconds 3 -PollMs 100 `
@@ -76,10 +90,11 @@ Describe 'Wait-ForSnapshotFrames' {
                     -IdleTimeoutSeconds 0 -WarmUpSeconds 0
                 $sw.Stop()
 
-                # Function ran for the full MaxSeconds, not cut short by idle detection
+                # Function ran for the full MaxSeconds, not cut short by idle
                 $sw.Elapsed.TotalSeconds | Should -BeGreaterThan 2
             }
             finally {
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
                 Remove-Item $folder -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
@@ -89,12 +104,11 @@ Describe 'Wait-ForSnapshotFrames' {
 
         It 'suppresses idle detection during the warm-up window' {
             $folder = script:New-TempSnapshotFolder -Prefix 'vid_'  # no PNGs
+            $proc = script:New-LongRunningProcess
             try {
-                $proc = script:New-MockProcess -HasExited $false
-
                 $sw = [System.Diagnostics.Stopwatch]::StartNew()
-                # WarmUpSeconds=3 > IdleTimeoutSeconds=1: idle break must not fire inside warm-up
-                # MaxSeconds=5 caps the run so the test completes in reasonable time
+                # Without warm-up, IdleTimeout=1 would fire in ~1 s.
+                # WarmUpSeconds=3 pushes idle detection past the MaxSeconds=5 cap.
                 $result = Wait-ForSnapshotFrames `
                     -SaveFolder $folder -ScenePrefix 'vid_' `
                     -MaxSeconds 5 -PollMs 100 `
@@ -102,21 +116,21 @@ Describe 'Wait-ForSnapshotFrames' {
                     -IdleTimeoutSeconds 1 -WarmUpSeconds 3
                 $sw.Stop()
 
-                # Without warm-up suppression the function would exit in ~1 s; with it, at least 3 s
+                # Must have run for at least the warm-up window, not bailed at 1 s
                 $sw.Elapsed.TotalSeconds | Should -BeGreaterThan 2.5
             }
             finally {
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
                 Remove-Item $folder -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
 
         It 'fires idle detection after the warm-up window expires' {
             $folder = script:New-TempSnapshotFolder -Prefix 'vid_'  # no PNGs
+            $proc = script:New-LongRunningProcess
             try {
-                $proc = script:New-MockProcess -HasExited $false
-
                 $sw = [System.Diagnostics.Stopwatch]::StartNew()
-                # WarmUp=2 + IdleTimeout=1 = should break at ~3 s; MaxSeconds is generous
+                # WarmUp=2 + IdleTimeout=1 → idle break at ~3 s; MaxSeconds generous
                 $result = Wait-ForSnapshotFrames `
                     -SaveFolder $folder -ScenePrefix 'vid_' `
                     -MaxSeconds 60 -PollMs 100 `
@@ -124,11 +138,11 @@ Describe 'Wait-ForSnapshotFrames' {
                     -IdleTimeoutSeconds 1 -WarmUpSeconds 2
                 $sw.Stop()
 
-                # Should break around WarmUp+IdleTimeout, well before MaxSeconds=60
                 $sw.Elapsed.TotalSeconds | Should -BeGreaterThan 2
                 $sw.Elapsed.TotalSeconds | Should -BeLessThan 15
             }
             finally {
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
                 Remove-Item $folder -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
@@ -138,9 +152,8 @@ Describe 'Wait-ForSnapshotFrames' {
 
         It 'stops after the grace period when VLC has already exited' {
             $folder = script:New-TempSnapshotFolder -Prefix 'vid_' -PngCount 5
+            $proc = script:New-AlreadyExitedProcess
             try {
-                $proc = script:New-MockProcess -HasExited $true  # exited before polling starts
-
                 $sw = [System.Diagnostics.Stopwatch]::StartNew()
                 $result = Wait-ForSnapshotFrames `
                     -SaveFolder $folder -ScenePrefix 'vid_' `
@@ -158,19 +171,17 @@ Describe 'Wait-ForSnapshotFrames' {
             }
         }
 
-        It 'returns correct FramesDelta when process exits with new frames' {
+        It 'returns correct FramesDelta and positive ElapsedSeconds' {
             $folder = script:New-TempSnapshotFolder -Prefix 'clip_' -PngCount 2
+            $proc = script:New-AlreadyExitedProcess
             try {
-                # Simulate a process that has already exited
-                $proc = script:New-MockProcess -HasExited $true
-
                 $result = Wait-ForSnapshotFrames `
                     -SaveFolder $folder -ScenePrefix 'clip_' `
                     -MaxSeconds 60 -PollMs 100 `
                     -Process $proc -GracePeriodSeconds 1 `
                     -IdleTimeoutSeconds 0 -WarmUpSeconds 0
 
-                # 2 PNGs existed at start; none added → delta is 0
+                # 2 PNGs present at start, none added during run → delta is 0
                 $result.FramesDelta | Should -Be 0
                 $result.ElapsedSeconds | Should -BeGreaterThan 0
             }
