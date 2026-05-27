@@ -187,15 +187,21 @@ function Start-VideoBatch {
         throw "Invalid SourceFolder."
     }
     $resolvedVlcExe = if (-not [string]::IsNullOrWhiteSpace($VlcExe)) {
-        if (-not (Test-Path -LiteralPath $VlcExe)) {
-            # Try appending vlc.exe if a directory was given
+        if (Test-Path -LiteralPath $VlcExe -PathType Leaf) {
+            $VlcExe
+        }
+        elseif (Test-Path -LiteralPath $VlcExe -PathType Container) {
+            # A directory was given — try appending vlc.exe
             $candidate = Join-Path $VlcExe 'vlc.exe'
-            if (Test-Path -LiteralPath $candidate) { $candidate } else {
-                Write-Message -Level Error -Message "VlcExe not found: $VlcExe"
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) { $candidate } else {
+                Write-Message -Level Error -Message "vlc.exe not found inside directory: $VlcExe"
                 throw "VLC missing."
             }
         }
-        else { $VlcExe }
+        else {
+            Write-Message -Level Error -Message "VlcExe not found: $VlcExe"
+            throw "VLC missing."
+        }
     }
     elseif (Get-Command vlc -ErrorAction SilentlyContinue) {
         (Get-Command vlc).Source
