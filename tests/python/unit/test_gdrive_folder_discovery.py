@@ -331,7 +331,6 @@ def test_stream_folder_continues_siblings_after_subfolder_fetch_error():
     assert disc._processed[0].id == "ok1"
 
 
-
 # ---------------------------------------------------------------------------
 # _process_file_data — source_folder_id and will_recover
 # ---------------------------------------------------------------------------
