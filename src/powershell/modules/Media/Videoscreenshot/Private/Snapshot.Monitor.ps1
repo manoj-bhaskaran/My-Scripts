@@ -14,6 +14,12 @@ function Wait-ForSnapshotFrames {
   Optional VLC process to monitor. When provided, polling stops early after process exits + grace period.
   .PARAMETER GracePeriodSeconds
   Seconds to continue polling after VLC exits to capture buffered frames (default 2).
+  .PARAMETER IdleTimeoutSeconds
+  Seconds without a new frame before breaking early (idle-frame stall detection). Only active after
+  WarmUpSeconds have elapsed and while the process is still alive. Set to 0 to disable (default).
+  .PARAMETER WarmUpSeconds
+  Seconds at the start of the session during which idle detection is suppressed, to allow
+  slow-starting sources to produce their first frame (default 10).
   .OUTPUTS
   PSCustomObject with FramesDelta and ElapsedSeconds.
   #>
@@ -24,18 +30,23 @@ function Wait-ForSnapshotFrames {
         [ValidateRange(1, 86400)][int]$MaxSeconds = 300,
         [ValidateRange(50, 5000)][int]$PollMs = 200,
         [System.Diagnostics.Process]$Process,
-        [ValidateRange(0, 60)][int]$GracePeriodSeconds = 2
+        [ValidateRange(0, 60)][int]$GracePeriodSeconds = 2,
+        [ValidateRange(0, 3600)][int]$IdleTimeoutSeconds = 0,
+        [ValidateRange(0, 3600)][int]$WarmUpSeconds = 10
     )
     $start = Get-Date
     $pattern = "$ScenePrefix*.png"
     $initial = (Get-ChildItem -Path $SaveFolder -Filter $pattern -File -ErrorAction SilentlyContinue | Measure-Object).Count
     $lastCount = $initial
     $vlcExitTime = $null
+    $lastFrameTime = $start
 
     while ((New-TimeSpan -Start $start -End (Get-Date)).TotalSeconds -lt $MaxSeconds) {
+        $now = Get-Date
         $count = (Get-ChildItem -Path $SaveFolder -Filter $pattern -File -ErrorAction SilentlyContinue | Measure-Object).Count
         if ($count -gt $lastCount) {
             $lastCount = $count
+            $lastFrameTime = $now
         }
 
         # Check if VLC has exited (early termination to prevent duplicate screenshots)
@@ -44,7 +55,7 @@ function Wait-ForSnapshotFrames {
                 $Process.Refresh()
                 if ($Process.HasExited) {
                     if ($null -eq $vlcExitTime) {
-                        $vlcExitTime = Get-Date
+                        $vlcExitTime = $now
                         Write-Debug "VLC exited; continuing for grace period of $GracePeriodSeconds seconds"
                     }
                     # Exit polling after grace period to avoid duplicate frames
@@ -53,11 +64,22 @@ function Wait-ForSnapshotFrames {
                         break
                     }
                 }
+                elseif ($IdleTimeoutSeconds -gt 0) {
+                    # Idle-frame stall detection: only fire after warm-up window has elapsed
+                    $elapsed = (New-TimeSpan -Start $start -End $now).TotalSeconds
+                    if ($elapsed -ge $WarmUpSeconds) {
+                        $idleSeconds = (New-TimeSpan -Start $lastFrameTime -End $now).TotalSeconds
+                        if ($idleSeconds -ge $IdleTimeoutSeconds) {
+                            Write-Message -Level Warn -Message ("Idle-frame stall detected: no new frames for {0:F0}s; abandoning VLC session early." -f $idleSeconds)
+                            break
+                        }
+                    }
+                }
             }
             catch {
                 # Process object may be disposed; treat as exited
                 if ($null -eq $vlcExitTime) {
-                    $vlcExitTime = Get-Date
+                    $vlcExitTime = $now
                 }
             }
         }

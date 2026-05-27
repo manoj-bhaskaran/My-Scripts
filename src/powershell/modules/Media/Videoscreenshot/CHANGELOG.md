@@ -8,6 +8,16 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.0.9] - 2026-05-27
+### Fixed
+- **VLC snapshot hang on undecodable videos**: `Wait-ForSnapshotFrames` previously waited the full `SnapshotFallbackTimeoutSeconds` (~300 s) when VLC stalled on a corrupt or unsupported video. Undecodable files are now abandoned within `SnapshotIdleTimeoutSeconds` (~20 s by default).
+
+### Added
+- **Idle-frame stall detection** in `Wait-ForSnapshotFrames` (`Private/Snapshot.Monitor.ps1`): tracks the timestamp of the last frame-count increase and breaks out early when no new frame appears for `IdleTimeoutSeconds` while the VLC process is still alive. A `Warn`-level message is emitted when the idle break fires.
+- **`WarmUpSeconds` parameter** on `Wait-ForSnapshotFrames`: suppresses idle detection for an initial window so slow-starting sources (cold network shares, large files) are not killed before their first frame arrives.
+- **`SnapshotIdleTimeoutSeconds`** (default `20`) and **`SnapshotIdleWarmUpSeconds`** (default `10`) in `Get-DefaultConfig` (`Private/Config.ps1`).
+- **Pester tests** for `Wait-ForSnapshotFrames` (`tests/powershell/modules/Media/Videoscreenshot/Snapshot.Monitor.Tests.ps1`) covering: idle-break fires on stalled process, idle detection disabled when `IdleTimeoutSeconds=0`, warm-up suppresses premature break, idle fires after warm-up, normal completion via process exit, correct `FramesDelta` return.
+
 ## [3.0.5] - 2026-01-03
 ### Fixed
 - **Processed videos tracking**: Fixed bug where some videos, despite being processed and having screenshots taken, were not being written to the `.processed_videos` file, causing unnecessary reprocessing on restart. Changes include:

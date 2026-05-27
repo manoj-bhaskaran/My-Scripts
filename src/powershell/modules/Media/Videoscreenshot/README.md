@@ -332,3 +332,16 @@ For module history, see this folder’s `CHANGELOG.md`. For repository-wide chan
 
 ### Notes on timings
 Runtime measurements reported by the cropper use wall-clock time (not CPU time) to better reflect I/O-bound workloads.
+
+### Idle-frame stall detection (VLC snapshot mode)
+When VLC cannot decode a file (corrupt, unsupported codec, zero-duration stream), it stalls indefinitely with a black screen. The module detects this situation and abandons the session early rather than waiting for the full fallback timeout.
+
+Key config knobs (in `Get-DefaultConfig`, `Private/Config.ps1`):
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `SnapshotIdleTimeoutSeconds` | `20` | Seconds without a new frame before the session is abandoned. Set to `0` to disable. |
+| `SnapshotIdleWarmUpSeconds` | `10` | Seconds at session start during which idle detection is suppressed (allows slow-starting sources their first frame). |
+| `SnapshotFallbackTimeoutSeconds` | `300` | Hard cap when no per-video duration is specified. |
+
+A `WARNING` log line is emitted when idle-break fires so the problem video is visible in the run log.

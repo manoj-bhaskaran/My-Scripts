@@ -352,7 +352,9 @@ function Start-VideoBatch {
                 $baseWait = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.SnapshotFallbackTimeoutSeconds }
                 $waitSeconds = [int]([Math]::Max(1, $baseWait + [int]$StartupGraceSeconds))
                 Write-Debug ("TRACE Start-VideoBatch: about to call Wait-ForSnapshotFrames (MaxSeconds={0}, Prefix={1})" -f $waitSeconds, $scenePrefix)
-                $snapStats = Wait-ForSnapshotFrames -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -MaxSeconds $waitSeconds -Process $p
+                $snapStats = Wait-ForSnapshotFrames -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -MaxSeconds $waitSeconds -Process $p `
+                    -IdleTimeoutSeconds ([int]$context.Config.SnapshotIdleTimeoutSeconds) `
+                    -WarmUpSeconds ([int]$context.Config.SnapshotIdleWarmUpSeconds)
                 $snapType = if ($null -ne $snapStats) { $snapStats.GetType().FullName } else { '<null>' }
                 $snapStr = if ($null -ne $snapStats) { $snapStats.ToString() } else { '<null>' }
                 Write-Debug ("TRACE Start-VideoBatch: Wait-ForSnapshotFrames returned type={0} tostring={1}" -f $snapType, $snapStr)
