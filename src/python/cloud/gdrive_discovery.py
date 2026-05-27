@@ -7,7 +7,6 @@ import re
 import sys
 import time
 from collections import deque
-from datetime import timezone
 from pathlib import Path
 from threading import Lock
 from typing import (
@@ -22,17 +21,15 @@ from typing import (
     TYPE_CHECKING,
 )
 
-try:
-    from dateutil import parser as date_parser
-except ImportError:
-    print("ERROR: Missing optional dependency 'python-dateutil' required for --after-date parsing.")
-    print("Install with: pip install python-dateutil")
-    sys.exit(1)
-
 from gdrive_console import ConsoleHelper
-from gdrive_constants import EXTENSION_MIME_TYPES, FOLDER_MIME_TYPE, PAGE_SIZE
+from gdrive_constants import FOLDER_MIME_TYPE, PAGE_SIZE
 from gdrive_models import FileMeta, RecoveryItem, PostRestorePolicy
 from gdrive_id_prefetch import IdMetadataPrefetcher
+from gdrive_query_filters import (
+    build_discovery_query,
+    matches_extension_filter,
+    matches_time_filter,
+)
 from gdrive_retry import with_retries
 
 if TYPE_CHECKING:
@@ -96,27 +93,11 @@ class DriveTrashDiscovery:
         return safe or "unknown"
 
     def _matches_extension_filter(self, filename: str) -> bool:
-        if not self.args.extensions or not filename:
-            return True
-        filename_lower = filename.lower()
-        for ext in self.args.extensions:
-            if filename_lower.endswith(f'.{ext.lower().strip(".")}'):
-                return True
-        return False
+        return matches_extension_filter(filename, self.args.extensions)
 
     def _matches_time_filter(self, item_data: Mapping[str, Any]) -> bool:
-        if not self.args.after_date:
-            return True
         try:
-            modified_dt = date_parser.parse(item_data.get("modifiedTime", ""))
-            after_dt = date_parser.parse(self.args.after_date)
-            if not hasattr(modified_dt, "tzinfo") or not hasattr(after_dt, "tzinfo"):
-                return True
-            if modified_dt.tzinfo is None:
-                modified_dt = modified_dt.replace(tzinfo=timezone.utc)
-            if after_dt.tzinfo is None:
-                after_dt = after_dt.replace(tzinfo=timezone.utc)
-            return modified_dt > after_dt
+            return matches_time_filter(item_data, self.args.after_date)
         except (ValueError, TypeError, OverflowError) as e:
             self.logger.warning(f"Error applying time filter: {e}")
             return True
@@ -257,27 +238,12 @@ class DriveTrashDiscovery:
         )
 
     def _build_query(self) -> str:
-        base_query = "trashed=true"
-
-        if self.args.extensions:
-            mime_conditions = []
-            for ext in self.args.extensions:
-                ext_normalized = ext.lower().strip(".")
-                last_seg = ext_normalized.split(".")[-1] if ext_normalized else ext_normalized
-                if last_seg in EXTENSION_MIME_TYPES:
-                    mime_type = EXTENSION_MIME_TYPES[last_seg]
-                    mime_conditions.append(f"mimeType = '{mime_type}'")
-            if mime_conditions:
-                extensions_query = f"({' or '.join(mime_conditions)})"
-                base_query += f" and {extensions_query}"
-
+        query = build_discovery_query(self.args.extensions, self.args.after_date)
         if self.args.after_date:
-            base_query += f" and modifiedTime > '{self.args.after_date}'"
             self.logger.info(
                 "Time-based filtering (--after-date) is applied server-side and revalidated client-side as a safety guard"
             )
-
-        return base_query
+        return query
 
     def _process_file_data(
         self, file_data: Mapping[str, Any] | FileMeta, relative_path: str = ""

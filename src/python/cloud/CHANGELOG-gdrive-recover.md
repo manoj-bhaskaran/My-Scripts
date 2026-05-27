@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.26.11] - 2026-05-27
+
+### Changed
+
+- `gdrive_discovery.py`: extracted query and filter composition into a dedicated `gdrive_query_filters.py` module so discovery orchestration stays focused on paging and item processing.
+- `gdrive_query_filters.py`: added focused helpers for extension normalization, MIME predicate generation, query assembly, and extension/time-match checks; list-comprehension based MIME condition building reduces intermediate mutation overhead in hot-path query construction.
+
+### Tests
+
+- Added `tests/python/unit/test_gdrive_query_filters.py` to cover query assembly and filter helper behavior.
+
 ## [1.26.10] - 2026-05-24
 
 ### Changed
