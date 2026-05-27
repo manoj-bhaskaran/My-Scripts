@@ -593,7 +593,7 @@ class DriveTrashDiscovery:
             self.logger.info("Streaming folder %s (prefix=%r)", folder_id, prefix)
             if not self._stream_folder_pages(folder_id, prefix, batch, batch_n, start_time, queue):
                 ok = False
-            return ok and not self._should_stop_for_limit()
+            return not self._should_stop_for_limit()
 
         self._bfs_traverse_folders(_visit)
         if batch:
