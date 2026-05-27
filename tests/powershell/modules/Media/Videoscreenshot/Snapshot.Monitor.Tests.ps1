@@ -4,8 +4,8 @@ Pester tests for Wait-ForSnapshotFrames (Snapshot.Monitor.ps1).
 #>
 
 BeforeAll {
-    $script:MonitorPath = Join-Path $PSScriptRoot '..' '..' '..' '..' 'src' 'powershell' 'modules' 'Media' 'Videoscreenshot' 'Private' 'Snapshot.Monitor.ps1'
-    $script:LoggingPath = Join-Path $PSScriptRoot '..' '..' '..' '..' 'src' 'powershell' 'modules' 'Media' 'Videoscreenshot' 'Private' 'Logging.ps1'
+    $script:MonitorPath = Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'powershell' 'modules' 'Media' 'Videoscreenshot' 'Private' 'Snapshot.Monitor.ps1'
+    $script:LoggingPath = Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'powershell' 'modules' 'Media' 'Videoscreenshot' 'Private' 'Logging.ps1'
 
     foreach ($f in $script:MonitorPath, $script:LoggingPath) {
         if (-not (Test-Path -LiteralPath $f)) { throw "Required file not found: $f" }
