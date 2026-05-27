@@ -8,7 +8,7 @@ EXPECTED Context.Config SHAPE (used for configurability; all optional):
     StopVlcWaitMs  = 5000
     WaitProcessTimeoutSeconds = 3
     Vlc = @{
-      BaseArgs  = @('--no-qt-privacy-ask','--no-video-title-show','--no-loop','--no-repeat','--rate','1','--play-and-exit')
+      BaseArgs  = @('--no-qt-privacy-ask','--no-video-title-show','--no-loop','--no-repeat','--no-audio','--rate','1','--play-and-exit')
       ExtraArgs = @()
       Scene = @{
         Format   = 'png'             # default snapshot format
@@ -43,6 +43,7 @@ function Get-VlcArgsCommon {
         '--no-video-title-show',
         '--no-loop',
         '--no-repeat',
+        '--no-audio',
         '--rate', '1',
         '--play-and-exit'
     )
