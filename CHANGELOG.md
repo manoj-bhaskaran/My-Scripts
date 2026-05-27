@@ -18,6 +18,7 @@ kept here — see the linked file for details.
 
 ### Security
 
+- **[Expand-ZipsAndClean]** Modularized precondition/destination and zip-move target helpers into `FileManagement/ZipWorkflow`; moved ZIP `Add-Type` loading from script to `ZipExtraction` module (issue #1096).
 - **[Dependencies]** Raised `sqlfluff` to `>=4.2.0,<5.0.0` (locked `4.2.0`) to remediate
   GHSA-wmhf-fqc8-vxhh and GHSA-73jc-5mrq-prw7 (parser resource-exhaustion DoS).
 - **[Dependencies]** Bumped `pytest` minimum to `9.0.3` (`pytest>=9.0.3,<10.0.0`) to resolve

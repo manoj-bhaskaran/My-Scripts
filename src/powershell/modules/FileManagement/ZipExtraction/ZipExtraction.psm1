@@ -1,5 +1,6 @@
 #requires -Version 7.0
 using namespace System.Collections.Concurrent
+Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
 # Provide no-op logging fallbacks for helper-load contexts where the logging framework
 # is not imported into the same scope as this module.

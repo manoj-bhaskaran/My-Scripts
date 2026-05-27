@@ -1,5 +1,13 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.7 — 2026-05-27
+
+### Changed
+
+- Extracted script-level helper responsibilities for precondition validation (`Test-ScriptPreconditions`), destination initialization (`Initialize-Destination`), and move-target collision resolution (`Resolve-MoveTarget`) into a new `FileManagement/ZipWorkflow` module.
+- Kept thin compatibility wrappers in `Expand-ZipsAndClean.ps1` to preserve existing call sites and tests while shifting canonical logic to modules.
+- Relocated `Add-Type -AssemblyName System.IO.Compression.FileSystem` from `Expand-ZipsAndClean.ps1` into `ZipExtraction.psm1` so archive assembly loading follows module ownership.
+
 ## 2.6.6 — 2026-05-25
 
 ### Tests
