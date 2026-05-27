@@ -20,18 +20,19 @@ BeforeAll {
     if (-not $pwsh) { throw 'No PowerShell executable found; cannot spawn real processes for tests.' }
     $script:PwshExe = $pwsh.Source
 
-    # Starts a real process that stays alive for the duration of a test
+    # Starts a real process that stays alive for the duration of a test.
+    # -WindowStyle is intentionally omitted: it is Windows-only and throws on Linux.
     function script:New-LongRunningProcess {
         Start-Process -FilePath $script:PwshExe `
             -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 120' `
-            -WindowStyle Hidden -PassThru
+            -PassThru
     }
 
-    # Starts a real process that exits immediately and waits for it to finish
+    # Starts a real process that exits immediately and waits for it to finish.
     function script:New-AlreadyExitedProcess {
         $p = Start-Process -FilePath $script:PwshExe `
             -ArgumentList '-NoProfile', '-Command', 'exit 0' `
-            -WindowStyle Hidden -PassThru
+            -PassThru
         $p.WaitForExit(10000) | Out-Null
         $p
     }
