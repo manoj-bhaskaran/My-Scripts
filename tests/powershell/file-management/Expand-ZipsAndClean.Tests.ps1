@@ -19,6 +19,7 @@ Describe 'Remove-SourceDirectory' {
 
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         function Write-LogDebug { param([string]$Message) }
@@ -146,6 +147,7 @@ Describe 'Move-ZipFilesToParent' {
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Progress\ProgressReporter.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         function Write-LogDebug { param([string]$Message) }
@@ -228,6 +230,7 @@ Describe 'Write-ExtractionSummary' {
 
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         function Write-LogDebug { param([string]$Message) }
@@ -355,6 +358,7 @@ Describe 'Test-ScriptPreconditions' {
 
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         function Write-LogDebug { param([string]$Message) }
@@ -415,6 +419,7 @@ Describe 'Resolve-MoveTarget' {
 
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1') -Force
         Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\Zip\Zip.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         function Write-LogDebug { param([string]$Message) }

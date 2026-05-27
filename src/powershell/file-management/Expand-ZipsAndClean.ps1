@@ -122,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.6.6
+    Version  : 2.6.9
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -183,6 +183,7 @@ Import-Module "$PSScriptRoot\..\modules\Core\Zip\Zip.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\Progress\ProgressReporter.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psm1" -Force
 Import-Module "$PSScriptRoot\..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1" -Force
 
 $_zipExtractionCmd = Get-Command Invoke-ZipExtractions -ErrorAction SilentlyContinue
 if (-not $_zipExtractionCmd -or $_zipExtractionCmd.Source -ne 'ZipExtraction') {
@@ -192,7 +193,6 @@ Remove-Variable _zipExtractionCmd
 
 # Initialize logger (script name will be extracted from the script file name)
 Initialize-Logger -ScriptName (Split-Path -Leaf $PSCommandPath) -LogLevel 20
-Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
 if ($ThrottleLimit -gt [Environment]::ProcessorCount) {
     Write-Warning "ThrottleLimit ($ThrottleLimit) exceeds the logical processor count ($([Environment]::ProcessorCount)). Consider reducing it to avoid scheduling overhead."
@@ -204,50 +204,13 @@ if ($ThrottleLimit -gt [Environment]::ProcessorCount) {
 .SYNOPSIS
     Validates source/destination safety constraints before any file operations.
 #>
-function Test-ScriptPreconditions {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$SourceDir,
-        [Parameter(Mandatory)][string]$DestinationDir
-    )
-
-    $srcFull = Get-FullPath -Path $SourceDir
-    $dstFull = Get-FullPath -Path $DestinationDir
-
-    if ($srcFull -eq $dstFull) {
-        throw "Source and destination cannot be the same: $srcFull"
-    }
-
-    if (Test-PathContainment -Container $srcFull -Candidate $dstFull) {
-        throw "Destination cannot be inside the source directory."
-    }
-    if (Test-PathContainment -Container $dstFull -Candidate $srcFull) {
-        throw "Source cannot be inside the destination directory."
-    }
-
-    if (-not (Test-Path -LiteralPath $SourceDir)) {
-        throw "Source directory not found: $SourceDir"
-    }
-
-    if (-not (Test-LongPathsEnabled)) {
-        Write-LogDebug "LongPathsEnabled=0; consider enabling to avoid path-length issues."
-    }
-}
+function Test-ScriptPreconditions { [CmdletBinding()] param([Parameter(Mandatory)][string]$SourceDir,[Parameter(Mandatory)][string]$DestinationDir) ZipWorkflow\Test-ScriptPreconditions -SourceDir $SourceDir -DestinationDir $DestinationDir }
 
 <#
 .SYNOPSIS
     Ensures destination root exists before extraction begins.
 #>
-function Initialize-Destination {
-    [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$DestinationDir)
-
-    if (-not (Test-Path -LiteralPath $DestinationDir)) {
-        if ($PSCmdlet.ShouldProcess($DestinationDir, "Create destination directory")) {
-            New-DirectoryIfMissing -Path $DestinationDir -Force | Out-Null
-        }
-    }
-}
+function Initialize-Destination { [CmdletBinding(SupportsShouldProcess = $true)] param([Parameter(Mandatory)][string]$DestinationDir) ZipWorkflow\Initialize-Destination -DestinationDir $DestinationDir }
 
 <#
 .SYNOPSIS
@@ -386,27 +349,7 @@ function Remove-SourceDirectory {
     (None / Skip / Overwrite / Rename). The caller is responsible for performing
     the actual move and updating counters.
 #>
-function Resolve-MoveTarget {
-    param(
-        [Parameter(Mandatory)][System.IO.FileInfo]$Zip,
-        [Parameter(Mandatory)][string]$Parent,
-        [Parameter(Mandatory)][ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy
-    )
-
-    $target    = Join-Path $Parent $Zip.Name
-    $policyTag = 'None'
-
-    if ([System.IO.File]::Exists($target)) {
-        $policyTag = $CollisionPolicy
-        if ($CollisionPolicy -eq 'Skip') {
-            Write-LogDebug "Move skip (collision): '$($Zip.Name)' already exists in parent."
-        } elseif ($CollisionPolicy -eq 'Rename') {
-            $target = Resolve-UniquePath -Path $target
-        }
-    }
-
-    return [pscustomobject]@{ TargetPath = $target; PolicyTag = $policyTag }
-}
+function Resolve-MoveTarget { param([Parameter(Mandatory)][System.IO.FileInfo]$Zip,[Parameter(Mandatory)][string]$Parent,[Parameter(Mandatory)][ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy) ZipWorkflow\Resolve-MoveTarget -Zip $Zip -Parent $Parent -CollisionPolicy $CollisionPolicy }
 
 <#
 .SYNOPSIS

@@ -48,6 +48,19 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean ZipWorkflow logging fallback fix (issue #1096 follow-up)** (2026-05-27)
+  - Added a `Write-LogDebug` no-op fallback in `ZipWorkflow.psm1` so helper-only test loads can call `Resolve-MoveTarget` Skip-collision path without requiring the logging framework in module scope.
+  - Version bump: `2.6.9` (patch — test/runtime safety for module logging dependency in helper contexts).
+
+- **Expand-ZipsAndClean helper-wrapper test compatibility fix (issue #1096)** (2026-05-27)
+  - Updated helper-region Pester setup to import `FileManagement/ZipWorkflow` before dot-sourcing helpers, so wrapper delegation works in helper-only load paths.
+  - Version bump: `2.6.8` (patch — test harness compatibility fix for refactor).
+
+- **Expand-ZipsAndClean helper modularization (issue #1096)** (2026-05-27)
+  - Extracted zip precondition/destination/move-target helper logic into new `src/powershell/modules/FileManagement/ZipWorkflow/` module with compatibility wrappers left in the script.
+  - Moved `Add-Type -AssemblyName System.IO.Compression.FileSystem` from script scope to `ZipExtraction.psm1` module scope.
+  - Version bump: `2.6.7` (patch — internal refactor, no intended behavior change).
+
 - **Expand-ZipsAndClean comment-help and env-var default fix** (2026-05-24)
   - Corrected comment-help attribution so `SourceDirectory` maps to `EXPAND_ZIPS_SOURCE_DIR` and `DestinationDirectory` maps to `EXPAND_ZIPS_DEST_DIR`.
   - Fixed default resolution logic to treat whitespace-only `EXPAND_ZIPS_SOURCE_DIR` / `EXPAND_ZIPS_DEST_DIR` values as unset and use profile-relative fallbacks.
