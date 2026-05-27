@@ -18,6 +18,7 @@ kept here — see the linked file for details.
 
 ### Security
 
+- **[Expand-ZipsAndClean tests]** Imported `FileManagement/ZipWorkflow` in helper-region test setups so extracted helper wrappers resolve module-qualified commands in helper-only loads (issue #1096 follow-up).
 - **[Expand-ZipsAndClean]** Modularized precondition/destination and zip-move target helpers into `FileManagement/ZipWorkflow`; moved ZIP `Add-Type` loading from script to `ZipExtraction` module (issue #1096).
 - **[Dependencies]** Raised `sqlfluff` to `>=4.2.0,<5.0.0` (locked `4.2.0`) to remediate
   GHSA-wmhf-fqc8-vxhh and GHSA-73jc-5mrq-prw7 (parser resource-exhaustion DoS).

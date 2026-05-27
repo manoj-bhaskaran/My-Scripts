@@ -48,6 +48,10 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean helper-wrapper test compatibility fix (issue #1096)** (2026-05-27)
+  - Updated helper-region Pester setup to import `FileManagement/ZipWorkflow` before dot-sourcing helpers, so wrapper delegation works in helper-only load paths.
+  - Version bump: `2.6.8` (patch — test harness compatibility fix for refactor).
+
 - **Expand-ZipsAndClean helper modularization (issue #1096)** (2026-05-27)
   - Extracted zip precondition/destination/move-target helper logic into new `src/powershell/modules/FileManagement/ZipWorkflow/` module with compatibility wrappers left in the script.
   - Moved `Add-Type -AssemblyName System.IO.Compression.FileSystem` from script scope to `ZipExtraction.psm1` module scope.

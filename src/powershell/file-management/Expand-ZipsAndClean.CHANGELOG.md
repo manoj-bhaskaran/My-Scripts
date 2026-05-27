@@ -1,5 +1,11 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.8 — 2026-05-27
+
+### Fixed
+
+- Updated helper-loading Pester contexts to import `FileManagement/ZipWorkflow` before dot-sourcing the script `#region Helpers`, restoring compatibility for extracted-helper wrapper delegation (`ZipWorkflow\Test-ScriptPreconditions` / `ZipWorkflow\Resolve-MoveTarget`) in helper-only test loads.
+
 ## 2.6.7 — 2026-05-27
 
 ### Changed
