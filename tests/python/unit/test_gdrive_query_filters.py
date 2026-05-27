@@ -10,11 +10,16 @@ from gdrive_query_filters import (
     build_mime_conditions,
     matches_extension_filter,
     normalize_extension,
+    normalize_extension_last_segment,
 )
 
 
 def test_normalize_extension_uses_last_segment():
-    assert normalize_extension(".tar.gz") == "gz"
+    assert normalize_extension(".tar.gz") == "tar.gz"
+
+
+def test_normalize_extension_last_segment_for_mime_lookup():
+    assert normalize_extension_last_segment(".tar.gz") == "gz"
 
 
 def test_build_mime_conditions_skips_unknown_extensions():
@@ -33,3 +38,8 @@ def test_build_discovery_query_combines_filters():
 def test_matches_extension_filter_accepts_mixed_extensions():
     assert matches_extension_filter("doc.PDF", ["pdf", ".txt"])
     assert not matches_extension_filter("doc.csv", ["pdf", "txt"])
+
+
+def test_matches_extension_filter_preserves_multi_segment_suffix():
+    assert matches_extension_filter("archive.tar.gz", ["tar.gz"])
+    assert not matches_extension_filter("archive.gz", ["tar.gz"])

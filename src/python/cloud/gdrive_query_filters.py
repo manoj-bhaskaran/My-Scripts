@@ -11,8 +11,13 @@ from gdrive_constants import EXTENSION_MIME_TYPES
 
 
 def normalize_extension(ext: str) -> str:
-    """Normalize extension tokens like '.tar.gz' -> 'gz'."""
-    ext_normalized = (ext or "").lower().strip(".")
+    """Normalize extension tokens while preserving multi-segment suffixes."""
+    return (ext or "").lower().strip(".")
+
+
+def normalize_extension_last_segment(ext: str) -> str:
+    """Normalize extension tokens to the last segment for MIME lookup."""
+    ext_normalized = normalize_extension(ext)
     return ext_normalized.split(".")[-1] if ext_normalized else ""
 
 
@@ -22,7 +27,7 @@ def build_mime_conditions(extensions: Optional[Sequence[str]]) -> list[str]:
     return [
         f"mimeType = '{EXTENSION_MIME_TYPES[last_seg]}'"
         for ext in extensions
-        for last_seg in [normalize_extension(ext)]
+        for last_seg in [normalize_extension_last_segment(ext)]
         if last_seg in EXTENSION_MIME_TYPES
     ]
 
