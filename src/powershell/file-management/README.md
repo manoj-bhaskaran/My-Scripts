@@ -48,6 +48,10 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean ZipWorkflow logging fallback fix (issue #1096 follow-up)** (2026-05-27)
+  - Added a `Write-LogDebug` no-op fallback in `ZipWorkflow.psm1` so helper-only test loads can call `Resolve-MoveTarget` Skip-collision path without requiring the logging framework in module scope.
+  - Version bump: `2.6.9` (patch — test/runtime safety for module logging dependency in helper contexts).
+
 - **Expand-ZipsAndClean helper-wrapper test compatibility fix (issue #1096)** (2026-05-27)
   - Updated helper-region Pester setup to import `FileManagement/ZipWorkflow` before dot-sourcing helpers, so wrapper delegation works in helper-only load paths.
   - Version bump: `2.6.8` (patch — test harness compatibility fix for refactor).

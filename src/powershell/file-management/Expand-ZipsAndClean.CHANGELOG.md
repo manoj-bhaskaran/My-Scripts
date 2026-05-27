@@ -1,5 +1,11 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.9 — 2026-05-27
+
+### Fixed
+
+- Added a `Write-LogDebug` no-op fallback in `FileManagement/ZipWorkflow/ZipWorkflow.psm1` for helper-load test contexts where the logging framework is not in module scope, fixing `Resolve-MoveTarget` Skip-collision test failures caused by unresolved logging calls.
+
 ## 2.6.8 — 2026-05-27
 
 ### Fixed
