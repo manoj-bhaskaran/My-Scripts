@@ -20,13 +20,14 @@ function Test-VideoPlayable {
   #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path,
+        [string]$VlcExe
     )
     if (-not (Test-Path -LiteralPath $Path)) { return $false }
 
     # Process setup
     $psi = [Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName = 'vlc'  # Resolves via PATH; we intentionally don’t pre-check here.
+    $psi.FileName = if (-not [string]::IsNullOrWhiteSpace($VlcExe)) { $VlcExe } else { ‘vlc’ }
     # ArgumentList handles quoting for us; we run a minimal, non-interactive session:
     #   --intf dummy       : no UI
     #   --play-and-exit    : exit once playback ends/hits stop-time

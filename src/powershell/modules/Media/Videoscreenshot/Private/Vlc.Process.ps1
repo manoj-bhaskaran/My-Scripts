@@ -189,10 +189,11 @@ function Start-VlcProcess {
     param(
         [Parameter(Mandatory)][psobject]$Context,
         [Parameter(Mandatory)][string[]]$Arguments,
-        [Parameter(Mandatory)][int]$StartupTimeoutSeconds
+        [Parameter(Mandatory)][int]$StartupTimeoutSeconds,
+        [string]$VlcExe
     )
     $psi = [Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName = 'vlc.exe'   # more explicit on Windows; still resolves via PATH
+    $psi.FileName = if (-not [string]::IsNullOrWhiteSpace($VlcExe)) { $VlcExe } else { 'vlc.exe' }
     # Prefer .Arguments string for WinPS 5.1 compatibility (ArgumentList may be unavailable)
     $quotedArgs = $Arguments | ForEach-Object { '"{0}"' -f ($_.Replace('"', '""')) }
     $psi.Arguments = [string]::Join(' ', $quotedArgs)
@@ -278,7 +279,8 @@ function Start-Vlc {
         [string]$SceneFormat,
         [string[]]$SceneArgs,
         [string[]]$GdiArgs,
-        [string[]]$ExtraArgs
+        [string[]]$ExtraArgs,
+        [string]$VlcExe
     )
     # Maintainability: early validation of context config to catch missing keys/typos.
     Test-VideoConfig -Context $Context
@@ -316,7 +318,7 @@ function Start-Vlc {
         if ($extraClean.Count -gt 0) { $vlcargs += $extraClean }
     }
 
-    $p = Start-VlcProcess -Context $Context -Arguments $vlcargs -StartupTimeoutSeconds $StartupTimeoutSeconds
+    $p = Start-VlcProcess -Context $Context -Arguments $vlcargs -StartupTimeoutSeconds $StartupTimeoutSeconds -VlcExe $VlcExe
     Write-Debug 'TRACE Start-Vlc: calling Register-RunPid'
     $regResult = Register-RunPid -Context $Context -ProcessId $p.Id
     $regType = if ($null -ne $regResult) { $regResult.GetType().FullName } else { '<null>' }

@@ -48,6 +48,8 @@ Python module (`python -m media.crop_colours`). PYTHONPATH is automatically conf
 Python interpreter to use (optional; falls back to py/python in helper).
 .PARAMETER ClearSnapshotsBeforeRun
 Delete existing frames with the scene prefix before each video.
+.PARAMETER VlcExe
+Full path to vlc.exe. Use when VLC is not on PATH (e.g. "D:\Program Files\VideoLAN\VLC\vlc.exe").
 
 .EXAMPLE
 Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper -PythonScriptPath .\src\python\crop_colours.py
@@ -84,7 +86,9 @@ function Start-VideoBatch {
         [string]$PythonScriptPath,
         [string]$PythonExe,
         [switch]$NoAutoInstall,
-        [switch]$ClearSnapshotsBeforeRun
+        [switch]$ClearSnapshotsBeforeRun,
+
+        [string]$VlcExe
     )
 
     # Enforce pwsh 7+ at runtime (friendly error if invoked directly)
@@ -179,9 +183,28 @@ function Start-VideoBatch {
         Write-Message -Level Error -Message "SourceFolder not found: $SourceFolder"
         throw "Invalid SourceFolder."
     }
-    if (-not (Get-Command vlc -ErrorAction SilentlyContinue)) {
-        Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH."
-        throw "VLC missing."
+    $resolvedVlcExe = if (-not [string]::IsNullOrWhiteSpace($VlcExe)) {
+        if (-not (Test-Path -LiteralPath $VlcExe)) {
+            # Try appending vlc.exe if a directory was given
+            $candidate = Join-Path $VlcExe 'vlc.exe'
+            if (Test-Path -LiteralPath $candidate) { $candidate } else {
+                Write-Message -Level Error -Message "VlcExe not found: $VlcExe"
+                throw "VLC missing."
+            }
+        }
+        else { $VlcExe }
+    }
+    elseif (Get-Command vlc -ErrorAction SilentlyContinue) {
+        (Get-Command vlc).Source
+    }
+    else {
+        # Check the default VLC install location on Windows
+        $defaultVlc = Join-Path $env:ProgramFiles 'VideoLAN\VLC\vlc.exe'
+        if (Test-Path -LiteralPath $defaultVlc) { $defaultVlc }
+        else {
+            Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH. Use -VlcExe to specify the path."
+            throw "VLC missing."
+        }
     }
     Test-FolderWritable -Folder $SaveFolder | Out-Null
 
@@ -265,7 +288,7 @@ function Start-VideoBatch {
         # Optional: verify video playability before spending time on it
         if ($canVerify) {
             try {
-                if (-not (Test-VideoPlayable -Path $video.FullName)) {
+                if (-not (Test-VideoPlayable -Path $video.FullName -VlcExe $resolvedVlcExe)) {
                     Write-Message -Level Warn -Message ("Skipping not-playable video: {0}" -f $video.FullName)
                     if (Get-Command -Name Write-ProcessedLog -ErrorAction SilentlyContinue) {
                         $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Skipped' -Reason 'NotPlayable'
@@ -312,7 +335,8 @@ function Start-VideoBatch {
                 -RequestedFps $FramesPerSecond `
                 -StopAtSeconds $stopAfter `
                 -GdiFullscreen:$GdiFullscreen `
-                -StartupTimeoutSeconds $VlcStartupTimeoutSeconds
+                -StartupTimeoutSeconds $VlcStartupTimeoutSeconds `
+                -VlcExe $resolvedVlcExe
 
             if ($UseVlcSnapshots) {
                 $baseWait = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.SnapshotFallbackTimeoutSeconds }
