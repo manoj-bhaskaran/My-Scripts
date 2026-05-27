@@ -8,7 +8,7 @@ EXPECTED Context.Config SHAPE (used for configurability; all optional):
     StopVlcWaitMs  = 5000
     WaitProcessTimeoutSeconds = 3
     Vlc = @{
-      BaseArgs  = @('--no-qt-privacy-ask','--no-video-title-show','--no-loop','--no-repeat','--no-audio','--rate','1','--play-and-exit')
+      BaseArgs  = @('--no-qt-privacy-ask','--no-video-title-show','--no-loop','--no-repeat','--rate','1','--play-and-exit')
       ExtraArgs = @()
       Scene = @{
         Format   = 'png'             # default snapshot format
@@ -43,7 +43,6 @@ function Get-VlcArgsCommon {
         '--no-video-title-show',
         '--no-loop',
         '--no-repeat',
-        '--no-audio',
         '--rate', '1',
         '--play-and-exit'
     )
@@ -281,7 +280,8 @@ function Start-Vlc {
         [string[]]$SceneArgs,
         [string[]]$GdiArgs,
         [string[]]$ExtraArgs,
-        [string]$VlcExe
+        [string]$VlcExe,
+        [switch]$NoAudio
     )
     # Maintainability: early validation of context config to catch missing keys/typos.
     Test-VideoConfig -Context $Context
@@ -305,6 +305,7 @@ function Start-Vlc {
     }
     # Append common/base args (may contain stop-time if caller used Get-VlcArgsCommon)
     $vlcargs += $baseArgs
+    if ($NoAudio) { $vlcargs += '--no-audio' }
     # Append any caller-provided extras last (Robustness: ignore null/empty elements).
     if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
         $extraClean = @()

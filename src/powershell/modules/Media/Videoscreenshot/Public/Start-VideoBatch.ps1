@@ -50,6 +50,8 @@ Python interpreter to use (optional; falls back to py/python in helper).
 Delete existing frames with the scene prefix before each video.
 .PARAMETER VlcExe
 Full path to vlc.exe. Use when VLC is not on PATH (e.g. "D:\Program Files\VideoLAN\VLC\vlc.exe").
+.PARAMETER NoAudio
+Pass --no-audio to VLC. Use when the VLC audio plugin crashes on your system (e.g. libmmdevice_plugin.dll access violation).
 
 .EXAMPLE
 Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper -PythonScriptPath .\src\python\crop_colours.py
@@ -88,7 +90,8 @@ function Start-VideoBatch {
         [switch]$NoAutoInstall,
         [switch]$ClearSnapshotsBeforeRun,
 
-        [string]$VlcExe
+        [string]$VlcExe,
+        [switch]$NoAudio
     )
 
     # Enforce pwsh 7+ at runtime (friendly error if invoked directly)
@@ -336,7 +339,8 @@ function Start-VideoBatch {
                 -StopAtSeconds $stopAfter `
                 -GdiFullscreen:$GdiFullscreen `
                 -StartupTimeoutSeconds $VlcStartupTimeoutSeconds `
-                -VlcExe $resolvedVlcExe
+                -VlcExe $resolvedVlcExe `
+                -NoAudio:$NoAudio
 
             if ($UseVlcSnapshots) {
                 $baseWait = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.SnapshotFallbackTimeoutSeconds }
