@@ -64,6 +64,7 @@ kept here — see the linked file for details.
 
 ### Fixed
 
+- **[Show-RandomImage 2.3.1]** Added an explicit read-permission pre-check before `Invoke-Item`; permission-denied selections now emit a console-visible error with the full path and skip viewer handoff (issue #1151).
 - **[Move-ImageFileToBatch 2.1.0]** Renamed `-LogFilePath` to `-LogDirectory` and passed it
   to `Initialize-Logger` so the framework log is written to the caller-supplied directory
   instead of the module default; fixed error-log path derivation in `Write-RunSummary` to
