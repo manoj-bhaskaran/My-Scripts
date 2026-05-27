@@ -46,6 +46,10 @@ The Videoscreenshot module has been moved to `src/powershell/modules/Media/Video
 
 All scripts use the PowerShell Logging Framework for structured logging.
 
+## Troubleshooting
+
+- **Show-RandomImage permission denied**: if the selected media file is not readable by the current user, the script now logs a console error that includes the full file path and skips opening the file in the external viewer.
+
 ### Move-ImageFileToBatch.ps1
 
 Use `-LogDirectory` to control where log files are written:

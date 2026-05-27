@@ -3,9 +3,13 @@
 This PowerShell script selects and opens a random media file (image or video) from a random subfolder or the main target folder in the specified directory.
 
 .VERSION
-2.3.0
+2.3.1
 
 # Changelog
+## [2.3.1] — 2026-05-27
+### Fixed
+- Added a read-access pre-check before `Invoke-Item` so permission-denied media files now log a clear console error with the full file path and are not handed off silently to the viewer.
+
 ## [2.3.0] — 2026-03-26
 ### Added
 - `.mp4` files are now included as valid candidates alongside `.jpg`, `.jpeg`, and `.png`.
@@ -103,7 +107,7 @@ param(
 
 # Script metadata
 # Expose version programmatically for logs/tests if needed.
-$Script:ScriptVersion = '2.3.0'
+$Script:ScriptVersion = '2.3.1'
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
@@ -171,6 +175,23 @@ if ($files.Count -gt 0) {
     # Select a random file and open it
     $randomFile = $files | Get-Random
     Write-LogInfo "Opening file: $($randomFile.Name)"
+
+    # Pre-check read access before shell hand-off.
+    try {
+        $readProbe = [System.IO.File]::OpenRead($randomFile.FullName)
+        $readProbe.Close()
+        $readProbe.Dispose()
+    }
+    catch [System.UnauthorizedAccessException] {
+        Write-LogError "Read access denied for selected file: $($randomFile.FullName)"
+        Write-Warning ("Read access denied for selected file: {0}" -f $randomFile.FullName)
+        return
+    }
+    catch {
+        Write-LogError "Unable to verify read access for '$($randomFile.FullName)': $($_.Exception.Message)"
+        Write-Warning ("Unable to verify read access for '{0}': {1}" -f $randomFile.FullName, $_.Exception.Message)
+        return
+    }
 
     # Opening the selected media file; wrap in try/catch for user-friendly feedback
     try {
