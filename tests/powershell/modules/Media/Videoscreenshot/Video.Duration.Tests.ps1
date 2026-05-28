@@ -32,7 +32,8 @@ Describe 'Get-VideoDuration' {
         }
 
         It 'throws when the file does not exist' {
-            { Get-VideoDuration -Path 'C:\does\not\exist\fake.mp4' } | Should -Throw
+            $nonExistent = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString() + '.mp4')
+            { Get-VideoDuration -Path $nonExistent } | Should -Throw
         }
     }
 
@@ -82,7 +83,7 @@ Describe 'Get-VideoDuration' {
                 # A 4-byte file will cause ffprobe to return a non-zero exit; result must be 0.0.
                 $result = Get-VideoDuration -Path $fake -WarningAction SilentlyContinue
                 $result | Should -BeOfType [double]
-                $result | Should -BeGreaterThanOrEqualTo 0.0
+                $result | Should -BeGreaterOrEqual 0.0
             }
             finally {
                 Remove-Item -LiteralPath $fake -Force -ErrorAction SilentlyContinue
@@ -107,7 +108,7 @@ Describe 'Get-VideoDuration' {
             $fake = Script:New-FakeTempVideoFile
             try {
                 $result = Get-VideoDuration -Path $fake -WarningAction SilentlyContinue
-                $result | Should -BeGreaterThanOrEqualTo 0.0
+                $result | Should -BeGreaterOrEqual 0.0
             }
             finally {
                 Remove-Item -LiteralPath $fake -Force -ErrorAction SilentlyContinue
