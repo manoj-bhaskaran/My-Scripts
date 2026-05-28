@@ -39,7 +39,7 @@
 
 ---
 
-## Unreleased
+## Unreleased *(next patch — internal de-duplication refactor; no behavioural change to progress output, summary objects, or extraction logic)*
 
 ### Removed
 
@@ -73,24 +73,8 @@
   `ProgressReporter.Tests.ps1`; one new clamping test added there; net new tests in
   ProgressReporter: +5).
 
-### Versioning
 
-- Bumped version to `2.6.5` (patch — internal de-duplication refactor; no behavioural
-  change to progress output, summary objects, or extraction logic).
-
----
-
-_Previous Unreleased (now part of 2.6.4):_
-
-- Corrected comment-based help attribution for default override environment variables:
-  `SourceDirectory` now explicitly references `EXPAND_ZIPS_SOURCE_DIR` and
-  `DestinationDirectory` references `EXPAND_ZIPS_DEST_DIR`.
-- Fixed parameter default resolution so whitespace-only values in
-  `EXPAND_ZIPS_SOURCE_DIR` / `EXPAND_ZIPS_DEST_DIR` are treated as unset and fall back
-  to profile-relative defaults (`$HOME/Downloads/picconvert`, `$HOME/Desktop/New folder`).
-- Removed four low-value/duplicate tests (net: 28 → 24 in this file).
-
-## 2.6.2 — 2026-05-24
+## 2.6.2 — 2026-05-24 *(patch — internal refactor; no behavioral change to extraction, move, or summary output)*
 
 ### Removed
 
@@ -122,19 +106,8 @@ _Previous Unreleased (now part of 2.6.4):_
   block asserting `Get-Command Invoke-ZipExtractions` returns a command whose `Source` is
   `ZipExtraction`.
 
-### Documentation
 
-- No comment-based help changes required (helpers described only behavior, not internal
-  resolution machinery).
-- `README.md` in `src/powershell/file-management/` does not reference the removed helper
-  function names; no update needed.
-
-### Versioning
-
-- Bumped version to `2.6.2` (patch — internal refactor; no behavioral change to extraction,
-  move, or summary output).
-
-## 2.6.1 — 2026-05-23
+## 2.6.1 — 2026-05-23 *(patch — internal refactor; no behavior change)*
 
 ### Changed
 
@@ -147,11 +120,8 @@ _Previous Unreleased (now part of 2.6.4):_
 - Added `tests/powershell/modules/FileManagement/ZipExtraction/ZipExtraction.Tests.ps1` covering `Invoke-SingleZipExtraction`: valid archive stats/log output, and throw on corrupt input.
 - Added four `Resolve-MoveTarget` tests in `Expand-ZipsAndClean.Tests.ps1`: no-collision path (`PolicyTag=None`), Skip, Overwrite, and Rename policy tags.
 
-### Versioning
 
-- Bumped version to `2.6.1` (patch — internal refactor; no behavior change).
-
-## 2.6.0 — 2026-05-23
+## 2.6.0 — 2026-05-23 *(minor — internal module-boundary refactor/import contract expansion; no intentional behavior change)*
 
 ### Changed
 
@@ -180,11 +150,8 @@ _Previous Unreleased (now part of 2.6.4):_
 - Added resilient wrapper command resolution (`Get-ZipExtractionCommand`) that imports the `ZipExtraction` module by path when necessary (including helper-region test loads) before dispatching module functions.
 - Moved `Expand-ZipInRunspace` into `FileManagement/ZipExtraction` module private scope so parallel extraction (`-ThrottleLimit > 1`) no longer depends on script-scope helper discovery.
 
-### Versioning
 
-- Bumped version to `2.6.0` (minor — internal module-boundary refactor/import contract expansion; no intentional behavior change).
-
-## 2.5.4 — 2026-05-22
+## 2.5.4 — 2026-05-22 *(patch — test-suite maintenance only; no script behaviour change)*
 
 ### Tests
 
@@ -195,11 +162,8 @@ _Previous Unreleased (now part of 2.6.4):_
   - `omits CurrentOperation when not provided` — redundant with `calls Write-Progress with computed percentage when QuietMode is false`, which already invokes the function with no `-CurrentOperation`, exercising the same branch.
 - Suite now contains 33 tests (was 37).
 
-### Versioning
 
-- Bumped version to `2.5.4` (patch — test-suite maintenance only; no script behaviour change).
-
-## 2.5.3 — 2026-05-21
+## 2.5.3 — 2026-05-21 *(patch — internal robustness refactor; no behavior change for callers)*
 
 ### Changed
 
@@ -240,18 +204,15 @@ _Previous Unreleased (now part of 2.6.4):_
 - Added `delegates move operation to Move-FileWithRetry` test to verify the retry helper is wired up in `Move-ZipFilesToParent`.
 - Added `delegates per-item non-zip removal to Remove-FileWithRetry` test to verify retry helper delegation in `Remove-SourceDirectory`.
 
-### Versioning
 
-- Bumped `Expand-ZipsAndClean.ps1` version to `2.5.3` (patch — internal robustness refactor; no behavior change for callers).
-
-## 2.5.2 — 2026-05-21
+## 2.5.2 — 2026-05-21 *(patch — internal progress abstraction refactor with backward-compatible behavior)*
 
 ### Changed
 
 - Replaced script-local `Write-PhaseProgress` usage with `Show-Progress` from `Core/Progress` via a thin `Show-ProgressPhase` adapter that keeps existing call-site arguments (`Current`/`Total`/`QuietMode`) while delegating progress rendering to the shared utility.
 - `Expand-ZipsAndClean.ps1` now imports `Core/Progress/ProgressReporter.psm1` alongside existing shared modules.
 
-### Enhanced
+### Added
 
 - Added `-Suppress` switch to `Core/Progress` `Show-Progress` so callers can centrally suppress progress output without bespoke quiet-mode wrappers around `Write-Progress`.
 
@@ -259,11 +220,8 @@ _Previous Unreleased (now part of 2.6.4):_
 
 - Updated `Expand-ZipsAndClean` helper tests from `Write-PhaseProgress` to `Show-ProgressPhase` with equivalent coverage for quiet suppression, percentage math, completion behavior, and optional current-operation forwarding.
 
-### Versioning
 
-- Bumped `Expand-ZipsAndClean.ps1` version to `2.5.2` (patch — internal progress abstraction refactor with backward-compatible behavior).
-
-## 2.5.1 — 2026-05-19
+## 2.5.1 — 2026-05-19 *(patch — bug fix for blank-env-var case)*
 
 ### Fixed
 
@@ -285,11 +243,8 @@ _Previous Unreleased (now part of 2.6.4):_
 - Added `DestinationDirectory default falls back to $HOME/Desktop/New folder when env var is blank`
   — same pattern for the destination env var.
 
-### Versioning
 
-- Bumped `Expand-ZipsAndClean.ps1` version to `2.5.1` (patch — bug fix for blank-env-var case).
-
-## 2.5.0 — 2026-05-19
+## 2.5.0 — 2026-05-19 *(minor — default semantics change; back-compat preserved for explicit parameter/env-var users)*
 
 ### Changed
 
@@ -329,12 +284,8 @@ _Previous Unreleased (now part of 2.6.4):_
     the script AST, extracts the default expressions for both parameters, and asserts they reference
     the env-var names and contain no hard-coded personal path (`manoj`).
 
-### Versioning
 
-- Bumped `Expand-ZipsAndClean.ps1` version to `2.5.0` (minor — default semantics change;
-  back-compat preserved for users who pass parameters explicitly or set the env vars).
-
-## 2.3.3 — 2026-05-17
+## 2.3.3 — 2026-05-17 *(patch — test coverage only; no production behavior change)*
 
 ### Tests
 
@@ -360,12 +311,15 @@ _Previous Unreleased (now part of 2.6.4):_
   - `contains #requires -Version 7.0 directive` — reads the first line of the script
     and asserts it matches the directive exactly.
 
-### Versioning
+## 2.4.x — not released
 
-- Bumped `Expand-ZipsAndClean.ps1` version to `2.3.3` (patch — test coverage only,
-  no production behavior change).
+- Minor version line reserved/skipped during refactor sequencing; no 2.4 release was published.
 
-## 2.3.2 — 2026-05-17
+## 2.3.1 — not released
+
+- Version number reserved and skipped; no released artifact for this version.
+
+## 2.3.2 — 2026-05-17 *(patch — internal refactor, no behaviour change for interactive runs)*
 
 ### Added
 
@@ -405,12 +359,8 @@ _Previous Unreleased (now part of 2.6.4):_
     output by type to extract the `PSCustomObject`; asserts `SrcDir`, `DestDir`, `ZipsFound`,
     `ZipsDone`, `Files`, `Ratio`, and `Duration`.
 
-### Versioning
 
-- Bumped `Expand-ZipsAndClean.ps1` version to `2.3.2` (patch — internal refactor, no
-  behaviour change for interactive runs).
-
-## 2.3.0 — 2026-05-17
+## 2.3.0 — 2026-05-17 *(minor — import contract changes)*
 
 ### Changed
 
@@ -437,11 +387,8 @@ _Previous Unreleased (now part of 2.6.4):_
   `Write-PhaseProgress`) each import `Core/Zip/Zip.psm1` in their `BeforeAll` so
   `Invoke-ZipExtractions` (which calls the module functions) resolves correctly if exercised.
 
-### Versioning
 
-- Bumped `Expand-ZipsAndClean.ps1` version to `2.3.0` (minor — import contract changes).
-
-## 2.2.3 — 2026-05-17
+## 2.2.3 — 2026-05-17 *(patch — progress-helper extraction/refactor)*
 
 ### Added
 
@@ -470,11 +417,8 @@ _Previous Unreleased (now part of 2.6.4):_
   - `Completed` switch invokes `Write-Progress -Completed`.
   - Zero `Total` guard (no division-by-zero error).
 
-### Versioning
 
-- Bumped `Expand-ZipsAndClean.ps1` version to `2.2.3`.
-
-## 2.2.2 — 2026-05-12
+## 2.2.2 — 2026-05-12 *(patch — extraction stats/perf refactor and helper signature update)*
 
 ### Changed
 
@@ -489,6 +433,3 @@ _Previous Unreleased (now part of 2.6.4):_
 - Updated `dispatches PerArchiveSubfolder mode to Expand-ZipToSubfolder` to pass and assert the new `ExpectedFileCount` parameter.
 - All three `Describe` `BeforeAll` blocks now explicitly call `Add-Type -AssemblyName System.IO.Compression.FileSystem` so the assembly is available when helpers are dot-sourced (previously the assembly was loaded lazily inside `Get-ZipFileStats` which is outside the extracted helpers block).
 
-### Versioning
-
-- Bumped `Expand-ZipsAndClean.ps1` version to `2.2.2`.
