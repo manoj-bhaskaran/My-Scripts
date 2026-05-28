@@ -22,14 +22,14 @@ BeforeAll {
 
     # Starts a real process that stays alive for the duration of a test.
     # -WindowStyle is intentionally omitted: it is Windows-only and throws on Linux.
-    function script:New-LongRunningProcess {
+    function Script:New-LongRunningProcess {
         Start-Process -FilePath $script:PwshExe `
             -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 120' `
             -PassThru
     }
 
     # Starts a real process that exits immediately and waits for it to finish.
-    function script:New-AlreadyExitedProcess {
+    function Script:New-AlreadyExitedProcess {
         $p = Start-Process -FilePath $script:PwshExe `
             -ArgumentList '-NoProfile', '-Command', 'exit 0' `
             -PassThru
@@ -37,7 +37,7 @@ BeforeAll {
         $p
     }
 
-    function script:New-TempSnapshotFolder {
+    function Script:New-TempSnapshotFolder {
         param([string]$Prefix = 'prefix_', [int]$PngCount = 0)
         $dir = New-Item -ItemType Directory `
             -Path (Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())) `
@@ -57,8 +57,8 @@ Describe 'Wait-ForSnapshotFrames' {
     Context 'idle-frame stall detection' {
 
         It 'breaks early when no new frames appear past the idle timeout while process is alive' {
-            $folder = script:New-TempSnapshotFolder -Prefix 'vid_' -PngCount 3
-            $proc = script:New-LongRunningProcess
+            $folder = Script:New-TempSnapshotFolder -Prefix 'vid_' -PngCount 3
+            $proc = Script:New-LongRunningProcess
             try {
                 $sw = [System.Diagnostics.Stopwatch]::StartNew()
                 $result = Wait-ForSnapshotFrames `
@@ -79,8 +79,8 @@ Describe 'Wait-ForSnapshotFrames' {
         }
 
         It 'does not idle-break when IdleTimeoutSeconds is 0 (detection disabled)' {
-            $folder = script:New-TempSnapshotFolder -Prefix 'vid_' -PngCount 2
-            $proc = script:New-LongRunningProcess
+            $folder = Script:New-TempSnapshotFolder -Prefix 'vid_' -PngCount 2
+            $proc = Script:New-LongRunningProcess
             try {
                 $sw = [System.Diagnostics.Stopwatch]::StartNew()
                 # MaxSeconds=3 is the only exit; idle detection is off
@@ -104,8 +104,8 @@ Describe 'Wait-ForSnapshotFrames' {
     Context 'warm-up grace period' {
 
         It 'suppresses idle detection during the warm-up window' {
-            $folder = script:New-TempSnapshotFolder -Prefix 'vid_'  # no PNGs
-            $proc = script:New-LongRunningProcess
+            $folder = Script:New-TempSnapshotFolder -Prefix 'vid_'  # no PNGs
+            $proc = Script:New-LongRunningProcess
             try {
                 $sw = [System.Diagnostics.Stopwatch]::StartNew()
                 # Without warm-up, IdleTimeout=1 would fire in ~1 s.
@@ -127,8 +127,8 @@ Describe 'Wait-ForSnapshotFrames' {
         }
 
         It 'fires idle detection after the warm-up window expires' {
-            $folder = script:New-TempSnapshotFolder -Prefix 'vid_'  # no PNGs
-            $proc = script:New-LongRunningProcess
+            $folder = Script:New-TempSnapshotFolder -Prefix 'vid_'  # no PNGs
+            $proc = Script:New-LongRunningProcess
             try {
                 $sw = [System.Diagnostics.Stopwatch]::StartNew()
                 # WarmUp=2 + IdleTimeout=1 → idle break at ~3 s; MaxSeconds generous
@@ -152,8 +152,8 @@ Describe 'Wait-ForSnapshotFrames' {
     Context 'normal completion via VLC process exit' {
 
         It 'stops after the grace period when VLC has already exited' {
-            $folder = script:New-TempSnapshotFolder -Prefix 'vid_' -PngCount 5
-            $proc = script:New-AlreadyExitedProcess
+            $folder = Script:New-TempSnapshotFolder -Prefix 'vid_' -PngCount 5
+            $proc = Script:New-AlreadyExitedProcess
             try {
                 $sw = [System.Diagnostics.Stopwatch]::StartNew()
                 $result = Wait-ForSnapshotFrames `
@@ -173,8 +173,8 @@ Describe 'Wait-ForSnapshotFrames' {
         }
 
         It 'returns correct FramesDelta and positive ElapsedSeconds' {
-            $folder = script:New-TempSnapshotFolder -Prefix 'clip_' -PngCount 2
-            $proc = script:New-AlreadyExitedProcess
+            $folder = Script:New-TempSnapshotFolder -Prefix 'clip_' -PngCount 2
+            $proc = Script:New-AlreadyExitedProcess
             try {
                 $result = Wait-ForSnapshotFrames `
                     -SaveFolder $folder -ScenePrefix 'clip_' `
