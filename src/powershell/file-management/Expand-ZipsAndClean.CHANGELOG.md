@@ -74,6 +74,25 @@
   ProgressReporter: +5).
 
 
+
+## 2.6.4 — 2026-05-24 *(patch — bug fix, no breaking change)*
+
+### Fixed
+
+- Corrected comment-based help attribution for default override environment variables:
+  `SourceDirectory` now explicitly references `EXPAND_ZIPS_SOURCE_DIR` and
+  `DestinationDirectory` references `EXPAND_ZIPS_DEST_DIR`.
+- Fixed parameter default resolution so whitespace-only values in
+  `EXPAND_ZIPS_SOURCE_DIR` / `EXPAND_ZIPS_DEST_DIR` are treated as unset and fall back
+  to profile-relative defaults (`$HOME/Downloads/picconvert`, `$HOME/Desktop/New folder`).
+
+## 2.6.3 — 2026-05-24 *(patch — tests/docs only; no runtime behavior change)*
+
+### Tests
+
+- Removed four low-value/duplicate tests (net: 28 → 24 in this file).
+
+
 ## 2.6.2 — 2026-05-24 *(patch — internal refactor; no behavioral change to extraction, move, or summary output)*
 
 ### Removed
