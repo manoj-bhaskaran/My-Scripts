@@ -288,7 +288,7 @@ function Get-WindowsShellDuration {
             $d = [double]::Parse($scrub, [Globalization.CultureInfo]::InvariantCulture)
             if ($d -gt 0) { return [double]$d }
         }
-        catch { }
+        catch { Write-Debug ("Get-WindowsShellDuration: failed to parse numeric seconds '{0}'" -f $scrub) }
     }
     return $null
 }
