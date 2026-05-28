@@ -8,6 +8,15 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-05-28
+### Added
+- **Duration-aware per-video snapshot cap**: `Start-VideoBatch -UseVlcSnapshots` now probes each video's duration (via `Get-VideoDuration`) and computes `cap = duration + SnapshotDurationGraceSeconds` instead of the previous flat `SnapshotFallbackTimeoutSeconds = 300` constant. Short clips no longer incur a 300 s worst-case wait; long videos are no longer cut off early.
+- **`Get-VideoDuration` helper** (`Private/Video.Fps.ps1`): reuses the ffprobe/Windows-Shell strategy pattern from `Get-VideoFps`; queries `format=duration` via ffprobe and falls back to the localized "Length"/"Duration" Shell column. Returns `0.0` on failure so callers can fall back safely.
+- **`SnapshotDurationGraceSeconds`** (default `30`) in `Get-DefaultConfig` (`Private/Config.ps1`): configurable grace margin added to the probed duration to absorb VLC startup, buffering, and slow end-of-stream flush.
+
+### Changed
+- **`SnapshotFallbackTimeoutSeconds`** is now a last-resort backstop used only when duration detection fails (rather than the primary cap for every video). Behavior for undetectable durations is unchanged.
+
 ## [3.0.9] - 2026-05-27
 ### Fixed
 - **VLC snapshot hang on undecodable videos**: `Wait-ForSnapshotFrames` previously waited the full `SnapshotFallbackTimeoutSeconds` (~300 s) when VLC stalled on a corrupt or unsupported video. Undecodable files are now abandoned within `SnapshotIdleTimeoutSeconds` (~20 s by default).

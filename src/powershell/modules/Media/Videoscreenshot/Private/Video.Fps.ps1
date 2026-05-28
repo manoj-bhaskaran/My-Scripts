@@ -219,3 +219,173 @@ function Get-VideoFps {
     Write-Warning ("FPS detection failed for '{0}'. Falling back to default cadence (e.g., 30.0). Snapshot cadence may be approximate." -f $full)
     return 0.0
 }
+
+<#
+.SYNOPSIS
+  Return the duration (in seconds) for a video file.
+
+.DESCRIPTION
+  Used by the VLC snapshot pipeline to compute a duration-aware per-video timeout cap
+  instead of the flat SnapshotFallbackTimeoutSeconds constant.
+  Strategy order:
+    1) **ffprobe** (if on PATH) — parse `format=duration`
+    2) **Windows Shell (COM)** — read the localized "Length"/"Duration" column (best-effort)
+  On failure, returns **0.0** and the caller should fall back to SnapshotFallbackTimeoutSeconds.
+  This function emits warnings when it must fall back so users understand cap accuracy may be affected.
+
+  Notes & limitations:
+    - Shell parsing is locale-dependent and heuristic. We look for "Length" or "Duration"
+      column names and parse HH:MM:SS, MM:SS, or plain-second values.
+    - We aim for a **reasonable approximation** — sufficient to scale the backstop cap to the
+      video's own duration rather than using a blind constant.
+
+.PARAMETER Path
+  Path to a video file (must exist).
+
+.OUTPUTS
+  [double] Duration in seconds (0.0 if not detected — callers should fall back to a default).
+
+.EXAMPLE
+  Get-VideoDuration -Path 'C:\clips\sample.mp4'
+  # → 183.5 (via ffprobe)
+
+.EXAMPLE
+  Get-VideoDuration -Path '.\short.mkv'
+  # → 0.0 when detection fails; caller should use SnapshotFallbackTimeoutSeconds.
+
+.NOTES
+  - ffprobe invocation queries format=duration (stable across FFmpeg releases).
+  - Windows Shell column scan covers [0..300] (mirrors common Explorer metadata columns).
+#>
+function Get-VideoDuration {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Path
+    )
+
+    # ---- Validation -----------------------------------------------------------
+    $full = try { [IO.Path]::GetFullPath($Path) } catch { $Path }
+    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
+        throw "Get-VideoDuration: file not found: $full"
+    }
+
+    # ---- Helpers --------------------------------------------------------------
+    function Get-FfprobeDuration {
+        param([Parameter(Mandatory)][string]$FilePath)
+
+        try {
+            $ff = Get-Command -Name ffprobe -ErrorAction Stop
+        }
+        catch {
+            Write-Debug "Get-VideoDuration: ffprobe not found on PATH."
+            return $null
+        }
+
+        try {
+            # Equivalent CLI (documented for maintainers):
+            #   ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 "file"
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = $ff.Source
+            $null = $psi.ArgumentList.Add('-v'); $null = $psi.ArgumentList.Add('error')
+            $null = $psi.ArgumentList.Add('-show_entries'); $null = $psi.ArgumentList.Add('format=duration')
+            $null = $psi.ArgumentList.Add('-of'); $null = $psi.ArgumentList.Add('default=nk=1:nw=1')
+            $null = $psi.ArgumentList.Add($FilePath)
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+
+            $p = [System.Diagnostics.Process]::new()
+            $p.StartInfo = $psi
+            $null = $p.Start()
+            $out = $p.StandardOutput.ReadToEnd()
+            $err = $p.StandardError.ReadToEnd()
+            $p.WaitForExit()
+
+            if ($p.ExitCode -ne 0) {
+                Write-Debug ("Get-VideoDuration(ffprobe): exit={0}; stderr={1}" -f $p.ExitCode, $err)
+                return $null
+            }
+
+            $trimmed = $out.Trim()
+            if ([string]::IsNullOrWhiteSpace($trimmed)) { return $null }
+
+            $normalized = $trimmed -replace ',', '.'
+            try {
+                $d = [double]::Parse($normalized, [Globalization.CultureInfo]::InvariantCulture)
+                if ($d -gt 0) { return [double]$d }
+            }
+            catch {
+                Write-Debug ("Get-VideoDuration(ffprobe): failed to parse '{0}'" -f $trimmed)
+            }
+            return $null
+        }
+        catch {
+            Write-Debug ("Get-VideoDuration(ffprobe) exception: {0}" -f $_.Exception.Message)
+            return $null
+        }
+    }
+
+    function Get-WindowsShellDuration {
+        param([Parameter(Mandatory)][string]$FilePath)
+
+        try {
+            $shell = New-Object -ComObject Shell.Application
+            $folder = Split-Path -Path $FilePath -Parent
+            $file = Split-Path -Path $FilePath -Leaf
+            $sf = $shell.Namespace($folder)
+            if ($null -eq $sf) { return $null }
+            $item = $sf.ParseName($file)
+            if ($null -eq $item) { return $null }
+
+            $candidateIdx = $null
+            # Pass 1: find a column whose *name* looks like "Length" or "Duration" (localized).
+            for ($i = 0; $i -le 300; $i++) {
+                $name = $sf.GetDetailsOf($sf.Items, $i)
+                if ([string]::IsNullOrWhiteSpace($name)) { continue }
+                if ($name -match '(?i)\blength\b' -or $name -match '(?i)\bduration\b') { $candidateIdx = $i; break }
+            }
+            if ($null -eq $candidateIdx) { return $null }
+            Write-Debug ("Windows Shell: using column index {0} for duration." -f $candidateIdx)
+
+            $rawVal = $sf.GetDetailsOf($item, $candidateIdx)
+            if ([string]::IsNullOrWhiteSpace($rawVal)) { return $null }
+
+            # Parse common formats: HH:MM:SS, H:MM:SS, MM:SS
+            if ($rawVal -match '^\s*(\d+):(\d+):(\d+)\s*$') {
+                return [double]([int]$Matches[1] * 3600 + [int]$Matches[2] * 60 + [int]$Matches[3])
+            }
+            if ($rawVal -match '^\s*(\d+):(\d+)\s*$') {
+                return [double]([int]$Matches[1] * 60 + [int]$Matches[2])
+            }
+            # Plain numeric seconds (with optional decimal)
+            $scrub = ($rawVal -replace '[^\d\.,]', '').Trim() -replace ',', '.'
+            if ($scrub -match '^\d+(\.\d+)?$') {
+                try {
+                    $d = [double]::Parse($scrub, [Globalization.CultureInfo]::InvariantCulture)
+                    if ($d -gt 0) { return [double]$d }
+                }
+                catch { }
+            }
+        }
+        catch {
+            Write-Debug ("Windows Shell duration probe failed: {0}" -f $_.Exception.Message)
+        }
+        return $null
+    }
+
+    # ---- Strategy chain -------------------------------------------------------
+    $ffDuration = Get-FfprobeDuration -FilePath $full
+    if ($ffDuration -gt 0) { return [double]$ffDuration }
+
+    $shellDuration = Get-WindowsShellDuration -FilePath $full
+    if ($shellDuration -gt 0) {
+        Write-Warning ("Duration derived from Windows Shell metadata for '{0}' (ffprobe unavailable or unhelpful). Value={1}s" -f $full, $shellDuration)
+        return [double]$shellDuration
+    }
+
+    Write-Warning ("Duration detection failed for '{0}'. Caller should fall back to SnapshotFallbackTimeoutSeconds." -f $full)
+    return 0.0
+}

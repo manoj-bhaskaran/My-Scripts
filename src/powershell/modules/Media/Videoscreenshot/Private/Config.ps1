@@ -18,8 +18,8 @@
 .OUTPUTS
   [hashtable] with well-known keys:
     - Timing: PollIntervalMs, SnapshotFallbackTimeoutSeconds,
-              SnapshotTerminationExtraSeconds, StopVlcWaitMs,
-              WaitProcessTimeoutSeconds
+              SnapshotDurationGraceSeconds, SnapshotTerminationExtraSeconds,
+              StopVlcWaitMs, WaitProcessTimeoutSeconds
     - Discovery: VideoExtensions
     - GDI: GdiCaptureDefaultSeconds
     - Python: RequiredPackages (used by Invoke-Cropper preflight)
@@ -39,10 +39,17 @@ function Get-DefaultConfig {
         # lower CPU, slower responsiveness. Typical range: 100–500 ms.
         PollIntervalMs                  = 200
 
-        # Maximum seconds to wait for snapshot frames when no explicit per-video
-        # cap is provided (e.g., when using VLC snapshot mode without StopAtSeconds).
+        # Last-resort cap (seconds) used when no explicit per-video limit is given
+        # AND duration detection fails. When duration is detectable, Start-VideoBatch
+        # computes cap = video_duration + SnapshotDurationGraceSeconds instead.
         # Typical range: 60–600 s depending on expected clip durations.
         SnapshotFallbackTimeoutSeconds  = 300
+
+        # Grace margin (seconds) added to a probed video duration to form the
+        # per-video snapshot cap: cap = duration + SnapshotDurationGraceSeconds.
+        # Accounts for VLC startup, buffering, and slow-flush at end of playback.
+        # Typical range: 15–60 s.
+        SnapshotDurationGraceSeconds    = 30
 
         # Extra grace seconds allowed after requesting termination of snapshotting,
         # giving VLC time to flush/close cleanly before any force-kill paths.
