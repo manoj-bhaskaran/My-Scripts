@@ -49,6 +49,17 @@ function Get-DefaultConfig {
         # Typical range: 2–10 s.
         SnapshotTerminationExtraSeconds = 5
 
+        # Seconds without a new frame before Wait-ForSnapshotFrames abandons a stalled
+        # VLC session (idle-frame stall detection). Only triggers after the warm-up window
+        # elapses. Set to 0 to disable. Typical range: 10–60 s.
+        SnapshotIdleTimeoutSeconds      = 20
+
+        # Seconds at the start of a snapshot session during which idle detection is
+        # suppressed, to allow slow-starting sources (e.g., cold network shares) to
+        # produce their first frame before the idle timer starts counting.
+        # Typical range: 5–30 s.
+        SnapshotIdleWarmUpSeconds       = 10
+
         # Milliseconds to wait after CloseMainWindow() before force-terminating VLC
         # in Stop-Vlc. Larger values are gentler on VLC; smaller values speed up
         # teardown on stubborn processes. Typical range: 2000–10000 ms.
