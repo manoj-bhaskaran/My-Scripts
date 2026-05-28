@@ -342,10 +342,21 @@ function Get-VideoDuration {
 
             $candidateIdx = $null
             # Pass 1: find a column whose *name* looks like "Length" or "Duration" (localized).
+            # This covers English ("Length", "Duration") and any locale where the translated
+            # column name contains one of these root words.
             for ($i = 0; $i -le 300; $i++) {
                 $name = $sf.GetDetailsOf($sf.Items, $i)
                 if ([string]::IsNullOrWhiteSpace($name)) { continue }
                 if ($name -match '(?i)\blength\b' -or $name -match '(?i)\bduration\b') { $candidateIdx = $i; break }
+            }
+            # Pass 2: if no column matched by name (e.g. fully localized header like "Länge",
+            # "Durée"), scan item values for a duration-shaped string (H:MM:SS / HH:MM:SS).
+            # This is locale-independent because the value format is standardized.
+            if ($null -eq $candidateIdx) {
+                for ($i = 0; $i -le 300; $i++) {
+                    $val = $sf.GetDetailsOf($item, $i)
+                    if ($val -and $val -match '^\s*\d{1,3}:\d{2}:\d{2}\s*$') { $candidateIdx = $i; break }
+                }
             }
             if ($null -eq $candidateIdx) { return $null }
             Write-Debug ("Windows Shell: using column index {0} for duration." -f $candidateIdx)
