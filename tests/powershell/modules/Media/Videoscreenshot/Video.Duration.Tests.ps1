@@ -38,10 +38,13 @@ Describe 'Get-VideoDuration' {
         }
 
         It 'throws when the file does not exist' {
-            # GetTempFileName creates a real file; we delete it immediately so the
-            # path is guaranteed non-existent when passed to Get-VideoDuration.
-            $nonExistent = [System.IO.Path]::GetTempFileName()
-            Remove-Item -LiteralPath $nonExistent -Force
+            # Nested under a GUID subdirectory that is never created, so the path
+            # cannot resolve to any existing leaf regardless of Remove-Item behaviour.
+            $nonExistent = [System.IO.Path]::Combine(
+                [System.IO.Path]::GetTempPath(),
+                [System.Guid]::NewGuid().ToString('N'),
+                'clip.mp4'
+            )
             { Get-VideoDuration -Path $nonExistent } | Should -Throw
         }
     }
