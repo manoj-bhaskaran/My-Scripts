@@ -170,6 +170,8 @@ pip install -e .
 See individual module READMEs for detailed documentation, usage examples, and API reference.
 For installation troubleshooting, see the [Module Deployment Guide](docs/guides/module-deployment.md).
 
+> **PowerShell profile note:** If your profile dot-sources `scripts/Profile-Helpers.ps1`, lazy module import now suppresses non-fatal module warnings (such as PostgresBackup `pg_dump` auto-detection) so unrelated commands are not noisy at prompt time.
+
 ---
 
 ## Logging

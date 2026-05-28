@@ -299,7 +299,7 @@ function Ensure-RepoModulesLoaded {
 
     foreach ($mf in $moduleFiles) {
         try {
-            Import-Module $mf -Force -Global -ErrorAction Stop
+            Import-Module $mf -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
         }
         catch {
             # Import failures are silently swallowed to keep the session
