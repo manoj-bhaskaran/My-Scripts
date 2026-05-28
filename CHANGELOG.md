@@ -69,6 +69,8 @@ kept here — see the linked file for details.
 
 ### Fixed
 
+- **[Profile-Helpers]** Suppressed non-fatal import warnings during lazy repo module loading (`Import-Module ... -WarningAction SilentlyContinue`) so profile-driven script dispatch no longer surfaces PostgresBackup `pg_dump` detection warnings during unrelated command usage.
+
 - **[gdrive_recover 1.26.14]** Restored streaming folder traversal behavior to continue processing queued sibling folders after a per-folder fetch error while still returning a non-success status for the run (issue #1088 review follow-up).
   → Full detail: [src/python/cloud/CHANGELOG-gdrive-recover.md](src/python/cloud/CHANGELOG-gdrive-recover.md)
 - **[Show-RandomImage 2.3.1]** Added an explicit read-permission pre-check before `Invoke-Item`; permission-denied selections now emit a console-visible error with the full path and skip viewer handoff (issue #1151).
