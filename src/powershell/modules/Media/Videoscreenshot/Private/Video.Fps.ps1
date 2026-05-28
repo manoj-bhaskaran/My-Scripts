@@ -16,6 +16,7 @@
 
   Private module-level helpers (not exported):
     ConvertTo-FpsFromFraction, Invoke-Ffprobe, Find-ShellColumnIndex,
+    Get-ShellMetadataValue,
     Get-FfprobeFps, Get-FfprobeDuration,
     Get-WindowsShellFps, Get-WindowsShellDuration
 
@@ -153,6 +154,51 @@ function Find-ShellColumnIndex {
     return $null
 }
 
+<#
+.SYNOPSIS
+  Retrieve a raw Shell metadata value for a file using a two-pass column search.
+.DESCRIPTION
+  Consolidates the Shell.Application COM setup, column index lookup via
+  Find-ShellColumnIndex, and value fetch used by both Get-WindowsShellFps
+  and Get-WindowsShellDuration.
+.PARAMETER FilePath
+  Absolute path to the media file.
+.PARAMETER NamePattern
+  Regex applied to column header names in Pass 1.
+.PARAMETER ValuePattern
+  Regex applied to item values in Pass 2.
+.PARAMETER Label
+  Short label used in debug messages (e.g. 'frame rate', 'duration').
+.OUTPUTS
+  [string] raw metadata value, or $null when unavailable.
+#>
+function Get-ShellMetadataValue {
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [Parameter(Mandatory)][string]$NamePattern,
+        [Parameter(Mandatory)][string]$ValuePattern,
+        [string]$Label = 'metadata'
+    )
+    try {
+        $shell = New-Object -ComObject Shell.Application
+        $sf    = $shell.Namespace((Split-Path -Path $FilePath -Parent))
+        if ($null -eq $sf) { return $null }
+        $item  = $sf.ParseName((Split-Path -Path $FilePath -Leaf))
+        if ($null -eq $item) { return $null }
+        $idx = Find-ShellColumnIndex -Namespace $sf -Item $item `
+            -NamePattern $NamePattern -ValuePattern $ValuePattern
+        if ($null -eq $idx) { return $null }
+        Write-Debug ("Windows Shell: using column index {0} for {1}." -f $idx, $Label)
+        $rawVal = $sf.GetDetailsOf($item, $idx)
+        if ([string]::IsNullOrWhiteSpace($rawVal)) { return $null }
+        return $rawVal
+    }
+    catch {
+        Write-Debug ("Windows Shell {0} probe failed for '{1}': {2}" -f $Label, $FilePath, $_.Exception.Message)
+        return $null
+    }
+}
+
 # ── FPS helpers ────────────────────────────────────────────────────────────
 
 function Get-FfprobeFps {
@@ -176,39 +222,22 @@ function Get-FfprobeFps {
 
 function Get-WindowsShellFps {
     param([Parameter(Mandatory)][string]$FilePath)
-    try {
-        $shell = New-Object -ComObject Shell.Application
-        $sf    = $shell.Namespace((Split-Path -Path $FilePath -Parent))
-        if ($null -eq $sf) { return $null }
-        $item  = $sf.ParseName((Split-Path -Path $FilePath -Leaf))
-        if ($null -eq $item) { return $null }
+    $rawVal = Get-ShellMetadataValue -FilePath $FilePath `
+        -NamePattern '(?i)(frame\s*rate|\bfps\b)' -ValuePattern '(?i)\bfps\b' -Label 'frame rate'
+    if ($null -eq $rawVal) { return $null }
 
-        $idx = Find-ShellColumnIndex -Namespace $sf -Item $item `
-            -NamePattern '(?i)(frame\s*rate|\bfps\b)' -ValuePattern '(?i)\bfps\b'
-        if ($null -eq $idx) { return $null }
-        Write-Debug ("Windows Shell: using column index {0} for frame rate." -f $idx)
+    # Examples: "29.97 fps" (en), "29,97 fps" (de/fr), "29970" (milli-FPS heuristic)
+    $scrub = ($rawVal -replace '[^\d\.,/ ]', '').Trim()
+    $fps = ConvertTo-FpsFromFraction -Text $scrub
+    if ($fps) { return [double]$fps }
 
-        $rawVal = $sf.GetDetailsOf($item, $idx)
-        if ([string]::IsNullOrWhiteSpace($rawVal)) { return $null }
-
-        # Examples: "29.97 fps" (en), "29,97 fps" (de/fr), "29970" (milli-FPS heuristic)
-        $scrub = ($rawVal -replace '[^\d\.,/ ]', '').Trim()
-        $fps = ConvertTo-FpsFromFraction -Text $scrub
-        if ($fps) { return [double]$fps }
-
-        if ($scrub -match '^\s*\d+\s*$') {
-            $n = [double]$scrub
-            if ($n -gt 300) {
-                # Heuristic: plain integer >300 without fps suffix → treat as milli-FPS.
-                Write-Warning ("Windows Shell returned large numeric value '{0}' for FPS; interpreting as milli-FPS (dividing by 1000)." -f $scrub)
-                return ($n / 1000.0)
-            }
-            return $n
+    if ($scrub -match '^\s*\d+\s*$') {
+        $n = [double]$scrub
+        if ($n -gt 300) {
+            Write-Warning ("Windows Shell returned large numeric value '{0}' for FPS; interpreting as milli-FPS (dividing by 1000)." -f $scrub)
+            return ($n / 1000.0)
         }
-    }
-    catch {
-        # COM can fail in headless contexts; keep this best-effort and continue.
-        Write-Debug ("Windows Shell FPS probe failed: {0}" -f $_.Exception.Message)
+        return $n
     }
     return $null
 }
@@ -238,42 +267,29 @@ function Get-FfprobeDuration {
 
 function Get-WindowsShellDuration {
     param([Parameter(Mandatory)][string]$FilePath)
-    try {
-        $shell = New-Object -ComObject Shell.Application
-        $sf    = $shell.Namespace((Split-Path -Path $FilePath -Parent))
-        if ($null -eq $sf) { return $null }
-        $item  = $sf.ParseName((Split-Path -Path $FilePath -Leaf))
-        if ($null -eq $item) { return $null }
+    # Pass 1: name matches English/similar; Pass 2: value is locale-independent H:MM:SS shape
+    $rawVal = Get-ShellMetadataValue -FilePath $FilePath `
+        -NamePattern '(?i)(\blength\b|\bduration\b)' `
+        -ValuePattern '^\s*\d{1,3}:\d{2}:\d{2}\s*$' -Label 'duration'
+    if ($null -eq $rawVal) { return $null }
 
-        # Pass 1 matches English and locales sharing the root word;
-        # Pass 2 value-scan is locale-independent (H:MM:SS format is standardized).
-        $idx = Find-ShellColumnIndex -Namespace $sf -Item $item `
-            -NamePattern '(?i)(\blength\b|\bduration\b)' -ValuePattern '^\s*\d{1,3}:\d{2}:\d{2}\s*$'
-        if ($null -eq $idx) { return $null }
-        Write-Debug ("Windows Shell: using column index {0} for duration." -f $idx)
-
-        $rawVal = $sf.GetDetailsOf($item, $idx)
-        if ([string]::IsNullOrWhiteSpace($rawVal)) { return $null }
-
-        # Parse HH:MM:SS / H:MM:SS
-        if ($rawVal -match '^\s*(\d+):(\d+):(\d+)\s*$') {
-            return [double]([int]$Matches[1] * 3600 + [int]$Matches[2] * 60 + [int]$Matches[3])
-        }
-        # Parse MM:SS
-        if ($rawVal -match '^\s*(\d+):(\d+)\s*$') {
-            return [double]([int]$Matches[1] * 60 + [int]$Matches[2])
-        }
-        # Plain numeric seconds (with optional decimal)
-        $scrub = ($rawVal -replace '[^\d\.,]', '').Trim() -replace ',', '.'
-        if ($scrub -match '^\d+(\.\d+)?$') {
-            try {
-                $d = [double]::Parse($scrub, [Globalization.CultureInfo]::InvariantCulture)
-                if ($d -gt 0) { return [double]$d }
-            }
-            catch { }
-        }
+    # Parse HH:MM:SS / H:MM:SS
+    if ($rawVal -match '^\s*(\d+):(\d+):(\d+)\s*$') {
+        return [double]([int]$Matches[1] * 3600 + [int]$Matches[2] * 60 + [int]$Matches[3])
     }
-    catch { Write-Debug ("Windows Shell duration probe failed: {0}" -f $_.Exception.Message) }
+    # Parse MM:SS
+    if ($rawVal -match '^\s*(\d+):(\d+)\s*$') {
+        return [double]([int]$Matches[1] * 60 + [int]$Matches[2])
+    }
+    # Plain numeric seconds (with optional decimal)
+    $scrub = ($rawVal -replace '[^\d\.,]', '').Trim() -replace ',', '.'
+    if ($scrub -match '^\d+(\.\d+)?$') {
+        try {
+            $d = [double]::Parse($scrub, [Globalization.CultureInfo]::InvariantCulture)
+            if ($d -gt 0) { return [double]$d }
+        }
+        catch { }
+    }
     return $null
 }
 
