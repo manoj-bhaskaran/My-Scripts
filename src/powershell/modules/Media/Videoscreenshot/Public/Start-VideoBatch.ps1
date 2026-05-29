@@ -349,7 +349,18 @@ function Start-VideoBatch {
                 -NoAudio:$NoAudio
 
             if ($UseVlcSnapshots) {
-                $baseWait = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.SnapshotFallbackTimeoutSeconds }
+                $baseWait = if ($capSeconds -gt 0) {
+                    [int]$capSeconds
+                } else {
+                    $detectedDuration = Get-VideoDuration -Path $video.FullName
+                    if ($detectedDuration -gt 0) {
+                        $grace = [int]$context.Config.SnapshotDurationGraceSeconds
+                        [int][Math]::Ceiling($detectedDuration + $grace)
+                    } else {
+                        Write-Debug ("Duration probe failed for '{0}'; using flat fallback ({1} s)." -f $video.FullName, $context.Config.SnapshotFallbackTimeoutSeconds)
+                        [int]$context.Config.SnapshotFallbackTimeoutSeconds
+                    }
+                }
                 $waitSeconds = [int]([Math]::Max(1, $baseWait + [int]$StartupGraceSeconds))
                 Write-Debug ("TRACE Start-VideoBatch: about to call Wait-ForSnapshotFrames (MaxSeconds={0}, Prefix={1})" -f $waitSeconds, $scenePrefix)
                 $snapStats = Wait-ForSnapshotFrames -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -MaxSeconds $waitSeconds -Process $p `

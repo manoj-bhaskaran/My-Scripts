@@ -1,6 +1,6 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '3.0.9'
+  ModuleVersion     = '3.1.0'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
@@ -14,7 +14,7 @@
   PrivateData       = @{
     PSData = @{
       Tags         = @('video','vlc','gdi','screenshots','crop','python','images','automation')
-      ReleaseNotes = '3.0.9: Added idle-frame stall detection to Wait-ForSnapshotFrames; undecodable videos are now abandoned in ~SnapshotIdleTimeoutSeconds (default 20 s) instead of hanging for the full ~300 s fallback timeout.'
+      ReleaseNotes = '3.1.0: Duration-aware per-video snapshot cap: Start-VideoBatch now probes each video duration via ffprobe (falling back to Windows Shell) and uses cap = duration + SnapshotDurationGraceSeconds (default 30 s) instead of the flat 300 s constant. The flat fallback is retained when duration detection fails.'
     }
   }
 }
