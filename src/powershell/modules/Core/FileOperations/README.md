@@ -313,6 +313,9 @@ Example with `RetryDelay=2` and `MaxBackoff=60`:
 
 ## Version History
 
+### 1.0.3 (Unreleased)
+- Fixed the private dependency loader to resolve `Core/ErrorHandling/ErrorHandling.psm1` from the module layout correctly.
+
 ### 1.0.0 (2025-11-20)
 - Initial release
 - `Copy-FileWithRetry` function

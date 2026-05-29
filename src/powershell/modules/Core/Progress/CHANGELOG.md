@@ -1,6 +1,46 @@
 # CHANGELOG — Core/Progress (ProgressReporter)
 
-## 1.1.0 — Unreleased
+## 1.2.2 — Unreleased
+
+### Changed
+
+- Reduced duplicated new-code lines in `Write-ExtractionSummary.ps1` by deriving the
+  internal summary state from `$PSBoundParameters` instead of repeating the full summary
+  parameter list at the helper call site. Public behavior is unchanged.
+- `ProgressReporter.psd1`: `ModuleVersion` bumped from `1.2.1` to `1.2.2` (PATCH —
+  internal refactor/no behavioral change).
+
+## 1.2.1 — Unreleased
+
+### Changed
+
+- Refactored `Write-ExtractionSummary` into focused helper functions for summary-object
+  construction, console-width selection, formatted view output, and error-note output.
+  Public behavior and the `Write-ExtractionSummary` export are unchanged; this only lowers
+  the public function's Cognitive Complexity below the quality-gate limit.
+- `ProgressReporter.psd1`: `ModuleVersion` bumped from `1.2.0` to `1.2.1` (PATCH —
+  internal refactor/no behavioral change).
+
+## 1.2.0 — Unreleased
+
+### Added
+
+- `Write-ExtractionSummary` (`Public/Write-ExtractionSummary.ps1`): public summary renderer
+  relocated from `Expand-ZipsAndClean.ps1`. It preserves interactive host header and
+  table/list rendering, non-interactive error-note emission, `ConsoleWidth`/`HostName`/
+  `PassThru` test-injection parameters, the 120-column table threshold, and the existing
+  compression-ratio formatting.
+
+### Changed
+
+- `ProgressReporter.psd1`: `ModuleVersion` bumped from `1.1.0` to `1.2.0` (MINOR —
+  additive new export); `FunctionsToExport` updated to include `Write-ExtractionSummary`.
+- `ProgressReporter.psm1`: imports `Core/FileSystem` so summary byte formatting uses the
+  shared `Format-Bytes` implementation.
+- `ProgressReporter.psd1`: `PowerShellVersion` raised from `5.1` to `7.0` because
+  the module now imports the PS 7-only `Core/FileSystem` module for `Format-Bytes`.
+
+## 1.1.0 — 2026-05-29
 
 ### Added
 

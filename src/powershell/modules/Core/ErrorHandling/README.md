@@ -184,6 +184,9 @@ Assert-Elevated
 
 ## Version History
 
+### 1.1.1 (Unreleased)
+- Hardened the module loader to skip missing `Private`/`Public` folders without provider errors.
+
 ### 1.1.0 (2026-03-26)
 - Added `IgnoreFileNotFound` switch to `Invoke-WithRetry` for warning-and-skip handling of file-not-found conditions.
 

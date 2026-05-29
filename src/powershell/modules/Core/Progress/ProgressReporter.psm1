@@ -1,5 +1,10 @@
 # Module loader for ProgressReporter
 
+$fileSystemModule = Join-Path $PSScriptRoot '..\FileSystem\FileSystem.psm1'
+if (Test-Path -LiteralPath $fileSystemModule) {
+    Import-Module $fileSystemModule -Force
+}
+
 $privateDir = Join-Path $PSScriptRoot 'Private'
 if (Test-Path -LiteralPath $privateDir) {
     Get-ChildItem -Path $privateDir -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
