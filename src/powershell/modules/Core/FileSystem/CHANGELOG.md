@@ -7,6 +7,17 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [1.3.0] – 2026-05-29
 
+### Changed
+
+- **`PowerShellVersion` raised from `5.1` to `7.0`** in the module manifest.
+  The new `Remove-SourceDirectory` helpers use the ternary operator (`? :`) which
+  is PS7-only syntax; the manifest now accurately reflects the minimum runtime
+  required. All pre-existing public functions remain compatible with PS7.
+- **`Remove-SourceDirectory`** now correctly honours `-WhatIf` / `-Confirm`.
+  A `$PSCmdlet.ShouldProcess($SourceDir, 'Delete source directory')` guard wraps
+  both the non-zip cleanup and the directory deletion, so a dry-run invocation
+  never touches the filesystem.
+
 ### Added
 
 - **`Remove-SourceDirectory`** (public) — thin orchestrator exported from the module.

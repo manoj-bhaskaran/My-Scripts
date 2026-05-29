@@ -7,6 +7,10 @@ function Remove-SourceDirectory {
         classification, best-effort non-zip cleanup, and robust directory deletion.
         Appends human-readable entries to ErrorList rather than throwing, so the
         caller's run continues uninterrupted on partial failures.
+
+        Supports -WhatIf and -Confirm: all destructive file-system operations
+        (non-zip cleanup and directory deletion) are guarded by a single
+        ShouldProcess call so that dry-run invocations leave the directory intact.
     .PARAMETER SourceDir
         The source directory to conditionally delete.
     .PARAMETER ShouldDeleteSource
@@ -51,6 +55,8 @@ function Remove-SourceDirectory {
             $ErrorList.Add($blockReason) | Out-Null
             return
         }
+
+        if (-not $PSCmdlet.ShouldProcess($SourceDir, 'Delete source directory')) { return }
 
         if ($ShouldCleanNonZips -and $nonZips.Count -gt 0) {
             Remove-NonZipItems -NonZips $nonZips -ResolvedSource $resolvedSource

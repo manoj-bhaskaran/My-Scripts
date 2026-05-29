@@ -113,6 +113,17 @@ Describe 'Remove-SourceDirectory' {
         Test-Path -LiteralPath $sourceDir | Should -BeTrue
         $errors.Count | Should -Be 0
     }
+
+    It 'leaves directory intact when -WhatIf is active' {
+        $sourceDir = Join-Path $TestDrive 'source-whatif'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+        $errors = [System.Collections.Generic.List[string]]::new()
+
+        Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $false -ErrorList $errors -WhatIf
+
+        Test-Path -LiteralPath $sourceDir | Should -BeTrue
+        $errors.Count | Should -Be 0
+    }
 }
 
 # ---------------------------------------------------------------------------

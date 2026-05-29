@@ -21,7 +21,7 @@
     Description       = 'Common file system operations including directory creation, file accessibility checks, path validation, file locking detection, path normalization, safe naming, byte formatting, directory writability testing, cross-platform path-separator helpers, and robust source-directory deletion.'
 
     # Minimum version of the PowerShell engine required by this module
-    PowerShellVersion = '5.1'
+    PowerShellVersion = '7.0'
 
     # Modules that must be imported into the global environment prior to importing this module
     RequiredModules   = @()
@@ -59,7 +59,7 @@
             Tags         = @('FileSystem', 'IO', 'Utilities', 'PathValidation', 'FileLocking', 'PathNormalization', 'SafeNaming', 'CrossPlatform')
             LicenseUri   = 'http://www.apache.org/licenses/LICENSE-2.0'
             ProjectUri   = 'https://github.com/manoj-bhaskaran/My-Scripts'
-            ReleaseNotes = '1.3.0: Added public Remove-SourceDirectory orchestrator and private helpers (Get-SourceDirectoryItems, Test-HasBlockingZips, Get-NonZipDeletionBlockReason, Remove-NonZipItems, Remove-DirectoryRobust) extracted from Expand-ZipsAndClean.ps1.
+            ReleaseNotes = '1.3.0: Added public Remove-SourceDirectory orchestrator and private helpers (Get-SourceDirectoryItems, Test-HasBlockingZips, Get-NonZipDeletionBlockReason, Remove-NonZipItems, Remove-DirectoryRobust) extracted from Expand-ZipsAndClean.ps1. Raised minimum PowerShell version to 7.0. Added ShouldProcess (-WhatIf/-Confirm) support to Remove-SourceDirectory.
 1.2.0: Added directory writability probe (Test-DirectoryWritable), cross-platform trailing-separator helper (Add-TrailingSeparator), and path-containment test (Test-PathContainment).
 1.1.0: Added path normalization (Get-FullPath), byte formatting (Format-Bytes), unique path resolution (Resolve-UniquePath, Resolve-UniqueDirectoryPath), safe filenames (Get-SafeName), and long paths OS check (Test-LongPathsEnabled).
 1.0.0: Initial release with directory creation, file accessibility checks, path validation, and file locking detection.'
