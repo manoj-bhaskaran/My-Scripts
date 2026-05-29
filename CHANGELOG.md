@@ -16,6 +16,11 @@ kept here — see the linked file for details.
 
 ## [Unreleased]
 
+### Fixed
+
+- **[Update-ScheduledTaskScriptPaths 3.0.1]** Consistent pipeline stage indentation: each cmdlet on its own line with pipe at end of preceding line.
+  → Full detail: [automation/CHANGELOG.md](src/powershell/automation/CHANGELOG.md)
+
 ### Security
 
 - **[Expand-ZipsAndClean/ZipWorkflow]** Added module-scope `Write-LogDebug` fallback to prevent helper-load failures when logging framework is not imported in test/module scope (issue #1096 follow-up).
