@@ -16,6 +16,13 @@ kept here — see the linked file for details.
 
 ## [Unreleased]
 
+### Changed
+
+- **[Invoke-PostCommitHook 3.2.0]** Refactored `Deploy-ModuleFromConfig` to reduce cognitive
+  complexity from 77 to ≤15: extracted `Test-TargetList`, `Get-ParsedConfigLine`,
+  `Resolve-ModuleSourcePath`, `Get-TargetBaseRoot`, `Invoke-ModuleTargetDeployment`, and
+  `Invoke-SingleModuleDeployment` helpers; no behaviour change.
+
 ### Fixed
 
 - **[Update-ScheduledTaskScriptPaths 3.0.1]** Consistent pipeline stage indentation: each cmdlet on its own line with pipe at end of preceding line.
