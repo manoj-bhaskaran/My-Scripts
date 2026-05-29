@@ -212,12 +212,7 @@
 
 ### Tests
 
-- Removed four duplicate/low-value `It` blocks from `Expand-ZipsAndClean.Tests.ps1`; no script logic changed:
-  - `Flat: file count returned matches archive entry count` — redundant with `Flat Overwrite` and `Flat Rename`, which already exercise `Expand-ZipFlat` write-count paths; `Get-ZipFileStats` is already covered by `PerArchiveSubfolder: file count returned matches archive entry count` and the `Expand-ZipSmart` fallback test.
-  - `delegates per-item non-zip removal to Remove-FileWithRetry` — overlaps with `deletes nested non-zip files deepest-first …`, which drives the same per-item removal path over a richer tree; `Remove-FileWithRetry` is a test stub so the delegation assertion verifies harness wiring only.
-  - `delegates move operation to Move-FileWithRetry` — identical single-zip, no-collision scenario to `moves zip files from source to parent directory`; `Move-FileWithRetry` is likewise a test stub, so the `Should -Invoke` assertion verifies harness wiring rather than script logic.
-  - `omits CurrentOperation when not provided` — redundant with `calls Write-Progress with computed percentage when QuietMode is false`, which already invokes the function with no `-CurrentOperation`, exercising the same branch.
-- Suite now contains 33 tests (was 37).
+- Removed 4 duplicate/low-value `It` blocks (`Flat: file count`, `delegates per-item non-zip removal`, `delegates move operation`, `omits CurrentOperation`) whose assertions were already covered by broader or more representative tests; suite shrinks from 37 to 33 tests.
 
 
 ## 2.5.3 — 2026-05-21 *(patch — internal robustness refactor; no behavior change for callers)*
@@ -346,27 +341,9 @@
 
 ### Tests
 
-- Added `Flat Overwrite: incoming file replaces existing file` — creates a zip with one
-  entry whose name collides with an existing file, calls `Expand-ZipFlat` with
-  `CollisionPolicy Overwrite`, and asserts the existing file is replaced with the
-  incoming content.
-- Added `Flat Rename: existing file untouched and incoming written under a unique name` —
-  same collision setup but with `CollisionPolicy Rename`; asserts the original file is
-  untouched, two `.txt` files exist in the root, and the renamed file holds the
-  incoming content.
-- Added `Describe 'Test-ScriptPreconditions'` with three `It` blocks:
-  - `throws when source and destination are the same path`.
-  - `throws when destination is inside the source directory`.
-  - `throws when source is inside the destination directory`.
-  Each test dot-sources the `#region Helpers` block directly from the script, creates
-  real temporary directories under `$TestDrive`, and asserts that `Test-ScriptPreconditions`
-  throws with the expected message pattern.
-- Added `Describe 'Smoke — Expand-ZipsAndClean.ps1 parse check'` with two `It` blocks:
-  - `parses without error under pwsh 7.x` — uses the PowerShell AST parser
-    (`[System.Management.Automation.Language.Parser]::ParseFile`) to assert zero
-    parse errors.
-  - `contains #requires -Version 7.0 directive` — reads the first line of the script
-    and asserts it matches the directive exactly.
+- Added `Flat Overwrite` and `Flat Rename` collision tests for `Expand-ZipFlat`, asserting that the target file is replaced or the incoming file is written under a unique name respectively.
+- Added `Describe 'Test-ScriptPreconditions'` (3 It blocks) covering same-path, destination-inside-source, and source-inside-destination guard conditions.
+- Added `Describe 'Smoke — Expand-ZipsAndClean.ps1 parse check'` (2 It blocks) asserting zero AST parse errors and the presence of the `#requires -Version 7.0` directive.
 
 ## 2.4.x — not released
 
@@ -404,17 +381,7 @@
 
 ### Tests
 
-- Added `Describe 'Write-ExtractionSummary'` with five `It` blocks:
-  - `emits summary header when host is interactive (ConsoleHost)`.
-  - `suppresses summary table and header when non-interactive and no errors` — passes
-    `HostName 'DefaultHost'` with an empty error list; asserts output is empty and
-    `Format-Table` / `Format-List` are each called zero times.
-  - `emits error notes even when host is non-interactive` — passes `HostName 'DefaultHost'`
-    with a non-empty error list; asserts the table is suppressed but errors appear in output.
-  - `emits error notes when interactive and error list is non-empty`.
-  - `summary view contains expected fields` — uses `-PassThru` switch and filters pipeline
-    output by type to extract the `PSCustomObject`; asserts `SrcDir`, `DestDir`, `ZipsFound`,
-    `ZipsDone`, `Files`, `Ratio`, and `Duration`.
+- Added `Describe 'Write-ExtractionSummary'` (5 It blocks) covering interactive/non-interactive host output, error-note emission regardless of host type, and summary-object field presence.
 
 
 ## 2.3.0 — 2026-05-17 *(minor — import contract changes)*
@@ -432,17 +399,8 @@
 
 ### Tests
 
-- Updated `Describe 'Expand-ZipsAndClean helper extraction refactor'` → renamed to
-  `'Core/Zip module — public extraction functions'`.
-- `BeforeAll` now imports `Core/Zip/Zip.psm1` directly instead of extracting the
-  `#region Helpers` block from the script source.
-- Module-internal function mocks (`Expand-ZipToSubfolder`, `Expand-ZipFlat`, `Expand-Archive`)
-  updated to use `-ModuleName Zip`.
-- Tests for private module functions (`Resolve-ZipEntryDestinationPath`,
-  `Test-IsEncryptedZipError`, `Resolve-ExtractionError`) now run inside `InModuleScope Zip`.
-- The three remaining `Describe` blocks (`Remove-SourceDirectory`, `Move-ZipFilesToParent`,
-  `Write-PhaseProgress`) each import `Core/Zip/Zip.psm1` in their `BeforeAll` so
-  `Invoke-ZipExtractions` (which calls the module functions) resolves correctly if exercised.
+- Updated `Describe 'Expand-ZipsAndClean helper extraction refactor'` → renamed to `'Core/Zip module — public extraction functions'`; `BeforeAll` now imports `Core/Zip/Zip.psm1` directly rather than dot-sourcing the script helpers region.
+- Module-internal mocks updated to `-ModuleName Zip`; private-function tests moved into `InModuleScope Zip`; remaining `Describe` blocks import `Core/Zip/Zip.psm1` in their own `BeforeAll`.
 
 
 ## 2.2.3 — 2026-05-17 *(patch — progress-helper extraction/refactor)*
@@ -467,12 +425,7 @@
 
 ### Tests
 
-- Added `Describe 'Write-PhaseProgress'` with eight It blocks covering:
-  - QuietMode suppression (both normal and Completed paths).
-  - Correct `PercentComplete` computation (50 % at midpoint, 100 % at end).
-  - `CurrentOperation` included when supplied, omitted when not.
-  - `Completed` switch invokes `Write-Progress -Completed`.
-  - Zero `Total` guard (no division-by-zero error).
+- Added `Describe 'Write-PhaseProgress'` (8 It blocks) covering QuietMode suppression, percentage computation, `CurrentOperation` inclusion/omission, `Completed` switch behavior, and zero-total guard.
 
 
 ## 2.2.2 — 2026-05-12 *(patch — extraction stats/perf refactor and helper signature update)*
@@ -485,8 +438,6 @@
 
 ### Tests
 
-- Added `PerArchiveSubfolder: file count returned matches archive entry count` — creates a 3-file zip, calls `Get-ZipFileStats` and `Expand-ZipToSubfolder`, and asserts the returned count equals the archive manifest count.
-- Added `Flat: file count returned matches archive entry count` — creates a 2-file zip, calls `Get-ZipFileStats` and `Expand-ZipFlat`, and asserts the returned count equals the archive manifest count.
-- Updated `dispatches PerArchiveSubfolder mode to Expand-ZipToSubfolder` to pass and assert the new `ExpectedFileCount` parameter.
-- All three `Describe` `BeforeAll` blocks now explicitly call `Add-Type -AssemblyName System.IO.Compression.FileSystem` so the assembly is available when helpers are dot-sourced (previously the assembly was loaded lazily inside `Get-ZipFileStats` which is outside the extracted helpers block).
+- Added `PerArchiveSubfolder: file count returned matches archive entry count` and `Flat: file count returned matches archive entry count`; updated `dispatches PerArchiveSubfolder mode to Expand-ZipToSubfolder` to assert the new `ExpectedFileCount` parameter.
+- All three `Describe` `BeforeAll` blocks now call `Add-Type -AssemblyName System.IO.Compression.FileSystem` explicitly so the assembly is available when helpers are dot-sourced.
 
