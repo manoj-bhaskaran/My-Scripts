@@ -100,9 +100,15 @@
 
 .NOTES
     VERSION
-      2.1.0
+      2.1.1
 
     CHANGELOG
+      2.1.1
+        - Refactor Rename-JpegFiles to reduce Cognitive Complexity from 19 to 14 (limit: 15).
+          • Simplify empty-collection guard: -not $Files (removes redundant -or $Files.Count -eq 0).
+          • Replace nested extension if/or block with an early-continue guard using -notin,
+            eliminating one nesting level from the two inner ShouldProcess/Test-Path checks.
+
       2.1.0
         - Renamed -LogFilePath to -LogDirectory to match framework semantics (directory, not file).
         - Pass -LogDirectory to Initialize-Logger so framework log lands in the caller-supplied path.
@@ -323,7 +329,7 @@ function Rename-JpegFiles {
         [switch]$ShowProgress
     )
 
-    if (-not $Files -or $Files.Count -eq 0) {
+    if (-not $Files) {
         if ($ShowProgress) { Write-Progress -Id 1 -Activity "Renaming (.jpeg/.jpg_large → .jpg)" -Completed }
         return 0
     }
@@ -341,19 +347,19 @@ function Rename-JpegFiles {
             Write-Progress -Id 1 -Activity "Renaming (.jpeg/.jpg_large → .jpg)" -Status "[$i/$total] $($f.Name)" -PercentComplete $pct
         }
 
-        try {
-            if ($f.Extension -ieq '.jpeg' -or $f.Extension -ieq '.jpg_large') {
-                $target = Join-Path -Path $f.DirectoryName -ChildPath ($f.BaseName + '.jpg')
-                if (Test-Path -LiteralPath $target) {
-                    Write-Verbose "Skip rename; target exists: $target"
-                    continue
-                }
+        if ($f.Extension.ToLowerInvariant() -notin @('.jpeg', '.jpg_large')) { continue }
 
-                if ($PSCmdlet.ShouldProcess($f.FullName, "Rename to $target")) {
-                    Rename-Item -LiteralPath $f.FullName -NewName ([System.IO.Path]::GetFileName($target)) -ErrorAction Stop
-                    $script:RenamedCount++
-                    Write-Verbose "Renamed: $($f.FullName) -> $target"
-                }
+        try {
+            $target = Join-Path -Path $f.DirectoryName -ChildPath ($f.BaseName + '.jpg')
+            if (Test-Path -LiteralPath $target) {
+                Write-Verbose "Skip rename; target exists: $target"
+                continue
+            }
+
+            if ($PSCmdlet.ShouldProcess($f.FullName, "Rename to $target")) {
+                Rename-Item -LiteralPath $f.FullName -NewName ([System.IO.Path]::GetFileName($target)) -ErrorAction Stop
+                $script:RenamedCount++
+                Write-Verbose "Renamed: $($f.FullName) -> $target"
             }
         }
         catch {
@@ -617,7 +623,7 @@ Elapsed (total)       : {2:c}
 # region: Main ------------------------------------------------------------------------------------
 
 try {
-    Write-LogInfo "Starting picconvert 2.1.0"
+    Write-LogInfo "Starting picconvert 2.1.1"
     Initialize-Directories -SourceDir $SourceDir -DestDir $DestDir
 
     # Phase 1: Gather all source files (for rename); ALWAYS include .jpeg and .jpg_large
