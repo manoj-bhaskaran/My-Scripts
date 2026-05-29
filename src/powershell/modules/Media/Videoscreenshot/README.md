@@ -39,7 +39,8 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
 - `TimeLimitSeconds` (int, default config): Per-video capture duration; `0` uses module default.
 - `VideoLimit` (int, default `0`): Maximum number of videos to process (0 = all).
 - `IncludeExtensions` (string[]): Extensions to consider (overrides defaults).
-- `VerifyVideos` (switch): Attempt lightweight playability checks before processing.
+- `VerifyVideos` (switch): Attempt lightweight playability checks before processing. Aliases: `-PreflightProbe`, `-SkipUnplayable`.
+- `VideoProbeTimeoutSeconds` (int, default config value `5`): Maximum time to wait for the `-VerifyVideos` probe before force-killing it and treating the video as unplayable.
 - `RunCropper` (switch): Invoke the Python cropper after capture.
 - `CropOnly` (switch): Run the cropper without taking screenshots.
 - `PythonScriptPath` (string): Path to `crop_colours.py` when cropping.
@@ -64,6 +65,7 @@ catch {
 - Set `FramesPerSecond` conservatively for long runs to reduce I/O and disk usage.
 - Enable `-IncludeExtensions` to skip unsupported formats early and speed up discovery.
 - Processed logs allow resumable runs—point `-ProcessedLogPath` at fast storage to avoid lock contention.
+- Use `-VerifyVideos` (`-PreflightProbe`/`-SkipUnplayable`) to skip corrupt or unsupported files before launching the main VLC capture session; tune the bounded probe with `-VideoProbeTimeoutSeconds`.
 - Cropper runs can be CPU intensive; use `-VideoLimit`/`-TimeLimitSeconds` to batch work into smaller chunks.
 
 ## Usage
@@ -141,16 +143,19 @@ Requirements/behavior:
 #### Custom video extensions & preflight video verification
 ```powershell
 Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
-  -Start-VideoBatch `
+Start-VideoBatch `
   -SourceFolder .\videos `
   -SaveFolder .\shots `
   -FramesPerSecond 2 `
   -UseVlcSnapshots `
   -IncludeExtensions '.mp4','.mkv','.webm' `
-  -VerifyVideos
+  -VerifyVideos `
+  -VideoProbeTimeoutSeconds 5
 ```
 * -IncludeExtensions overrides the discovery set (defaults come from module config).
-* -VerifyVideos attempts a lightweight playability check if Test-VideoPlayable is available; otherwise it logs a warning and skips verification.
+* -VerifyVideos attempts a lightweight, bounded `Test-VideoPlayable` check before the main VLC session. `-PreflightProbe` and `-SkipUnplayable` are aliases for the same switch.
+* If the probe returns false or times out, the video is logged as `Skipped`/`NotPlayable` in the processed log and skipped on later resume runs.
+* `-VideoProbeTimeoutSeconds` controls the force-kill deadline for the probe; omit it to use `VideoProbeTimeoutSeconds` from module config.
 
 #### What the cropper flags do
 * --preserve-alpha — consider transparency when trimming borders; useful for PNGs with transparent edges.
@@ -349,6 +354,7 @@ Key config knobs (in `Get-DefaultConfig`, `Private/Config.ps1`):
 
 | Key | Default | Description |
 |-----|---------|-------------|
+| `VideoProbeTimeoutSeconds` | `5` | Seconds to wait for the optional `-VerifyVideos` pre-flight VLC probe before force-killing it and marking the video unplayable. |
 | `SnapshotDurationGraceSeconds` | `30` | Grace margin (s) added to detected video duration to form the per-video cap. Absorbs VLC startup, buffering, and end-of-stream flush. |
 | `SnapshotIdleTimeoutSeconds` | `20` | Seconds without a new frame before the session is abandoned. Set to `0` to disable. |
 | `SnapshotIdleWarmUpSeconds` | `10` | Seconds at session start during which idle detection is suppressed (allows slow-starting sources their first frame). |
