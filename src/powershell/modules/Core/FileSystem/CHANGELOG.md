@@ -5,6 +5,57 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.3.0] – 2026-05-29
+
+### Changed
+
+- **`PowerShellVersion` raised from `5.1` to `7.0`** in the module manifest.
+  The new `Remove-SourceDirectory` helpers use the ternary operator (`? :`) which
+  is PS7-only syntax; the manifest now accurately reflects the minimum runtime
+  required. All pre-existing public functions remain compatible with PS7.
+- **`Remove-SourceDirectory`** now correctly honours `-WhatIf` / `-Confirm`.
+  A `$PSCmdlet.ShouldProcess($SourceDir, 'Delete source directory')` guard wraps
+  both the non-zip cleanup and the directory deletion, so a dry-run invocation
+  never touches the filesystem.
+
+### Added
+
+- **`Remove-SourceDirectory`** (public) — thin orchestrator exported from the module.
+  Resolves the provider path, delegates to the four private helpers below, and appends
+  human-readable entries to an `ErrorList` rather than throwing, so callers continue
+  uninterrupted on partial failures.
+- **`Get-SourceDirectoryItems`** (private) — scans a directory recursively with
+  `-ErrorAction SilentlyContinue` and surfaces enumeration errors as `Write-Warning`
+  messages so the caller is never silently left without diagnostics.
+- **`Test-HasBlockingZips`** (private) — checks whether leftover `.zip` files in the
+  source directory would be destroyed by deletion (because they were not moved due to a
+  Skip collision policy) and records the block-reason error message.
+- **`Get-NonZipDeletionBlockReason`** (private) — returns a human-readable block reason
+  when non-zip items prevent deletion (distinguishing "non-zip files remain" from "only
+  empty subdirectories remain"), or `$null` when it is safe to proceed.
+- **`Remove-NonZipItems`** (private) — removes non-zip items depth-first (deepest path
+  first) to avoid "directory not empty" errors on nested trees. Uses `@(...)` guards on
+  the split/filter expression to preserve correct `.Count` behaviour under
+  `Set-StrictMode -Version Latest`.
+- **`Remove-DirectoryRobust`** (private) — deletes a directory using
+  `[System.IO.Directory]::Delete` (the synchronous .NET primitive) with
+  `Remove-Item -Recurse -Force` as a fallback. Works around PowerShell issue #8211
+  where `Remove-Item` can leave the root directory behind on some Linux CI filesystems
+  (GitHub Actions runners). Records a single failure entry to `ErrorList` if the
+  directory still exists after both attempts.
+
+### Changed
+
+- Module description updated to mention robust source-directory deletion.
+
+### Notes
+
+- No README exists for this module; no documentation changes required.
+- All behaviour, error messages, and delete semantics are identical to the
+  script-local implementation previously in `Expand-ZipsAndClean.ps1`.
+
+---
+
 ## [1.2.1] – 2026-05-25
 
 ### Fixed
