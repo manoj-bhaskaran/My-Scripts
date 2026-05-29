@@ -68,6 +68,11 @@ kept here — see the linked file for details.
   `Expand-ZipToSubfolder` / `Expand-ZipFlat` with `Expand-ZipSmart` retained as a dispatcher
   (issues #937–#939).
   → Full detail: [Expand-ZipsAndClean.CHANGELOG.md](src/powershell/file-management/Expand-ZipsAndClean.CHANGELOG.md)
+- **[Sync-MacriumBackups.ps1 2.7.3]** Reduced `Test-Network` cognitive complexity from 25 → 6
+  (limit: 15) by extracting two helpers: `Invoke-FallbackUpgrade` (upgrade from fallback SSID to
+  preferred when available) and `Connect-KnownWiFiNetwork` (connect from a fully disconnected
+  state). No functional changes; `Get-AvailableWiFiNetworks` added to eliminate the duplicated
+  `netsh wlan show networks` one-liner.
 - **[Sync-MacriumBackups.ps1 2.7.0–2.7.2]** State management extracted to `BackupState` module;
   `Connect-WiFiNetwork` inner helper extracted to remove duplicated netsh/sleep/SSID pattern;
   117-line inline CHANGELOG removed from `.NOTES` (replaced with pointer to `CHANGELOG.md`).

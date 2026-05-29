@@ -61,7 +61,7 @@
     Forces a sync run regardless of the previous run's status.
 
 .NOTES
-    Version: 2.7.2
+    Version: 2.7.3
     Author: Manoj Bhaskaran
 
     See CHANGELOG.md for version history.
@@ -112,7 +112,7 @@ param(
 )
 
 # Script Version (extracted from .NOTES for programmatic access)
-$ScriptVersion = "2.7.2"
+$ScriptVersion = "2.7.3"
 
 # Import logging framework
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
@@ -355,10 +355,80 @@ function Connect-WiFiNetwork {
     return Get-CurrentSSID
 }
 
+function Get-AvailableWiFiNetworks {
+    return (netsh wlan show networks mode=bssid) -join "`n"
+}
+
+function Invoke-FallbackUpgrade {
+    # Called when already on $FallbackSSID: tries to switch to $PreferredSSID if visible.
+    # Returns the resulting SSID (may remain on fallback if upgrade fails or is unavailable).
+    $availableNetworks = Get-AvailableWiFiNetworks
+
+    if (-not ($availableNetworks -match $PreferredSSID)) {
+        Write-LogInfo "Preferred network '$PreferredSSID' not available. Staying on '$FallbackSSID'"
+        return $FallbackSSID
+    }
+
+    Write-LogInfo "Switching from '$FallbackSSID' to preferred network '$PreferredSSID'"
+    $newSSID = Connect-WiFiNetwork -SSID $PreferredSSID -TimeoutSeconds 10
+
+    if ($null -eq $newSSID) {
+        Write-LogWarning "Unable to verify SSID after connection attempt. Assuming connection failed."
+        return $FallbackSSID
+    }
+
+    if ($newSSID -eq $PreferredSSID) {
+        Write-LogInfo "Switched successfully to '$PreferredSSID'"
+    }
+    else {
+        Write-LogWarning "Failed to switch to '$PreferredSSID'. Continuing on '$FallbackSSID'"
+    }
+
+    return $newSSID
+}
+
+function Connect-KnownWiFiNetwork {
+    # Called when not connected to either known network: connects to preferred, then fallback.
+    # Exits the script on failure; returns the connected SSID on success.
+    param([Parameter(Mandatory = $true)][object]$State)
+
+    $availableNetworks = Get-AvailableWiFiNetworks
+
+    if ($availableNetworks -match $PreferredSSID) {
+        Write-LogInfo "Connecting to preferred network '$PreferredSSID'"
+        $targetSSID = $PreferredSSID
+    }
+    elseif ($availableNetworks -match $FallbackSSID) {
+        Write-LogInfo "Connecting to fallback network '$FallbackSSID'"
+        $targetSSID = $FallbackSSID
+    }
+    else {
+        Write-LogError "Neither '$PreferredSSID' nor '$FallbackSSID' WiFi networks are available."
+        Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
+        exit 1
+    }
+
+    $currentSSID = Connect-WiFiNetwork -SSID $targetSSID -TimeoutSeconds 10
+
+    if ($null -eq $currentSSID) {
+        Write-LogError "Unable to verify SSID after connection attempt. Connection likely failed."
+        Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
+        exit 1
+    }
+
+    if ($currentSSID -ne $PreferredSSID -and $currentSSID -ne $FallbackSSID) {
+        Write-LogError "Failed to connect to preferred or fallback WiFi networks. Connected to: '$currentSSID'"
+        Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
+        exit 1
+    }
+
+    Write-LogInfo "Connected to WiFi network '$currentSSID'"
+    return $currentSSID
+}
+
 function Test-Network {
     param([Parameter(Mandatory = $true)][object]$State)
     Update-StateStep -StateFile $StateFile -State $State -StepName "Test-Network"
-    # Use Google's public DNS for internet connectivity test
     $connectivityTestTarget = "8.8.8.8"
 
     # Step 0: Pre-check Wi-Fi adapter presence
@@ -368,13 +438,11 @@ function Test-Network {
         exit 1
     }
 
-    # Step 1: Get current SSID with proper validation
+    # Step 1: Establish Wi-Fi connection to a known network
     $currentSSID = Get-CurrentSSID
 
-    # Treat null SSID as disconnected state - allow reconnection attempt
     if ($null -eq $currentSSID) {
         Write-LogInfo "Wi-Fi adapter is present but not connected. Will attempt to connect..."
-        # Set to empty string to trigger the "not connected" branch below
         $currentSSID = ""
     }
 
@@ -382,54 +450,11 @@ function Test-Network {
         Write-LogInfo "Connected to preferred network '$PreferredSSID'"
     }
     elseif ($currentSSID -eq $FallbackSSID) {
-        # Try to switch to preferred if available
-        $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
-        if ($availableNetworks -match $PreferredSSID) {
-            Write-LogInfo "Switching from '$FallbackSSID' to preferred network '$PreferredSSID'"
-            $currentSSID = Connect-WiFiNetwork -SSID $PreferredSSID -TimeoutSeconds 10
-            if ($null -eq $currentSSID) {
-                Write-LogWarning "Unable to verify SSID after connection attempt. Assuming connection failed."
-                $currentSSID = $FallbackSSID
-            }
-            if ($currentSSID -eq $PreferredSSID) {
-                Write-LogInfo "Switched successfully to '$PreferredSSID'"
-            }
-            else {
-                Write-LogWarning "Failed to switch to '$PreferredSSID'. Continuing on '$FallbackSSID'"
-            }
-        }
-        else {
-            Write-LogInfo "Preferred network '$PreferredSSID' not available. Staying on '$FallbackSSID'"
-        }
+        $currentSSID = Invoke-FallbackUpgrade
     }
     else {
         Write-LogInfo "Not connected to either '$PreferredSSID' or '$FallbackSSID'. Trying to connect..."
-        $availableNetworks = (netsh wlan show networks mode=bssid) -join "`n"
-        if ($availableNetworks -match $PreferredSSID) {
-            Write-LogInfo "Connecting to preferred network '$PreferredSSID'"
-            $targetSSID = $PreferredSSID
-        }
-        elseif ($availableNetworks -match $FallbackSSID) {
-            Write-LogInfo "Connecting to fallback network '$FallbackSSID'"
-            $targetSSID = $FallbackSSID
-        }
-        else {
-            Write-LogError "Neither '$PreferredSSID' nor '$FallbackSSID' WiFi networks are available."
-            Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
-            exit 1
-        }
-        $currentSSID = Connect-WiFiNetwork -SSID $targetSSID -TimeoutSeconds 10
-        if ($null -eq $currentSSID) {
-            Write-LogError "Unable to verify SSID after connection attempt. Connection likely failed."
-            Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
-            exit 1
-        }
-        if ($currentSSID -ne $PreferredSSID -and $currentSSID -ne $FallbackSSID) {
-            Write-LogError "Failed to connect to preferred or fallback WiFi networks. Connected to: '$currentSSID'"
-            Complete-StateFile -StateFile $StateFile -State $State -Status "Failed" -ExitCode 1
-            exit 1
-        }
-        Write-LogInfo "Connected to WiFi network '$currentSSID'"
+        $currentSSID = Connect-KnownWiFiNetwork -State $State
     }
 
     # Step 2: Internet test
