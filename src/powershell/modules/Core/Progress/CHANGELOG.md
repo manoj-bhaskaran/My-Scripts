@@ -1,5 +1,15 @@
 # CHANGELOG — Core/Progress (ProgressReporter)
 
+## 1.2.2 — Unreleased
+
+### Changed
+
+- Reduced duplicated new-code lines in `Write-ExtractionSummary.ps1` by deriving the
+  internal summary state from `$PSBoundParameters` instead of repeating the full summary
+  parameter list at the helper call site. Public behavior is unchanged.
+- `ProgressReporter.psd1`: `ModuleVersion` bumped from `1.2.1` to `1.2.2` (PATCH —
+  internal refactor/no behavioral change).
+
 ## 1.2.1 — Unreleased
 
 ### Changed

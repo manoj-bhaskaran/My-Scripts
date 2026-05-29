@@ -425,6 +425,9 @@ This significantly reduces the performance impact of progress reporting.
 
 ## Version History
 
+### 1.2.2 (Unreleased)
+- Reduced duplicated new-code lines in `Write-ExtractionSummary.ps1` by deriving internal summary state from bound parameters.
+
 ### 1.2.1 (Unreleased)
 - Refactored `Write-ExtractionSummary` into smaller internal helper functions to reduce Cognitive Complexity without behavior changes.
 

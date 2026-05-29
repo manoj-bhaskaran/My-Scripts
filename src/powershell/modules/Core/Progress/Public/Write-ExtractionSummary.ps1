@@ -1,42 +1,51 @@
 function New-ExtractionSummaryView {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$SourceDirectory,
-        [Parameter(Mandatory)][string]$DestinationDirectory,
-        [Parameter(Mandatory)][string]$ExtractMode,
-        [Parameter(Mandatory)][string]$CollisionPolicy,
-        [Parameter(Mandatory)][int]$ZipCount,
-        [Parameter(Mandatory)][int]$ProcessedZips,
-        [Parameter(Mandatory)][int]$FilesExtracted,
-        [Parameter(Mandatory)][int64]$UncompressedBytes,
-        [Parameter(Mandatory)][int64]$CompressedBytes,
-        [Parameter(Mandatory)][pscustomobject]$MoveSummary,
-        [Parameter(Mandatory)][int]$ErrorCount,
-        [Parameter(Mandatory)][timespan]$Elapsed
-    )
+    param([Parameter(Mandatory)][pscustomobject]$SummaryState)
 
-    $compressionRatio = if ($CompressedBytes -gt 0) { "{0:N1}x" -f ($UncompressedBytes / [double]$CompressedBytes) } else { "n/a" }
+    $compressionRatio = if ($SummaryState.CompressedBytes -gt 0) {
+        "{0:N1}x" -f ($SummaryState.UncompressedBytes / [double]$SummaryState.CompressedBytes)
+    } else {
+        "n/a"
+    }
 
     [pscustomobject]@{
-        SrcDir          = $SourceDirectory
-        DestDir         = $DestinationDirectory
-        Mode            = $ExtractMode
-        Policy          = $CollisionPolicy
-        ZipsFound       = $ZipCount
-        ZipsDone        = $ProcessedZips
-        Files           = $FilesExtracted
-        Uncompressed    = (Format-Bytes $UncompressedBytes)
-        Compressed      = (Format-Bytes $CompressedBytes)
+        SrcDir          = $SummaryState.SourceDirectory
+        DestDir         = $SummaryState.DestinationDirectory
+        Mode            = $SummaryState.ExtractMode
+        Policy          = $SummaryState.CollisionPolicy
+        ZipsFound       = $SummaryState.ZipCount
+        ZipsDone        = $SummaryState.ProcessedZips
+        Files           = $SummaryState.FilesExtracted
+        Uncompressed    = (Format-Bytes $SummaryState.UncompressedBytes)
+        Compressed      = (Format-Bytes $SummaryState.CompressedBytes)
         Ratio           = $compressionRatio
-        ZipsMoved       = ($MoveSummary.Count)
-        MoveSkipped     = ($MoveSummary.Skipped)
-        MoveOverwritten = ($MoveSummary.Overwritten)
-        MoveRenamed     = ($MoveSummary.Renamed)
-        MovedBytes      = (Format-Bytes $MoveSummary.Bytes)
-        MovedTo         = ($MoveSummary.Destination)
-        Errors          = $ErrorCount
-        Duration        = ("{0:hh\:mm\:ss\.fff}" -f $Elapsed)
+        ZipsMoved       = ($SummaryState.MoveSummary.Count)
+        MoveSkipped     = ($SummaryState.MoveSummary.Skipped)
+        MoveOverwritten = ($SummaryState.MoveSummary.Overwritten)
+        MoveRenamed     = ($SummaryState.MoveSummary.Renamed)
+        MovedBytes      = (Format-Bytes $SummaryState.MoveSummary.Bytes)
+        MovedTo         = ($SummaryState.MoveSummary.Destination)
+        Errors          = $SummaryState.ErrorCount
+        Duration        = ("{0:hh\:mm\:ss\.fff}" -f $SummaryState.Elapsed)
     }
+}
+
+function New-ExtractionSummaryState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$BoundParameters,
+        [Parameter(Mandatory)][int]$ErrorCount
+    )
+
+    $summaryState = [ordered]@{}
+    foreach ($name in $BoundParameters.Keys) {
+        if ($name -notin 'Errors', 'HostName', 'ConsoleWidth', 'PassThru') {
+            $summaryState[$name] = $BoundParameters[$name]
+        }
+    }
+
+    $summaryState['ErrorCount'] = $ErrorCount
+    [pscustomobject]$summaryState
 }
 
 function Get-ExtractionSummaryConsoleWidth {
@@ -162,19 +171,8 @@ function Write-ExtractionSummary {
     $isInteractive = $HostName -in ('ConsoleHost', 'Visual Studio Code Host')
 
     if ($isInteractive) {
-        $summaryView = New-ExtractionSummaryView `
-            -SourceDirectory $SourceDirectory `
-            -DestinationDirectory $DestinationDirectory `
-            -ExtractMode $ExtractMode `
-            -CollisionPolicy $CollisionPolicy `
-            -ZipCount $ZipCount `
-            -ProcessedZips $ProcessedZips `
-            -FilesExtracted $FilesExtracted `
-            -UncompressedBytes $UncompressedBytes `
-            -CompressedBytes $CompressedBytes `
-            -MoveSummary $MoveSummary `
-            -ErrorCount $Errors.Count `
-            -Elapsed $Elapsed
+        $summaryState = New-ExtractionSummaryState -BoundParameters $PSBoundParameters -ErrorCount $Errors.Count
+        $summaryView = New-ExtractionSummaryView -SummaryState $summaryState
 
         Write-ExtractionSummaryView -SummaryView $summaryView -ConsoleWidth $ConsoleWidth
         if ($PassThru) { $summaryView }
