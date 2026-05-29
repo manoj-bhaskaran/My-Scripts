@@ -14,8 +14,9 @@
     The path to the log file where renaming actions are recorded. Default: "C:\Users\manoj\Documents\Scripts\scrubname.log"
 
 .NOTES
-    VERSION: 2.0.0
+    VERSION: 2.0.1
     CHANGELOG:
+        2.0.1 - Place $null on the left-hand side of the $files null-check (PSScriptAnalyzer)
         2.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
         1.0.0 - Initial release with Add-Content logging
 #>
@@ -76,7 +77,7 @@ foreach ($string in $scrubStrings.Keys) {
     # Get files containing the current scrub string
     $files = Get-ChildItem -Path $sourcePath -Filter "*$string*"
 
-    if ($files -ne $null) {
+    if ($null -ne $files) {
 
         # Display the number of files to be processed
         Write-Host "$($files.Count) files to be processed"
