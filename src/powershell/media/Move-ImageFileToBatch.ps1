@@ -100,9 +100,21 @@
 
 .NOTES
     VERSION
-      2.1.1
+      2.1.2
 
     CHANGELOG
+      2.1.2
+        - Refactor Copy-FilesToBatches to reduce Cognitive Complexity from 46 to 12 (limit: 15).
+          • Extract Test-FileSkippedByCopyRule: encapsulates PNG-skip and JPG-not-img-skip rules.
+          • Extract New-BatchFolderIfMissing: encapsulates the if/ShouldProcess/New-Item pattern,
+            removing two deeply-nested if blocks (depth 2–3) from the main loop.
+          • Extract Get-OrAdvanceBatchFolder: encapsulates per-extension state initialisation
+            and folder-rollover logic, removing two more if blocks from the main loop.
+          • Move $script:ExtBatchState initialisation to the script globals block.
+          • Replace ternary-based extStem derivation with .TrimStart('.') (no conditional).
+          • Replace ContainsKey guard on CopiedByExt with null-coalescing arithmetic.
+          • Simplify empty-collection guard: -not $Files (removes redundant -or $Files.Count -eq 0).
+
       2.1.1
         - Refactor Rename-JpegFiles to reduce Cognitive Complexity from 19 to 14 (limit: 15).
           • Simplify empty-collection guard: -not $Files (removes redundant -or $Files.Count -eq 0).
@@ -213,6 +225,7 @@ $script:CopiedCount = 0
 $script:BatchDirsCreated = 0
 $script:RootDirsCreated = 0
 $script:CopiedByExt = @{}   # e.g., @{ "jpg" = 123; "heic" = 45 }
+$script:ExtBatchState = @{}
 $script:SkippedPngCount = 0
 $script:SkippedJpgNotImgCount = 0
 
@@ -375,6 +388,98 @@ function Rename-JpegFiles {
     return $script:RenamedCount, $sw.Elapsed
 }
 
+function Test-FileSkippedByCopyRule {
+    <#
+    .SYNOPSIS
+        Returns $true and updates skip counters when a file must be excluded from the copy phase.
+    .PARAMETER File
+        The file to evaluate.
+    .OUTPUTS
+        [bool] $true if the file should be skipped; $false otherwise.
+    #>
+    param([Parameter(Mandatory = $true)][System.IO.FileInfo]$File)
+
+    $ext = $File.Extension.ToLowerInvariant()
+
+    if ($ext -eq '.png') {
+        $script:SkippedPngCount++
+        Write-Verbose "Skip PNG: $($File.FullName)"
+        return $true
+    }
+
+    if ($ext -eq '.jpg') {
+        if ([System.IO.Path]::GetFileNameWithoutExtension($File.Name) -cnotmatch '^img') {
+            $script:SkippedJpgNotImgCount++
+            Write-Verbose "Skip JPG not starting with 'img': $($File.Name)"
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function New-BatchFolderIfMissing {
+    <#
+    .SYNOPSIS
+        Creates a batch subdirectory when it does not yet exist.
+    .PARAMETER Path
+        Full path to create.
+    .OUTPUTS
+        None
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        if ($PSCmdlet.ShouldProcess($Path, "Create extension batch directory")) {
+            New-Item -ItemType Directory -Path $Path -Force | Out-Null
+            $script:BatchDirsCreated++
+            Write-Verbose "Created directory: $Path"
+        }
+    }
+}
+
+function Get-OrAdvanceBatchFolder {
+    <#
+    .SYNOPSIS
+        Returns the current batch subfolder path for an extension, creating or advancing
+        to the next numbered folder when the per-folder file limit has been reached.
+    .PARAMETER ExtStem
+        Extension without leading dot (e.g., 'jpg').
+    .PARAMETER ExtRoot
+        Root folder for this extension under DestDir.
+    .PARAMETER FilesPerFolderLimit
+        Maximum files per subfolder (0 or less = unlimited).
+    .OUTPUTS
+        [string] Path to the current target subfolder.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$ExtStem,
+        [Parameter(Mandatory = $true)][string]$ExtRoot,
+        [Parameter(Mandatory = $true)][int]$FilesPerFolderLimit
+    )
+
+    if (-not $script:ExtBatchState.ContainsKey($ExtStem)) {
+        $script:ExtBatchState[$ExtStem] = [pscustomobject]@{ Index = 0; Current = $null; Count = 0 }
+    }
+    $state = $script:ExtBatchState[$ExtStem]
+
+    if (-not $state.Current) {
+        $state.Current = Join-Path -Path $ExtRoot -ChildPath ("{0}_{1:D4}" -f $ExtStem, $state.Index)
+        New-BatchFolderIfMissing -Path $state.Current
+        $state.Count = (Get-ChildItem -LiteralPath $state.Current -File | Measure-Object).Count
+    }
+
+    if ($FilesPerFolderLimit -gt 0 -and $state.Count -ge $FilesPerFolderLimit) {
+        $state.Index++
+        $state.Current = Join-Path -Path $ExtRoot -ChildPath ("{0}_{1:D4}" -f $ExtStem, $state.Index)
+        New-BatchFolderIfMissing -Path $state.Current
+        $state.Count = 0
+    }
+
+    return $state.Current
+}
+
 function Copy-FilesToBatches {
     <#
     .SYNOPSIS
@@ -399,7 +504,7 @@ function Copy-FilesToBatches {
         [switch]$ShowProgress
     )
 
-    if (-not $Files -or $Files.Count -eq 0) {
+    if (-not $Files) {
         if ($ShowProgress) { Write-Progress -Id 2 -Activity "Copying to extension batches" -Completed }
         return 0
     }
@@ -408,7 +513,6 @@ function Copy-FilesToBatches {
 
     $total = $Files.Count
     $i = 0
-    if (-not $script:ExtBatchState) { $script:ExtBatchState = @{} }
 
     foreach ($f in $Files) {
         $i++
@@ -419,73 +523,19 @@ function Copy-FilesToBatches {
         }
 
         try {
-            $ext = $f.Extension.ToLowerInvariant()
+            if (Test-FileSkippedByCopyRule -File $f) { continue }
 
-            # RULE 1: Skip all .png files (count it)
-            if ($ext -eq '.png') {
-                $script:SkippedPngCount++
-                Write-Verbose "Skip PNG: $($f.FullName)"
-                continue
-            }
-
-            # RULE 2: For .jpg, only allow names starting with 'img' (case-sensitive)
-            if ($ext -eq '.jpg') {
-                $nameOnly = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
-                if ($nameOnly -cnotmatch '^img') {
-                    $script:SkippedJpgNotImgCount++
-                    Write-Verbose "Skip JPG not starting with 'img': $($f.Name)"
-                    continue
-                }
-            }
-
-            # Determine extension stem (without dot)
-            $extStem = ($ext.StartsWith('.')) ? $ext.Substring(1) : $ext
-
-            # Root folder for this extension
-            $extRoot = Join-Path -Path $DestDir -ChildPath ("{0}_{1}_{2}" -f $BatchPrefix, $script:RunStamp, $extStem)
-
-            # Per-extension state: Index (counter), Current (current dir), Count (files in current dir)
-            if (-not $script:ExtBatchState.ContainsKey($extStem)) {
-                $script:ExtBatchState[$extStem] = [pscustomobject]@{ Index = 0; Current = $null; Count = 0 }
-            }
-            $state = $script:ExtBatchState[$extStem]
-
-            # Ensure current extension folder exists
-            if (-not $state.Current) {
-                $state.Current = Join-Path -Path $extRoot -ChildPath ("{0}_{1:D4}" -f $extStem, $state.Index)
-                if (-not (Test-Path -LiteralPath $state.Current)) {
-                    if ($PSCmdlet.ShouldProcess($state.Current, "Create extension batch directory")) {
-                        New-Item -ItemType Directory -Path $state.Current -Force | Out-Null
-                        $script:BatchDirsCreated++
-                        Write-Verbose "Created directory: $($state.Current)"
-                    }
-                }
-                $state.Count = (Get-ChildItem -LiteralPath $state.Current -File | Measure-Object).Count
-            }
-
-            # If limit reached (when > 0), roll to next folder
-            if ($FilesPerFolderLimit -gt 0 -and $state.Count -ge $FilesPerFolderLimit) {
-                $state.Index++
-                $state.Current = Join-Path -Path $extRoot -ChildPath ("{0}_{1:D4}" -f $extStem, $state.Index)
-                if (-not (Test-Path -LiteralPath $state.Current)) {
-                    if ($PSCmdlet.ShouldProcess($state.Current, "Create extension batch directory")) {
-                        New-Item -ItemType Directory -Path $state.Current -Force | Out-Null
-                        $script:BatchDirsCreated++
-                        Write-Verbose "Created directory: $($state.Current)"
-                    }
-                }
-                $state.Count = 0
-            }
-
-            $targetPath = Join-Path -Path $state.Current -ChildPath $f.Name
+            $extStem   = $f.Extension.ToLowerInvariant().TrimStart('.')
+            $extRoot   = Join-Path -Path $DestDir -ChildPath ("{0}_{1}_{2}" -f $BatchPrefix, $script:RunStamp, $extStem)
+            $targetDir = Get-OrAdvanceBatchFolder -ExtStem $extStem -ExtRoot $extRoot -FilesPerFolderLimit $FilesPerFolderLimit
+            $targetPath = Join-Path -Path $targetDir -ChildPath $f.Name
 
             if ($PSCmdlet.ShouldProcess($f.FullName, "Copy to $targetPath then delete source")) {
                 Copy-Item -LiteralPath $f.FullName -Destination $targetPath -Force -ErrorAction Stop
                 Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop
                 $script:CopiedCount++
-                $state.Count++
-                if (-not $script:CopiedByExt.ContainsKey($extStem)) { $script:CopiedByExt[$extStem] = 0 }
-                $script:CopiedByExt[$extStem]++
+                $script:ExtBatchState[$extStem].Count++
+                $script:CopiedByExt[$extStem] = ($script:CopiedByExt[$extStem] ?? 0) + 1
                 Write-Verbose "Copied+Deleted: $($f.FullName) -> $targetPath"
             }
         }
@@ -623,7 +673,7 @@ Elapsed (total)       : {2:c}
 # region: Main ------------------------------------------------------------------------------------
 
 try {
-    Write-LogInfo "Starting picconvert 2.1.1"
+    Write-LogInfo "Starting picconvert 2.1.2"
     Initialize-Directories -SourceDir $SourceDir -DestDir $DestDir
 
     # Phase 1: Gather all source files (for rename); ALWAYS include .jpeg and .jpg_large
