@@ -122,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.6.10
+    Version  : 2.6.11
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -368,7 +368,7 @@ function Remove-SourceDirectory {
     }
 
     try {
-        $remaining = Get-SourceDirectoryItems -SourceDir $resolvedSource
+        $remaining = @(Get-SourceDirectoryItems -SourceDir $resolvedSource)
         if (Test-HasBlockingZips -Remaining $remaining -SourceDir $SourceDir -ErrorList $ErrorList) { return }
 
         $nonZips = @($remaining | Where-Object { $_.PSIsContainer -or $_.Extension -ne '.zip' })

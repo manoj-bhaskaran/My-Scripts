@@ -1,5 +1,22 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.11 — 2026-05-29
+
+### Fixed
+
+- Wrapped the `Get-SourceDirectoryItems` call in `Remove-SourceDirectory` with `@(...)` so
+  that `$remaining` is always a proper array when the source directory is empty (all zips
+  moved, nothing left). Previously, PowerShell could unroll the function's pipeline output
+  to `$null`, causing the mandatory `[object[]]` parameter of `Test-HasBlockingZips` to
+  throw; the outer `catch` would record a spurious failure and leave the empty directory
+  behind even on an otherwise successful `-DeleteSource` run.
+
+### Tests
+
+- Added `'deletes an already-empty source directory without error'` to the
+  `Remove-SourceDirectory` describe block: creates an empty source directory, calls
+  `Remove-SourceDirectory -DeleteSource`, and asserts the directory is gone with zero errors.
+
 ## 2.6.10 — 2026-05-29
 
 ### Changed
