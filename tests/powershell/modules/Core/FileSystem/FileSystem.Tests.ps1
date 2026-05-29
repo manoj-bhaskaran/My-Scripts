@@ -1,20 +1,14 @@
 Set-StrictMode -Version Latest
 
 # ---------------------------------------------------------------------------
-# Helper: resolve paths relative to this test file
-# ---------------------------------------------------------------------------
-
-$Script:fsRoot     = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\..\..\src\powershell\modules\Core\FileSystem'))
-$Script:modulePath = Join-Path $Script:fsRoot 'FileSystem.psm1'
-$Script:privPath   = Join-Path $Script:fsRoot 'Private'
-
-# ---------------------------------------------------------------------------
 # Public function tests — call through the exported surface
 # ---------------------------------------------------------------------------
 
 Describe 'Remove-SourceDirectory' {
     BeforeAll {
-        Import-Module $Script:modulePath -Force
+        $modulePath = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot '..\..\..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1'))
+        Import-Module $modulePath -Force
     }
 
     It 'blocks DeleteSource and preserves zip files remaining after a Skip-policy move' {
@@ -135,7 +129,9 @@ Describe 'Remove-SourceDirectory' {
 
 Describe 'Get-SourceDirectoryItems (private)' {
     BeforeAll {
-        . (Join-Path $Script:privPath 'Get-SourceDirectoryItems.ps1')
+        $privPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot '..\..\..\..\..\src\powershell\modules\Core\FileSystem\Private'))
+        . (Join-Path $privPath 'Get-SourceDirectoryItems.ps1')
     }
 
     It 'returns an empty array for an empty directory' {
@@ -168,7 +164,9 @@ Describe 'Get-SourceDirectoryItems (private)' {
 
 Describe 'Test-HasBlockingZips (private)' {
     BeforeAll {
-        . (Join-Path $Script:privPath 'Test-HasBlockingZips.ps1')
+        $privPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot '..\..\..\..\..\src\powershell\modules\Core\FileSystem\Private'))
+        . (Join-Path $privPath 'Test-HasBlockingZips.ps1')
     }
 
     It 'returns $true and records an error when zip files remain' {
@@ -214,7 +212,9 @@ Describe 'Test-HasBlockingZips (private)' {
 
 Describe 'Get-NonZipDeletionBlockReason (private)' {
     BeforeAll {
-        . (Join-Path $Script:privPath 'Get-NonZipDeletionBlockReason.ps1')
+        $privPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot '..\..\..\..\..\src\powershell\modules\Core\FileSystem\Private'))
+        . (Join-Path $privPath 'Get-NonZipDeletionBlockReason.ps1')
     }
 
     It 'returns $null when NonZips list is empty' {
@@ -243,7 +243,9 @@ Describe 'Get-NonZipDeletionBlockReason (private)' {
 
 Describe 'Remove-NonZipItems (private)' {
     BeforeAll {
-        . (Join-Path $Script:privPath 'Remove-NonZipItems.ps1')
+        $privPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot '..\..\..\..\..\src\powershell\modules\Core\FileSystem\Private'))
+        . (Join-Path $privPath 'Remove-NonZipItems.ps1')
     }
 
     It 'removes files and subdirs deepest-first in a nested tree' {
@@ -277,7 +279,9 @@ Describe 'Remove-NonZipItems (private)' {
 
 Describe 'Remove-DirectoryRobust (private)' {
     BeforeAll {
-        . (Join-Path $Script:privPath 'Remove-DirectoryRobust.ps1')
+        $privPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot '..\..\..\..\..\src\powershell\modules\Core\FileSystem\Private'))
+        . (Join-Path $privPath 'Remove-DirectoryRobust.ps1')
     }
 
     It 'deletes a non-empty directory and records no error' {
