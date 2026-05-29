@@ -21,7 +21,7 @@
     Description = 'Standardized progress reporting utilities for PowerShell scripts with logging integration.'
 
     # Minimum version of the PowerShell engine required by this module
-    PowerShellVersion = '5.1'
+    PowerShellVersion = '7.0'
 
     # Functions to export from this module
     FunctionsToExport = @(
@@ -50,7 +50,7 @@
             Tags = @('Progress', 'Logging', 'Reporting', 'Utilities')
             LicenseUri = 'http://www.apache.org/licenses/LICENSE-2.0'
             ProjectUri = 'https://github.com/manoj-bhaskaran/My-Scripts'
-            ReleaseNotes = '1.2.0: Added Write-ExtractionSummary public summary renderer. 1.1.0: Added Show-ProgressPhase (percentage-computing quiet-mode-aware progress wrapper). 1.0.1: Standardized module folder structure and loader.'
+            ReleaseNotes = '1.2.0: Added Write-ExtractionSummary public summary renderer and raised minimum PowerShell version to 7.0 because the summary renderer depends on Core/FileSystem. 1.1.0: Added Show-ProgressPhase (percentage-computing quiet-mode-aware progress wrapper). 1.0.1: Standardized module folder structure and loader.'
         }
     }
 }

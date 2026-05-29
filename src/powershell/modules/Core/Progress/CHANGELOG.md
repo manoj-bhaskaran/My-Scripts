@@ -16,6 +16,8 @@
   additive new export); `FunctionsToExport` updated to include `Write-ExtractionSummary`.
 - `ProgressReporter.psm1`: imports `Core/FileSystem` so summary byte formatting uses the
   shared `Format-Bytes` implementation.
+- `ProgressReporter.psd1`: `PowerShellVersion` raised from `5.1` to `7.0` because
+  the module now imports the PS 7-only `Core/FileSystem` module for `Format-Bytes`.
 
 ## 1.1.0 — 2026-05-29
 

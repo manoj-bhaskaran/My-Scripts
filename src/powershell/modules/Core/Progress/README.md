@@ -4,6 +4,10 @@
 
 The ProgressReporter module provides standardized progress reporting utilities for PowerShell scripts. It offers consistent progress bar formatting, logging integration, and a tracker object for managing complex multi-stage operations.
 
+## Requirements
+
+- PowerShell 7.0 or newer. `Write-ExtractionSummary` imports shared byte formatting from `Core/FileSystem`, which is a PowerShell 7 module.
+
 ## Quick Start
 ```powershell
 Import-Module ProgressReporter
@@ -423,7 +427,7 @@ This significantly reduces the performance impact of progress reporting.
 
 ### 1.2.0 (Unreleased)
 - Added `Write-ExtractionSummary` as a public summary renderer for `Expand-ZipsAndClean`.
-- Module manifest exports the new summary function and imports `Core/FileSystem` for `Format-Bytes`.
+- Module manifest exports the new summary function, imports `Core/FileSystem` for `Format-Bytes`, and raises the minimum PowerShell version to 7.0.
 
 ### 1.1.0 (2026-05-29)
 - Added `Show-ProgressPhase` for quiet-mode-aware phase progress with percentage calculation.
