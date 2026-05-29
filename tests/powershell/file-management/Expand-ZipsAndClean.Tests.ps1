@@ -110,6 +110,17 @@ Describe 'Remove-SourceDirectory' {
         $errors.Count | Should -Be 0    -Because $diag
     }
 
+    It 'deletes an already-empty source directory without error' {
+        $sourceDir = Join-Path $TestDrive 'source-empty'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+        $errors = [System.Collections.Generic.List[string]]::new()
+
+        Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $false -ErrorList $errors
+
+        [System.IO.Directory]::Exists($sourceDir) | Should -BeFalse
+        $errors.Count | Should -Be 0
+    }
+
     It 'surfaces Get-ChildItem read errors as warnings rather than silently dropping them' {
         $sourceDir = Join-Path $TestDrive 'source-unreadable'
         New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null

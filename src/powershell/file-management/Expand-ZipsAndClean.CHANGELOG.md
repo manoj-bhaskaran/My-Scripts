@@ -1,5 +1,43 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.11 — 2026-05-29
+
+### Fixed
+
+- Wrapped the `Get-SourceDirectoryItems` call in `Remove-SourceDirectory` with `@(...)` so
+  that `$remaining` is always a proper array when the source directory is empty (all zips
+  moved, nothing left). Previously, PowerShell could unroll the function's pipeline output
+  to `$null`, causing the mandatory `[object[]]` parameter of `Test-HasBlockingZips` to
+  throw; the outer `catch` would record a spurious failure and leave the empty directory
+  behind even on an otherwise successful `-DeleteSource` run.
+
+### Tests
+
+- Added `'deletes an already-empty source directory without error'` to the
+  `Remove-SourceDirectory` describe block: creates an empty source directory, calls
+  `Remove-SourceDirectory -DeleteSource`, and asserts the directory is gone with zero errors.
+
+## 2.6.10 — 2026-05-29
+
+### Changed
+
+- Refactored `Remove-SourceDirectory` to reduce its Cognitive Complexity from 32 to ≤15
+  (SonarCloud S3776). Extracted four focused private helpers into the `#region Helpers`
+  block:
+  - `Get-SourceDirectoryItems` — scans the directory and surfaces enumeration errors as
+    warnings (complexity 1).
+  - `Test-HasBlockingZips` — checks whether leftover zip files block deletion and records
+    the error message (complexity 1).
+  - `Get-NonZipDeletionBlockReason` — returns a human-readable block reason when non-zip
+    items prevent deletion, or `$null` when safe to proceed (complexity 3).
+  - `Remove-NonZipItems` — removes non-zip items deepest-first to avoid "directory not
+    empty" errors on nested trees (complexity 5).
+  - `Remove-DirectoryWithFallback` — deletes the directory root using
+    `[System.IO.Directory]::Delete` with a `Remove-Item` fallback, and records a single
+    error entry on failure (complexity 12).
+  `Remove-SourceDirectory` itself is now a thin orchestrator (complexity ≤10). No
+  behavioral change.
+
 ## 2.6.9 — 2026-05-27
 
 ### Fixed
