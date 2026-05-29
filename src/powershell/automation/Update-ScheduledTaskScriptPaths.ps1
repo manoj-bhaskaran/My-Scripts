@@ -23,9 +23,13 @@
     Directory where modified task XML files will be saved. Default: Uses TASK_SCHEDULER_OUTPUT environment variable or repository's config/tasks directory
 
 .NOTES
-    Version: 3.0.0
+    Version: 3.0.1
 
     CHANGELOG
+    ## 3.0.1 - 2026-05-29
+    ### Fixed
+    - Consistent pipeline stage indentation: each cmdlet on its own line with pipe at end of preceding line
+
     ## 3.0.0 - 2025-11-28
     ### Changed
     - Removed hardcoded paths, added configurable parameters (Issue #513)
@@ -123,10 +127,12 @@ else {
 
 Write-LogInfo "Starting scan and export of scheduled tasks..."
 
-Get-ScheduledTask | Where-Object {
+Get-ScheduledTask |
+Where-Object {
     # Exclude Microsoft and Windows system tasks
     $_.TaskPath -notlike "\Microsoft*" -and $_.TaskPath -notlike "\Windows*"
-} | ForEach-Object {
+} |
+ForEach-Object {
     $taskName = $_.TaskName
     $taskPath = $_.TaskPath
     $fullTaskName = "$taskPath$taskName"
