@@ -65,7 +65,7 @@ function Move-ZipFilesToParent {
             continue
         }
 
-        Move-FileWithRetry -Source $zf.FullName -Destination $mt.TargetPath -Force:($mt.PolicyTag -eq 'Overwrite')
+        $null = Move-FileWithRetry -Source $zf.FullName -Destination $mt.TargetPath -Force:($mt.PolicyTag -eq 'Overwrite')
         if ($mt.PolicyTag -eq 'Overwrite') { $overwritten++ }
         elseif ($mt.PolicyTag -eq 'Rename') { $renamed++ }
         $moved++

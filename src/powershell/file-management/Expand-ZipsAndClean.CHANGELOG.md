@@ -1,5 +1,17 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.14 — 2026-05-29
+
+### Fixed
+
+- Suppressed the boolean success output from `Move-FileWithRetry` inside
+  `ZipWorkflow\Move-ZipFilesToParent`, restoring the function's single summary-object
+  output contract. This fixes callers/tests seeing an extra pipeline object and treating
+  `$result.Count` as the array length (`2`) instead of the summary object's moved-zip
+  count (`1`).
+
+---
+
 ## 2.6.13 — 2026-05-29
 
 ### Refactor

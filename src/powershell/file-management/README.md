@@ -50,6 +50,10 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean ZipWorkflow move output fix** (2026-05-29)
+  - Suppressed `Move-FileWithRetry`'s boolean success output inside `ZipWorkflow\Move-ZipFilesToParent` so callers receive only the move-summary object.
+  - Version bump: `2.6.14` (patch — output contract bug fix).
+
 - **Expand-ZipsAndClean thin orchestrator refactor (issue #1098)** (2026-05-29)
   - Moved `Write-ExtractionSummary` into `Core/Progress` and updated the script to consume the exported presentation helper without changing summary output.
   - Removed remaining script-local helper definitions so `Expand-ZipsAndClean.ps1` is now a parameter/import/logger/throttle/main/summary orchestrator.
