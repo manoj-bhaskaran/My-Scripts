@@ -1,16 +1,22 @@
 Set-StrictMode -Version Latest
 
-BeforeAll {
-    $modulePath = Join-Path $PSScriptRoot '..\..\..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1'
-    $modulePath  = [System.IO.Path]::GetFullPath($modulePath)
-    Import-Module $modulePath -Force
-}
+# ---------------------------------------------------------------------------
+# Helper: resolve paths relative to this test file
+# ---------------------------------------------------------------------------
+
+$Script:fsRoot     = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\..\..\src\powershell\modules\Core\FileSystem'))
+$Script:modulePath = Join-Path $Script:fsRoot 'FileSystem.psm1'
+$Script:privPath   = Join-Path $Script:fsRoot 'Private'
 
 # ---------------------------------------------------------------------------
-# Public function — tested through the exported surface
+# Public function tests — call through the exported surface
 # ---------------------------------------------------------------------------
 
 Describe 'Remove-SourceDirectory' {
+    BeforeAll {
+        Import-Module $Script:modulePath -Force
+    }
+
     It 'blocks DeleteSource and preserves zip files remaining after a Skip-policy move' {
         $sourceDir = Join-Path $TestDrive 'source-skip-remaining'
         New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
@@ -61,9 +67,9 @@ Describe 'Remove-SourceDirectory' {
 
         Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $true -ErrorList $errors
 
-        # Anchor the assertion on [System.IO.Directory]::Exists — same API the function uses.
-        # On some GitHub Actions Linux runners, Test-Path can transiently return $true for a
-        # path that all .NET and GCI APIs report as gone; surface both signals in the diagnostic.
+        # Anchor on [System.IO.Directory]::Exists — same API the function uses to decide
+        # success. On some GitHub Actions Linux runners, Test-Path can transiently return
+        # $true for a path that the .NET APIs report as gone.
         $netDirExists = [System.IO.Directory]::Exists($sourceDir)
         $psExists     = Test-Path -LiteralPath $sourceDir
         $remaining    = if ($psExists) {
@@ -87,19 +93,15 @@ Describe 'Remove-SourceDirectory' {
         $errors.Count | Should -Be 0
     }
 
-    It 'surfaces Get-ChildItem read errors as warnings rather than silently dropping them' {
+    It 'does not throw when Get-ChildItem encounters an access error' {
+        # Warning-emission behaviour is covered by the Get-SourceDirectoryItems unit test below.
         $sourceDir = Join-Path $TestDrive 'source-unreadable'
         New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
-        Mock -ModuleName FileSystem Get-ChildItem {
-            Write-Error 'Access to the path is denied.'
-        }
-        Mock -ModuleName FileSystem Write-Warning {}
+        Mock Get-ChildItem { Write-Error 'Access to the path is denied.' }
         $errors = [System.Collections.Generic.List[string]]::new()
 
         { Remove-SourceDirectory -SourceDir $sourceDir -ShouldDeleteSource $true -ShouldCleanNonZips $false -ErrorList $errors } |
         Should -Not -Throw
-
-        Should -Invoke -ModuleName FileSystem Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -like '*scan*' }
     }
 
     It 'does nothing when ShouldDeleteSource is false' {
@@ -127,106 +129,145 @@ Describe 'Remove-SourceDirectory' {
 }
 
 # ---------------------------------------------------------------------------
-# Private helpers — accessed via InModuleScope
+# Private helper unit tests — dot-source each file so functions are callable
+# without needing InModuleScope
 # ---------------------------------------------------------------------------
 
+Describe 'Get-SourceDirectoryItems (private)' {
+    BeforeAll {
+        . (Join-Path $Script:privPath 'Get-SourceDirectoryItems.ps1')
+    }
+
+    It 'returns an empty array for an empty directory' {
+        $dir = Join-Path $TestDrive 'gsi-empty'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+
+        $result = Get-SourceDirectoryItems -SourceDir $dir
+
+        $result | Should -BeNullOrEmpty
+    }
+
+    It 'returns all items recursively' {
+        $dir = Join-Path $TestDrive 'gsi-content'
+        New-Item -ItemType Directory -Path (Join-Path $dir 'sub') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'sub' | Join-Path -ChildPath 'file.txt') -Value 'x'
+
+        $result = Get-SourceDirectoryItems -SourceDir $dir
+
+        $result.Count | Should -Be 2
+    }
+
+    It 'surfaces Get-ChildItem enumeration errors as warnings' {
+        $dir = Join-Path $TestDrive 'gsi-warn'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Mock Get-ChildItem { Write-Error 'Access to the path is denied.' }
+        Mock Write-Warning {}
+
+        Get-SourceDirectoryItems -SourceDir $dir
+
+        Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -like '*scan*' }
+    }
+
+    It 'does not throw on enumeration errors' {
+        $dir = Join-Path $TestDrive 'gsi-nothrow'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Mock Get-ChildItem { Write-Error 'Denied.' }
+
+        { Get-SourceDirectoryItems -SourceDir $dir } | Should -Not -Throw
+    }
+}
+
 Describe 'Test-HasBlockingZips (private)' {
+    BeforeAll {
+        . (Join-Path $Script:privPath 'Test-HasBlockingZips.ps1')
+    }
+
     It 'returns $true and records an error when zip files remain' {
-        InModuleScope FileSystem {
-            $zip   = [pscustomobject]@{ PSIsContainer = $false; Extension = '.zip'; FullName = 'C:\src\leftover.zip' }
-            $errors = [System.Collections.Generic.List[string]]::new()
+        $zip    = [pscustomobject]@{ PSIsContainer = $false; Extension = '.zip'; FullName = 'C:\src\leftover.zip' }
+        $errors = [System.Collections.Generic.List[string]]::new()
 
-            $result = Test-HasBlockingZips -Remaining @($zip) -SourceDir 'C:\src' -ErrorList $errors
+        $result = Test-HasBlockingZips -Remaining @($zip) -SourceDir 'C:\src' -ErrorList $errors
 
-            $result         | Should -BeTrue
-            $errors.Count   | Should -Be 1
-            $errors[0]      | Should -BeLike '*zip file*remain*'
-        }
+        $result       | Should -BeTrue
+        $errors.Count | Should -Be 1
+        $errors[0]    | Should -BeLike '*zip file*remain*'
     }
 
     It 'returns $false and records nothing when no zip files remain' {
-        InModuleScope FileSystem {
-            $txt   = [pscustomobject]@{ PSIsContainer = $false; Extension = '.txt'; FullName = 'C:\src\readme.txt' }
-            $errors = [System.Collections.Generic.List[string]]::new()
+        $txt    = [pscustomobject]@{ PSIsContainer = $false; Extension = '.txt'; FullName = 'C:\src\readme.txt' }
+        $errors = [System.Collections.Generic.List[string]]::new()
 
-            $result = Test-HasBlockingZips -Remaining @($txt) -SourceDir 'C:\src' -ErrorList $errors
+        $result = Test-HasBlockingZips -Remaining @($txt) -SourceDir 'C:\src' -ErrorList $errors
 
-            $result       | Should -BeFalse
-            $errors.Count | Should -Be 0
-        }
+        $result       | Should -BeFalse
+        $errors.Count | Should -Be 0
     }
 
     It 'returns $false and records nothing for an empty remaining list' {
-        InModuleScope FileSystem {
-            $errors = [System.Collections.Generic.List[string]]::new()
+        $errors = [System.Collections.Generic.List[string]]::new()
 
-            $result = Test-HasBlockingZips -Remaining @() -SourceDir 'C:\src' -ErrorList $errors
+        $result = Test-HasBlockingZips -Remaining @() -SourceDir 'C:\src' -ErrorList $errors
 
-            $result       | Should -BeFalse
-            $errors.Count | Should -Be 0
-        }
+        $result       | Should -BeFalse
+        $errors.Count | Should -Be 0
     }
 
     It 'counts multiple remaining zips in the error message' {
-        InModuleScope FileSystem {
-            $zip1  = [pscustomobject]@{ PSIsContainer = $false; Extension = '.zip'; FullName = 'C:\src\a.zip' }
-            $zip2  = [pscustomobject]@{ PSIsContainer = $false; Extension = '.zip'; FullName = 'C:\src\b.zip' }
-            $errors = [System.Collections.Generic.List[string]]::new()
+        $zip1   = [pscustomobject]@{ PSIsContainer = $false; Extension = '.zip'; FullName = 'C:\src\a.zip' }
+        $zip2   = [pscustomobject]@{ PSIsContainer = $false; Extension = '.zip'; FullName = 'C:\src\b.zip' }
+        $errors = [System.Collections.Generic.List[string]]::new()
 
-            Test-HasBlockingZips -Remaining @($zip1, $zip2) -SourceDir 'C:\src' -ErrorList $errors | Out-Null
+        Test-HasBlockingZips -Remaining @($zip1, $zip2) -SourceDir 'C:\src' -ErrorList $errors | Out-Null
 
-            $errors[0] | Should -BeLike '*2 zip file*'
-        }
+        $errors[0] | Should -BeLike '*2 zip file*'
     }
 }
 
 Describe 'Get-NonZipDeletionBlockReason (private)' {
+    BeforeAll {
+        . (Join-Path $Script:privPath 'Get-NonZipDeletionBlockReason.ps1')
+    }
+
     It 'returns $null when NonZips list is empty' {
-        InModuleScope FileSystem {
-            $result = Get-NonZipDeletionBlockReason -NonZips @() -ShouldCleanNonZips $false -SourceDir 'C:\src'
-            $result | Should -BeNullOrEmpty
-        }
+        $result = Get-NonZipDeletionBlockReason -NonZips @() -ShouldCleanNonZips $false -SourceDir 'C:\src'
+        $result | Should -BeNullOrEmpty
     }
 
     It 'returns $null when ShouldCleanNonZips is true regardless of content' {
-        InModuleScope FileSystem {
-            $file   = [pscustomobject]@{ PSIsContainer = $false; FullName = 'C:\src\file.txt' }
-            $result = Get-NonZipDeletionBlockReason -NonZips @($file) -ShouldCleanNonZips $true -SourceDir 'C:\src'
-            $result | Should -BeNullOrEmpty
-        }
+        $file   = [pscustomobject]@{ PSIsContainer = $false; FullName = 'C:\src\file.txt' }
+        $result = Get-NonZipDeletionBlockReason -NonZips @($file) -ShouldCleanNonZips $true -SourceDir 'C:\src'
+        $result | Should -BeNullOrEmpty
     }
 
     It 'returns "non-zip files remain" message when actual files exist and ShouldCleanNonZips is false' {
-        InModuleScope FileSystem {
-            $file   = [pscustomobject]@{ PSIsContainer = $false; FullName = 'C:\src\file.txt' }
-            $result = Get-NonZipDeletionBlockReason -NonZips @($file) -ShouldCleanNonZips $false -SourceDir 'C:\src'
-            $result | Should -BeLike '*non-zip files remain*'
-        }
+        $file   = [pscustomobject]@{ PSIsContainer = $false; FullName = 'C:\src\file.txt' }
+        $result = Get-NonZipDeletionBlockReason -NonZips @($file) -ShouldCleanNonZips $false -SourceDir 'C:\src'
+        $result | Should -BeLike '*non-zip files remain*'
     }
 
     It 'returns "only empty subdirectories remain" message when only containers exist and ShouldCleanNonZips is false' {
-        InModuleScope FileSystem {
-            $dir    = [pscustomobject]@{ PSIsContainer = $true; FullName = 'C:\src\emptydir' }
-            $result = Get-NonZipDeletionBlockReason -NonZips @($dir) -ShouldCleanNonZips $false -SourceDir 'C:\src'
-            $result | Should -BeLike '*only empty subdirectories remain*'
-        }
+        $dir    = [pscustomobject]@{ PSIsContainer = $true; FullName = 'C:\src\emptydir' }
+        $result = Get-NonZipDeletionBlockReason -NonZips @($dir) -ShouldCleanNonZips $false -SourceDir 'C:\src'
+        $result | Should -BeLike '*only empty subdirectories remain*'
     }
 }
 
 Describe 'Remove-NonZipItems (private)' {
+    BeforeAll {
+        . (Join-Path $Script:privPath 'Remove-NonZipItems.ps1')
+    }
+
     It 'removes files and subdirs deepest-first in a nested tree' {
         $root = Join-Path $TestDrive 'nonzip-nested'
         $sub  = Join-Path $root 'sub'
-        $leaf = Join-Path $sub  'leaf'
+        $leaf = Join-Path $sub 'leaf'
         New-Item -ItemType Directory -Path $leaf -Force | Out-Null
         Set-Content -LiteralPath (Join-Path $leaf 'deep.txt') -Value 'deep'
         Set-Content -LiteralPath (Join-Path $sub  'mid.txt')  -Value 'mid'
         Set-Content -LiteralPath (Join-Path $root 'top.txt')  -Value 'top'
 
-        InModuleScope FileSystem -Parameters @{ Root = $root } {
-            $nonZips = @(Get-ChildItem -LiteralPath $Root -Recurse -Force)
-            Remove-NonZipItems -NonZips $nonZips -ResolvedSource $Root
-        }
+        $nonZips = @(Get-ChildItem -LiteralPath $root -Recurse -Force)
+        Remove-NonZipItems -NonZips $nonZips -ResolvedSource $root
 
         $remaining = @(Get-ChildItem -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue)
         $remaining.Count | Should -Be 0
@@ -241,37 +282,33 @@ Describe 'Remove-NonZipItems (private)' {
             FullName      = (Join-Path $root 'gone.txt')
         }
 
-        {
-            InModuleScope FileSystem -Parameters @{ Root = $root; Phantom = $phantom } {
-                Remove-NonZipItems -NonZips @($Phantom) -ResolvedSource $Root
-            }
-        } | Should -Not -Throw
+        { Remove-NonZipItems -NonZips @($phantom) -ResolvedSource $root } | Should -Not -Throw
     }
 }
 
 Describe 'Remove-DirectoryRobust (private)' {
+    BeforeAll {
+        . (Join-Path $Script:privPath 'Remove-DirectoryRobust.ps1')
+    }
+
     It 'deletes a non-empty directory and records no error' {
-        $dir = Join-Path $TestDrive 'robust-nonempty'
+        $dir    = Join-Path $TestDrive 'robust-nonempty'
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
         Set-Content -LiteralPath (Join-Path $dir 'file.txt') -Value 'data'
         $errors = [System.Collections.Generic.List[string]]::new()
 
-        InModuleScope FileSystem -Parameters @{ Dir = $dir; Errors = $errors } {
-            Remove-DirectoryRobust -ResolvedSource $Dir -SourceDir $Dir -ErrorList $Errors
-        }
+        Remove-DirectoryRobust -ResolvedSource $dir -SourceDir $dir -ErrorList $errors
 
         [System.IO.Directory]::Exists($dir) | Should -BeFalse
         $errors.Count | Should -Be 0
     }
 
     It 'deletes an empty directory and records no error' {
-        $dir = Join-Path $TestDrive 'robust-empty'
+        $dir    = Join-Path $TestDrive 'robust-empty'
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
         $errors = [System.Collections.Generic.List[string]]::new()
 
-        InModuleScope FileSystem -Parameters @{ Dir = $dir; Errors = $errors } {
-            Remove-DirectoryRobust -ResolvedSource $Dir -SourceDir $Dir -ErrorList $Errors
-        }
+        Remove-DirectoryRobust -ResolvedSource $dir -SourceDir $dir -ErrorList $errors
 
         [System.IO.Directory]::Exists($dir) | Should -BeFalse
         $errors.Count | Should -Be 0
@@ -281,11 +318,8 @@ Describe 'Remove-DirectoryRobust (private)' {
         $dir    = Join-Path $TestDrive 'robust-nonexistent'
         $errors = [System.Collections.Generic.List[string]]::new()
 
-        InModuleScope FileSystem -Parameters @{ Dir = $dir; Errors = $errors } {
-            Remove-DirectoryRobust -ResolvedSource $Dir -SourceDir $Dir -ErrorList $Errors
-        }
+        Remove-DirectoryRobust -ResolvedSource $dir -SourceDir $dir -ErrorList $errors
 
         $errors.Count | Should -Be 0
     }
-
 }
