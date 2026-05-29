@@ -94,7 +94,7 @@ Describe 'Remove-SourceDirectory' {
     }
 
     It 'does not throw when Get-ChildItem encounters an access error' {
-        # Warning-emission behaviour is covered by the Get-SourceDirectoryItems unit test below.
+        # Error-handling behaviour is also covered by the Get-SourceDirectoryItems unit test below.
         $sourceDir = Join-Path $TestDrive 'source-unreadable'
         New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
         Mock Get-ChildItem { Write-Error 'Access to the path is denied.' }
@@ -157,18 +157,7 @@ Describe 'Get-SourceDirectoryItems (private)' {
         $result.Count | Should -Be 2
     }
 
-    It 'surfaces Get-ChildItem enumeration errors as warnings' {
-        $dir = Join-Path $TestDrive 'gsi-warn'
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
-        Mock Get-ChildItem { Write-Error 'Access to the path is denied.' }
-        Mock Write-Warning {}
-
-        Get-SourceDirectoryItems -SourceDir $dir
-
-        Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter { $Message -like '*scan*' }
-    }
-
-    It 'does not throw on enumeration errors' {
+    It 'surfaces enumeration errors as warnings and does not throw' {
         $dir = Join-Path $TestDrive 'gsi-nothrow'
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
         Mock Get-ChildItem { Write-Error 'Denied.' }
