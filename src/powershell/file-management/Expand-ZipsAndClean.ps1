@@ -1,7 +1,4 @@
 #requires -Version 7.0
-using namespace System.Collections.Generic
-using namespace System.Collections.Concurrent
-
 <#
 .SYNOPSIS
     Unzips all .zip files from a source folder into a destination folder, moves the .zip files
@@ -122,7 +119,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.6.12
+    Version  : 2.6.13
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -198,242 +195,11 @@ if ($ThrottleLimit -gt [Environment]::ProcessorCount) {
     Write-Warning "ThrottleLimit ($ThrottleLimit) exceeds the logical processor count ($([Environment]::ProcessorCount)). Consider reducing it to avoid scheduling overhead."
 }
 
-#region Helpers
-
-<#
-.SYNOPSIS
-    Validates source/destination safety constraints before any file operations.
-#>
-function Test-ScriptPreconditions { [CmdletBinding()] param([Parameter(Mandatory)][string]$SourceDir,[Parameter(Mandatory)][string]$DestinationDir) ZipWorkflow\Test-ScriptPreconditions -SourceDir $SourceDir -DestinationDir $DestinationDir }
-
-<#
-.SYNOPSIS
-    Ensures destination root exists before extraction begins.
-#>
-function Initialize-Destination { [CmdletBinding(SupportsShouldProcess = $true)] param([Parameter(Mandatory)][string]$DestinationDir) ZipWorkflow\Initialize-Destination -DestinationDir $DestinationDir }
-
-<#
-.SYNOPSIS
-    Resolves the move target path and collision policy for a single zip file.
-.DESCRIPTION
-    Determines the destination path for moving a zip file to the parent directory,
-    applying the collision policy when a file with the same name already exists.
-    Returns an object with TargetPath (the resolved destination) and PolicyTag
-    (None / Skip / Overwrite / Rename). The caller is responsible for performing
-    the actual move and updating counters.
-#>
-function Resolve-MoveTarget { param([Parameter(Mandatory)][System.IO.FileInfo]$Zip,[Parameter(Mandatory)][string]$Parent,[Parameter(Mandatory)][ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy) ZipWorkflow\Resolve-MoveTarget -Zip $Zip -Parent $Parent -CollisionPolicy $CollisionPolicy }
-
-<#
-.SYNOPSIS
-    Moves .zip files from SourceDir to its parent folder with per-file progress.
-
-.PARAMETER SourceDir
-    The source directory containing .zip files to move.
-
-.PARAMETER QuietMode
-    Suppresses progress bar output when $true.
-
-.PARAMETER CollisionPolicy
-    Behavior when a zip with the same name already exists in the parent directory:
-      - Skip       : leave the existing parent zip untouched and do not move the source zip.
-      - Overwrite  : replace the existing parent zip with the source zip (Move-Item -Force).
-      - Rename     : move the source zip with a unique suffix (default, prior behavior).
-#>
-function Move-ZipFilesToParent {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$SourceDir,
-        [Parameter(Mandatory)][bool]$QuietMode,
-        [ValidateSet('Skip', 'Overwrite', 'Rename')][string]$CollisionPolicy = 'Rename'
-    )
-
-    $parentItem = Get-Item -LiteralPath $SourceDir
-    $parent = $parentItem.Parent?.FullName
-    if (-not $parent) {
-        throw "Cannot move zip files: source directory '$SourceDir' is at drive root (no parent directory exists)"
-    }
-
-    if (-not [System.IO.Directory]::Exists($parent)) {
-        throw "Parent directory not found: $parent"
-    }
-
-    # Writability probe (skip if WhatIf)
-    if (-not $WhatIfPreference) {
-        $null = Test-DirectoryWritable -Path $parent -ThrowOnFailure
-    }
-
-    $zipsToMove = @(Get-ChildItem -LiteralPath $SourceDir -Filter *.zip -File)
-    $total = $zipsToMove.Count
-    $totalBytes = [int64](($zipsToMove | Measure-Object Length -Sum).Sum)
-
-    $idx = 0
-    $moved = 0
-    $bytes = [int64]0
-    $skipped = 0
-    $overwritten = 0
-    $renamed = 0
-
-    foreach ($zf in $zipsToMove) {
-        $idx++
-        # Include the current file's size in the display so the byte counter reflects
-        # the running total up to and including the file being processed (fixes the
-        # off-by-one where the caption previously showed only bytes from prior files).
-        Show-ProgressPhase -Activity "Moving zip files to parent" `
-            -Status "$idx / $total : $($zf.Name) ($(Format-Bytes $zf.Length))" `
-            -Current $idx -Total $total -QuietMode $QuietMode `
-            -CurrentOperation ("Moving: {0} of {1} bytes" -f (Format-Bytes ($bytes + $zf.Length)), (Format-Bytes $totalBytes))
-
-        $mt = Resolve-MoveTarget -Zip $zf -Parent $parent -CollisionPolicy $CollisionPolicy
-
-        if ($mt.PolicyTag -eq 'Skip') {
-            $skipped++
-            continue
-        }
-
-        Move-FileWithRetry -Source $zf.FullName -Destination $mt.TargetPath -Force:($mt.PolicyTag -eq 'Overwrite')
-        if ($mt.PolicyTag -eq 'Overwrite') { $overwritten++ }
-        elseif ($mt.PolicyTag -eq 'Rename') { $renamed++ }
-        $moved++
-        $bytes += $zf.Length
-    }
-
-    Show-ProgressPhase -Activity "Moving zip files to parent" -Status "Done" `
-        -Current $total -Total $total -QuietMode $QuietMode -Completed
-
-    [pscustomobject]@{ Count = $moved; Bytes = $bytes; Destination = $parent; Skipped = $skipped; Overwritten = $overwritten; Renamed = $renamed }
-}
-
-<#
-.SYNOPSIS
-    Writes the end-of-run extraction summary to the host.
-.DESCRIPTION
-    Formats and displays a summary table (or list on narrow consoles) of all
-    extraction, move, and error statistics collected during the run.
-
-    Behavior varies by host interactivity:
-    - Interactive hosts (ConsoleHost, Visual Studio Code Host): full output —
-      header, Format-Table/-List view, and error notes.
-    - Non-interactive hosts (scheduled tasks, redirected streams): the
-      formatted table is suppressed, but any accumulated errors are still
-      written to the success stream so failures are never silent in
-      automation logs.
-.PARAMETER SourceDirectory
-    Source directory passed to the script.
-.PARAMETER DestinationDirectory
-    Destination directory passed to the script.
-.PARAMETER ExtractMode
-    Extraction mode used (PerArchiveSubfolder or Flat).
-.PARAMETER CollisionPolicy
-    Collision policy used (Skip, Overwrite, or Rename).
-.PARAMETER ZipCount
-    Total number of zip files found.
-.PARAMETER ProcessedZips
-    Number of zip files successfully processed.
-.PARAMETER FilesExtracted
-    Total number of files extracted across all archives.
-.PARAMETER UncompressedBytes
-    Total uncompressed bytes extracted.
-.PARAMETER CompressedBytes
-    Total compressed (on-disk) bytes of the zip files processed.
-.PARAMETER MoveSummary
-    PSCustomObject returned by Move-ZipFilesToParent containing Count, Bytes,
-    Destination, Skipped, Overwritten, and Renamed.
-.PARAMETER Errors
-    List of non-fatal error messages accumulated during the run.
-.PARAMETER Elapsed
-    Total elapsed time for the run.
-.PARAMETER HostName
-    Name of the current host. Defaults to $Host.Name. Accepted as a parameter
-    so that tests can inject a synthetic value without spawning a new host.
-.PARAMETER ConsoleWidth
-    Override the detected console width. 0 (default) means auto-detect via
-    $Host.UI.RawUI.WindowSize.Width. Pass a positive value to force Format-Table
-    (>= 120) or Format-List (< 120) regardless of the actual terminal width.
-    Useful in tests and when piping output to a fixed-width formatter.
-.PARAMETER PassThru
-    Switch. When set, emits the summary PSCustomObject to the pipeline in addition
-    to writing it to the host. Intended for testing so callers can inspect the
-    computed fields without needing to intercept Format-Table/-List.
-.NOTES
-    Error notes are always emitted when errors exist, regardless of host type,
-    so that failures are never silently swallowed in scheduled tasks or
-    automation pipelines.
-#>
-function Write-ExtractionSummary {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$SourceDirectory,
-        [Parameter(Mandatory)][string]$DestinationDirectory,
-        [Parameter(Mandatory)][string]$ExtractMode,
-        [Parameter(Mandatory)][string]$CollisionPolicy,
-        [Parameter(Mandatory)][int]$ZipCount,
-        [Parameter(Mandatory)][int]$ProcessedZips,
-        [Parameter(Mandatory)][int]$FilesExtracted,
-        [Parameter(Mandatory)][int64]$UncompressedBytes,
-        [Parameter(Mandatory)][int64]$CompressedBytes,
-        [Parameter(Mandatory)][pscustomobject]$MoveSummary,
-        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$Errors,
-        [Parameter(Mandatory)][timespan]$Elapsed,
-        [string]$HostName = $Host.Name,
-        [int]$ConsoleWidth = 0,
-        [switch]$PassThru
-    )
-
-    $isInteractive = $HostName -in ('ConsoleHost', 'Visual Studio Code Host')
-
-    if ($isInteractive) {
-        $compressionRatio = ($CompressedBytes -gt 0) ? ("{0:N1}x" -f ($UncompressedBytes / [double]$CompressedBytes)) : "n/a"
-
-        $summaryView = [pscustomobject]@{
-            SrcDir          = $SourceDirectory
-            DestDir         = $DestinationDirectory
-            Mode            = $ExtractMode
-            Policy          = $CollisionPolicy
-            ZipsFound       = $ZipCount
-            ZipsDone        = $ProcessedZips
-            Files           = $FilesExtracted
-            Uncompressed    = (Format-Bytes $UncompressedBytes)
-            Compressed      = (Format-Bytes $CompressedBytes)
-            Ratio           = $compressionRatio
-            ZipsMoved       = ($MoveSummary.Count)
-            MoveSkipped     = ($MoveSummary.Skipped)
-            MoveOverwritten = ($MoveSummary.Overwritten)
-            MoveRenamed     = ($MoveSummary.Renamed)
-            MovedBytes      = (Format-Bytes $MoveSummary.Bytes)
-            MovedTo         = ($MoveSummary.Destination)
-            Errors          = ($Errors.Count)
-            Duration        = ("{0:hh\:mm\:ss\.fff}" -f $Elapsed)
-        }
-
-        Write-Output ""
-        Write-Output "==== Expand-ZipsAndClean Summary ===="
-
-        $rawWidth = try { $Host.UI.RawUI.WindowSize.Width } catch { $null }
-        $effectiveWidth = ($ConsoleWidth -gt 0) ? $ConsoleWidth : ($rawWidth ?? 120)
-
-        if ($effectiveWidth -lt 120) {
-            $summaryView | Format-List
-        } else {
-            $summaryView | Format-Table -AutoSize
-        }
-
-        if ($PassThru) { $summaryView }
-    }
-
-    if ($Errors.Count -gt 0) {
-        if ($isInteractive) { Write-Output "" }
-        Write-Output "Notes / Errors:"
-        $Errors | ForEach-Object { Write-Output " - $_" }
-    }
-}
-
-#endregion Helpers
 
 #------------------------------- Main -------------------------------#
 
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-$errors = [List[string]]::new()
+$errors = [System.Collections.Generic.List[string]]::new()
 
 # State for summary
 $zipCount = 0
@@ -444,8 +210,8 @@ $totalCompressedZipBytes = [int64]0
 $moveSummary = [pscustomobject]@{ Count = 0; Bytes = 0; Destination = ""; Skipped = 0; Overwritten = 0; Renamed = 0 }
 
 try {
-    Test-ScriptPreconditions -SourceDir $SourceDirectory -DestinationDir $DestinationDirectory
-    Initialize-Destination -DestinationDir $DestinationDirectory
+    ZipWorkflow\Test-ScriptPreconditions -SourceDir $SourceDirectory -DestinationDir $DestinationDirectory
+    ZipWorkflow\Initialize-Destination -DestinationDir $DestinationDirectory
 
     $extractionResult = ZipExtraction\Invoke-ZipExtractions `
         -SourceDir $SourceDirectory `
@@ -465,7 +231,7 @@ try {
 
     try {
         if ($PSCmdlet.ShouldProcess($SourceDirectory, "Move .zip files to parent")) {
-            $moveSummary = Move-ZipFilesToParent -SourceDir $SourceDirectory -QuietMode $Quiet.IsPresent -CollisionPolicy $CollisionPolicy
+            $moveSummary = ZipWorkflow\Move-ZipFilesToParent -SourceDir $SourceDirectory -QuietMode $Quiet.IsPresent -CollisionPolicy $CollisionPolicy
         }
     } catch {
         $msg = "Moving .zip files to parent failed: $($_.Exception.Message)"
@@ -473,7 +239,7 @@ try {
         $errors.Add($msg) | Out-Null
     }
 
-    Remove-SourceDirectory `
+    FileSystem\Remove-SourceDirectory `
         -SourceDir $SourceDirectory `
         -ShouldDeleteSource $DeleteSource.IsPresent `
         -ShouldCleanNonZips $CleanNonZips.IsPresent `
@@ -487,7 +253,7 @@ try {
 
 #------------------------------ Summary -----------------------------#
 
-Write-ExtractionSummary `
+ProgressReporter\Write-ExtractionSummary `
     -SourceDirectory    $SourceDirectory `
     -DestinationDirectory $DestinationDirectory `
     -ExtractMode        $ExtractMode `

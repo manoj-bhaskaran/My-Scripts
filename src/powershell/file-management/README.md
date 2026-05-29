@@ -21,6 +21,8 @@ Scripts for file operations, distribution, copying, and archiving.
 - **FileSystem** (`src/powershell/modules/Core/FileSystem/`) - Path normalization, safe naming, unique path resolution
 - **Zip** (`src/powershell/modules/Core/Zip/`) - ZIP archive primitives used by `Expand-ZipsAndClean.ps1`
 - **ZipExtraction** (`src/powershell/modules/FileManagement/ZipExtraction/`) - ZIP extraction orchestration helpers used by `Expand-ZipsAndClean.ps1`
+- **ZipWorkflow** (`src/powershell/modules/FileManagement/ZipWorkflow/`) - ZIP workflow precondition, destination, move-target, and zip-move helpers used by `Expand-ZipsAndClean.ps1`
+- **ProgressReporter** (`src/powershell/modules/Core/Progress/`) - Progress and summary presentation helpers used by `Expand-ZipsAndClean.ps1`
 - **AdbHelpers** (`src/powershell/modules/Android/AdbHelpers/`) - Shared ADB/device helpers used by `Copy-AndroidFiles.ps1`
 
 ### External Tools
@@ -47,6 +49,12 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 - These versions are intentionally independent and may advance separately under SemVer.
 
 ## Recent Updates
+
+- **Expand-ZipsAndClean thin orchestrator refactor (issue #1098)** (2026-05-29)
+  - Moved `Write-ExtractionSummary` into `Core/Progress` and updated the script to consume the exported presentation helper without changing summary output.
+  - Removed remaining script-local helper definitions so `Expand-ZipsAndClean.ps1` is now a parameter/import/logger/throttle/main/summary orchestrator.
+  - Promoted `Move-ZipFilesToParent` into `FileManagement/ZipWorkflow` to keep zip-move workflow logic module-owned.
+  - Version bump: `2.6.13` (patch — internal refactor, no intended behavior change).
 
 - **Expand-ZipsAndClean ZipWorkflow logging fallback fix (issue #1096 follow-up)** (2026-05-27)
   - Added a `Write-LogDebug` no-op fallback in `ZipWorkflow.psm1` so helper-only test loads can call `Resolve-MoveTarget` Skip-collision path without requiring the logging framework in module scope.

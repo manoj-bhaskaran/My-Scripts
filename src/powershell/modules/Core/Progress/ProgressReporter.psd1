@@ -3,7 +3,7 @@
     RootModule = 'ProgressReporter.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.1.0'
+    ModuleVersion = '1.2.0'
 
     # ID used to uniquely identify this module
     GUID = '9b0c1d2e-3f4a-5b6c-7d8e-9f0a1b2c3d4e'
@@ -31,7 +31,8 @@
         'New-ProgressTracker',
         'Update-ProgressTracker',
         'Complete-ProgressTracker',
-        'Write-ProgressStatus'
+        'Write-ProgressStatus',
+        'Write-ExtractionSummary'
     )
 
     # Cmdlets to export from this module
@@ -49,7 +50,7 @@
             Tags = @('Progress', 'Logging', 'Reporting', 'Utilities')
             LicenseUri = 'http://www.apache.org/licenses/LICENSE-2.0'
             ProjectUri = 'https://github.com/manoj-bhaskaran/My-Scripts'
-            ReleaseNotes = '1.1.0: Added Show-ProgressPhase (percentage-computing quiet-mode-aware progress wrapper). 1.0.1: Standardized module folder structure and loader.'
+            ReleaseNotes = '1.2.0: Added Write-ExtractionSummary public summary renderer. 1.1.0: Added Show-ProgressPhase (percentage-computing quiet-mode-aware progress wrapper). 1.0.1: Standardized module folder structure and loader.'
         }
     }
 }

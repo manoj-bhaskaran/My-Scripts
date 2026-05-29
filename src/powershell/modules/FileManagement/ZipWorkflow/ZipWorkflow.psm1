@@ -1,5 +1,17 @@
 #requires -Version 7.0
 
+$coreModules = @(
+    '..\..\Core\FileSystem\FileSystem.psm1',
+    '..\..\Core\Progress\ProgressReporter.psm1',
+    '..\..\Core\FileOperations\FileOperations.psm1'
+)
+foreach ($relativeModulePath in $coreModules) {
+    $modulePath = Join-Path $PSScriptRoot $relativeModulePath
+    if (Test-Path -LiteralPath $modulePath) {
+        Import-Module $modulePath -Force
+    }
+}
+
 # Provide no-op logging fallback for helper-load/test contexts where the
 # logging framework is not imported into the same scope as this module.
 if (-not (Get-Command -Name Write-LogDebug -ErrorAction SilentlyContinue)) {

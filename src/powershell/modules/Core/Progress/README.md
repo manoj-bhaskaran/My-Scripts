@@ -39,6 +39,19 @@ Show-Progress -Activity "Processing files" -PercentComplete 25 -Status "Validati
    ```
 
 ## Parameters
+- **Write-ExtractionSummary**
+  - `SourceDirectory` (string, required): Source directory displayed in the summary.
+  - `DestinationDirectory` (string, required): Destination directory displayed in the summary.
+  - `ExtractMode` (string, required): Extraction mode to report.
+  - `CollisionPolicy` (string, required): Collision policy to report.
+  - `ZipCount`, `ProcessedZips`, `FilesExtracted` (int, required): Archive and file counters.
+  - `UncompressedBytes`, `CompressedBytes` (int64, required): Byte counters used for formatted sizes and ratio.
+  - `MoveSummary` (pscustomobject, required): Zip move counters and destination.
+  - `Errors` (`List[string]`, required): Non-fatal error notes to emit.
+  - `Elapsed` (timespan, required): Run duration to display.
+  - `HostName` (string, default `$Host.Name`): Test-injection override for interactive detection.
+  - `ConsoleWidth` (int, default `0`): Test-injection override for table/list selection; widths below 120 use `Format-List`.
+  - `PassThru` (switch): Emits the computed summary object for callers/tests.
 - **Show-ProgressPhase**
   - `Activity` (string, required): Progress-bar activity label.
   - `Status` (string, required): Status message shown on the bar.
@@ -108,6 +121,20 @@ Import-Module "$PSScriptRoot/path/to/ProgressReporter.psm1"
 ```
 
 ## Functions
+
+### Write-ExtractionSummary
+
+Renders the `Expand-ZipsAndClean` end-of-run summary. Interactive hosts (`ConsoleHost` and `Visual Studio Code Host`) receive the header plus a formatted table or list depending on console width. Non-interactive hosts suppress the table but still emit accumulated error notes to the success stream for automation logs.
+
+**Example:**
+```powershell
+Write-ExtractionSummary `
+    -SourceDirectory $source -DestinationDirectory $destination `
+    -ExtractMode PerArchiveSubfolder -CollisionPolicy Rename `
+    -ZipCount $zipCount -ProcessedZips $processedZips -FilesExtracted $files `
+    -UncompressedBytes $uncompressed -CompressedBytes $compressed `
+    -MoveSummary $moveSummary -Errors $errors -Elapsed $stopwatch.Elapsed
+```
 
 ### Show-ProgressPhase
 
@@ -393,6 +420,13 @@ $tracker = New-ProgressTracker -Total 100000 -Activity "Processing" -UpdateFrequ
 This significantly reduces the performance impact of progress reporting.
 
 ## Version History
+
+### 1.2.0 (Unreleased)
+- Added `Write-ExtractionSummary` as a public summary renderer for `Expand-ZipsAndClean`.
+- Module manifest exports the new summary function and imports `Core/FileSystem` for `Format-Bytes`.
+
+### 1.1.0 (2026-05-29)
+- Added `Show-ProgressPhase` for quiet-mode-aware phase progress with percentage calculation.
 
 ### 1.0.0 (2025-11-20)
 - Initial release
