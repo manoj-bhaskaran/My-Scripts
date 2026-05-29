@@ -18,6 +18,10 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[Invoke-PostMergeHook 3.2.1]** Refactored `Deploy-ModuleFromConfig` to reduce cognitive
+  complexity from 77 to ≤15: extracted `Test-TargetList`, `Get-ParsedConfigLine`,
+  `Resolve-ModuleSourcePath`, `Get-TargetBaseRoot`, `Invoke-ModuleTargetDeployment`, and
+  `Invoke-SingleModuleDeployment` helpers; no behaviour change.
 - **[Invoke-PostCommitHook 3.2.0]** Refactored `Deploy-ModuleFromConfig` to reduce cognitive
   complexity from 77 to ≤15: extracted `Test-TargetList`, `Get-ParsedConfigLine`,
   `Resolve-ModuleSourcePath`, `Get-TargetBaseRoot`, `Invoke-ModuleTargetDeployment`, and
