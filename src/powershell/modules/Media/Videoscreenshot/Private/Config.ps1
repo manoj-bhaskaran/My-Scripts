@@ -9,7 +9,7 @@
     - Discovery: Start-VideoBatch honors -IncludeExtensions; otherwise uses
       Config.VideoExtensions.
     - Timing: Helpers (e.g., Start-VlcProcess / Stop-Vlc) read PollIntervalMs,
-      StopVlcWaitMs, and WaitProcessTimeoutSeconds.
+      VideoProbeTimeoutSeconds, StopVlcWaitMs, and WaitProcessTimeoutSeconds.
     - GDI: When neither MaxPerVideoSeconds nor TimeLimitSeconds is set,
       Invoke-GdiCapture uses GdiCaptureDefaultSeconds as a safe fallback.
     - Cropper: Invoke-Cropper consults Python.RequiredPackages for preflight.
@@ -17,9 +17,9 @@
   These defaults are intended to be sane and conservative. Tune with care.
 .OUTPUTS
   [hashtable] with well-known keys:
-    - Timing: PollIntervalMs, SnapshotFallbackTimeoutSeconds,
-              SnapshotDurationGraceSeconds, SnapshotTerminationExtraSeconds,
-              StopVlcWaitMs, WaitProcessTimeoutSeconds
+    - Timing: PollIntervalMs, VideoProbeTimeoutSeconds,
+              SnapshotFallbackTimeoutSeconds, SnapshotDurationGraceSeconds,
+              SnapshotTerminationExtraSeconds, StopVlcWaitMs, WaitProcessTimeoutSeconds
     - Discovery: VideoExtensions
     - GDI: GdiCaptureDefaultSeconds
     - Python: RequiredPackages (used by Invoke-Cropper preflight)
@@ -38,6 +38,11 @@ function Get-DefaultConfig {
         # VLC to start/exit. Smaller = snappier detection, higher CPU; larger =
         # lower CPU, slower responsiveness. Typical range: 100–500 ms.
         PollIntervalMs                  = 200
+
+        # Maximum seconds to wait for the optional Test-VideoPlayable pre-flight
+        # VLC probe. If the probe does not exit in this window, it is force-killed
+        # and the video is treated as not playable. Typical range: 3–15 s.
+        VideoProbeTimeoutSeconds        = 5
 
         # Last-resort cap (seconds) used when no explicit per-video limit is given
         # AND duration detection fails. When duration is detectable, Start-VideoBatch

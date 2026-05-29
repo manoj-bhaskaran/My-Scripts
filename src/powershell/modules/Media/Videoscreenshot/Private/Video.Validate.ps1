@@ -4,30 +4,34 @@ function Test-VideoPlayable {
   Lightweight validation that VLC can open a video.
   .DESCRIPTION
   Launches VLC in a headless/dummy interface for ~1 second and checks the exit code
-  as a quick “can this open & start?” probe. This is intentionally fast to keep
-  batch throughput high and to avoid long delays on broken files.
+  as a quick “can this open & start?” probe. The probe is bounded by
+  TimeoutSeconds and force-killed when VLC does not exit in time. This is
+  intentionally fast to keep batch throughput high and to avoid long delays on
+  broken files.
 
   Exit policy:
     - Returns $true on exit code 0 (success).
     - Returns $false on a clean non-zero exit. In this case, stderr/stdout are captured
       and emitted at Debug level to aid troubleshooting.
+    - Returns $false on probe timeout after force-killing the VLC process.
     - Throws only on immediate startup failures (e.g., process launch errors).
 
   Notes:
     - The 1s window is a trade-off; longer probes reduce false negatives on slow sources
-      (e.g., cold network shares) but slow the batch. If you need a longer probe, adjust
-      the stop-time flag here or add a parameterized variant.
+      (e.g., cold network shares) but slow the batch. Use TimeoutSeconds to bound
+      how long the process may run before it is treated as not playable.
   #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path,
-        [string]$VlcExe
+        [string]$VlcExe,
+        [ValidateRange(1, 300)][int]$TimeoutSeconds = 5
     )
     if (-not (Test-Path -LiteralPath $Path)) { return $false }
 
     # Process setup
     $psi = [Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName = if (-not [string]::IsNullOrWhiteSpace($VlcExe)) { $VlcExe } else { ‘vlc’ }
+    $psi.FileName = if (-not [string]::IsNullOrWhiteSpace($VlcExe)) { $VlcExe } else { 'vlc' }
     # ArgumentList handles quoting for us; we run a minimal, non-interactive session:
     #   --intf dummy       : no UI
     #   --play-and-exit    : exit once playback ends/hits stop-time
@@ -45,24 +49,41 @@ function Test-VideoPlayable {
     $p = [Diagnostics.Process]::new()
     $p.StartInfo = $psi
     if (-not $p.Start()) { throw "Failed to start VLC for validation." }
-    $p.WaitForExit()
 
-    if ($p.ExitCode -eq 0) { return $true }
-
-    # Non-zero exit: capture stderr/stdout for diagnostics (Debug level to avoid noise).
-    # We read after the process exits to avoid async complexity.
     try {
-        $stderr = $p.StandardError.ReadToEnd()
-    }
-    catch { $stderr = '' }
-    try {
-        $stdout = $p.StandardOutput.ReadToEnd()
-    }
-    catch { $stdout = '' }
+        $timeoutMs = [Math]::Max(1, $TimeoutSeconds) * 1000
+        if (-not $p.WaitForExit($timeoutMs)) {
+            Write-Debug ("Test-VideoPlayable: VLC probe timed out after {0}s for '{1}'" -f $TimeoutSeconds, $Path)
+            try {
+                $p.Kill($true)
+            }
+            catch {
+                try { $p.Kill() } catch { }
+            }
+            try { $p.WaitForExit(1000) | Out-Null } catch { }
+            return $false
+        }
 
-    if ($stderr) { Write-Debug ("Test-VideoPlayable: VLC stderr => {0}" -f $stderr.Trim()) }
-    if ($stdout) { Write-Debug ("Test-VideoPlayable: VLC stdout => {0}" -f $stdout.Trim()) }
-    Write-Debug ("Test-VideoPlayable: VLC exited with code {0} for '{1}'" -f $p.ExitCode, $Path)
+        if ($p.ExitCode -eq 0) { return $true }
+
+        # Non-zero exit: capture stderr/stdout for diagnostics (Debug level to avoid noise).
+        # We read after the process exits to avoid async complexity.
+        try {
+            $stderr = $p.StandardError.ReadToEnd()
+        }
+        catch { $stderr = '' }
+        try {
+            $stdout = $p.StandardOutput.ReadToEnd()
+        }
+        catch { $stdout = '' }
+
+        if ($stderr) { Write-Debug ("Test-VideoPlayable: VLC stderr => {0}" -f $stderr.Trim()) }
+        if ($stdout) { Write-Debug ("Test-VideoPlayable: VLC stdout => {0}" -f $stdout.Trim()) }
+        Write-Debug ("Test-VideoPlayable: VLC exited with code {0} for '{1}'" -f $p.ExitCode, $Path)
+    }
+    finally {
+        $p.Dispose()
+    }
 
     # Treat non-zero as not playable; caller decides to skip
     return $false

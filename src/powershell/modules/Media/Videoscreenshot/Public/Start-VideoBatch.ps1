@@ -32,6 +32,12 @@ Use VLC scene snapshots; otherwise use GDI capture.
 With GDI capture, request fullscreen/top-most playback.
 .PARAMETER VlcStartupTimeoutSeconds
 Timeout for VLC process to initialize.
+.PARAMETER VerifyVideos
+Opt-in pre-flight that runs Test-VideoPlayable before launching the main VLC session.
+Unplayable videos are logged as Skipped/NotPlayable and omitted from later resume runs.
+Aliases: -PreflightProbe, -SkipUnplayable.
+.PARAMETER VideoProbeTimeoutSeconds
+Timeout for the VerifyVideos/Test-VideoPlayable pre-flight probe. Defaults to Config.VideoProbeTimeoutSeconds.
 .PARAMETER RunCropper
 Run the Python cropper after capture completes.
 .PARAMETER CropOnly
@@ -77,7 +83,9 @@ function Start-VideoBatch {
         [switch]$GdiFullscreen,
         [int]$VlcStartupTimeoutSeconds = 10,
         # Optional validation / discovery flexibility
+        [Alias('PreflightProbe', 'SkipUnplayable')]
         [switch]$VerifyVideos,
+        [ValidateRange(0, 300)][int]$VideoProbeTimeoutSeconds = 0,
         [string[]]$IncludeExtensions,
 
         # Pipeline completion parameters
@@ -109,7 +117,7 @@ function Start-VideoBatch {
     if ($CropOnly) {
         # Warn about ignored capture-related parameters if supplied
         $captureParams = @('SourceFolder', 'UseVlcSnapshots', 'FramesPerSecond', 'TimeLimitSeconds', 'MaxPerVideoSeconds',
-            'GdiFullscreen', 'VlcStartupTimeoutSeconds', 'VerifyVideos', 'IncludeExtensions',
+            'GdiFullscreen', 'VlcStartupTimeoutSeconds', 'VerifyVideos', 'VideoProbeTimeoutSeconds', 'IncludeExtensions',
             'ClearSnapshotsBeforeRun', 'VideoLimit', 'ResumeFile', 'ProcessedLogPath')
         $ignored = @()
         foreach ($n in $captureParams) {
@@ -252,6 +260,13 @@ function Start-VideoBatch {
         Write-Message -Level Info -Message ("Resume enabled: {0} item(s) will be skipped based on processed/resume lists." -f $processedSet.Count)
     }
 
+    $probeTimeoutSeconds = if ($VideoProbeTimeoutSeconds -gt 0) {
+        $VideoProbeTimeoutSeconds
+    }
+    else {
+        [Math]::Max(1, [int]$context.Config.VideoProbeTimeoutSeconds)
+    }
+
     # If requested, verify videos only when a verifier is available
     $canVerify = $false
     if ($VerifyVideos) {
@@ -297,16 +312,15 @@ function Start-VideoBatch {
         # Optional: verify video playability before spending time on it
         if ($canVerify) {
             try {
-                if (-not (Test-VideoPlayable -Path $video.FullName -VlcExe $resolvedVlcExe)) {
+                if (-not (Test-VideoPlayable -Path $video.FullName -VlcExe $resolvedVlcExe -TimeoutSeconds $probeTimeoutSeconds)) {
                     Write-Message -Level Warn -Message ("Skipping not-playable video: {0}" -f $video.FullName)
-                    if (Get-Command -Name Write-ProcessedLog -ErrorAction SilentlyContinue) {
-                        $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Skipped' -Reason 'NotPlayable'
-                    }
+                    $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Skipped' -Reason 'NotPlayable'
                     continue
                 }
             }
             catch {
                 Write-Message -Level Warn -Message ("Video verification error for {0}: {1}" -f $video.FullName, $_.Exception.Message)
+                $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Skipped' -Reason 'VideoProbeError'
                 continue
             }
         }

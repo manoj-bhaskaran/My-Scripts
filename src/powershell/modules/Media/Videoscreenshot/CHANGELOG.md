@@ -8,6 +8,16 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-05-29
+### Added
+- **Opt-in video pre-flight skip**: `Start-VideoBatch -VerifyVideos` (aliases `-PreflightProbe`, `-SkipUnplayable`) now runs `Test-VideoPlayable` before launching the main VLC capture session. Videos that fail the probe are logged as `Skipped`/`NotPlayable` in the processed log so resume runs do not retry them.
+- **`VideoProbeTimeoutSeconds`** (default `5`) in `Get-DefaultConfig`, plus a `Start-VideoBatch -VideoProbeTimeoutSeconds` override for the pre-flight probe deadline.
+- **Pester coverage** for `Test-VideoPlayable` success, non-zero exit, and hung-probe force-kill behavior, plus the batch-loop skip path.
+
+### Fixed
+- **Bounded playability probe**: `Test-VideoPlayable` now uses `WaitForExit(timeout)` and force-kills VLC on timeout, treating the video as unplayable instead of hanging indefinitely.
+- **VLC executable fallback quoting**: replaced smart quotes around the default `vlc` executable name with straight quotes so the helper parses and executes reliably.
+
 ## [3.1.0] - 2026-05-28
 ### Added
 - **Duration-aware per-video snapshot cap**: `Start-VideoBatch -UseVlcSnapshots` now probes each video's duration (via `Get-VideoDuration`) and computes `cap = duration + SnapshotDurationGraceSeconds` instead of the previous flat `SnapshotFallbackTimeoutSeconds = 300` constant. Short clips no longer incur a 300 s worst-case wait; long videos are no longer cut off early.
