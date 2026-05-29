@@ -22,9 +22,10 @@
 
 .NOTES
     Author: Manoj Bhaskaran
-    Version: 3.2.0
-    Last Updated: 2026-01-12
+    Version: 3.2.1
+    Last Updated: 2026-05-29
     CHANGELOG:
+        3.2.1 - Refactored Deploy-ModuleFromConfig to reduce cognitive complexity from 77 to ≤15
         3.2.0 - Integrated Copy-FileWithRetry from FileOperations module to handle locked files
         3.1.0 - Fixed logging initialization order and config loading sequence
         3.0.0 - Refactored to use PowerShellLoggingFramework for standardized logging
@@ -209,18 +210,223 @@ function Test-TextSafe {
 }
 
 # ==============================================================================================
+# Deployment helpers
+# ==============================================================================================
+
+function Test-TargetList {
+    param(
+        [string[]] $Targets,
+        [string[]] $AllowedFixedTargets,
+        [int]      $LineNumber
+    )
+    $invalid = @()
+    foreach ($t in $Targets) {
+        if ($t -like 'Alt:*') { if (-not $t.Substring(4)) { $invalid += $t } }
+        elseif ($AllowedFixedTargets -notcontains $t) { $invalid += $t }
+    }
+    if ($invalid.Count) {
+        Write-Message ("Config error line {0}: invalid target(s): {1}" -f $LineNumber, ($invalid -join ', '))
+        return $false
+    }
+    return $true
+}
+
+function Get-ParsedConfigLine {
+    <#
+    .NOTES
+        Config line format (pipe-separated):
+          ModuleName | RelativePathFromRepoRoot | Targets | [Author] | [Description]
+        Returns a hashtable of parsed fields, or $null if the line is blank, a comment, or invalid.
+    #>
+    param(
+        [string]   $RawLine,
+        [int]      $LineNumber,
+        [string[]] $AllowedFixedTargets
+    )
+
+    $line = $RawLine.Trim()
+    if (-not $line -or $line.StartsWith('#')) { return $null }
+
+    if ($line -notmatch '^[^|]+\|[^|]+\|.+$') {
+        Write-Message ("Config parse error at line {0}: expected 'Module|RelPath|Targets[|Author][|Description]' -> {1}" -f $LineNumber, $RawLine)
+        return $null
+    }
+
+    $parts = $line.Split('|')
+    if ($parts.Count -lt 3) {
+        Write-Message ("Config parse error at line {0}: need at least 3 fields -> {1}" -f $LineNumber, $RawLine)
+        return $null
+    }
+
+    $moduleName = $parts[0].Trim()
+    $relPath    = $parts[1].Trim()
+    $targetsCsv = $parts[2].Trim()
+
+    if (-not $moduleName) { Write-Message ("Config error line {0}: empty ModuleName"   -f $LineNumber); return $null }
+    if (-not $relPath)    { Write-Message ("Config error line {0}: empty RelativePath" -f $LineNumber); return $null }
+    if (-not $targetsCsv) { Write-Message ("Config error line {0}: empty Targets"      -f $LineNumber); return $null }
+
+    $targets = $targetsCsv.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    if (-not $targets) { Write-Message ("Config error line {0}: no targets specified" -f $LineNumber); return $null }
+
+    if (-not (Test-TargetList -Targets $targets -AllowedFixedTargets $AllowedFixedTargets -LineNumber $LineNumber)) {
+        return $null
+    }
+
+    $authorRaw      = if ($parts.Count -ge 4) { $parts[3] } else { $null }
+    $descriptionRaw = if ($parts.Count -ge 5) { $parts[4] } else { $null }
+
+    return @{
+        ModuleName      = $moduleName
+        RelPath         = $relPath
+        Targets         = $targets
+        AuthorRaw       = $authorRaw
+        DescriptionRaw  = $descriptionRaw
+    }
+}
+
+function Resolve-ModuleSourcePath {
+    param(
+        [string] $RepoPath,
+        [string] $RelPath,
+        [string] $RepoRootNormalized,
+        [int]    $LineNumber
+    )
+
+    $absPath = Join-Path $RepoPath $RelPath
+    try   { $resolved = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $absPath -ErrorAction Stop).ProviderPath) }
+    catch { $resolved = [System.IO.Path]::GetFullPath($absPath) }
+
+    if (-not $resolved.StartsWith($RepoRootNormalized, [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Message ("Config error line {0}: RelativePath escapes repo root -> {1}" -f $LineNumber, $RelPath)
+        return $null
+    }
+    if (-not (Test-Path -LiteralPath $resolved)) {
+        Write-Message ("Module path not found (line {0}): {1}" -f $LineNumber, $absPath)
+        return $null
+    }
+    if ([IO.Path]::GetExtension($resolved) -ne '.psm1') {
+        Write-Message ("Config error line {0}: RelativePath must point to a .psm1 file -> {1}" -f $LineNumber, $RelPath)
+        return $null
+    }
+    if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+        Write-Message ("Config error line {0}: RelativePath is not a file -> {1}" -f $LineNumber, $RelPath)
+        return $null
+    }
+
+    return $resolved
+}
+
+function Get-TargetBaseRoot {
+    param(
+        [string] $Target,
+        [int]    $LineNumber
+    )
+
+    if ($Target -ieq 'System') { return "C:\Program Files\WindowsPowerShell\Modules\User" }
+    if ($Target -ieq 'User')   { return (Join-Path $env:USERPROFILE "Documents\WindowsPowerShell\Modules") }
+    if ($Target -like 'Alt:*') {
+        try   { return Get-SafeAbsolutePath ($Target.Substring(4)) }
+        catch { Write-Message ("Alt path error (line {0}): {1}" -f $LineNumber, $_); return $null }
+    }
+
+    Write-Message ("Unknown target '{0}' (line {1})" -f $Target, $LineNumber)
+    return $null
+}
+
+function Invoke-ModuleTargetDeployment {
+    param(
+        [string]  $BaseRoot,
+        [string]  $ModuleName,
+        [version] $Version,
+        [string]  $SourcePath,
+        [string]  $Author,
+        [string]  $Description,
+        [int]     $LineNumber
+    )
+
+    $destVersionDir = Join-Path (Join-Path $BaseRoot $ModuleName) $Version.ToString()
+    New-DirectoryIfMissing $destVersionDir
+
+    $destPsm1 = Join-Path $destVersionDir "$ModuleName.psm1"
+    $destPsd1 = Join-Path $destVersionDir "$ModuleName.psd1"
+
+    try {
+        Copy-Item -LiteralPath $SourcePath -Destination $destPsm1 -Force -ErrorAction Stop
+        New-OrUpdateManifest -ManifestPath $destPsd1 -Version $Version -ModuleName $ModuleName `
+            -Author $Author -Description $Description
+        Write-Message ("Deployed {0} {1} -> {2} (manifest: {3})" -f $ModuleName, $Version, $destVersionDir, $destPsd1)
+    }
+    catch {
+        Write-Message ("Deployment error for {0} -> {1}: {2}" -f $ModuleName, $destVersionDir, $_)
+    }
+}
+
+function Invoke-SingleModuleDeployment {
+    param(
+        [hashtable] $Config,
+        [string]    $RepoPath,
+        [string]    $RepoRootNormalized,
+        [int]       $LineNumber,
+        [string[]]  $TouchedRelPaths
+    )
+
+    if ($TouchedRelPaths -and ($TouchedRelPaths -notcontains $Config.RelPath)) { return }
+
+    $resolved = Resolve-ModuleSourcePath -RepoPath $RepoPath -RelPath $Config.RelPath `
+        -RepoRootNormalized $RepoRootNormalized -LineNumber $LineNumber
+    if (-not $resolved) { return }
+
+    $author      = if ($Config.AuthorRaw)      { $Config.AuthorRaw.Trim() }      else { $env:USERNAME }
+    $description = if ($Config.DescriptionRaw) { $Config.DescriptionRaw.Trim() } else { "PowerShell module" }
+
+    if (-not (Test-TextSafe $author)) {
+        Write-Message ("Config line {0}: invalid author field, using fallback for {1}" -f $LineNumber, $Config.ModuleName)
+        $author = $env:USERNAME
+    }
+    if (-not (Test-TextSafe $description)) {
+        Write-Message ("Config line {0}: invalid description field, using fallback for {1}" -f $LineNumber, $Config.ModuleName)
+        $description = "PowerShell module"
+    }
+
+    if (-not (Test-ModuleSanity -Path $resolved)) {
+        Write-Message ("Skipping deploy for {0} due to failed sanity check." -f $Config.ModuleName)
+        return
+    }
+
+    try   { $ver = Get-HeaderVersion -Path $resolved }
+    catch { Write-Message ("Cannot parse version for {0}: {1}" -f $Config.ModuleName, $_); return }
+
+    foreach ($t in $Config.Targets) {
+        $baseRoot = Get-TargetBaseRoot -Target $t -LineNumber $LineNumber
+        if (-not $baseRoot) { continue }
+        Invoke-ModuleTargetDeployment -BaseRoot $baseRoot -ModuleName $Config.ModuleName `
+            -Version $ver -SourcePath $resolved -Author $author -Description $description `
+            -LineNumber $LineNumber
+    }
+}
+
+# ==============================================================================================
 # Deployment (with strong config validation + optional Author/Description from config)
 # ==============================================================================================
 
 function Deploy-ModuleFromConfig {
     <#
     .SYNOPSIS
-        Deploys modules listed in the config file to configured targets with diagnostics.
+        Deploys modules listed in the config file to configured targets (with detailed validation & diagnostics).
+    .PARAMETER RepoPath
+        Repository root.
+    .PARAMETER ConfigPath
+        Path to config\module-deployment-config.txt.
+    .PARAMETER TouchedRelPaths
+        Optional list of relative paths modified in this merge; if provided, only those modules whose RelativePath matches are deployed.
+
     .NOTES
-        Config line format:
+        Config line format (pipe-separated):
           ModuleName | RelativePathFromRepoRoot | Targets | [Author] | [Description]
-        Optional fields fallback to:
-          Author=$env:USERNAME, Description="PowerShell module"
+        Fields [Author] and [Description] are optional. If omitted:
+          Author      -> $env:USERNAME
+          Description -> "PowerShell module"
     #>
     param(
         [Parameter(Mandatory = $true)][string]$RepoPath,
@@ -233,125 +439,17 @@ function Deploy-ModuleFromConfig {
         return
     }
 
-    $repoRootResolved = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $RepoPath -ErrorAction Stop).ProviderPath)
+    $repoRootNormalized  = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $RepoPath -ErrorAction Stop).ProviderPath)
     $allowedFixedTargets = @('System', 'User')
-    $lines = @(Get-Content -Path $ConfigPath -ErrorAction Stop)
+    $lines               = @(Get-Content -Path $ConfigPath -ErrorAction Stop)
 
     for ($i = 0; $i -lt $lines.Count; $i++) {
-        $raw = $lines[$i]
-        $line = $raw.Trim()
-        if (-not $line -or $line.StartsWith('#')) { continue }
-
-        if ($line -notmatch '^[^|]+\|[^|]+\|.+$') {
-            Write-Message ("Config parse error at line {0}: expected 'Module|RelPath|Targets[|Author][|Description]' -> {1}" -f ($i + 1), $raw)
-            continue
-        }
-
-        $parts = $line.Split('|')
-        if ($parts.Count -lt 3) {
-            Write-Message ("Config parse error at line {0}: need at least 3 fields -> {1}" -f ($i + 1), $raw)
-            continue
-        }
-
-        $moduleName = $parts[0].Trim()
-        $relPath = $parts[1].Trim()
-        $targetsCsv = $parts[2].Trim()
-        $authorRaw = if ($parts.Count -ge 4) { $parts[3] } else { $null }
-        $descriptionRaw = if ($parts.Count -ge 5) { $parts[4] } else { $null }
-
-        if (-not $moduleName) { Write-Message ("Config error line {0}: empty ModuleName" -f ($i + 1)); continue }
-        if (-not $relPath) { Write-Message ("Config error line {0}: empty RelativePath" -f ($i + 1)); continue }
-        if (-not $targetsCsv) { Write-Message ("Config error line {0}: empty Targets" -f ($i + 1)); continue }
-
-        $targets = $targetsCsv.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-        if (-not $targets) { Write-Message ("Config error line {0}: no targets specified" -f ($i + 1)); continue }
-
-        $invalidTargets = @()
-        foreach ($t in $targets) {
-            if ($t -like 'Alt:*') { if (-not $t.Substring(4)) { $invalidTargets += $t } }
-            elseif ($allowedFixedTargets -notcontains $t) { $invalidTargets += $t }
-        }
-        if ($invalidTargets.Count) {
-            Write-Message ("Config error line {0}: invalid target(s): {1}" -f ($i + 1), ($invalidTargets -join ', '))
-            continue
-        }
-
-        # Only deploy if this module file was touched (when TouchedRelPaths is provided)
-        if ($TouchedRelPaths -and ($TouchedRelPaths -notcontains $relPath)) { continue }
-
-        # Build and validate module path
-        $absPath = Join-Path $RepoPath $relPath
-        try { $resolved = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $absPath -ErrorAction Stop).ProviderPath) }
-        catch { $resolved = [System.IO.Path]::GetFullPath($absPath) }
-
-        # Ensure the resolved path sits inside the repo root (no traversal outside)
-        if (-not $resolved.StartsWith($repoRootResolved, [StringComparison]::OrdinalIgnoreCase)) {
-            Write-Message ("Config error line {0}: RelativePath escapes repo root -> {1}" -f ($i + 1), $relPath)
-            continue
-        }
-
-        if (-not (Test-Path -LiteralPath $resolved)) {
-            Write-Message ("Module path not found (line {0}): {1}" -f ($i + 1), $absPath)
-            continue
-        }
-
-        # Must be a .psm1 file and a leaf
-        if ([IO.Path]::GetExtension($resolved) -ne '.psm1') {
-            Write-Message ("Config error line {0}: RelativePath must point to a .psm1 file -> {1}" -f ($i + 1), $relPath)
-            continue
-        }
-        if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
-            Write-Message ("Config error line {0}: RelativePath is not a file -> {1}" -f ($i + 1), $relPath)
-            continue
-        }
-
-        # Sanitize author/description
-        $author = if ($authorRaw) { $authorRaw.Trim() }      else { $env:USERNAME }
-        $description = if ($descriptionRaw) { $descriptionRaw.Trim() } else { "PowerShell module" }
-        if (-not (Test-TextSafe $author)) { $author = $env:USERNAME }
-        if (-not (Test-TextSafe $description)) { $description = "PowerShell module" }
-
-        # Sanity check the module (syntax + presence of functions or Export-ModuleMember)
-        if (-not (Test-ModuleSanity -Path $resolved)) {
-            Write-Message ("Skipping deploy for {0} due to failed sanity check." -f $moduleName)
-            continue
-        }
-
-        # Parse module version from header
-        try { $ver = Get-HeaderVersion -Path $resolved }
-        catch { Write-Message ("Cannot parse version for {0}: {1}" -f $moduleName, $_); continue }
-
-        # --- Targets: System/User/Alt ---
-        foreach ($t in $targets) {
-            if ($t -ieq 'System') { $baseRoot = "C:\Program Files\WindowsPowerShell\Modules\User" }
-            elseif ($t -ieq 'User') { $baseRoot = Join-Path $env:USERPROFILE "Documents\WindowsPowerShell\Modules" }
-            elseif ($t -like 'Alt:*') {
-                try { $baseRoot = Get-SafeAbsolutePath ($t.Substring(4)) }
-                catch { Write-Message ("Alt path error (line {0}): {1}" -f ($i + 1), $_); continue }
-            }
-            else { Write-Message ("Unknown target '{0}' (line {1})" -f $t, ($i + 1)); continue }
-
-            $moduleRoot = Join-Path $baseRoot $moduleName
-            $destVersionDir = Join-Path $moduleRoot $ver.ToString()
-            New-DirectoryIfMissing $destVersionDir
-
-            $destPsm1 = Join-Path $destVersionDir "$moduleName.psm1"
-            $destPsd1 = Join-Path $destVersionDir "$moduleName.psd1"
-
-            try {
-                Copy-Item -LiteralPath $resolved -Destination $destPsm1 -Force -ErrorAction Stop
-                New-OrUpdateManifest `
-                    -ManifestPath $destPsd1 `
-                    -Version      $ver `
-                    -ModuleName   $moduleName `
-                    -Author       $author `
-                    -Description  $description
-                Write-Message ("Deployed {0} {1} -> {2} (manifest: {3})" -f $moduleName, $ver, $destVersionDir, $destPsd1)
-            }
-            catch {
-                Write-Message ("Deployment error for {0} -> {1}: {2}" -f $moduleName, $destVersionDir, $_)
-            }
-        }
+        $parsed = Get-ParsedConfigLine -RawLine $lines[$i] -LineNumber ($i + 1) `
+            -AllowedFixedTargets $allowedFixedTargets
+        if (-not $parsed) { continue }
+        Invoke-SingleModuleDeployment -Config $parsed -RepoPath $RepoPath `
+            -RepoRootNormalized $repoRootNormalized -LineNumber ($i + 1) `
+            -TouchedRelPaths $TouchedRelPaths
     }
 }
 
