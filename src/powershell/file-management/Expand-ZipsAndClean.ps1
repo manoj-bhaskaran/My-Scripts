@@ -122,7 +122,7 @@ using namespace System.Collections.Concurrent
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.6.9
+    Version  : 2.6.10
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -214,6 +214,134 @@ function Initialize-Destination { [CmdletBinding(SupportsShouldProcess = $true)]
 
 <#
 .SYNOPSIS
+    Reads all items under SourceDir recursively, surfacing enumeration errors as warnings.
+#>
+function Get-SourceDirectoryItems {
+    param([Parameter(Mandatory)][string]$SourceDir)
+    $gcErrors = $null
+    $items = Get-ChildItem -LiteralPath $SourceDir -Recurse -Force -ErrorAction SilentlyContinue -ErrorVariable gcErrors
+    foreach ($e in $gcErrors) {
+        Write-Warning "Could not read item during source directory scan: $($e.Exception.Message)"
+    }
+    return @($items)
+}
+
+<#
+.SYNOPSIS
+    Returns $true and records an error when zip files remain and would be destroyed by deletion.
+#>
+function Test-HasBlockingZips {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Remaining,
+        [Parameter(Mandatory)][string]$SourceDir,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
+    )
+    $remainingZips = @($Remaining | Where-Object { -not $_.PSIsContainer -and $_.Extension -eq '.zip' })
+    if ($remainingZips.Count -gt 0) {
+        $ErrorList.Add("DeleteSource skipped: $($remainingZips.Count) zip file(s) remain in '$SourceDir' (not moved due to Skip collision policy). Resolve the collisions or change -CollisionPolicy before using -DeleteSource.") | Out-Null
+        Write-LogDebug ("Remaining zips: `n" + ($remainingZips | Select-Object -ExpandProperty FullName | Out-String))
+        return $true
+    }
+    return $false
+}
+
+<#
+.SYNOPSIS
+    Returns a human-readable block reason when non-zip items prevent deletion, or $null when safe to proceed.
+#>
+function Get-NonZipDeletionBlockReason {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$NonZips,
+        [Parameter(Mandatory)][bool]$ShouldCleanNonZips,
+        [Parameter(Mandatory)][string]$SourceDir
+    )
+    if ($NonZips.Count -eq 0 -or $ShouldCleanNonZips) { return $null }
+    $hasFiles = @($NonZips | Where-Object { -not $_.PSIsContainer })
+    $msg = ($hasFiles.Count -gt 0) ?
+        "DeleteSource skipped: non-zip files remain in '$SourceDir'. Use -CleanNonZips to remove them." :
+        "DeleteSource skipped: only empty subdirectories remain in '$SourceDir'. Use -CleanNonZips to remove them."
+    Write-LogDebug ("Remaining items: `n" + ($NonZips | Select-Object -ExpandProperty FullName | Out-String))
+    return $msg
+}
+
+<#
+.SYNOPSIS
+    Removes non-zip items deepest-first to avoid "directory not empty" errors on nested trees.
+#>
+function Remove-NonZipItems {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$NonZips,
+        [Parameter(Mandatory)][string]$ResolvedSource
+    )
+    # Wrap the split/filter result with @(...) so .Count remains valid under
+    # Set-StrictMode -Version Latest when a single-segment relative path
+    # would otherwise make Where-Object return a scalar string.
+    $NonZips | Sort-Object -Property `
+        @{ Expression = { @($_.FullName -replace [regex]::Escape($ResolvedSource), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count }; Descending = $true }, `
+        @{ Expression = { $_.FullName }; Descending = $true } | ForEach-Object {
+        # Capture the pipeline item; inside the catch below, $_ is rebound
+        # to the ErrorRecord and reading $_.FullName would raise a
+        # terminating PropertyNotFoundException under Set-StrictMode -Latest,
+        # which would bubble past this catch into the outer handler and
+        # prevent the final source-directory deletion from running.
+        $item = $_
+        try {
+            if (Test-Path -LiteralPath $item.FullName) {
+                Remove-FileWithRetry -Path $item.FullName
+            }
+        } catch {
+            Write-LogDebug "Best-effort cleanup skip for '$($item.FullName)': $($_.Exception.Message)"
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Deletes a directory using [System.IO.Directory]::Delete with Remove-Item as fallback.
+#>
+function Remove-DirectoryWithFallback {
+    param(
+        [Parameter(Mandatory)][string]$ResolvedSource,
+        [Parameter(Mandatory)][string]$SourceDir,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
+    )
+    # Use [System.IO.Directory]::Delete instead of Remove-Item -Recurse -Force.
+    # On Linux, PowerShell's Remove-Item has a long-standing rough edge (PowerShell
+    # #8211) where it can leave the root directory behind on some CI filesystems
+    # (GitHub Actions runners). The .NET primitive is synchronous and has no such
+    # quirk. Remove-Item is kept as a fallback only if the .NET call fails.
+    $finalDeleteError = $null
+    if ([System.IO.Directory]::Exists($ResolvedSource)) {
+        try {
+            [System.IO.Directory]::Delete($ResolvedSource, $true)
+        } catch {
+            $finalDeleteError = $_
+            Write-LogDebug "Directory.Delete raised for '$ResolvedSource': $($_.Exception.Message)"
+        }
+    }
+    if ([System.IO.Directory]::Exists($ResolvedSource)) {
+        try {
+            Remove-Item -LiteralPath $ResolvedSource -Recurse -Force -ErrorAction Stop
+            $finalDeleteError = $null
+        } catch {
+            if ($null -eq $finalDeleteError) { $finalDeleteError = $_ }
+            Write-LogDebug "Remove-Item fallback raised for '$ResolvedSource': $($_.Exception.Message)"
+        }
+    }
+    # Record a single failure entry if the directory still exists, or if the
+    # last delete attempt threw (preserves error reporting when permission-
+    # denied ACLs might make the directory appear absent while deletion
+    # genuinely failed).
+    if ([System.IO.Directory]::Exists($ResolvedSource)) {
+        $reason = ($null -ne $finalDeleteError) ? $finalDeleteError.Exception.Message : 'source directory still exists after removal'
+        $ErrorList.Add("Failed to delete source directory '$SourceDir': $reason") | Out-Null
+    } elseif ($null -ne $finalDeleteError) {
+        $ErrorList.Add("Failed to delete source directory '$SourceDir': $($finalDeleteError.Exception.Message)") | Out-Null
+    }
+}
+
+<#
+.SYNOPSIS
     Optionally cleans non-zip leftovers and removes the source directory.
 #>
 function Remove-SourceDirectory {
@@ -225,9 +353,7 @@ function Remove-SourceDirectory {
         [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$ErrorList
     )
 
-    if (-not $ShouldDeleteSource) {
-        return
-    }
+    if (-not $ShouldDeleteSource) { return }
 
     # Resolve to the native provider path so [System.IO.Directory] calls (which
     # are unaware of PowerShell PSDrives) see exactly the same path PowerShell
@@ -242,96 +368,21 @@ function Remove-SourceDirectory {
     }
 
     try {
-        $gcErrors = $null
-        $remaining = Get-ChildItem -LiteralPath $resolvedSource -Recurse -Force -ErrorAction SilentlyContinue -ErrorVariable gcErrors
-        foreach ($e in $gcErrors) {
-            Write-Warning "Could not read item during source directory scan: $($e.Exception.Message)"
-        }
-        # Zip files left behind (e.g. by Skip collision policy) must block deletion
-        # to prevent data loss: the caller chose Skip precisely to keep those archives.
-        $remainingZips = @($remaining | Where-Object { -not $_.PSIsContainer -and $_.Extension -eq '.zip' })
-        if ($remainingZips.Count -gt 0) {
-            $ErrorList.Add("DeleteSource skipped: $($remainingZips.Count) zip file(s) remain in '$SourceDir' (not moved due to Skip collision policy). Resolve the collisions or change -CollisionPolicy before using -DeleteSource.") | Out-Null
-            Write-LogDebug ("Remaining zips: `n" + ($remainingZips | Select-Object -ExpandProperty FullName | Out-String))
-            return
-        }
+        $remaining = Get-SourceDirectoryItems -SourceDir $resolvedSource
+        if (Test-HasBlockingZips -Remaining $remaining -SourceDir $SourceDir -ErrorList $ErrorList) { return }
 
         $nonZips = @($remaining | Where-Object { $_.PSIsContainer -or $_.Extension -ne '.zip' })
-        if ($nonZips.Count -gt 0 -and -not $ShouldCleanNonZips) {
-            $hasFiles = @($nonZips | Where-Object { -not $_.PSIsContainer })
-            if ($hasFiles.Count -gt 0) {
-                $ErrorList.Add("DeleteSource skipped: non-zip files remain in '$SourceDir'. Use -CleanNonZips to remove them.") | Out-Null
-            } else {
-                $ErrorList.Add("DeleteSource skipped: only empty subdirectories remain in '$SourceDir'. Use -CleanNonZips to remove them.") | Out-Null
-            }
-            Write-LogDebug ("Remaining items: `n" + ($nonZips | Select-Object -ExpandProperty FullName | Out-String))
+        $blockReason = Get-NonZipDeletionBlockReason -NonZips $nonZips -ShouldCleanNonZips $ShouldCleanNonZips -SourceDir $SourceDir
+        if ($blockReason) {
+            $ErrorList.Add($blockReason) | Out-Null
             return
         }
 
         if ($ShouldCleanNonZips -and $nonZips.Count -gt 0) {
-            # Wrap the split/filter result with @(...) so .Count remains valid under
-            # Set-StrictMode -Version Latest when a single-segment relative path
-            # would otherwise make Where-Object return a scalar string.
-            $nonZips | Sort-Object -Property `
-            @{ Expression = { @($_.FullName -replace [regex]::Escape($resolvedSource), '' -split '[\\/]' | Where-Object { $_ -ne '' }).Count }; Descending = $true }, `
-            @{ Expression = { $_.FullName }; Descending = $true } | ForEach-Object {
-                # Capture the pipeline item; inside the catch below, $_ is rebound
-                # to the ErrorRecord and reading $_.FullName would raise a
-                # terminating PropertyNotFoundException under Set-StrictMode -Latest,
-                # which would bubble past this catch into the outer handler and
-                # prevent the final source-directory deletion from running.
-                $item = $_
-                try {
-                    if (Test-Path -LiteralPath $item.FullName) {
-                        Remove-FileWithRetry -Path $item.FullName
-                    }
-                } catch {
-                    Write-LogDebug "Best-effort cleanup skip for '$($item.FullName)': $($_.Exception.Message)"
-                }
-            }
+            Remove-NonZipItems -NonZips $nonZips -ResolvedSource $resolvedSource
         }
 
-        # Delete the source directory itself (no ShouldProcess check needed since $ShouldDeleteSource is explicit).
-        #
-        # Use [System.IO.Directory]::Delete($path, recursive: true) instead of
-        # Remove-Item -Recurse -Force. On Linux, PowerShell's Remove-Item has a
-        # long-standing rough edge with recursive deletion (PowerShell #8211):
-        # it can emit non-terminating errors while still removing most content,
-        # and on some CI filesystems (GitHub Actions runners in particular) it
-        # leaves the root directory behind, producing a persistent
-        # "source directory still exists after removal" failure in
-        # the nested-cleanup Pester case. The .NET primitive is synchronous,
-        # cross-platform, and has no such quirk. Remove-Item is kept as a
-        # fallback only if the .NET call fails.
-        $finalDeleteError = $null
-        if ([System.IO.Directory]::Exists($resolvedSource)) {
-            try {
-                [System.IO.Directory]::Delete($resolvedSource, $true)
-            } catch {
-                $finalDeleteError = $_
-                Write-LogDebug "Directory.Delete raised for '$resolvedSource': $($_.Exception.Message)"
-            }
-        }
-        # Fallback: if .NET failed and the dir still exists, try Remove-Item once.
-        if ([System.IO.Directory]::Exists($resolvedSource)) {
-            try {
-                Remove-Item -LiteralPath $resolvedSource -Recurse -Force -ErrorAction Stop
-                $finalDeleteError = $null
-            } catch {
-                if ($null -eq $finalDeleteError) { $finalDeleteError = $_ }
-                Write-LogDebug "Remove-Item fallback raised for '$resolvedSource': $($_.Exception.Message)"
-            }
-        }
-        # Record a single failure entry if the directory still exists, or if the
-        # last delete attempt threw (preserves error reporting when permission-
-        # denied ACLs might make the directory appear absent while deletion
-        # genuinely failed).
-        if ([System.IO.Directory]::Exists($resolvedSource)) {
-            $reason = if ($null -ne $finalDeleteError) { $finalDeleteError.Exception.Message } else { 'source directory still exists after removal' }
-            $ErrorList.Add("Failed to delete source directory '$SourceDir': $reason") | Out-Null
-        } elseif ($null -ne $finalDeleteError) {
-            $ErrorList.Add("Failed to delete source directory '$SourceDir': $($finalDeleteError.Exception.Message)") | Out-Null
-        }
+        Remove-DirectoryWithFallback -ResolvedSource $resolvedSource -SourceDir $SourceDir -ErrorList $ErrorList
     } catch {
         $msg = "Failed to delete source directory '$SourceDir': $($_.Exception.Message)"
         Write-LogDebug $msg
