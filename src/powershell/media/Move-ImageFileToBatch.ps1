@@ -100,9 +100,15 @@
 
 .NOTES
     VERSION
-      2.1.2
+      2.1.3
 
     CHANGELOG
+      2.1.3
+        - Refactor Write-RunSummary to reduce Cognitive Complexity from 19 to 4 (limit: 15).
+          • Extract Write-ErrorLog: encapsulates path resolution, directory creation, size warning,
+            writability probe, and file-append logic, removing the deeply nested try/catch and
+            all its nested if blocks from Write-RunSummary.
+
       2.1.2
         - Refactor Copy-FilesToBatches to reduce Cognitive Complexity from 46 to 12 (limit: 15).
           • Extract Test-FileSkippedByCopyRule: encapsulates PNG-skip and JPG-not-img-skip rules.
@@ -552,6 +558,67 @@ function Copy-FilesToBatches {
     return $script:CopiedCount, $sw.Elapsed
 }
 
+function Write-ErrorLog {
+    <#
+    .SYNOPSIS
+        Resolves the error log path, ensures its directory exists, and appends error details.
+    .PARAMETER ErrCount
+        Number of errors to log.
+    .PARAMETER DestDir
+        Fallback destination directory when LogDirectory is not supplied.
+    .PARAMETER LogDirectory
+        Optional explicit log directory.
+    .OUTPUTS
+        None
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
+    param(
+        [Parameter(Mandatory = $true)][int]$ErrCount,
+        [Parameter(Mandatory = $true)][string]$DestDir,
+        [string]$LogDirectory
+    )
+
+    try {
+        if ($LogDirectory) {
+            $resolvedLogPath = Join-Path -Path $LogDirectory -ChildPath ("picconvert_errors_{0}.log" -f $script:RunStamp)
+        } else {
+            $resolvedLogPath = Join-Path -Path $DestDir -ChildPath ("picconvert_errors_{0}.log" -f $script:RunStamp)
+        }
+
+        $logDir = Split-Path -Path $resolvedLogPath -Parent
+        if (-not (Test-Path -LiteralPath $logDir -PathType Container)) {
+            if ($PSCmdlet.ShouldProcess($logDir, "Create log directory")) {
+                New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+                $script:RootDirsCreated++
+                Write-Verbose "Created log directory: $logDir"
+            }
+        }
+
+        if (Test-Path -LiteralPath $resolvedLogPath) {
+            $sizeMB = ([IO.FileInfo]$resolvedLogPath).Length / 1MB
+            if ($sizeMB -ge $LogWarnSizeMB) {
+                Write-LogWarning ("Log file is {0:N1} MB (>= {1} MB). Consider rotating or changing -LogDirectory." -f $sizeMB, $LogWarnSizeMB)
+            }
+        }
+
+        $probe = Join-Path $logDir ("._probe_{0}.tmp" -f [Guid]::NewGuid())
+        "probe" | Out-File -FilePath $probe -Encoding UTF8
+        Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+
+        if (-not (Test-Path -LiteralPath $resolvedLogPath)) {
+            New-Item -ItemType File -Path $resolvedLogPath -Force | Out-Null
+        }
+        Add-Content -Path $resolvedLogPath -Value ("`n==== {0} ====" -f $script:RunStamp)
+        Add-Content -Path $resolvedLogPath -Value ("[{0}] Error details (count={1})" -f (Get-Date), $ErrCount)
+        $script:ErrList | Add-Content -Path $resolvedLogPath
+
+        Write-LogWarning "Errors were logged to: $resolvedLogPath"
+    }
+    catch {
+        Write-LogWarning "Failed to write error log to '$resolvedLogPath': $($_.Exception.Message)"
+    }
+}
+
 function Write-RunSummary {
     <#
     .SYNOPSIS
@@ -622,49 +689,7 @@ Elapsed (total)       : {2:c}
     Write-Host "================================================="
 
     if ($ErrCount -gt 0) {
-        try {
-            if ($LogDirectory) {
-                $resolvedLogPath = Join-Path -Path $LogDirectory -ChildPath ("picconvert_errors_{0}.log" -f $script:RunStamp)
-            } else {
-                $resolvedLogPath = Join-Path -Path $DestDir -ChildPath ("picconvert_errors_{0}.log" -f $script:RunStamp)
-            }
-
-            # Ensure directory exists & is writable
-            $logDir = Split-Path -Path $resolvedLogPath -Parent
-            if (-not (Test-Path -LiteralPath $logDir -PathType Container)) {
-                if ($PSCmdlet.ShouldProcess($logDir, "Create log directory")) {
-                    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-                    $script:RootDirsCreated++
-                    Write-Verbose "Created log directory: $logDir"
-                }
-            }
-
-            # Warn if existing log is large before appending
-            if (Test-Path -LiteralPath $resolvedLogPath) {
-                $sizeMB = ([IO.FileInfo]$resolvedLogPath).Length / 1MB
-                if ($sizeMB -ge $LogWarnSizeMB) {
-                    Write-LogWarning ("Log file is {0:N1} MB (>= {1} MB). Consider rotating or changing -LogDirectory." -f $sizeMB, $LogWarnSizeMB)
-                }
-            }
-
-            # Writability probe
-            $probe = Join-Path $logDir ("._probe_{0}.tmp" -f [Guid]::NewGuid())
-            "probe" | Out-File -FilePath $probe -Encoding UTF8
-            Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
-
-            # APPEND-BY-DEFAULT for user-specified path; create file if missing
-            if (-not (Test-Path -LiteralPath $resolvedLogPath)) {
-                New-Item -ItemType File -Path $resolvedLogPath -Force | Out-Null
-            }
-            Add-Content -Path $resolvedLogPath -Value ("`n==== {0} ====" -f $script:RunStamp)
-            Add-Content -Path $resolvedLogPath -Value ("[{0}] Error details (count={1})" -f (Get-Date), $ErrCount)
-            $script:ErrList | Add-Content -Path $resolvedLogPath
-
-            Write-LogWarning "Errors were logged to: $resolvedLogPath"
-        }
-        catch {
-            Write-LogWarning "Failed to write error log to '$resolvedLogPath': $($_.Exception.Message)"
-        }
+        Write-ErrorLog -ErrCount $ErrCount -DestDir $DestDir -LogDirectory $LogDirectory
     }
 }
 
@@ -673,7 +698,7 @@ Elapsed (total)       : {2:c}
 # region: Main ------------------------------------------------------------------------------------
 
 try {
-    Write-LogInfo "Starting picconvert 2.1.2"
+    Write-LogInfo "Starting picconvert 2.1.3"
     Initialize-Directories -SourceDir $SourceDir -DestDir $DestDir
 
     # Phase 1: Gather all source files (for rename); ALWAYS include .jpeg and .jpg_large
