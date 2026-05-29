@@ -1,5 +1,18 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.12 — 2026-05-29
+
+### Refactor
+
+- `Remove-SourceDirectory` and its five private helpers (`Get-SourceDirectoryItems`,
+  `Test-HasBlockingZips`, `Get-NonZipDeletionBlockReason`, `Remove-NonZipItems`,
+  `Remove-DirectoryRobust`) have been moved to `Core/FileSystem` (module version 1.3.0).
+  The script imports `Remove-SourceDirectory` from the module and calls it from `Main`
+  unchanged. No behavioural change; error messages, delete semantics, and the
+  `Remove-Item` / `[System.IO.Directory]::Delete` fallback logic are identical.
+
+---
+
 ## 2.6.11 — 2026-05-29
 
 ### Fixed

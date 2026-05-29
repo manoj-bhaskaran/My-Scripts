@@ -3,7 +3,7 @@
     RootModule        = 'FileSystem.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.2.1'
+    ModuleVersion     = '1.3.0'
 
     # ID used to uniquely identify this module
     GUID              = '1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d'
@@ -18,7 +18,7 @@
     Copyright         = '(c) 2025 My-Scripts. Licensed under Apache License 2.0.'
 
     # Description of the functionality provided by this module
-    Description       = 'Common file system operations including directory creation, file accessibility checks, path validation, file locking detection, path normalization, safe naming, byte formatting, directory writability testing, and cross-platform path-separator helpers.'
+    Description       = 'Common file system operations including directory creation, file accessibility checks, path validation, file locking detection, path normalization, safe naming, byte formatting, directory writability testing, cross-platform path-separator helpers, and robust source-directory deletion.'
 
     # Minimum version of the PowerShell engine required by this module
     PowerShellVersion = '5.1'
@@ -40,7 +40,8 @@
         'Test-LongPathsEnabled',
         'Test-DirectoryWritable',
         'Add-TrailingSeparator',
-        'Test-PathContainment'
+        'Test-PathContainment',
+        'Remove-SourceDirectory'
     )
 
     # Cmdlets to export from this module
@@ -58,7 +59,8 @@
             Tags         = @('FileSystem', 'IO', 'Utilities', 'PathValidation', 'FileLocking', 'PathNormalization', 'SafeNaming', 'CrossPlatform')
             LicenseUri   = 'http://www.apache.org/licenses/LICENSE-2.0'
             ProjectUri   = 'https://github.com/manoj-bhaskaran/My-Scripts'
-            ReleaseNotes = '1.2.0: Added directory writability probe (Test-DirectoryWritable), cross-platform trailing-separator helper (Add-TrailingSeparator), and path-containment test (Test-PathContainment).
+            ReleaseNotes = '1.3.0: Added public Remove-SourceDirectory orchestrator and private helpers (Get-SourceDirectoryItems, Test-HasBlockingZips, Get-NonZipDeletionBlockReason, Remove-NonZipItems, Remove-DirectoryRobust) extracted from Expand-ZipsAndClean.ps1.
+1.2.0: Added directory writability probe (Test-DirectoryWritable), cross-platform trailing-separator helper (Add-TrailingSeparator), and path-containment test (Test-PathContainment).
 1.1.0: Added path normalization (Get-FullPath), byte formatting (Format-Bytes), unique path resolution (Resolve-UniquePath, Resolve-UniqueDirectoryPath), safe filenames (Get-SafeName), and long paths OS check (Test-LongPathsEnabled).
 1.0.0: Initial release with directory creation, file accessibility checks, path validation, and file locking detection.'
         }
