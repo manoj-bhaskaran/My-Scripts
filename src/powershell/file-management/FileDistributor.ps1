@@ -331,7 +331,7 @@ Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistr
 # Note: Logger initialization moved to after LogFilePath resolution
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.9.2"
+$script:Version = "4.9.3"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -368,6 +368,26 @@ Initialize-Logger -resolvedLogDir $logDirectory -ScriptName "FileDistributor" -L
 $null = Set-LoggerLogFilePath -Path $LogFilePath
 Reset-LogCounters
 
+# Builds and applies the log-file purge policy (truncate / age-out / timestamp-prune).
+# Extracted from Main to keep Main's cognitive complexity within limits.
+function Invoke-LogFilePurge {
+    $beforeTimestamp = $null
+    if ($RemoveEntriesBefore) {
+        try { $beforeTimestamp = [datetime]::Parse($RemoveEntriesBefore) }
+        catch { throw "Invalid timestamp format. Use 'YYYY-MM-DD HH:MM:SS' or ISO 8601." }
+    }
+    $purgeParams = @{ LogFilePath = $LogFilePath }
+    if ($beforeTimestamp) { $purgeParams.BeforeTimestamp = $beforeTimestamp }
+    if ($RemoveEntriesOlderThan) { $purgeParams.RetentionDays = $RemoveEntriesOlderThan }
+    if ($TruncateIfLarger) { $purgeParams.TruncateIfLarger = $TruncateIfLarger }
+    if ($TruncateLog) { $purgeParams.TruncateLog = $true }
+
+    if ($purgeParams.Keys.Count -gt 1) {
+        try { Clear-LogFile @purgeParams }
+        catch { Write-LogError "Failed to apply log file cleanup policy: $($_.Exception.Message)" }
+    }
+}
+
 # Main script logic
 function Main {
     $script:DebugMode = ($DebugPreference -ne 'SilentlyContinue')
@@ -383,21 +403,7 @@ function Main {
     $priorErrors = 0
 
     if (-not $Restart) {
-        $beforeTimestamp = $null
-        if ($RemoveEntriesBefore) {
-            try { $beforeTimestamp = [datetime]::Parse($RemoveEntriesBefore) }
-            catch { throw "Invalid timestamp format. Use 'YYYY-MM-DD HH:MM:SS' or ISO 8601." }
-        }
-        $purgeParams = @{ LogFilePath = $LogFilePath }
-        if ($beforeTimestamp) { $purgeParams.BeforeTimestamp = $beforeTimestamp }
-        if ($RemoveEntriesOlderThan) { $purgeParams.RetentionDays = $RemoveEntriesOlderThan }
-        if ($TruncateIfLarger) { $purgeParams.TruncateIfLarger = $TruncateIfLarger }
-        if ($TruncateLog) { $purgeParams.TruncateLog = $true }
-
-        if ($purgeParams.Keys.Count -gt 1) {
-            try { Clear-LogFile @purgeParams }
-            catch { Write-LogError "Failed to apply log file cleanup policy: $($_.Exception.Message)" }
-        }
+        Invoke-LogFilePurge
     }
     $script:Warnings = [Math]::Max($script:Warnings, (Get-LogWarningCount))
     $script:Errors = [Math]::Max($script:Errors, (Get-LogErrorCount))
