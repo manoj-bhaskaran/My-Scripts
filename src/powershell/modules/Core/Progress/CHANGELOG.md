@@ -1,5 +1,16 @@
 # CHANGELOG — Core/Progress (ProgressReporter)
 
+## 1.2.1 — Unreleased
+
+### Changed
+
+- Refactored `Write-ExtractionSummary` into focused helper functions for summary-object
+  construction, console-width selection, formatted view output, and error-note output.
+  Public behavior and the `Write-ExtractionSummary` export are unchanged; this only lowers
+  the public function's Cognitive Complexity below the quality-gate limit.
+- `ProgressReporter.psd1`: `ModuleVersion` bumped from `1.2.0` to `1.2.1` (PATCH —
+  internal refactor/no behavioral change).
+
 ## 1.2.0 — Unreleased
 
 ### Added

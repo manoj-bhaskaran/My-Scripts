@@ -425,6 +425,9 @@ This significantly reduces the performance impact of progress reporting.
 
 ## Version History
 
+### 1.2.1 (Unreleased)
+- Refactored `Write-ExtractionSummary` into smaller internal helper functions to reduce Cognitive Complexity without behavior changes.
+
 ### 1.2.0 (Unreleased)
 - Added `Write-ExtractionSummary` as a public summary renderer for `Expand-ZipsAndClean`.
 - Module manifest exports the new summary function, imports `Core/FileSystem` for `Format-Bytes`, and raises the minimum PowerShell version to 7.0.
