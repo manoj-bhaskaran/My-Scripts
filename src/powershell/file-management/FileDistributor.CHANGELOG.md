@@ -1,5 +1,15 @@
 # CHANGELOG — FileDistributor
 
+## 4.9.3 — 2026-05-29
+
+### Changed
+
+- Extracted log-file purge policy logic from `Main` into a dedicated `Invoke-LogFilePurge` helper function, reducing `Main`'s cognitive complexity from 22 to 5 (limit: 15). `Invoke-LogFilePurge` carries the extracted logic at complexity 10. No behavior change.
+
+### Versioning
+
+- Bumped `FileDistributor.ps1` script version to `4.9.3`.
+
 ## 4.9.2 — 2026-04-22
 
 ### Fixed
