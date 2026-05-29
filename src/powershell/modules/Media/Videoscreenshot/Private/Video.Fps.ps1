@@ -336,7 +336,7 @@ function Get-VideoFps {
     )
 
     $full = try { [IO.Path]::GetFullPath($Path) } catch { $Path }
-    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
+    if (-not [System.IO.File]::Exists($full)) {
         throw "Get-VideoFps: file not found: $full"
     }
 
@@ -396,7 +396,7 @@ function Get-VideoDuration {
     )
 
     $full = try { [IO.Path]::GetFullPath($Path) } catch { $Path }
-    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
+    if (-not [System.IO.File]::Exists($full)) {
         throw "Get-VideoDuration: file not found: $full"
     }
 
