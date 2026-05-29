@@ -1,17 +1,17 @@
 # Module loader for ErrorHandling
 
 $privateDir = Join-Path $PSScriptRoot 'Private'
-if (Test-Path -LiteralPath $privateDir) {
-    Get-ChildItem -Path $privateDir -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
+if ([System.IO.Directory]::Exists($privateDir)) {
+    Get-ChildItem -LiteralPath $privateDir -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
 }
 
 $publicDir = Join-Path $PSScriptRoot 'Public'
-if (Test-Path -LiteralPath $publicDir) {
-    Get-ChildItem -Path $publicDir -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
+if ([System.IO.Directory]::Exists($publicDir)) {
+    Get-ChildItem -LiteralPath $publicDir -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
 }
 
-$publicFunctions = if (Test-Path -LiteralPath $publicDir) {
-    Get-ChildItem -Path $publicDir -Filter '*.ps1' -File | Select-Object -ExpandProperty BaseName
+$publicFunctions = if ([System.IO.Directory]::Exists($publicDir)) {
+    Get-ChildItem -LiteralPath $publicDir -Filter '*.ps1' -File | Select-Object -ExpandProperty BaseName
 }
 else {
     @()
