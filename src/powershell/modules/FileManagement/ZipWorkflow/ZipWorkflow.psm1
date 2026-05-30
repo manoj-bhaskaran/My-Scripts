@@ -6,18 +6,25 @@ $coreModules = @(
     '..\..\Core\FileOperations\FileOperations.psm1'
 )
 foreach ($relativeModulePath in $coreModules) {
-    $modulePath = Join-Path $PSScriptRoot $relativeModulePath
+    $modulePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $relativeModulePath))
     $moduleName = [System.IO.Path]::GetFileNameWithoutExtension(($relativeModulePath -split '[\\/]' | Select-Object -Last 1))
-
-    if (Get-Module -Name $moduleName) {
-        continue
-    }
 
     if (-not (Test-Path -LiteralPath $modulePath)) {
         throw "Required module dependency not found: $modulePath"
     }
 
-    Import-Module $modulePath -ErrorAction Stop
+    $loadedModule = Get-Module -Name $moduleName | Where-Object {
+        $_.Path -and [System.StringComparer]::OrdinalIgnoreCase.Equals(
+            [System.IO.Path]::GetFullPath($_.Path),
+            $modulePath
+        )
+    } | Select-Object -First 1
+
+    if ($loadedModule) {
+        continue
+    }
+
+    Import-Module $modulePath -Force -ErrorAction Stop
 }
 
 # Provide no-op logging fallback for helper-load/test contexts where the

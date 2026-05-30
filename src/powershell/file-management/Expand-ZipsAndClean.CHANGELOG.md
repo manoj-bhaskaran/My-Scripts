@@ -1,5 +1,18 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.17 — 2026-05-30 *(patch — path-aware import guard)*
+
+### Fixed
+
+- Matched `ZipWorkflow`'s already-loaded dependency guard by resolved module path, not just
+  module name. Same-name modules loaded from other locations no longer cause repository-local
+  `FileSystem`, `ProgressReporter`, or `FileOperations` dependencies to be skipped.
+
+### Tests
+
+- Added regression coverage for same-name external `FileSystem` modules so `ZipWorkflow`
+  still loads the repository-local dependency.
+
 ## 2.6.16 — 2026-05-30 *(patch — ZipWorkflow import guard)*
 
 ### Fixed

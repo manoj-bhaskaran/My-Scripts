@@ -222,13 +222,14 @@ Describe 'Expand-ZipsAndClean script structure' {
     }
 
 
-    It 'does not force-reimport ZipWorkflow core dependencies' {
+    It 'uses a path-aware guard before force-importing ZipWorkflow core dependencies' {
         $modulePath = Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1'
         $moduleText = Get-Content -LiteralPath $modulePath -Raw
 
         $moduleText | Should -Match 'Get-Module -Name \$moduleName'
-        $moduleText | Should -Not -Match 'Import-Module \$modulePath -Force'
-        $moduleText | Should -Match 'Import-Module \$modulePath -ErrorAction Stop'
+        $moduleText | Should -Match '\\$_.Path'
+        $moduleText | Should -Match 'OrdinalIgnoreCase\.Equals'
+        $moduleText | Should -Match 'Import-Module \$modulePath -Force -ErrorAction Stop'
     }
 }
 
@@ -284,5 +285,24 @@ Describe 'Expand-ZipsAndClean module load sequence' {
 
         Get-Module -Name ZipWorkflow | Should -Not -BeNullOrEmpty
         Get-Module -Name ProgressReporter | Should -Not -BeNullOrEmpty
+    }
+
+
+    It 'does not skip repository-local dependencies when another module with the same name is loaded' {
+        $foreignDir = Join-Path $TestDrive 'foreign-modules'
+        New-Item -ItemType Directory -Path $foreignDir -Force | Out-Null
+        $foreignFileSystemPath = Join-Path $foreignDir 'FileSystem.psm1'
+        Set-Content -LiteralPath $foreignFileSystemPath -Value 'function Get-FullPath { param([string]$Path) "foreign:$Path" }' -NoNewline
+
+        Import-Module $foreignFileSystemPath -Force -ErrorAction Stop
+        [System.IO.Path]::GetFullPath((Get-Module -Name FileSystem).Path) | Should -Be ([System.IO.Path]::GetFullPath($foreignFileSystemPath))
+
+        $zipWorkflowPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1'
+        $repoFileSystemPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\Core\FileSystem\FileSystem.psm1'
+
+        Import-Module $zipWorkflowPath -Force -ErrorAction Stop
+
+        $loadedFileSystemPaths = @(Get-Module -Name FileSystem | ForEach-Object { [System.IO.Path]::GetFullPath($_.Path) })
+        $loadedFileSystemPaths | Should -Contain ([System.IO.Path]::GetFullPath($repoFileSystemPath))
     }
 }
