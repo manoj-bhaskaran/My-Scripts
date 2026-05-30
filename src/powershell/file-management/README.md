@@ -50,6 +50,11 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean path-aware import guard test fix (issue #1191)** (2026-05-30)
+  - Used a platform-appropriate path comparer for `ZipWorkflow` dependency path checks before skipping already-loaded same-name modules.
+  - Corrected regression tests to validate nested dependency behavior through `ZipWorkflow` commands rather than global module visibility.
+  - Version bump: `2.6.18` (patch — module-load regression/test fix).
+
 - **Expand-ZipsAndClean path-aware ZipWorkflow import guard fix (issue #1191)** (2026-05-30)
   - Tightened the `ZipWorkflow` dependency guard so it only skips an import when the loaded module path matches the repository-local dependency path.
   - Added regression coverage for a same-name external `FileSystem` module to ensure repository-local dependencies are still loaded.

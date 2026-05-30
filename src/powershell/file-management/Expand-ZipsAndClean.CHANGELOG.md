@@ -1,5 +1,19 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.18 — 2026-05-30 *(patch — import guard test fix)*
+
+### Fixed
+
+- Used a platform-appropriate path comparer for `ZipWorkflow` dependency path checks
+  (case-insensitive on Windows, case-sensitive elsewhere) before deciding whether an
+  already-loaded same-name module is the repository-local dependency.
+
+### Tests
+
+- Corrected the path-aware import-guard regression tests to verify behavior through
+  `ZipWorkflow` commands instead of expecting nested dependency imports to appear in
+  the caller's global module table.
+
 ## 2.6.17 — 2026-05-30 *(patch — path-aware import guard)*
 
 ### Fixed

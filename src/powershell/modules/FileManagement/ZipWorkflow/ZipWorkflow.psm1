@@ -5,6 +5,12 @@ $coreModules = @(
     '..\..\Core\Progress\ProgressReporter.psm1',
     '..\..\Core\FileOperations\FileOperations.psm1'
 )
+$modulePathComparer = if ($IsWindows) {
+    [System.StringComparer]::OrdinalIgnoreCase
+} else {
+    [System.StringComparer]::Ordinal
+}
+
 foreach ($relativeModulePath in $coreModules) {
     $modulePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $relativeModulePath))
     $moduleName = [System.IO.Path]::GetFileNameWithoutExtension(($relativeModulePath -split '[\\/]' | Select-Object -Last 1))
@@ -14,7 +20,7 @@ foreach ($relativeModulePath in $coreModules) {
     }
 
     $loadedModule = Get-Module -Name $moduleName | Where-Object {
-        $_.Path -and [System.StringComparer]::OrdinalIgnoreCase.Equals(
+        $_.Path -and $modulePathComparer.Equals(
             [System.IO.Path]::GetFullPath($_.Path),
             $modulePath
         )
