@@ -53,9 +53,9 @@ Describe "Move-ImageFileToBatch — parameter contract" {
         $content | Should -Match "resolvedLogDir.*LogDirectory"
     }
 
-    It "Version is 2.1.0 in .NOTES" {
+    It "Version is 2.1.4 in .NOTES" {
         $content = Get-Content -LiteralPath $script:ScriptPath -Raw
-        $content | Should -Match '2\.1\.0'
+        $content | Should -Match '2\.1\.4'
     }
 }
 
@@ -120,7 +120,7 @@ Describe "Move-ImageFileToBatch — error log path derivation" {
         # Verify Write-RunSummary joins a filename onto LogDirectory
         $content = Get-Content -LiteralPath $script:ScriptPath -Raw
         # The function should construct a path using Join-Path + $LogDirectory, not use $LogDirectory directly as a file
-        $content | Should -Match 'Join-Path.*LogDirectory.*picconvert_errors'
+        $content | Should -Match 'Join-Path.*LogDirectory.*Move-ImageFileToBatch_errors'
     }
 
     It "Error log file created under -LogDirectory when errors occur" {
@@ -134,7 +134,7 @@ Describe "Move-ImageFileToBatch — error log path derivation" {
         & $script:PS -NonInteractive -NoProfile -File $script:ScriptPath `
             -SourceDir $script:Src -DestDir $fakeDestFile -LogDirectory $script:LogDir 2>&1 | Out-Null
 
-        $errLogs = Get-ChildItem -Path $script:LogDir -Filter 'picconvert_errors_*.log' -ErrorAction SilentlyContinue
+        $errLogs = Get-ChildItem -Path $script:LogDir -Filter 'Move-ImageFileToBatch_errors_*.log' -ErrorAction SilentlyContinue
         $errLogs | Should -Not -BeNullOrEmpty
     }
 }

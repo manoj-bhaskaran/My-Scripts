@@ -31,6 +31,8 @@ kept here — see the linked file for details.
 
 ### Fixed
 
+- **[Move-ImageFileToBatch 2.1.4]** Replaced stale legacy script-name references in help examples, logger metadata, default batch/log prefixes, startup banner, and media README documentation (issue #1185).
+
 - **[Update-ScheduledTaskScriptPaths 3.0.1]** Consistent pipeline stage indentation: each cmdlet on its own line with pipe at end of preceding line.
   → Full detail: [automation/CHANGELOG.md](src/powershell/automation/CHANGELOG.md)
 
