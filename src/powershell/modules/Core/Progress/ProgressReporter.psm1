@@ -20,9 +20,12 @@ $modulePathComparer = if ($IsWindows) {
 } else {
     [System.StringComparer]::Ordinal
 }
-$loadedFileSystem = Get-Module -Name 'FileSystem' | Where-Object {
-    $_.Path -and $modulePathComparer.Equals([System.IO.Path]::GetFullPath($_.Path), $fileSystemModule)
-} | Select-Object -First 1
+$loadedFileSystem =
+    Get-Module -Name 'FileSystem' |
+    Where-Object {
+        $_.Path -and $modulePathComparer.Equals([System.IO.Path]::GetFullPath($_.Path), $fileSystemModule)
+    } |
+    Select-Object -First 1
 if (-not $loadedFileSystem) {
     Import-Module $fileSystemModule -Force -ErrorAction Stop
 }
