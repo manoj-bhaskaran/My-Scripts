@@ -50,8 +50,8 @@ Describe "Move-ImageFileToBatch — parameter contract" {
 
     It "Passes -LogDirectory to Initialize-Logger by public parameter name" {
         $content = Get-Content -LiteralPath $script:ScriptPath -Raw
-        $content | Should -Match "loggerArgs\['LogDirectory'\] = \$LogDirectory"
-        $content | Should -Not -Match "loggerArgs\['resolvedLogDir'\]"
+        $content | Should -Match '\$script:loggerArgs\[''LogDirectory''\]\s*=\s*\$LogDirectory'
+        $content | Should -Not -Match '\$script:loggerArgs\[''resolvedLogDir''\]'
     }
 
     It "Version is 2.1.5 in .NOTES" {
