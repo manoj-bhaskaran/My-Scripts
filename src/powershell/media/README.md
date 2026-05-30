@@ -58,9 +58,9 @@ Use `-LogDirectory` to control where log files are written:
   are written to the supplied directory, which is created if it does not exist.
 - **Without `-LogDirectory`**: the framework log goes to its default location (relative to the
   module); any error log is auto-created under `-DestDir` as
-  `picconvert_errors_yyyyMMdd_HHmmss.log`.
+  `Move-ImageFileToBatch_errors_yyyyMMdd_HHmmss.log`.
 
 ```powershell
 .\Move-ImageFileToBatch.ps1 -SourceDir "D:\Photos" -DestDir "F:\Media" `
-    -LogDirectory "C:\Logs\picconvert" -ShowProgress
+    -LogDirectory "C:\Logs\Move-ImageFileToBatch" -ShowProgress
 ```

@@ -78,7 +78,7 @@
     the framework log and any error log are both placed in this directory;
     the directory is created if missing.
     If omitted, the framework log goes to its default location and any error
-    log is created under DestDir as ‘picconvert_errors_yyyyMMdd_HHmmss.log’.
+    log is created under DestDir as ‘Move-ImageFileToBatch_errors_yyyyMMdd_HHmmss.log’.
 
 .PARAMETER LogWarnSizeMB
     Warn if the error log file size (when using -LogDirectory) is at or above this many MB
@@ -91,18 +91,22 @@
     None. Writes status/progress to the console and a summary at the end.
 
 .EXAMPLE
-    .\picconvert.ps1 -ShowProgress
+    .\Move-ImageFileToBatch.ps1 -ShowProgress
 
 .EXAMPLE
-    .\picconvert.ps1 -SourceDir "D:\Photos\2024" -DestDir "F:\Media\Photos" `
+    .\Move-ImageFileToBatch.ps1 -SourceDir "D:\Photos\2024" -DestDir "F:\Media\Photos" `
       -FilesPerFolderLimit 150 -IncludeExtensions '.jpg','.heic' -BatchPrefix 'archive' `
       -ShowProgress -Verbose
 
 .NOTES
     VERSION
-      2.1.3
+      2.1.4
 
     CHANGELOG
+      2.1.4
+        - Replace stale legacy script-name references in help examples, log naming, logger metadata,
+          and startup banner while retaining the default batch folder prefix for compatibility.
+
       2.1.3
         - Refactor Write-RunSummary to reduce Cognitive Complexity from 19 to 4 (limit: 15).
           • Extract Write-ErrorLog: encapsulates path resolution, directory creation, size warning,
@@ -215,7 +219,7 @@ param(
 Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
 
 # Initialize logger — pass caller-supplied directory so framework log lands there
-$script:loggerArgs = @{ ScriptName = "picconvert"; LogLevel = 20 }
+$script:loggerArgs = @{ ScriptName = "Move-ImageFileToBatch"; LogLevel = 20 }
 if ($LogDirectory) { $script:loggerArgs['resolvedLogDir'] = $LogDirectory }
 Initialize-Logger @script:loggerArgs
 
@@ -580,9 +584,9 @@ function Write-ErrorLog {
 
     try {
         if ($LogDirectory) {
-            $resolvedLogPath = Join-Path -Path $LogDirectory -ChildPath ("picconvert_errors_{0}.log" -f $script:RunStamp)
+            $resolvedLogPath = Join-Path -Path $LogDirectory -ChildPath ("Move-ImageFileToBatch_errors_{0}.log" -f $script:RunStamp)
         } else {
-            $resolvedLogPath = Join-Path -Path $DestDir -ChildPath ("picconvert_errors_{0}.log" -f $script:RunStamp)
+            $resolvedLogPath = Join-Path -Path $DestDir -ChildPath ("Move-ImageFileToBatch_errors_{0}.log" -f $script:RunStamp)
         }
 
         $logDir = Split-Path -Path $resolvedLogPath -Parent
@@ -698,7 +702,7 @@ Elapsed (total)       : {2:c}
 # region: Main ------------------------------------------------------------------------------------
 
 try {
-    Write-LogInfo "Starting picconvert 2.1.3"
+    Write-LogInfo "Starting Move-ImageFileToBatch 2.1.4"
     Initialize-Directories -SourceDir $SourceDir -DestDir $DestDir
 
     # Phase 1: Gather all source files (for rename); ALWAYS include .jpeg and .jpg_large
