@@ -119,7 +119,7 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.6.14
+    Version  : 2.6.15
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -174,13 +174,13 @@ param(
 )
 
 # Import logging framework
-Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
-Import-Module "$PSScriptRoot\..\modules\Core\FileSystem\FileSystem.psm1" -Force
-Import-Module "$PSScriptRoot\..\modules\Core\Zip\Zip.psm1" -Force
-Import-Module "$PSScriptRoot\..\modules\Core\Progress\ProgressReporter.psm1" -Force
-Import-Module "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psm1" -Force
-Import-Module "$PSScriptRoot\..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1" -Force
-Import-Module "$PSScriptRoot\..\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1" -Force
+Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force -ErrorAction Stop
+Import-Module "$PSScriptRoot\..\modules\Core\FileSystem\FileSystem.psm1" -Force -ErrorAction Stop
+Import-Module "$PSScriptRoot\..\modules\Core\Zip\Zip.psm1" -Force -ErrorAction Stop
+Import-Module "$PSScriptRoot\..\modules\Core\Progress\ProgressReporter.psm1" -Force -ErrorAction Stop
+Import-Module "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psm1" -Force -ErrorAction Stop
+Import-Module "$PSScriptRoot\..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1" -Force -ErrorAction Stop
+Import-Module "$PSScriptRoot\..\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1" -Force -ErrorAction Stop
 
 $_zipExtractionCmd = Get-Command Invoke-ZipExtractions -ErrorAction SilentlyContinue
 if (-not $_zipExtractionCmd -or $_zipExtractionCmd.Source -ne 'ZipExtraction') {

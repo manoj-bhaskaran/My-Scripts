@@ -425,6 +425,9 @@ This significantly reduces the performance impact of progress reporting.
 
 ## Version History
 
+### 1.2.3 (Unreleased)
+- Treat the internal `Core/FileSystem` dependency import as terminating so missing or broken dependencies fail fast during module load.
+
 ### 1.2.2 (Unreleased)
 - Reduced duplicated new-code lines in `Write-ExtractionSummary.ps1` by deriving internal summary state from bound parameters.
 
