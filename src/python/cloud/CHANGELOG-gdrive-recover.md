@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.27.0] - 2026-05-30
+
+### Changed
+
+- `gdrive_recover.py`: removed pass-through wrapper methods for privilege checks, file-ID validation, recovery operations, and reporter printing so tests and callers target the owning helper objects directly.
+- `gdrive_discovery.py`: replaced the single-item `_seen_total_ref` list box with `SeenTotalCounter`, a named shared counter injected into discovery for streaming progress accounting.
+- `gdrive_recover.py`: routes `--fresh-run` reset messages through `RecoveryReporter`/`ConsoleHelper` instead of raw `print(...)`.
+
+### Tests
+
+- Retargeted recovery unit tests from `DriveTrashRecoveryTool` delegation wrappers to `tool.privileges`, `tool.discovery`, and direct owner APIs.
+
 ## [1.26.14] - 2026-05-27
 
 ### Fixed

@@ -68,7 +68,7 @@ from gdrive_report import RecoveryReporter
 
 try:
     # v1.12.3: discovery module uses googleapiclient.errors, so import under same guard.
-    from gdrive_discovery import DriveTrashDiscovery
+    from gdrive_discovery import DriveTrashDiscovery, SeenTotalCounter
 
     # v1.14.0: download subsystem extracted to gdrive_download.py (issue #853).
     from gdrive_download import DriveDownloader
@@ -106,7 +106,7 @@ class DriveTrashRecoveryTool:
         # progress throttles
         self._streaming: bool = False
         self._processed_total: int = 0
-        self._seen_total_ref: List[int] = [0]
+        self._seen_total_counter = SeenTotalCounter()
         self._last_exec_progress_ts: Optional[float] = None
         # v1.12.0: authentication delegated to DriveAuthManager (issue #789)
         self.rate_limiter = RateLimiter(args, self.logger)
@@ -121,7 +121,7 @@ class DriveTrashRecoveryTool:
             self._execute,
             stats=self.stats,
             stats_lock=self.stats_lock,
-            seen_total_ref=self._seen_total_ref,
+            seen_total=self._seen_total_counter,
             generate_target_path=self._generate_target_path,
             run_parallel_processing_for_batch=self._run_parallel_processing_for_batch,
         )
@@ -150,20 +150,11 @@ class DriveTrashRecoveryTool:
 
     @property
     def _seen_total(self) -> int:
-        return self._seen_total_ref[0]
+        return self._seen_total_counter.value
 
     @_seen_total.setter
     def _seen_total(self, value: int) -> None:
-        self._seen_total_ref[0] = value
-
-    def _print_err(self, msg: str) -> None:
-        self.reporter._print_err(msg)
-
-    def _print_warn(self, msg: str) -> None:
-        self.reporter._print_warn(msg)
-
-    def _print_info(self, msg: str) -> None:
-        self.reporter._print_info(msg)
+        self._seen_total_counter.value = value
 
     def _record_state_load_error(self) -> None:
         with self.stats_lock:
@@ -243,38 +234,21 @@ class DriveTrashRecoveryTool:
             base_path = base_path.parent / f"{stem}_{uuid.uuid4().hex[:6]}{suffix}"
         return str(base_path)
 
-    def _check_untrash_privilege(self, file_id: str) -> Dict[str, Any]:
-        return self.privileges._check_untrash_privilege(file_id)
-
-    def _check_download_privilege(self, file_id: str) -> Dict[str, Any]:
-        return self.privileges._check_download_privilege(file_id)
-
-    def _check_trash_delete_privileges(
-        self, file_id: str, untrash_status: str
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        return self.privileges._check_trash_delete_privileges(file_id, untrash_status)
-
-    def _test_operation_privileges(self, test_items: List[RecoveryItem]) -> Dict[str, Any]:
-        return self.privileges._test_operation_privileges(test_items)
-
     def _check_privileges(self) -> Dict[str, Any]:
         self.privileges.items = self.items
         return self.privileges._check_privileges(self.args)
-
-    def _validate_file_ids(self) -> bool:
-        return self.discovery._validate_file_ids()
 
     def dry_run(self) -> bool:
         self.reporter.print_dry_run_banner()
         # Authenticate up front; dry-run still needs list access
         try:
             if not self.auth.authenticate():
-                self._print_err(
+                self.reporter._print_err(
                     "Authentication failed. Ensure your credentials are configured and try again."
                 )
                 return False
         except Exception as e:
-            self._print_err(f"Authentication failed: {e}")
+            self.reporter._print_err(f"Authentication failed: {e}")
             return False
         self.items = self.discover_trashed_files()
         if not self.items:
@@ -289,36 +263,6 @@ class DriveTrashRecoveryTool:
             getattr(self.args, "_policy_warning_message", None)
         )
         return True
-
-    def _recover_file(self, item: RecoveryItem) -> bool:
-        return self.ops._recover_file(item)
-
-    def _get_post_restore_action_and_ctx(self, item: RecoveryItem) -> Tuple[str, Optional[str]]:
-        return self.ops._get_post_restore_action_and_ctx(item)
-
-    def _do_post_restore_action(self, service, item: RecoveryItem, action: str):
-        return self.ops._do_post_restore_action(service, item, action)
-
-    def _log_post_restore_success(self, item: RecoveryItem, action: str):
-        return self.ops._log_post_restore_success(item, action)
-
-    def _is_terminal_post_restore_error(self, status):
-        return self.ops._is_terminal_post_restore_error(status)
-
-    def _handle_post_restore_retry(self, item, status, attempt):
-        return self.ops._handle_post_restore_retry(item, status, attempt)
-
-    def _extract_http_error_detail(self, error_message: str):
-        return self.ops._extract_http_error_detail(error_message)
-
-    def _log_post_restore_terminal_error(self, item, detail, api_ctx):
-        return self.ops._log_post_restore_terminal_error(item, detail, api_ctx)
-
-    def _log_post_restore_final_error(self, item, detail, api_ctx):
-        return self.ops._log_post_restore_final_error(item, detail, api_ctx)
-
-    def _apply_post_restore_policy(self, item: RecoveryItem) -> bool:
-        return self.ops._apply_post_restore_policy(item)
 
     def _process_item(self, item: RecoveryItem) -> bool:
         return self.ops._process_item(item)
@@ -348,14 +292,11 @@ class DriveTrashRecoveryTool:
         if getattr(self.args, "fresh_run", False):
             self._fresh_run_reset()
 
-    def _reset_prefix(self) -> str:
-        return "🔄" if not getattr(self.args, "no_emoji", False) else "INFO"
-
     def _fresh_run_reset(self) -> None:
         cleared = self.state_manager._reset_state()
         if cleared:
-            print(
-                f"{self._reset_prefix()} --fresh-run: cleared {cleared} previously "
+            self.reporter._print_info(
+                f"--fresh-run: cleared {cleared} previously "
                 "processed item(s) from state and regenerated run identity"
             )
         self.ops._clear_failed_files()
