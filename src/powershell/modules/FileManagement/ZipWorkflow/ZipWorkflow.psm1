@@ -7,10 +7,17 @@ $coreModules = @(
 )
 foreach ($relativeModulePath in $coreModules) {
     $modulePath = Join-Path $PSScriptRoot $relativeModulePath
+    $moduleName = [System.IO.Path]::GetFileNameWithoutExtension(($relativeModulePath -split '[\\/]' | Select-Object -Last 1))
+
+    if (Get-Module -Name $moduleName) {
+        continue
+    }
+
     if (-not (Test-Path -LiteralPath $modulePath)) {
         throw "Required module dependency not found: $modulePath"
     }
-    Import-Module $modulePath -Force -ErrorAction Stop
+
+    Import-Module $modulePath -ErrorAction Stop
 }
 
 # Provide no-op logging fallback for helper-load/test contexts where the

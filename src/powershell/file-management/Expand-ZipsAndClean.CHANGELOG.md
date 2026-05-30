@@ -1,5 +1,19 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.16 — 2026-05-30 *(patch — ZipWorkflow import guard)*
+
+### Fixed
+
+- Guarded `ZipWorkflow` dependency imports so already-loaded core modules are reused instead
+  of being force-unloaded and reimported. This preserves `ProgressReporter` through the full
+  `Expand-ZipsAndClean.ps1` startup load sequence and prevents the summary-step
+  `ProgressReporter\Write-ExtractionSummary` module-load failure.
+
+### Tests
+
+- Added regression coverage for the full startup import sequence, the module-qualified
+  summary call, and standalone `ZipWorkflow` loading when `ProgressReporter` is not preloaded.
+
 ## 2.6.15 — 2026-05-30 *(patch — startup robustness)*
 
 ### Fixed

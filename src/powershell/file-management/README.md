@@ -50,6 +50,11 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean ZipWorkflow import guard fix (issue #1191)** (2026-05-30)
+  - Changed `ZipWorkflow` to reuse already-loaded core modules instead of force-reimporting them, preventing `ProgressReporter` from being unloaded before the final summary call.
+  - Added regression coverage for the full startup import sequence, `ProgressReporter\Write-ExtractionSummary`, and standalone `ZipWorkflow` loading.
+  - Version bump: `2.6.16` (patch — module-load regression fix).
+
 - **Expand-ZipsAndClean fast-fail module import fix (issue #1188)** (2026-05-30)
   - Added terminating `-ErrorAction Stop` handling to the script's startup module imports so dependency failures stop before extraction work begins and no longer appear as a late `ProgressReporter\Write-ExtractionSummary` summary-step error.
   - Hardened `ProgressReporter` and `ZipWorkflow` dependency imports for consistent fail-fast module loading.

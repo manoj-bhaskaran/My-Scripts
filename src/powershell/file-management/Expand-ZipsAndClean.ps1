@@ -119,7 +119,7 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.6.15
+    Version  : 2.6.16
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)

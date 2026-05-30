@@ -220,4 +220,69 @@ Describe 'Expand-ZipsAndClean script structure' {
         @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)).Count |
             Should -Be 0
     }
+
+
+    It 'does not force-reimport ZipWorkflow core dependencies' {
+        $modulePath = Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1'
+        $moduleText = Get-Content -LiteralPath $modulePath -Raw
+
+        $moduleText | Should -Match 'Get-Module -Name \$moduleName'
+        $moduleText | Should -Not -Match 'Import-Module \$modulePath -Force'
+        $moduleText | Should -Match 'Import-Module \$modulePath -ErrorAction Stop'
+    }
+}
+
+Describe 'Expand-ZipsAndClean module load sequence' {
+    BeforeEach {
+        'ZipWorkflow', 'ZipExtraction', 'FileOperations', 'ProgressReporter', 'Zip', 'FileSystem', 'PowerShellLoggingFramework' |
+            ForEach-Object { Remove-Module -Name $_ -Force -ErrorAction SilentlyContinue }
+    }
+
+    AfterEach {
+        'ZipWorkflow', 'ZipExtraction', 'FileOperations', 'ProgressReporter', 'Zip', 'FileSystem', 'PowerShellLoggingFramework' |
+            ForEach-Object { Remove-Module -Name $_ -Force -ErrorAction SilentlyContinue }
+    }
+
+    It 'keeps ProgressReporter loaded after the full startup import sequence' {
+        $scriptRoot = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management'
+
+        Import-Module (Join-Path $scriptRoot '..\modules\Core\Logging\PowerShellLoggingFramework.psm1') -Force -ErrorAction Stop
+        Import-Module (Join-Path $scriptRoot '..\modules\Core\FileSystem\FileSystem.psm1') -Force -ErrorAction Stop
+        Import-Module (Join-Path $scriptRoot '..\modules\Core\Zip\Zip.psm1') -Force -ErrorAction Stop
+        Import-Module (Join-Path $scriptRoot '..\modules\Core\Progress\ProgressReporter.psm1') -Force -ErrorAction Stop
+        Import-Module (Join-Path $scriptRoot '..\modules\Core\FileOperations\FileOperations.psm1') -Force -ErrorAction Stop
+        Import-Module (Join-Path $scriptRoot '..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1') -Force -ErrorAction Stop
+        Import-Module (Join-Path $scriptRoot '..\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force -ErrorAction Stop
+
+        Get-Module -Name ProgressReporter | Should -Not -BeNullOrEmpty
+
+        $errors = [System.Collections.Generic.List[string]]::new()
+        {
+            ProgressReporter\Write-ExtractionSummary `
+                -SourceDirectory $TestDrive `
+                -DestinationDirectory $TestDrive `
+                -ExtractMode 'PerArchiveSubfolder' `
+                -CollisionPolicy 'Rename' `
+                -ZipCount 0 `
+                -ProcessedZips 0 `
+                -FilesExtracted 0 `
+                -UncompressedBytes 0 `
+                -CompressedBytes 0 `
+                -MoveSummary ([pscustomobject]@{ Count = 0; Bytes = 0; Destination = $TestDrive; Skipped = 0; Overwritten = 0; Renamed = 0 }) `
+                -Errors $errors `
+                -Elapsed ([timespan]::Zero) `
+                -HostName 'ServerRemoteHost'
+        } | Should -Not -Throw
+    }
+
+    It 'loads ZipWorkflow standalone and imports ProgressReporter when it was not already loaded' {
+        $zipWorkflowPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1'
+
+        Get-Module -Name ProgressReporter | Should -BeNullOrEmpty
+
+        Import-Module $zipWorkflowPath -Force -ErrorAction Stop
+
+        Get-Module -Name ZipWorkflow | Should -Not -BeNullOrEmpty
+        Get-Module -Name ProgressReporter | Should -Not -BeNullOrEmpty
+    }
 }
