@@ -6,7 +6,7 @@ Cross-platform structured logging framework implementing the [Logging Specificat
 
 ## Version
 
-Current version: **2.1.0**
+Current version: **2.1.1**
 
 ## Features
 
@@ -95,7 +95,7 @@ Set-LoggerLogFilePath [-Path] <string>
 **Example:**
 
 ```powershell
-Initialize-Logger -resolvedLogDir "D:\logs" -ScriptName "example"
+Initialize-Logger -LogDirectory "D:\logs" -ScriptName "example"
 Set-LoggerLogFilePath -Path "D:\custom\exact-log-file.log"
 ```
 
@@ -103,6 +103,7 @@ Set-LoggerLogFilePath -Path "D:\custom\exact-log-file.log"
 
 - **LogDirectory** (string, optional)
   - Directory where log files will be created
+  - `resolvedLogDir` remains as a backward-compatible alias for legacy callers
   - Default: `<script_root>/logs`
   - Created automatically if it doesn't exist
 

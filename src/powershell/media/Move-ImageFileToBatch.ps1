@@ -100,9 +100,13 @@
 
 .NOTES
     VERSION
-      2.1.4
+      2.1.5
 
     CHANGELOG
+      2.1.5
+        - Pass -LogDirectory to Initialize-Logger by its public parameter name so the framework
+          log is created in the caller-supplied directory.
+
       2.1.4
         - Replace stale legacy script-name references in help examples, log naming, logger metadata,
           and startup banner while retaining the default batch folder prefix for compatibility.
@@ -220,7 +224,7 @@ Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.
 
 # Initialize logger — pass caller-supplied directory so framework log lands there
 $script:loggerArgs = @{ ScriptName = "Move-ImageFileToBatch"; LogLevel = 20 }
-if ($LogDirectory) { $script:loggerArgs['resolvedLogDir'] = $LogDirectory }
+if ($LogDirectory) { $script:loggerArgs['LogDirectory'] = $LogDirectory }
 Initialize-Logger @script:loggerArgs
 
 # region: Globals / State -------------------------------------------------------------------------

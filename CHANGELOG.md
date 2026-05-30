@@ -31,6 +31,8 @@ kept here — see the linked file for details.
 
 ### Fixed
 
+- **[Move-ImageFileToBatch 2.1.5 / PowerShellLoggingFramework 2.1.1]** Routed caller-supplied `-LogDirectory` through the logger's public parameter name so framework logs are written to the requested directory, while preserving the legacy `resolvedLogDir` alias for existing callers (issue #1189).
+
 - **[Move-ImageFileToBatch 2.1.4]** Replaced stale legacy script-name references in help examples, logger metadata, log prefix, startup banner, and media README documentation while retaining the default `picconvert` batch folder prefix for compatibility (issue #1185).
 
 - **[Update-ScheduledTaskScriptPaths 3.0.1]** Consistent pipeline stage indentation: each cmdlet on its own line with pipe at end of preceding line.

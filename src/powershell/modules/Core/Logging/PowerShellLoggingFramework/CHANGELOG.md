@@ -6,6 +6,13 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 > This file is module-scoped. For repository-wide changes affecting other scripts, see the root `CHANGELOG.md`.
 
+## [2.1.1] - 2026-05-30
+
+### Fixed
+
+- `Initialize-Logger` now exposes `-LogDirectory` as the real public parameter, resolves it
+  to a full directory path, and keeps `-resolvedLogDir` as a backward-compatible alias.
+
 ## [2.1.0] - 2026-04-12
 
 ### Added
