@@ -1,9 +1,10 @@
 # Module loader for ProgressReporter
 
 $fileSystemModule = Join-Path $PSScriptRoot '..\FileSystem\FileSystem.psm1'
-if (Test-Path -LiteralPath $fileSystemModule) {
-    Import-Module $fileSystemModule -Force
+if (-not (Test-Path -LiteralPath $fileSystemModule)) {
+    throw "Required module dependency not found: $fileSystemModule"
 }
+Import-Module $fileSystemModule -Force -ErrorAction Stop
 
 $privateDir = Join-Path $PSScriptRoot 'Private'
 if (Test-Path -LiteralPath $privateDir) {

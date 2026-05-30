@@ -184,6 +184,31 @@ Describe 'Resolve-MoveTarget' {
 }
 
 Describe 'Expand-ZipsAndClean script structure' {
+    It 'uses terminating imports for all startup modules before workflow execution' {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptText = Get-Content -LiteralPath $scriptPath -Raw
+        $tokens = $null
+        $parseErrors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($scriptText, [ref]$tokens, [ref]$parseErrors)
+
+        $parseErrors | Should -BeNullOrEmpty
+
+        $importCommands = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.CommandAst] -and
+                $node.GetCommandName() -eq 'Import-Module'
+        }, $true))
+
+        $startupImports = @($importCommands | Where-Object {
+            $_.Extent.Text -like '*$PSScriptRoot*..*modules*'
+        })
+
+        $startupImports.Count | Should -Be 7
+        foreach ($import in $startupImports) {
+            $import.Extent.Text | Should -Match '(?i)-ErrorAction\s+Stop'
+        }
+    }
+
     It 'contains no script-local helper function definitions' {
         $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
         $scriptText = Get-Content -LiteralPath $scriptPath -Raw

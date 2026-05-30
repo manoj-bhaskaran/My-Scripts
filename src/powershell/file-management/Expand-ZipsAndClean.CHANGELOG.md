@@ -1,5 +1,19 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.15 — 2026-05-30
+
+### Fixed
+
+- Added `-ErrorAction Stop` to all seven `Expand-ZipsAndClean.ps1` startup `Import-Module` calls so a missing or broken module fails immediately before extraction work begins, instead of surfacing later as a `ProgressReporter\Write-ExtractionSummary` module-load error at the summary step.
+- Kept the existing `ZipExtraction` command-source guard as an additional consistency check after terminating imports.
+- Hardened the related `ProgressReporter` and `ZipWorkflow` module loaders so their internal dependency imports also fail fast.
+
+### Tests
+
+- Added script-structure coverage to require terminating startup imports on every top-level `Expand-ZipsAndClean.ps1` module dependency.
+
+---
+
 ## 2.6.14 — 2026-05-29
 
 ### Fixed

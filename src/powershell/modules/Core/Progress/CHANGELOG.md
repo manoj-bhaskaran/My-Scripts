@@ -1,5 +1,12 @@
 # CHANGELOG — Core/Progress (ProgressReporter)
 
+## 1.2.3 — Unreleased
+
+### Fixed
+
+- `ProgressReporter.psm1`: imports `Core/FileSystem` with `-ErrorAction Stop` so missing or broken dependency failures are terminating and surface at import time instead of allowing a partially loaded summary module.
+- `ProgressReporter.psd1`: `ModuleVersion` bumped from `1.2.2` to `1.2.3` (PATCH — module-load robustness fix).
+
 ## 1.2.2 — Unreleased
 
 ### Changed
