@@ -1,6 +1,11 @@
 # Module loader for ProgressReporter
 
-$fileSystemModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\FileSystem\FileSystem.psm1'))
+# Build the dependency path from discrete segments (no embedded '\' / '/') so it resolves
+# correctly on every platform. An embedded-separator literal like '..\FileSystem\...' is not
+# normalized by [System.IO.Path]::GetFullPath() on Linux/macOS (where '\' is an ordinary
+# filename character), which would leave a mangled path and make the guard below miss an
+# already-loaded FileSystem module.
+$fileSystemModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..' 'FileSystem' 'FileSystem.psm1'))
 if (-not (Test-Path -LiteralPath $fileSystemModule)) {
     throw "Required module dependency not found: $fileSystemModule"
 }

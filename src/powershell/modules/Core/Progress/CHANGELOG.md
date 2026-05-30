@@ -14,6 +14,11 @@
   could not be loaded." The loader now skips the import when a FileSystem module from the
   same path is already loaded (mirroring the guard in `ZipWorkflow.psm1`), keeping
   FileSystem shared across the session.
+- `ProgressReporter.psm1`: build the FileSystem dependency path from discrete `Join-Path`
+  segments instead of an embedded-separator literal. `[System.IO.Path]::GetFullPath()` does
+  not normalize `\` on Linux/macOS, so a `'..\FileSystem\FileSystem.psm1'` literal could
+  resolve to a mangled path and make the already-loaded guard miss a matching module,
+  falling back to the destructive `-Force` re-import the guard is meant to prevent.
 - `ProgressReporter.psd1`: `ModuleVersion` bumped from `1.2.3` to `1.2.4` (PATCH —
   module-load robustness fix).
 
