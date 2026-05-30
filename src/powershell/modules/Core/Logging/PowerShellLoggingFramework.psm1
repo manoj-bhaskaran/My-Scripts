@@ -125,7 +125,10 @@ function Initialize-Logger {
     When enabled, JSON logging includes keys: timestamp, level, script, host, pid, message, metadata.
 #>
     param (
-        [string]$resolvedLogDir = $script:DefaultLogDir,
+        [Parameter(Mandatory = $false)]
+        [Alias('resolvedLogDir')]
+        [string]$LogDirectory = $script:DefaultLogDir,
+
         [string]$ScriptName = $null,
         [int]$LogLevel = (Get-LoggerLevelValue -Level INFO)
     )
@@ -137,7 +140,8 @@ function Initialize-Logger {
     $Global:LogConfig.LogLevel = $LogLevel
     $Global:LogConfig.ScriptName = if ($ScriptName) { $ScriptName } else { $MyInvocation.ScriptName }
 
-    if (-not $resolvedLogDir) {
+    $resolvedLogDir = $LogDirectory
+    if ([string]::IsNullOrWhiteSpace($resolvedLogDir)) {
         $callerScriptPath = (Get-PSCallStack)[1].ScriptName
         if ($callerScriptPath) {
             $callerScriptRoot = Split-Path -Path $callerScriptPath -Parent
@@ -147,13 +151,18 @@ function Initialize-Logger {
         }
     }
 
+    try {
+        $resolvedLogDir = [System.IO.Path]::GetFullPath($resolvedLogDir)
+    } catch {
+        throw "Invalid log directory '$resolvedLogDir': $($_.Exception.Message)"
+    }
+
     $Global:LogConfig.LogDirectory = $resolvedLogDir
 
-
     # Ensure the log directory exists, creating parent directories as needed
-    if (-not (Test-Path $resolvedLogDir)) {
+    if (-not (Test-Path -LiteralPath $resolvedLogDir)) {
         try {
-            New-Item -Path $resolvedLogDir -ItemType Directory -Force | Out-Null
+            [System.IO.Directory]::CreateDirectory($resolvedLogDir) | Out-Null
         } catch {
             Write-Warning "Failed to create log directory '$resolvedLogDir': $_"
             throw
@@ -162,7 +171,7 @@ function Initialize-Logger {
 
     $dateStr = (Get-Date -Format 'yyyy-MM-dd')
     $scriptBase = [IO.Path]::GetFileNameWithoutExtension($Global:LogConfig.ScriptName)
-    $logFile = Join-Path $resolvedLogDir "${scriptBase}_powershell_$dateStr.log"
+    $logFile = Join-Path -Path $resolvedLogDir -ChildPath "${scriptBase}_powershell_$dateStr.log"
 
     $Global:LogConfig.LogFilePath = $logFile
 }

@@ -47,7 +47,10 @@ This function must be called before using any Write-Log* functions.
 When enabled, JSON logging includes keys: timestamp, level, script, host, pid, message, metadata.
 #>
     param (
-        [string]$resolvedLogDir = "$PSScriptRoot/../../logs",
+        [Parameter(Mandatory = $false)]
+        [Alias('resolvedLogDir')]
+        [string]$LogDirectory = (Join-Path -Path (Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent) -ChildPath 'logs'),
+
         [string]$ScriptName = $null,
         [int]$LogLevel = 20
     )
@@ -55,19 +58,32 @@ When enabled, JSON logging includes keys: timestamp, level, script, host, pid, m
     $Global:LogConfig.LogLevel = $LogLevel
     $Global:LogConfig.ScriptName = if ($ScriptName) { $ScriptName } else { $MyInvocation.ScriptName }
 
-    $callerScriptPath = (Get-PSCallStack)[1].ScriptName
-    $callerScriptRoot = Split-Path -Path $callerScriptPath -Parent
-    $resolvedLogDir = if ($resolvedLogDir) { $resolvedLogDir } else { Join-Path (Split-Path $callerScriptRoot -Parent) "logs" }
+    $resolvedLogDir = $LogDirectory
+    if ([string]::IsNullOrWhiteSpace($resolvedLogDir)) {
+        $callerScriptPath = (Get-PSCallStack)[1].ScriptName
+        if ($callerScriptPath) {
+            $callerScriptRoot = Split-Path -Path $callerScriptPath -Parent
+            $resolvedLogDir = Join-Path (Split-Path $callerScriptRoot -Parent) "logs"
+        } else {
+            $resolvedLogDir = Join-Path -Path (Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent) -ChildPath 'logs'
+        }
+    }
+
+    try {
+        $resolvedLogDir = [System.IO.Path]::GetFullPath($resolvedLogDir)
+    } catch {
+        throw "Invalid log directory '$resolvedLogDir': $($_.Exception.Message)"
+    }
+
     $Global:LogConfig.LogDirectory = $resolvedLogDir
 
-
-    if (-not (Test-Path $resolvedLogDir)) {
-        New-Item -Path $resolvedLogDir -ItemType Directory -Force | Out-Null
+    if (-not (Test-Path -LiteralPath $resolvedLogDir)) {
+        [System.IO.Directory]::CreateDirectory($resolvedLogDir) | Out-Null
     }
 
     $dateStr = (Get-Date -Format 'yyyy-MM-dd')
     $scriptBase = [IO.Path]::GetFileNameWithoutExtension($Global:LogConfig.ScriptName)
-    $logFile = Join-Path $resolvedLogDir "${scriptBase}_powershell_$dateStr.log"
+    $logFile = Join-Path -Path $resolvedLogDir -ChildPath "${scriptBase}_powershell_$dateStr.log"
 
     $Global:LogConfig.LogFilePath = $logFile
 }
