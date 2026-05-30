@@ -3,7 +3,7 @@
     RootModule = 'ProgressReporter.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.2.3'
+    ModuleVersion = '1.2.4'
 
     # ID used to uniquely identify this module
     GUID = '9b0c1d2e-3f4a-5b6c-7d8e-9f0a1b2c3d4e'
