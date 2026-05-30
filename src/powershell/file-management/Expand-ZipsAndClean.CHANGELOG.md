@@ -1,5 +1,46 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.18 — 2026-05-30 *(patch — import guard test fix)*
+
+### Fixed
+
+- Used a platform-appropriate path comparer for `ZipWorkflow` dependency path checks
+  (case-insensitive on Windows, case-sensitive elsewhere) before deciding whether an
+  already-loaded same-name module is the repository-local dependency.
+
+### Tests
+
+- Corrected the path-aware import-guard regression tests to verify behavior through
+  `ZipWorkflow` commands instead of expecting nested dependency imports to appear in
+  the caller's global module table.
+
+## 2.6.17 — 2026-05-30 *(patch — path-aware import guard)*
+
+### Fixed
+
+- Matched `ZipWorkflow`'s already-loaded dependency guard by resolved module path, not just
+  module name. Same-name modules loaded from other locations no longer cause repository-local
+  `FileSystem`, `ProgressReporter`, or `FileOperations` dependencies to be skipped.
+
+### Tests
+
+- Added regression coverage for same-name external `FileSystem` modules so `ZipWorkflow`
+  still loads the repository-local dependency.
+
+## 2.6.16 — 2026-05-30 *(patch — ZipWorkflow import guard)*
+
+### Fixed
+
+- Guarded `ZipWorkflow` dependency imports so already-loaded core modules are reused instead
+  of being force-unloaded and reimported. This preserves `ProgressReporter` through the full
+  `Expand-ZipsAndClean.ps1` startup load sequence and prevents the summary-step
+  `ProgressReporter\Write-ExtractionSummary` module-load failure.
+
+### Tests
+
+- Added regression coverage for the full startup import sequence, the module-qualified
+  summary call, and standalone `ZipWorkflow` loading when `ProgressReporter` is not preloaded.
+
 ## 2.6.15 — 2026-05-30 *(patch — startup robustness)*
 
 ### Fixed
