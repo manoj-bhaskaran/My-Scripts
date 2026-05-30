@@ -57,6 +57,11 @@ Describe "Move-ImageFileToBatch — parameter contract" {
         $content = Get-Content -LiteralPath $script:ScriptPath -Raw
         $content | Should -Match '2\.1\.4'
     }
+
+    It "Retains the picconvert BatchPrefix default" {
+        $content = Get-Content -LiteralPath $script:ScriptPath -Raw
+        $content | Should -Match '\[string\]\$BatchPrefix = ''picconvert'''
+    }
 }
 
 Describe "Move-ImageFileToBatch — framework log routing" {

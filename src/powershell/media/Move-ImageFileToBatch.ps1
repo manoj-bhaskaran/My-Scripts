@@ -53,7 +53,7 @@
     Use a positive integer. If 0 or less is supplied, the script treats it as unlimited.
 
 .PARAMETER BatchPrefix
-    Prefix for the per-extension root folders. Default: 'Move-ImageFileToBatch'.
+    Prefix for the per-extension root folders. Default: 'picconvert'.
       Example layout:
         <BatchPrefix>_<RunStamp>_<ext>\ <ext>_0000, <ext>_0001, ...
 
@@ -105,7 +105,7 @@
     CHANGELOG
       2.1.4
         - Replace stale legacy script-name references in help examples, log naming, logger metadata,
-          startup banner, and the default batch folder prefix.
+          and startup banner while retaining the default batch folder prefix for compatibility.
 
       2.1.3
         - Refactor Write-RunSummary to reduce Cognitive Complexity from 19 to 4 (limit: 15).
@@ -198,7 +198,7 @@ param(
 
     [Parameter(Mandatory = $false)]
     [ValidatePattern('^[A-Za-z0-9_-]+$')]
-    [string]$BatchPrefix = 'Move-ImageFileToBatch',
+    [string]$BatchPrefix = 'picconvert',
 
     [Parameter(Mandatory = $false)]
     [switch]$ShowProgress,
