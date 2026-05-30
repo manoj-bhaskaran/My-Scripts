@@ -50,7 +50,7 @@ sys.modules["googleapiclient.errors"] = errors_module
 sys.modules["googleapiclient.discovery"] = discovery_module
 sys.modules["googleapiclient.http"] = http_module
 
-from gdrive_discovery import DriveTrashDiscovery
+from gdrive_discovery import DriveTrashDiscovery, SeenTotalCounter
 
 
 def _make_discovery():
@@ -76,7 +76,7 @@ def _make_discovery():
         execute_fn,
         stats={"found": 0},
         stats_lock=Lock(),
-        seen_total_ref=[0],
+        seen_total=SeenTotalCounter(),
         generate_target_path=lambda *_: "",
         run_parallel_processing_for_batch=lambda *_: None,
     )

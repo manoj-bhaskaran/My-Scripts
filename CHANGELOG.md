@@ -18,6 +18,8 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[gdrive_recover 1.27.0]** Removed `DriveTrashRecoveryTool` pass-through delegation wrappers, retargeted recovery tests to owning helper objects, routed fresh-run reset output through `RecoveryReporter`, and replaced the streaming `_seen_total_ref` list box with `SeenTotalCounter` (issue #1118).
+  → Full detail: [src/python/cloud/CHANGELOG-gdrive-recover.md](src/python/cloud/CHANGELOG-gdrive-recover.md)
 - **[Invoke-PostMergeHook 3.2.1]** Refactored `Deploy-ModuleFromConfig` to reduce cognitive
   complexity from 77 to ≤15: extracted `Test-TargetList`, `Get-ParsedConfigLine`,
   `Resolve-ModuleSourcePath`, `Get-TargetBaseRoot`, `Invoke-ModuleTargetDeployment`, and

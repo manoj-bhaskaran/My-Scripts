@@ -39,6 +39,17 @@ HTTP_404_LABEL = "HTTP 404"
 HTTP_403_LABEL = "HTTP 403"
 
 
+class SeenTotalCounter:
+    """Mutable counter shared between recovery orchestration and discovery.
+
+    A named object keeps streaming progress state explicit without using a
+    single-item list as a mutable box.
+    """
+
+    def __init__(self, value: int = 0) -> None:
+        self.value = value
+
+
 class DriveTrashDiscovery:
     """Extracted discovery helper class for DriveTrashRecoveryTool.
 
@@ -56,7 +67,7 @@ class DriveTrashDiscovery:
         *,
         stats: Dict[str, Any],
         stats_lock: Lock,
-        seen_total_ref: List[int],
+        seen_total: SeenTotalCounter,
         generate_target_path: Callable[..., str],
         run_parallel_processing_for_batch: Callable[..., None],
     ) -> None:
@@ -67,7 +78,7 @@ class DriveTrashDiscovery:
         self._execute = execute_fn
         self._stats = stats
         self._stats_lock = stats_lock
-        self._seen_total_ref = seen_total_ref
+        self._seen_total = seen_total
         self._generate_target_path = generate_target_path
         self._run_parallel_processing_for_batch = run_parallel_processing_for_batch
         self._with_retries = lambda *args, **kwargs: with_retries(*args, **kwargs)
@@ -613,7 +624,7 @@ class DriveTrashDiscovery:
                         break
                 if self.args.verbose >= 1:
                     print(
-                        f"Found {len(files)} files in page {page_count} (streamed total: {self._seen_total_ref[0]})"
+                        f"Found {len(files)} files in page {page_count} (streamed total: {self._seen_total.value})"
                     )
                 if self._should_stop_for_limit():
                     break
@@ -626,9 +637,7 @@ class DriveTrashDiscovery:
 
     def _should_stop_for_limit(self) -> bool:
         """Return True if the user-provided --limit has been reached."""
-        return (
-            self.args.limit and self.args.limit > 0 and self._seen_total_ref[0] >= self.args.limit
-        )
+        return self.args.limit and self.args.limit > 0 and self._seen_total.value >= self.args.limit
 
     def _process_streaming_batch(self, batch: List[RecoveryItem], start_time: float) -> None:
         """Process the current streaming batch and clear in-memory references."""
@@ -659,7 +668,7 @@ class DriveTrashDiscovery:
             item.target_path = self._generate_target_path(item)
         batch.append(item)
         with self._stats_lock:
-            self._seen_total_ref[0] += 1
+            self._seen_total.value += 1
             self._stats["found"] += 1
         if self._should_flush_streaming_batch(batch, batch_n):
             self._process_streaming_batch(batch, start_time)
@@ -691,7 +700,7 @@ class DriveTrashDiscovery:
             now = time.time()
             if (now - start_ts) >= 10:
                 print(
-                    f"Processing IDs: {idx}/{total_ids} (streamed total: {self._seen_total_ref[0]})"
+                    f"Processing IDs: {idx}/{total_ids} (streamed total: {self._seen_total.value})"
                 )
                 return now
         return start_ts

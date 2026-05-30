@@ -33,6 +33,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - Recent maintenance refactors from `1.26.2` through `1.26.5` are intentionally grouped as one consolidated release band in the changelog to reduce short-lived refactor churn noise while preserving the key fixes and test deltas.
 - As of `1.26.7`, CLI file-path validation in `gdrive_cli.py` reuses shared utilities from `modules.utils.file_operations` (`ensure_directory`, `is_writable`) instead of local inline write-probe checks.
 - As of `1.26.8`, `gdrive_cli.py` prepends `src/python` to `sys.path` before importing `modules.utils.file_operations`, preserving the documented `python gdrive_recover.py ...` execution path from `src/python/cloud`.
+- As of `1.27.0`, `DriveTrashRecoveryTool` no longer exposes pass-through wrappers for privilege, discovery-validation, operation, or reporter helpers; tests and internal callers target `tool.privileges`, `tool.discovery`, `tool.ops`, and `tool.reporter` directly.
 
 ## Dependencies
 
@@ -429,8 +430,8 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
 - `gdrive_state.py` owns persistent state and lock-file concerns.
   - Includes PID liveness checks used by lock diagnostics in `gdrive_cli.py`.
   - Reports state-load failures back to `gdrive_recover.py` so execution error totals remain accurate.
-- `gdrive_discovery.py` owns query/file-ID discovery, validation, streaming helpers, and folder-scoped BFS traversal used by `DriveTrashRecoveryTool`.
-  - `DriveTrashDiscovery` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`stats`, `stats_lock`, `seen_total_ref`, `generate_target_path`, `run_parallel_processing_for_batch`) are injected at construction time.
+- `gdrive_discovery.py` owns query/file-ID discovery, validation, streaming helpers, folder-scoped BFS traversal, and the `SeenTotalCounter` shared streaming-progress counter used by `DriveTrashRecoveryTool`.
+  - `DriveTrashDiscovery` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`stats`, `stats_lock`, `seen_total`, `generate_target_path`, `run_parallel_processing_for_batch`) are injected at construction time.
   - Neither `DriveTrashRecoveryTool` nor `DriveTrashDiscovery` defines `__getattr__`; all inter-class wiring is explicit.
   - Streaming helper methods required by discovery paths are implemented in this module (not delegated back to `gdrive_recover.py`).
   - Folder-scoped discovery (`--folder-id`) uses BFS traversal: `_discover_folder_recursively` for dry-run/non-streaming paths and `_stream_stream_folder` for streaming execution. Both reconstruct subfolder hierarchy via `relative_path` on each `RecoveryItem`.

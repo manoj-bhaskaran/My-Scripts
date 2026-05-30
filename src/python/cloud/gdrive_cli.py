@@ -708,7 +708,7 @@ def _validate_file_ids_if_present(tool, args) -> Tuple[bool, int]:
     if getattr(args, "_retry_mode", False):
         return True, 0
     if hasattr(args, "file_ids") and args.file_ids:
-        ok = tool._validate_file_ids()
+        ok = tool.discovery._validate_file_ids()
         if not ok:
             return False, 2
     return True, 0

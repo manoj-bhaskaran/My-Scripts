@@ -234,7 +234,8 @@ def test_privilege_checks_and_file_info(tmp_path, monkeypatch):
     tool.auth._get_service = MagicMock(return_value=fake_service)
 
     tool.items = []
-    checks = tool._check_privileges()
+    tool.privileges.items = tool.items
+    checks = tool.privileges._check_privileges(args)
     assert checks["drive_access"] is True
     assert checks["local_writable"] is True
 
@@ -252,18 +253,18 @@ def test_privilege_checks_and_file_info(tmp_path, monkeypatch):
 
     # monkeypatch privilege checker fetch helper to return our fake_file when called
     tool.privileges._get_file_info = MagicMock(return_value=fake_file)
-    status = tool._check_untrash_privilege("fid")
+    status = tool.privileges._check_untrash_privilege("fid")
     assert status["status"] == "pass"
 
-    status = tool._check_download_privilege("fid")
+    status = tool.privileges._check_download_privilege("fid")
     assert status["status"] == "fail"
 
-    trash_status, delete_status = tool._check_trash_delete_privileges("fid", "pass")
+    trash_status, delete_status = tool.privileges._check_trash_delete_privileges("fid", "pass")
     assert trash_status["status"] == "pass"
     assert delete_status["status"] == "fail"
 
     # ensure _test_operation_privileges handles empty input quietly
-    assert tool._test_operation_privileges([])["untrash"]["status"] == "unknown"
+    assert tool.privileges._test_operation_privileges([])["untrash"]["status"] == "unknown"
 
 
 def test_check_privileges_samples_single_item(tmp_path, monkeypatch):
@@ -287,7 +288,8 @@ def test_check_privileges_samples_single_item(tmp_path, monkeypatch):
 
     tool.privileges._test_operation_privileges = fake_test_operation_privileges
 
-    checks = tool._check_privileges()
+    tool.privileges.items = tool.items
+    checks = tool.privileges._check_privileges(args)
 
     assert checks["drive_access"] is True
     assert len(captured["items"]) == 1
@@ -301,7 +303,7 @@ def test_validate_file_ids_delegates_to_discovery(tmp_path, monkeypatch):
     tool = DriveTrashRecoveryTool(_build_dummy_args(tmp_path))
     tool.discovery._validate_file_ids = MagicMock(return_value=True)
 
-    assert tool._validate_file_ids() is True
+    assert tool.discovery._validate_file_ids() is True
     tool.discovery._validate_file_ids.assert_called_once_with()
 
 
