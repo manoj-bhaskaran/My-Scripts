@@ -1,8 +1,9 @@
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'Expand-ZipsAndClean.TestHelpers.ps1')
 
 Describe 'Move-ZipFilesToParent' {
     BeforeAll {
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force
+        Import-ExpandZipsAndCleanZipWorkflowTestModule
     }
 
     It 'moves zip files from source to parent directory' {
@@ -56,8 +57,7 @@ Describe 'Move-ZipFilesToParent' {
 
 Describe 'Invoke-ZipExtractions — wrapper delegation' {
     BeforeAll {
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipExtraction\ZipExtraction.psm1') -Force
-        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+        Import-ExpandZipsAndCleanZipExtractionTestModule
     }
 
     It 'returns a zero-count summary when source has no zip files, confirming module delegation' {
@@ -85,7 +85,7 @@ Describe 'Invoke-ZipExtractions — wrapper delegation' {
 
 Describe 'Test-ScriptPreconditions' {
     BeforeAll {
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force
+        Import-ExpandZipsAndCleanZipWorkflowTestModule
     }
 
     It 'throws when source and destination are the same path' {
@@ -120,7 +120,7 @@ Describe 'Test-ScriptPreconditions' {
 
 Describe 'Resolve-MoveTarget' {
     BeforeAll {
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force
+        Import-ExpandZipsAndCleanZipWorkflowTestModule
     }
 
     It 'returns PolicyTag None and canonical TargetPath when no collision' {
