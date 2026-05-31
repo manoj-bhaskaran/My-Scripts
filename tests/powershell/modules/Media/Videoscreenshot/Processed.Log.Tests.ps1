@@ -82,6 +82,8 @@ Describe 'Write-ProcessedLog zero-frame-compatible statuses' {
         Write-ProcessedLog -Path $script:LogPath -VideoPath $video -Status Failed -Reason NoFrames
         $index = Get-ResumeIndex -Path $script:LogPath
 
+        $index.GetType().GetGenericTypeDefinition().FullName | Should -Be 'System.Collections.Generic.HashSet`1'
+        $index.GetType().GenericTypeArguments[0].FullName | Should -Be 'System.String'
         $line = Get-Content -LiteralPath $script:LogPath -Raw
         $line | Should -Match "`tFailed`tNoFrames`t"
         $index.Contains((Resolve-VideoPath -Path $video)) | Should -BeFalse

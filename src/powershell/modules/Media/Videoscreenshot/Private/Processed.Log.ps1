@@ -68,7 +68,10 @@ function Get-ResumeIndex {
     )
     # Case-insensitive by default on Windows; keeps behavior stable cross-platform.
     $set = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    if (-not (Test-Path -LiteralPath $Path)) { return $set }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Output -NoEnumerate $set
+        return
+    }
     try {
         Get-Content -LiteralPath $Path -ErrorAction Stop | ForEach-Object {
             if ([string]::IsNullOrWhiteSpace($_)) { return }
@@ -107,7 +110,7 @@ function Get-ResumeIndex {
     catch {
         Write-Debug ("Get-ResumeIndex: failed to read '{0}': {1}" -f $Path, $_.Exception.Message)
     }
-    return $set
+    Write-Output -NoEnumerate $set
 }
 
 <#
