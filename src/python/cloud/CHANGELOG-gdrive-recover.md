@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.31.0] - 2026-05-31
+
+### Changed
+
+- `gdrive_cli.py`: refactored `main()` pre-construction validation from nine separate `ok, code = …; if not ok: return code` blocks into two data-driven loops (`pre_timestamp_steps` and `post_timestamp_steps`). Validators that require `console` are bound with `functools.partial`; `_apply_timestamped_output` remains inline between the two loops to preserve its ordering dependency. Tool-dependent steps (`_acquire_or_bypass_lock`, `_validate_file_ids_if_present`) are unchanged and still run after `DriveTrashRecoveryTool` construction. Execution order and all `args`-mutation dependencies are preserved exactly (issue #1138).
+
 ## [1.30.0] - 2026-05-31
 
 ### Changed

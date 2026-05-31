@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import functools
 import json
 import logging
 import os
@@ -656,39 +657,40 @@ def main() -> int:
     # user-facing output, rather than reconstructing ConsoleHelper(args) in each.
     console = ConsoleHelper(args)
 
-    ok, code = _normalize_and_validate_policy(args, console)
-    if not ok:
-        return code
-
-    ok, code = _validate_folder_id_args(args, console)
-    if not ok:
-        return code
-
-    ok, code = _validate_concurrency_arg(args, console)
-    if not ok:
-        return code
-
-    ok, code = _validate_download_dir_arg(args)
-    if not ok:
-        return code
-
-    ok, code = _validate_after_date_arg(args)
-    if not ok:
-        return code
+    # Pre-construction validators: each takes (args) or (args, console) and
+    # returns (ok, code).  The ordering below is load-bearing — several steps
+    # mutate args and later steps depend on those mutations:
+    #   1. policy   – normalises args.post_restore_policy before folder-id check
+    #   2. folder   – reads args.post_restore_policy (normalised above)
+    #   3. concurrency, download-dir, after-date – independent of each other
+    #   4. _apply_timestamped_output is called between after-date and failed-file
+    #      so that timestamped paths are validated, not the base paths
+    #   5. failed-file – validates the (possibly timestamped) path
+    #   6. retry    – sets args.file_ids from the CSV before extension validation
+    #   7. extensions – reads args.extensions (may be overridden by retry step)
+    pre_timestamp_steps = (
+        functools.partial(_normalize_and_validate_policy, console=console),
+        functools.partial(_validate_folder_id_args, console=console),
+        functools.partial(_validate_concurrency_arg, console=console),
+        _validate_download_dir_arg,
+        _validate_after_date_arg,
+    )
+    for step in pre_timestamp_steps:
+        ok, code = step(args)
+        if not ok:
+            return code
 
     _apply_timestamped_output(args)
 
-    ok, code = _validate_failed_file_arg(args)
-    if not ok:
-        return code
-
-    ok, code = _apply_retry_failed_file(args, console)
-    if not ok:
-        return code
-
-    ok, code = _normalize_and_validate_extensions(args, console)
-    if not ok:
-        return code
+    post_timestamp_steps = (
+        _validate_failed_file_arg,
+        functools.partial(_apply_retry_failed_file, console=console),
+        functools.partial(_normalize_and_validate_extensions, console=console),
+    )
+    for step in post_timestamp_steps:
+        ok, code = step(args)
+        if not ok:
+            return code
 
     tool = DriveTrashRecoveryTool(args)
 
