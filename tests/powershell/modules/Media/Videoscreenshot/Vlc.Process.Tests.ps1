@@ -60,6 +60,24 @@ BeforeAll {
     }
 }
 
+
+Describe 'Test-VideoConfig' {
+    It 'accepts legacy configs that provide StopVlcWaitMs without SnapshotTerminationExtraSeconds' {
+        $context = Script:New-TestContext
+        $context.Config.Remove('SnapshotTerminationExtraSeconds')
+
+        { Test-VideoConfig -Context $context } | Should -Not -Throw
+    }
+
+    It 'requires at least one VLC stop flush timing knob' {
+        $context = Script:New-TestContext
+        $context.Config.Remove('SnapshotTerminationExtraSeconds')
+        $context.Config.Remove('StopVlcWaitMs')
+
+        { Test-VideoConfig -Context $context } | Should -Throw -ExpectedMessage '*either SnapshotTerminationExtraSeconds or StopVlcWaitMs*'
+    }
+}
+
 Describe 'Get-VlcFileLoggingArgs' {
     It 'builds VLC sidecar logfile arguments at the configured verbosity' {
         $logPath = Join-Path ([System.IO.Path]::GetTempPath()) 'vlc-sidecar-test.txt'
@@ -134,7 +152,7 @@ Describe 'Stop-Vlc' {
         Remove-Item -LiteralPath $fakeVlc.CleanupPath -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    It 'uses SnapshotTerminationExtraSeconds instead of the legacy StopVlcWaitMs delay before force-kill' {
+    It 'waits SnapshotTerminationExtraSeconds before force-killing a still-running dummy VLC process' {
         $context = Script:New-TestContext
         $context.Config.StopVlcWaitMs = 5000
         $context.Config.SnapshotTerminationExtraSeconds = 1
@@ -147,7 +165,7 @@ Describe 'Stop-Vlc' {
             $elapsed = Measure-Command { Stop-Vlc -Context $context -Process $process }
 
             $elapsed.TotalMilliseconds | Should -BeLessThan 3000
-            Should -Invoke Stop-Process -Times 1 -ParameterFilter { -not $Force }
+            Should -Not -Invoke Stop-Process -ParameterFilter { -not $Force }
             Should -Invoke Stop-Process -Times 1 -ParameterFilter { $Force }
             Should -Invoke Wait-Process -Times 1 -ParameterFilter { $Timeout -eq $context.Config.WaitProcessTimeoutSeconds }
         }

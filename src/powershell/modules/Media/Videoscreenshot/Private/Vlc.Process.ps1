@@ -197,10 +197,22 @@ function Test-VideoConfig {
         throw "Context.Config is missing."
     }
     $cfg = $Context.Config
-    foreach ($k in @('PollIntervalMs', 'StopVlcWaitMs', 'SnapshotTerminationExtraSeconds', 'WaitProcessTimeoutSeconds')) {
+    foreach ($k in @('PollIntervalMs', 'WaitProcessTimeoutSeconds')) {
         if ($null -eq $cfg.$k -or ($cfg.$k -as [int]) -lt 0) {
             throw "Context.Config.$k is missing or invalid (expected non-negative integer)."
         }
+    }
+
+    $hasSnapshotFlush = $false
+    if ($null -ne $cfg.SnapshotTerminationExtraSeconds) {
+        try { $hasSnapshotFlush = [double]$cfg.SnapshotTerminationExtraSeconds -ge 0 } catch { $hasSnapshotFlush = $false }
+    }
+    $hasLegacyStopWait = $false
+    if ($null -ne $cfg.StopVlcWaitMs) {
+        try { $hasLegacyStopWait = [int]$cfg.StopVlcWaitMs -ge 0 } catch { $hasLegacyStopWait = $false }
+    }
+    if (-not $hasSnapshotFlush -and -not $hasLegacyStopWait) {
+        throw "Context.Config requires either SnapshotTerminationExtraSeconds or StopVlcWaitMs as a non-negative timing value."
     }
 }
 
@@ -402,23 +414,16 @@ function Stop-Vlc {
     }
 
     # VLC snapshot mode runs with --intf dummy/CreateNoWindow, so CloseMainWindow()
-    # has no window to close and is a guaranteed no-op. Request normal process
-    # termination immediately, then allow a short, configurable scene-filter flush
-    # window before the force-kill backstop.
-    try {
-        Stop-Process -Id $Process.Id -ErrorAction SilentlyContinue
-    }
-    catch {
-        # Process may have already exited or may not exist.
-    }
-
-    try { $null = $Process.Refresh() } catch { }
-
-    if (-not $Process.HasExited -and $flushWaitMs -gt 0) {
+    # has no window to close and is a guaranteed no-op. Leave VLC alive for a
+    # short, configurable scene-filter flush window before the force-kill
+    # backstop, so timeout/idle-break teardown does not preempt final frame writes.
+    if ($flushWaitMs -gt 0) {
         try { $null = $Process.WaitForExit($flushWaitMs) } catch {
             # Wait operation may fail if process already exited.
         }
     }
+
+    try { $null = $Process.Refresh() } catch { }
 
     # Force kill if still running
     if (-not $Process.HasExited) {

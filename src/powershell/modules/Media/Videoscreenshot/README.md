@@ -368,9 +368,9 @@ Key config knobs (in `Get-DefaultConfig`, `Private/Config.ps1`):
 | `SnapshotDurationGraceSeconds` | `60` | Grace margin (s) added after the duration slack/floor cap. Absorbs VLC startup, buffering, and end-of-stream flush. |
 | `SnapshotIdleTimeoutSeconds` | `60` | Seconds without a new frame after warm-up before the session is abandoned. Set to `0` to disable. |
 | `SnapshotIdleWarmUpSeconds` | `30` | Seconds at session start during which idle detection is suppressed; the idle timer starts after this window for cold/slow sources. |
-| `SnapshotTerminationExtraSeconds` | `5` | Short flush window used by `Stop-Vlc` after requesting normal termination of a still-running dummy-interface VLC process and before the force-kill backstop. |
+| `SnapshotTerminationExtraSeconds` | `5` | Short flush window during which `Stop-Vlc` leaves a still-running dummy-interface VLC process alive before the force-kill backstop. |
 | `SnapshotFallbackTimeoutSeconds` | `300` | Last-resort cap used only when duration detection fails. |
 | `StopVlcWaitMs` | `5000` | Legacy millisecond fallback for older caller-provided config objects that do not define `SnapshotTerminationExtraSeconds`; prefer `SnapshotTerminationExtraSeconds` for new tuning. |
 | `Vlc.LogVerbosity` | `1` | VLC sidecar logfile verbosity (`0`-`2`); `0` also passes `--quiet`. |
 
-A `WARNING` log line is emitted when idle-break fires or the safety-net cap is reached while VLC is still alive, so the problem video is visible in the run log. When a cap/idle break leaves VLC running under the headless dummy interface, `Stop-Vlc` does not wait on a GUI main-window close; it uses `SnapshotTerminationExtraSeconds` as the bounded scene-filter flush window before force-killing the process if needed.
+A `WARNING` log line is emitted when idle-break fires or the safety-net cap is reached while VLC is still alive, so the problem video is visible in the run log. When a cap/idle break leaves VLC running under the headless dummy interface, `Stop-Vlc` does not wait on a GUI main-window close or preemptively stop the process; it uses `SnapshotTerminationExtraSeconds` as the bounded scene-filter flush window before force-killing the process if needed.

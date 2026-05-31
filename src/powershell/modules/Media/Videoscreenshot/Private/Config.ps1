@@ -68,9 +68,9 @@ function Get-DefaultConfig {
         # Typical range: 15–120 s.
         SnapshotDurationGraceSeconds    = 60
 
-        # Extra seconds Stop-Vlc waits after requesting normal process termination
-        # of a still-running dummy-interface snapshot session, giving VLC's scene
-        # filter time to flush/close before the force-kill backstop.
+        # Extra seconds Stop-Vlc leaves a still-running dummy-interface snapshot
+        # session alive, giving VLC's scene filter time to flush/close before the
+        # force-kill backstop.
         # Typical range: 2–10 s.
         SnapshotTerminationExtraSeconds = 5
 
