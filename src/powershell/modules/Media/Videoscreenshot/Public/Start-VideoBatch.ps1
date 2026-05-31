@@ -393,20 +393,29 @@ function Start-VideoBatch {
                     $detectedDuration = Get-VideoDuration -Path $video.FullName
                     if ($detectedDuration -gt 0) {
                         $grace = [int]$context.Config.SnapshotDurationGraceSeconds
-                        [int][Math]::Ceiling($detectedDuration + $grace)
+                        $slackFactor = [double]$context.Config.SnapshotDurationSlackFactor
+                        if ($slackFactor -le 0) { $slackFactor = 2.0 }
+                        $floorSeconds = [int]$context.Config.SnapshotMinimumTimeoutSeconds
+                        if ($floorSeconds -lt 1) { $floorSeconds = 1 }
+                        $slackSeconds = [Math]::Ceiling([double]$detectedDuration * $slackFactor)
+                        [int][Math]::Ceiling([Math]::Max($slackSeconds, $floorSeconds) + $grace)
                     } else {
                         Write-Debug ("Duration probe failed for '{0}'; using flat fallback ({1} s)." -f $video.FullName, $context.Config.SnapshotFallbackTimeoutSeconds)
                         [int]$context.Config.SnapshotFallbackTimeoutSeconds
                     }
                 }
                 $waitSeconds = [int]([Math]::Max(1, $baseWait + [int]$StartupGraceSeconds))
-                Write-Debug ("TRACE Start-VideoBatch: about to call Wait-ForSnapshotFrames (MaxSeconds={0}, Prefix={1})" -f $waitSeconds, $scenePrefix)
+                Write-Debug ("TRACE Start-VideoBatch: about to call Wait-ForSnapshotFrames (MaxSeconds={0}, Prefix={1}, CapSeconds={2})" -f $waitSeconds, $scenePrefix, $capSeconds)
                 $snapStats = Wait-ForSnapshotFrames -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -MaxSeconds $waitSeconds -Process $p `
                     -IdleTimeoutSeconds ([int]$context.Config.SnapshotIdleTimeoutSeconds) `
                     -WarmUpSeconds ([int]$context.Config.SnapshotIdleWarmUpSeconds)
                 $snapType = if ($null -ne $snapStats) { $snapStats.GetType().FullName } else { '<null>' }
                 $snapStr = if ($null -ne $snapStats) { $snapStats.ToString() } else { '<null>' }
                 Write-Debug ("TRACE Start-VideoBatch: Wait-ForSnapshotFrames returned type={0} tostring={1}" -f $snapType, $snapStr)
+                if ($null -ne $snapStats -and $snapStats.HitMaxSeconds -and $snapStats.ProcessAliveAtExit) {
+                    $retainVlcLog = $true
+                    Write-Message -Level Warn -Message ("VLC snapshot cap hit while playback was still active for: {0}; marking as timeout/truncation so resume can retry." -f $video.FullName)
+                }
             }
             else {
                 $dur = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.GdiCaptureDefaultSeconds }
@@ -485,6 +494,12 @@ function Start-VideoBatch {
             Write-Message -Level Warn -Message ("No frames produced for: {0}" -f $video.FullName)
             # Log zero-frame captures as failed so resume runs can retry them.
             $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Failed' -Reason 'NoFrames'
+        }
+        elseif ($UseVlcSnapshots -and $null -ne $snapStats -and $snapStats.HitMaxSeconds -and $snapStats.ProcessAliveAtExit) {
+            # Some frames were produced, but the safety-net cap interrupted a live VLC session.
+            # Keep the row retry-eligible for status-aware resume.
+            $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'TimedOutProcessed' -Reason 'SnapshotCapHit'
+            Write-Message -Level Warn -Message ("Video marked as timed out/truncated (eligible for retry on resume): {0}" -f $video.FullName)
         }
         else {
             if ($null -ne $achievedFps) {

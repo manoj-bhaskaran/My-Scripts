@@ -350,10 +350,10 @@ Runtime measurements reported by the cropper use wall-clock time (not CPU time) 
 When no explicit `-MaxPerVideoSeconds` / `-TimeLimitSeconds` is set, `Start-VideoBatch` probes each video's duration and computes a per-video cap:
 
 ```
-cap = video_duration + SnapshotDurationGraceSeconds
+cap = max(video_duration × SnapshotDurationSlackFactor, SnapshotMinimumTimeoutSeconds) + SnapshotDurationGraceSeconds
 ```
 
-This means a 20 s clip gets ~50 s, a 4-min video gets ~4.5 min, and a 30-min video gets ~31 min — the entire video always plays. The flat `SnapshotFallbackTimeoutSeconds` is used only when duration cannot be detected (e.g., no ffprobe, no Shell metadata).
+VLC `--play-and-exit` remains the primary completion signal: healthy short clips still finish as soon as VLC exits, without waiting for the floor. The cap is only a generous safety net for stuck VLC sessions, slow decode, or under-reported metadata. A cap hit while VLC is still alive is logged as `TimedOutProcessed`/`SnapshotCapHit` so status-aware resume can retry it. The flat `SnapshotFallbackTimeoutSeconds` is used only when duration cannot be detected (e.g., no ffprobe, no Shell metadata).
 
 ### Idle-frame stall detection (VLC snapshot mode)
 When VLC cannot decode a file (corrupt, unsupported codec, zero-duration stream), it stalls indefinitely with a black screen. The module detects this situation and abandons the session early rather than waiting for the full fallback timeout.
@@ -363,10 +363,12 @@ Key config knobs (in `Get-DefaultConfig`, `Private/Config.ps1`):
 | Key | Default | Description |
 |-----|---------|-------------|
 | `VideoProbeTimeoutSeconds` | `5` | Seconds to wait for the optional `-VerifyVideos` pre-flight VLC probe before force-killing it and marking the video unplayable. |
-| `SnapshotDurationGraceSeconds` | `30` | Grace margin (s) added to detected video duration to form the per-video cap. Absorbs VLC startup, buffering, and end-of-stream flush. |
-| `SnapshotIdleTimeoutSeconds` | `20` | Seconds without a new frame before the session is abandoned. Set to `0` to disable. |
-| `SnapshotIdleWarmUpSeconds` | `10` | Seconds at session start during which idle detection is suppressed (allows slow-starting sources their first frame). |
+| `SnapshotDurationSlackFactor` | `2.0` | Multiplier applied to detected duration when computing the VLC snapshot safety-net cap. |
+| `SnapshotMinimumTimeoutSeconds` | `120` | Minimum safety-net cap for duration-probed VLC snapshot runs; healthy short clips still exit promptly via VLC self-exit. |
+| `SnapshotDurationGraceSeconds` | `60` | Grace margin (s) added after the duration slack/floor cap. Absorbs VLC startup, buffering, and end-of-stream flush. |
+| `SnapshotIdleTimeoutSeconds` | `60` | Seconds without a new frame after warm-up before the session is abandoned. Set to `0` to disable. |
+| `SnapshotIdleWarmUpSeconds` | `30` | Seconds at session start during which idle detection is suppressed; the idle timer starts after this window for cold/slow sources. |
 | `SnapshotFallbackTimeoutSeconds` | `300` | Last-resort cap used only when duration detection fails. |
 | `Vlc.LogVerbosity` | `1` | VLC sidecar logfile verbosity (`0`-`2`); `0` also passes `--quiet`. |
 
-A `WARNING` log line is emitted when idle-break fires so the problem video is visible in the run log.
+A `WARNING` log line is emitted when idle-break fires or the safety-net cap is reached while VLC is still alive, so the problem video is visible in the run log.

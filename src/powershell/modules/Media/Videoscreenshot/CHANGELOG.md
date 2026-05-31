@@ -8,6 +8,15 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.2.4] - 2026-05-31
+### Fixed
+- **Tolerant VLC snapshot completion**: duration-probed snapshot caps now use `max(duration × SnapshotDurationSlackFactor, SnapshotMinimumTimeoutSeconds) + SnapshotDurationGraceSeconds`, making VLC `--play-and-exit` the primary completion signal while keeping a generous stuck-process safety net.
+- **Retryable cap truncation**: cap hits while VLC is still alive are logged as `TimedOutProcessed`/`SnapshotCapHit` instead of clean success, so status-aware resume can retry partially captured videos.
+- **Less aggressive idle detection**: default idle warm-up/timeout values are higher, and the idle timer starts after warm-up for cold/slow sources rather than counting the warm-up period itself.
+
+### Added
+- **Snapshot cap tuning knobs**: `SnapshotDurationSlackFactor` and `SnapshotMinimumTimeoutSeconds` in `Get-DefaultConfig`.
+
 ## [3.2.3] - 2026-05-31
 ### Fixed
 - **Empty retry-only resume indexes**: `Get-ResumeIndex` now emits its `HashSet` with `Write-Output -NoEnumerate`, so logs containing only retry-eligible rows (or missing logs) return an empty set instead of `$null`.

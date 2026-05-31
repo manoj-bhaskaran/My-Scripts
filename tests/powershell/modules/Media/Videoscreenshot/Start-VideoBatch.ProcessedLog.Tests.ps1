@@ -21,6 +21,8 @@ BeforeAll {
                 VideoExtensions                 = @('.mp4')
                 VideoProbeTimeoutSeconds        = 1
                 SnapshotFallbackTimeoutSeconds  = 1
+                SnapshotDurationSlackFactor     = 2.0
+                SnapshotMinimumTimeoutSeconds   = 2
                 SnapshotDurationGraceSeconds    = 1
                 SnapshotIdleTimeoutSeconds      = 0
                 SnapshotIdleWarmUpSeconds       = 0
@@ -47,8 +49,10 @@ BeforeAll {
     }
     function Wait-ForSnapshotFrames {
         param([string]$SaveFolder, [string]$ScenePrefix, [int]$MaxSeconds, $Process, [int]$IdleTimeoutSeconds, [int]$WarmUpSeconds)
-        return [pscustomobject]@{ FramesDelta = 0; ElapsedSeconds = 1 }
+        $script:WaitMaxSeconds = $MaxSeconds
+        return [pscustomobject]@{ FramesDelta = $script:WaitFramesDelta; ElapsedSeconds = 1; HitMaxSeconds = $script:WaitHitMaxSeconds; ProcessAliveAtExit = $script:WaitProcessAliveAtExit }
     }
+    function Get-VideoDuration { param([string]$Path) $script:DetectedDuration }
     function Stop-Vlc { param($Context, $Process) }
     function Unregister-RunPid { param($Context, [int]$ProcessId) }
     function Invoke-Cropper { throw 'Invoke-Cropper should not be called in this test.' }
@@ -58,6 +62,11 @@ Describe 'Start-VideoBatch processed-log status writes' {
     BeforeEach {
         $script:ProcessedLogCalls = @()
         $script:StartVlcCalls = 0
+        $script:WaitFramesDelta = 0
+        $script:WaitHitMaxSeconds = $false
+        $script:WaitProcessAliveAtExit = $false
+        $script:WaitMaxSeconds = 0
+        $script:DetectedDuration = 2
         $script:SourceFolder = Join-Path ([System.IO.Path]::GetTempPath()) ("video-source-{0}" -f [System.Guid]::NewGuid().ToString('N'))
         $script:SaveFolder = Join-Path ([System.IO.Path]::GetTempPath()) ("video-save-{0}" -f [System.Guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $script:SourceFolder, $script:SaveFolder -Force | Out-Null
@@ -82,5 +91,28 @@ Describe 'Start-VideoBatch processed-log status writes' {
         $script:ProcessedLogCalls | Should -HaveCount 1
         $script:ProcessedLogCalls[0].Status | Should -Be 'Failed'
         $script:ProcessedLogCalls[0].Reason | Should -Be 'NoFrames'
+    }
+
+    It 'uses duration slack and floor as a safety-net cap when no explicit cap is supplied' {
+        $script:WaitFramesDelta = 2
+
+        Start-VideoBatch -SourceFolder $script:SourceFolder -SaveFolder $script:SaveFolder -VlcExe $script:FakeVlc -UseVlcSnapshots -StartupGraceSeconds 2
+
+        # max(duration 2s * slack 2.0, floor 2s) + grace 1s + startup grace 2s
+        $script:WaitMaxSeconds | Should -Be 7
+        $script:ProcessedLogCalls[0].Status | Should -Be 'Processed'
+    }
+
+    It 'logs cap-hit VLC snapshot runs with frames as TimedOutProcessed/SnapshotCapHit' {
+        $script:WaitFramesDelta = 3
+        $script:WaitHitMaxSeconds = $true
+        $script:WaitProcessAliveAtExit = $true
+
+        Start-VideoBatch -SourceFolder $script:SourceFolder -SaveFolder $script:SaveFolder -VlcExe $script:FakeVlc -UseVlcSnapshots -MaxPerVideoSeconds 1
+
+        $script:StartVlcCalls | Should -Be 1
+        $script:ProcessedLogCalls | Should -HaveCount 1
+        $script:ProcessedLogCalls[0].Status | Should -Be 'TimedOutProcessed'
+        $script:ProcessedLogCalls[0].Reason | Should -Be 'SnapshotCapHit'
     }
 }
