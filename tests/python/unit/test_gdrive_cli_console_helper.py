@@ -20,6 +20,7 @@ sys.modules["gdrive_recover"] = MagicMock()
 from gdrive_cli import (  # noqa: E402
     _validate_concurrency_arg,
     _normalize_and_validate_extensions,
+    _normalize_and_validate_policy,
     _load_retry_failed_file,
 )
 from gdrive_console import ConsoleHelper  # noqa: E402
@@ -95,6 +96,50 @@ def test_validate_concurrency_arg_one_passes():
     args = _args(concurrency=1)
     ok, code = _validate_concurrency_arg(args, ConsoleHelper(args))
     assert ok and code == 0
+
+
+# ---------------------------------------------------------------------------
+# _normalize_and_validate_policy
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_and_validate_policy_unknown_warns_and_logs_metric(monkeypatch, capsys):
+    info_calls = []
+    warning_calls = []
+    monkeypatch.setattr("gdrive_cli.log_info", lambda logger, message: info_calls.append(message))
+    monkeypatch.setattr(
+        "gdrive_cli.log_warning", lambda logger, message: warning_calls.append(message)
+    )
+
+    args = _args(post_restore_policy="mystery", strict_policy=False, no_emoji=True)
+    ok, code = _normalize_and_validate_policy(args, ConsoleHelper(args))
+
+    assert ok and code == 0
+    assert args.post_restore_policy == "trash"
+    assert "WARN" in capsys.readouterr().err
+    assert len(info_calls) == 1
+    assert info_calls[0].startswith("METRIC {")
+    assert '"metric": "unknown_policy_token"' in info_calls[0]
+    assert '"token": "mystery"' in info_calls[0]
+    assert len(warning_calls) == 1
+    assert "Falling back" in warning_calls[0]
+
+
+def test_normalize_and_validate_policy_strict_error_logs_error(monkeypatch, capsys):
+    info_calls = []
+    error_calls = []
+    monkeypatch.setattr("gdrive_cli.log_info", lambda logger, message: info_calls.append(message))
+    monkeypatch.setattr("gdrive_cli.log_error", lambda logger, message: error_calls.append(message))
+
+    args = _args(post_restore_policy="mystery", strict_policy=True, no_emoji=True)
+    ok, code = _normalize_and_validate_policy(args, ConsoleHelper(args))
+
+    assert not ok and code == 2
+    assert "ERROR" in capsys.readouterr().err
+    assert len(info_calls) == 1
+    assert info_calls[0].startswith("METRIC {")
+    assert len(error_calls) == 1
+    assert "Unknown --post-restore-policy" in error_calls[0]
 
 
 # ---------------------------------------------------------------------------

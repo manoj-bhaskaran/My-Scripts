@@ -17,6 +17,7 @@ _CLOUD_DIR = Path(__file__).resolve().parent
 _PYTHON_SRC_DIR = _CLOUD_DIR.parent
 if str(_PYTHON_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_PYTHON_SRC_DIR))
+from modules.logging.python_logging_framework import log_error, log_info, log_warning
 from modules.utils.file_operations import ensure_directory, is_writable
 
 from gdrive_console import ConsoleHelper
@@ -40,6 +41,9 @@ from gdrive_recover import DriveTrashRecoveryTool
 from gdrive_state import StateScopeMismatchError
 
 __version__ = VERSION
+
+logger = logging.getLogger(__name__)
+logger.script_name = __name__
 
 
 def create_parser():
@@ -492,33 +496,20 @@ def _normalize_and_validate_policy(args, console: ConsoleHelper) -> Tuple[bool, 
         aliases=PostRestorePolicy.ALIASES,
         default_value=PostRestorePolicy.TRASH,
     )
-    try:
-        if telemetry and "unknown_policy" in telemetry:
-            logging.getLogger(__name__).info(
-                "METRIC %s",
-                json.dumps(
-                    {
-                        "metric": "unknown_policy_token",
-                        **telemetry["unknown_policy"],
-                    }
-                ),
-            )
-    except Exception:
-        pass
+    if telemetry and "unknown_policy" in telemetry:
+        metric_payload = {
+            "metric": "unknown_policy_token",
+            **telemetry["unknown_policy"],
+        }
+        log_info(logger, f"METRIC {json.dumps(metric_payload)}")
     if policy_errors:
         for msg in policy_errors:
             console.print_err(msg)
-            try:
-                logging.getLogger(__name__).error(msg)
-            except Exception:
-                pass
+            log_error(logger, msg)
         return False, 2
     for msg in policy_warnings:
         console.print_warn(msg)
-        try:
-            logging.getLogger(__name__).warning(msg)
-        except Exception:
-            pass
+        log_warning(logger, msg)
         if not hasattr(args, "_policy_warning_message"):
             args._policy_warning_message = msg
     args.post_restore_policy = norm_policy

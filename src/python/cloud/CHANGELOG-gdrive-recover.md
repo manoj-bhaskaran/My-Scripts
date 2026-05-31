@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.27.3] - 2026-05-31
+
+### Changed
+
+- `gdrive_cli.py`: routes post-restore policy metric, warning, and error logs through the shared `python_logging_framework` helpers instead of raw `logging.getLogger(__name__)` calls with defensive `try/except Exception: pass` wrappers. The `METRIC {json}` line for `unknown_policy_token` keeps the same greppable shape while user-facing stderr warning/error output remains unchanged.
+
+### Tests
+
+- Added `gdrive_cli` policy-validation unit coverage proving unknown-policy metric emission and strict/non-strict warning/error logs use the shared logging helper entry points.
+
 ## [1.27.2] - 2026-05-31
 
 ### Changed
