@@ -9,7 +9,7 @@
     - Discovery: Start-VideoBatch honors -IncludeExtensions; otherwise uses
       Config.VideoExtensions.
     - Timing: Helpers (e.g., Start-VlcProcess / Stop-Vlc) read PollIntervalMs,
-      VideoProbeTimeoutSeconds, StopVlcWaitMs, and WaitProcessTimeoutSeconds.
+      VideoProbeTimeoutSeconds, SnapshotTerminationExtraSeconds, StopVlcWaitMs, and WaitProcessTimeoutSeconds.
     - GDI: When neither MaxPerVideoSeconds nor TimeLimitSeconds is set,
       Invoke-GdiCapture uses GdiCaptureDefaultSeconds as a safe fallback.
     - Cropper: Invoke-Cropper consults Python.RequiredPackages for preflight.
@@ -68,8 +68,9 @@ function Get-DefaultConfig {
         # Typical range: 15–120 s.
         SnapshotDurationGraceSeconds    = 60
 
-        # Extra grace seconds allowed after requesting termination of snapshotting,
-        # giving VLC time to flush/close cleanly before any force-kill paths.
+        # Extra seconds Stop-Vlc waits after requesting normal process termination
+        # of a still-running dummy-interface snapshot session, giving VLC's scene
+        # filter time to flush/close before the force-kill backstop.
         # Typical range: 2–10 s.
         SnapshotTerminationExtraSeconds = 5
 
@@ -84,9 +85,9 @@ function Get-DefaultConfig {
         # Typical range: 15–120 s.
         SnapshotIdleWarmUpSeconds       = 30
 
-        # Milliseconds to wait after CloseMainWindow() before force-terminating VLC
-        # in Stop-Vlc. Larger values are gentler on VLC; smaller values speed up
-        # teardown on stubborn processes. Typical range: 2000–10000 ms.
+        # Legacy Stop-Vlc wait in milliseconds, retained as a fallback for callers
+        # without SnapshotTerminationExtraSeconds. New config should tune
+        # SnapshotTerminationExtraSeconds instead.
         StopVlcWaitMs                   = 5000
 
         # Seconds to wait in Wait-Process after issuing Stop-Process -Force when

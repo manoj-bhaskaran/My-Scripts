@@ -8,6 +8,13 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.2.5] - 2026-05-31
+### Fixed
+- **Dummy-interface VLC teardown**: `Stop-Vlc` no longer calls `CloseMainWindow()` for headless `--intf dummy` snapshot runs. Still-running VLC processes now receive a prompt normal termination request, wait only the configurable `SnapshotTerminationExtraSeconds` flush window, and then use the existing force-kill backstop.
+
+### Changed
+- **Termination timing config**: `SnapshotTerminationExtraSeconds` is now wired into `Stop-Vlc`; `StopVlcWaitMs` remains only as a legacy fallback for older caller-provided config objects.
+
 ## [3.2.4] - 2026-05-31
 ### Fixed
 - **Tolerant VLC snapshot completion**: duration-probed snapshot caps now use `max(duration × SnapshotDurationSlackFactor, SnapshotMinimumTimeoutSeconds) + SnapshotDurationGraceSeconds`, making VLC `--play-and-exit` the primary completion signal while keeping a generous stuck-process safety net.

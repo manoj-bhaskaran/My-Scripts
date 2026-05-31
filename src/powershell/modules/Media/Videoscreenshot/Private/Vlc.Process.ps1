@@ -5,7 +5,8 @@
 EXPECTED Context.Config SHAPE (used for configurability; all optional):
   @{
     PollIntervalMs = 200
-    StopVlcWaitMs  = 5000
+    SnapshotTerminationExtraSeconds = 5
+    StopVlcWaitMs  = 5000 # legacy fallback
     WaitProcessTimeoutSeconds = 3
     Vlc = @{
       BaseArgs     = @('--no-qt-privacy-ask','--no-video-title-show','--no-loop','--no-repeat','--rate','1','--play-and-exit')
@@ -196,7 +197,7 @@ function Test-VideoConfig {
         throw "Context.Config is missing."
     }
     $cfg = $Context.Config
-    foreach ($k in @('PollIntervalMs', 'StopVlcWaitMs', 'WaitProcessTimeoutSeconds')) {
+    foreach ($k in @('PollIntervalMs', 'StopVlcWaitMs', 'SnapshotTerminationExtraSeconds', 'WaitProcessTimeoutSeconds')) {
         if ($null -eq $cfg.$k -or ($cfg.$k -as [int]) -lt 0) {
             throw "Context.Config.$k is missing or invalid (expected non-negative integer)."
         }
@@ -371,7 +372,7 @@ function Start-Vlc {
 .SYNOPSIS
   Attempt graceful VLC shutdown, then force-kill if needed.
 .PARAMETER Context
-  Run context object with timing knobs (StopVlcWaitMs/WaitProcessTimeoutSeconds).
+  Run context object with timing knobs (SnapshotTerminationExtraSeconds/WaitProcessTimeoutSeconds).
 .PARAMETER Process
   The VLC process object to stop.
 #>
@@ -391,21 +392,37 @@ function Stop-Vlc {
         return
     }
 
-    # Try graceful shutdown
-    try { $null = $Process.CloseMainWindow() } catch {
-        # Process may not have a main window or may already be closing
+    $flushWaitMs = 0
+    if ($Context.Config -and $null -ne $Context.Config.SnapshotTerminationExtraSeconds) {
+        $flushWaitMs = [int]([Math]::Max(0, [double]$Context.Config.SnapshotTerminationExtraSeconds) * 1000)
+    }
+    elseif ($Context.Config -and $null -ne $Context.Config.StopVlcWaitMs) {
+        # Backward-compatible fallback for callers that have not refreshed config.
+        $flushWaitMs = [int][Math]::Max(0, [int]$Context.Config.StopVlcWaitMs)
     }
 
-    # Only wait if still running
-    if (-not $Process.HasExited) {
-        try { $null = $Process.WaitForExit($Context.Config.StopVlcWaitMs) } catch {
-            # Wait operation may fail if process already exited
+    # VLC snapshot mode runs with --intf dummy/CreateNoWindow, so CloseMainWindow()
+    # has no window to close and is a guaranteed no-op. Request normal process
+    # termination immediately, then allow a short, configurable scene-filter flush
+    # window before the force-kill backstop.
+    try {
+        Stop-Process -Id $Process.Id -ErrorAction SilentlyContinue
+    }
+    catch {
+        # Process may have already exited or may not exist.
+    }
+
+    try { $null = $Process.Refresh() } catch { }
+
+    if (-not $Process.HasExited -and $flushWaitMs -gt 0) {
+        try { $null = $Process.WaitForExit($flushWaitMs) } catch {
+            # Wait operation may fail if process already exited.
         }
     }
 
     # Force kill if still running
     if (-not $Process.HasExited) {
-        Write-Debug "VLC still running; forcing PID $($Process.Id)"
+        Write-Debug "VLC still running after $flushWaitMs ms flush window; forcing PID $($Process.Id)"
         try { Stop-Process -Id $Process.Id -Force; $null = Wait-Process -Id $Process.Id -Timeout $Context.Config.WaitProcessTimeoutSeconds -ErrorAction SilentlyContinue; $null = $Process.Refresh() } catch {
             # Process may have already exited or may not exist
         }

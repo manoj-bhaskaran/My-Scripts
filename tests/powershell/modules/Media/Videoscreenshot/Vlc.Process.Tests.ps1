@@ -47,10 +47,11 @@ BeforeAll {
 
         [pscustomobject]@{
             Config     = @{
-                PollIntervalMs            = 10
-                StopVlcWaitMs             = 100
-                WaitProcessTimeoutSeconds = 1
-                Vlc                       = @{
+                PollIntervalMs                  = 10
+                StopVlcWaitMs                   = 100
+                SnapshotTerminationExtraSeconds = 1
+                WaitProcessTimeoutSeconds       = 1
+                Vlc                             = @{
                     LogVerbosity = $LogVerbosity
                 }
             }
@@ -113,5 +114,54 @@ Describe 'Start-VlcProcess' {
 
         Remove-Item -LiteralPath $context.VlcLogPath -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $fakeVlc.CleanupPath -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Describe 'Stop-Vlc' {
+    It 'returns immediately for an already-exited process without requesting termination' {
+        $context = Script:New-TestContext
+        $fakeVlc = Script:New-NativeExitCommand -ExitCode 0
+        $process = Start-VlcProcess -Context $context -Arguments $fakeVlc.Arguments -StartupTimeoutSeconds 1 -VlcExe $fakeVlc.FilePath
+        $process.WaitForExit(1000) | Should -BeTrue
+
+        Mock Stop-Process { throw 'Stop-Process should not be called for an already-exited VLC process.' }
+
+        Stop-Vlc -Context $context -Process $process
+
+        Should -Not -Invoke Stop-Process
+
+        Remove-Item -LiteralPath $context.VlcLogPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $fakeVlc.CleanupPath -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'uses SnapshotTerminationExtraSeconds instead of the legacy StopVlcWaitMs delay before force-kill' {
+        $context = Script:New-TestContext
+        $context.Config.StopVlcWaitMs = 5000
+        $context.Config.SnapshotTerminationExtraSeconds = 1
+        $process = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') -PassThru
+
+        Mock Stop-Process { }
+        Mock Wait-Process { }
+
+        try {
+            $elapsed = Measure-Command { Stop-Vlc -Context $context -Process $process }
+
+            $elapsed.TotalMilliseconds | Should -BeLessThan 3000
+            Should -Invoke Stop-Process -Times 1 -ParameterFilter { -not $Force }
+            Should -Invoke Stop-Process -Times 1 -ParameterFilter { $Force }
+            Should -Invoke Wait-Process -Times 1 -ParameterFilter { $Timeout -eq $context.Config.WaitProcessTimeoutSeconds }
+        }
+        finally {
+            if ($process -and -not $process.HasExited) {
+                $process.Kill($true)
+                $process.WaitForExit(1000) | Out-Null
+            }
+        }
+    }
+
+    It 'does not call CloseMainWindow in the dummy-interface stop path' {
+        $source = Get-Content -LiteralPath $script:VlcProcessPath -Raw
+
+        $source | Should -Not -Match '\.CloseMainWindow\('
     }
 }
