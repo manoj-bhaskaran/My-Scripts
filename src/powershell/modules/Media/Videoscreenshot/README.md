@@ -40,7 +40,7 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
 - `VideoLimit` (int, default `0`): Maximum number of videos to process (0 = all).
 - `IncludeExtensions` (string[]): Extensions to consider (overrides defaults).
 - `VerifyVideos` (switch): Attempt lightweight playability checks before processing. Aliases: `-PreflightProbe`, `-SkipUnplayable`.
-- `VideoProbeTimeoutSeconds` (int, default config value `5`): Maximum time to wait for the `-VerifyVideos` probe before force-killing it and treating the video as unplayable.
+- `VideoProbeTimeoutSeconds` (int, default config value `10`): Maximum time to wait for the `-VerifyVideos` probe before force-killing it and treating the video as unplayable.
 - `RunCropper` (switch): Invoke the Python cropper after capture.
 - `CropOnly` (switch): Run the cropper without taking screenshots.
 - `PythonScriptPath` (string): Path to `crop_colours.py` when cropping.
@@ -65,7 +65,7 @@ catch {
 - Set `FramesPerSecond` conservatively for long runs to reduce I/O and disk usage.
 - Enable `-IncludeExtensions` to skip unsupported formats early and speed up discovery.
 - Processed logs allow resumable runs—point `-ProcessedLogPath` at fast storage to avoid lock contention.
-- Use `-VerifyVideos` (`-PreflightProbe`/`-SkipUnplayable`) to skip corrupt or unsupported files before launching the main VLC capture session; tune the bounded probe with `-VideoProbeTimeoutSeconds`.
+- Use `-VerifyVideos` (`-PreflightProbe`/`-SkipUnplayable`) to skip corrupt or unsupported files before launching the main VLC capture session; tune the bounded probe with `-VideoProbeTimeoutSeconds` (default `10`). The probe no longer false-skips chatty codecs (AV1/VP9) due to the pipe-buffer deadlock fix.
 - Cropper runs can be CPU intensive; use `-VideoLimit`/`-TimeLimitSeconds` to batch work into smaller chunks.
 
 ## Usage
@@ -150,12 +150,12 @@ Start-VideoBatch `
   -UseVlcSnapshots `
   -IncludeExtensions '.mp4','.mkv','.webm' `
   -VerifyVideos `
-  -VideoProbeTimeoutSeconds 5
+  -VideoProbeTimeoutSeconds 10
 ```
 * -IncludeExtensions overrides the discovery set (defaults come from module config).
-* -VerifyVideos attempts a lightweight, bounded `Test-VideoPlayable` check before the main VLC session. `-PreflightProbe` and `-SkipUnplayable` are aliases for the same switch.
+* `-VerifyVideos` attempts a lightweight, bounded `Test-VideoPlayable` check before the main VLC session. `-PreflightProbe` and `-SkipUnplayable` are aliases for the same switch. The probe no longer redirects stdout/stderr — VLC writes to a temp sidecar logfile — so chatty-but-playable videos (e.g. AV1/VP9 clips with verbose startup output) are no longer falsely reported as `NotPlayable`.
 * If the probe returns false or times out, the video is logged as `Skipped`/`NotPlayable` in the processed log and skipped on later resume runs. Probe errors are logged as `Skipped`/`VideoProbeError` and retried on resume.
-* `-VideoProbeTimeoutSeconds` controls the force-kill deadline for the probe; omit it to use `VideoProbeTimeoutSeconds` from module config.
+* `-VideoProbeTimeoutSeconds` controls the force-kill deadline for the probe; omit it to use `VideoProbeTimeoutSeconds` from module config (default `10`).
 
 #### What the cropper flags do
 * --preserve-alpha — consider transparency when trimming borders; useful for PNGs with transparent edges.

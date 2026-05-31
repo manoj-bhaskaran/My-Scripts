@@ -1,6 +1,6 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '3.2.5'
+  ModuleVersion     = '3.2.6'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
@@ -14,7 +14,7 @@
   PrivateData       = @{
     PSData = @{
       Tags         = @('video','vlc','gdi','screenshots','crop','python','images','automation')
-      ReleaseNotes = '3.2.5: Stop-Vlc no longer relies on CloseMainWindow for dummy-interface VLC and uses SnapshotTerminationExtraSeconds as the short flush window before force-kill.'
+      ReleaseNotes = '3.2.6: Test-VideoPlayable no longer redirects stdout/stderr; VLC probe writes to a temp sidecar logfile, eliminating the pipe-buffer deadlock that caused chatty-but-playable videos to be falsely logged as NotPlayable.'
     }
   }
 }

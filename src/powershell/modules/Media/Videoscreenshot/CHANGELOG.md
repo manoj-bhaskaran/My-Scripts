@@ -8,6 +8,16 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.2.6] - 2026-05-31
+### Fixed
+- **VLC probe pipe-buffer deadlock in `Test-VideoPlayable`**: the `-VerifyVideos` pre-flight probe no longer sets `RedirectStandardOutput`/`RedirectStandardError` to `$true`. VLC now writes diagnostics to a unique sidecar logfile under the system temp directory, eliminating the unread-pipe deadlock that caused chatty-but-playable videos (e.g. AV1/VP9 clips) to time out and be falsely logged as `Skipped/NotPlayable`. This is the same class of defect fixed for the main capture path in 3.2.1 (#1201), now applied to the second, independent VLC launch used by the pre-flight probe.
+
+### Changed
+- **`VideoProbeTimeoutSeconds` default raised from `5` → `10`**: once pipe-buffer deadlock is gone, the 5 s budget was genuinely tight for slow-starting codecs (AV1/VP9). 10 s gives adequate headroom while still bounding the probe.
+
+### Added
+- **`VideoProbeLogVerbosity`** (default `1`) in `Get-DefaultConfig`: controls VLC logging verbosity (`0`–`2`) written to the probe sidecar logfile; increase to `2` when diagnosing persistent `NotPlayable` false-positives.
+
 ## [3.2.5] - 2026-05-31
 ### Fixed
 - **Dummy-interface VLC teardown**: `Stop-Vlc` no longer calls `CloseMainWindow()` for headless `--intf dummy` snapshot runs. Still-running VLC processes now skip GUI main-window shutdown, remain alive for the configurable `SnapshotTerminationExtraSeconds` flush window, and then use the existing force-kill backstop.
