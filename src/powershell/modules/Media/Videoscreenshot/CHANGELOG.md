@@ -8,6 +8,15 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.2.3] - 2026-05-31
+### Fixed
+- **Empty retry-only resume indexes**: `Get-ResumeIndex` now emits its `HashSet` with `Write-Output -NoEnumerate`, so logs containing only retry-eligible rows (or missing logs) return an empty set instead of `$null`.
+
+## [3.2.2] - 2026-05-31
+### Fixed
+- **Status-aware resume logs**: `Get-ResumeIndex` now skips only true `Processed` successes and deliberate `Skipped`/`NotPlayable` rows. `Failed`, `TimedOutProcessed`, `Processed`/`NoFrames`, and `Skipped`/`VideoProbeError` entries remain eligible for retry on resume.
+- **Zero-frame labelling**: zero-frame captures are now logged as `Failed`/`NoFrames` instead of `Processed`/`NoFrames`, making incomplete coverage visible and retryable.
+
 ## [3.2.1] - 2026-05-31
 ### Fixed
 - **VLC stdout/stderr pipe-buffer deadlock**: long-running VLC sessions no longer redirect stdout/stderr pipes. VLC now writes diagnostics to a `.vlc_log_<RunGuid>.txt` sidecar under `SaveFolder`, with startup-failure errors reading from that logfile instead of unread stderr.

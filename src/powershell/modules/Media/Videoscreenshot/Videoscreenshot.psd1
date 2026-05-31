@@ -1,6 +1,6 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '3.2.1'
+  ModuleVersion     = '3.2.3'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
@@ -14,7 +14,7 @@
   PrivateData       = @{
     PSData = @{
       Tags         = @('video','vlc','gdi','screenshots','crop','python','images','automation')
-      ReleaseNotes = '3.2.1: VLC capture now logs diagnostics to a .vlc_log_<RunGuid>.txt sidecar instead of redirecting stdout/stderr pipes, preventing pipe-buffer deadlocks while preserving startup-failure diagnostics.'
+      ReleaseNotes = '3.2.3: Get-ResumeIndex now returns an empty HashSet without pipeline enumeration when all processed-log rows are retry-eligible or the log is missing.'
     }
   }
 }
