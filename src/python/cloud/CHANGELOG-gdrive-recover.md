@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.27.2] - 2026-05-31
+
+### Changed
+
+- `gdrive_cli.py`: routes all prefixed console output through `ConsoleHelper.print_err`/`print_warn`/`print_info` instead of open-coding `print(f"{console.sym_*()} ...", file=sys.stderr)`. Stream routing (errors/warnings to stderr, info to stdout) and `--no-emoji` behaviour are unchanged; unprefixed continuation lines are retained as-is.
+- `gdrive_cli.py`: constructs a single `ConsoleHelper` in `main()` and threads it into the validation/output helpers instead of reconstructing it per helper.
+
+### Tests
+
+- Updated `gdrive_cli` console-helper, folder-id, and lock-management unit tests to pass the threaded `ConsoleHelper` into the refactored helper signatures.
+
 ## [1.27.1] - 2026-05-31
 
 ### Changed
