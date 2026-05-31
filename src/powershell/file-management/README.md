@@ -18,6 +18,9 @@ Scripts for file operations, distribution, copying, and archiving.
 ### PowerShell Modules
 
 - **PowerShellLoggingFramework** (`src/powershell/modules/Core/Logging/`) - Structured logging
+- **ErrorHandling** (`src/powershell/modules/Core/ErrorHandling/`) - Retry orchestration used by `FileDistributor.ps1` and file operation helpers
+- **FileOperations** (`src/powershell/modules/Core/FileOperations/`) - Retry-aware copy, move, remove, rename, and content helpers used by `FileDistributor.ps1`
+- **FileQueue** (`src/powershell/modules/FileManagement/FileQueue/`) - Queue primitives used by the `FileDistributor` support module
 - **FileSystem** (`src/powershell/modules/Core/FileSystem/`) - Path normalization, safe naming, unique path resolution
 - **Zip** (`src/powershell/modules/Core/Zip/`) - ZIP archive primitives used by `Expand-ZipsAndClean.ps1`
 - **ZipExtraction** (`src/powershell/modules/FileManagement/ZipExtraction/`) - ZIP extraction orchestration helpers used by `Expand-ZipsAndClean.ps1`
@@ -49,6 +52,11 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 - These versions are intentionally independent and may advance separately under SemVer.
 
 ## Recent Updates
+
+- **FileDistributor module dependency fix (issue #1228)** (2026-05-31)
+  - Declared `Core/ErrorHandling` and `Core/FileOperations` as `FileDistributor` module dependencies and imported them inside the module before FileDistributor functions are dot-sourced.
+  - Ensures `Invoke-WithRetry`, `Copy-FileWithRetry`, and `Remove-FileWithRetry` resolve from FileDistributor module scope for RecycleBin deletes, Immediate deletes, state sidecar writes, and consolidation runs.
+  - Version bump: `FileDistributor.ps1` `4.9.4`; support module `1.3.3` (patch — module dependency bug fix).
 
 - **Expand-ZipsAndClean Pester helper-loading cleanup (issue #1144)** (2026-05-31)
   - Added shared test setup helpers for loading `ZipWorkflow` and `ZipExtraction` dependencies in `Expand-ZipsAndClean.Tests.ps1`, loaded during Pester's run phase so `BeforeAll` blocks can call them.

@@ -2,6 +2,15 @@
 
 $ModuleRoot = $PSScriptRoot
 
+$moduleDependencies = @(
+    '..\..\Core\ErrorHandling\ErrorHandling.psd1',
+    '..\..\Core\FileOperations\FileOperations.psd1'
+)
+foreach ($dependency in $moduleDependencies) {
+    $dependencyPath = Join-Path -Path $ModuleRoot -ChildPath $dependency
+    Import-Module -Name $dependencyPath -Force -ErrorAction Stop
+}
+
 $runStateClassPath = Join-Path -Path $ModuleRoot -ChildPath 'Private\FileDistributorRunState.ps1'
 if (Test-Path -LiteralPath $runStateClassPath) {
     . $runStateClassPath

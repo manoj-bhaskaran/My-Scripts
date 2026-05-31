@@ -1,5 +1,21 @@
 # CHANGELOG — FileDistributor
 
+## 4.9.4 — 2026-05-31
+
+### Fixed
+
+- Declared `Core/ErrorHandling` and `Core/FileOperations` as formal `FileDistributor` module dependencies so `Invoke-WithRetry`, `Copy-FileWithRetry`, and `Remove-FileWithRetry` are available during module loading.
+- Imported those dependencies inside `FileDistributor.psm1` before private/public function dot-sourcing so retry and file operation commands resolve from the `FileDistributor` module scope instead of relying on global session fallback.
+
+### Tests
+
+- Added regression coverage for the dependency declarations and module-scope dependency import ordering.
+
+### Versioning
+
+- Bumped `FileDistributor.ps1` script version to `4.9.4`.
+- Bumped `FileDistributor` module version to `1.3.3`.
+
 ## 4.9.3 — 2026-05-29
 
 ### Changed

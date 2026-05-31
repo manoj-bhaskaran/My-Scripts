@@ -331,6 +331,27 @@ Describe 'FileDistributor Module Public API' {
         $runState.GetType().Name | Should -Be 'FileDistributorRunState'
     }
 
+    It 'Should declare retry and file operation modules as required dependencies' {
+        $manifest = Import-PowerShellDataFile -LiteralPath $script:ModulePath
+
+        $manifest.RequiredModules | Should -Contain '..\..\Core\ErrorHandling\ErrorHandling.psd1'
+        $manifest.RequiredModules | Should -Contain '..\..\Core\FileOperations\FileOperations.psd1'
+        $manifest.RequiredModules | Should -Contain '..\FileQueue\FileQueue.psd1'
+    }
+
+    It 'Should import retry and file operation dependencies into module scope before function dot-sourcing' {
+        $moduleScriptPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'FileDistributor.psm1'
+        $moduleScriptContent = Get-Content -LiteralPath $moduleScriptPath -Raw
+        $dependencyImportIndex = $moduleScriptContent.IndexOf('foreach ($dependency in $moduleDependencies)')
+        $privateDotSourceIndex = $moduleScriptContent.IndexOf('$privateFunctions = @(')
+
+        $dependencyImportIndex | Should -BeGreaterOrEqual 0
+        $privateDotSourceIndex | Should -BeGreaterThan $dependencyImportIndex
+        $moduleScriptContent | Should -Match ([regex]::Escape('..\..\Core\ErrorHandling\ErrorHandling.psd1'))
+        $moduleScriptContent | Should -Match ([regex]::Escape('..\..\Core\FileOperations\FileOperations.psd1'))
+        $moduleScriptContent | Should -Match 'Import-Module\s+-Name\s+\$dependencyPath\s+-Force\s+-ErrorAction\s+Stop'
+    }
+
     It 'Should expose the complete expected function API through module exports' {
         $expectedExports = @(
             'Initialize-FileDistributorPaths',
