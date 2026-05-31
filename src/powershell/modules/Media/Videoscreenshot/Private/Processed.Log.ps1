@@ -17,6 +17,34 @@ function Resolve-VideoPath {
     return $full
 }
 
+function Convert-ProcessedLogLineToResumePath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Line
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Line)) { return $null }
+
+    $trimmedLine = $Line.Trim()
+    if ($trimmedLine.StartsWith('#')) { return $null }
+
+    $columns = $trimmedLine.Split("`t")
+    $rawPath = $columns[0]
+    $isTsv = $columns.Count -gt 1
+    $status = if ($isTsv) { $columns[1] } else { 'Processed' }
+    $reason = if ($columns.Count -ge 3) { $columns[2] } else { '' }
+    $shouldSkip = Test-ProcessedLogEntryShouldSkip -Status $status -Reason $reason -LegacyEntry:(-not $isTsv)
+
+    if (-not $shouldSkip -or [string]::IsNullOrWhiteSpace($rawPath)) { return $null }
+
+    try {
+        return (Resolve-VideoPath -Path $rawPath)
+    }
+    catch {
+        return $rawPath
+    }
+}
+
 function Test-ProcessedLogEntryShouldSkip {
     [CmdletBinding()]
     param(
@@ -74,36 +102,9 @@ function Get-ResumeIndex {
     }
     try {
         Get-Content -LiteralPath $Path -ErrorAction Stop | ForEach-Object {
-            if ([string]::IsNullOrWhiteSpace($_)) { return }
-            $line = $_.Trim()
-            if ($line.StartsWith('#')) { return }
-
-            $rawPath = $null
-            $shouldSkip = $false
-            if ($line -like "*`t*") {
-                # TSV (current) format: <FullPath>\t<Status>\t<Reason>\t<Timestamp>
-                $columns = $line.Split("`t")
-                $rawPath = $columns[0]
-                $status = if ($columns.Count -ge 2) { $columns[1] } else { '' }
-                $reason = if ($columns.Count -ge 3) { $columns[2] } else { '' }
-                $shouldSkip = Test-ProcessedLogEntryShouldSkip -Status $status -Reason $reason
-            }
-            else {
-                # Legacy format: a single path per line; keep old skip behavior.
-                $rawPath = $line
-                $shouldSkip = Test-ProcessedLogEntryShouldSkip -Status 'Processed' -LegacyEntry
-            }
-
-            if ($shouldSkip -and -not [string]::IsNullOrWhiteSpace($rawPath)) {
-                try {
-                    $full = Resolve-VideoPath -Path $rawPath
-                }
-                catch {
-                    $full = $rawPath
-                }
-                if (-not [string]::IsNullOrWhiteSpace($full)) {
-                    [void]$set.Add($full)
-                }
+            $full = Convert-ProcessedLogLineToResumePath -Line $_
+            if (-not [string]::IsNullOrWhiteSpace($full)) {
+                [void]$set.Add($full)
             }
         }
     }
