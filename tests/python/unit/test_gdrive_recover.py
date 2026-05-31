@@ -465,7 +465,7 @@ def test_log_file_created_with_parent_dirs(tmp_path, monkeypatch):
     root.handlers.clear()
 
     try:
-        tool = DriveTrashRecoveryTool(args)
+        DriveTrashRecoveryTool(args)
         assert log_path.parent.exists(), "parent directories should have been created"
         assert log_path.exists() or any(
             isinstance(h, logging.FileHandler) for h in logging.getLogger().handlers

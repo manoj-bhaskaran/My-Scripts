@@ -181,9 +181,11 @@ This repository includes a standardized, cross-platform logging framework for Py
 Log levels: DEBUG (10), INFO (20), WARNING (30), ERROR (40), CRITICAL (50).
 
 ```python
+import logging
 import python_logging_framework as plog
-plog.initialise_logger(log_file_path="auto", level="INFO")
-plog.log_info("Script started successfully")
+
+logger = plog.initialise_logger("my_script.py", log_level=logging.INFO)
+plog.log_info(logger, "Script started successfully")
 ```
 
 ```powershell
