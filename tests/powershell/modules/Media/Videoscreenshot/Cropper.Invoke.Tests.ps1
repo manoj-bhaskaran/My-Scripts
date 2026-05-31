@@ -28,6 +28,7 @@ param([Parameter(ValueFromRemainingArguments = $true)][string[]]$PythonArgs)
 $record = [pscustomobject]@{
     args = $PythonArgs
     pythonpath = [Environment]::GetEnvironmentVariable('PYTHONPATH')
+    cwd = (Get-Location).Path
 }
 $record | ConvertTo-Json -Compress | Add-Content -LiteralPath $env:FAKE_PYTHON_LOG
 exit 0
@@ -52,6 +53,7 @@ log_path = Path(os.environ['FAKE_PYTHON_LOG'])
 record = {
     'args': sys.argv[1:],
     'pythonpath': os.environ.get('PYTHONPATH', ''),
+    'cwd': os.getcwd(),
 }
 with log_path.open('a', encoding='utf-8') as handle:
     handle.write(json.dumps(record) + '\n')
@@ -78,6 +80,8 @@ PY
         $records = Get-Content -LiteralPath $script:InvocationLog | ForEach-Object { $_ | ConvertFrom-Json }
         $actual = $records | Where-Object { $_.args -contains '-m' -and $_.args -contains 'media.crop_colours' } | Select-Object -Last 1
 
+        $expectedPythonSrc = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'python')).Path
+
         $actual | Should -Not -BeNullOrEmpty
         $actual.args[0] | Should -Be '-m'
         $actual.args[1] | Should -Be 'media.crop_colours'
@@ -89,7 +93,8 @@ PY
         $actual.args | Should -Contain '--preserve-alpha'
         $actual.args | Should -Contain '--reprocess-cropped'
         $actual.args | Should -Contain '--keep-existing-crops'
-        $actual.pythonpath | Should -Match ([regex]::Escape((Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'python')).Path))
+        $actual.pythonpath | Should -Match ([regex]::Escape($expectedPythonSrc))
+        $actual.cwd | Should -Be $expectedPythonSrc
     }
 
     It 'keeps omitted PythonScriptPath on module invocation with repository PYTHONPATH' {
@@ -99,9 +104,12 @@ PY
         $records = Get-Content -LiteralPath $script:InvocationLog | ForEach-Object { $_ | ConvertFrom-Json }
         $actual = $records | Where-Object { $_.args -contains '-m' -and $_.args -contains 'media.crop_colours' } | Select-Object -Last 1
 
+        $expectedPythonSrc = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'python')).Path
+
         $actual | Should -Not -BeNullOrEmpty
         $actual.args[0] | Should -Be '-m'
         $actual.args[1] | Should -Be 'media.crop_colours'
-        $actual.pythonpath | Should -Match ([regex]::Escape((Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'python')).Path))
+        $actual.pythonpath | Should -Match ([regex]::Escape($expectedPythonSrc))
+        $actual.cwd | Should -Be $expectedPythonSrc
     }
 }

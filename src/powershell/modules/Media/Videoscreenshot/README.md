@@ -106,7 +106,7 @@ When `-RunCropper` is set, the module invokes the Python cropper after capture. 
   ```
   python -m media.crop_colours --input <SaveFolder> --skip-bad-images --allow-empty --recurse --preserve-alpha
   ```
-  PYTHONPATH is automatically configured to include `src/python`.
+  PYTHONPATH is automatically configured to include `src/python`, and the child process working directory is set to that same package root so `python -m` resolves the intended `media` package before any package in the caller's current directory.
 
 To force a full re-crop, use:
 ```
@@ -126,7 +126,7 @@ Notes:
 - The cropper operates on images under `-SaveFolder`.
 
 Notes:
-- The cropper receives absolute paths and streams logs to the console; Ctrl+C cancels cleanly.
+- The cropper receives absolute input paths, runs from the selected `src/python` package root, and streams logs to the console; Ctrl+C cancels cleanly.
 - On failure, the module throws a concise error; see on-screen logs for details.
 
 ### Crop-only mode

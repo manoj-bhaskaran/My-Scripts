@@ -1,6 +1,6 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '3.2.8'
+  ModuleVersion     = '3.2.9'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
@@ -14,7 +14,7 @@
   PrivateData       = @{
     PSData = @{
       Tags         = @('video','vlc','gdi','screenshots','crop','python','images','automation')
-      ReleaseNotes = '3.2.8: Invoke-Cropper now treats -PythonScriptPath as a packaged cropper locator and always runs python -m media.crop_colours with PYTHONPATH set, fixing package-relative imports.'
+      ReleaseNotes = '3.2.9: Invoke-Cropper now sets the cropper child working directory to the selected src/python package root and passes an absolute input path so python -m resolves the intended media package before any caller cwd package.'
     }
   }
 }

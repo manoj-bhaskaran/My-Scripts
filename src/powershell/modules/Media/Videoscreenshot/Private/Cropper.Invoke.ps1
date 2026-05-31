@@ -88,6 +88,7 @@ function Invoke-Cropper {
     if (-not (Test-Path -LiteralPath $InputFolder -PathType Container)) {
         throw "InputFolder not found for cropper: $InputFolder"
     }
+    $resolvedInputFolder = (Resolve-Path -LiteralPath $InputFolder).Path
 
     # ---- Resolve Python executable -----------------------------------------
     # Preference order: explicit -PythonExe → 'py' (Windows launcher) → 'python'
@@ -193,7 +194,7 @@ function Invoke-Cropper {
     # Per design, these flags are not made configurable here.
     $pyArgs = @('-m', 'media.crop_colours')
     $pyArgs += @(
-        '--input', $InputFolder,
+        '--input', $resolvedInputFolder,
         '--skip-bad-images',
         '--allow-empty',
         '--recurse',
@@ -252,17 +253,20 @@ function Invoke-Cropper {
     $existingPath = [System.Environment]::GetEnvironmentVariable('PYTHONPATH')
     $newPath = if ($existingPath) { "$pythonSrc$([System.IO.Path]::PathSeparator)$existingPath" } else { $pythonSrc }
     $psi.Environment['PYTHONPATH'] = $newPath
+    $psi.WorkingDirectory = $pythonSrc
     Write-Debug ("Invoke-Cropper: Set PYTHONPATH={0}" -f $newPath)
+    Write-Debug ("Invoke-Cropper: Set WorkingDirectory={0}" -f $pythonSrc)
 
     # Pre-flight check: verify Python can import the module
     $psiTest = [System.Diagnostics.ProcessStartInfo]::new()
     $psiTest.FileName = $pythonCmd
     $null = $psiTest.ArgumentList.Add('-c')
-    $null = $psiTest.ArgumentList.Add('import sys; sys.path.insert(0, r"{0}"); import media.crop_colours' -f $pythonSrc)
+    $null = $psiTest.ArgumentList.Add('import media.crop_colours')
     $psiTest.UseShellExecute = $false
     $psiTest.RedirectStandardOutput = $true
     $psiTest.RedirectStandardError = $true
     $psiTest.CreateNoWindow = $true
+    $psiTest.WorkingDirectory = $pythonSrc
     # Copy PYTHONPATH to test process
     $null = $psiTest.Environment
     $psiTest.Environment['PYTHONPATH'] = $newPath
@@ -285,6 +289,7 @@ function Invoke-Cropper {
         $cmdDisplay = "$pythonCmd $($pyArgs -join ' ')"
         Write-Debug ("Invoke-Cropper: Executing command: {0}" -f $cmdDisplay)
         Write-Debug ("Invoke-Cropper: PYTHONPATH={0}" -f $psi.Environment['PYTHONPATH'])
+        Write-Debug ("Invoke-Cropper: WorkingDirectory={0}" -f $psi.WorkingDirectory)
     }
 
     $p = [System.Diagnostics.Process]::new()
