@@ -1,5 +1,22 @@
 # CHANGELOG — FileDistributor
 
+## 4.9.5 — 2026-05-31
+
+### Changed
+
+- Mirrored the mode-specific post-run summary to the console so successful full-distribution runs show source counts, target counts before and after, reconciliation status, total warnings/errors, and completion status without requiring the log file.
+- Mirrored the rebalance-only post-run summary to the console so target counts before and after, discrepancy warnings, total warnings/errors, and completion status are visible at the terminal.
+- Added a console completion line in `Main` after the existing successful completion log entry; fatal error console output remains unchanged.
+
+### Tests
+
+- Added regression coverage for the new post-run console summary/status output and the successful completion console line.
+
+### Versioning
+
+- Bumped `FileDistributor.ps1` script version to `4.9.5`.
+- Bumped `FileDistributor` module version to `1.3.4`.
+
 ## 4.9.4 — 2026-05-31
 
 ### Fixed

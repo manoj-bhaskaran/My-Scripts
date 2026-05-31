@@ -325,6 +325,31 @@ Describe 'FileDistributor Module Public API' {
         $functionContent | Should -Match 'Get-NextQueueItem\s+-Queue\s+\$RunState\.FilesToDelete\s+-Peek'
     }
 
+    It 'Invoke-PostRunCleanup mirrors completion summary details to the console' {
+        $functionPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'Public' 'Invoke-PostRunCleanup.ps1'
+        $functionContent = Get-Content -LiteralPath $functionPath -Raw
+
+        $functionContent | Should -Match 'Write-Host "===== File Rebalancing Summary ====="'
+        $functionContent | Should -Match 'Write-Host "===== File Distribution Summary ====="'
+        $functionContent | Should -Match 'Write-Host "Original number of files in the source folder \(enumerated\):'
+        $functionContent | Should -Match 'Write-Host "Files selected for copying this run:'
+        $functionContent | Should -Match 'Write-Host "Original number of files in the target folder hierarchy:'
+        $functionContent | Should -Match 'Write-Host "Final number of files in the target folder hierarchy:'
+        $functionContent | Should -Match 'Write-Host "Total warnings: \$frameworkWarnings"'
+        $functionContent | Should -Match 'Write-Host "Total errors: \$frameworkErrors"'
+        $functionContent | Should -Match 'Write-Host "Completion status: Completed successfully"'
+        $functionContent | Should -Match 'Write-Host "Completion status: Completed with warnings" -ForegroundColor Yellow'
+        $functionContent | Should -Match 'Write-Host "Completion status: Completed with errors" -ForegroundColor Red'
+    }
+
+    It 'Invoke-PostRunCleanup surfaces count discrepancies as console warnings' {
+        $functionPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'Public' 'Invoke-PostRunCleanup.ps1'
+        $functionContent = Get-Content -LiteralPath $functionPath -Raw
+
+        $functionContent | Should -Match 'Write-Host "WARNING: File count changed during rebalancing\. Possible discrepancy detected\." -ForegroundColor Yellow'
+        $functionContent | Should -Match 'Write-Host "WARNING: Sum of original counts does not equal the final count in the target\. Possible discrepancy detected\." -ForegroundColor Yellow'
+    }
+
     It 'New-FileDistributorRunState should return a FileDistributorRunState instance callable from script scope' {
         $runState = New-FileDistributorRunState
         $runState | Should -Not -BeNullOrEmpty

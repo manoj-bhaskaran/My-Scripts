@@ -331,7 +331,7 @@ Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistr
 # Note: Logger initialization moved to after LogFilePath resolution
 
 # Define script-scoped variables for warnings and errors
-$script:Version = "4.9.4"
+$script:Version = "4.9.5"
 $script:Warnings = 0
 $script:Errors = 0
 
@@ -455,6 +455,7 @@ function Main {
             -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
 
         Write-LogInfo "File distribution and optional cleanup completed."
+        Write-Host "File distribution and optional cleanup completed."
     } catch {
         Write-LogError "FATAL ERROR: $($_.Exception.Message)"
         Write-Host "ERROR: FATAL ERROR: $($_.Exception.Message)" -ForegroundColor Red
