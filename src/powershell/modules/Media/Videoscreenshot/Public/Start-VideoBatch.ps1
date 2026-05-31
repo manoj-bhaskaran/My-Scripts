@@ -59,6 +59,8 @@ Delete existing frames with the scene prefix before each video.
 Full path to vlc.exe. Use when VLC is not on PATH (e.g. "D:\Program Files\VideoLAN\VLC\vlc.exe").
 .PARAMETER NoAudio
 Pass --no-audio to VLC. Use when the VLC audio plugin crashes on your system (e.g. libmmdevice_plugin.dll access violation).
+.PARAMETER DeduplicateFrames
+After each video capture, remove consecutive duplicate frames whose file bytes are identical. One frame per distinct image is kept. Default off; enable for image/slideshow MP4 conversions that produce long runs of identical frames (e.g. picconvert output). Frame counts and status logging reflect the kept frames after de-dup runs.
 
 .EXAMPLE
 Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper -PythonScriptPath .\src\python\media\crop_colours.py
@@ -100,7 +102,8 @@ function Start-VideoBatch {
         [switch]$ClearSnapshotsBeforeRun,
 
         [string]$VlcExe,
-        [switch]$NoAudio
+        [switch]$NoAudio,
+        [switch]$DeduplicateFrames
     )
 
     # Enforce pwsh 7+ at runtime (friendly error if invoked directly)
@@ -476,11 +479,34 @@ function Start-VideoBatch {
             }
         }
 
-        # Always do a final file count check to ensure accuracy
-        # This catches cases where stats might be incorrect but files were actually saved
+        # De-duplicate consecutive identical frames if requested.
+        # Gated on $framesDelta > 0 so a zero-capture run (e.g. VLC produced nothing)
+        # never de-dups pre-existing frames from a previous run on the same prefix.
+        $dedupStats = $null
+        if ($DeduplicateFrames -and -not $processingFailed -and $framesDelta -gt 0) {
+            $dedupAlgorithm = if ($context.Config.ContainsKey('DeduplicateHashAlgorithm')) {
+                [string]$context.Config.DeduplicateHashAlgorithm
+            } else { 'SHA256' }
+            try {
+                $dedupStats = Invoke-SnapshotDedup -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -HashAlgorithm $dedupAlgorithm
+                Write-Debug ("Snapshot.Dedup: removed {0}/{1} frame(s) for prefix '{2}'" -f $dedupStats.RemovedCount, $dedupStats.OriginalCount, $scenePrefix)
+                if ($dedupStats.RemovedCount -gt 0) {
+                    Write-Message -Level Info -Message ("De-dup: removed {0} duplicate frame(s) for '{1}' ({2} unique frame(s) kept)" -f $dedupStats.RemovedCount, $scenePrefix, $dedupStats.KeptCount)
+                }
+            }
+            catch {
+                Write-Message -Level Warn -Message ("De-dup failed for prefix '{0}': {1}" -f $scenePrefix, $_.Exception.Message)
+            }
+        }
+
+        # Final disk count — always recompute for accuracy; when de-dup ran, use the
+        # actual post-dedup count (which may be lower than the stats-derived estimate).
         $actualPostCount = (Get-ChildItem -Path $SaveFolder -Filter "${scenePrefix}*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
         $actualFramesDelta = [int]($actualPostCount - $preCount)
-        if ($actualFramesDelta -gt $framesDelta) {
+        if ($null -ne $dedupStats) {
+            $framesDelta = $actualFramesDelta
+        }
+        elseif ($actualFramesDelta -gt $framesDelta) {
             Write-Debug ("Stats reported {0} frames but disk shows {1} frames; using actual count" -f $framesDelta, $actualFramesDelta)
             $framesDelta = $actualFramesDelta
         }

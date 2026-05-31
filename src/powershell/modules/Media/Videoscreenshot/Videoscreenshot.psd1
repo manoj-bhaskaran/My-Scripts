@@ -1,6 +1,6 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '3.2.9'
+  ModuleVersion     = '3.3.0'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
@@ -14,7 +14,7 @@
   PrivateData       = @{
     PSData = @{
       Tags         = @('video','vlc','gdi','screenshots','crop','python','images','automation')
-      ReleaseNotes = '3.2.9: Invoke-Cropper now sets the cropper child working directory to the selected src/python package root and passes an absolute input path so python -m resolves the intended media package before any caller cwd package.'
+      ReleaseNotes = '3.3.0: Add -DeduplicateFrames opt-in switch that removes consecutive identical snapshot frames by content hash (SHA256 default); frame counts and status logging reflect kept frames. Config knob DeduplicateHashAlgorithm allows algorithm override.'
     }
   }
 }
