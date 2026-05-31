@@ -18,6 +18,8 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[gdrive_recover 1.27.3]** Routed `gdrive_cli.py` post-restore policy metric, warning, and error logs through the shared `python_logging_framework` helpers while preserving user-facing console output and the greppable `METRIC {json}` unknown-policy line (issue #1135).
+  → Full detail: [src/python/cloud/CHANGELOG-gdrive-recover.md](src/python/cloud/CHANGELOG-gdrive-recover.md)
 - **[gdrive_recover 1.27.1]** Reused the shared `python_logging_framework` in `DriveTrashRecoveryTool._setup_logging`, preserving verbosity-driven console output and explicit `--log-file` behavior while adding framework support for exact log-file paths and root-handler configuration (issue #1119).
   → Full detail: [src/python/cloud/CHANGELOG-gdrive-recover.md](src/python/cloud/CHANGELOG-gdrive-recover.md)
 - **[gdrive_recover 1.27.0]** Removed `DriveTrashRecoveryTool` pass-through delegation wrappers, retargeted recovery tests to owning helper objects, routed fresh-run reset output through `RecoveryReporter`, and replaced the streaming `_seen_total_ref` list box with `SeenTotalCounter` (issue #1118).
