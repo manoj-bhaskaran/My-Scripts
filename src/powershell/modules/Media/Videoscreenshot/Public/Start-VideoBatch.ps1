@@ -283,6 +283,23 @@ function Start-VideoBatch {
     $pidFile = Initialize-PidRegistry -Context $context -SaveFolder $SaveFolder -RunGuid $runGuid
     Write-Debug "PID registry: $pidFile"
 
+    # Initialize VLC's own sidecar logfile. This avoids redirecting stdout/stderr
+    # pipes for the long-running process, which can deadlock when VLC is chatty.
+    $vlcLogFile = Join-Path $SaveFolder ".vlc_log_$runGuid.txt"
+    try {
+        if (Test-Path -LiteralPath $vlcLogFile -PathType Leaf) {
+            Remove-Item -LiteralPath $vlcLogFile -Force -ErrorAction Stop
+        }
+        New-Item -ItemType File -Path $vlcLogFile -Force -ErrorAction Stop | Out-Null
+        $context | Add-Member -NotePropertyName VlcLogPath -NotePropertyValue $vlcLogFile -Force
+        Write-Debug "VLC sidecar log: $vlcLogFile"
+    }
+    catch {
+        Write-Message -Level Warn -Message ("Unable to initialize VLC sidecar logfile '{0}': {1}. Continuing without VLC file logging." -f $vlcLogFile, $_.Exception.Message)
+        $context | Add-Member -NotePropertyName VlcLogPath -NotePropertyValue $null -Force
+        $vlcLogFile = $null
+    }
+
     # Discover videos (configurable extension set via param or config)
     $exts = if ($IncludeExtensions -and $IncludeExtensions.Count -gt 0) { $IncludeExtensions } else { $context.Config.VideoExtensions }
     $patterns = $exts | ForEach-Object {
@@ -293,11 +310,18 @@ function Start-VideoBatch {
     $videos = Get-ChildItem -Path (Join-Path $SourceFolder '*') -Recurse -File -Include $patterns
     if (-not $videos) {
         Write-Message -Level Warn -Message "No videos found under $SourceFolder."
+        if ($pidFile -and (Test-Path -LiteralPath $pidFile)) {
+            Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+        }
+        if ($vlcLogFile -and (Test-Path -LiteralPath $vlcLogFile)) {
+            Remove-Item -LiteralPath $vlcLogFile -Force -ErrorAction SilentlyContinue
+        }
         return
     }
 
     $processedCount = 0
     $attemptedCount = 0
+    $retainVlcLog = $false
 
     foreach ($video in $videos) {
         if ($VideoLimit -gt 0 -and $attemptedCount -ge $VideoLimit) { break }
@@ -395,6 +419,7 @@ function Start-VideoBatch {
         }
         catch {
             $processingFailed = $true
+            $retainVlcLog = $true
             $processingError = $_.Exception.Message
             Write-Message -Level Error -Message ("Processing failed for: {0} — {1}" -f $video.FullName, $processingError)
         }
@@ -502,6 +527,23 @@ function Start-VideoBatch {
         }
         catch {
             Write-Message -Level Warn -Message ("Failed to remove PID registry file '{0}': {1}" -f $pidFile, $_.Exception.Message)
+        }
+    }
+
+    # Clean VLC's sidecar logfile on successful runs; retain it deterministically
+    # when processing failed so startup/decoder diagnostics remain available.
+    if ($vlcLogFile -and (Test-Path -LiteralPath $vlcLogFile)) {
+        if ($retainVlcLog) {
+            Write-Message -Level Warn -Message ("Retaining VLC sidecar log after failure: {0}" -f $vlcLogFile)
+        }
+        else {
+            try {
+                Remove-Item -LiteralPath $vlcLogFile -Force -ErrorAction Stop
+                Write-Debug "Cleaned up VLC sidecar log: $vlcLogFile"
+            }
+            catch {
+                Write-Message -Level Warn -Message ("Failed to remove VLC sidecar log '{0}': {1}" -f $vlcLogFile, $_.Exception.Message)
+            }
         }
     }
 

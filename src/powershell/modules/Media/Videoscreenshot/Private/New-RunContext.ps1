@@ -52,5 +52,6 @@ function New-VideoRunContext {
         SaveFolder      = $SaveFolder
         RunGuid         = $RunGuid
         PidRegistryPath = $null
+        VlcLogPath      = $null
     }
 }

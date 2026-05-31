@@ -8,6 +8,13 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.2.1] - 2026-05-31
+### Fixed
+- **VLC stdout/stderr pipe-buffer deadlock**: long-running VLC sessions no longer redirect stdout/stderr pipes. VLC now writes diagnostics to a `.vlc_log_<RunGuid>.txt` sidecar under `SaveFolder`, with startup-failure errors reading from that logfile instead of unread stderr.
+
+### Added
+- **`Vlc.LogVerbosity`** (default `1`) in `Get-DefaultConfig` to tune VLC sidecar logging verbosity (`0`-`2`, where `0` also passes `--quiet`).
+
 ## [3.2.0] - 2026-05-29
 ### Added
 - **Opt-in video pre-flight skip**: `Start-VideoBatch -VerifyVideos` (aliases `-PreflightProbe`, `-SkipUnplayable`) now runs `Test-VideoPlayable` before launching the main VLC capture session. Videos that fail the probe are logged as `Skipped`/`NotPlayable` in the processed log so resume runs do not retry them.

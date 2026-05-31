@@ -319,9 +319,14 @@ On Windows (example):
   via `-ProcessedLogPath`. `Start-VideoBatch` honors `-ResumeFile` by skipping items up to that file.
 - **Crash: “There is no Runspace available to run scripts in this thread.”**
   This was caused by emitting PowerShell debug output from background stream handlers.
-  Fixed in the next patch release; update to the latest version. As a temporary workaround,
-  run without `-Debug`. Note that, by design, VLC’s stdout/stderr are still captured for errors,
-  but per-line live output from VLC is no longer shown when `-Debug` is used.
+  Fixed in earlier patch releases; update to the latest version.
+- **VLC hangs or stalls after producing a few frames.**
+  VLC stdout/stderr are not redirected by the module. Instead, VLC writes diagnostics to a
+  hidden sidecar logfile named `.vlc_log_<RunGuid>.txt` in `SaveFolder`, so verbose decoder
+  output cannot fill an unread pipe and deadlock the process. The sidecar is deleted after
+  successful runs and retained after processing failures for diagnosis. Tune `Vlc.LogVerbosity`
+  in `Get-DefaultConfig` (`0`-`2`, default `1`; `0` also passes `--quiet`) if the VLC log is
+  too noisy or too sparse.
 
 ### GDI-specific tips
 - Prefer the Primary display; multi-monitor/VM environments may vary in behavior.
@@ -359,5 +364,6 @@ Key config knobs (in `Get-DefaultConfig`, `Private/Config.ps1`):
 | `SnapshotIdleTimeoutSeconds` | `20` | Seconds without a new frame before the session is abandoned. Set to `0` to disable. |
 | `SnapshotIdleWarmUpSeconds` | `10` | Seconds at session start during which idle detection is suppressed (allows slow-starting sources their first frame). |
 | `SnapshotFallbackTimeoutSeconds` | `300` | Last-resort cap used only when duration detection fails. |
+| `Vlc.LogVerbosity` | `1` | VLC sidecar logfile verbosity (`0`-`2`); `0` also passes `--quiet`. |
 
 A `WARNING` log line is emitted when idle-break fires so the problem video is visible in the run log.

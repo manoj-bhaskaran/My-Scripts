@@ -8,8 +8,9 @@ EXPECTED Context.Config SHAPE (used for configurability; all optional):
     StopVlcWaitMs  = 5000
     WaitProcessTimeoutSeconds = 3
     Vlc = @{
-      BaseArgs  = @('--no-qt-privacy-ask','--no-video-title-show','--no-loop','--no-repeat','--rate','1','--play-and-exit')
-      ExtraArgs = @()
+      BaseArgs     = @('--no-qt-privacy-ask','--no-video-title-show','--no-loop','--no-repeat','--rate','1','--play-and-exit')
+      ExtraArgs    = @()
+      LogVerbosity = 1
       Scene = @{
         Format   = 'png'             # default snapshot format
         BaseArgs = @('--intf','dummy','--video-filter=scene')
@@ -149,6 +150,38 @@ function Get-VlcArgsSnapshot {
 
 <#
 .SYNOPSIS
+  Build VLC file-logging arguments for the current run.
+.DESCRIPTION
+  Directs VLC diagnostics to a sidecar file instead of redirected process pipes,
+  preventing stdout/stderr pipe-buffer deadlocks during verbose decoding.
+.PARAMETER Context
+  Run context; optional .VlcLogPath enables sidecar logging and
+  Config.Vlc.LogVerbosity controls VLC verbosity (0-2, default 1).
+.OUTPUTS
+  string[] of VLC logging arguments, or an empty array when no log path is configured.
+#>
+function Get-VlcFileLoggingArgs {
+    param(
+        [Parameter(Mandatory)][psobject]$Context
+    )
+
+    if (-not $Context -or [string]::IsNullOrWhiteSpace([string]$Context.VlcLogPath)) {
+        return @()
+    }
+
+    $verbosity = 1
+    if ($Context.Config -and $Context.Config.Vlc -and $null -ne $Context.Config.Vlc.LogVerbosity) {
+        try { $verbosity = [int]$Context.Config.Vlc.LogVerbosity } catch { $verbosity = 1 }
+    }
+    $verbosity = [Math]::Min(2, [Math]::Max(0, $verbosity))
+
+    $loggingArgs = @('--file-logging', '--logfile', [string]$Context.VlcLogPath, '--verbose', "$verbosity")
+    if ($verbosity -eq 0) { $loggingArgs += '--quiet' }
+    return $loggingArgs
+}
+
+<#
+.SYNOPSIS
   Validate required configuration keys on the run context.
 .DESCRIPTION
   Ensures Context.Config and core timing knobs exist and are sane before using them.
@@ -174,8 +207,8 @@ function Test-VideoConfig {
 .SYNOPSIS
   Start a VLC process with the provided arguments and basic startup validation.
 .DESCRIPTION
-  Launches VLC headlessly with stdout/stderr redirected. Collects early output
-  for diagnostics and respects a startup timeout watchdog.
+  Launches VLC headlessly without redirecting stdout/stderr. VLC diagnostics
+  are written to the configured sidecar logfile for startup-failure diagnostics.
 .PARAMETER Context
   Run context object; expected to contain Config timing knobs.
 .PARAMETER Arguments
@@ -194,20 +227,20 @@ function Start-VlcProcess {
     )
     $psi = [Diagnostics.ProcessStartInfo]::new()
     $psi.FileName = if (-not [string]::IsNullOrWhiteSpace($VlcExe)) { $VlcExe } else { 'vlc.exe' }
+    $effectiveArguments = @($Arguments) + (Get-VlcFileLoggingArgs -Context $Context)
     # Prefer .Arguments string for WinPS 5.1 compatibility (ArgumentList may be unavailable)
-    $quotedArgs = $Arguments | ForEach-Object { '"{0}"' -f ($_.Replace('"', '""')) }
+    $quotedArgs = $effectiveArguments | ForEach-Object { '"{0}"' -f ($_.Replace('"', '""')) }
     $psi.Arguments = [string]::Join(' ', $quotedArgs)
     $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
+    $psi.RedirectStandardOutput = $false
+    $psi.RedirectStandardError = $false
     $psi.CreateNoWindow = $true
 
     $p = [Diagnostics.Process]::new()
     $p.StartInfo = $psi
-    # IMPORTANT (Robustness): Do not attach ScriptBlock event handlers for stdout/stderr.
-    # They execute on ThreadPool threads without a PowerShell runspace and will crash with:
-    # "There is no Runspace available to run scripts in this thread."
-    # We still redirect streams, but avoid async handlers; on startup failure we read stderr synchronously.
+    # IMPORTANT (Robustness): Do not attach ScriptBlock event handlers or redirect stdout/stderr.
+    # VLC writes diagnostics to a sidecar logfile instead, avoiding finite OS pipe-buffer deadlocks
+    # and the ThreadPool runspace crash caused by PowerShell stream handlers.
     $null = ($p.EnableRaisingEvents = $true)
     Write-Debug ("TRACE Start-VlcProcess: EnableRaisingEvents={0}" -f $p.EnableRaisingEvents)
 
@@ -225,12 +258,16 @@ function Start-VlcProcess {
         Start-Sleep -Milliseconds $Context.Config.PollIntervalMs
     }
     if ($p.HasExited -and $p.ExitCode -ne 0) {
-        # Safe: streams are closed after process exit; read synchronously for diagnostics.
-        $stderrText = ''
-        try { $stderrText = $p.StandardError.ReadToEnd() } catch {
-            # Stream may already be disposed or not available
+        $logText = ''
+        if (-not [string]::IsNullOrWhiteSpace([string]$Context.VlcLogPath) -and (Test-Path -LiteralPath $Context.VlcLogPath -PathType Leaf)) {
+            try { $logText = Get-Content -LiteralPath $Context.VlcLogPath -Raw -ErrorAction Stop } catch {
+                $logText = "<unable to read VLC logfile: $($_.Exception.Message)>"
+            }
         }
-        throw ("VLC startup failed (ExitCode={0}). stderr: {1}" -f $p.ExitCode, ($stderrText ?? ''))
+        if ([string]::IsNullOrWhiteSpace($logText)) {
+            $logText = '<VLC logfile empty or unavailable; stdout/stderr pipes are not redirected>'
+        }
+        throw ("VLC startup failed (ExitCode={0}). VLC log: {1}" -f $p.ExitCode, $logText)
     }
     Write-Debug ("TRACE Start-VlcProcess: leaving; returning Process Id={0}" -f $p.Id)
     return $p

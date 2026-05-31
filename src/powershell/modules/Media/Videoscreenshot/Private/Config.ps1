@@ -103,6 +103,27 @@ function Get-DefaultConfig {
         GdiCaptureDefaultSeconds        = 10
 
         # =========================
+        # VLC process logging
+        # =========================
+
+        Vlc                             = @{
+            # VLC writes its own diagnostics to a sidecar file instead of this
+            # module redirecting stdout/stderr pipes. Keep the default modest to
+            # avoid large logs during batch runs. Valid range: 0-2 (0 also adds
+            # --quiet; 1 is VLC's normal warning/info balance; 2 is verbose).
+            LogVerbosity = 1
+
+            Scene        = @{
+                Format   = 'png'
+                BaseArgs = @('--intf', 'dummy', '--video-filter=scene')
+            }
+
+            Gdi          = @{
+                Args = @('--qt-minimal-view')
+            }
+        }
+
+        # =========================
         # Python / Cropper preflight
         # =========================
 
