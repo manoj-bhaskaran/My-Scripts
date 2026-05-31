@@ -154,7 +154,7 @@ Start-VideoBatch `
 ```
 * -IncludeExtensions overrides the discovery set (defaults come from module config).
 * -VerifyVideos attempts a lightweight, bounded `Test-VideoPlayable` check before the main VLC session. `-PreflightProbe` and `-SkipUnplayable` are aliases for the same switch.
-* If the probe returns false or times out, the video is logged as `Skipped`/`NotPlayable` in the processed log and skipped on later resume runs.
+* If the probe returns false or times out, the video is logged as `Skipped`/`NotPlayable` in the processed log and skipped on later resume runs. Probe errors are logged as `Skipped`/`VideoProbeError` and retried on resume.
 * `-VideoProbeTimeoutSeconds` controls the force-kill deadline for the probe; omit it to use `VideoProbeTimeoutSeconds` from module config.
 
 #### What the cropper flags do
@@ -175,7 +175,7 @@ The module tracks which videos have been handled so future runs can skip work.
   Each line is `<FullPath>\t<Status>[\t<Reason>]`:
   ```
   C:\path\to\video1.mp4\tProcessed
-  C:\path\to\video2.mp4\tSkipped\tnot playable
+  C:\path\to\video2.mp4\tSkipped\tNotPlayable
   ```
 
 * **Legacy (single-column)**
@@ -191,7 +191,10 @@ The module tracks which videos have been handled so future runs can skip work.
 **Behavior**
 - Entries are normalized to absolute provider paths at import time.
 - On Windows, matching is case-insensitive to minimize false mismatches.
-- Mixing TSV and legacy lines in the same file is supported; new writes use TSV.
+- Resume parsing is status-aware for TSV rows: successful `Processed` rows are skipped, except `Processed`/`NoFrames`, which is retried for compatibility with older logs.
+- `Skipped`/`NotPlayable` rows remain skipped because they represent deliberate pre-flight exclusions; `Failed`, `TimedOutProcessed`, and `Skipped`/`VideoProbeError` rows are retried automatically on the next run.
+- New zero-frame captures are written as `Failed`/`NoFrames` so the log accurately marks them as incomplete and retry-eligible.
+- Mixing TSV and legacy lines in the same file is supported; legacy single-column rows are treated as successful `Processed` rows and skipped as before; new writes use TSV.
 
 **Legacy wrapper (decommissioned)**
 The legacy `src\powershell\videoscreenshot.ps1` wrapper (now `Show-VideoscreenshotDeprecation.ps1`) has been **removed**.

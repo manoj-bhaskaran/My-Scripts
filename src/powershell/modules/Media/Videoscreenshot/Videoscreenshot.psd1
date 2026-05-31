@@ -1,6 +1,6 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '3.2.1'
+  ModuleVersion     = '3.2.2'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
@@ -14,7 +14,7 @@
   PrivateData       = @{
     PSData = @{
       Tags         = @('video','vlc','gdi','screenshots','crop','python','images','automation')
-      ReleaseNotes = '3.2.1: VLC capture now logs diagnostics to a .vlc_log_<RunGuid>.txt sidecar instead of redirecting stdout/stderr pipes, preventing pipe-buffer deadlocks while preserving startup-failure diagnostics.'
+      ReleaseNotes = '3.2.2: Resume processing now honors processed-log Status/Reason values so Failed, TimedOutProcessed, VideoProbeError, and NoFrames rows are retried while successful Processed and Skipped/NotPlayable rows remain skipped.'
     }
   }
 }

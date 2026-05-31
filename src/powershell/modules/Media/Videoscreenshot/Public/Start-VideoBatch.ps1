@@ -477,14 +477,14 @@ function Start-VideoBatch {
 
         # Determine status and log the video as processed
         if ($processingFailed) {
-            # Even if processing failed, log it to avoid reprocessing
+            # Failed rows remain retry-eligible on subsequent resume runs.
             $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Failed' -Reason $processingError
-            Write-Message -Level Warn -Message ("Video marked as failed (will not retry): {0}" -f $video.FullName)
+            Write-Message -Level Warn -Message ("Video marked as failed (eligible for retry on resume): {0}" -f $video.FullName)
         }
         elseif ($framesDelta -le 0) {
             Write-Message -Level Warn -Message ("No frames produced for: {0}" -f $video.FullName)
-            # Still log it to avoid reprocessing the same video
-            $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Processed' -Reason 'NoFrames'
+            # Log zero-frame captures as failed so resume runs can retry them.
+            $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Failed' -Reason 'NoFrames'
         }
         else {
             if ($null -ne $achievedFps) {

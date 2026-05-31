@@ -17,6 +17,30 @@ function Resolve-VideoPath {
     return $full
 }
 
+function Test-ProcessedLogEntryShouldSkip {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Status,
+        [string]$Reason = '',
+        [switch]$LegacyEntry
+    )
+
+    if ($LegacyEntry) { return $true }
+
+    $normalizedStatus = $Status.Trim()
+    $normalizedReason = ($Reason ?? '').Trim()
+
+    if ($normalizedStatus.Equals('Processed', [StringComparison]::OrdinalIgnoreCase)) {
+        return (-not $normalizedReason.Equals('NoFrames', [StringComparison]::OrdinalIgnoreCase))
+    }
+
+    if ($normalizedStatus.Equals('Skipped', [StringComparison]::OrdinalIgnoreCase)) {
+        return $normalizedReason.Equals('NotPlayable', [StringComparison]::OrdinalIgnoreCase)
+    }
+
+    return $false
+}
+
 <#
 .SYNOPSIS
   Build a normalized set of already-processed video paths.
@@ -24,8 +48,14 @@ function Resolve-VideoPath {
   Reads a processed log and returns a HashSet[string] of normalized absolute paths.
   Supports both the current TSV format (`<FullPath>`<tab>`<Status>`<tab>`<Reason>`<tab>`<Timestamp>`)
   and the **legacy format** that contains one `<FullPath>` per line. Blank lines and
-  comment lines (starting with '#') are ignored. Status values in TSV are
-  currently informational; presence of the path implies "already processed".
+  comment lines (starting with '#') are ignored.
+
+  TSV rows are status-aware: only successful `Processed` rows, excluding
+  `Processed`/`NoFrames`, and deliberate `Skipped`/`NotPlayable` rows are added to
+  the resume skip set. Retry-eligible rows such as `Failed`, `TimedOutProcessed`,
+  `Processed`/`NoFrames`, and `Skipped`/`VideoProbeError` are not skipped. Legacy
+  single-column rows are treated as successful `Processed` entries for backward
+  compatibility.
 .PARAMETER Path
   Path to the processed log. The file may be missing (returns an empty set).
 .OUTPUTS
@@ -46,17 +76,22 @@ function Get-ResumeIndex {
             if ($line.StartsWith('#')) { return }
 
             $rawPath = $null
+            $shouldSkip = $false
             if ($line -like "*`t*") {
                 # TSV (current) format: <FullPath>\t<Status>\t<Reason>\t<Timestamp>
-                # Path is always in the first column
-                $rawPath = ($line.Split("`t"))[0]
+                $columns = $line.Split("`t")
+                $rawPath = $columns[0]
+                $status = if ($columns.Count -ge 2) { $columns[1] } else { '' }
+                $reason = if ($columns.Count -ge 3) { $columns[2] } else { '' }
+                $shouldSkip = Test-ProcessedLogEntryShouldSkip -Status $status -Reason $reason
             }
             else {
-                # Legacy format: a single path per line
+                # Legacy format: a single path per line; keep old skip behavior.
                 $rawPath = $line
+                $shouldSkip = Test-ProcessedLogEntryShouldSkip -Status 'Processed' -LegacyEntry
             }
 
-            if (-not [string]::IsNullOrWhiteSpace($rawPath)) {
+            if ($shouldSkip -and -not [string]::IsNullOrWhiteSpace($rawPath)) {
                 try {
                     $full = Resolve-VideoPath -Path $rawPath
                 }
