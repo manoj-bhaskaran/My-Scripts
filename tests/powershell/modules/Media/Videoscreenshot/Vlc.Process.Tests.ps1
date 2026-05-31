@@ -31,7 +31,10 @@ BeforeAll {
 
         [pscustomobject]@{
             FilePath    = $path
-            Arguments   = @()
+            # Start-VlcProcess requires a non-empty argument array; the fake
+            # native command intentionally ignores this placeholder and any
+            # appended VLC logging flags.
+            Arguments   = @('--ignored-test-arg')
             CleanupPath = $dir
         }
     }
