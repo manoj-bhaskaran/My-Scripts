@@ -42,8 +42,15 @@ function Get-DefaultConfig {
 
         # Maximum seconds to wait for the optional Test-VideoPlayable pre-flight
         # VLC probe. If the probe does not exit in this window, it is force-killed
-        # and the video is treated as not playable. Typical range: 3–15 s.
-        VideoProbeTimeoutSeconds        = 5
+        # and the video is treated as not playable. Raised to 10 s (from 5) to give
+        # slow-starting codecs (e.g. AV1/VP9) headroom once the pipe-buffer deadlock
+        # is gone and the timeout is the real bound. Typical range: 5–30 s.
+        VideoProbeTimeoutSeconds        = 10
+
+        # VLC verbosity for the Test-VideoPlayable probe sidecar logfile (0–2).
+        # Forwarded to Test-VideoPlayable as -LogVerbosity; 0 also adds --quiet.
+        # Increase to 2 when diagnosing false NotPlayable reports. Default 1 (normal).
+        VideoProbeLogVerbosity          = 1
 
         # Last-resort cap (seconds) used when no explicit per-video limit is given
         # AND duration detection fails. When duration is detectable, Start-VideoBatch
