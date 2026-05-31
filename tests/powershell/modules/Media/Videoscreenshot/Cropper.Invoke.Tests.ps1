@@ -40,26 +40,19 @@ pwsh -NoLogo -NoProfile -File "$fakePowerShell" %*
         }
         else {
             $script:FakePython = Join-Path $script:TempRoot 'fake-python'
-            @"
-#!/usr/bin/env bash
-set -euo pipefail
-python3 - "`$@" <<'PY'
-import json
-import os
-import sys
-from pathlib import Path
-
-log_path = Path(os.environ['FAKE_PYTHON_LOG'])
-record = {
-    'args': sys.argv[1:],
-    'pythonpath': os.environ.get('PYTHONPATH', ''),
-    'cwd': os.getcwd(),
+            $fakePythonContent = @'
+#!/usr/bin/env pwsh
+param([Parameter(ValueFromRemainingArguments = $true)][string[]]$PythonArgs)
+$record = [pscustomobject]@{
+    args = $PythonArgs
+    pythonpath = [Environment]::GetEnvironmentVariable('PYTHONPATH')
+    cwd = (Get-Location).Path
 }
-with log_path.open('a', encoding='utf-8') as handle:
-    handle.write(json.dumps(record) + '\n')
-sys.exit(0)
-PY
-"@ | Set-Content -LiteralPath $script:FakePython -NoNewline
+$record | ConvertTo-Json -Compress | Add-Content -LiteralPath $env:FAKE_PYTHON_LOG
+exit 0
+'@
+            $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+            [System.IO.File]::WriteAllText($script:FakePython, $fakePythonContent.Replace("`r`n", "`n"), $utf8NoBom)
             chmod +x $script:FakePython
         }
     }
