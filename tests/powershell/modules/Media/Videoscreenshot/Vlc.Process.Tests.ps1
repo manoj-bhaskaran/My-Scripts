@@ -64,19 +64,19 @@ Describe 'Get-VlcFileLoggingArgs' {
         $logPath = Join-Path ([System.IO.Path]::GetTempPath()) 'vlc-sidecar-test.txt'
         $context = Script:New-TestContext -VlcLogPath $logPath -LogVerbosity 2
 
-        $args = Get-VlcFileLoggingArgs -Context $context
+        $loggingArgs = Get-VlcFileLoggingArgs -Context $context
 
-        $args | Should -Be @('--file-logging', '--logfile', $logPath, '--verbose', '2')
+        $loggingArgs | Should -Be @('--file-logging', '--logfile', $logPath, '--verbose', '2')
     }
 
     It 'adds --quiet when verbosity is zero' {
         $context = Script:New-TestContext -LogVerbosity 0
 
-        $args = Get-VlcFileLoggingArgs -Context $context
+        $loggingArgs = Get-VlcFileLoggingArgs -Context $context
 
-        $args | Should -Contain '--quiet'
-        $args | Should -Contain '--verbose'
-        $args | Should -Contain '0'
+        $loggingArgs | Should -Contain '--quiet'
+        $loggingArgs | Should -Contain '--verbose'
+        $loggingArgs | Should -Contain '0'
     }
 }
 

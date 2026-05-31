@@ -175,9 +175,9 @@ function Get-VlcFileLoggingArgs {
     }
     $verbosity = [Math]::Min(2, [Math]::Max(0, $verbosity))
 
-    $args = @('--file-logging', '--logfile', [string]$Context.VlcLogPath, '--verbose', "$verbosity")
-    if ($verbosity -eq 0) { $args += '--quiet' }
-    return $args
+    $loggingArgs = @('--file-logging', '--logfile', [string]$Context.VlcLogPath, '--verbose', "$verbosity")
+    if ($verbosity -eq 0) { $loggingArgs += '--quiet' }
+    return $loggingArgs
 }
 
 <#
