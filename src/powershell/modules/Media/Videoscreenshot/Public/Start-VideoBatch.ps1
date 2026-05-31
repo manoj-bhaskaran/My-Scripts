@@ -500,11 +500,18 @@ function Start-VideoBatch {
         }
 
         # Final disk count — always recompute for accuracy; when de-dup ran, use the
-        # actual post-dedup count (which may be lower than the stats-derived estimate).
+        # post-dedup count only when it is positive (new unique frames were added).
+        # When the delta is 0 or negative — e.g. VLC overwrote pre-existing files with
+        # the same names rather than appending new ones, so the file count did not rise —
+        # fall back to the stats-derived $framesDelta so valid captures are not falsely
+        # flagged as NoFrames.
         $actualPostCount = (Get-ChildItem -Path $SaveFolder -Filter "${scenePrefix}*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
         $actualFramesDelta = [int]($actualPostCount - $preCount)
         if ($null -ne $dedupStats) {
-            $framesDelta = $actualFramesDelta
+            if ($actualFramesDelta -gt 0) {
+                $framesDelta = $actualFramesDelta
+            }
+            # else: overwrite case or de-dup removed below preCount — keep stats-derived value
         }
         elseif ($actualFramesDelta -gt $framesDelta) {
             Write-Debug ("Stats reported {0} frames but disk shows {1} frames; using actual count" -f $framesDelta, $actualFramesDelta)
