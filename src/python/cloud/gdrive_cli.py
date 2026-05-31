@@ -9,7 +9,6 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Tuple
 
 from dateutil import parser as date_parser
 
@@ -49,7 +48,7 @@ from gdrive_state import StateScopeMismatchError
 __version__ = VERSION
 
 logger = logging.getLogger(__name__)
-logger.script_name = __name__
+setattr(logger, "script_name", __name__)
 
 
 def create_parser():
@@ -322,7 +321,7 @@ def _set_mode(args) -> None:
     args.mode = mode_map.get(args.command)
 
 
-def _validate_concurrency_arg(args, console: ConsoleHelper) -> Tuple[bool, int]:
+def _validate_concurrency_arg(args, console: ConsoleHelper) -> tuple[bool, int]:
     try:
         cpu = os.cpu_count() or 1
     except Exception:
@@ -339,22 +338,17 @@ def _validate_concurrency_arg(args, console: ConsoleHelper) -> Tuple[bool, int]:
     return True, 0
 
 
-def _validate_download_dir_arg(args) -> Tuple[bool, int]:
+def _validate_download_dir_arg(args) -> tuple[bool, int]:
     if getattr(args, "mode", None) != "recover_and_download":
         return True, 0
-    try:
-        p = Path(args.download_dir)
-        if p.exists() and not p.is_dir():
-            print(f"ERROR --download-dir points to a file: {p}", file=sys.stderr)
-            return False, 2
-        ensure_directory(p)
-        if not is_writable(p):
-            print(f"ERROR --download-dir is not writable: {p}", file=sys.stderr)
-            return False, 2
-        return True, 0
-    except Exception as e:
-        print(f"ERROR --download-dir is not writable or cannot be created: {e}", file=sys.stderr)
+    p = Path(args.download_dir)
+    if p.exists() and not p.is_dir():
+        print(f"ERROR --download-dir points to a file: {p}", file=sys.stderr)
         return False, 2
+    if not is_writable(p):
+        print(f"ERROR --download-dir is not writable or cannot be created: {p}", file=sys.stderr)
+        return False, 2
+    return True, 0
 
 
 def _apply_timestamped_output(args) -> None:
@@ -385,7 +379,7 @@ def _apply_timestamped_output(args) -> None:
     args.failed_file = _stamp(getattr(args, "failed_file", "") or "")
 
 
-def _validate_failed_file_arg(args) -> Tuple[bool, int]:
+def _validate_failed_file_arg(args) -> tuple[bool, int]:
     path_str = getattr(args, "failed_file", None) or ""
     if not path_str:
         return True, 0
@@ -401,7 +395,7 @@ def _validate_failed_file_arg(args) -> Tuple[bool, int]:
         return False, 2
 
 
-def _validate_retry_failed_file_arg(args) -> Tuple[bool, int]:
+def _validate_retry_failed_file_arg(args) -> tuple[bool, int]:
     """Validate --retry-failed-file and check it is not combined with conflicting flags."""
     path_str = getattr(args, "retry_failed_file", None) or ""
     if not path_str:
@@ -446,13 +440,13 @@ def _validate_retry_failed_file_arg(args) -> Tuple[bool, int]:
 def _load_retry_failed_file(
     path_str: str,
     console: ConsoleHelper,
-) -> Tuple[bool, int, Dict[str, str]]:
+) -> tuple[bool, int, dict[str, str]]:
     """Read a failed-items CSV and return (ok, exit_code, {file_id: target_path}).
 
     Expected columns: source_folder_id, file_id, target_path
     The header row is skipped automatically.
     """
-    target_path_overrides: Dict[str, str] = {}
+    target_path_overrides: dict[str, str] = {}
     try:
         with open(path_str, newline="", encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
@@ -473,7 +467,7 @@ def _load_retry_failed_file(
     return True, 0, target_path_overrides
 
 
-def _validate_after_date_arg(args) -> Tuple[bool, int]:
+def _validate_after_date_arg(args) -> tuple[bool, int]:
     if not getattr(args, "after_date", None):
         return True, 0
     try:
@@ -488,10 +482,10 @@ def _validate_after_date_arg(args) -> Tuple[bool, int]:
 
 
 def _run_tool(tool: "DriveTrashRecoveryTool", args) -> bool:
-    return tool.dry_run() if args.mode == "dry_run" else tool.execute_recovery()
+    return bool(tool.dry_run() if args.mode == "dry_run" else tool.execute_recovery())
 
 
-def _normalize_and_validate_policy(args, console: ConsoleHelper) -> Tuple[bool, int]:
+def _normalize_and_validate_policy(args, console: ConsoleHelper) -> tuple[bool, int]:
     """Normalize and validate post-restore policy, print errors/warnings, update args."""
     strict_env = os.getenv("GDRT_STRICT_POLICY", "").strip().lower()
     strict_from_env = strict_env in ("1", "true", "yes", "on")
@@ -522,7 +516,7 @@ def _normalize_and_validate_policy(args, console: ConsoleHelper) -> Tuple[bool, 
     return True, 0
 
 
-def _normalize_and_validate_extensions(args, console: ConsoleHelper) -> Tuple[bool, int]:
+def _normalize_and_validate_extensions(args, console: ConsoleHelper) -> tuple[bool, int]:
     cleaned_exts, ext_warnings, ext_errors = validate_extensions(
         getattr(args, "extensions", None),
         EXTENSION_MIME_TYPES,
@@ -539,7 +533,7 @@ def _normalize_and_validate_extensions(args, console: ConsoleHelper) -> Tuple[bo
     return True, 0
 
 
-def _validate_folder_id_args(args, console: ConsoleHelper) -> Tuple[bool, int]:
+def _validate_folder_id_args(args, console: ConsoleHelper) -> tuple[bool, int]:
     """Reject flag combinations that are incompatible with --folder-id."""
     if not getattr(args, "folder_id", None):
         return True, 0
@@ -565,7 +559,7 @@ def _validate_folder_id_args(args, console: ConsoleHelper) -> Tuple[bool, int]:
     return True, 0
 
 
-def _apply_retry_failed_file(args, console: ConsoleHelper) -> Tuple[bool, int]:
+def _apply_retry_failed_file(args, console: ConsoleHelper) -> tuple[bool, int]:
     """Load the retry CSV and wire up args for a retry run.
 
     When --retry-failed-file is absent, sets safe defaults and returns True.
@@ -596,7 +590,7 @@ def _apply_retry_failed_file(args, console: ConsoleHelper) -> Tuple[bool, int]:
     return True, 0
 
 
-def _validate_file_ids_if_present(tool, args) -> Tuple[bool, int]:
+def _validate_file_ids_if_present(tool, args) -> tuple[bool, int]:
     # Skip trash-specific prefetch validation when retrying from a failed-file CSV;
     # those IDs are already live (not in trash) so the non-trashed filter would drop them.
     if getattr(args, "_retry_mode", False):
@@ -696,7 +690,7 @@ def main() -> int:
 
     ok, code = _acquire_or_bypass_lock(tool, args, console)
     if not ok:
-        return code
+        return int(code)
 
     ok, code = _validate_file_ids_if_present(tool, args)
     if not ok:

@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.31.1] - 2026-05-31
+
+### Changed
+
+- `gdrive_cli.py`: simplified `recover-and-download --download-dir` validation so `modules.utils.file_operations.is_writable()` owns directory creation and write probing, while preserving the explicit existing-file guard and user-facing error messages (issue #1139).
+- `gdrive_cli.py`: replaced remaining `typing.Dict`/`typing.Tuple` annotations with Python 3.10+ built-in `dict[...]`/`tuple[...]` generics and removed the now-unused `typing` import (issue #1139).
+
+### Tests
+
+- Updated `gdrive_cli` download-directory validation coverage to assert failed create/write checks are delegated through `is_writable()`.
+
 ## [1.31.0] - 2026-05-31
 
 ### Changed
