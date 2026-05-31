@@ -74,7 +74,7 @@ function Import-RandomNameProvider {
     if ($ModulePath) {
         try {
             $resolved = Resolve-Path -LiteralPath $ModulePath -ErrorAction Stop
-            Import-Module -Name $resolved.Path -Force -ErrorAction Stop
+            Import-Module -Name $resolved.Path -Force -Global -ErrorAction Stop
             Write-RandomNameProviderLog -Level Info -Message "Imported RandomName module from '$($resolved.Path)'."
             return
         } catch {
@@ -94,7 +94,7 @@ function Import-RandomNameProvider {
         foreach ($candidate in $scriptRootCandidates) {
             if (Test-Path -LiteralPath $candidate) {
                 try {
-                    Import-Module -Name $candidate -Force -ErrorAction Stop
+                    Import-Module -Name $candidate -Force -Global -ErrorAction Stop
                     Write-RandomNameProviderLog -Level Info -Message "Imported RandomName module from script-root '$candidate'."
                     return
                 } catch {
@@ -105,7 +105,7 @@ function Import-RandomNameProvider {
     }
 
     try {
-        Import-Module -Name RandomName -ErrorAction Stop
+        Import-Module -Name RandomName -Force -Global -ErrorAction Stop
         Write-RandomNameProviderLog -Level Info -Message 'Imported RandomName module from PSModulePath.'
         return
     } catch {
