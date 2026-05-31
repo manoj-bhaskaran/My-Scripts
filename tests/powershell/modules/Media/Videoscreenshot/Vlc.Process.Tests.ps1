@@ -11,10 +11,30 @@ BeforeAll {
 
     . $script:VlcProcessPath
 
-    $pwsh = Get-Command -Name 'pwsh' -ErrorAction SilentlyContinue
-    if (-not $pwsh) { $pwsh = Get-Command -Name 'powershell' -ErrorAction SilentlyContinue }
-    if (-not $pwsh) { throw 'No PowerShell executable found; cannot run process tests.' }
-    $script:PwshExe = $pwsh.Source
+    function Script:New-NativeExitCommand {
+        param(
+            [Parameter(Mandatory)][int]$ExitCode
+        )
+
+        $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("vlc-process-test-{0}" -f [System.Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+
+        if ($env:OS -eq 'Windows_NT') {
+            $path = Join-Path $dir 'fake-vlc.cmd'
+            [System.IO.File]::WriteAllText($path, ("@echo off`r`nexit /b {0}`r`n" -f $ExitCode))
+        }
+        else {
+            $path = Join-Path $dir 'fake-vlc'
+            [System.IO.File]::WriteAllText($path, ("#!/bin/sh`nexit {0}`n" -f $ExitCode))
+            chmod +x $path
+        }
+
+        [pscustomobject]@{
+            FilePath    = $path
+            Arguments   = @()
+            CleanupPath = $dir
+        }
+    }
 
     function Script:New-TestContext {
         param(
@@ -60,7 +80,8 @@ Describe 'Get-VlcFileLoggingArgs' {
 Describe 'Start-VlcProcess' {
     It 'does not redirect stdout or stderr and appends VLC file logging arguments' {
         $context = Script:New-TestContext
-        $process = Start-VlcProcess -Context $context -Arguments @('-NoProfile', '-Command', 'exit 0') -StartupTimeoutSeconds 1 -VlcExe $script:PwshExe
+        $fakeVlc = Script:New-NativeExitCommand -ExitCode 0
+        $process = Start-VlcProcess -Context $context -Arguments $fakeVlc.Arguments -StartupTimeoutSeconds 1 -VlcExe $fakeVlc.FilePath
 
         try {
             $process.StartInfo.RedirectStandardOutput | Should -BeFalse
@@ -75,16 +96,19 @@ Describe 'Start-VlcProcess' {
                 Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
             }
             Remove-Item -LiteralPath $context.VlcLogPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $fakeVlc.CleanupPath -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
     It 'uses the VLC logfile text in startup failure diagnostics' {
         $context = Script:New-TestContext
+        $fakeVlc = Script:New-NativeExitCommand -ExitCode 9
         Set-Content -LiteralPath $context.VlcLogPath -Value 'decoder exploded before startup' -NoNewline
 
-        { Start-VlcProcess -Context $context -Arguments @('-NoProfile', '-Command', 'exit 9') -StartupTimeoutSeconds 1 -VlcExe $script:PwshExe } |
+        { Start-VlcProcess -Context $context -Arguments $fakeVlc.Arguments -StartupTimeoutSeconds 1 -VlcExe $fakeVlc.FilePath } |
             Should -Throw -ExpectedMessage '*decoder exploded before startup*'
 
         Remove-Item -LiteralPath $context.VlcLogPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $fakeVlc.CleanupPath -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
