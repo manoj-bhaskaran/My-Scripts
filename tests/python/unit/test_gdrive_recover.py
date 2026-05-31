@@ -301,10 +301,10 @@ def test_validate_file_ids_delegates_to_discovery(tmp_path, monkeypatch):
     from gdrive_recover import DriveTrashRecoveryTool
 
     tool = DriveTrashRecoveryTool(_build_dummy_args(tmp_path))
-    tool.discovery._validate_file_ids = MagicMock(return_value=True)
+    tool.discovery.validate_file_ids = MagicMock(return_value=True)
 
-    assert tool.discovery._validate_file_ids() is True
-    tool.discovery._validate_file_ids.assert_called_once_with()
+    assert tool.discovery.validate_file_ids() is True
+    tool.discovery.validate_file_ids.assert_called_once_with()
 
 
 def test_prepare_recovery_overwrite_alone_does_not_clear_state(tmp_path, monkeypatch, capsys):

@@ -213,5 +213,5 @@ def test_validate_file_ids_clear_cache_warns(monkeypatch):
 
     discovery._console.print_warn = MagicMock()
 
-    assert discovery._validate_file_ids() is True
+    assert discovery.validate_file_ids() is True
     discovery._console.print_warn.assert_called_once()

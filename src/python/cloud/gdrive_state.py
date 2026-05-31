@@ -509,3 +509,16 @@ class RecoveryStateManager:
                 return False
         except Exception:
             return False
+
+    # ---------------------------------------------------------------------------
+    # Public API — stable surface for external consumers (e.g. gdrive_cli.py)
+    # ---------------------------------------------------------------------------
+
+    def acquire_state_lock(self) -> bool:
+        return self._acquire_state_lock()
+
+    def release_state_lock(self) -> None:
+        self._release_state_lock()
+
+    def pid_is_alive(self, pid: int) -> bool:
+        return self._pid_is_alive(pid)

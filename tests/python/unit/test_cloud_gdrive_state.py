@@ -53,7 +53,7 @@ def test_pid_is_alive_uses_posix_kill(monkeypatch, tmp_path, side_effect, expect
     monkeypatch.setattr(gdrive_state.os, "name", "posix", raising=False)
     monkeypatch.setattr(gdrive_state.os, "kill", fake_kill)
 
-    assert manager._pid_is_alive(1234) is expected
+    assert manager.pid_is_alive(1234) is expected
     assert calls == [(1234, 0)]
 
 
