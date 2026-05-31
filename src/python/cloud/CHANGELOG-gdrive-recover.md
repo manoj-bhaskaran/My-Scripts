@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `gdrive_recover.py`: `_setup_logging` now configures console and optional `--log-file` output through the shared `python_logging_framework` instead of constructing local root handlers inline.
-- `python_logging_framework.py`: `initialise_logger` accepts explicit file paths, separate console/file levels, optional default file creation, and root-handler configuration so scripts with existing CLI logging contracts can reuse the shared framework.
+- `python_logging_framework.py`: `initialise_logger` accepts explicit file paths, separate console/file levels, optional default file creation, and root-handler configuration so scripts with existing CLI logging contracts can reuse the shared framework without weakening preconfigured host root-log levels.
 
 ### Tests
 

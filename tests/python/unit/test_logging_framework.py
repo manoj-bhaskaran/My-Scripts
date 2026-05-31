@@ -262,6 +262,51 @@ class TestLoggerNameAndCustomDir:
             root.handlers.extend(original_handlers)
             root.setLevel(original_level)
 
+    def test_configure_root_preserves_preconfigured_root_logger(self, tmp_path):
+        """Test configure_root does not weaken host-provided root logging filters."""
+        root = logging.getLogger()
+        original_handlers = root.handlers[:]
+        original_level = root.level
+        root.handlers.clear()
+
+        class CapturingHandler(logging.Handler):
+            def __init__(self):
+                super().__init__()
+                self.records = []
+
+            def emit(self, record):
+                self.records.append(record)
+
+        handler = CapturingHandler()
+        handler.setLevel(logging.NOTSET)
+        root.addHandler(handler)
+        root.setLevel(logging.WARNING)
+
+        try:
+            logger = initialise_logger(
+                "preconfigured_child",
+                log_level=logging.DEBUG,
+                console_level=logging.WARNING,
+                log_file_path=tmp_path / "should-not-be-created.log",
+                create_default_file=False,
+                configure_root=True,
+            )
+
+            assert root.level == logging.WARNING
+            assert root.handlers == [handler]
+
+            logger.debug("suppressed debug")
+            logger.warning("visible warning")
+
+            assert [record.getMessage() for record in handler.records] == ["visible warning"]
+            assert not (tmp_path / "should-not-be-created.log").exists()
+        finally:
+            for existing_handler in list(root.handlers):
+                existing_handler.close()
+                root.removeHandler(existing_handler)
+            root.handlers.extend(original_handlers)
+            root.setLevel(original_level)
+
 
 class TestLoggingHelpers:
     """Tests for logging helper functions."""
