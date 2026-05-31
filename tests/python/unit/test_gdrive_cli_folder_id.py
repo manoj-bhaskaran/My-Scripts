@@ -165,15 +165,18 @@ def test_validate_download_dir_arg_rejects_non_writable_directory(tmp_path, monk
     assert not ok and code == 2
 
 
-def test_validate_download_dir_arg_handles_ensure_directory_failure(tmp_path, monkeypatch):
+def test_validate_download_dir_arg_delegates_create_failures_to_is_writable(tmp_path, monkeypatch):
     dir_path = tmp_path / "out"
+    seen_paths = []
 
-    def _boom(_p):
-        raise IOError("cannot create")
+    def _not_writable(p):
+        seen_paths.append(p)
+        return False
 
-    monkeypatch.setattr("gdrive_cli.ensure_directory", _boom)
+    monkeypatch.setattr("gdrive_cli.is_writable", _not_writable)
     ok, code = _validate_download_dir_arg(_args(download_dir=str(dir_path)))
     assert not ok and code == 2
+    assert seen_paths == [dir_path]
 
 
 # ---------------------------------------------------------------------------
