@@ -19,6 +19,7 @@
   [hashtable] with well-known keys:
     - Timing: PollIntervalMs, VideoProbeTimeoutSeconds,
               SnapshotFallbackTimeoutSeconds, SnapshotDurationGraceSeconds,
+              SnapshotDurationSlackFactor, SnapshotMinimumTimeoutSeconds,
               SnapshotTerminationExtraSeconds, StopVlcWaitMs, WaitProcessTimeoutSeconds
     - Discovery: VideoExtensions
     - GDI: GdiCaptureDefaultSeconds
@@ -46,15 +47,26 @@ function Get-DefaultConfig {
 
         # Last-resort cap (seconds) used when no explicit per-video limit is given
         # AND duration detection fails. When duration is detectable, Start-VideoBatch
-        # computes cap = video_duration + SnapshotDurationGraceSeconds instead.
+        # computes a generous safety-net cap from duration, slack, floor, and grace.
         # Typical range: 60–600 s depending on expected clip durations.
         SnapshotFallbackTimeoutSeconds  = 300
 
-        # Grace margin (seconds) added to a probed video duration to form the
-        # per-video snapshot cap: cap = duration + SnapshotDurationGraceSeconds.
+        # Multiplier applied to probed video duration when computing the VLC
+        # snapshot safety-net cap. This makes --play-and-exit the normal completion
+        # signal while absorbing slow decode and under-reported metadata.
+        # Typical range: 1.5–3.0.
+        SnapshotDurationSlackFactor     = 2.0
+
+        # Minimum safety-net cap (seconds) for duration-probed VLC snapshot runs.
+        # The floor does not delay healthy short clips because polling exits when
+        # VLC self-exits; it only bounds genuinely stuck sessions.
+        # Typical range: 60–300 s.
+        SnapshotMinimumTimeoutSeconds   = 120
+
+        # Grace margin (seconds) added after the duration-derived slack/floor cap.
         # Accounts for VLC startup, buffering, and slow-flush at end of playback.
-        # Typical range: 15–60 s.
-        SnapshotDurationGraceSeconds    = 30
+        # Typical range: 15–120 s.
+        SnapshotDurationGraceSeconds    = 60
 
         # Extra grace seconds allowed after requesting termination of snapshotting,
         # giving VLC time to flush/close cleanly before any force-kill paths.
@@ -63,14 +75,14 @@ function Get-DefaultConfig {
 
         # Seconds without a new frame before Wait-ForSnapshotFrames abandons a stalled
         # VLC session (idle-frame stall detection). Only triggers after the warm-up window
-        # elapses. Set to 0 to disable. Typical range: 10–60 s.
-        SnapshotIdleTimeoutSeconds      = 20
+        # elapses. Set to 0 to disable. Typical range: 30–180 s.
+        SnapshotIdleTimeoutSeconds      = 60
 
         # Seconds at the start of a snapshot session during which idle detection is
         # suppressed, to allow slow-starting sources (e.g., cold network shares) to
         # produce their first frame before the idle timer starts counting.
-        # Typical range: 5–30 s.
-        SnapshotIdleWarmUpSeconds       = 10
+        # Typical range: 15–120 s.
+        SnapshotIdleWarmUpSeconds       = 30
 
         # Milliseconds to wait after CloseMainWindow() before force-terminating VLC
         # in Stop-Vlc. Larger values are gentler on VLC; smaller values speed up

@@ -21,7 +21,7 @@ function Wait-ForSnapshotFrames {
   Seconds at the start of the session during which idle detection is suppressed, to allow
   slow-starting sources to produce their first frame (default 10).
   .OUTPUTS
-  PSCustomObject with FramesDelta and ElapsedSeconds.
+  PSCustomObject with FramesDelta, ElapsedSeconds, ExitReason, HitMaxSeconds, and ProcessAliveAtExit.
   #>
     [CmdletBinding()]
     param(
@@ -40,6 +40,9 @@ function Wait-ForSnapshotFrames {
     $lastCount = $initial
     $vlcExitTime = $null
     $lastFrameTime = $start
+    $exitReason = 'MaxSeconds'
+    $hitMaxSeconds = $true
+    $processAliveAtExit = $false
 
     while ((New-TimeSpan -Start $start -End (Get-Date)).TotalSeconds -lt $MaxSeconds) {
         $now = Get-Date
@@ -61,6 +64,8 @@ function Wait-ForSnapshotFrames {
                     # Exit polling after grace period to avoid duplicate frames
                     if ((New-TimeSpan -Start $vlcExitTime -End (Get-Date)).TotalSeconds -ge $GracePeriodSeconds) {
                         Write-Debug "Grace period elapsed; stopping snapshot polling"
+                        $exitReason = 'ProcessExited'
+                        $hitMaxSeconds = $false
                         break
                     }
                 }
@@ -68,9 +73,16 @@ function Wait-ForSnapshotFrames {
                     # Idle-frame stall detection: only fire after warm-up window has elapsed
                     $elapsed = (New-TimeSpan -Start $start -End $now).TotalSeconds
                     if ($elapsed -ge $WarmUpSeconds) {
-                        $idleSeconds = (New-TimeSpan -Start $lastFrameTime -End $now).TotalSeconds
+                        # Count idle time only after the warm-up window. If no frames arrive
+                        # during warm-up, a slow-starting source still gets a full idle window.
+                        $idleWindowStart = $lastFrameTime
+                        $warmUpEnd = $start.AddSeconds($WarmUpSeconds)
+                        if ($idleWindowStart -lt $warmUpEnd) { $idleWindowStart = $warmUpEnd }
+                        $idleSeconds = (New-TimeSpan -Start $idleWindowStart -End $now).TotalSeconds
                         if ($idleSeconds -ge $IdleTimeoutSeconds) {
-                            Write-Message -Level Warn -Message ("Idle-frame stall detected: no new frames for {0:F0}s; abandoning VLC session early." -f $idleSeconds)
+                            Write-Message -Level Warn -Message ("Idle-frame stall detected: no new frames for {0:F0}s after warm-up; abandoning VLC session early." -f $idleSeconds)
+                            $exitReason = 'IdleTimeout'
+                            $hitMaxSeconds = $false
                             break
                         }
                     }
@@ -81,15 +93,34 @@ function Wait-ForSnapshotFrames {
                 if ($null -eq $vlcExitTime) {
                     $vlcExitTime = $now
                 }
+                $exitReason = 'ProcessUnknown'
+                $hitMaxSeconds = $false
+                break
             }
         }
 
         Start-Sleep -Milliseconds $PollMs
     }
 
+    if ($hitMaxSeconds -and $Process) {
+        try {
+            $Process.Refresh()
+            $processAliveAtExit = -not $Process.HasExited
+        }
+        catch {
+            $processAliveAtExit = $false
+        }
+        if ($processAliveAtExit) {
+            Write-Message -Level Warn -Message ("Snapshot safety-net cap reached after {0}s while VLC is still running; capture may be truncated." -f $MaxSeconds)
+        }
+    }
+
     $elapsed = [int][Math]::Ceiling((New-TimeSpan -Start $start -End (Get-Date)).TotalSeconds)
     [pscustomobject]@{
-        FramesDelta    = [int]($lastCount - $initial)
-        ElapsedSeconds = $elapsed
+        FramesDelta        = [int]($lastCount - $initial)
+        ElapsedSeconds     = $elapsed
+        ExitReason         = $exitReason
+        HitMaxSeconds      = [bool]$hitMaxSeconds
+        ProcessAliveAtExit = [bool]$processAliveAtExit
     }
 }

@@ -71,6 +71,8 @@ Describe 'Wait-ForSnapshotFrames' {
                 # Should idle-break at ~2 s, not wait out the full 60 s cap
                 $sw.Elapsed.TotalSeconds | Should -BeLessThan 15
                 $result.FramesDelta | Should -Be 0
+                $result.ExitReason | Should -Be 'IdleTimeout'
+                $result.HitMaxSeconds | Should -BeFalse
             }
             finally {
                 Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
@@ -93,6 +95,9 @@ Describe 'Wait-ForSnapshotFrames' {
 
                 # Function ran for the full MaxSeconds, not cut short by idle
                 $sw.Elapsed.TotalSeconds | Should -BeGreaterThan 2
+                $result.ExitReason | Should -Be 'MaxSeconds'
+                $result.HitMaxSeconds | Should -BeTrue
+                $result.ProcessAliveAtExit | Should -BeTrue
             }
             finally {
                 Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
@@ -119,6 +124,7 @@ Describe 'Wait-ForSnapshotFrames' {
 
                 # Must have run for at least the warm-up window, not bailed at 1 s
                 $sw.Elapsed.TotalSeconds | Should -BeGreaterThan 2.5
+                $result.ExitReason | Should -Be 'IdleTimeout'
             }
             finally {
                 Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
@@ -141,6 +147,7 @@ Describe 'Wait-ForSnapshotFrames' {
 
                 $sw.Elapsed.TotalSeconds | Should -BeGreaterThan 2
                 $sw.Elapsed.TotalSeconds | Should -BeLessThan 15
+                $result.ExitReason | Should -Be 'IdleTimeout'
             }
             finally {
                 Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
@@ -166,6 +173,8 @@ Describe 'Wait-ForSnapshotFrames' {
                 # Should exit after GracePeriodSeconds (~1 s), not wait 60 s
                 $sw.Elapsed.TotalSeconds | Should -BeLessThan 10
                 $result.FramesDelta | Should -Be 0
+                $result.ExitReason | Should -Be 'ProcessExited'
+                $result.HitMaxSeconds | Should -BeFalse
             }
             finally {
                 Remove-Item $folder -Recurse -Force -ErrorAction SilentlyContinue

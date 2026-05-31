@@ -1,6 +1,6 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '3.2.3'
+  ModuleVersion     = '3.2.4'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
@@ -14,7 +14,7 @@
   PrivateData       = @{
     PSData = @{
       Tags         = @('video','vlc','gdi','screenshots','crop','python','images','automation')
-      ReleaseNotes = '3.2.3: Get-ResumeIndex now returns an empty HashSet without pipeline enumeration when all processed-log rows are retry-eligible or the log is missing.'
+      ReleaseNotes = '3.2.4: VLC snapshot waits now use a generous duration slack/floor safety-net, more tolerant idle defaults, and retry-eligible timeout status for cap-hit truncation.'
     }
   }
 }
