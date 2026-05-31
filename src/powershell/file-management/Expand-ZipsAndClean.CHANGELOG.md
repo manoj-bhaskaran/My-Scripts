@@ -1,5 +1,16 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.6.19 — 2026-05-31 *(patch — test refactor; no behaviour change)*
+
+### Tests
+
+- Added shared `Expand-ZipsAndClean.TestHelpers.ps1` Pester setup helpers for loading the
+  `ZipWorkflow` and `ZipExtraction` test dependencies.
+- Load the shared helper during Pester's run phase so its helper functions are available
+  to `BeforeAll` blocks.
+- Replaced repeated `Expand-ZipsAndClean.Tests.ps1` `BeforeAll` module-loading boilerplate
+  with calls into the shared setup helpers while preserving the existing test coverage.
+
 ## 2.6.18 — 2026-05-30 *(patch — import guard test fix)*
 
 ### Fixed
