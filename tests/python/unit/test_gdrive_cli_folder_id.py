@@ -25,6 +25,7 @@ from gdrive_cli import (  # noqa: E402
     _apply_retry_failed_file,
     create_parser,
 )
+from gdrive_console import ConsoleHelper  # noqa: E402
 
 del sys.modules["gdrive_recover"]
 
@@ -35,33 +36,42 @@ def _args(**kwargs):
     return SimpleNamespace(**defaults)
 
 
+def _console(**kwargs):
+    return ConsoleHelper(_args(**kwargs))
+
+
+def _validate_folder(**kwargs):
+    args = _args(**kwargs)
+    return _validate_folder_id_args(args, ConsoleHelper(args))
+
+
 # ---------------------------------------------------------------------------
 # _validate_folder_id_args
 # ---------------------------------------------------------------------------
 
 
 def test_no_folder_id_always_passes():
-    ok, code = _validate_folder_id_args(_args(folder_id=None))
+    ok, code = _validate_folder(folder_id=None)
     assert ok and code == 0
 
 
 def test_folder_id_with_file_ids_rejected():
-    ok, code = _validate_folder_id_args(_args(folder_id="abc123", file_ids=["id1", "id2"]))
+    ok, code = _validate_folder(folder_id="abc123", file_ids=["id1", "id2"])
     assert not ok and code == 2
 
 
 def test_folder_id_with_recover_only_rejected():
-    ok, code = _validate_folder_id_args(_args(folder_id="abc123", mode="recover_only"))
+    ok, code = _validate_folder(folder_id="abc123", mode="recover_only")
     assert not ok and code == 2
 
 
 def test_folder_id_with_recover_and_download_passes():
-    ok, code = _validate_folder_id_args(_args(folder_id="abc123", mode="recover_and_download"))
+    ok, code = _validate_folder(folder_id="abc123", mode="recover_and_download")
     assert ok and code == 0
 
 
 def test_folder_id_with_dry_run_passes():
-    ok, code = _validate_folder_id_args(_args(folder_id="abc123", mode="dry_run"))
+    ok, code = _validate_folder(folder_id="abc123", mode="dry_run")
     assert ok and code == 0
 
 
@@ -294,7 +304,7 @@ def test_load_retry_failed_file_parses_rows(tmp_path):
     csv_file.write_text(
         "source_folder_id,file_id,target_path\nfolder1,id1,/a/b.txt\nfolder2,id2,/c/d.jpg\n"
     )
-    ok, code, overrides = _load_retry_failed_file(str(csv_file), _args())
+    ok, code, overrides = _load_retry_failed_file(str(csv_file), _console())
     assert ok and code == 0
     assert overrides == {"id1": "/a/b.txt", "id2": "/c/d.jpg"}
 
@@ -302,14 +312,14 @@ def test_load_retry_failed_file_parses_rows(tmp_path):
 def test_load_retry_failed_file_missing_file_id_column_rejected(tmp_path):
     csv_file = tmp_path / "bad.csv"
     csv_file.write_text("source_folder_id,target_path\nfolder1,/a/b.txt\n")
-    ok, code, overrides = _load_retry_failed_file(str(csv_file), _args())
+    ok, code, overrides = _load_retry_failed_file(str(csv_file), _console())
     assert not ok and code == 2
 
 
 def test_load_retry_failed_file_empty_rows_returns_empty_overrides(tmp_path):
     csv_file = tmp_path / "empty.csv"
     csv_file.write_text("source_folder_id,file_id,target_path\n")
-    ok, code, overrides = _load_retry_failed_file(str(csv_file), _args())
+    ok, code, overrides = _load_retry_failed_file(str(csv_file), _console())
     # _load_retry_failed_file succeeds; main() is responsible for the early exit on empty result.
     assert ok and code == 0
     assert overrides == {}
@@ -342,7 +352,7 @@ def test_parser_retry_failed_file_defaults_to_empty(tmp_path):
 def test_apply_retry_failed_file_no_path_sets_defaults():
     """No --retry-failed-file: sets safe defaults and returns True."""
     args = _args(retry_failed_file="", failed_file="")
-    ok, code = _apply_retry_failed_file(args)
+    ok, code = _apply_retry_failed_file(args, ConsoleHelper(args))
     assert ok and code == 0
     assert args._retry_mode is False
     assert args._target_path_overrides == {}
@@ -351,7 +361,7 @@ def test_apply_retry_failed_file_no_path_sets_defaults():
 def test_apply_retry_failed_file_nonexistent_path_rejected(tmp_path):
     path = tmp_path / "missing.csv"
     args = _args(retry_failed_file=str(path), failed_file="")
-    ok, code = _apply_retry_failed_file(args)
+    ok, code = _apply_retry_failed_file(args, ConsoleHelper(args))
     assert not ok and code == 2
 
 
@@ -360,7 +370,7 @@ def test_apply_retry_failed_file_empty_csv_rejected(tmp_path):
     csv_file = tmp_path / "empty.csv"
     csv_file.write_text("source_folder_id,file_id,target_path\n")
     args = _args(retry_failed_file=str(csv_file), failed_file="")
-    ok, code = _apply_retry_failed_file(args)
+    ok, code = _apply_retry_failed_file(args, ConsoleHelper(args))
     assert not ok and code == 1
 
 
@@ -370,7 +380,7 @@ def test_apply_retry_failed_file_valid_csv_populates_args(tmp_path):
         "source_folder_id,file_id,target_path\nfolder1,id1,/a/b.txt\nfolder2,id2,/c/d.jpg\n"
     )
     args = _args(retry_failed_file=str(csv_file), failed_file="")
-    ok, code = _apply_retry_failed_file(args)
+    ok, code = _apply_retry_failed_file(args, ConsoleHelper(args))
     assert ok and code == 0
     assert args._retry_mode is True
     assert args.file_ids == ["id1", "id2"]
@@ -384,7 +394,7 @@ def test_apply_retry_failed_file_same_as_failed_file_rejected(tmp_path):
         retry_failed_file=str(csv_file),
         failed_file=str(csv_file),
     )
-    ok, code = _apply_retry_failed_file(args)
+    ok, code = _apply_retry_failed_file(args, ConsoleHelper(args))
     assert not ok and code == 2
 
 

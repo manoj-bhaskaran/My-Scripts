@@ -312,22 +312,18 @@ def _set_mode(args) -> None:
     args.mode = mode_map.get(args.command)
 
 
-def _validate_concurrency_arg(args) -> Tuple[bool, int]:
-    console = ConsoleHelper(args)
+def _validate_concurrency_arg(args, console: ConsoleHelper) -> Tuple[bool, int]:
     try:
         cpu = os.cpu_count() or 1
     except Exception:
         cpu = 1
     ceiling = min(cpu * 4, 64)
     if args.concurrency < 1:
-        print(
-            f"{console.sym_fail()} Invalid --concurrency value. It must be >= 1.", file=sys.stderr
-        )
+        console.print_err("Invalid --concurrency value. It must be >= 1.")
         return False, 2
     if args.concurrency > ceiling:
-        print(
-            f"{console.sym_warn()} --concurrency {args.concurrency} is high; capping to {ceiling} to avoid resource exhaustion and 429s.",
-            file=sys.stderr,
+        console.print_warn(
+            f"--concurrency {args.concurrency} is high; capping to {ceiling} to avoid resource exhaustion and 429s."
         )
         args.concurrency = ceiling
     return True, 0
@@ -439,23 +435,21 @@ def _validate_retry_failed_file_arg(args) -> Tuple[bool, int]:
 
 def _load_retry_failed_file(
     path_str: str,
-    args,
+    console: ConsoleHelper,
 ) -> Tuple[bool, int, Dict[str, str]]:
     """Read a failed-items CSV and return (ok, exit_code, {file_id: target_path}).
 
     Expected columns: source_folder_id, file_id, target_path
     The header row is skipped automatically.
     """
-    console = ConsoleHelper(args)
     target_path_overrides: Dict[str, str] = {}
     try:
         with open(path_str, newline="", encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
             if reader.fieldnames is None or "file_id" not in reader.fieldnames:
-                print(
-                    f"{console.sym_fail()} --retry-failed-file does not look like a valid failed-items CSV "
-                    f"(missing 'file_id' column): {path_str}",
-                    file=sys.stderr,
+                console.print_err(
+                    "--retry-failed-file does not look like a valid failed-items CSV "
+                    f"(missing 'file_id' column): {path_str}"
                 )
                 return False, 2, {}
             for row in reader:
@@ -464,10 +458,7 @@ def _load_retry_failed_file(
                 if fid:
                     target_path_overrides[fid] = tp
     except Exception as e:
-        print(
-            f"{console.sym_fail()} Could not read --retry-failed-file '{path_str}': {e}",
-            file=sys.stderr,
-        )
+        console.print_err(f"Could not read --retry-failed-file '{path_str}': {e}")
         return False, 2, {}
     return True, 0, target_path_overrides
 
@@ -490,9 +481,8 @@ def _run_tool(tool: "DriveTrashRecoveryTool", args) -> bool:
     return tool.dry_run() if args.mode == "dry_run" else tool.execute_recovery()
 
 
-def _normalize_and_validate_policy(args) -> Tuple[bool, int]:
+def _normalize_and_validate_policy(args, console: ConsoleHelper) -> Tuple[bool, int]:
     """Normalize and validate post-restore policy, print errors/warnings, update args."""
-    console = ConsoleHelper(args)
     strict_env = os.getenv("GDRT_STRICT_POLICY", "").strip().lower()
     strict_from_env = strict_env in ("1", "true", "yes", "on")
     effective_strict = bool(getattr(args, "strict_policy", False) or strict_from_env)
@@ -517,14 +507,14 @@ def _normalize_and_validate_policy(args) -> Tuple[bool, int]:
         pass
     if policy_errors:
         for msg in policy_errors:
-            print(f"{console.sym_fail()} {msg}", file=sys.stderr)
+            console.print_err(msg)
             try:
                 logging.getLogger(__name__).error(msg)
             except Exception:
                 pass
         return False, 2
     for msg in policy_warnings:
-        print(f"{console.sym_warn()} {msg}", file=sys.stderr)
+        console.print_warn(msg)
         try:
             logging.getLogger(__name__).warning(msg)
         except Exception:
@@ -535,20 +525,19 @@ def _normalize_and_validate_policy(args) -> Tuple[bool, int]:
     return True, 0
 
 
-def _normalize_and_validate_extensions(args) -> Tuple[bool, int]:
-    console = ConsoleHelper(args)
+def _normalize_and_validate_extensions(args, console: ConsoleHelper) -> Tuple[bool, int]:
     cleaned_exts, ext_warnings, ext_errors = validate_extensions(
         getattr(args, "extensions", None),
         EXTENSION_MIME_TYPES,
     )
     if ext_errors:
         for msg in ext_errors:
-            print(f"{console.sym_fail()} {msg}", file=sys.stderr)
+            console.print_err(msg)
         print("   Use space-separated extensions like: --extensions jpg png pdf tar.gz min.js")
         print("   Do not include wildcards, commas, spaces, or path characters.")
         return False, 2
     for msg in ext_warnings:
-        print(f"{console.sym_info()} {msg}")
+        console.print_info(msg)
     args.extensions = cleaned_exts
     return True, 0
 
@@ -569,13 +558,9 @@ def _read_lockfile_metadata(lockfile_path):
     return owner_pid, run_id
 
 
-def _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, force):
+def _print_lockfile_messages(args, console, owner_pid, run_id, pid_alive_note, force):
     """Print user-facing messages about lockfile status."""
-    console = ConsoleHelper(args)
-    print(
-        f"{console.sym_fail()} Another run appears to be active for state '{args.state_file}'.",
-        file=sys.stderr,
-    )
+    console.print_err(f"Another run appears to be active for state '{args.state_file}'.")
     print(f"   Owner PID: {owner_pid}{pid_alive_note}   Run-ID: {run_id}", file=sys.stderr)
     if "(not running)" in pid_alive_note:
         print(
@@ -589,15 +574,11 @@ def _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, force):
         )
     if force:
         if "(not running)" in pid_alive_note:
-            print(
-                f"{console.sym_warn()} --force supplied: taking over a **stale** lock (previous PID not detected).",
-                file=sys.stderr,
+            console.print_warn(
+                "--force supplied: taking over a **stale** lock (previous PID not detected)."
             )
         else:
-            print(
-                f"{console.sym_warn()} --force supplied: bypassing concurrent-run guardrail.",
-                file=sys.stderr,
-            )
+            console.print_warn("--force supplied: bypassing concurrent-run guardrail.")
 
 
 def _check_pid_alive(owner_pid, tool):
@@ -613,7 +594,7 @@ def _check_pid_alive(owner_pid, tool):
     return pid_alive_note
 
 
-def _acquire_or_bypass_lock(tool, args) -> Tuple[bool, int]:
+def _acquire_or_bypass_lock(tool, args, console: ConsoleHelper) -> Tuple[bool, int]:
     start_wait = time.time()
     timeout = float(getattr(args, "lock_timeout", 0.0) or 0.0)
     poll = 0.5
@@ -633,45 +614,40 @@ def _acquire_or_bypass_lock(tool, args) -> Tuple[bool, int]:
         pid_alive_note = _check_pid_alive(owner_pid, tool)
         force = getattr(args, "force", False)
         if not force:
-            _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, False)
+            _print_lockfile_messages(args, console, owner_pid, run_id, pid_alive_note, False)
             return False, 2
         else:
-            _print_lockfile_messages(args, owner_pid, run_id, pid_alive_note, True)
+            _print_lockfile_messages(args, console, owner_pid, run_id, pid_alive_note, True)
     return True, 0
 
 
-def _validate_folder_id_args(args) -> Tuple[bool, int]:
+def _validate_folder_id_args(args, console: ConsoleHelper) -> Tuple[bool, int]:
     """Reject flag combinations that are incompatible with --folder-id."""
     if not getattr(args, "folder_id", None):
         return True, 0
-    console = ConsoleHelper(args)
     if getattr(args, "file_ids", None):
-        print(
-            f"{console.sym_fail()} --folder-id and --file-ids are mutually exclusive. "
-            "Use one source at a time.",
-            file=sys.stderr,
+        console.print_err(
+            "--folder-id and --file-ids are mutually exclusive. Use one source at a time."
         )
         return False, 2
     if getattr(args, "mode", None) == "recover_only":
-        print(
-            f"{console.sym_fail()} --folder-id cannot be used with recover-only: "
+        console.print_err(
+            "--folder-id cannot be used with recover-only: "
             "folder-scoped files are not in trash so no action would be taken, "
             "and items would still be recorded as processed in the state file. "
-            "Use recover-and-download with --post-restore-policy retain instead.",
-            file=sys.stderr,
+            "Use recover-and-download with --post-restore-policy retain instead."
         )
         return False, 2
     if getattr(args, "post_restore_policy", PostRestorePolicy.TRASH) == PostRestorePolicy.TRASH:
-        print(
-            f"{console.sym_warn()} --folder-id is set with the default post-restore-policy 'trash'. "
+        console.print_warn(
+            "--folder-id is set with the default post-restore-policy 'trash'. "
             "Files will be moved to Drive Trash after downloading. "
-            "Use --post-restore-policy retain to leave them in place.",
-            file=sys.stderr,
+            "Use --post-restore-policy retain to leave them in place."
         )
     return True, 0
 
 
-def _apply_retry_failed_file(args) -> Tuple[bool, int]:
+def _apply_retry_failed_file(args, console: ConsoleHelper) -> Tuple[bool, int]:
     """Load the retry CSV and wire up args for a retry run.
 
     When --retry-failed-file is absent, sets safe defaults and returns True.
@@ -686,7 +662,7 @@ def _apply_retry_failed_file(args) -> Tuple[bool, int]:
     ok, code = _validate_retry_failed_file_arg(args)
     if not ok:
         return False, code
-    ok, code, target_path_overrides = _load_retry_failed_file(retry_path, args)
+    ok, code, target_path_overrides = _load_retry_failed_file(retry_path, console)
     if not ok:
         return False, code
     if not target_path_overrides:
@@ -714,14 +690,11 @@ def _validate_file_ids_if_present(tool, args) -> Tuple[bool, int]:
     return True, 0
 
 
-def _print_scope_mismatch_error(args, exc: "StateScopeMismatchError") -> None:
-    console = ConsoleHelper(args)
+def _print_scope_mismatch_error(args, console, exc: "StateScopeMismatchError") -> None:
     saved = exc.saved_scope
     current = exc.current_scope
-    print(
-        f"{console.sym_fail()} State file '{args.state_file}' was created for a different scope; "
-        "refusing to resume.",
-        file=sys.stderr,
+    console.print_err(
+        f"State file '{args.state_file}' was created for a different scope; refusing to resume."
     )
     print(
         f"   Saved scope:   source={saved.source} command={saved.command} key={saved.key}",
@@ -738,12 +711,12 @@ def _print_scope_mismatch_error(args, exc: "StateScopeMismatchError") -> None:
     )
 
 
-def _run_and_release_lock(tool, args) -> int:
+def _run_and_release_lock(tool, args, console: ConsoleHelper) -> int:
     ran_ok = False
     try:
         ran_ok = _run_tool(tool, args)
     except StateScopeMismatchError as e:
-        _print_scope_mismatch_error(args, e)
+        _print_scope_mismatch_error(args, console, e)
         return 2
     finally:
         try:
@@ -762,15 +735,19 @@ def main() -> int:
 
     _set_mode(args)
 
-    ok, code = _normalize_and_validate_policy(args)
+    # Build the console helper once and thread it into the helpers that emit
+    # user-facing output, rather than reconstructing ConsoleHelper(args) in each.
+    console = ConsoleHelper(args)
+
+    ok, code = _normalize_and_validate_policy(args, console)
     if not ok:
         return code
 
-    ok, code = _validate_folder_id_args(args)
+    ok, code = _validate_folder_id_args(args, console)
     if not ok:
         return code
 
-    ok, code = _validate_concurrency_arg(args)
+    ok, code = _validate_concurrency_arg(args, console)
     if not ok:
         return code
 
@@ -788,17 +765,17 @@ def main() -> int:
     if not ok:
         return code
 
-    ok, code = _apply_retry_failed_file(args)
+    ok, code = _apply_retry_failed_file(args, console)
     if not ok:
         return code
 
-    ok, code = _normalize_and_validate_extensions(args)
+    ok, code = _normalize_and_validate_extensions(args, console)
     if not ok:
         return code
 
     tool = DriveTrashRecoveryTool(args)
 
-    ok, code = _acquire_or_bypass_lock(tool, args)
+    ok, code = _acquire_or_bypass_lock(tool, args, console)
     if not ok:
         return code
 
@@ -806,4 +783,4 @@ def main() -> int:
     if not ok:
         return code
 
-    return _run_and_release_lock(tool, args)
+    return _run_and_release_lock(tool, args, console)
