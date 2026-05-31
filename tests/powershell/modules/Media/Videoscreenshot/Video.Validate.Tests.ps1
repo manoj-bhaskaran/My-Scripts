@@ -72,7 +72,7 @@ Describe 'Test-VideoPlayable' {
         # WaitForExit to block indefinitely, falsely timing out a playable video.
         # With no pipe redirection the process exits cleanly and should return $true.
         $script:FakeVlc = Script:New-FakeVlcExecutable `
-            -UnixBody "for i in \$(seq 1 2000); do echo \"VLC startup noise line \$i\"; done; exit 0" `
+            -UnixBody 'for i in $(seq 1 2000); do echo "VLC startup noise line $i"; done; exit 0' `
             -WindowsBody "for /l %%i in (1,1,2000) do @echo VLC startup noise line %%i`r`nexit /b 0"
 
         Test-VideoPlayable -Path $script:FakeVideo -VlcExe $script:FakeVlc -TimeoutSeconds 5 | Should -BeTrue
