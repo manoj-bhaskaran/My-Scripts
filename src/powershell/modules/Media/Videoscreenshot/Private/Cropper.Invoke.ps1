@@ -4,10 +4,10 @@
 
 .DESCRIPTION
   Invokes the cropper with safe, opinionated defaults (non-destructive and robust).
-  If -PythonScriptPath is provided, the file is executed directly:
-      python <crop_colours.py> --input <folder> --skip-bad-images --allow-empty --recurse --preserve-alpha [--reprocess-cropped [--keep-existing-crops]] [--debug]
-  If -PythonScriptPath is omitted, the module form is used (PYTHONPATH automatically set to include src/python):
+  The packaged cropper is always executed as a module so package-relative imports work:
       python -m media.crop_colours --input <folder> --skip-bad-images --allow-empty --recurse --preserve-alpha [--reprocess-cropped [--keep-existing-crops]] [--debug]
+  If -PythonScriptPath is provided, it is used as a locator for src/python (the parent of the media package) rather than executed as a loose script.
+  If -PythonScriptPath is omitted, src/python is located from the repository root and added to PYTHONPATH automatically.
 
   This helper follows the “helpers throw; caller owns user-facing messages” policy:
   - It validates Python is available.
@@ -26,7 +26,8 @@
     - Import-name translation: 'opencv-python' → import 'cv2'; others import by the same name.
 
 .PARAMETER PythonScriptPath
-  Path to the cropper script (e.g., crop_colours.py).
+  Optional path to the packaged cropper script (src/python/media/crop_colours.py).
+  The path is used to locate src/python; the cropper still runs as `python -m media.crop_colours`.
 
 .PARAMETER PythonExe
   Optional Python executable to use. If not supplied, tries 'py' (Windows launcher) then 'python'.
@@ -46,10 +47,10 @@
     - RequiredPackages : string[] (resolved package list used)
 
 .EXAMPLE
-  Invoke-Cropper -PythonScriptPath .\src\python\crop_colours.py -InputFolder .\shots
+  Invoke-Cropper -PythonScriptPath .\src\python\media\crop_colours.py -InputFolder .\shots
 
 .EXAMPLE
-  Invoke-Cropper -PythonScriptPath .\src\python\crop_colours.py -InputFolder .\shots -PythonExe python -NoAutoInstall -Debug
+  Invoke-Cropper -PythonScriptPath .\src\python\media\crop_colours.py -InputFolder .\shots -PythonExe python -NoAutoInstall -Debug
 #>
 function Invoke-Cropper {
     [CmdletBinding()]
@@ -63,16 +64,25 @@ function Invoke-Cropper {
     )
 
     # ---- Validate inputs ----------------------------------------------------
-    $useModuleInvoke = $false
     $resolvedScript = $null
+    $pythonSrcHint = $null
     if (-not [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
         if (-not (Test-Path -LiteralPath $PythonScriptPath -PathType Leaf)) {
             throw "Cropper script not found: $PythonScriptPath"
         }
-        $resolvedScript = $PythonScriptPath
+
+        $resolvedScript = (Resolve-Path -LiteralPath $PythonScriptPath).Path
+        $scriptDirectory = Split-Path -Parent $resolvedScript
+        $packageDirectoryName = Split-Path -Leaf $scriptDirectory
+        $packageInit = Join-Path $scriptDirectory '__init__.py'
+        if ((Split-Path -Leaf $resolvedScript) -ne 'crop_colours.py' -or $packageDirectoryName -ne 'media' -or -not (Test-Path -LiteralPath $packageInit -PathType Leaf)) {
+            throw "PythonScriptPath must point to the packaged cropper at src/python/media/crop_colours.py so it can be invoked as 'python -m media.crop_colours': $PythonScriptPath"
+        }
+
+        $pythonSrcHint = Split-Path -Parent $scriptDirectory
+        Write-Debug ("Invoke-Cropper: PythonScriptPath supplied; using it as package locator and invoking -m media.crop_colours. src/python={0}" -f $pythonSrcHint)
     }
     else {
-        $useModuleInvoke = $true
         Write-Debug "Invoke-Cropper: PythonScriptPath not supplied; using module invocation (-m media.crop_colours)."
     }
     if (-not (Test-Path -LiteralPath $InputFolder -PathType Container)) {
@@ -181,13 +191,7 @@ function Invoke-Cropper {
 
     # ---- Compose cropper arguments (intentionally opinionated) --------------
     # Per design, these flags are not made configurable here.
-    $pyArgs = @()
-    if ($useModuleInvoke) {
-        $pyArgs += @('-m', 'media.crop_colours')
-    }
-    else {
-        $pyArgs += @("$resolvedScript")
-    }
+    $pyArgs = @('-m', 'media.crop_colours')
     $pyArgs += @(
         '--input', $InputFolder,
         '--skip-bad-images',
@@ -213,8 +217,9 @@ function Invoke-Cropper {
     $psi.RedirectStandardError = $false
     $psi.CreateNoWindow = $false
 
-    # If using module invocation, ensure PYTHONPATH includes src/python directory
-    if ($useModuleInvoke) {
+    # Ensure PYTHONPATH includes src/python so `python -m media.crop_colours` can resolve package-relative imports.
+    $pythonSrc = $pythonSrcHint
+    if (-not $pythonSrc) {
         # Locate repository root (parent of src/python directory)
         $moduleRoot = $PSScriptRoot
         # Navigate up from Private/ to module root
@@ -224,66 +229,62 @@ function Invoke-Cropper {
             $moduleRoot = $parent
         }
 
-        if ($moduleRoot) {
-            $pythonSrc = Join-Path $moduleRoot 'src' 'python'
-            if (Test-Path $pythonSrc -PathType Container) {
-                # Verify the media package exists
-                $mediaPackage = Join-Path $pythonSrc 'media'
-                $cropScript = Join-Path $mediaPackage 'crop_colours.py'
-                if (-not (Test-Path $cropScript -PathType Leaf)) {
-                    throw "Python module not found: $cropScript. Ensure the repository is up-to-date and src/python/media/crop_colours.py exists."
-                }
-
-                # Access .Environment property to auto-populate with current environment
-                $null = $psi.Environment
-                # Set PYTHONPATH to include src/python
-                $existingPath = [System.Environment]::GetEnvironmentVariable('PYTHONPATH')
-                $newPath = if ($existingPath) { "$pythonSrc$([System.IO.Path]::PathSeparator)$existingPath" } else { $pythonSrc }
-                $psi.Environment['PYTHONPATH'] = $newPath
-                Write-Debug ("Invoke-Cropper: Set PYTHONPATH={0}" -f $newPath)
-
-                # Pre-flight check: verify Python can import the module
-                $psiTest = [System.Diagnostics.ProcessStartInfo]::new()
-                $psiTest.FileName = $pythonCmd
-                $null = $psiTest.ArgumentList.Add('-c')
-                $null = $psiTest.ArgumentList.Add('import sys; sys.path.insert(0, r"{0}"); import media.crop_colours' -f $pythonSrc)
-                $psiTest.UseShellExecute = $false
-                $psiTest.RedirectStandardOutput = $true
-                $psiTest.RedirectStandardError = $true
-                $psiTest.CreateNoWindow = $true
-                # Copy PYTHONPATH to test process
-                $null = $psiTest.Environment
-                $psiTest.Environment['PYTHONPATH'] = $newPath
-
-                $pTest = [System.Diagnostics.Process]::new()
-                $pTest.StartInfo = $psiTest
-                $null = $pTest.Start()
-                $testOut = $pTest.StandardOutput.ReadToEnd()
-                $testErr = $pTest.StandardError.ReadToEnd()
-                $pTest.WaitForExit()
-
-                if ($pTest.ExitCode -ne 0) {
-                    $errDetail = if ($testErr) { $testErr } else { $testOut }
-                    throw ("Pre-flight check failed: Python cannot import media.crop_colours. PYTHONPATH={0}. Error: {1}" -f $newPath, $errDetail.Trim())
-                }
-                Write-Debug "Invoke-Cropper: Pre-flight check passed (media.crop_colours is importable)"
-            }
-            else {
-                throw "Python source directory not found: $pythonSrc. Ensure the repository structure is intact."
-            }
-        }
-        else {
+        if (-not $moduleRoot -or -not (Test-Path (Join-Path $moduleRoot '.git') -PathType Container)) {
             throw "Could not locate repository root (no .git directory found). Unable to set PYTHONPATH for module invocation."
         }
+        $pythonSrc = Join-Path $moduleRoot 'src' 'python'
     }
+
+    if (-not (Test-Path -LiteralPath $pythonSrc -PathType Container)) {
+        throw "Python source directory not found: $pythonSrc. Ensure the repository structure is intact."
+    }
+
+    # Verify the media package exists
+    $mediaPackage = Join-Path $pythonSrc 'media'
+    $cropScript = Join-Path $mediaPackage 'crop_colours.py'
+    if (-not (Test-Path -LiteralPath $cropScript -PathType Leaf)) {
+        throw "Python module not found: $cropScript. Ensure the repository is up-to-date and src/python/media/crop_colours.py exists."
+    }
+
+    # Access .Environment property to auto-populate with current environment
+    $null = $psi.Environment
+    # Set PYTHONPATH to include src/python
+    $existingPath = [System.Environment]::GetEnvironmentVariable('PYTHONPATH')
+    $newPath = if ($existingPath) { "$pythonSrc$([System.IO.Path]::PathSeparator)$existingPath" } else { $pythonSrc }
+    $psi.Environment['PYTHONPATH'] = $newPath
+    Write-Debug ("Invoke-Cropper: Set PYTHONPATH={0}" -f $newPath)
+
+    # Pre-flight check: verify Python can import the module
+    $psiTest = [System.Diagnostics.ProcessStartInfo]::new()
+    $psiTest.FileName = $pythonCmd
+    $null = $psiTest.ArgumentList.Add('-c')
+    $null = $psiTest.ArgumentList.Add('import sys; sys.path.insert(0, r"{0}"); import media.crop_colours' -f $pythonSrc)
+    $psiTest.UseShellExecute = $false
+    $psiTest.RedirectStandardOutput = $true
+    $psiTest.RedirectStandardError = $true
+    $psiTest.CreateNoWindow = $true
+    # Copy PYTHONPATH to test process
+    $null = $psiTest.Environment
+    $psiTest.Environment['PYTHONPATH'] = $newPath
+
+    $pTest = [System.Diagnostics.Process]::new()
+    $pTest.StartInfo = $psiTest
+    $null = $pTest.Start()
+    $testOut = $pTest.StandardOutput.ReadToEnd()
+    $testErr = $pTest.StandardError.ReadToEnd()
+    $pTest.WaitForExit()
+
+    if ($pTest.ExitCode -ne 0) {
+        $errDetail = if ($testErr) { $testErr } else { $testOut }
+        throw ("Pre-flight check failed: Python cannot import media.crop_colours. PYTHONPATH={0}. Error: {1}" -f $newPath, $errDetail.Trim())
+    }
+    Write-Debug "Invoke-Cropper: Pre-flight check passed (media.crop_colours is importable)"
 
     # Debug: Log the exact command being executed
     if ($PSBoundParameters.ContainsKey('Debug') -or $DebugPreference -eq 'Continue') {
         $cmdDisplay = "$pythonCmd $($pyArgs -join ' ')"
         Write-Debug ("Invoke-Cropper: Executing command: {0}" -f $cmdDisplay)
-        if ($useModuleInvoke) {
-            Write-Debug ("Invoke-Cropper: PYTHONPATH={0}" -f $psi.Environment['PYTHONPATH'])
-        }
+        Write-Debug ("Invoke-Cropper: PYTHONPATH={0}" -f $psi.Environment['PYTHONPATH'])
     }
 
     $p = [System.Diagnostics.Process]::new()

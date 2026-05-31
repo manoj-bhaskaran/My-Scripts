@@ -19,7 +19,7 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
    ```
 3. **Crop-only cleanup runs** – rerun the Python cropper without capturing new frames.
    ```powershell
-   Start-VideoBatch -CropOnly -SaveFolder .\shots -PythonScriptPath .\src\python\crop_colours.py -ReprocessCropped
+   Start-VideoBatch -CropOnly -SaveFolder .\shots -PythonScriptPath .\src\python\media\crop_colours.py -ReprocessCropped
    ```
 4. **Extension-filtered processing** – restrict work to specific formats and verify playability.
    ```powershell
@@ -43,7 +43,7 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
 - `VideoProbeTimeoutSeconds` (int, default config value `10`): Maximum time to wait for the `-VerifyVideos` probe before force-killing it and treating the video as unplayable.
 - `RunCropper` (switch): Invoke the Python cropper after capture.
 - `CropOnly` (switch): Run the cropper without taking screenshots.
-- `PythonScriptPath` (string): Path to `crop_colours.py` when cropping.
+- `PythonScriptPath` (string): Optional path to the packaged `src/python/media/crop_colours.py`; used as a package locator while the cropper still runs via `python -m media.crop_colours`.
 - `PythonExe` (string): Python interpreter to use for the cropper.
 - `ReprocessCropped` (switch): Force re-crop even if images were processed before.
 - `KeepExistingCrops` (switch): Preserve existing crops when reprocessing.
@@ -100,12 +100,13 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
 ### Cropper integration
 When `-RunCropper` is set, the module invokes the Python cropper after capture. By default the cropper **skips images that were already cropped in previous runs** (tracked via `.processed_images`).
 
-- **If `-PythonScriptPath` is provided** (path to `crop_colours.py`), the script file is executed directly.
-- **If `-PythonScriptPath` is omitted**, the module falls back to **module invocation**:
+- **If `-PythonScriptPath` is provided** (path to `src/python/media/crop_colours.py`), it is treated as a locator for `src/python`; the file is not executed directly.
+- **If `-PythonScriptPath` is omitted**, the module locates `src/python` from the repository root.
+- In both cases, the cropper uses **module invocation** so package-relative imports work:
   ```
   python -m media.crop_colours --input <SaveFolder> --skip-bad-images --allow-empty --recurse --preserve-alpha
   ```
-  PYTHONPATH is automatically configured to include `src/python` from the repository root.
+  PYTHONPATH is automatically configured to include `src/python`.
 
 To force a full re-crop, use:
 ```
@@ -118,7 +119,7 @@ If you call `Start-VideoBatch -Debug`, `--debug` is added to the Python invocati
 #### Crop-only mode
 Run the cropper without taking screenshots:
 ```powershell
-Start-VideoBatch -CropOnly -SaveFolder .\shots -PythonScriptPath .\src\python\crop_colours.py
+Start-VideoBatch -CropOnly -SaveFolder .\shots -PythonScriptPath .\src\python\media\crop_colours.py
 ```
 Notes:
 - `-CropOnly` ignores capture-related parameters (e.g., `-UseVlcSnapshots`, `-TimeLimitSeconds`); a warning lists any that were supplied.
@@ -131,7 +132,7 @@ Notes:
 ### Crop-only mode
 Skip screenshot capture and only run the cropper:
 ```powershell
-Start-VideoBatch -CropOnly -SaveFolder .\shots [-PythonScriptPath .\src\python\crop_colours.py]
+Start-VideoBatch -CropOnly -SaveFolder .\shots [-PythonScriptPath .\src\python\media\crop_colours.py]
 ```
 Requirements/behavior:
 - **`-SaveFolder` is required** in crop-only mode and must point to the folder containing images to process.
@@ -163,7 +164,7 @@ Start-VideoBatch `
 * (reprocessing) Default behavior skips previously cropped images.
   - `--reprocess-cropped` reprocesses everything.
   - `--keep-existing-crops` (with `--reprocess-cropped`) keeps existing outputs; new files are de-duplicated.
-See the Python script’s docstring for advanced options: src/python/crop_colours.py.
+See the Python script’s docstring for advanced options: src/python/media/crop_colours.py.
 
 ### Resume / processed logging
 
@@ -248,7 +249,7 @@ src/
 - -GdiFullscreen – when using GDI, request fullscreen/top-most playback
 - -VlcStartupTimeoutSeconds – timeout for VLC to initialize
 - -RunCropper – after capture, run the Python cropper over the output images
-- -PythonScriptPath – path to crop_colours.py when using -RunCropper
+- -PythonScriptPath – optional path to src/python/media/crop_colours.py as a package locator when using -RunCropper
 - -PythonExe – optional Python interpreter to use (defaults to py launcher or python)
 - -NoAutoInstall – disable automatic installation of missing Python packages (see below)
 - -TimeLimitSeconds – per-video time cap for playback/capture (0 = no cap)
@@ -263,7 +264,7 @@ src/
 - -RunCropper – run Python cropper after frames saved
 - -ReprocessCropped – force re-crop even if images were processed previously (deletes existing crops by default)
 - -KeepExistingCrops – with -ReprocessCropped, keep existing crops and add new outputs alongside
-- -PythonScriptPath, -PythonExe – cropper script & interpreter
+- -PythonScriptPath, -PythonExe – packaged cropper locator & interpreter
 - -ClearSnapshotsBeforeRun – clear existing frames for the current video prefix before capture
 
 ### Example (with resume + processed logging)
@@ -303,7 +304,7 @@ If any package is missing, the module automatically installs them via python -m 
 > and adds `--reprocess-cropped` (plus `--keep-existing-crops`) when you pass the corresponding PowerShell flags.
 > Note: The cropper’s stdout/stderr stream live to the console (always-on). For advanced control over cropping arguments, adjust the Python script directly. The module uses safe defaults: `--skip-bad-images --allow-empty --recurse --preserve-alpha`, and adds `--reprocess-cropped` (plus `--keep-existing-crops`) when you pass the corresponding PowerShell flags.
 - GDI capture currently targets Windows (uses GDI+/System.Drawing); VLC snapshot mode is cross-platform where VLC is available.
-> See also the docstring in src/python/crop_colours.py for a full list of cropper flags, behaviors, and troubleshooting notes.
+> See also the docstring in src/python/media/crop_colours.py for a full list of cropper flags, behaviors, and troubleshooting notes.
 ### If you see a version error
 The script/module will refuse to run under Windows PowerShell (5.1/Desktop).
 Install PowerShell 7+ and re-run using pwsh.

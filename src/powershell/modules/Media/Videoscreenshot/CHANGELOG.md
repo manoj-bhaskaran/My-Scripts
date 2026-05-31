@@ -8,6 +8,13 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.2.8] - 2026-05-31
+### Fixed
+- **Packaged cropper invocation via `-PythonScriptPath`**: `Invoke-Cropper` now treats `src/python/media/crop_colours.py` as a locator for `src/python`, sets `PYTHONPATH`, and always runs `python -m media.crop_colours` so the cropper's package-relative imports resolve correctly. The no-path and `CropOnly` paths continue to use the same module invocation and preserve existing cropper flags/resume tracking.
+
+### Docs
+- Updated cropper examples and parameter help to document that `-PythonScriptPath` remains supported as a packaged-cropper locator rather than a loose script execution path.
+
 ## [3.2.7] - 2026-05-31
 ### Fixed
 - **Startup banner version resolution**: `New-VideoRunContext` now reads `ModuleVersion` directly from `Videoscreenshot.psd1` via `Import-PowerShellDataFile`, making the manifest the single authoritative source. The previous logic preferred `Get-Module`, which returns the version of a stale import when the module has been edited without an `Import-Module -Force` reload. The hard-coded `'3.0.5'` fallback (which silently masked lookup failures with a long-obsolete literal) is replaced by `'unknown'`, making missed lookups obvious in the startup banner and logs.

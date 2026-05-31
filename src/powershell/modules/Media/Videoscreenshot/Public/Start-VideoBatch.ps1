@@ -48,8 +48,9 @@ By default, existing crops are deleted and regenerated.
 .PARAMETER KeepExistingCrops
 When used with -ReprocessCropped, do not delete existing crops; new outputs are added alongside.
 .PARAMETER PythonScriptPath
-Path to crop_colours.py. If omitted, the module will invoke the cropper as a
-Python module (`python -m media.crop_colours`). PYTHONPATH is automatically configured to include src/python.
+Optional path to the packaged cropper at src/python/media/crop_colours.py.
+The path is used to locate src/python; the cropper is still invoked as a
+Python module (`python -m media.crop_colours`) so package-relative imports work.
 .PARAMETER PythonExe
 Python interpreter to use (optional; falls back to py/python in helper).
 .PARAMETER ClearSnapshotsBeforeRun
@@ -60,7 +61,7 @@ Full path to vlc.exe. Use when VLC is not on PATH (e.g. "D:\Program Files\VideoL
 Pass --no-audio to VLC. Use when the VLC audio plugin crashes on your system (e.g. libmmdevice_plugin.dll access violation).
 
 .EXAMPLE
-Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper -PythonScriptPath .\src\python\crop_colours.py
+Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper -PythonScriptPath .\src\python\media\crop_colours.py
 #>
 function Start-VideoBatch {
     [CmdletBinding()]
