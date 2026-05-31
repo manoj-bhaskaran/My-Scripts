@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.29.0] - 2026-05-31
+
+### Changed
+
+- `gdrive_state.py`: `RecoveryStateManager` now exposes public `acquire_state_lock()`, `release_state_lock()`, and `pid_is_alive(pid)` methods that delegate to the existing private implementations. The private methods are retained unchanged for internal callers (issue #1136).
+- `gdrive_discovery.py`: `DriveTrashDiscovery` now exposes a public `validate_file_ids()` method that delegates to `_validate_file_ids()`. The private method is retained unchanged (issue #1136).
+- `gdrive_cli.py`: updated all cross-module calls to use the new public API — `state_manager.acquire_state_lock()`, `state_manager.release_state_lock()`, `state_manager.pid_is_alive()`, and `discovery.validate_file_ids()` — removing all references to `_`-prefixed members of `RecoveryStateManager` and `DriveTrashDiscovery` (issue #1136).
+
+### Tests
+
+- Updated `test_cloud_gdrive_state.py`, `test_gdrive_cli_lock_management.py`, `test_gdrive_recover.py`, and `test_gdrive_discovery_retry_classification.py` to reference the new public API names.
+
 ## [1.28.0] - 2026-05-31
 
 ### Changed

@@ -41,8 +41,8 @@ del sys.modules["gdrive_recover"]
 def _tool(acquired=True, pid_alive=True):
     """Return a minimal mock tool with a state_manager."""
     tool = MagicMock()
-    tool.state_manager._acquire_state_lock.return_value = acquired
-    tool.state_manager._pid_is_alive.return_value = pid_alive
+    tool.state_manager.acquire_state_lock.return_value = acquired
+    tool.state_manager.pid_is_alive.return_value = pid_alive
     return tool
 
 
@@ -84,7 +84,7 @@ def test_check_pid_alive_returns_empty_on_non_integer_pid():
 
 def test_check_pid_alive_returns_empty_on_pid_check_exception():
     tool = MagicMock()
-    tool.state_manager._pid_is_alive.side_effect = OSError("permission denied")
+    tool.state_manager.pid_is_alive.side_effect = OSError("permission denied")
     note = _check_pid_alive("1234", tool)
     assert note == ""
 
@@ -162,7 +162,7 @@ def test_run_and_release_lock_releases_lock_on_success():
     args = _args()
     with patch("gdrive_cli._run_tool", return_value=True):
         _run_and_release_lock(tool, args, ConsoleHelper(args))
-    tool.state_manager._release_state_lock.assert_called_once()
+    tool.state_manager.release_state_lock.assert_called_once()
 
 
 def test_run_and_release_lock_releases_lock_on_failure():
@@ -170,7 +170,7 @@ def test_run_and_release_lock_releases_lock_on_failure():
     args = _args()
     with patch("gdrive_cli._run_tool", return_value=False):
         _run_and_release_lock(tool, args, ConsoleHelper(args))
-    tool.state_manager._release_state_lock.assert_called_once()
+    tool.state_manager.release_state_lock.assert_called_once()
 
 
 def test_run_and_release_lock_scope_mismatch_returns_2(capsys):
@@ -180,7 +180,7 @@ def test_run_and_release_lock_scope_mismatch_returns_2(capsys):
     with patch("gdrive_cli._run_tool", side_effect=err):
         result = _run_and_release_lock(tool, args, ConsoleHelper(args))
     assert result == 2
-    tool.state_manager._release_state_lock.assert_called_once()
+    tool.state_manager.release_state_lock.assert_called_once()
 
 
 def test_run_and_release_lock_releases_lock_even_on_scope_mismatch(capsys):
@@ -189,7 +189,7 @@ def test_run_and_release_lock_releases_lock_even_on_scope_mismatch(capsys):
     err = StateScopeMismatchError(RecoveryStateScope(), RecoveryStateScope())
     with patch("gdrive_cli._run_tool", side_effect=err):
         _run_and_release_lock(tool, args, ConsoleHelper(args))
-    tool.state_manager._release_state_lock.assert_called_once()
+    tool.state_manager.release_state_lock.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ def test_acquire_or_bypass_lock_succeeds_with_force_on_contention(capsys):
 
 def test_acquire_or_bypass_lock_raises_on_filesystem_error():
     tool = MagicMock()
-    tool.state_manager._acquire_state_lock.side_effect = OSError("disk error")
+    tool.state_manager.acquire_state_lock.side_effect = OSError("disk error")
     args = _args()
     with pytest.raises(OSError, match="disk error"):
         _acquire_or_bypass_lock(tool, args, ConsoleHelper(args))
@@ -249,7 +249,7 @@ def test_acquire_or_bypass_lock_stale_lock_no_force_emits_stale_message(capsys):
 def test_acquire_or_bypass_lock_acquired_on_retry(capsys):
     """Lock fails on the first attempt but succeeds after one wait iteration."""
     tool = MagicMock()
-    tool.state_manager._acquire_state_lock.side_effect = [False, True]
+    tool.state_manager.acquire_state_lock.side_effect = [False, True]
     args = _args(lock_timeout=5.0)
     # time.time(): start=100, while-check=100 (enters loop), remaining=100, while-check=100 (exits)
     with patch("gdrive_cli.time") as mock_time:
@@ -263,7 +263,7 @@ def test_acquire_or_bypass_lock_acquired_on_retry(capsys):
 def test_acquire_or_bypass_lock_wait_loop_integer_remaining_display(capsys):
     """When remaining time is a whole number, display uses integer format ('5s')."""
     tool = MagicMock()
-    tool.state_manager._acquire_state_lock.side_effect = [False, True]
+    tool.state_manager.acquire_state_lock.side_effect = [False, True]
     args = _args(lock_timeout=5.0)
     # elapsed = 0 at the time remaining is computed → remaining = 5.0 → is_integer() True
     with patch("gdrive_cli.time") as mock_time:
@@ -277,7 +277,7 @@ def test_acquire_or_bypass_lock_wait_loop_integer_remaining_display(capsys):
 def test_acquire_or_bypass_lock_wait_loop_fractional_remaining_display(capsys):
     """When remaining time is fractional, display uses one-decimal format ('2.7s')."""
     tool = MagicMock()
-    tool.state_manager._acquire_state_lock.side_effect = [False, True]
+    tool.state_manager.acquire_state_lock.side_effect = [False, True]
     args = _args(lock_timeout=5.0)
     # elapsed = 2.3 when remaining is computed → remaining = 2.7 → is_integer() False
     with patch("gdrive_cli.time") as mock_time:
@@ -291,7 +291,7 @@ def test_acquire_or_bypass_lock_wait_loop_fractional_remaining_display(capsys):
 def test_acquire_or_bypass_lock_timeout_expires_returns_failure(capsys):
     """When lock_timeout expires without acquiring, returns False with code 2."""
     tool = MagicMock()
-    tool.state_manager._acquire_state_lock.side_effect = [False, False]
+    tool.state_manager.acquire_state_lock.side_effect = [False, False]
     args = _args(lock_timeout=5.0, force=False)
     # Last time.time() call returns start+6 so the while condition fails
     with patch("gdrive_cli.time") as mock_time:

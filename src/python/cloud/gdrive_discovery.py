@@ -195,6 +195,9 @@ class DriveTrashDiscovery:
             buckets, result.counters.transient_errors, result.counters.transient_ids
         )
 
+    def validate_file_ids(self) -> bool:
+        return self._validate_file_ids()
+
     def _clear_id_caches(self) -> None:
         self._id_prefetcher.clear_id_caches()
 

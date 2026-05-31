@@ -577,7 +577,7 @@ def _check_pid_alive(owner_pid, tool):
     pid_alive_note = ""
     try:
         pid_int = int(owner_pid)
-        alive = tool.state_manager._pid_is_alive(pid_int)
+        alive = tool.state_manager.pid_is_alive(pid_int)
         if not alive:
             pid_alive_note = " (not running)"
     except Exception:
@@ -589,7 +589,7 @@ def _acquire_or_bypass_lock(tool, args, console: ConsoleHelper) -> Tuple[bool, i
     start_wait = time.time()
     timeout = float(getattr(args, "lock_timeout", 0.0) or 0.0)
     poll = 0.5
-    acquired = tool.state_manager._acquire_state_lock()
+    acquired = tool.state_manager.acquire_state_lock()
     while (not acquired) and timeout > 0 and (time.time() - start_wait) < timeout:
         remaining = max(0.0, timeout - (time.time() - start_wait))
         if remaining.is_integer():
@@ -598,7 +598,7 @@ def _acquire_or_bypass_lock(tool, args, console: ConsoleHelper) -> Tuple[bool, i
             remaining_str = f"{remaining:.1f}s"
         print(f"Waiting for state lock (remaining {remaining_str})...", file=sys.stderr)
         time.sleep(poll)
-        acquired = tool.state_manager._acquire_state_lock()
+        acquired = tool.state_manager.acquire_state_lock()
     if not acquired:
         lockfile_path = f"{args.state_file}.lock"
         owner_pid, run_id = _read_lockfile_metadata(lockfile_path)
@@ -675,7 +675,7 @@ def _validate_file_ids_if_present(tool, args) -> Tuple[bool, int]:
     if getattr(args, "_retry_mode", False):
         return True, 0
     if hasattr(args, "file_ids") and args.file_ids:
-        ok = tool.discovery._validate_file_ids()
+        ok = tool.discovery.validate_file_ids()
         if not ok:
             return False, 2
     return True, 0
@@ -711,7 +711,7 @@ def _run_and_release_lock(tool, args, console: ConsoleHelper) -> int:
         return 2
     finally:
         try:
-            tool.state_manager._release_state_lock()
+            tool.state_manager.release_state_lock()
         except Exception:
             pass
     return 0 if ran_ok else 1
