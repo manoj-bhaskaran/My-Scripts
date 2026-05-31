@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.30.0] - 2026-05-31
+
+### Changed
+
+- `gdrive_locking.py` (new): extracted `_read_lockfile_metadata`, `_print_lockfile_messages`, `_check_pid_alive`, and `_acquire_or_bypass_lock` from `gdrive_cli.py` into a dedicated `gdrive_locking` module. Collaborators (`tool`, `console`, `args`) are accepted explicitly so the module has no circular dependency back into `gdrive_cli` (issue #1137).
+- `gdrive_cli.py`: removed the four lock-management function definitions and replaced them with a single import block from `gdrive_locking`; removed the now-unused `time` import (issue #1137).
+
+### Tests
+
+- Added `test_gdrive_locking.py` covering all lock paths: stale-lock detection, live-lock, `--force` bypass, and the `--lock-timeout` wait loop (integer/fractional remaining display, timeout expiry, acquired-on-retry). Tests updated to patch `gdrive_locking.*` rather than `gdrive_cli.*`.
+- Updated `test_gdrive_cli_lock_management.py`: removed tests for moved functions; retained `_run_and_release_lock` and `_apply_retry_failed_file` coverage.
+
 ## [1.29.0] - 2026-05-31
 
 ### Changed

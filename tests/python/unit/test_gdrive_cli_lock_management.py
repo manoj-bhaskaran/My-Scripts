@@ -1,22 +1,18 @@
-"""Unit tests for lock management and run dispatch in gdrive_cli.
+"""Unit tests for lock-adjacent helpers that remain in gdrive_cli.
 
-Covers the three correctness fixes from issue #1122:
-  - _check_pid_alive returns " (not running)" when PID is not alive
-  - _print_lockfile_messages stale-lock branches are reachable
+Covers:
   - _run_and_release_lock dispatches all commands through _run_tool
-  - _acquire_or_bypass_lock surfaces real exceptions instead of swallowing them
+  - _apply_retry_failed_file empty-CSV error (issue #1133)
 
-Also covers the wait-loop paths added in issue #1133:
-  - _acquire_or_bypass_lock lock_timeout > 0: acquired on retry
-  - _acquire_or_bypass_lock remaining.is_integer() integer display ("5s")
-  - _acquire_or_bypass_lock remaining.is_integer() fractional display ("2.7s")
-  - _acquire_or_bypass_lock timeout expires without acquiring
+Lock-management helpers (_check_pid_alive, _print_lockfile_messages,
+_acquire_or_bypass_lock) have been extracted to gdrive_locking and are
+tested in test_gdrive_locking.py.
 """
 
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 import pytest
 
 cloud_dir = Path(__file__).parent.parent.parent / "src" / "python" / "cloud"
@@ -25,10 +21,7 @@ if str(cloud_dir) not in sys.path:
 
 sys.modules["gdrive_recover"] = MagicMock()
 from gdrive_cli import (  # noqa: E402
-    _check_pid_alive,
-    _print_lockfile_messages,
     _run_and_release_lock,
-    _acquire_or_bypass_lock,
     _apply_retry_failed_file,
 )
 from gdrive_console import ConsoleHelper  # noqa: E402
@@ -57,73 +50,6 @@ def _args(**kwargs):
     )
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
-
-
-# ---------------------------------------------------------------------------
-# _check_pid_alive
-# ---------------------------------------------------------------------------
-
-
-def test_check_pid_alive_returns_not_running_when_dead():
-    tool = _tool(pid_alive=False)
-    note = _check_pid_alive("1234", tool)
-    assert note == " (not running)"
-
-
-def test_check_pid_alive_returns_empty_when_alive():
-    tool = _tool(pid_alive=True)
-    note = _check_pid_alive("1234", tool)
-    assert note == ""
-
-
-def test_check_pid_alive_returns_empty_on_non_integer_pid():
-    tool = _tool()
-    note = _check_pid_alive("unknown", tool)
-    assert note == ""
-
-
-def test_check_pid_alive_returns_empty_on_pid_check_exception():
-    tool = MagicMock()
-    tool.state_manager.pid_is_alive.side_effect = OSError("permission denied")
-    note = _check_pid_alive("1234", tool)
-    assert note == ""
-
-
-# ---------------------------------------------------------------------------
-# _print_lockfile_messages — stale-lock branch (no force)
-# ---------------------------------------------------------------------------
-
-
-def test_print_lockfile_messages_stale_no_force_prints_stale_hint(capsys):
-    args = _args()
-    _print_lockfile_messages(args, ConsoleHelper(args), "999", "run-abc", " (not running)", False)
-    err = capsys.readouterr().err
-    assert "stale" in err
-    assert "--force" in err
-
-
-def test_print_lockfile_messages_live_no_force_prints_tip(capsys):
-    args = _args()
-    _print_lockfile_messages(args, ConsoleHelper(args), "999", "run-abc", "", False)
-    err = capsys.readouterr().err
-    assert "Tip:" in err
-    assert "stale" not in err
-
-
-def test_print_lockfile_messages_stale_with_force_prints_stale_warning(capsys):
-    args = _args()
-    _print_lockfile_messages(args, ConsoleHelper(args), "999", "run-abc", " (not running)", True)
-    err = capsys.readouterr().err
-    assert "stale" in err
-    assert "WARN" in err
-
-
-def test_print_lockfile_messages_live_with_force_prints_generic_bypass(capsys):
-    args = _args()
-    _print_lockfile_messages(args, ConsoleHelper(args), "999", "run-abc", "", True)
-    err = capsys.readouterr().err
-    assert "bypassing concurrent-run guardrail" in err
-    assert "stale" not in err
 
 
 # ---------------------------------------------------------------------------
@@ -190,117 +116,6 @@ def test_run_and_release_lock_releases_lock_even_on_scope_mismatch(capsys):
     with patch("gdrive_cli._run_tool", side_effect=err):
         _run_and_release_lock(tool, args, ConsoleHelper(args))
     tool.state_manager.release_state_lock.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# _acquire_or_bypass_lock — exceptions now surface
-# ---------------------------------------------------------------------------
-
-
-def test_acquire_or_bypass_lock_succeeds_when_lock_acquired():
-    tool = _tool(acquired=True)
-    args = _args()
-    ok, code = _acquire_or_bypass_lock(tool, args, ConsoleHelper(args))
-    assert ok and code == 0
-
-
-def test_acquire_or_bypass_lock_fails_without_force_on_contention(capsys):
-    tool = _tool(acquired=False)
-    args = _args(force=False)
-    with patch("gdrive_cli._read_lockfile_metadata", return_value=("999", "run-abc")):
-        with patch("gdrive_cli._check_pid_alive", return_value=""):
-            ok, code = _acquire_or_bypass_lock(tool, args, ConsoleHelper(args))
-    assert not ok and code == 2
-
-
-def test_acquire_or_bypass_lock_succeeds_with_force_on_contention(capsys):
-    tool = _tool(acquired=False)
-    args = _args(force=True)
-    with patch("gdrive_cli._read_lockfile_metadata", return_value=("999", "run-abc")):
-        with patch("gdrive_cli._check_pid_alive", return_value=" (not running)"):
-            ok, code = _acquire_or_bypass_lock(tool, args, ConsoleHelper(args))
-    assert ok and code == 0
-
-
-def test_acquire_or_bypass_lock_raises_on_filesystem_error():
-    tool = MagicMock()
-    tool.state_manager.acquire_state_lock.side_effect = OSError("disk error")
-    args = _args()
-    with pytest.raises(OSError, match="disk error"):
-        _acquire_or_bypass_lock(tool, args, ConsoleHelper(args))
-
-
-def test_acquire_or_bypass_lock_stale_lock_no_force_emits_stale_message(capsys):
-    tool = _tool(acquired=False)
-    args = _args(force=False)
-    with patch("gdrive_cli._read_lockfile_metadata", return_value=("999", "run-abc")):
-        with patch("gdrive_cli._check_pid_alive", return_value=" (not running)"):
-            ok, code = _acquire_or_bypass_lock(tool, args, ConsoleHelper(args))
-    err = capsys.readouterr().err
-    assert not ok
-    assert "stale" in err
-
-
-# ---------------------------------------------------------------------------
-# _acquire_or_bypass_lock — wait-loop paths (lock_timeout > 0)
-# ---------------------------------------------------------------------------
-
-
-def test_acquire_or_bypass_lock_acquired_on_retry(capsys):
-    """Lock fails on the first attempt but succeeds after one wait iteration."""
-    tool = MagicMock()
-    tool.state_manager.acquire_state_lock.side_effect = [False, True]
-    args = _args(lock_timeout=5.0)
-    # time.time(): start=100, while-check=100 (enters loop), remaining=100, while-check=100 (exits)
-    with patch("gdrive_cli.time") as mock_time:
-        mock_time.time.side_effect = [100.0, 100.0, 100.0, 100.0]
-        mock_time.sleep = MagicMock()
-        ok, code = _acquire_or_bypass_lock(tool, args, ConsoleHelper(args))
-    assert ok and code == 0
-    mock_time.sleep.assert_called_once()
-
-
-def test_acquire_or_bypass_lock_wait_loop_integer_remaining_display(capsys):
-    """When remaining time is a whole number, display uses integer format ('5s')."""
-    tool = MagicMock()
-    tool.state_manager.acquire_state_lock.side_effect = [False, True]
-    args = _args(lock_timeout=5.0)
-    # elapsed = 0 at the time remaining is computed → remaining = 5.0 → is_integer() True
-    with patch("gdrive_cli.time") as mock_time:
-        mock_time.time.side_effect = [100.0, 100.0, 100.0, 100.0]
-        mock_time.sleep = MagicMock()
-        _acquire_or_bypass_lock(tool, args, ConsoleHelper(args))
-    err = capsys.readouterr().err
-    assert "remaining 5s" in err
-
-
-def test_acquire_or_bypass_lock_wait_loop_fractional_remaining_display(capsys):
-    """When remaining time is fractional, display uses one-decimal format ('2.7s')."""
-    tool = MagicMock()
-    tool.state_manager.acquire_state_lock.side_effect = [False, True]
-    args = _args(lock_timeout=5.0)
-    # elapsed = 2.3 when remaining is computed → remaining = 2.7 → is_integer() False
-    with patch("gdrive_cli.time") as mock_time:
-        mock_time.time.side_effect = [100.0, 102.3, 102.3, 102.3]
-        mock_time.sleep = MagicMock()
-        _acquire_or_bypass_lock(tool, args, ConsoleHelper(args))
-    err = capsys.readouterr().err
-    assert "remaining 2.7s" in err
-
-
-def test_acquire_or_bypass_lock_timeout_expires_returns_failure(capsys):
-    """When lock_timeout expires without acquiring, returns False with code 2."""
-    tool = MagicMock()
-    tool.state_manager.acquire_state_lock.side_effect = [False, False]
-    args = _args(lock_timeout=5.0, force=False)
-    # Last time.time() call returns start+6 so the while condition fails
-    with patch("gdrive_cli.time") as mock_time:
-        mock_time.time.side_effect = [100.0, 100.0, 100.0, 106.0]
-        mock_time.sleep = MagicMock()
-        with patch("gdrive_cli._read_lockfile_metadata", return_value=("999", "run-abc")):
-            with patch("gdrive_cli._check_pid_alive", return_value=""):
-                ok, code = _acquire_or_bypass_lock(tool, args, ConsoleHelper(args))
-    assert not ok and code == 2
 
 
 # ---------------------------------------------------------------------------
