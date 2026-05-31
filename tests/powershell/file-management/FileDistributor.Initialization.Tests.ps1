@@ -55,4 +55,12 @@ Describe 'FileDistributor initialization behavior' {
         $content | Should -Match 'Set-LoggerLogFilePath\s+-Path\s+\$LogFilePath'
         $content | Should -Not -Match '\$Global:LogConfig\.LogFilePath\s*='
     }
+
+
+    It 'emits the successful completion message with pipeline-compatible output after logging it' {
+        $content = Get-Content -LiteralPath $script:ScriptPath -Raw
+
+        $content | Should -Match 'Write-LogInfo "File distribution and optional cleanup completed\."\s+Write-Output "File distribution and optional cleanup completed\."'
+        $content | Should -Not -Match '\bWrite-Host\b'
+    }
 }
