@@ -50,7 +50,7 @@ Analyze file content to determine the correct file type and restore proper exten
 python find_duplicate_images.py --path /path/to/images --threshold 5
 
 # Crop colored borders
-python crop_colours.py --input image.jpg --output cropped.jpg
+PYTHONPATH=src/python python -m media.crop_colours --input image.jpg --output cropped.jpg
 
 # Recover file extensions
 python recover_extensions.py --directory /path/to/files
@@ -67,6 +67,11 @@ python recover_extensions.py --directory /path/to/files
 All scripts use the Python Logging Framework located in `src/python/modules/logging/`.
 
 ## Troubleshooting crop_colours.py
+
+> `crop_colours.py` is part of the `media` package. Run it with `python -m media.crop_colours`
+> from a context where `src/python` is on `PYTHONPATH`; direct `python crop_colours.py`
+> execution is unsupported because package-relative imports need the parent package.
+
 
 - **"No valid images found"**:
   Ensure `--input` has `.png`/`.jpg`/`.jpeg` files. Use `--recurse` to include subfolders.

@@ -85,9 +85,27 @@ with ErrorContext("Processing data", on_error="continue"):
 
 ### file_operations
 
-Provides file operation utilities with built-in retry logic.
+Provides file operation utilities with built-in retry logic, filename sanitization, and collision-safe path generation.
 
 #### Functions
+
+
+**`sanitize_filename(name, fallback)`** - Remove unsafe filename characters and return a fallback when empty
+
+```python
+from src.python.modules.utils.file_operations import sanitize_filename
+
+safe_name = sanitize_filename("my*file?.txt", fallback="file_abc")
+```
+
+**`unique_path(path, fallback_stem)`** - Return a short-UUID-suffixed path when the target already exists
+
+```python
+from pathlib import Path
+from src.python.modules.utils.file_operations import unique_path
+
+target = unique_path(Path("downloads/report.txt"), fallback_stem="file_abc")
+```
 
 **`copy_with_retry(source, destination, max_retries, retry_delay, max_backoff)`**
 

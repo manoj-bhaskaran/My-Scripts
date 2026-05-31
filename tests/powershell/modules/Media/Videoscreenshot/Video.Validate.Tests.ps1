@@ -60,9 +60,22 @@ Describe 'Test-VideoPlayable' {
     }
 
     It 'returns false when the VLC probe exits with a non-zero code' {
+        # stderr output is not captured via pipes (no redirection); the test confirms
+        # that non-zero exit still yields $false regardless of what VLC wrote to stderr.
         $script:FakeVlc = Script:New-FakeVlcExecutable -UnixBody 'echo probe failed >&2; exit 7' -WindowsBody 'echo probe failed 1>&2& exit /b 7'
 
         Test-VideoPlayable -Path $script:FakeVideo -VlcExe $script:FakeVlc -TimeoutSeconds 2 | Should -BeFalse
+    }
+
+    It 'returns true when a chatty VLC floods stdout but exits 0 (regression: pipe-buffer deadlock)' {
+        # Previously, excessive stdout/stderr output filled the OS pipe buffer and caused
+        # WaitForExit to block indefinitely, falsely timing out a playable video.
+        # With no pipe redirection the process exits cleanly and should return $true.
+        $script:FakeVlc = Script:New-FakeVlcExecutable `
+            -UnixBody 'for i in $(seq 1 2000); do echo "VLC startup noise line $i"; done; exit 0' `
+            -WindowsBody "for /l %%i in (1,1,2000) do @echo VLC startup noise line %%i`r`nexit /b 0"
+
+        Test-VideoPlayable -Path $script:FakeVideo -VlcExe $script:FakeVlc -TimeoutSeconds 5 | Should -BeTrue
     }
 
     It 'force-kills a hung VLC probe and treats the video as not playable' {

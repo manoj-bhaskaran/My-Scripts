@@ -12,6 +12,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.31.1] - 2026-05-31
+
+### Changed
+
+- `gdrive_cli.py`: simplified `recover-and-download --download-dir` validation so `modules.utils.file_operations.is_writable()` owns directory creation and write probing, while preserving the explicit existing-file guard and user-facing error messages (issue #1139).
+- `gdrive_cli.py`: replaced remaining `typing.Dict`/`typing.Tuple` annotations with Python 3.10+ built-in `dict[...]`/`tuple[...]` generics and removed the now-unused `typing` import (issue #1139).
+
+### Tests
+
+- Updated `gdrive_cli` download-directory validation coverage to assert failed create/write checks are delegated through `is_writable()`.
+
+## [1.31.0] - 2026-05-31
+
+### Changed
+
+- `gdrive_cli.py`: refactored `main()` pre-construction validation from nine separate `ok, code = …; if not ok: return code` blocks into two data-driven loops (`pre_timestamp_steps` and `post_timestamp_steps`). Validators that require `console` are bound with `functools.partial`; `_apply_timestamped_output` remains inline between the two loops to preserve its ordering dependency. Tool-dependent steps (`_acquire_or_bypass_lock`, `_validate_file_ids_if_present`) are unchanged and still run after `DriveTrashRecoveryTool` construction. Execution order and all `args`-mutation dependencies are preserved exactly (issue #1138).
+
+## [1.30.0] - 2026-05-31
+
+### Changed
+
+- `gdrive_locking.py` (new): extracted `_read_lockfile_metadata`, `_print_lockfile_messages`, `_check_pid_alive`, and `_acquire_or_bypass_lock` from `gdrive_cli.py` into a dedicated `gdrive_locking` module. Collaborators (`tool`, `console`, `args`) are accepted explicitly so the module has no circular dependency back into `gdrive_cli` (issue #1137).
+- `gdrive_cli.py`: removed the four lock-management function definitions and replaced them with a single import block from `gdrive_locking`; removed the now-unused `time` import (issue #1137).
+
+### Tests
+
+- Added `test_gdrive_locking.py` covering all lock paths: stale-lock detection, live-lock, `--force` bypass, and the `--lock-timeout` wait loop (integer/fractional remaining display, timeout expiry, acquired-on-retry). Tests updated to patch `gdrive_locking.*` rather than `gdrive_cli.*`.
+- Updated `test_gdrive_cli_lock_management.py`: removed tests for moved functions; retained `_run_and_release_lock` and `_apply_retry_failed_file` coverage.
+
+## [1.29.0] - 2026-05-31
+
+### Changed
+
+- `gdrive_state.py`: `RecoveryStateManager` now exposes public `acquire_state_lock()`, `release_state_lock()`, and `pid_is_alive(pid)` methods that delegate to the existing private implementations. The private methods are retained unchanged for internal callers (issue #1136).
+- `gdrive_discovery.py`: `DriveTrashDiscovery` now exposes a public `validate_file_ids()` method that delegates to `_validate_file_ids()`. The private method is retained unchanged (issue #1136).
+- `gdrive_cli.py`: updated all cross-module calls to use the new public API — `state_manager.acquire_state_lock()`, `state_manager.release_state_lock()`, `state_manager.pid_is_alive()`, and `discovery.validate_file_ids()` — removing all references to `_`-prefixed members of `RecoveryStateManager` and `DriveTrashDiscovery` (issue #1136).
+
+### Tests
+
+- Updated `test_cloud_gdrive_state.py`, `test_gdrive_cli_lock_management.py`, `test_gdrive_recover.py`, and `test_gdrive_discovery_retry_classification.py` to reference the new public API names.
+
+## [1.28.0] - 2026-05-31
+
+### Changed
+
+- `gdrive_recover.py`: `_generate_target_path` now reuses shared `modules.utils.file_operations.sanitize_filename` and `unique_path` helpers for Drive item filename cleanup and conflict-safe local target generation, preserving overrides, relative subdirectory joins, and `--overwrite`/`--skip-existing` bypass behavior (issue #1120).
+
+### Tests
+
+- Added shared `file_operations` unit coverage for filename sanitization fallback behavior and one-pass UUID suffix generation on local filename collisions.
+
+## [1.27.3] - 2026-05-31
+
+### Changed
+
+- `gdrive_cli.py`: routes post-restore policy metric, warning, and error logs through the shared `python_logging_framework` helpers instead of raw `logging.getLogger(__name__)` calls with defensive `try/except Exception: pass` wrappers. The `METRIC {json}` line for `unknown_policy_token` keeps the same greppable shape while user-facing stderr warning/error output remains unchanged.
+
+### Tests
+
+- Added `gdrive_cli` policy-validation unit coverage proving unknown-policy metric emission and strict/non-strict warning/error logs use the shared logging helper entry points.
+
+## [1.27.2] - 2026-05-31
+
+### Changed
+
+- `gdrive_cli.py`: routes all prefixed console output through `ConsoleHelper.print_err`/`print_warn`/`print_info` instead of open-coding `print(f"{console.sym_*()} ...", file=sys.stderr)`. Stream routing (errors/warnings to stderr, info to stdout) and `--no-emoji` behaviour are unchanged; unprefixed continuation lines are retained as-is.
+- `gdrive_cli.py`: constructs a single `ConsoleHelper` in `main()` and threads it into the validation/output helpers instead of reconstructing it per helper.
+
+### Tests
+
+- Updated `gdrive_cli` console-helper, folder-id, and lock-management unit tests to pass the threaded `ConsoleHelper` into the refactored helper signatures.
+
+## [1.27.1] - 2026-05-31
+
+### Changed
+
+- `gdrive_recover.py`: `_setup_logging` now configures console and optional `--log-file` output through the shared `python_logging_framework` instead of constructing local root handlers inline.
+- `python_logging_framework.py`: `initialise_logger` accepts explicit file paths, separate console/file levels, optional default file creation, and root-handler configuration so scripts with existing CLI logging contracts can reuse the shared framework without weakening preconfigured host root-log levels.
+
+### Tests
+
+- Added shared logging-framework coverage for explicit log-file paths and root-handler configuration used by `gdrive_recover.py`.
+
+## [1.27.0] - 2026-05-30
+
+### Changed
+
+- `gdrive_recover.py`: removed pass-through wrapper methods for privilege checks, file-ID validation, recovery operations, and reporter printing so tests and callers target the owning helper objects directly.
+- `gdrive_discovery.py`: replaced the single-item `_seen_total_ref` list box with `SeenTotalCounter`, a named shared counter injected into discovery for streaming progress accounting.
+- `gdrive_recover.py`: routes `--fresh-run` reset messages through `RecoveryReporter`/`ConsoleHelper` instead of raw `print(...)`.
+
+### Tests
+
+- Retargeted recovery unit tests from `DriveTrashRecoveryTool` delegation wrappers to `tool.privileges`, `tool.discovery`, and direct owner APIs.
+
 ## [1.26.14] - 2026-05-27
 
 ### Fixed
@@ -286,39 +381,19 @@ behaviour changes; follow-up patches (listed below) include targeted runtime fix
 - **Download extracted** — `gdrive_download.py` / `DriveDownloader` (`[1.14.0]`).
 - **Operations + shared retry extracted** — `gdrive_operations.py` / `DriveOperations`, `gdrive_retry.py` / `with_retries(...)` (`[1.15.0]`).
 - **Reporting + privilege checks extracted** — `gdrive_report.py` / `RecoveryReporter`, `gdrive_privileges.py` / `DrivePrivilegeChecker`; `--no-emoji` completed (`[1.16.0]`, `[1.17.0]`).
-- Plus follow-up patches restoring back-compat shims, error-accounting fixes, retry/error-classification hardening, cognitive-complexity reductions, and Black/CI formatting fixes (`[1.11.2]`, `[1.12.2]`, `[1.12.4]`, `[1.12.5]`, `[1.12.6]`, `[1.12.7]`, `[1.15.1]`, `[1.15.2]`, `[1.15.3]`, `[1.15.4]`).
+- Plus follow-up patches restoring back-compat shims, error-accounting fixes, retry/error-classification hardening, and CI formatting fixes.
 
-See #789–#856 for issue-by-issue detail.
-
-## [1.8.3] - 2026-03-26
+## [1.8.2–1.8.3] - 2026-03-26 (consolidated)
 
 ### Changed
 
-- Added pointer to `CHANGELOG.md` in the module docstring of `gdrive_recover.py`.
-
-## [1.8.2] - 2026-03-26
-
-### Changed
-
-- Moved embedded `CHANGELOG` block out of `gdrive_recover.py` into this `CHANGELOG.md` file. No logic changes.
+- Moved embedded `CHANGELOG` block out of `gdrive_recover.py` into `CHANGELOG-gdrive-recover.md`; added a pointer to the file in the module docstring. No logic changes.
 
 ## [1.8.1] - 2026-03-26
 
 ### Fixed
 
-- **Streaming "found" double-counting:** In `recover-only` and `recover-and-download` modes we were pre-discovering items in `_prepare_recovery()` and then counting them again during streaming discovery. This inflated `Total files found` (e.g., `--limit 1` could show 2 found) and skewed the success rate.
-  - Introduced `streaming_mode` flow in `_prepare_recovery(streaming_mode: bool)` that **skips pre-discovery** when streaming and resets `stats['found']`, `_seen_total`, and `_processed_total` so streaming is the single source of truth.
-  - Updated `execute_recovery()` to pass `streaming_mode = (args.mode != 'dry_run')`.
-
-### Impact
-
-- Accurate `Total files found`, `Files recovered/downloaded`, and **Success rate** in streaming modes.
-- `--limit` now cleanly caps **streamed** discovery without preloaded items leaking into counts.
-
-### Notes
-
-- No CLI or API changes; backward-compatible patch.
-- Dry-run behavior unchanged (it still performs one-shot discovery and reports counts once).
+- Streaming "found" double-counting fixed: `_prepare_recovery` now skips pre-discovery in streaming mode and resets `stats['found']` / `_seen_total` / `_processed_total`, so streaming is the single source of truth for `Total files found`, success rate, and `--limit` capping.
 
 ## [1.8.0] - 2026-03-26
 
@@ -332,49 +407,21 @@ See #789–#856 for issue-by-issue detail.
 
 ### Highlights
 
-- **Configurable credentials path** via `GDRT_CREDENTIALS_FILE`. Falls back to `credentials.json` if unset; paths with spaces are supported. Clearer startup error when missing/unreadable.
-- **Windows/OneDrive lock resilience:** Added `_atomic_replace_with_retry()` to handle transient `WinError 32` during final `*.partial → final` rename, including cleanup of zero-byte stubs.
+- Configurable credentials path via `GDRT_CREDENTIALS_FILE`; clearer startup error when missing.
+- Windows/OneDrive lock resilience: `_atomic_replace_with_retry()` for transient `WinError 32` on `.partial → final` rename.
 
 ### Fixes & Robustness
 
-- **Dry-run auth flow:** `dry_run()` now authenticates before any Drive calls, eliminating "Service not initialized" crashes.
-- **Dry-run on Windows/Linux:** Guarded `args.download_dir` access with `getattr(..., None)` so `dry-run` and `recover-only` don't raise `AttributeError`.
-- **OAuth bootstrap:** Avoid `'NoneType' object has no attribute 'to_json'` when credentials are missing; guarded writes and provide a helpful exit.
-- **Token cache hardening:** Treat unreadable/corrupt `token.json` as a cache miss and trigger a fresh OAuth flow instead of crashing.
-- **Windows path literals:** Marked long docstrings/argparse `epilog` as raw strings to prevent `unicodeescape` errors from `\U` in examples.
-
-### Developer Experience & Messaging
-
-- Clearer auth errors including resolved credential path.
-- Improved error reporting in dry-run when auth fails (user-facing messages instead of stack traces).
-
-### Docs & UX
-
-- Added examples for setting `GDRT_CREDENTIALS_FILE` in PowerShell, CMD, and Bash.
-
-### Notes
-
-- Backward compatible; no CLI or API changes to existing commands/flags.
-- `recover-and-download` behavior is unchanged except for added resilience during the final rename on Windows.
-- For immediate mitigation of destination-lock issues without updating, pause OneDrive sync or download to a non-synced folder.
-- No changes to token caching semantics (`token.json` still created/updated after first OAuth consent).
+- Dry-run auth flow and `--download-dir` `AttributeError` guard on Windows/Linux.
+- Token cache hardening: unreadable/corrupt `token.json` treated as a cache miss and triggers fresh OAuth instead of crashing.
 
 ## [1.6.0–1.6.8] - 2025-09-21 → 2025-09-22
 
 ### Highlights
 
-- **HTTP transport & pooling (opt-in):** New `--http-transport {auto|httplib2|requests}` and `--http-pool-maxsize` enable per-thread pooled `AuthorizedSession` when `requests` is available; otherwise gracefully falls back to `httplib2`. Added a lightweight requests→httplib2 shim exposing common attrs (`timeout`, `ca_certs`, `disable_ssl_certificate_validation`) and best-effort smoke tests (tiny `files.list` + `Range: bytes=0-0` media fetch) to validate the adapter path. Help text explains the pool sizing heuristic; docs clarify that performance gains vary by workload and environment.
-- **Concurrent-run guardrails & locking:** State now carries a `run_id` and `owner_pid`; a lockfile prevents overlapping runs. Locking was hardened to **fail closed**, verify persisted metadata, and print PID liveness hints. Added `--lock-timeout <sec>` to wait for a held lock with polling, plus clearer messages for stale vs active locks and an explicit `--force` takeover path. Safer file writes (`flush` + `fsync`) reduce truncation risk.
-- **Observability & parity checks:** Validation/discovery parity moved behind `--debug-parity`, emitting structured JSON metrics and optional `--parity-metrics-file`. `--fail-on-parity-mismatch` can enforce CI failure on mismatch. Logs are quieter by default (DEBUG instead of INFO) and wording was tightened ("Parity check …").
-- **State compatibility:** Introduced `schema_version: 1` with tolerant loading—unknown JSON fields are ignored and missing fields defaulted. Legacy states (v0) emit a one-time note and are upgraded on next save.
-- **Policy & validation UX:** Unknown `--post-restore-policy` values get a "did you mean …?" suggestion (Levenshtein ≤2) and structured telemetry for tracking. Most error/warning prints now go to **stderr**; `--no-emoji` offers ASCII output. Extension validator helpers gained clearer docstrings and return types.
-- **Type-system cleanup (phase 1):** Tightened function signatures to eliminate easy `# type: ignore`s, introduced small `TypedDict` for Drive file metadata across discovery paths, and added a local `mypy.ini` (`warn_unused_ignores = True`) with a couple of `reveal_type` checks.
-- **Requirements & docs:** Explicit Python **3.10+** requirement (PEP 604 unions) called out in headers/CLI epilog, including notes that apply to `validators.py`. Docs include commands to install requests transport support: `pip install requests google-auth[requests]`.
-
-### Notes
-
-- Pooling and rate behavior are workload-dependent; treat any throughput gains as directional.
-- Default behavior is unchanged unless new flags are used; existing workflows continue to work.
+- **HTTP transport & pooling:** `--http-transport` / `--http-pool-maxsize`; per-thread pooled `AuthorizedSession`; httplib2 fallback.
+- **Concurrent-run guardrails & locking:** `run_id`/`owner_pid` in state; lockfile; `--lock-timeout`; `--force` takeover; safer file writes.
+- **State compatibility:** `schema_version: 1`; tolerant loading of unknown fields; v0 upgrade on next save.
 
 ## [1.5.x] - 2025-09-19 → 2025-09-21 (consolidated)
 
@@ -391,6 +438,4 @@ See #789–#856 for issue-by-issue detail.
   diagnostics via `--rl-diagnostics` to validate observed RPS (±10%).
 - **Safety & Hotfixes (1.5.4):** client-per-thread on by default, atomic state writes + advisory
   locks, partial downloads, better progress cadence.
-- **Usability (1.5.3):** validation chain short-circuits, better no-command UX, quieter discovery.
-- **Foundations (1.5.1/1.5.0):** baseline rate limiting, streaming downloads, `--limit` canaries;
-  policy normalization (`retain|trash|delete`) with aliases and simplified service internals.
+- **Foundations (1.5.0–1.5.1):** baseline rate limiting, streaming downloads, `--limit` canaries; policy normalisation (`retain|trash|delete`) with aliases.

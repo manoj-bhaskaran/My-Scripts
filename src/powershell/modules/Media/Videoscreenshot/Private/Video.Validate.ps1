@@ -3,16 +3,16 @@ function Test-VideoPlayable {
   .SYNOPSIS
   Lightweight validation that VLC can open a video.
   .DESCRIPTION
-  Launches VLC in a headless/dummy interface for ~1 second and checks the exit code
-  as a quick “can this open & start?” probe. The probe is bounded by
-  TimeoutSeconds and force-killed when VLC does not exit in time. This is
-  intentionally fast to keep batch throughput high and to avoid long delays on
-  broken files.
+  Launches VLC in a headless/dummy interface for ~1 second with VLC writing its
+  diagnostics to a sidecar logfile rather than stdout/stderr pipes. Avoiding pipe
+  redirection eliminates the OS pipe-buffer deadlock that occurs when VLC's startup
+  chatter fills the pipe buffer before WaitForExit returns — the root cause of
+  chatty-but-playable videos being falsely reported as NotPlayable.
 
   Exit policy:
     - Returns $true on exit code 0 (success).
-    - Returns $false on a clean non-zero exit. In this case, stderr/stdout are captured
-      and emitted at Debug level to aid troubleshooting.
+    - Returns $false on a clean non-zero exit. The probe sidecar logfile is read and
+      emitted at Debug level to aid troubleshooting.
     - Returns $false on probe timeout after force-killing the VLC process.
     - Throws only on immediate startup failures (e.g., process launch errors).
 
@@ -20,16 +20,38 @@ function Test-VideoPlayable {
     - The 1s window is a trade-off; longer probes reduce false negatives on slow sources
       (e.g., cold network shares) but slow the batch. Use TimeoutSeconds to bound
       how long the process may run before it is treated as not playable.
+    - Stdout/stderr are NOT redirected; VLC logs to a temp sidecar file to avoid
+      pipe-buffer deadlocks (mirrors the capture path fix from #1201).
   #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path,
         [string]$VlcExe,
-        [ValidateRange(1, 300)][int]$TimeoutSeconds = 5
+        [ValidateRange(1, 300)][int]$TimeoutSeconds = 10,
+        [ValidateRange(0, 2)][int]$LogVerbosity = 1
     )
     if (-not (Test-Path -LiteralPath $Path)) { return $false }
 
-    # Process setup
+    # Create a unique sidecar logfile in temp (distinct from SaveFolder frame globs and capture log).
+    # Best-effort: if creation fails, continue without --file-logging rather than throw.
+    $probeLogPath = $null
+    try {
+        $probeLogPath = Join-Path ([System.IO.Path]::GetTempPath()) (".vlcprobe_{0}.log" -f [System.Guid]::NewGuid().ToString('N'))
+        $null = New-Item -ItemType File -Path $probeLogPath -Force -ErrorAction Stop
+    }
+    catch {
+        Write-Debug ("Test-VideoPlayable: unable to create probe logfile '{0}': {1}; continuing without VLC file logging." -f $probeLogPath, $_.Exception.Message)
+        $probeLogPath = $null
+    }
+
+    # Build VLC file-logging args (mirrors Get-VlcFileLoggingArgs; no context object available here).
+    $loggingArgs = @()
+    if (-not [string]::IsNullOrWhiteSpace($probeLogPath)) {
+        $loggingArgs = @('--file-logging', '--logfile', $probeLogPath, '--verbose', "$LogVerbosity")
+        if ($LogVerbosity -eq 0) { $loggingArgs += '--quiet' }
+    }
+
+    # Process setup — stdout/stderr NOT redirected; VLC logs to sidecar to avoid pipe-buffer deadlock.
     $psi = [Diagnostics.ProcessStartInfo]::new()
     $psi.FileName = if (-not [string]::IsNullOrWhiteSpace($VlcExe)) { $VlcExe } else { 'vlc' }
     # ArgumentList handles quoting for us; we run a minimal, non-interactive session:
@@ -37,12 +59,13 @@ function Test-VideoPlayable {
     #   --play-and-exit    : exit once playback ends/hits stop-time
     #   --start-time 0     : seek to start (defensive)
     #   --stop-time  1     : ~1s probe (see trade-off note in DESCRIPTION)
-    foreach ($a in @('--intf', 'dummy', '--play-and-exit', '--start-time', '0', '--stop-time', '1', $Path)) {
+    #   --file-logging ... : direct VLC diagnostics to sidecar; avoids OS pipe-buffer deadlock
+    foreach ($a in (@('--intf', 'dummy', '--play-and-exit', '--start-time', '0', '--stop-time', '1') + $loggingArgs + @($Path))) {
         $psi.ArgumentList.Add($a)
     }
     $psi.UseShellExecute = $false
-    $psi.RedirectStandardError = $true
-    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $false
+    $psi.RedirectStandardOutput = $false
     $psi.CreateNoWindow = $true
 
     # Launch VLC
@@ -66,23 +89,22 @@ function Test-VideoPlayable {
 
         if ($p.ExitCode -eq 0) { return $true }
 
-        # Non-zero exit: capture stderr/stdout for diagnostics (Debug level to avoid noise).
-        # We read after the process exits to avoid async complexity.
-        try {
-            $stderr = $p.StandardError.ReadToEnd()
+        # Non-zero exit: read sidecar logfile for diagnostics (Debug level to avoid noise).
+        if (-not [string]::IsNullOrWhiteSpace($probeLogPath) -and (Test-Path -LiteralPath $probeLogPath -PathType Leaf)) {
+            try {
+                $logText = Get-Content -LiteralPath $probeLogPath -Raw -ErrorAction SilentlyContinue
+                if ($logText) { Write-Debug ("Test-VideoPlayable: VLC probe log => {0}" -f $logText.Trim()) }
+            }
+            catch { }
         }
-        catch { $stderr = '' }
-        try {
-            $stdout = $p.StandardOutput.ReadToEnd()
-        }
-        catch { $stdout = '' }
-
-        if ($stderr) { Write-Debug ("Test-VideoPlayable: VLC stderr => {0}" -f $stderr.Trim()) }
-        if ($stdout) { Write-Debug ("Test-VideoPlayable: VLC stdout => {0}" -f $stdout.Trim()) }
         Write-Debug ("Test-VideoPlayable: VLC exited with code {0} for '{1}'" -f $p.ExitCode, $Path)
     }
     finally {
         $p.Dispose()
+        # Deterministic cleanup: always remove the probe logfile (diagnostics already emitted above).
+        if (-not [string]::IsNullOrWhiteSpace($probeLogPath) -and (Test-Path -LiteralPath $probeLogPath -PathType Leaf)) {
+            try { Remove-Item -LiteralPath $probeLogPath -Force -ErrorAction SilentlyContinue } catch { }
+        }
     }
 
     # Treat non-zero as not playable; caller decides to skip

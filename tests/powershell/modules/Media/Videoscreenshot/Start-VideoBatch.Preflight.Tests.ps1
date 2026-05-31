@@ -21,6 +21,8 @@ BeforeAll {
                 VideoExtensions                 = @('.mp4')
                 VideoProbeTimeoutSeconds        = 1
                 SnapshotFallbackTimeoutSeconds  = 1
+                SnapshotDurationSlackFactor     = 2.0
+                SnapshotMinimumTimeoutSeconds   = 2
                 SnapshotDurationGraceSeconds    = 1
                 SnapshotIdleTimeoutSeconds      = 0
                 SnapshotIdleWarmUpSeconds       = 0

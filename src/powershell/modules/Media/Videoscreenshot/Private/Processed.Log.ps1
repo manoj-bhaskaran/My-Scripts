@@ -17,6 +17,58 @@ function Resolve-VideoPath {
     return $full
 }
 
+function Convert-ProcessedLogLineToResumePath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Line
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Line)) { return $null }
+
+    $trimmedLine = $Line.Trim()
+    if ($trimmedLine.StartsWith('#')) { return $null }
+
+    $columns = $trimmedLine.Split("`t")
+    $rawPath = $columns[0]
+    $isTsv = $columns.Count -gt 1
+    $status = if ($isTsv) { $columns[1] } else { 'Processed' }
+    $reason = if ($columns.Count -ge 3) { $columns[2] } else { '' }
+    $shouldSkip = Test-ProcessedLogEntryShouldSkip -Status $status -Reason $reason -LegacyEntry:(-not $isTsv)
+
+    if (-not $shouldSkip -or [string]::IsNullOrWhiteSpace($rawPath)) { return $null }
+
+    try {
+        return (Resolve-VideoPath -Path $rawPath)
+    }
+    catch {
+        return $rawPath
+    }
+}
+
+function Test-ProcessedLogEntryShouldSkip {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Status,
+        [string]$Reason = '',
+        [switch]$LegacyEntry
+    )
+
+    if ($LegacyEntry) { return $true }
+
+    $normalizedStatus = $Status.Trim()
+    $normalizedReason = ($Reason ?? '').Trim()
+
+    if ($normalizedStatus.Equals('Processed', [StringComparison]::OrdinalIgnoreCase)) {
+        return (-not $normalizedReason.Equals('NoFrames', [StringComparison]::OrdinalIgnoreCase))
+    }
+
+    if ($normalizedStatus.Equals('Skipped', [StringComparison]::OrdinalIgnoreCase)) {
+        return $normalizedReason.Equals('NotPlayable', [StringComparison]::OrdinalIgnoreCase)
+    }
+
+    return $false
+}
+
 <#
 .SYNOPSIS
   Build a normalized set of already-processed video paths.
@@ -24,8 +76,14 @@ function Resolve-VideoPath {
   Reads a processed log and returns a HashSet[string] of normalized absolute paths.
   Supports both the current TSV format (`<FullPath>`<tab>`<Status>`<tab>`<Reason>`<tab>`<Timestamp>`)
   and the **legacy format** that contains one `<FullPath>` per line. Blank lines and
-  comment lines (starting with '#') are ignored. Status values in TSV are
-  currently informational; presence of the path implies "already processed".
+  comment lines (starting with '#') are ignored.
+
+  TSV rows are status-aware: only successful `Processed` rows, excluding
+  `Processed`/`NoFrames`, and deliberate `Skipped`/`NotPlayable` rows are added to
+  the resume skip set. Retry-eligible rows such as `Failed`, `TimedOutProcessed`,
+  `Processed`/`NoFrames`, and `Skipped`/`VideoProbeError` are not skipped. Legacy
+  single-column rows are treated as successful `Processed` entries for backward
+  compatibility.
 .PARAMETER Path
   Path to the processed log. The file may be missing (returns an empty set).
 .OUTPUTS
@@ -38,41 +96,22 @@ function Get-ResumeIndex {
     )
     # Case-insensitive by default on Windows; keeps behavior stable cross-platform.
     $set = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    if (-not (Test-Path -LiteralPath $Path)) { return $set }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Output -NoEnumerate $set
+        return
+    }
     try {
         Get-Content -LiteralPath $Path -ErrorAction Stop | ForEach-Object {
-            if ([string]::IsNullOrWhiteSpace($_)) { return }
-            $line = $_.Trim()
-            if ($line.StartsWith('#')) { return }
-
-            $rawPath = $null
-            if ($line -like "*`t*") {
-                # TSV (current) format: <FullPath>\t<Status>\t<Reason>\t<Timestamp>
-                # Path is always in the first column
-                $rawPath = ($line.Split("`t"))[0]
-            }
-            else {
-                # Legacy format: a single path per line
-                $rawPath = $line
-            }
-
-            if (-not [string]::IsNullOrWhiteSpace($rawPath)) {
-                try {
-                    $full = Resolve-VideoPath -Path $rawPath
-                }
-                catch {
-                    $full = $rawPath
-                }
-                if (-not [string]::IsNullOrWhiteSpace($full)) {
-                    [void]$set.Add($full)
-                }
+            $full = Convert-ProcessedLogLineToResumePath -Line $_
+            if (-not [string]::IsNullOrWhiteSpace($full)) {
+                [void]$set.Add($full)
             }
         }
     }
     catch {
         Write-Debug ("Get-ResumeIndex: failed to read '{0}': {1}" -f $Path, $_.Exception.Message)
     }
-    return $set
+    Write-Output -NoEnumerate $set
 }
 
 <#

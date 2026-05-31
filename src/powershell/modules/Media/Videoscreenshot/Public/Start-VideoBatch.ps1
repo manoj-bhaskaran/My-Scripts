@@ -48,8 +48,9 @@ By default, existing crops are deleted and regenerated.
 .PARAMETER KeepExistingCrops
 When used with -ReprocessCropped, do not delete existing crops; new outputs are added alongside.
 .PARAMETER PythonScriptPath
-Path to crop_colours.py. If omitted, the module will invoke the cropper as a
-Python module (`python -m media.crop_colours`). PYTHONPATH is automatically configured to include src/python.
+Optional path to the packaged cropper at src/python/media/crop_colours.py.
+The path is used to locate src/python; the cropper is still invoked as a
+Python module (`python -m media.crop_colours`) so package-relative imports work.
 .PARAMETER PythonExe
 Python interpreter to use (optional; falls back to py/python in helper).
 .PARAMETER ClearSnapshotsBeforeRun
@@ -62,7 +63,7 @@ Pass --no-audio to VLC. Use when the VLC audio plugin crashes on your system (e.
 After each video capture, remove consecutive duplicate frames whose file bytes are identical. One frame per distinct image is kept. Default off; enable for image/slideshow MP4 conversions that produce long runs of identical frames (e.g. picconvert output). Frame counts and status logging reflect the kept frames after de-dup runs.
 
 .EXAMPLE
-Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper -PythonScriptPath .\src\python\crop_colours.py
+Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper -PythonScriptPath .\src\python\media\crop_colours.py
 #>
 function Start-VideoBatch {
     [CmdletBinding()]
@@ -286,6 +287,23 @@ function Start-VideoBatch {
     $pidFile = Initialize-PidRegistry -Context $context -SaveFolder $SaveFolder -RunGuid $runGuid
     Write-Debug "PID registry: $pidFile"
 
+    # Initialize VLC's own sidecar logfile. This avoids redirecting stdout/stderr
+    # pipes for the long-running process, which can deadlock when VLC is chatty.
+    $vlcLogFile = Join-Path $SaveFolder ".vlc_log_$runGuid.txt"
+    try {
+        if (Test-Path -LiteralPath $vlcLogFile -PathType Leaf) {
+            Remove-Item -LiteralPath $vlcLogFile -Force -ErrorAction Stop
+        }
+        New-Item -ItemType File -Path $vlcLogFile -Force -ErrorAction Stop | Out-Null
+        $context | Add-Member -NotePropertyName VlcLogPath -NotePropertyValue $vlcLogFile -Force
+        Write-Debug "VLC sidecar log: $vlcLogFile"
+    }
+    catch {
+        Write-Message -Level Warn -Message ("Unable to initialize VLC sidecar logfile '{0}': {1}. Continuing without VLC file logging." -f $vlcLogFile, $_.Exception.Message)
+        $context | Add-Member -NotePropertyName VlcLogPath -NotePropertyValue $null -Force
+        $vlcLogFile = $null
+    }
+
     # Discover videos (configurable extension set via param or config)
     $exts = if ($IncludeExtensions -and $IncludeExtensions.Count -gt 0) { $IncludeExtensions } else { $context.Config.VideoExtensions }
     $patterns = $exts | ForEach-Object {
@@ -296,11 +314,18 @@ function Start-VideoBatch {
     $videos = Get-ChildItem -Path (Join-Path $SourceFolder '*') -Recurse -File -Include $patterns
     if (-not $videos) {
         Write-Message -Level Warn -Message "No videos found under $SourceFolder."
+        if ($pidFile -and (Test-Path -LiteralPath $pidFile)) {
+            Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+        }
+        if ($vlcLogFile -and (Test-Path -LiteralPath $vlcLogFile)) {
+            Remove-Item -LiteralPath $vlcLogFile -Force -ErrorAction SilentlyContinue
+        }
         return
     }
 
     $processedCount = 0
     $attemptedCount = 0
+    $retainVlcLog = $false
 
     foreach ($video in $videos) {
         if ($VideoLimit -gt 0 -and $attemptedCount -ge $VideoLimit) { break }
@@ -372,20 +397,29 @@ function Start-VideoBatch {
                     $detectedDuration = Get-VideoDuration -Path $video.FullName
                     if ($detectedDuration -gt 0) {
                         $grace = [int]$context.Config.SnapshotDurationGraceSeconds
-                        [int][Math]::Ceiling($detectedDuration + $grace)
+                        $slackFactor = [double]$context.Config.SnapshotDurationSlackFactor
+                        if ($slackFactor -le 0) { $slackFactor = 2.0 }
+                        $floorSeconds = [int]$context.Config.SnapshotMinimumTimeoutSeconds
+                        if ($floorSeconds -lt 1) { $floorSeconds = 1 }
+                        $slackSeconds = [Math]::Ceiling([double]$detectedDuration * $slackFactor)
+                        [int][Math]::Ceiling([Math]::Max($slackSeconds, $floorSeconds) + $grace)
                     } else {
                         Write-Debug ("Duration probe failed for '{0}'; using flat fallback ({1} s)." -f $video.FullName, $context.Config.SnapshotFallbackTimeoutSeconds)
                         [int]$context.Config.SnapshotFallbackTimeoutSeconds
                     }
                 }
                 $waitSeconds = [int]([Math]::Max(1, $baseWait + [int]$StartupGraceSeconds))
-                Write-Debug ("TRACE Start-VideoBatch: about to call Wait-ForSnapshotFrames (MaxSeconds={0}, Prefix={1})" -f $waitSeconds, $scenePrefix)
+                Write-Debug ("TRACE Start-VideoBatch: about to call Wait-ForSnapshotFrames (MaxSeconds={0}, Prefix={1}, CapSeconds={2})" -f $waitSeconds, $scenePrefix, $capSeconds)
                 $snapStats = Wait-ForSnapshotFrames -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -MaxSeconds $waitSeconds -Process $p `
                     -IdleTimeoutSeconds ([int]$context.Config.SnapshotIdleTimeoutSeconds) `
                     -WarmUpSeconds ([int]$context.Config.SnapshotIdleWarmUpSeconds)
                 $snapType = if ($null -ne $snapStats) { $snapStats.GetType().FullName } else { '<null>' }
                 $snapStr = if ($null -ne $snapStats) { $snapStats.ToString() } else { '<null>' }
                 Write-Debug ("TRACE Start-VideoBatch: Wait-ForSnapshotFrames returned type={0} tostring={1}" -f $snapType, $snapStr)
+                if ($null -ne $snapStats -and $snapStats.HitMaxSeconds -and $snapStats.ProcessAliveAtExit) {
+                    $retainVlcLog = $true
+                    Write-Message -Level Warn -Message ("VLC snapshot cap hit while playback was still active for: {0}; marking as timeout/truncation so resume can retry." -f $video.FullName)
+                }
             }
             else {
                 $dur = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.GdiCaptureDefaultSeconds }
@@ -398,6 +432,7 @@ function Start-VideoBatch {
         }
         catch {
             $processingFailed = $true
+            $retainVlcLog = $true
             $processingError = $_.Exception.Message
             Write-Message -Level Error -Message ("Processing failed for: {0} — {1}" -f $video.FullName, $processingError)
         }
@@ -484,14 +519,20 @@ function Start-VideoBatch {
 
         # Determine status and log the video as processed
         if ($processingFailed) {
-            # Even if processing failed, log it to avoid reprocessing
+            # Failed rows remain retry-eligible on subsequent resume runs.
             $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Failed' -Reason $processingError
-            Write-Message -Level Warn -Message ("Video marked as failed (will not retry): {0}" -f $video.FullName)
+            Write-Message -Level Warn -Message ("Video marked as failed (eligible for retry on resume): {0}" -f $video.FullName)
         }
         elseif ($framesDelta -le 0) {
             Write-Message -Level Warn -Message ("No frames produced for: {0}" -f $video.FullName)
-            # Still log it to avoid reprocessing the same video
-            $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Processed' -Reason 'NoFrames'
+            # Log zero-frame captures as failed so resume runs can retry them.
+            $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'Failed' -Reason 'NoFrames'
+        }
+        elseif ($UseVlcSnapshots -and $null -ne $snapStats -and $snapStats.HitMaxSeconds -and $snapStats.ProcessAliveAtExit) {
+            # Some frames were produced, but the safety-net cap interrupted a live VLC session.
+            # Keep the row retry-eligible for status-aware resume.
+            $null = Write-ProcessedLog -Path $processedLog -VideoPath $video.FullName -Status 'TimedOutProcessed' -Reason 'SnapshotCapHit'
+            Write-Message -Level Warn -Message ("Video marked as timed out/truncated (eligible for retry on resume): {0}" -f $video.FullName)
         }
         else {
             if ($null -ne $achievedFps) {
@@ -534,6 +575,23 @@ function Start-VideoBatch {
         }
         catch {
             Write-Message -Level Warn -Message ("Failed to remove PID registry file '{0}': {1}" -f $pidFile, $_.Exception.Message)
+        }
+    }
+
+    # Clean VLC's sidecar logfile on successful runs; retain it deterministically
+    # when processing failed so startup/decoder diagnostics remain available.
+    if ($vlcLogFile -and (Test-Path -LiteralPath $vlcLogFile)) {
+        if ($retainVlcLog) {
+            Write-Message -Level Warn -Message ("Retaining VLC sidecar log after failure: {0}" -f $vlcLogFile)
+        }
+        else {
+            try {
+                Remove-Item -LiteralPath $vlcLogFile -Force -ErrorAction Stop
+                Write-Debug "Cleaned up VLC sidecar log: $vlcLogFile"
+            }
+            catch {
+                Write-Message -Level Warn -Message ("Failed to remove VLC sidecar log '{0}': {1}" -f $vlcLogFile, $_.Exception.Message)
+            }
         }
     }
 

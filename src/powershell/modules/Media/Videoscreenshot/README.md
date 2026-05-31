@@ -19,7 +19,7 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
    ```
 3. **Crop-only cleanup runs** – rerun the Python cropper without capturing new frames.
    ```powershell
-   Start-VideoBatch -CropOnly -SaveFolder .\shots -PythonScriptPath .\src\python\crop_colours.py -ReprocessCropped
+   Start-VideoBatch -CropOnly -SaveFolder .\shots -PythonScriptPath .\src\python\media\crop_colours.py -ReprocessCropped
    ```
 4. **Extension-filtered processing** – restrict work to specific formats and verify playability.
    ```powershell
@@ -40,10 +40,10 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
 - `VideoLimit` (int, default `0`): Maximum number of videos to process (0 = all).
 - `IncludeExtensions` (string[]): Extensions to consider (overrides defaults).
 - `VerifyVideos` (switch): Attempt lightweight playability checks before processing. Aliases: `-PreflightProbe`, `-SkipUnplayable`.
-- `VideoProbeTimeoutSeconds` (int, default config value `5`): Maximum time to wait for the `-VerifyVideos` probe before force-killing it and treating the video as unplayable.
+- `VideoProbeTimeoutSeconds` (int, default config value `10`): Maximum time to wait for the `-VerifyVideos` probe before force-killing it and treating the video as unplayable.
 - `RunCropper` (switch): Invoke the Python cropper after capture.
 - `CropOnly` (switch): Run the cropper without taking screenshots.
-- `PythonScriptPath` (string): Path to `crop_colours.py` when cropping.
+- `PythonScriptPath` (string): Optional path to the packaged `src/python/media/crop_colours.py`; used as a package locator while the cropper still runs via `python -m media.crop_colours`.
 - `PythonExe` (string): Python interpreter to use for the cropper.
 - `ReprocessCropped` (switch): Force re-crop even if images were processed before.
 - `KeepExistingCrops` (switch): Preserve existing crops when reprocessing.
@@ -65,7 +65,7 @@ catch {
 - Set `FramesPerSecond` conservatively for long runs to reduce I/O and disk usage.
 - Enable `-IncludeExtensions` to skip unsupported formats early and speed up discovery.
 - Processed logs allow resumable runs—point `-ProcessedLogPath` at fast storage to avoid lock contention.
-- Use `-VerifyVideos` (`-PreflightProbe`/`-SkipUnplayable`) to skip corrupt or unsupported files before launching the main VLC capture session; tune the bounded probe with `-VideoProbeTimeoutSeconds`.
+- Use `-VerifyVideos` (`-PreflightProbe`/`-SkipUnplayable`) to skip corrupt or unsupported files before launching the main VLC capture session; tune the bounded probe with `-VideoProbeTimeoutSeconds` (default `10`). The probe no longer false-skips chatty codecs (AV1/VP9) due to the pipe-buffer deadlock fix.
 - Cropper runs can be CPU intensive; use `-VideoLimit`/`-TimeLimitSeconds` to batch work into smaller chunks.
 
 ## Usage
@@ -100,12 +100,13 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
 ### Cropper integration
 When `-RunCropper` is set, the module invokes the Python cropper after capture. By default the cropper **skips images that were already cropped in previous runs** (tracked via `.processed_images`).
 
-- **If `-PythonScriptPath` is provided** (path to `crop_colours.py`), the script file is executed directly.
-- **If `-PythonScriptPath` is omitted**, the module falls back to **module invocation**:
+- **If `-PythonScriptPath` is provided** (path to `src/python/media/crop_colours.py`), it is treated as a locator for `src/python`; the file is not executed directly.
+- **If `-PythonScriptPath` is omitted**, the module locates `src/python` from the repository root.
+- In both cases, the cropper uses **module invocation** so package-relative imports work:
   ```
   python -m media.crop_colours --input <SaveFolder> --skip-bad-images --allow-empty --recurse --preserve-alpha
   ```
-  PYTHONPATH is automatically configured to include `src/python` from the repository root.
+  PYTHONPATH is automatically configured to include `src/python`, and the child process working directory is set to that same package root so `python -m` resolves the intended `media` package before any package in the caller's current directory.
 
 To force a full re-crop, use:
 ```
@@ -118,20 +119,20 @@ If you call `Start-VideoBatch -Debug`, `--debug` is added to the Python invocati
 #### Crop-only mode
 Run the cropper without taking screenshots:
 ```powershell
-Start-VideoBatch -CropOnly -SaveFolder .\shots -PythonScriptPath .\src\python\crop_colours.py
+Start-VideoBatch -CropOnly -SaveFolder .\shots -PythonScriptPath .\src\python\media\crop_colours.py
 ```
 Notes:
 - `-CropOnly` ignores capture-related parameters (e.g., `-UseVlcSnapshots`, `-TimeLimitSeconds`); a warning lists any that were supplied.
 - The cropper operates on images under `-SaveFolder`.
 
 Notes:
-- The cropper receives absolute paths and streams logs to the console; Ctrl+C cancels cleanly.
+- The cropper receives absolute input paths, runs from the selected `src/python` package root, and streams logs to the console; Ctrl+C cancels cleanly.
 - On failure, the module throws a concise error; see on-screen logs for details.
 
 ### Crop-only mode
 Skip screenshot capture and only run the cropper:
 ```powershell
-Start-VideoBatch -CropOnly -SaveFolder .\shots [-PythonScriptPath .\src\python\crop_colours.py]
+Start-VideoBatch -CropOnly -SaveFolder .\shots [-PythonScriptPath .\src\python\media\crop_colours.py]
 ```
 Requirements/behavior:
 - **`-SaveFolder` is required** in crop-only mode and must point to the folder containing images to process.
@@ -150,12 +151,12 @@ Start-VideoBatch `
   -UseVlcSnapshots `
   -IncludeExtensions '.mp4','.mkv','.webm' `
   -VerifyVideos `
-  -VideoProbeTimeoutSeconds 5
+  -VideoProbeTimeoutSeconds 10
 ```
 * -IncludeExtensions overrides the discovery set (defaults come from module config).
-* -VerifyVideos attempts a lightweight, bounded `Test-VideoPlayable` check before the main VLC session. `-PreflightProbe` and `-SkipUnplayable` are aliases for the same switch.
-* If the probe returns false or times out, the video is logged as `Skipped`/`NotPlayable` in the processed log and skipped on later resume runs.
-* `-VideoProbeTimeoutSeconds` controls the force-kill deadline for the probe; omit it to use `VideoProbeTimeoutSeconds` from module config.
+* `-VerifyVideos` attempts a lightweight, bounded `Test-VideoPlayable` check before the main VLC session. `-PreflightProbe` and `-SkipUnplayable` are aliases for the same switch. The probe no longer redirects stdout/stderr — VLC writes to a temp sidecar logfile — so chatty-but-playable videos (e.g. AV1/VP9 clips with verbose startup output) are no longer falsely reported as `NotPlayable`.
+* If the probe returns false or times out, the video is logged as `Skipped`/`NotPlayable` in the processed log and skipped on later resume runs. Probe errors are logged as `Skipped`/`VideoProbeError` and retried on resume.
+* `-VideoProbeTimeoutSeconds` controls the force-kill deadline for the probe; omit it to use `VideoProbeTimeoutSeconds` from module config (default `10`).
 
 #### What the cropper flags do
 * --preserve-alpha — consider transparency when trimming borders; useful for PNGs with transparent edges.
@@ -163,7 +164,7 @@ Start-VideoBatch `
 * (reprocessing) Default behavior skips previously cropped images.
   - `--reprocess-cropped` reprocesses everything.
   - `--keep-existing-crops` (with `--reprocess-cropped`) keeps existing outputs; new files are de-duplicated.
-See the Python script’s docstring for advanced options: src/python/crop_colours.py.
+See the Python script’s docstring for advanced options: src/python/media/crop_colours.py.
 
 ### Resume / processed logging
 
@@ -175,7 +176,7 @@ The module tracks which videos have been handled so future runs can skip work.
   Each line is `<FullPath>\t<Status>[\t<Reason>]`:
   ```
   C:\path\to\video1.mp4\tProcessed
-  C:\path\to\video2.mp4\tSkipped\tnot playable
+  C:\path\to\video2.mp4\tSkipped\tNotPlayable
   ```
 
 * **Legacy (single-column)**
@@ -191,7 +192,10 @@ The module tracks which videos have been handled so future runs can skip work.
 **Behavior**
 - Entries are normalized to absolute provider paths at import time.
 - On Windows, matching is case-insensitive to minimize false mismatches.
-- Mixing TSV and legacy lines in the same file is supported; new writes use TSV.
+- Resume parsing is status-aware for TSV rows: successful `Processed` rows are skipped, except `Processed`/`NoFrames`, which is retried for compatibility with older logs.
+- `Skipped`/`NotPlayable` rows remain skipped because they represent deliberate pre-flight exclusions; `Failed`, `TimedOutProcessed`, and `Skipped`/`VideoProbeError` rows are retried automatically on the next run.
+- New zero-frame captures are written as `Failed`/`NoFrames` so the log accurately marks them as incomplete and retry-eligible.
+- Mixing TSV and legacy lines in the same file is supported; legacy single-column rows are treated as successful `Processed` rows and skipped as before; new writes use TSV.
 
 **Legacy wrapper (decommissioned)**
 The legacy `src\powershell\videoscreenshot.ps1` wrapper (now `Show-VideoscreenshotDeprecation.ps1`) has been **removed**.
@@ -245,7 +249,7 @@ src/
 - -GdiFullscreen – when using GDI, request fullscreen/top-most playback
 - -VlcStartupTimeoutSeconds – timeout for VLC to initialize
 - -RunCropper – after capture, run the Python cropper over the output images
-- -PythonScriptPath – path to crop_colours.py when using -RunCropper
+- -PythonScriptPath – optional path to src/python/media/crop_colours.py as a package locator when using -RunCropper
 - -PythonExe – optional Python interpreter to use (defaults to py launcher or python)
 - -NoAutoInstall – disable automatic installation of missing Python packages (see below)
 - -TimeLimitSeconds – per-video time cap for playback/capture (0 = no cap)
@@ -260,7 +264,7 @@ src/
 - -RunCropper – run Python cropper after frames saved
 - -ReprocessCropped – force re-crop even if images were processed previously (deletes existing crops by default)
 - -KeepExistingCrops – with -ReprocessCropped, keep existing crops and add new outputs alongside
-- -PythonScriptPath, -PythonExe – cropper script & interpreter
+- -PythonScriptPath, -PythonExe – packaged cropper locator & interpreter
 - -ClearSnapshotsBeforeRun – clear existing frames for the current video prefix before capture
 - -DeduplicateFrames – after each video capture, remove consecutive duplicate frames by content hash; one frame per distinct picture is kept (see [Frame de-duplication](#frame-de-duplication))
 
@@ -301,7 +305,7 @@ If any package is missing, the module automatically installs them via python -m 
 > and adds `--reprocess-cropped` (plus `--keep-existing-crops`) when you pass the corresponding PowerShell flags.
 > Note: The cropper’s stdout/stderr stream live to the console (always-on). For advanced control over cropping arguments, adjust the Python script directly. The module uses safe defaults: `--skip-bad-images --allow-empty --recurse --preserve-alpha`, and adds `--reprocess-cropped` (plus `--keep-existing-crops`) when you pass the corresponding PowerShell flags.
 - GDI capture currently targets Windows (uses GDI+/System.Drawing); VLC snapshot mode is cross-platform where VLC is available.
-> See also the docstring in src/python/crop_colours.py for a full list of cropper flags, behaviors, and troubleshooting notes.
+> See also the docstring in src/python/media/crop_colours.py for a full list of cropper flags, behaviors, and troubleshooting notes.
 ### If you see a version error
 The script/module will refuse to run under Windows PowerShell (5.1/Desktop).
 Install PowerShell 7+ and re-run using pwsh.
@@ -313,6 +317,7 @@ On Windows (example):
 ## Troubleshooting
 - “VLC not found”: ensure `vlc --version` runs in the same session.
 - “Module not found”: verify the path to `Videoscreenshot.psd1` when importing the module manually.
+- **Startup banner shows a stale version after editing files**: PowerShell caches the module in the current session. Editing files on disk does **not** update what is loaded. Always reload with `Import-Module .\Videoscreenshot.psd1 -Force` (or restart the session) after making edits; otherwise `Get-Module` still returns the old version and any version-dependent behaviour reflects the stale import.
 - “Cropper failed due to missing packages”: by default, the module tries to install them. If you used -NoAutoInstall, install manually with python -m pip install <packages> or remove the switch.
 - “Resume/processed not working”: the module reads `<SaveFolder>\.processed_videos.txt` and accepts **both**
   TSV (`<FullPath>\t<Status>[\t<Reason>]`) **and** legacy single-column (`<FullPath>`) lines. Paths are
@@ -320,9 +325,14 @@ On Windows (example):
   via `-ProcessedLogPath`. `Start-VideoBatch` honors `-ResumeFile` by skipping items up to that file.
 - **Crash: “There is no Runspace available to run scripts in this thread.”**
   This was caused by emitting PowerShell debug output from background stream handlers.
-  Fixed in the next patch release; update to the latest version. As a temporary workaround,
-  run without `-Debug`. Note that, by design, VLC’s stdout/stderr are still captured for errors,
-  but per-line live output from VLC is no longer shown when `-Debug` is used.
+  Fixed in earlier patch releases; update to the latest version.
+- **VLC hangs or stalls after producing a few frames.**
+  VLC stdout/stderr are not redirected by the module. Instead, VLC writes diagnostics to a
+  hidden sidecar logfile named `.vlc_log_<RunGuid>.txt` in `SaveFolder`, so verbose decoder
+  output cannot fill an unread pipe and deadlock the process. The sidecar is deleted after
+  successful runs and retained after processing failures for diagnosis. Tune `Vlc.LogVerbosity`
+  in `Get-DefaultConfig` (`0`-`2`, default `1`; `0` also passes `--quiet`) if the VLC log is
+  too noisy or too sparse.
 
 ### GDI-specific tips
 - Prefer the Primary display; multi-monitor/VM environments may vary in behavior.
@@ -343,10 +353,10 @@ Runtime measurements reported by the cropper use wall-clock time (not CPU time) 
 When no explicit `-MaxPerVideoSeconds` / `-TimeLimitSeconds` is set, `Start-VideoBatch` probes each video's duration and computes a per-video cap:
 
 ```
-cap = video_duration + SnapshotDurationGraceSeconds
+cap = max(video_duration × SnapshotDurationSlackFactor, SnapshotMinimumTimeoutSeconds) + SnapshotDurationGraceSeconds
 ```
 
-This means a 20 s clip gets ~50 s, a 4-min video gets ~4.5 min, and a 30-min video gets ~31 min — the entire video always plays. The flat `SnapshotFallbackTimeoutSeconds` is used only when duration cannot be detected (e.g., no ffprobe, no Shell metadata).
+VLC `--play-and-exit` remains the primary completion signal: healthy short clips still finish as soon as VLC exits, without waiting for the floor. The cap is only a generous safety net for stuck VLC sessions, slow decode, or under-reported metadata. A cap hit while VLC is still alive is logged as `TimedOutProcessed`/`SnapshotCapHit` so status-aware resume can retry it. The flat `SnapshotFallbackTimeoutSeconds` is used only when duration cannot be detected (e.g., no ffprobe, no Shell metadata).
 
 ### Idle-frame stall detection (VLC snapshot mode)
 When VLC cannot decode a file (corrupt, unsupported codec, zero-duration stream), it stalls indefinitely with a black screen. The module detects this situation and abandons the session early rather than waiting for the full fallback timeout.
@@ -356,10 +366,15 @@ Key config knobs (in `Get-DefaultConfig`, `Private/Config.ps1`):
 | Key | Default | Description |
 |-----|---------|-------------|
 | `VideoProbeTimeoutSeconds` | `5` | Seconds to wait for the optional `-VerifyVideos` pre-flight VLC probe before force-killing it and marking the video unplayable. |
-| `SnapshotDurationGraceSeconds` | `30` | Grace margin (s) added to detected video duration to form the per-video cap. Absorbs VLC startup, buffering, and end-of-stream flush. |
-| `SnapshotIdleTimeoutSeconds` | `20` | Seconds without a new frame before the session is abandoned. Set to `0` to disable. |
-| `SnapshotIdleWarmUpSeconds` | `10` | Seconds at session start during which idle detection is suppressed (allows slow-starting sources their first frame). |
+| `SnapshotDurationSlackFactor` | `2.0` | Multiplier applied to detected duration when computing the VLC snapshot safety-net cap. |
+| `SnapshotMinimumTimeoutSeconds` | `120` | Minimum safety-net cap for duration-probed VLC snapshot runs; healthy short clips still exit promptly via VLC self-exit. |
+| `SnapshotDurationGraceSeconds` | `60` | Grace margin (s) added after the duration slack/floor cap. Absorbs VLC startup, buffering, and end-of-stream flush. |
+| `SnapshotIdleTimeoutSeconds` | `60` | Seconds without a new frame after warm-up before the session is abandoned. Set to `0` to disable. |
+| `SnapshotIdleWarmUpSeconds` | `30` | Seconds at session start during which idle detection is suppressed; the idle timer starts after this window for cold/slow sources. |
+| `SnapshotTerminationExtraSeconds` | `5` | Short flush window during which `Stop-Vlc` leaves a still-running dummy-interface VLC process alive before the force-kill backstop. |
 | `SnapshotFallbackTimeoutSeconds` | `300` | Last-resort cap used only when duration detection fails. |
+| `StopVlcWaitMs` | `5000` | Legacy millisecond fallback for older caller-provided config objects that do not define `SnapshotTerminationExtraSeconds`; prefer `SnapshotTerminationExtraSeconds` for new tuning. |
+| `Vlc.LogVerbosity` | `1` | VLC sidecar logfile verbosity (`0`-`2`); `0` also passes `--quiet`. |
 
 A `WARNING` log line is emitted when idle-break fires so the problem video is visible in the run log.
 

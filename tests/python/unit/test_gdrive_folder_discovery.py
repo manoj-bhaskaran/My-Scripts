@@ -61,7 +61,7 @@ if not hasattr(_googleapiclient, "http"):
     _googleapiclient.http = _http
 
 from gdrive_constants import FOLDER_MIME_TYPE  # noqa: E402
-from gdrive_discovery import DriveTrashDiscovery  # noqa: E402
+from gdrive_discovery import DriveTrashDiscovery, SeenTotalCounter  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -88,7 +88,7 @@ def _make_discovery(folder_id="root_id", mode="recover_and_download", limit=0):
         execute_fn=MagicMock(),
         stats={"found": 0, "errors": 0},
         stats_lock=Lock(),
-        seen_total_ref=[0],
+        seen_total=SeenTotalCounter(),
         generate_target_path=lambda item: f"/tmp/dl/{item.name}",
         run_parallel_processing_for_batch=lambda batch, ts: processed.extend(list(batch)),
     )
@@ -359,7 +359,7 @@ def _make_discovery_trash(mode="recover_and_download", extra_args=None):
         execute_fn=MagicMock(),
         stats={"found": 0, "errors": 0},
         stats_lock=Lock(),
-        seen_total_ref=[0],
+        seen_total=SeenTotalCounter(),
         generate_target_path=lambda item: f"/tmp/dl/{item.name}",
         run_parallel_processing_for_batch=lambda batch, ts: None,
     )
@@ -541,7 +541,7 @@ def _make_discovery_streaming(file_ids):
         execute_fn=MagicMock(),
         stats={"found": 0, "errors": 0},
         stats_lock=Lock(),
-        seen_total_ref=[0],
+        seen_total=SeenTotalCounter(),
         generate_target_path=lambda item: f"/tmp/dl/{item.name}",
         run_parallel_processing_for_batch=lambda batch, ts: processed.extend(list(batch)),
     )

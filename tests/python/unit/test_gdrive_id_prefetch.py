@@ -19,7 +19,7 @@ if "dateutil" not in sys.modules:
     sys.modules["dateutil"] = dateutil_module
     sys.modules["dateutil.parser"] = parser_module
 
-from gdrive_discovery import DriveTrashDiscovery
+from gdrive_discovery import DriveTrashDiscovery, SeenTotalCounter
 from gdrive_id_prefetch import IdMetadataPrefetcher, ValidationBucket, classify_http_status
 
 
@@ -46,7 +46,7 @@ def _make_discovery():
         execute_fn,
         stats={"found": 0},
         stats_lock=Lock(),
-        seen_total_ref=[0],
+        seen_total=SeenTotalCounter(),
         generate_target_path=lambda *_: "",
         run_parallel_processing_for_batch=lambda *_: None,
     )

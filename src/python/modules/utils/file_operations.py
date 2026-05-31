@@ -4,13 +4,63 @@ This module provides file operation functions with built-in retry logic
 to handle transient failures like file locks or network issues.
 """
 
+import logging
 import shutil
 import time
 from pathlib import Path
-from typing import Optional, Union, Callable
-import logging
+from typing import Callable, Optional, Union
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_filename(name: str, *, fallback: str) -> str:
+    """Return a filesystem-safe filename using the repository allow-list.
+
+    Characters are preserved only when they are alphanumeric or one of
+    space, hyphen, underscore, or period. Trailing whitespace is stripped
+    after filtering. If no characters remain, ``fallback`` is returned.
+
+    Args:
+        name: Candidate filename to sanitize.
+        fallback: Value to return when the sanitized filename is empty.
+
+    Returns:
+        Sanitized filename, or ``fallback`` when the sanitized name is empty.
+
+    Example:
+        >>> sanitize_filename("my*file?.txt", fallback="file_abc")
+        'myfile.txt'
+    """
+    safe_name = "".join(c for c in str(name) if c.isalnum() or c in (" ", "-", "_", ".")).rstrip()
+    return safe_name or fallback
+
+
+def unique_path(path: Path, *, fallback_stem: str = "file") -> Path:
+    """Return ``path`` unless it exists, otherwise append a short UUID suffix.
+
+    The collision check is filesystem-local and intentionally single-pass: if
+    ``path`` exists, the returned candidate is
+    ``path.parent / f"{stem}_{uuid4().hex[:6]}{suffix}"``.
+
+    Args:
+        path: Candidate path to check.
+        fallback_stem: Stem used when ``path.stem`` is empty.
+
+    Returns:
+        ``path`` when it does not exist; otherwise a suffixed candidate path.
+
+    Example:
+        >>> unique_path(Path("report.txt"))  # doctest: +SKIP
+        PosixPath('report_a1b2c3.txt')
+    """
+    candidate = Path(path)
+    if not candidate.exists():
+        return candidate
+
+    stem = candidate.stem or fallback_stem
+    suffix = candidate.suffix
+    return candidate.parent / f"{stem}_{uuid4().hex[:6]}{suffix}"
 
 
 def copy_with_retry(
@@ -404,6 +454,8 @@ def safe_append_text(
 
 
 __all__ = [
+    "sanitize_filename",
+    "unique_path",
     "copy_with_retry",
     "move_with_retry",
     "remove_with_retry",

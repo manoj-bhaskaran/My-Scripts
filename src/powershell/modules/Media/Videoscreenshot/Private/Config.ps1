@@ -9,7 +9,7 @@
     - Discovery: Start-VideoBatch honors -IncludeExtensions; otherwise uses
       Config.VideoExtensions.
     - Timing: Helpers (e.g., Start-VlcProcess / Stop-Vlc) read PollIntervalMs,
-      VideoProbeTimeoutSeconds, StopVlcWaitMs, and WaitProcessTimeoutSeconds.
+      VideoProbeTimeoutSeconds, SnapshotTerminationExtraSeconds, StopVlcWaitMs, and WaitProcessTimeoutSeconds.
     - GDI: When neither MaxPerVideoSeconds nor TimeLimitSeconds is set,
       Invoke-GdiCapture uses GdiCaptureDefaultSeconds as a safe fallback.
     - Cropper: Invoke-Cropper consults Python.RequiredPackages for preflight.
@@ -19,6 +19,7 @@
   [hashtable] with well-known keys:
     - Timing: PollIntervalMs, VideoProbeTimeoutSeconds,
               SnapshotFallbackTimeoutSeconds, SnapshotDurationGraceSeconds,
+              SnapshotDurationSlackFactor, SnapshotMinimumTimeoutSeconds,
               SnapshotTerminationExtraSeconds, StopVlcWaitMs, WaitProcessTimeoutSeconds
     - Discovery: VideoExtensions
     - GDI: GdiCaptureDefaultSeconds
@@ -41,40 +42,59 @@ function Get-DefaultConfig {
 
         # Maximum seconds to wait for the optional Test-VideoPlayable pre-flight
         # VLC probe. If the probe does not exit in this window, it is force-killed
-        # and the video is treated as not playable. Typical range: 3–15 s.
-        VideoProbeTimeoutSeconds        = 5
+        # and the video is treated as not playable. Raised to 10 s (from 5) to give
+        # slow-starting codecs (e.g. AV1/VP9) headroom once the pipe-buffer deadlock
+        # is gone and the timeout is the real bound. Typical range: 5–30 s.
+        VideoProbeTimeoutSeconds        = 10
+
+        # VLC verbosity for the Test-VideoPlayable probe sidecar logfile (0–2).
+        # Forwarded to Test-VideoPlayable as -LogVerbosity; 0 also adds --quiet.
+        # Increase to 2 when diagnosing false NotPlayable reports. Default 1 (normal).
+        VideoProbeLogVerbosity          = 1
 
         # Last-resort cap (seconds) used when no explicit per-video limit is given
         # AND duration detection fails. When duration is detectable, Start-VideoBatch
-        # computes cap = video_duration + SnapshotDurationGraceSeconds instead.
+        # computes a generous safety-net cap from duration, slack, floor, and grace.
         # Typical range: 60–600 s depending on expected clip durations.
         SnapshotFallbackTimeoutSeconds  = 300
 
-        # Grace margin (seconds) added to a probed video duration to form the
-        # per-video snapshot cap: cap = duration + SnapshotDurationGraceSeconds.
-        # Accounts for VLC startup, buffering, and slow-flush at end of playback.
-        # Typical range: 15–60 s.
-        SnapshotDurationGraceSeconds    = 30
+        # Multiplier applied to probed video duration when computing the VLC
+        # snapshot safety-net cap. This makes --play-and-exit the normal completion
+        # signal while absorbing slow decode and under-reported metadata.
+        # Typical range: 1.5–3.0.
+        SnapshotDurationSlackFactor     = 2.0
 
-        # Extra grace seconds allowed after requesting termination of snapshotting,
-        # giving VLC time to flush/close cleanly before any force-kill paths.
+        # Minimum safety-net cap (seconds) for duration-probed VLC snapshot runs.
+        # The floor does not delay healthy short clips because polling exits when
+        # VLC self-exits; it only bounds genuinely stuck sessions.
+        # Typical range: 60–300 s.
+        SnapshotMinimumTimeoutSeconds   = 120
+
+        # Grace margin (seconds) added after the duration-derived slack/floor cap.
+        # Accounts for VLC startup, buffering, and slow-flush at end of playback.
+        # Typical range: 15–120 s.
+        SnapshotDurationGraceSeconds    = 60
+
+        # Extra seconds Stop-Vlc leaves a still-running dummy-interface snapshot
+        # session alive, giving VLC's scene filter time to flush/close before the
+        # force-kill backstop.
         # Typical range: 2–10 s.
         SnapshotTerminationExtraSeconds = 5
 
         # Seconds without a new frame before Wait-ForSnapshotFrames abandons a stalled
         # VLC session (idle-frame stall detection). Only triggers after the warm-up window
-        # elapses. Set to 0 to disable. Typical range: 10–60 s.
-        SnapshotIdleTimeoutSeconds      = 20
+        # elapses. Set to 0 to disable. Typical range: 30–180 s.
+        SnapshotIdleTimeoutSeconds      = 60
 
         # Seconds at the start of a snapshot session during which idle detection is
         # suppressed, to allow slow-starting sources (e.g., cold network shares) to
         # produce their first frame before the idle timer starts counting.
-        # Typical range: 5–30 s.
-        SnapshotIdleWarmUpSeconds       = 10
+        # Typical range: 15–120 s.
+        SnapshotIdleWarmUpSeconds       = 30
 
-        # Milliseconds to wait after CloseMainWindow() before force-terminating VLC
-        # in Stop-Vlc. Larger values are gentler on VLC; smaller values speed up
-        # teardown on stubborn processes. Typical range: 2000–10000 ms.
+        # Legacy Stop-Vlc wait in milliseconds, retained as a fallback for callers
+        # without SnapshotTerminationExtraSeconds. New config should tune
+        # SnapshotTerminationExtraSeconds instead.
         StopVlcWaitMs                   = 5000
 
         # Seconds to wait in Wait-Process after issuing Stop-Process -Force when

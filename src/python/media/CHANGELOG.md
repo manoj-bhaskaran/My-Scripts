@@ -8,6 +8,11 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [4.2.1] - 2026-05-31
+### Fixed
+- Updated `crop_colours.py` usage guidance to show `python -m media.crop_colours` instead of direct loose-script execution.
+- Added a direct-execution guard that exits with a clear message when `crop_colours.py` is run without its parent `media` package.
+
 ## [4.2.0] - 2026-04-10
 
 ### Added

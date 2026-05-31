@@ -18,6 +18,15 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[gdrive_recover 1.28.0 / python utils 1.1.0]** Added shared `sanitize_filename` and `unique_path` helpers to `modules.utils.file_operations`, refactored `gdrive_recover.py` target-path generation to use them without changing override, relative-path, or overwrite/skip collision behavior, and bumped the repository version to 2.17.0 (issue #1120).
+  → Full detail: [src/python/cloud/CHANGELOG-gdrive-recover.md](src/python/cloud/CHANGELOG-gdrive-recover.md)
+
+- **[gdrive_recover 1.27.3]** Routed `gdrive_cli.py` post-restore policy metric, warning, and error logs through the shared `python_logging_framework` helpers while preserving user-facing console output and the greppable `METRIC {json}` unknown-policy line (issue #1135).
+  → Full detail: [src/python/cloud/CHANGELOG-gdrive-recover.md](src/python/cloud/CHANGELOG-gdrive-recover.md)
+- **[gdrive_recover 1.27.1]** Reused the shared `python_logging_framework` in `DriveTrashRecoveryTool._setup_logging`, preserving verbosity-driven console output and explicit `--log-file` behavior while adding framework support for exact log-file paths and root-handler configuration (issue #1119).
+  → Full detail: [src/python/cloud/CHANGELOG-gdrive-recover.md](src/python/cloud/CHANGELOG-gdrive-recover.md)
+- **[gdrive_recover 1.27.0]** Removed `DriveTrashRecoveryTool` pass-through delegation wrappers, retargeted recovery tests to owning helper objects, routed fresh-run reset output through `RecoveryReporter`, and replaced the streaming `_seen_total_ref` list box with `SeenTotalCounter` (issue #1118).
+  → Full detail: [src/python/cloud/CHANGELOG-gdrive-recover.md](src/python/cloud/CHANGELOG-gdrive-recover.md)
 - **[Invoke-PostMergeHook 3.2.1]** Refactored `Deploy-ModuleFromConfig` to reduce cognitive
   complexity from 77 to ≤15: extracted `Test-TargetList`, `Get-ParsedConfigLine`,
   `Resolve-ModuleSourcePath`, `Get-TargetBaseRoot`, `Invoke-ModuleTargetDeployment`, and
@@ -28,6 +37,10 @@ kept here — see the linked file for details.
   `Invoke-SingleModuleDeployment` helpers; no behaviour change.
 
 ### Fixed
+
+- **[Move-ImageFileToBatch 2.1.5 / PowerShellLoggingFramework 2.1.1]** Routed caller-supplied `-LogDirectory` through the logger's public parameter name so framework logs are written to the requested directory, while preserving the legacy `resolvedLogDir` alias for existing callers (issue #1189).
+
+- **[Move-ImageFileToBatch 2.1.4]** Replaced stale legacy script-name references in help examples, logger metadata, log prefix, startup banner, and media README documentation while retaining the default `picconvert` batch folder prefix for compatibility (issue #1185).
 
 - **[Update-ScheduledTaskScriptPaths 3.0.1]** Consistent pipeline stage indentation: each cmdlet on its own line with pipe at end of preceding line.
   → Full detail: [automation/CHANGELOG.md](src/powershell/automation/CHANGELOG.md)

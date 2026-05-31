@@ -48,14 +48,52 @@ Describe "Move-ImageFileToBatch — parameter contract" {
         $params | Should -Not -Contain 'LogFilePath'
     }
 
-    It "Passes -LogDirectory to Initialize-Logger via splatting" {
+    It "Passes -LogDirectory to Initialize-Logger by public parameter name" {
         $content = Get-Content -LiteralPath $script:ScriptPath -Raw
-        $content | Should -Match "resolvedLogDir.*LogDirectory"
+        $content | Should -Match '\$script:loggerArgs\[''LogDirectory''\]\s*=\s*\$LogDirectory'
+        $content | Should -Not -Match '\$script:loggerArgs\[''resolvedLogDir''\]'
     }
 
-    It "Version is 2.1.0 in .NOTES" {
+    It "Version is 2.1.5 in .NOTES" {
         $content = Get-Content -LiteralPath $script:ScriptPath -Raw
-        $content | Should -Match '2\.1\.0'
+        $content | Should -Match '2\.1\.5'
+    }
+
+    It "Retains the picconvert BatchPrefix default" {
+        $content = Get-Content -LiteralPath $script:ScriptPath -Raw
+        $content | Should -Match '\[string\]\$BatchPrefix = ''picconvert'''
+    }
+}
+
+
+Describe "PowerShellLoggingFramework — Initialize-Logger log directory contract" {
+    BeforeEach {
+        $script:TmpRoot = Join-Path ([IO.Path]::GetTempPath()) "PLFInitTest_$([guid]::NewGuid())"
+        $script:LogDir = Join-Path $script:TmpRoot 'custom logs'
+    }
+
+    AfterEach {
+        if (Test-Path $script:TmpRoot) { Remove-Item $script:TmpRoot -Recurse -Force -ErrorAction SilentlyContinue }
+        Remove-Module PowerShellLoggingFramework -Force -ErrorAction SilentlyContinue
+    }
+
+    It "Accepts the public -LogDirectory parameter and stores the resolved target" {
+        Import-Module $script:ModulePath -Force
+
+        Initialize-Logger -LogDirectory $script:LogDir -ScriptName 'Move-ImageFileToBatch' -LogLevel 20
+
+        Test-Path $script:LogDir | Should -Be $true
+        $Global:LogConfig.LogDirectory | Should -Be ([System.IO.Path]::GetFullPath($script:LogDir))
+        $Global:LogConfig.LogFilePath | Should -BeLike (Join-Path $script:LogDir 'Move-ImageFileToBatch_powershell_*.log')
+    }
+
+    It "Keeps the legacy -resolvedLogDir alias for existing callers" {
+        Import-Module $script:ModulePath -Force
+
+        Initialize-Logger -resolvedLogDir $script:LogDir -ScriptName 'Move-ImageFileToBatch' -LogLevel 20
+
+        Test-Path $script:LogDir | Should -Be $true
+        $Global:LogConfig.LogDirectory | Should -Be ([System.IO.Path]::GetFullPath($script:LogDir))
     }
 }
 
@@ -120,7 +158,7 @@ Describe "Move-ImageFileToBatch — error log path derivation" {
         # Verify Write-RunSummary joins a filename onto LogDirectory
         $content = Get-Content -LiteralPath $script:ScriptPath -Raw
         # The function should construct a path using Join-Path + $LogDirectory, not use $LogDirectory directly as a file
-        $content | Should -Match 'Join-Path.*LogDirectory.*picconvert_errors'
+        $content | Should -Match 'Join-Path.*LogDirectory.*Move-ImageFileToBatch_errors'
     }
 
     It "Error log file created under -LogDirectory when errors occur" {
@@ -134,7 +172,7 @@ Describe "Move-ImageFileToBatch — error log path derivation" {
         & $script:PS -NonInteractive -NoProfile -File $script:ScriptPath `
             -SourceDir $script:Src -DestDir $fakeDestFile -LogDirectory $script:LogDir 2>&1 | Out-Null
 
-        $errLogs = Get-ChildItem -Path $script:LogDir -Filter 'picconvert_errors_*.log' -ErrorAction SilentlyContinue
+        $errLogs = Get-ChildItem -Path $script:LogDir -Filter 'Move-ImageFileToBatch_errors_*.log' -ErrorAction SilentlyContinue
         $errLogs | Should -Not -BeNullOrEmpty
     }
 }

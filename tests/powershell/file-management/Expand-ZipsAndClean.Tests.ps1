@@ -1,8 +1,12 @@
 Set-StrictMode -Version Latest
 
+BeforeAll {
+    . (Join-Path $PSScriptRoot 'Expand-ZipsAndClean.TestHelpers.ps1')
+}
+
 Describe 'Move-ZipFilesToParent' {
     BeforeAll {
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force
+        Import-ExpandZipsAndCleanZipWorkflowTestModule
     }
 
     It 'moves zip files from source to parent directory' {
@@ -56,8 +60,7 @@ Describe 'Move-ZipFilesToParent' {
 
 Describe 'Invoke-ZipExtractions — wrapper delegation' {
     BeforeAll {
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipExtraction\ZipExtraction.psm1') -Force
-        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+        Import-ExpandZipsAndCleanZipExtractionTestModule
     }
 
     It 'returns a zero-count summary when source has no zip files, confirming module delegation' {
@@ -85,7 +88,7 @@ Describe 'Invoke-ZipExtractions — wrapper delegation' {
 
 Describe 'Test-ScriptPreconditions' {
     BeforeAll {
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force
+        Import-ExpandZipsAndCleanZipWorkflowTestModule
     }
 
     It 'throws when source and destination are the same path' {
@@ -120,7 +123,7 @@ Describe 'Test-ScriptPreconditions' {
 
 Describe 'Resolve-MoveTarget' {
     BeforeAll {
-        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force
+        Import-ExpandZipsAndCleanZipWorkflowTestModule
     }
 
     It 'returns PolicyTag None and canonical TargetPath when no collision' {
@@ -184,6 +187,31 @@ Describe 'Resolve-MoveTarget' {
 }
 
 Describe 'Expand-ZipsAndClean script structure' {
+    It 'uses terminating imports for all startup modules before workflow execution' {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptText = Get-Content -LiteralPath $scriptPath -Raw
+        $tokens = $null
+        $parseErrors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($scriptText, [ref]$tokens, [ref]$parseErrors)
+
+        $parseErrors | Should -BeNullOrEmpty
+
+        $importCommands = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.CommandAst] -and
+                $node.GetCommandName() -eq 'Import-Module'
+        }, $true))
+
+        $startupImports = @($importCommands | Where-Object {
+            $_.Extent.Text -like '*$PSScriptRoot*..*modules*'
+        })
+
+        $startupImports.Count | Should -Be 7
+        foreach ($import in $startupImports) {
+            $import.Extent.Text | Should -Match '(?i)-ErrorAction\s+Stop'
+        }
+    }
+
     It 'contains no script-local helper function definitions' {
         $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
         $scriptText = Get-Content -LiteralPath $scriptPath -Raw
@@ -194,5 +222,99 @@ Describe 'Expand-ZipsAndClean script structure' {
         $parseErrors | Should -BeNullOrEmpty
         @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)).Count |
             Should -Be 0
+    }
+
+
+    It 'uses a path-aware guard before force-importing ZipWorkflow core dependencies' {
+        $modulePath = Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1'
+        $moduleText = Get-Content -LiteralPath $modulePath -Raw
+
+        $moduleText | Should -Match 'Get-Module -Name \$moduleName'
+        $moduleText | Should -Match '\$_.Path -and \$modulePathComparer\.Equals'
+        $moduleText | Should -Match '\[System.StringComparer\]::OrdinalIgnoreCase'
+        $moduleText | Should -Match '\[System.StringComparer\]::Ordinal'
+        $moduleText | Should -Match 'Import-Module \$modulePath -Force -ErrorAction Stop'
+    }
+}
+
+Describe 'Expand-ZipsAndClean module load sequence' {
+    BeforeEach {
+        'ZipWorkflow', 'ZipExtraction', 'FileOperations', 'ProgressReporter', 'Zip', 'FileSystem', 'PowerShellLoggingFramework' |
+            ForEach-Object { Remove-Module -Name $_ -Force -ErrorAction SilentlyContinue }
+    }
+
+    AfterEach {
+        'ZipWorkflow', 'ZipExtraction', 'FileOperations', 'ProgressReporter', 'Zip', 'FileSystem', 'PowerShellLoggingFramework' |
+            ForEach-Object { Remove-Module -Name $_ -Force -ErrorAction SilentlyContinue }
+    }
+
+    It 'keeps ProgressReporter loaded after the full startup import sequence' {
+        $scriptRoot = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management'
+
+        Import-Module (Join-Path $scriptRoot '..\modules\Core\Logging\PowerShellLoggingFramework.psm1') -Force -ErrorAction Stop
+        Import-Module (Join-Path $scriptRoot '..\modules\Core\FileSystem\FileSystem.psm1') -Force -ErrorAction Stop
+        Import-Module (Join-Path $scriptRoot '..\modules\Core\Zip\Zip.psm1') -Force -ErrorAction Stop
+        Import-Module (Join-Path $scriptRoot '..\modules\Core\Progress\ProgressReporter.psm1') -Force -ErrorAction Stop
+        Import-Module (Join-Path $scriptRoot '..\modules\Core\FileOperations\FileOperations.psm1') -Force -ErrorAction Stop
+        Import-Module (Join-Path $scriptRoot '..\modules\FileManagement\ZipExtraction\ZipExtraction.psm1') -Force -ErrorAction Stop
+        Import-Module (Join-Path $scriptRoot '..\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1') -Force -ErrorAction Stop
+
+        Get-Module -Name ProgressReporter | Should -Not -BeNullOrEmpty
+
+        $errors = [System.Collections.Generic.List[string]]::new()
+        {
+            ProgressReporter\Write-ExtractionSummary `
+                -SourceDirectory $TestDrive `
+                -DestinationDirectory $TestDrive `
+                -ExtractMode 'PerArchiveSubfolder' `
+                -CollisionPolicy 'Rename' `
+                -ZipCount 0 `
+                -ProcessedZips 0 `
+                -FilesExtracted 0 `
+                -UncompressedBytes 0 `
+                -CompressedBytes 0 `
+                -MoveSummary ([pscustomobject]@{ Count = 0; Bytes = 0; Destination = $TestDrive; Skipped = 0; Overwritten = 0; Renamed = 0 }) `
+                -Errors $errors `
+                -Elapsed ([timespan]::Zero) `
+                -HostName 'ServerRemoteHost'
+        } | Should -Not -Throw
+    }
+
+    It 'loads ZipWorkflow standalone with nested ProgressReporter helpers available' {
+        $zipWorkflowPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1'
+        $sourceDir = Join-Path $TestDrive 'standalone-empty-src'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+
+        Get-Module -Name ProgressReporter | Should -BeNullOrEmpty
+
+        Import-Module $zipWorkflowPath -Force -ErrorAction Stop
+
+        Get-Module -Name ZipWorkflow | Should -Not -BeNullOrEmpty
+        { ZipWorkflow\Move-ZipFilesToParent -SourceDir $sourceDir -QuietMode $true } | Should -Not -Throw
+    }
+
+
+    It 'does not skip repository-local dependencies when another module with the same name is loaded' {
+        $foreignDir = Join-Path $TestDrive 'foreign-modules'
+        New-Item -ItemType Directory -Path $foreignDir -Force | Out-Null
+        $foreignFileSystemPath = Join-Path $foreignDir 'FileSystem.psm1'
+        Set-Content -LiteralPath $foreignFileSystemPath -Value 'function Resolve-UniquePath { param([string]$Path) "foreign:$Path" }' -NoNewline
+
+        Import-Module $foreignFileSystemPath -Force -ErrorAction Stop
+        [System.IO.Path]::GetFullPath((Get-Module -Name FileSystem).Path) | Should -Be ([System.IO.Path]::GetFullPath($foreignFileSystemPath))
+
+        $zipWorkflowPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\modules\FileManagement\ZipWorkflow\ZipWorkflow.psm1'
+        Import-Module $zipWorkflowPath -Force -ErrorAction Stop
+
+        $parentDir = Join-Path $TestDrive 'collision-parent'
+        New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+        $zipPath = Join-Path $parentDir 'dup.zip'
+        Set-Content -LiteralPath $zipPath -Value 'existing' -NoNewline
+        $zip = Get-Item -LiteralPath $zipPath
+
+        $result = ZipWorkflow\Resolve-MoveTarget -Zip $zip -Parent $parentDir -CollisionPolicy Rename
+
+        $result.TargetPath | Should -Not -Be "foreign:$zipPath"
+        $result.TargetPath | Should -BeLike (Join-Path $parentDir 'dup_*.zip')
     }
 }

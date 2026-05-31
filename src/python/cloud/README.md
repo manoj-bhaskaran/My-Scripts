@@ -31,8 +31,12 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - Historical note: a small number of pre-2.0 releases documented breaking behavior under minor-version bumps. Under SemVer 2.0 this is only expected before `1.0.0`; these `1.x` historical exceptions are preserved as published and called out explicitly in the changelog.
 - Changelog heading convention: consolidated rollups use a lowercase `(consolidated)` suffix, and multi-version entries use a single bracketed range like `[1.23.1–1.23.3]`.
 - Recent maintenance refactors from `1.26.2` through `1.26.5` are intentionally grouped as one consolidated release band in the changelog to reduce short-lived refactor churn noise while preserving the key fixes and test deltas.
-- As of `1.26.7`, CLI file-path validation in `gdrive_cli.py` reuses shared utilities from `modules.utils.file_operations` (`ensure_directory`, `is_writable`) instead of local inline write-probe checks.
+- As of `1.31.1`, `recover-and-download --download-dir` validation delegates directory creation and write probing to `modules.utils.file_operations.is_writable`, while preserving the explicit guard for paths that point at existing files. Other CLI file-path validation continues to reuse shared utilities such as `ensure_directory`.
 - As of `1.26.8`, `gdrive_cli.py` prepends `src/python` to `sys.path` before importing `modules.utils.file_operations`, preserving the documented `python gdrive_recover.py ...` execution path from `src/python/cloud`.
+- As of `1.28.0`, `gdrive_recover.py` reuses shared `modules.utils.file_operations.sanitize_filename` and `unique_path` helpers for local recovery target names and collision-safe suffixing.
+- As of `1.27.0`, `DriveTrashRecoveryTool` no longer exposes pass-through wrappers for privilege, discovery-validation, operation, or reporter helpers; tests and internal callers target `tool.privileges`, `tool.discovery`, `tool.ops`, and `tool.reporter` directly.
+- As of `1.27.1`, `gdrive_recover.py` configures console and optional `--log-file` output through the shared `python_logging_framework`, preserving the existing verbosity and explicit-log-file behavior while removing local handler setup.
+- As of `1.27.3`, `gdrive_cli.py` also sends post-restore policy validation metric, warning, and error logs through the shared `python_logging_framework`; the user-facing console output and greppable `METRIC {json}` unknown-policy line are preserved.
 
 ## Dependencies
 
@@ -391,7 +395,7 @@ python gdrive_recover.py recover-and-download \
 
 ## Logging
 
-All scripts use the Python Logging Framework located in `src/python/modules/logging/`.
+All scripts use the Python Logging Framework located in `src/python/modules/logging/`. `gdrive_recover.py` routes its `-v`/`-vv` console levels and optional `--log-file` handler through this shared framework; leaving `--log-file` empty still disables file logging for the recovery tool.
 
 ## Compatibility and Performance
 
@@ -429,8 +433,8 @@ All scripts use the Python Logging Framework located in `src/python/modules/logg
 - `gdrive_state.py` owns persistent state and lock-file concerns.
   - Includes PID liveness checks used by lock diagnostics in `gdrive_cli.py`.
   - Reports state-load failures back to `gdrive_recover.py` so execution error totals remain accurate.
-- `gdrive_discovery.py` owns query/file-ID discovery, validation, streaming helpers, and folder-scoped BFS traversal used by `DriveTrashRecoveryTool`.
-  - `DriveTrashDiscovery` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`stats`, `stats_lock`, `seen_total_ref`, `generate_target_path`, `run_parallel_processing_for_batch`) are injected at construction time.
+- `gdrive_discovery.py` owns query/file-ID discovery, validation, streaming helpers, folder-scoped BFS traversal, and the `SeenTotalCounter` shared streaming-progress counter used by `DriveTrashRecoveryTool`.
+  - `DriveTrashDiscovery` holds no reference to `DriveTrashRecoveryTool`; all dependencies (`stats`, `stats_lock`, `seen_total`, `generate_target_path`, `run_parallel_processing_for_batch`) are injected at construction time.
   - Neither `DriveTrashRecoveryTool` nor `DriveTrashDiscovery` defines `__getattr__`; all inter-class wiring is explicit.
   - Streaming helper methods required by discovery paths are implemented in this module (not delegated back to `gdrive_recover.py`).
   - Folder-scoped discovery (`--folder-id`) uses BFS traversal: `_discover_folder_recursively` for dry-run/non-streaming paths and `_stream_stream_folder` for streaming execution. Both reconstruct subfolder hierarchy via `relative_path` on each `RecoveryItem`.

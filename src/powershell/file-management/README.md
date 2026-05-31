@@ -50,6 +50,31 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
+- **Expand-ZipsAndClean Pester helper-loading cleanup (issue #1144)** (2026-05-31)
+  - Added shared test setup helpers for loading `ZipWorkflow` and `ZipExtraction` dependencies in `Expand-ZipsAndClean.Tests.ps1`, loaded during Pester's run phase so `BeforeAll` blocks can call them.
+  - Replaced repeated per-`Describe` `BeforeAll` module-loading boilerplate with calls into the shared helper file without changing behavioral coverage.
+  - Version bump: `2.6.19` (patch — tests-only refactor, no runtime behavior change).
+
+- **Expand-ZipsAndClean path-aware import guard test fix (issue #1191)** (2026-05-30)
+  - Used a platform-appropriate path comparer for `ZipWorkflow` dependency path checks before skipping already-loaded same-name modules.
+  - Corrected regression tests to validate nested dependency behavior through `ZipWorkflow` commands rather than global module visibility.
+  - Version bump: `2.6.18` (patch — module-load regression/test fix).
+
+- **Expand-ZipsAndClean path-aware ZipWorkflow import guard fix (issue #1191)** (2026-05-30)
+  - Tightened the `ZipWorkflow` dependency guard so it only skips an import when the loaded module path matches the repository-local dependency path.
+  - Added regression coverage for a same-name external `FileSystem` module to ensure repository-local dependencies are still loaded.
+  - Version bump: `2.6.17` (patch — module-load regression fix).
+
+- **Expand-ZipsAndClean ZipWorkflow import guard fix (issue #1191)** (2026-05-30)
+  - Changed `ZipWorkflow` to reuse already-loaded core modules instead of force-reimporting them, preventing `ProgressReporter` from being unloaded before the final summary call.
+  - Added regression coverage for the full startup import sequence, `ProgressReporter\Write-ExtractionSummary`, and standalone `ZipWorkflow` loading.
+  - Version bump: `2.6.16` (patch — module-load regression fix).
+
+- **Expand-ZipsAndClean fast-fail module import fix (issue #1188)** (2026-05-30)
+  - Added terminating `-ErrorAction Stop` handling to the script's startup module imports so dependency failures stop before extraction work begins and no longer appear as a late `ProgressReporter\Write-ExtractionSummary` summary-step error.
+  - Hardened `ProgressReporter` and `ZipWorkflow` dependency imports for consistent fail-fast module loading.
+  - Version bump: `2.6.15` (patch — module-load robustness bug fix).
+
 - **Expand-ZipsAndClean ZipWorkflow move output fix** (2026-05-29)
   - Suppressed `Move-FileWithRetry`'s boolean success output inside `ZipWorkflow\Move-ZipFilesToParent` so callers receive only the move-summary object.
   - Version bump: `2.6.14` (patch — output contract bug fix).

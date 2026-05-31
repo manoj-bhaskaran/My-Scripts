@@ -1,7 +1,7 @@
 """
 Frame cropper for image folders.
 
-Version: 4.2.0
+Version: 4.2.1
 Author: Manoj Bhaskaran
 
 DESCRIPTION
@@ -28,7 +28,7 @@ DEPENDENCIES
 
 USAGE
     # Safe default (non-destructive): Cropped/ + suffix
-    python crop_colours.py --input /path/to/images [--output /path/to/out]
+    python -m media.crop_colours --input /path/to/images [--output /path/to/out]
                       [--suffix _cropped] [--no-suffix]
                       [--max-workers N] [--retry-writes 3]
                       [--progress-interval 100]
@@ -42,7 +42,7 @@ USAGE
                       [--debug]
 
     # Overwrite originals (opt-in)
-    python crop_colours.py --input /path/to/images --in-place
+    python -m media.crop_colours --input /path/to/images --in-place
 
 SEE ALSO
     - Troubleshooting & FAQs:  src/python/media/README.md
@@ -60,6 +60,14 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional, Sequence
+
+if __package__ in (None, ""):
+    print(
+        "crop_colours.py is part of the media package; run it with "
+        "`python -m media.crop_colours` from a context where src/python is on PYTHONPATH.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 from ._tracking import get_processed_set, mark_processed
 from ._image_ops import (

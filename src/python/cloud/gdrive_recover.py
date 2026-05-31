@@ -39,6 +39,7 @@ Usage examples were moved to `docs/gdrive-recover-usage.md` to keep this module 
 
 import time
 import logging
+import importlib
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple, Optional, Mapping
 from pathlib import Path
@@ -68,7 +69,7 @@ from gdrive_report import RecoveryReporter
 
 try:
     # v1.12.3: discovery module uses googleapiclient.errors, so import under same guard.
-    from gdrive_discovery import DriveTrashDiscovery
+    from gdrive_discovery import DriveTrashDiscovery, SeenTotalCounter
 
     # v1.14.0: download subsystem extracted to gdrive_download.py (issue #853).
     from gdrive_download import DriveDownloader
@@ -78,6 +79,18 @@ except ImportError:
         "Install with: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib"
     )
     sys.exit(1)
+
+# Add shared Python modules to sys.path for direct script execution from src/python/cloud.
+_PYTHON_SRC_DIR = Path(__file__).resolve().parents[1]
+if str(_PYTHON_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_PYTHON_SRC_DIR))
+_MODULES_LOGGING = _PYTHON_SRC_DIR / "modules" / "logging"
+if str(_MODULES_LOGGING) not in sys.path:
+    sys.path.insert(0, str(_MODULES_LOGGING))
+initialise_logger = importlib.import_module("python_logging_framework").initialise_logger
+_file_operations = importlib.import_module("modules.utils.file_operations")
+sanitize_filename = _file_operations.sanitize_filename
+unique_path = _file_operations.unique_path
 
 
 class DriveTrashRecoveryTool:
@@ -106,7 +119,7 @@ class DriveTrashRecoveryTool:
         # progress throttles
         self._streaming: bool = False
         self._processed_total: int = 0
-        self._seen_total_ref: List[int] = [0]
+        self._seen_total_counter = SeenTotalCounter()
         self._last_exec_progress_ts: Optional[float] = None
         # v1.12.0: authentication delegated to DriveAuthManager (issue #789)
         self.rate_limiter = RateLimiter(args, self.logger)
@@ -121,7 +134,7 @@ class DriveTrashRecoveryTool:
             self._execute,
             stats=self.stats,
             stats_lock=self.stats_lock,
-            seen_total_ref=self._seen_total_ref,
+            seen_total=self._seen_total_counter,
             generate_target_path=self._generate_target_path,
             run_parallel_processing_for_batch=self._run_parallel_processing_for_batch,
         )
@@ -150,20 +163,11 @@ class DriveTrashRecoveryTool:
 
     @property
     def _seen_total(self) -> int:
-        return self._seen_total_ref[0]
+        return self._seen_total_counter.value
 
     @_seen_total.setter
     def _seen_total(self, value: int) -> None:
-        self._seen_total_ref[0] = value
-
-    def _print_err(self, msg: str) -> None:
-        self.reporter._print_err(msg)
-
-    def _print_warn(self, msg: str) -> None:
-        self.reporter._print_warn(msg)
-
-    def _print_info(self, msg: str) -> None:
-        self.reporter._print_info(msg)
+        self._seen_total_counter.value = value
 
     def _record_state_load_error(self) -> None:
         with self.stats_lock:
@@ -175,38 +179,22 @@ class DriveTrashRecoveryTool:
         return request.execute()
 
     def _setup_logging(self) -> logging.Logger:
-        """Configure logging based on verbosity level.
-
-        Console level follows -v / -vv flags.  When --log-file is provided a
-        FileHandler at DEBUG level is added so every operation is captured in
-        the file regardless of console verbosity.  The parent directory is
-        created automatically if it does not exist.
-        """
+        """Configure recovery logging through the shared logging framework."""
         console_level = logging.WARNING
         if self.args.verbose >= 2:
             console_level = logging.DEBUG
         elif self.args.verbose == 1:
             console_level = logging.INFO
 
-        root = logging.getLogger()
-        if not root.handlers:
-            root.setLevel(logging.DEBUG)  # handlers apply their own filters
-            fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-
-            console_h = logging.StreamHandler()
-            console_h.setLevel(console_level)
-            console_h.setFormatter(fmt)
-            root.addHandler(console_h)
-
-            log_file = getattr(self.args, "log_file", None) or ""
-            if log_file:
-                Path(log_file).parent.mkdir(parents=True, exist_ok=True)
-                file_h = logging.FileHandler(log_file)
-                file_h.setLevel(logging.DEBUG)
-                file_h.setFormatter(fmt)
-                root.addHandler(file_h)
-
-        return logging.getLogger(__name__)
+        return initialise_logger(
+            script_name=__name__,
+            log_level=logging.DEBUG,
+            console_level=console_level,
+            log_file_path=getattr(self.args, "log_file", None) or None,
+            file_level=logging.DEBUG,
+            create_default_file=False,
+            configure_root=True,
+        )
 
     # -------------------- Discovery helpers delegated to DriveTrashDiscovery --------------------
     # discover_trashed_files is the public entry point; all other discovery internals
@@ -224,11 +212,7 @@ class DriveTrashRecoveryTool:
         if overrides and item_id in overrides:
             return overrides[item_id]
         relative_path = "" if isinstance(item, Mapping) else item.relative_path
-        safe_name = "".join(
-            c for c in str(item_name) if c.isalnum() or c in (" ", "-", "_", ".")
-        ).rstrip()
-        if not safe_name:
-            safe_name = f"file_{item_id}"
+        safe_name = sanitize_filename(str(item_name), fallback=f"file_{item_id}")
         if relative_path:
             base_path = Path(self.args.download_dir) / relative_path / safe_name
         else:
@@ -238,43 +222,24 @@ class DriveTrashRecoveryTool:
             and not getattr(self.args, "overwrite", False)
             and not getattr(self.args, "skip_existing", False)
         ):
-            stem = base_path.stem or f"file_{item_id}"
-            suffix = base_path.suffix
-            base_path = base_path.parent / f"{stem}_{uuid.uuid4().hex[:6]}{suffix}"
+            base_path = unique_path(base_path, fallback_stem=f"file_{item_id}")
         return str(base_path)
-
-    def _check_untrash_privilege(self, file_id: str) -> Dict[str, Any]:
-        return self.privileges._check_untrash_privilege(file_id)
-
-    def _check_download_privilege(self, file_id: str) -> Dict[str, Any]:
-        return self.privileges._check_download_privilege(file_id)
-
-    def _check_trash_delete_privileges(
-        self, file_id: str, untrash_status: str
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        return self.privileges._check_trash_delete_privileges(file_id, untrash_status)
-
-    def _test_operation_privileges(self, test_items: List[RecoveryItem]) -> Dict[str, Any]:
-        return self.privileges._test_operation_privileges(test_items)
 
     def _check_privileges(self) -> Dict[str, Any]:
         self.privileges.items = self.items
         return self.privileges._check_privileges(self.args)
-
-    def _validate_file_ids(self) -> bool:
-        return self.discovery._validate_file_ids()
 
     def dry_run(self) -> bool:
         self.reporter.print_dry_run_banner()
         # Authenticate up front; dry-run still needs list access
         try:
             if not self.auth.authenticate():
-                self._print_err(
+                self.reporter._print_err(
                     "Authentication failed. Ensure your credentials are configured and try again."
                 )
                 return False
         except Exception as e:
-            self._print_err(f"Authentication failed: {e}")
+            self.reporter._print_err(f"Authentication failed: {e}")
             return False
         self.items = self.discover_trashed_files()
         if not self.items:
@@ -289,36 +254,6 @@ class DriveTrashRecoveryTool:
             getattr(self.args, "_policy_warning_message", None)
         )
         return True
-
-    def _recover_file(self, item: RecoveryItem) -> bool:
-        return self.ops._recover_file(item)
-
-    def _get_post_restore_action_and_ctx(self, item: RecoveryItem) -> Tuple[str, Optional[str]]:
-        return self.ops._get_post_restore_action_and_ctx(item)
-
-    def _do_post_restore_action(self, service, item: RecoveryItem, action: str):
-        return self.ops._do_post_restore_action(service, item, action)
-
-    def _log_post_restore_success(self, item: RecoveryItem, action: str):
-        return self.ops._log_post_restore_success(item, action)
-
-    def _is_terminal_post_restore_error(self, status):
-        return self.ops._is_terminal_post_restore_error(status)
-
-    def _handle_post_restore_retry(self, item, status, attempt):
-        return self.ops._handle_post_restore_retry(item, status, attempt)
-
-    def _extract_http_error_detail(self, error_message: str):
-        return self.ops._extract_http_error_detail(error_message)
-
-    def _log_post_restore_terminal_error(self, item, detail, api_ctx):
-        return self.ops._log_post_restore_terminal_error(item, detail, api_ctx)
-
-    def _log_post_restore_final_error(self, item, detail, api_ctx):
-        return self.ops._log_post_restore_final_error(item, detail, api_ctx)
-
-    def _apply_post_restore_policy(self, item: RecoveryItem) -> bool:
-        return self.ops._apply_post_restore_policy(item)
 
     def _process_item(self, item: RecoveryItem) -> bool:
         return self.ops._process_item(item)
@@ -348,14 +283,11 @@ class DriveTrashRecoveryTool:
         if getattr(self.args, "fresh_run", False):
             self._fresh_run_reset()
 
-    def _reset_prefix(self) -> str:
-        return "🔄" if not getattr(self.args, "no_emoji", False) else "INFO"
-
     def _fresh_run_reset(self) -> None:
         cleared = self.state_manager._reset_state()
         if cleared:
-            print(
-                f"{self._reset_prefix()} --fresh-run: cleared {cleared} previously "
+            self.reporter._print_info(
+                f"--fresh-run: cleared {cleared} previously "
                 "processed item(s) from state and regenerated run identity"
             )
         self.ops._clear_failed_files()
