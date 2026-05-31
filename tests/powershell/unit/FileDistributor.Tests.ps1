@@ -347,8 +347,8 @@ Describe 'FileDistributor Module Public API' {
 
         $dependencyImportIndex | Should -BeGreaterOrEqual 0
         $privateDotSourceIndex | Should -BeGreaterThan $dependencyImportIndex
-        $moduleScriptContent | Should -Match [regex]::Escape('..\..\Core\ErrorHandling\ErrorHandling.psd1')
-        $moduleScriptContent | Should -Match [regex]::Escape('..\..\Core\FileOperations\FileOperations.psd1')
+        $moduleScriptContent | Should -Match ([regex]::Escape('..\..\Core\ErrorHandling\ErrorHandling.psd1'))
+        $moduleScriptContent | Should -Match ([regex]::Escape('..\..\Core\FileOperations\FileOperations.psd1'))
         $moduleScriptContent | Should -Match 'Import-Module\s+-Name\s+\$dependencyPath\s+-Force\s+-ErrorAction\s+Stop'
     }
 
