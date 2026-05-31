@@ -1,6 +1,6 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '3.2.7'
+  ModuleVersion     = '3.2.9'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
@@ -14,7 +14,7 @@
   PrivateData       = @{
     PSData = @{
       Tags         = @('video','vlc','gdi','screenshots','crop','python','images','automation')
-      ReleaseNotes = '3.2.7: Version resolution in New-VideoRunContext is now manifest-authoritative (Import-PowerShellDataFile); stale hard-coded fallback removed; guard test added; README documents Import-Module -Force reload requirement.'
+      ReleaseNotes = '3.2.9: Invoke-Cropper now sets the cropper child working directory to the selected src/python package root and passes an absolute input path so python -m resolves the intended media package before any caller cwd package.'
     }
   }
 }
