@@ -8,6 +8,16 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.2.7] - 2026-05-31
+### Fixed
+- **Startup banner version resolution**: `New-VideoRunContext` now reads `ModuleVersion` directly from `Videoscreenshot.psd1` via `Import-PowerShellDataFile`, making the manifest the single authoritative source. The previous logic preferred `Get-Module`, which returns the version of a stale import when the module has been edited without an `Import-Module -Force` reload. The hard-coded `'3.0.5'` fallback (which silently masked lookup failures with a long-obsolete literal) is replaced by `'unknown'`, making missed lookups obvious in the startup banner and logs.
+
+### Added
+- **Version guard test** (`tests/.../New-RunContext.Tests.ps1`): asserts that the banner version emitted by `New-VideoRunContext` matches `ModuleVersion` in `Videoscreenshot.psd1`, so future version drift fails CI immediately; covers the fallback path (`'unknown'` on manifest read failure) and verifies the stale `'3.0.5'` literal is gone.
+
+### Docs
+- **`README.md` reload note**: added a Troubleshooting entry explaining that `Import-Module … -Force` (or a fresh session) is required after editing module files; otherwise `Get-Module` returns the old version and the banner reflects the stale import.
+
 ## [3.2.6] - 2026-05-31
 ### Fixed
 - **VLC probe pipe-buffer deadlock in `Test-VideoPlayable`**: the `-VerifyVideos` pre-flight probe no longer sets `RedirectStandardOutput`/`RedirectStandardError` to `$true`. VLC now writes diagnostics to a unique sidecar logfile under the system temp directory, eliminating the unread-pipe deadlock that caused chatty-but-playable videos (e.g. AV1/VP9 clips) to time out and be falsely logged as `Skipped/NotPlayable`. This is the same class of defect fixed for the main capture path in 3.2.1 (#1201), now applied to the second, independent VLC launch used by the pre-flight probe.

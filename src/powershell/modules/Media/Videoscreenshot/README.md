@@ -315,6 +315,7 @@ On Windows (example):
 ## Troubleshooting
 - “VLC not found”: ensure `vlc --version` runs in the same session.
 - “Module not found”: verify the path to `Videoscreenshot.psd1` when importing the module manually.
+- **Startup banner shows a stale version after editing files**: PowerShell caches the module in the current session. Editing files on disk does **not** update what is loaded. Always reload with `Import-Module .\Videoscreenshot.psd1 -Force` (or restart the session) after making edits; otherwise `Get-Module` still returns the old version and any version-dependent behaviour reflects the stale import.
 - “Cropper failed due to missing packages”: by default, the module tries to install them. If you used -NoAutoInstall, install manually with python -m pip install <packages> or remove the switch.
 - “Resume/processed not working”: the module reads `<SaveFolder>\.processed_videos.txt` and accepts **both**
   TSV (`<FullPath>\t<Status>[\t<Reason>]`) **and** legacy single-column (`<FullPath>`) lines. Paths are

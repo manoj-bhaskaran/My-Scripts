@@ -18,18 +18,12 @@ function New-VideoRunContext {
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$SaveFolder,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$RunGuid
     )
-    $mod = Get-Module -Name 'Videoscreenshot'
-    $version = if ($mod -and $mod.Version -ne [version]'0.0') {
-        $mod.Version.ToString()
+    $manifestPath = Join-Path $PSScriptRoot '..' 'Videoscreenshot.psd1'
+    $version = try {
+        (Import-PowerShellDataFile -Path $manifestPath -ErrorAction Stop).ModuleVersion
     }
-    else {
-        $manifestPath = Join-Path $PSScriptRoot '..' 'Videoscreenshot.psd1'
-        try {
-            (Import-PowerShellDataFile -Path $manifestPath -ErrorAction Stop).ModuleVersion
-        }
-        catch {
-            '3.0.5'
-        }
+    catch {
+        'unknown'
     }
     $cfg = Get-DefaultConfig
     # stats object is per-run and intentionally mutable but isolated inside the context
