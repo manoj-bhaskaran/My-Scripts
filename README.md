@@ -225,7 +225,7 @@ This repository follows [Semantic Versioning](https://semver.org/):
 - **MAJOR**: Breaking changes to script interfaces or module APIs
 - **MINOR**: New features (new scripts, module enhancements)
 - **PATCH**: Bug fixes and minor improvements
-  Current version: **2.12.10**
+  Current version: **2.17.0**
   See [CHANGELOG.md](CHANGELOG.md) for release history and [docs/guides/versioning.md](docs/guides/versioning.md) for the release/versioning workflow.
 
 CHANGELOG maintenance note: entries older than the current minor release line are condensed to architectural highlights; full detail remains available through `git log` and release tags. The CHANGELOG legend uses `#NNN` for GitHub issue references unless otherwise prefixed.

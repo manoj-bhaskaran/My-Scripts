@@ -80,11 +80,17 @@ except ImportError:
     )
     sys.exit(1)
 
-# Add shared logging framework to sys.path for direct script execution from src/python/cloud.
-_MODULES_LOGGING = Path(__file__).resolve().parents[1] / "modules" / "logging"
+# Add shared Python modules to sys.path for direct script execution from src/python/cloud.
+_PYTHON_SRC_DIR = Path(__file__).resolve().parents[1]
+if str(_PYTHON_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_PYTHON_SRC_DIR))
+_MODULES_LOGGING = _PYTHON_SRC_DIR / "modules" / "logging"
 if str(_MODULES_LOGGING) not in sys.path:
     sys.path.insert(0, str(_MODULES_LOGGING))
 initialise_logger = importlib.import_module("python_logging_framework").initialise_logger
+_file_operations = importlib.import_module("modules.utils.file_operations")
+sanitize_filename = _file_operations.sanitize_filename
+unique_path = _file_operations.unique_path
 
 
 class DriveTrashRecoveryTool:
@@ -206,11 +212,7 @@ class DriveTrashRecoveryTool:
         if overrides and item_id in overrides:
             return overrides[item_id]
         relative_path = "" if isinstance(item, Mapping) else item.relative_path
-        safe_name = "".join(
-            c for c in str(item_name) if c.isalnum() or c in (" ", "-", "_", ".")
-        ).rstrip()
-        if not safe_name:
-            safe_name = f"file_{item_id}"
+        safe_name = sanitize_filename(str(item_name), fallback=f"file_{item_id}")
         if relative_path:
             base_path = Path(self.args.download_dir) / relative_path / safe_name
         else:
@@ -220,9 +222,7 @@ class DriveTrashRecoveryTool:
             and not getattr(self.args, "overwrite", False)
             and not getattr(self.args, "skip_existing", False)
         ):
-            stem = base_path.stem or f"file_{item_id}"
-            suffix = base_path.suffix
-            base_path = base_path.parent / f"{stem}_{uuid.uuid4().hex[:6]}{suffix}"
+            base_path = unique_path(base_path, fallback_stem=f"file_{item_id}")
         return str(base_path)
 
     def _check_privileges(self) -> Dict[str, Any]:

@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.28.0] - 2026-05-31
+
+### Changed
+
+- `gdrive_recover.py`: `_generate_target_path` now reuses shared `modules.utils.file_operations.sanitize_filename` and `unique_path` helpers for Drive item filename cleanup and conflict-safe local target generation, preserving overrides, relative subdirectory joins, and `--overwrite`/`--skip-existing` bypass behavior (issue #1120).
+
+### Tests
+
+- Added shared `file_operations` unit coverage for filename sanitization fallback behavior and one-pass UUID suffix generation on local filename collisions.
+
 ## [1.27.3] - 2026-05-31
 
 ### Changed

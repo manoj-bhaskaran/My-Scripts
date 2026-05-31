@@ -18,6 +18,9 @@ kept here — see the linked file for details.
 
 ### Changed
 
+- **[gdrive_recover 1.28.0 / python utils 1.1.0]** Added shared `sanitize_filename` and `unique_path` helpers to `modules.utils.file_operations`, refactored `gdrive_recover.py` target-path generation to use them without changing override, relative-path, or overwrite/skip collision behavior, and bumped the repository version to 2.17.0 (issue #1120).
+  → Full detail: [src/python/cloud/CHANGELOG-gdrive-recover.md](src/python/cloud/CHANGELOG-gdrive-recover.md)
+
 - **[gdrive_recover 1.27.3]** Routed `gdrive_cli.py` post-restore policy metric, warning, and error logs through the shared `python_logging_framework` helpers while preserving user-facing console output and the greppable `METRIC {json}` unknown-policy line (issue #1135).
   → Full detail: [src/python/cloud/CHANGELOG-gdrive-recover.md](src/python/cloud/CHANGELOG-gdrive-recover.md)
 - **[gdrive_recover 1.27.1]** Reused the shared `python_logging_framework` in `DriveTrashRecoveryTool._setup_logging`, preserving verbosity-driven console output and explicit `--log-file` behavior while adding framework support for exact log-file paths and root-handler configuration (issue #1119).

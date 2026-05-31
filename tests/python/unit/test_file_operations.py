@@ -4,7 +4,11 @@ import pytest
 import tempfile
 import time
 from pathlib import Path
+
+import src.python.modules.utils.file_operations as file_operations
 from src.python.modules.utils.file_operations import (
+    sanitize_filename,
+    unique_path,
     copy_with_retry,
     move_with_retry,
     remove_with_retry,
@@ -14,6 +18,58 @@ from src.python.modules.utils.file_operations import (
     safe_write_text,
     safe_append_text,
 )
+
+
+class TestSanitizeFilename:
+    """Tests for sanitize_filename function."""
+
+    def test_preserves_allowed_characters_and_removes_disallowed(self):
+        """Allowed alphanumeric/space/-/_. characters are preserved."""
+        assert sanitize_filename("my*file?.txt", fallback="file_abc") == "myfile.txt"
+        assert sanitize_filename("Report 2026-05_31.final", fallback="file_abc") == (
+            "Report 2026-05_31.final"
+        )
+
+    def test_strips_trailing_whitespace_after_filtering(self):
+        """Trailing whitespace is stripped after unsafe characters are removed."""
+        assert sanitize_filename("name   ", fallback="file_abc") == "name"
+
+    def test_empty_sanitized_name_uses_fallback(self):
+        """Fallback is returned when no safe filename characters remain."""
+        assert sanitize_filename("***???", fallback="file_abc") == "file_abc"
+        assert sanitize_filename("   ", fallback="file_abc") == "file_abc"
+
+
+class TestUniquePath:
+    """Tests for unique_path function."""
+
+    def test_returns_original_path_when_it_does_not_exist(self, tmp_path):
+        """Non-existing targets are returned unchanged."""
+        path = tmp_path / "report.txt"
+
+        assert unique_path(path) == path
+
+    def test_appends_short_uuid_suffix_when_path_exists(self, tmp_path, monkeypatch):
+        """Existing targets receive a six-character UUID suffix."""
+        path = tmp_path / "report.txt"
+        path.write_text("x")
+
+        class DummyUuid:
+            hex = "abcdef123456"
+
+        monkeypatch.setattr(file_operations, "uuid4", lambda: DummyUuid())
+
+        assert unique_path(path) == tmp_path / "report_abcdef.txt"
+
+    def test_existing_path_with_empty_stem_uses_fallback_stem(self, monkeypatch):
+        """The configured fallback stem is used when pathlib reports an empty stem."""
+
+        class DummyUuid:
+            hex = "123456abcdef"
+
+        monkeypatch.setattr(file_operations, "uuid4", lambda: DummyUuid())
+
+        assert unique_path(Path("."), fallback_stem="file_abc") == Path("file_abc_123456")
 
 
 class TestCopyWithRetry:
