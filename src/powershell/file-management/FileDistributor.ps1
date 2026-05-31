@@ -392,9 +392,9 @@ function Invoke-LogFilePurge {
 function Main {
     $script:DebugMode = ($DebugPreference -ne 'SilentlyContinue')
     Write-LogInfo "FileDistributor starting..."
-    Write-Host "FileDistributor starting..."
+    Write-Output "FileDistributor starting..."
     Write-LogInfo "Version: $script:Version"
-    Write-Host "Version: $script:Version"
+    Write-Output "Version: $script:Version"
     Import-RandomNameProvider -ModulePath $RandomNameModulePath -ScriptRoot $script:ScriptRoot
     $script:Warnings = Get-LogWarningCount
     $script:Errors = Get-LogErrorCount
@@ -455,10 +455,10 @@ function Main {
             -WarningCount ([ref]$script:Warnings) -ErrorCount ([ref]$script:Errors)
 
         Write-LogInfo "File distribution and optional cleanup completed."
-        Write-Host "File distribution and optional cleanup completed."
+        Write-Output "File distribution and optional cleanup completed."
     } catch {
         Write-LogError "FATAL ERROR: $($_.Exception.Message)"
-        Write-Host "ERROR: FATAL ERROR: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Error "ERROR: FATAL ERROR: $($_.Exception.Message)"
         Write-LogError "Stack Trace: $($_.ScriptStackTrace)"
         throw
     } finally {

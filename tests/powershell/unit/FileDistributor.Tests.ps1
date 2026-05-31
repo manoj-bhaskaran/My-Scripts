@@ -325,29 +325,30 @@ Describe 'FileDistributor Module Public API' {
         $functionContent | Should -Match 'Get-NextQueueItem\s+-Queue\s+\$RunState\.FilesToDelete\s+-Peek'
     }
 
-    It 'Invoke-PostRunCleanup mirrors completion summary details to the console' {
+    It 'Invoke-PostRunCleanup emits completion summary details with pipeline-compatible output' {
         $functionPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'Public' 'Invoke-PostRunCleanup.ps1'
         $functionContent = Get-Content -LiteralPath $functionPath -Raw
 
-        $functionContent | Should -Match 'Write-Host "===== File Rebalancing Summary ====="'
-        $functionContent | Should -Match 'Write-Host "===== File Distribution Summary ====="'
-        $functionContent | Should -Match 'Write-Host "Original number of files in the source folder \(enumerated\):'
-        $functionContent | Should -Match 'Write-Host "Files selected for copying this run:'
-        $functionContent | Should -Match 'Write-Host "Original number of files in the target folder hierarchy:'
-        $functionContent | Should -Match 'Write-Host "Final number of files in the target folder hierarchy:'
-        $functionContent | Should -Match 'Write-Host "Total warnings: \$frameworkWarnings"'
-        $functionContent | Should -Match 'Write-Host "Total errors: \$frameworkErrors"'
-        $functionContent | Should -Match 'Write-Host "Completion status: Completed successfully"'
-        $functionContent | Should -Match 'Write-Host "Completion status: Completed with warnings" -ForegroundColor Yellow'
-        $functionContent | Should -Match 'Write-Host "Completion status: Completed with errors" -ForegroundColor Red'
+        $functionContent | Should -Match 'Write-Output "===== File Rebalancing Summary ====="'
+        $functionContent | Should -Match 'Write-Output "===== File Distribution Summary ====="'
+        $functionContent | Should -Match 'Write-Output "Original number of files in the source folder \(enumerated\):'
+        $functionContent | Should -Match 'Write-Output "Files selected for copying this run:'
+        $functionContent | Should -Match 'Write-Output "Original number of files in the target folder hierarchy:'
+        $functionContent | Should -Match 'Write-Output "Final number of files in the target folder hierarchy:'
+        $functionContent | Should -Match 'Write-Output "Total warnings: \$frameworkWarnings"'
+        $functionContent | Should -Match 'Write-Output "Total errors: \$frameworkErrors"'
+        $functionContent | Should -Match 'Write-Output "Completion status: Completed successfully"'
+        $functionContent | Should -Match 'Write-Output "Completion status: Completed with warnings"'
+        $functionContent | Should -Match 'Write-Output "Completion status: Completed with errors"'
     }
 
-    It 'Invoke-PostRunCleanup surfaces count discrepancies as console warnings' {
+    It 'Invoke-PostRunCleanup surfaces count discrepancies as pipeline-compatible warnings' {
         $functionPath = Join-Path $PSScriptRoot '..' '..' '..' 'src' 'powershell' 'modules' 'FileManagement' 'FileDistributor' 'Public' 'Invoke-PostRunCleanup.ps1'
         $functionContent = Get-Content -LiteralPath $functionPath -Raw
 
-        $functionContent | Should -Match 'Write-Host "WARNING: File count changed during rebalancing\. Possible discrepancy detected\." -ForegroundColor Yellow'
-        $functionContent | Should -Match 'Write-Host "WARNING: Sum of original counts does not equal the final count in the target\. Possible discrepancy detected\." -ForegroundColor Yellow'
+        $functionContent | Should -Match 'Write-Output "WARNING: File count changed during rebalancing\. Possible discrepancy detected\."'
+        $functionContent | Should -Match 'Write-Output "WARNING: Sum of original counts does not equal the final count in the target\. Possible discrepancy detected\."'
+        $functionContent | Should -Not -Match '\bWrite-Host\b'
     }
 
     It 'New-FileDistributorRunState should return a FileDistributorRunState instance callable from script scope' {

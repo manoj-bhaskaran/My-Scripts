@@ -4,13 +4,13 @@
 
 ### Changed
 
-- Mirrored the mode-specific post-run summary to the console so successful full-distribution runs show source counts, target counts before and after, reconciliation status, total warnings/errors, and completion status without requiring the log file.
-- Mirrored the rebalance-only post-run summary to the console so target counts before and after, discrepancy warnings, total warnings/errors, and completion status are visible at the terminal.
-- Added a console completion line in `Main` after the existing successful completion log entry; fatal error console output remains unchanged.
+- Mirrored the mode-specific post-run summary with pipeline-compatible output so successful full-distribution runs show source counts, target counts before and after, reconciliation status, total warnings/errors, and completion status without requiring the log file.
+- Mirrored the rebalance-only post-run summary with pipeline-compatible output so target counts before and after, discrepancy warnings, total warnings/errors, and completion status are visible at the terminal.
+- Added a pipeline-compatible completion line in `Main` after the existing successful completion log entry; fatal errors now use the error stream instead of host-only output.
 
 ### Tests
 
-- Added regression coverage for the new post-run console summary/status output and the successful completion console line.
+- Added regression coverage for the new post-run pipeline-visible summary/status output and the successful completion output line.
 
 ### Versioning
 

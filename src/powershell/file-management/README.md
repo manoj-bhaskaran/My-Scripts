@@ -53,10 +53,10 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 
 ## Recent Updates
 
-- **FileDistributor console completion summary (issue #1229)** (2026-05-31)
-  - Successful full-distribution runs now print source counts, target counts before/after, reconciliation status, warning/error totals, and completion status to the console in addition to the unchanged log entries.
-  - Rebalance-only runs now print target counts before/after, discrepancy warnings, warning/error totals, and completion status to the console.
-  - Version bump: `FileDistributor.ps1` `4.9.5`; support module `1.3.4` (patch — UX/observability improvement).
+- **FileDistributor pipeline-compatible completion summary (issue #1229)** (2026-05-31)
+  - Successful full-distribution runs now emit source counts, target counts before/after, reconciliation status, warning/error totals, and completion status through pipeline-compatible output in addition to the unchanged log entries.
+  - Rebalance-only runs now emit target counts before/after, discrepancy warnings, warning/error totals, and completion status through pipeline-compatible output.
+  - Version bump: `FileDistributor.ps1` `4.9.5`; support module `1.3.4` (patch — pipeline-compatible UX/observability improvement).
 
 - **FileDistributor module dependency fix (issue #1228)** (2026-05-31)
   - Declared `Core/ErrorHandling` and `Core/FileOperations` as `FileDistributor` module dependencies and imported them inside the module before FileDistributor functions are dot-sourced.

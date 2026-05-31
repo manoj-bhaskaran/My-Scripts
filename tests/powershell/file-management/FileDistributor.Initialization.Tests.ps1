@@ -57,9 +57,10 @@ Describe 'FileDistributor initialization behavior' {
     }
 
 
-    It 'prints the successful completion message to the console after logging it' {
+    It 'emits the successful completion message with pipeline-compatible output after logging it' {
         $content = Get-Content -LiteralPath $script:ScriptPath -Raw
 
-        $content | Should -Match 'Write-LogInfo "File distribution and optional cleanup completed\."\s+Write-Host "File distribution and optional cleanup completed\."'
+        $content | Should -Match 'Write-LogInfo "File distribution and optional cleanup completed\."\s+Write-Output "File distribution and optional cleanup completed\."'
+        $content | Should -Not -Match '\bWrite-Host\b'
     }
 }
