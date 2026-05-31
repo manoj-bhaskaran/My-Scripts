@@ -34,6 +34,7 @@ Python scripts for cloud service integration, primarily Google Drive operations.
 - As of `1.26.7`, CLI file-path validation in `gdrive_cli.py` reuses shared utilities from `modules.utils.file_operations` (`ensure_directory`, `is_writable`) instead of local inline write-probe checks.
 - As of `1.26.8`, `gdrive_cli.py` prepends `src/python` to `sys.path` before importing `modules.utils.file_operations`, preserving the documented `python gdrive_recover.py ...` execution path from `src/python/cloud`.
 - As of `1.27.0`, `DriveTrashRecoveryTool` no longer exposes pass-through wrappers for privilege, discovery-validation, operation, or reporter helpers; tests and internal callers target `tool.privileges`, `tool.discovery`, `tool.ops`, and `tool.reporter` directly.
+- As of `1.27.1`, `gdrive_recover.py` configures console and optional `--log-file` output through the shared `python_logging_framework`, preserving the existing verbosity and explicit-log-file behavior while removing local handler setup.
 
 ## Dependencies
 
@@ -392,7 +393,7 @@ python gdrive_recover.py recover-and-download \
 
 ## Logging
 
-All scripts use the Python Logging Framework located in `src/python/modules/logging/`.
+All scripts use the Python Logging Framework located in `src/python/modules/logging/`. `gdrive_recover.py` routes its `-v`/`-vv` console levels and optional `--log-file` handler through this shared framework; leaving `--log-file` empty still disables file logging for the recovery tool.
 
 ## Compatibility and Performance
 

@@ -39,6 +39,7 @@ Usage examples were moved to `docs/gdrive-recover-usage.md` to keep this module 
 
 import time
 import logging
+import importlib
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple, Optional, Mapping
 from pathlib import Path
@@ -78,6 +79,12 @@ except ImportError:
         "Install with: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib"
     )
     sys.exit(1)
+
+# Add shared logging framework to sys.path for direct script execution from src/python/cloud.
+_MODULES_LOGGING = Path(__file__).resolve().parents[1] / "modules" / "logging"
+if str(_MODULES_LOGGING) not in sys.path:
+    sys.path.insert(0, str(_MODULES_LOGGING))
+initialise_logger = importlib.import_module("python_logging_framework").initialise_logger
 
 
 class DriveTrashRecoveryTool:
@@ -166,38 +173,22 @@ class DriveTrashRecoveryTool:
         return request.execute()
 
     def _setup_logging(self) -> logging.Logger:
-        """Configure logging based on verbosity level.
-
-        Console level follows -v / -vv flags.  When --log-file is provided a
-        FileHandler at DEBUG level is added so every operation is captured in
-        the file regardless of console verbosity.  The parent directory is
-        created automatically if it does not exist.
-        """
+        """Configure recovery logging through the shared logging framework."""
         console_level = logging.WARNING
         if self.args.verbose >= 2:
             console_level = logging.DEBUG
         elif self.args.verbose == 1:
             console_level = logging.INFO
 
-        root = logging.getLogger()
-        if not root.handlers:
-            root.setLevel(logging.DEBUG)  # handlers apply their own filters
-            fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-
-            console_h = logging.StreamHandler()
-            console_h.setLevel(console_level)
-            console_h.setFormatter(fmt)
-            root.addHandler(console_h)
-
-            log_file = getattr(self.args, "log_file", None) or ""
-            if log_file:
-                Path(log_file).parent.mkdir(parents=True, exist_ok=True)
-                file_h = logging.FileHandler(log_file)
-                file_h.setLevel(logging.DEBUG)
-                file_h.setFormatter(fmt)
-                root.addHandler(file_h)
-
-        return logging.getLogger(__name__)
+        return initialise_logger(
+            script_name=__name__,
+            log_level=logging.DEBUG,
+            console_level=console_level,
+            log_file_path=getattr(self.args, "log_file", None) or None,
+            file_level=logging.DEBUG,
+            create_default_file=False,
+            configure_root=True,
+        )
 
     # -------------------- Discovery helpers delegated to DriveTrashDiscovery --------------------
     # discover_trashed_files is the public entry point; all other discovery internals

@@ -5,7 +5,6 @@ Tests logging framework core functions including logger initialization,
 formatters, and logging helper functions.
 """
 
-import pytest
 import logging
 import sys
 import json
@@ -19,7 +18,7 @@ src_logging = Path(__file__).resolve().parents[3] / "src" / "python" / "modules"
 if str(src_logging) not in sys.path:
     sys.path.insert(0, str(src_logging))
 
-from python_logging_framework import (
+from python_logging_framework import (  # noqa: E402
     SpecFormatter,
     JSONFormatter,
     initialise_logger,
@@ -209,6 +208,59 @@ class TestLoggerNameAndCustomDir:
         content = log_file.read_text()
         assert "user_id" in content
         assert "123" in content
+
+    def test_logger_uses_explicit_log_file_path_without_default_file(self, tmp_path):
+        """Test exact log file paths can be supplied without auto-created files."""
+        log_file = tmp_path / "nested" / "explicit.log"
+        logger = initialise_logger(
+            "test_explicit_path",
+            log_file_path=log_file,
+            create_default_file=False,
+        )
+
+        log_info(logger, "Explicit path message")
+
+        for handler in logger.handlers:
+            handler.flush()
+
+        assert log_file.exists()
+        assert "Explicit path message" in log_file.read_text()
+        assert list(tmp_path.glob("test_explicit_path_python_*.log")) == []
+
+    def test_configure_root_attaches_shared_handlers(self, tmp_path):
+        """Test root-handler configuration for scripts that use child loggers."""
+        root = logging.getLogger()
+        original_handlers = root.handlers[:]
+        original_level = root.level
+        root.handlers.clear()
+
+        try:
+            log_file = tmp_path / "root.log"
+            logger = initialise_logger(
+                "shared_child",
+                log_level=logging.DEBUG,
+                console_level=logging.WARNING,
+                log_file_path=log_file,
+                create_default_file=False,
+                configure_root=True,
+            )
+
+            assert logger.name == "shared_child"
+            assert logger.propagate is True
+            assert any(isinstance(handler, logging.FileHandler) for handler in root.handlers)
+
+            logger.debug("Root file message")
+            for handler in root.handlers:
+                handler.flush()
+
+            assert log_file.exists()
+            assert "Root file message" in log_file.read_text()
+        finally:
+            for handler in list(root.handlers):
+                handler.close()
+                root.removeHandler(handler)
+            root.handlers.extend(original_handlers)
+            root.setLevel(original_level)
 
 
 class TestLoggingHelpers:

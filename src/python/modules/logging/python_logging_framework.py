@@ -19,7 +19,15 @@ Key Features:
 from __future__ import annotations
 
 import logging  # Standard library logging
-from logging import Logger, LogRecord, Formatter, FileHandler, StreamHandler, INFO  # type: ignore[attr-defined]
+from logging import (
+    Logger,
+    LogRecord,
+    Formatter,
+    FileHandler,
+    StreamHandler,
+    INFO,
+    DEBUG,
+)  # type: ignore[attr-defined]
 import os
 import socket
 import sys
@@ -91,6 +99,11 @@ def initialise_logger(
     log_level: int = INFO,
     json_format: bool = False,
     propagate: bool = False,
+    console_level: Optional[int] = None,
+    log_file_path: Optional[Union[str, Path]] = None,
+    file_level: int = DEBUG,
+    create_default_file: bool = True,
+    configure_root: bool = False,
 ) -> Logger:
     """
     Initialise and configure a logger instance.
@@ -98,9 +111,18 @@ def initialise_logger(
     Args:
         script_name (Optional[str]): Name of the script using the logger.
         log_dir (Optional[Union[str, Path]]): Directory to store log files. Defaults to <root>/logs.
-        log_level (int): Logging level (e.g., logging.INFO).
+        log_level (int): Logger level (e.g., logging.INFO).
         json_format (bool): If True, use JSONFormatter; otherwise use plain text.
         propagate (bool): If False, prevent propagation to the root logger.
+        console_level (Optional[int]): Console handler level. Defaults to ``log_level``.
+        log_file_path (Optional[Union[str, Path]]): Exact file path for file logging.
+            Parent directories are created automatically.
+        file_level (int): File handler level when a file handler is configured.
+        create_default_file (bool): If True and ``log_file_path`` is not provided,
+            create the legacy auto-named log file under ``log_dir``.
+        configure_root (bool): If True, attach handlers to the root logger and
+            return the named logger so sibling modules using ``getLogger(__name__)``
+            propagate through the shared handlers.
 
     Returns:
         Logger: Configured logger instance.
@@ -108,44 +130,61 @@ def initialise_logger(
     if not script_name:
         script_name = os.path.basename(sys.argv[0])
 
-    base_name = os.path.splitext(script_name)[0]
-    today = datetime.now(IST).strftime("%Y-%m-%d")
-    log_file_name = f"{base_name}_python_{today}.log"
+    handler_console_level = log_level if console_level is None else console_level
+    formatter = JSONFormatter() if json_format else SpecFormatter()
 
-    try:
-        script_path = Path(script_name).resolve()
-        root_dir = script_path.parents[1]
-    except Exception:
-        root_dir = Path.cwd()
+    file_handler: Optional[FileHandler] = None
+    file_path: Optional[Path] = None
 
-    log_dir_path: Path = Path(log_dir) if log_dir else root_dir / "logs"
+    if log_file_path:
+        file_path = Path(log_file_path)
+    elif create_default_file:
+        base_name = os.path.splitext(script_name)[0]
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        log_file_name = f"{base_name}_python_{today}.log"
 
-    file_handler: Optional[FileHandler]
-    try:
-        log_dir_path.mkdir(parents=True, exist_ok=True)
+        try:
+            script_path = Path(script_name).resolve()
+            root_dir = script_path.parents[1]
+        except Exception:
+            root_dir = Path.cwd()
+
+        log_dir_path: Path = Path(log_dir) if log_dir else root_dir / "logs"
         file_path = log_dir_path / log_file_name
-        file_handler = FileHandler(file_path, encoding="utf-8")
-    except Exception as e:
-        print(f"[WARNING] Failed to initialise file logging: {e}", file=sys.stderr)
-        file_handler = None
+
+    if file_path is not None:
+        try:
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = FileHandler(file_path, encoding="utf-8")
+            file_handler.setLevel(file_level)
+            file_handler.setFormatter(formatter)
+        except Exception as e:
+            print(f"[WARNING] Failed to initialise file logging: {e}", file=sys.stderr)
+            file_handler = None
 
     console_handler = StreamHandler(sys.stdout)
-    formatter = JSONFormatter() if json_format else SpecFormatter()
+    console_handler.setLevel(handler_console_level)
     console_handler.setFormatter(formatter)
-    if file_handler:
-        file_handler.setFormatter(formatter)
 
-    logger = logging.getLogger(script_name)  # type: ignore[attr-defined]
-    logger.setLevel(log_level)
-    logger.propagate = propagate
-    logger.script_name = script_name
+    target_logger = logging.getLogger() if configure_root else logging.getLogger(script_name)
+    target_level = min(log_level, handler_console_level, file_level) if configure_root else log_level
+    target_logger.setLevel(target_level)
+    target_logger.propagate = False if configure_root else propagate
+    target_logger.script_name = script_name
 
-    if not logger.handlers:
-        logger.addHandler(console_handler)
+    if not target_logger.handlers:
+        target_logger.addHandler(console_handler)
         if file_handler:
-            logger.addHandler(file_handler)
+            target_logger.addHandler(file_handler)
 
-    return logger
+    if configure_root:
+        logger = logging.getLogger(script_name)
+        logger.setLevel(log_level)
+        logger.propagate = True
+        logger.script_name = script_name
+        return logger
+
+    return target_logger
 
 
 def validate_metadata_keys(metadata: Dict[str, Any]) -> None:

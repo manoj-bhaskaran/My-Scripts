@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `google_drive_root_files_delete.py` are sibling scripts in this directory that are currently
 > unversioned and not covered by this changelog.
 
+## [1.27.1] - 2026-05-31
+
+### Changed
+
+- `gdrive_recover.py`: `_setup_logging` now configures console and optional `--log-file` output through the shared `python_logging_framework` instead of constructing local root handlers inline.
+- `python_logging_framework.py`: `initialise_logger` accepts explicit file paths, separate console/file levels, optional default file creation, and root-handler configuration so scripts with existing CLI logging contracts can reuse the shared framework.
+
+### Tests
+
+- Added shared logging-framework coverage for explicit log-file paths and root-handler configuration used by `gdrive_recover.py`.
+
 ## [1.27.0] - 2026-05-30
 
 ### Changed
