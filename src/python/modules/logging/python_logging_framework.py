@@ -167,7 +167,9 @@ def initialise_logger(
     console_handler.setFormatter(formatter)
 
     target_logger = logging.getLogger() if configure_root else logging.getLogger(script_name)
-    target_level = min(log_level, handler_console_level, file_level) if configure_root else log_level
+    target_level = (
+        min(log_level, handler_console_level, file_level) if configure_root else log_level
+    )
     target_logger.setLevel(target_level)
     target_logger.propagate = False if configure_root else propagate
     target_logger.script_name = script_name
