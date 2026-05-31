@@ -1,5 +1,8 @@
 Set-StrictMode -Version Latest
-. (Join-Path $PSScriptRoot 'Expand-ZipsAndClean.TestHelpers.ps1')
+
+BeforeAll {
+    . (Join-Path $PSScriptRoot 'Expand-ZipsAndClean.TestHelpers.ps1')
+}
 
 Describe 'Move-ZipFilesToParent' {
     BeforeAll {

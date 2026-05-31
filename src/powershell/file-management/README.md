@@ -51,7 +51,7 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
 ## Recent Updates
 
 - **Expand-ZipsAndClean Pester helper-loading cleanup (issue #1144)** (2026-05-31)
-  - Added shared test setup helpers for loading `ZipWorkflow` and `ZipExtraction` dependencies in `Expand-ZipsAndClean.Tests.ps1`.
+  - Added shared test setup helpers for loading `ZipWorkflow` and `ZipExtraction` dependencies in `Expand-ZipsAndClean.Tests.ps1`, loaded during Pester's run phase so `BeforeAll` blocks can call them.
   - Replaced repeated per-`Describe` `BeforeAll` module-loading boilerplate with calls into the shared helper file without changing behavioral coverage.
   - Version bump: `2.6.19` (patch — tests-only refactor, no runtime behavior change).
 
