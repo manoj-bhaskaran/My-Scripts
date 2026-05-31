@@ -262,6 +262,7 @@ src/
 - -KeepExistingCrops – with -ReprocessCropped, keep existing crops and add new outputs alongside
 - -PythonScriptPath, -PythonExe – cropper script & interpreter
 - -ClearSnapshotsBeforeRun – clear existing frames for the current video prefix before capture
+- -DeduplicateFrames – after each video capture, remove consecutive duplicate frames by content hash; one frame per distinct picture is kept (see [Frame de-duplication](#frame-de-duplication))
 
 ### Example (with resume + processed logging)
 ```powershell
@@ -361,3 +362,26 @@ Key config knobs (in `Get-DefaultConfig`, `Private/Config.ps1`):
 | `SnapshotFallbackTimeoutSeconds` | `300` | Last-resort cap used only when duration detection fails. |
 
 A `WARNING` log line is emitted when idle-break fires so the problem video is visible in the run log.
+
+### Frame de-duplication (`-DeduplicateFrames`) {#frame-de-duplication}
+
+Image/slideshow-to-MP4 conversions (e.g. `picconvert_*` output) typically hold one still image for several seconds. At 1 fps, a 20 s clip produces ~20 identical PNG files. Enable `-DeduplicateFrames` to collapse runs of identical frames to a single kept copy:
+
+```powershell
+Start-VideoBatch -SourceFolder .\picconvert_20240101 -SaveFolder .\shots `
+    -UseVlcSnapshots -FramesPerSecond 1 -DeduplicateFrames
+```
+
+**How it works:**
+- After `Wait-ForSnapshotFrames` returns for a video, the module walks all `${scenePrefix}*.png` files in lexical order.
+- Any frame whose raw file bytes match the previous *kept* frame is deleted. Only consecutive duplicates are removed; genuinely distinct frames are always preserved.
+- Frame counts (`Frames saved: N`) and the processed-log status reflect the kept frames after de-dup.
+- A video that produces N identical frames (collapsed to 1) is recorded as a successful capture, not `NoFrames`.
+
+**Configuration:**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `DeduplicateHashAlgorithm` | `'SHA256'` | Hash algorithm for byte-level frame comparison. `'MD5'` is faster for large batches; any name accepted by `[System.Security.Cryptography.HashAlgorithm]::Create` is valid. |
+
+De-dup is scoped strictly to each video's scene prefix; files from other videos are never touched. IO errors on individual frames are tolerated (logged at Verbose level; the frame is left in place and de-dup continues).

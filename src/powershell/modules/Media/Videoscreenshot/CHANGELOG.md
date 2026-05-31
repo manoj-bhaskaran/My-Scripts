@@ -8,6 +8,19 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-05-31
+### Added
+- **`-DeduplicateFrames` switch** on `Start-VideoBatch`: when set, consecutive snapshot frames whose file bytes are identical are collapsed to a single kept frame per video after capture completes. Genuinely distinct frames are always preserved. Default off; enable for image/slideshow→MP4 conversions (e.g. `picconvert_*` folders) that produce long runs of identical frames at the configured FPS.
+- **`Private/Snapshot.Dedup.ps1`** (`Invoke-SnapshotDedup`): new private helper that walks all `${ScenePrefix}*.png` files in lexical order and removes consecutive duplicates by content hash. Tolerant of locked/unreadable files (skipped with a Verbose log; IO errors do not abort the batch). Returns `OriginalCount`, `KeptCount`, and `RemovedCount` for status accounting.
+- **`DeduplicateHashAlgorithm`** (default `'SHA256'`) in `Get-DefaultConfig`: controls the hash algorithm used by `Invoke-SnapshotDedup`. Override with `'MD5'` for faster hashing on large batches; any algorithm accepted by `[System.Security.Cryptography.HashAlgorithm]::Create` is valid.
+
+### Changed
+- **Frame count / status accounting** in `Start-VideoBatch`: when `-DeduplicateFrames` is set, the final frame delta is re-derived from the post-dedup disk count so that `Frames saved:` and processed-log status reflect the kept unique frames rather than the raw capture count.
+- A video whose N captured frames are all identical is recorded as a successful capture (1 kept frame), not `NoFrames`.
+
+### Tests
+- New `tests/.../Snapshot.Dedup.Tests.ps1`: covers consecutive-duplicate removal, distinct-frame preservation, prefix isolation, IO-error tolerance, and return-object accuracy.
+
 ## [3.2.0] - 2026-05-29
 ### Added
 - **Opt-in video pre-flight skip**: `Start-VideoBatch -VerifyVideos` (aliases `-PreflightProbe`, `-SkipUnplayable`) now runs `Test-VideoPlayable` before launching the main VLC capture session. Videos that fail the probe are logged as `Skipped`/`NotPlayable` in the processed log so resume runs do not retry them.

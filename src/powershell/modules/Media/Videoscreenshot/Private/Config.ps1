@@ -103,6 +103,16 @@ function Get-DefaultConfig {
         GdiCaptureDefaultSeconds        = 10
 
         # =========================
+        # Snapshot de-duplication
+        # =========================
+
+        # Hash algorithm used by Invoke-SnapshotDedup when -DeduplicateFrames is set.
+        # 'SHA256' is the safe default (exact, collision-resistant). 'MD5' is faster
+        # for large batches. Any algorithm accepted by
+        # [System.Security.Cryptography.HashAlgorithm]::Create is valid.
+        DeduplicateHashAlgorithm        = 'SHA256'
+
+        # =========================
         # Python / Cropper preflight
         # =========================
 
