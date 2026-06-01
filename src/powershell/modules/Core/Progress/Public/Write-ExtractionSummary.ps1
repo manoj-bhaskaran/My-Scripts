@@ -8,44 +8,35 @@ function New-ExtractionSummaryView {
         "n/a"
     }
 
-    if ($SummaryState.DeleteSourceZips) {
-        [pscustomobject]@{
-            SrcDir       = $SummaryState.SourceDirectory
-            DestDir      = $SummaryState.DestinationDirectory
-            Mode         = $SummaryState.ExtractMode
-            ZipsFound    = $SummaryState.ZipCount
-            ZipsDone     = $SummaryState.ProcessedZips
-            Files        = $SummaryState.FilesExtracted
-            Uncompressed = (Format-Bytes $SummaryState.UncompressedBytes)
-            Compressed   = (Format-Bytes $SummaryState.CompressedBytes)
-            Ratio        = $compressionRatio
-            ZipsDeleted  = ($SummaryState.DeletedSummary.Count)
-            DeletedBytes = (Format-Bytes $SummaryState.DeletedSummary.Bytes)
-            Errors       = $SummaryState.ErrorCount
-            Duration     = ("{0:hh\:mm\:ss\.fff}" -f $SummaryState.Elapsed)
-        }
-    } else {
-        [pscustomobject]@{
-            SrcDir          = $SummaryState.SourceDirectory
-            DestDir         = $SummaryState.DestinationDirectory
-            Mode            = $SummaryState.ExtractMode
-            Policy          = $SummaryState.CollisionPolicy
-            ZipsFound       = $SummaryState.ZipCount
-            ZipsDone        = $SummaryState.ProcessedZips
-            Files           = $SummaryState.FilesExtracted
-            Uncompressed    = (Format-Bytes $SummaryState.UncompressedBytes)
-            Compressed      = (Format-Bytes $SummaryState.CompressedBytes)
-            Ratio           = $compressionRatio
-            ZipsMoved       = ($SummaryState.MoveSummary.Count)
-            MoveSkipped     = ($SummaryState.MoveSummary.Skipped)
-            MoveOverwritten = ($SummaryState.MoveSummary.Overwritten)
-            MoveRenamed     = ($SummaryState.MoveSummary.Renamed)
-            MovedBytes      = (Format-Bytes $SummaryState.MoveSummary.Bytes)
-            MovedTo         = ($SummaryState.MoveSummary.Destination)
-            Errors          = $SummaryState.ErrorCount
-            Duration        = ("{0:hh\:mm\:ss\.fff}" -f $SummaryState.Elapsed)
-        }
+    $view = [ordered]@{
+        SrcDir       = $SummaryState.SourceDirectory
+        DestDir      = $SummaryState.DestinationDirectory
+        Mode         = $SummaryState.ExtractMode
+        ZipsFound    = $SummaryState.ZipCount
+        ZipsDone     = $SummaryState.ProcessedZips
+        Files        = $SummaryState.FilesExtracted
+        Uncompressed = (Format-Bytes $SummaryState.UncompressedBytes)
+        Compressed   = (Format-Bytes $SummaryState.CompressedBytes)
+        Ratio        = $compressionRatio
     }
+
+    if ($SummaryState.DeleteSourceZips) {
+        $view['ZipsDeleted']  = $SummaryState.DeletedSummary.Count
+        $view['DeletedBytes'] = (Format-Bytes $SummaryState.DeletedSummary.Bytes)
+    } else {
+        $view['Policy']          = $SummaryState.CollisionPolicy
+        $view['ZipsMoved']       = $SummaryState.MoveSummary.Count
+        $view['MoveSkipped']     = $SummaryState.MoveSummary.Skipped
+        $view['MoveOverwritten'] = $SummaryState.MoveSummary.Overwritten
+        $view['MoveRenamed']     = $SummaryState.MoveSummary.Renamed
+        $view['MovedBytes']      = (Format-Bytes $SummaryState.MoveSummary.Bytes)
+        $view['MovedTo']         = $SummaryState.MoveSummary.Destination
+    }
+
+    $view['Errors']   = $SummaryState.ErrorCount
+    $view['Duration'] = "{0:hh\:mm\:ss\.fff}" -f $SummaryState.Elapsed
+
+    [pscustomobject]$view
 }
 
 function New-ExtractionSummaryState {
