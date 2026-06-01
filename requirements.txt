@@ -29,7 +29,7 @@ bandit>=1.7.9,<2.0.0
 sqlfluff>=4.2.1,<5.0.0
 mypy==1.19.1
 types-requests==2.33.0.20260518
-types-tqdm==4.67.3.20260205
+types-tqdm==4.67.3.20260518
 
 # Security scanning
 pip-audit>=2.7.3,<3.0.0
