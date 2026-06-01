@@ -8,6 +8,12 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-06-01
+### Changed
+- **Remove `Private/IO.Helpers.ps1`**: `Add-ContentWithRetry` and `Test-FolderWritable` are now resolved from `Core/FileOperations`. The module manifest declares `FileOperations >= 1.0.3` and `ErrorHandling >= 1.1.1` in `RequiredModules`.
+- **Reconcile `Test-FolderWritable` call site** in `Start-VideoBatch`: updated from `Test-FolderWritable -Folder` to `-Path` and from throw-on-false to an explicit guard on the `$false` return, matching Core's non-throwing contract.
+- **Replace three inline `Get-Command -SilentlyContinue` blocks** in `Start-VideoBatch` (VLC PATH check, `Test-VideoPlayable` availability check, Python executable check) with `Test-CommandAvailable` from `Core/ErrorHandling`.
+
 ## [3.4.0] - 2026-06-01
 ### Added
 - **Per-run log files for `Start-VideoBatch`**: runs now write timestamped `Write-Message` output to a collision-safe `videoscreenshot_<yyyyMMdd_HHmmss>_<RunGuid>.log` file under `SaveFolder` by default. The resolved log path is printed at run start so non-interactive runs leave an inspectable artifact.
