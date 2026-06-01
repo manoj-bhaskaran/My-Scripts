@@ -20,6 +20,12 @@ Legacy per-video time budget (seconds). Prefer -MaxPerVideoSeconds.
 Process at most this many videos (0 = no limit).
 .PARAMETER ProcessedLogPath
 TSV log used for resume/skip; auto-located in SaveFolder when not provided.
+.PARAMETER LogFile
+Run log file for timestamped module messages. Defaults to a collision-safe
+videoscreenshot_<yyyyMMdd_HHmmss>_<RunGuid>.log file under SaveFolder. Pass an
+empty string or use -NoLogFile to keep console-only output.
+.PARAMETER NoLogFile
+Disable the per-run log file while keeping console stream behavior unchanged.
 .PARAMETER ResumeFile
 Optional file path/name to resume after.
 .PARAMETER MaxPerVideoSeconds
@@ -74,9 +80,12 @@ function Start-VideoBatch {
         [int]$TimeLimitSeconds = 0,
         [int]$VideoLimit = 0,
 
-        # Resume & processed logging
+        # Resume, processed logging, and run logging
         [string]$ProcessedLogPath,
         [string]$ResumeFile,
+        [AllowEmptyString()]
+        [string]$LogFile,
+        [switch]$NoLogFile,
 
         # Advanced timing controls
         [ValidateRange(0, 86400)][int]$MaxPerVideoSeconds = 0,
@@ -114,8 +123,49 @@ function Start-VideoBatch {
     $runGuid = [Guid]::NewGuid().ToString('N').Substring(0, 8)
     $context = New-VideoRunContext -RequestedFps $FramesPerSecond -SaveFolder $SaveFolder -RunGuid $runGuid
 
+    if ($CropOnly -and -not $PSBoundParameters.ContainsKey('SaveFolder')) {
+        throw "CropOnly requires -SaveFolder pointing to the folder containing images to crop."
+    }
+    if ($CropOnly -and -not (Test-Path -LiteralPath $SaveFolder -PathType Container)) {
+        throw "SaveFolder not found (CropOnly expects images here): $SaveFolder"
+    }
+
+    # Validate/create SaveFolder before resolving the default run log path. This
+    # also makes the CropOnly fast-path log-capable before it emits messages.
+    Test-FolderWritable -Folder $SaveFolder | Out-Null
+
+    $resolvedRunLogFile = $null
+    $logFileExplicitlyProvided = $PSBoundParameters.ContainsKey('LogFile')
+    if (-not $NoLogFile -and -not ($logFileExplicitlyProvided -and [string]::IsNullOrWhiteSpace($LogFile))) {
+        $resolvedRunLogFile = if ($logFileExplicitlyProvided) {
+            $LogFile
+        }
+        else {
+            Join-Path $SaveFolder ("videoscreenshot_{0}_{1}.log" -f (Get-Date).ToString('yyyyMMdd_HHmmss'), $runGuid)
+        }
+
+        $runLogParent = Split-Path -Path $resolvedRunLogFile -Parent
+        if (-not [string]::IsNullOrWhiteSpace($runLogParent) -and -not (Test-Path -LiteralPath $runLogParent -PathType Container)) {
+            try {
+                New-Item -ItemType Directory -Path $runLogParent -Force -ErrorAction Stop | Out-Null
+            }
+            catch {
+                Write-Warning ("Unable to create run log directory '{0}': {1}. File logging will remain best-effort." -f $runLogParent, $_.Exception.Message)
+            }
+        }
+
+        Set-VideoScreenshotLogFile -Path $resolvedRunLogFile
+    }
+    else {
+        Clear-VideoScreenshotLogFile
+    }
+
+    try {
     # Context contains Version, Config (defaults incl. VideoExtensions), RunGuid, SaveFolder, RequestedFps
     Write-Message -Level Info -Message ("videoscreenshot module v{0} starting (Mode={1}, FPS={2}, SaveFolder=""{3}"")" -f ($context.Version -as [string]), $mode, $FramesPerSecond, $SaveFolder)
+    if (-not [string]::IsNullOrWhiteSpace($resolvedRunLogFile)) {
+        Write-Message -Level Info -Message ("Run log file: {0}" -f $resolvedRunLogFile)
+    }
 
     # --- Crop-only fast path ---------------------------------------------------
     if ($CropOnly) {
@@ -131,11 +181,6 @@ function Start-VideoBatch {
             Write-Message -Level Warn -Message ("CropOnly: ignoring capture-related parameter(s): {0}" -f ($ignored -join ', '))
         }
 
-        # Require an explicit SaveFolder in CropOnly mode (no implicit default)
-        if (-not $PSBoundParameters.ContainsKey('SaveFolder')) {
-            throw "CropOnly requires -SaveFolder pointing to the folder containing images to crop."
-        }
-
         # Validate inputs for cropper
         if (-not [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
             if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
@@ -145,12 +190,6 @@ function Start-VideoBatch {
         else {
             Write-Debug "CropOnly: PythonScriptPath not supplied; will attempt module invocation via 'python -m media.crop_colours'."
         }
-        if (-not (Test-Path -LiteralPath $SaveFolder -PathType Container)) {
-            throw "SaveFolder not found (CropOnly expects images here): $SaveFolder"
-        }
-        # Ensure we can write logs if needed (non-fatal if read-only images)
-        Test-FolderWritable -Folder $SaveFolder | Out-Null
-
         try {
             $isDebug = $PSBoundParameters.ContainsKey('Debug')
             $crop = Invoke-Cropper `
@@ -227,8 +266,6 @@ function Start-VideoBatch {
             throw "VLC missing."
         }
     }
-    Test-FolderWritable -Folder $SaveFolder | Out-Null
-
     # Resolve processed log path and read processed/resume set (P0)
     $processedLog = if ([string]::IsNullOrWhiteSpace($ProcessedLogPath)) {
         Join-Path $SaveFolder '.processed_videos.txt'
@@ -320,6 +357,7 @@ function Start-VideoBatch {
         if ($vlcLogFile -and (Test-Path -LiteralPath $vlcLogFile)) {
             Remove-Item -LiteralPath $vlcLogFile -Force -ErrorAction SilentlyContinue
         }
+        $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed 0 file(s)" -f ($context.Version))
         return
     }
 
@@ -599,4 +637,8 @@ function Start-VideoBatch {
     $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed {1} file(s)" -f ($context.Version), $processedCount)
     Write-Debug 'TRACE Start-VideoBatch: leaving (no output intended)'
     return
+    }
+    finally {
+        Clear-VideoScreenshotLogFile
+    }
 }

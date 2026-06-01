@@ -13,6 +13,8 @@ BeforeAll {
 
     function Assert-Pwsh7OrThrow { }
     function Write-Message { param([string]$Level, [string]$Message) }
+    function Set-VideoScreenshotLogFile { param([AllowEmptyString()][string]$Path) $script:TestRunLogFile = $Path }
+    function Clear-VideoScreenshotLogFile { $script:TestRunLogFile = $null }
     function New-VideoRunContext {
         param([int]$RequestedFps, [string]$SaveFolder, [string]$RunGuid)
         [pscustomobject]@{
