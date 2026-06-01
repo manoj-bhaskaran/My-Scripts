@@ -1,16 +1,18 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-    Unzips all .zip files from a source folder into a destination folder, moves the .zip files
-    to the parent of the source folder, and (optionally) deletes/cleans the source folder.
+    Unzips all .zip files from a source folder into a destination folder, then either moves
+    the .zip files to the parent of the source folder or deletes them in place (if
+    -DeleteSourceZips is specified), and (optionally) deletes/cleans the source folder.
     Prints a summary at the end.
 
 .DESCRIPTION
     Typical workflow:
       - Source folder (example): $HOME\Downloads\picconvert   (or $env:EXPAND_ZIPS_SOURCE_DIR)
       - Destination folder (example): $HOME\Desktop\New folder (or $env:EXPAND_ZIPS_DEST_DIR)
-      - After extraction, all .zip files in the source are moved to the source’s parent
-        (example: $HOME\Downloads)
+      - After extraction, all successfully extracted .zip files are either:
+          * Moved to the source’s parent (example: $HOME\Downloads) — default behaviour, or
+          * Deleted in place — when -DeleteSourceZips is specified.
       - Optionally delete/clean the source folder using -DeleteSource (switch) and
         optionally -CleanNonZips to remove non-zip leftovers.
 
@@ -23,6 +25,7 @@
           per CollisionPolicy before writing each file (Skip/Overwrite/Rename).
     - CollisionPolicy (for overlapping paths in Flat mode AND for the zip-move-to-parent step):
         * Skip | Overwrite | Rename (default: Rename)
+        * Not applicable when -DeleteSourceZips is set (no move step occurs).
     - Progress bars for long runs (suppressed by -Quiet). Move progress shows cumulative AND total bytes.
     - End-of-run summary includes uncompressed bytes, total compressed zip bytes, and compression ratio.
       (CompressionRatio > 1.0 means the original content is larger than the archives; compression saved space.)
@@ -60,6 +63,14 @@
       - Rename     : save the incoming item with a unique suffix (default behavior).
     Default: Rename
 
+.PARAMETER DeleteSourceZips
+    Switch. If present, each .zip file whose extraction succeeds is deleted in place
+    rather than moved to the parent directory. Zips whose extraction failed are left
+    untouched. Move-ZipFilesToParent is bypassed entirely.
+    -CollisionPolicy has no effect on the zip-disposal step when this switch is set.
+    This switch is independent of -DeleteSource and -CleanNonZips; all combinations
+    are valid.
+
 .PARAMETER DeleteSource
     Switch. If present, deletes the source directory after zips are moved and,
     if -CleanNonZips is also set, after non-zip items are removed. If leftovers remain
@@ -96,6 +107,10 @@
     .\Expand-ZipsAndClean.ps1 -ExtractMode Flat -CollisionPolicy Overwrite -Verbose
 
 .EXAMPLE
+    # Delete source zips in place after successful extraction (skip the move-to-parent step)
+    .\Expand-ZipsAndClean.ps1 -DeleteSourceZips
+
+.EXAMPLE
     # Delete the source folder after processing (and also delete any non-zip leftovers)
     .\Expand-ZipsAndClean.ps1 -DeleteSource -CleanNonZips
 
@@ -119,7 +134,7 @@
 
 .NOTES
     Name     : Expand-ZipsAndClean.ps1
-    Version  : 2.6.19
+    Version  : 2.7.0
     Author   : Manoj Bhaskaran
     Requires : PowerShell 7+ (uses ternary operator, null-coalescing ??, null-conditional ?.,
                and ForEach-Object -Parallel); Microsoft.PowerShell.Archive (Expand-Archive)
@@ -154,6 +169,9 @@ param(
     [Parameter()]
     [ValidateSet('Skip', 'Overwrite', 'Rename')]
     [string]$CollisionPolicy = 'Rename',
+
+    [Parameter()]
+    [switch]$DeleteSourceZips,
 
     [Parameter()]
     [switch]$DeleteSource,
@@ -208,6 +226,7 @@ $totalFilesExtracted = 0
 $totalUncompressedBytes = [int64]0
 $totalCompressedZipBytes = [int64]0
 $moveSummary = [pscustomobject]@{ Count = 0; Bytes = 0; Destination = ""; Skipped = 0; Overwritten = 0; Renamed = 0 }
+$deletedSummary = [pscustomobject]@{ Count = 0; Bytes = 0 }
 
 try {
     ZipWorkflow\Test-ScriptPreconditions -SourceDir $SourceDirectory -DestinationDir $DestinationDirectory
@@ -229,14 +248,36 @@ try {
     $totalUncompressedBytes = $extractionResult.UncompressedBytes
     $totalCompressedZipBytes = $extractionResult.CompressedBytes
 
-    try {
-        if ($PSCmdlet.ShouldProcess($SourceDirectory, "Move .zip files to parent")) {
-            $moveSummary = ZipWorkflow\Move-ZipFilesToParent -SourceDir $SourceDirectory -QuietMode $Quiet.IsPresent -CollisionPolicy $CollisionPolicy
+    if ($DeleteSourceZips.IsPresent) {
+        $deletedCount = 0
+        $deletedBytes = [int64]0
+        foreach ($zipPath in $extractionResult.ProcessedZipPaths) {
+            if (-not [System.IO.File]::Exists($zipPath)) { continue }
+            try {
+                if ($PSCmdlet.ShouldProcess($zipPath, "Delete extracted zip")) {
+                    $zipLen = (Get-Item -LiteralPath $zipPath -ErrorAction Stop).Length
+                    Remove-Item -LiteralPath $zipPath -Force -ErrorAction Stop
+                    $deletedCount++
+                    $deletedBytes += $zipLen
+                    Write-LogDebug "Deleted extracted zip: $zipPath"
+                }
+            } catch {
+                $msg = "Failed to delete zip '$zipPath': $($_.Exception.Message)"
+                Write-LogDebug $msg
+                $errors.Add($msg) | Out-Null
+            }
         }
-    } catch {
-        $msg = "Moving .zip files to parent failed: $($_.Exception.Message)"
-        Write-LogDebug $msg
-        $errors.Add($msg) | Out-Null
+        $deletedSummary = [pscustomobject]@{ Count = $deletedCount; Bytes = $deletedBytes }
+    } else {
+        try {
+            if ($PSCmdlet.ShouldProcess($SourceDirectory, "Move .zip files to parent")) {
+                $moveSummary = ZipWorkflow\Move-ZipFilesToParent -SourceDir $SourceDirectory -QuietMode $Quiet.IsPresent -CollisionPolicy $CollisionPolicy
+            }
+        } catch {
+            $msg = "Moving .zip files to parent failed: $($_.Exception.Message)"
+            Write-LogDebug $msg
+            $errors.Add($msg) | Out-Null
+        }
     }
 
     FileSystem\Remove-SourceDirectory `
@@ -253,18 +294,24 @@ try {
 
 #------------------------------ Summary -----------------------------#
 
-ProgressReporter\Write-ExtractionSummary `
-    -SourceDirectory    $SourceDirectory `
-    -DestinationDirectory $DestinationDirectory `
-    -ExtractMode        $ExtractMode `
-    -CollisionPolicy    $CollisionPolicy `
-    -ZipCount           $zipCount `
-    -ProcessedZips      $processedZips `
-    -FilesExtracted     $totalFilesExtracted `
-    -UncompressedBytes  $totalUncompressedBytes `
-    -CompressedBytes    $totalCompressedZipBytes `
-    -MoveSummary        $moveSummary `
-    -Errors             $errors `
-    -Elapsed            $stopwatch.Elapsed
+$summaryParams = @{
+    SourceDirectory     = $SourceDirectory
+    DestinationDirectory = $DestinationDirectory
+    ExtractMode         = $ExtractMode
+    CollisionPolicy     = $CollisionPolicy
+    ZipCount            = $zipCount
+    ProcessedZips       = $processedZips
+    FilesExtracted      = $totalFilesExtracted
+    UncompressedBytes   = $totalUncompressedBytes
+    CompressedBytes     = $totalCompressedZipBytes
+    MoveSummary         = $moveSummary
+    Errors              = $errors
+    Elapsed             = $stopwatch.Elapsed
+}
+if ($DeleteSourceZips.IsPresent) {
+    $summaryParams['DeleteSourceZips'] = $true
+    $summaryParams['DeletedSummary']   = $deletedSummary
+}
+ProgressReporter\Write-ExtractionSummary @summaryParams
 
 # End of script

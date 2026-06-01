@@ -89,4 +89,49 @@ Describe 'Write-ExtractionSummary' {
         Should -Invoke Format-List -ModuleName ProgressReporter -Times 1
         Should -Invoke Format-Table -ModuleName ProgressReporter -Times 0
     }
+
+    It 'shows ZipsDeleted and DeletedBytes when -DeleteSourceZips is set' {
+        Mock Format-Table -ModuleName ProgressReporter { }
+        Mock Format-List -ModuleName ProgressReporter { }
+
+        $deletedSummary = [pscustomobject]@{ Count = 3; Bytes = [int64]1024 }
+        $moveSummary    = [pscustomobject]@{ Count = 0; Bytes = [int64]0; Destination = ''; Skipped = 0; Overwritten = 0; Renamed = 0 }
+
+        $allOutput = @(Write-ExtractionSummary `
+            -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
+            -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
+            -ZipCount 3 -ProcessedZips 3 -FilesExtracted 9 `
+            -UncompressedBytes ([int64]4096) -CompressedBytes ([int64]1024) `
+            -MoveSummary $moveSummary -Errors $script:emptyErrors -Elapsed $script:testElapsed `
+            -DeleteSourceZips -DeletedSummary $deletedSummary `
+            -HostName 'ConsoleHost' -ConsoleWidth 200 -PassThru)
+
+        $view = $allOutput | Where-Object { $_ -isnot [string] } | Select-Object -First 1
+        $view                               | Should -Not -BeNullOrEmpty
+        $view.ZipsDeleted                   | Should -Be 3
+        $view.PSObject.Properties.Name      | Should -Contain 'DeletedBytes'
+        $view.PSObject.Properties.Name      | Should -Not -Contain 'ZipsMoved'
+        $view.PSObject.Properties.Name      | Should -Not -Contain 'MovedTo'
+    }
+
+    It 'shows ZipsMoved (not ZipsDeleted) by default' {
+        Mock Format-Table -ModuleName ProgressReporter { }
+        Mock Format-List -ModuleName ProgressReporter { }
+
+        $moveSummary = [pscustomobject]@{ Count = 2; Bytes = [int64]512; Destination = 'C:\parent'; Skipped = 0; Overwritten = 0; Renamed = 0 }
+
+        $allOutput = @(Write-ExtractionSummary `
+            -SourceDirectory 'C:\src' -DestinationDirectory 'C:\dest' `
+            -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
+            -ZipCount 2 -ProcessedZips 2 -FilesExtracted 4 `
+            -UncompressedBytes ([int64]2048) -CompressedBytes ([int64]512) `
+            -MoveSummary $moveSummary -Errors $script:emptyErrors -Elapsed $script:testElapsed `
+            -HostName 'ConsoleHost' -ConsoleWidth 200 -PassThru)
+
+        $view = $allOutput | Where-Object { $_ -isnot [string] } | Select-Object -First 1
+        $view                               | Should -Not -BeNullOrEmpty
+        $view.ZipsMoved                     | Should -Be 2
+        $view.PSObject.Properties.Name      | Should -Contain 'MovedTo'
+        $view.PSObject.Properties.Name      | Should -Not -Contain 'ZipsDeleted'
+    }
 }

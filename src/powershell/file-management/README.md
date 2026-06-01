@@ -63,6 +63,13 @@ All scripts use the PowerShell Logging Framework and write logs to the standard 
   - Ensures `Invoke-WithRetry`, `Copy-FileWithRetry`, and `Remove-FileWithRetry` resolve from FileDistributor module scope for RecycleBin deletes, Immediate deletes, state sidecar writes, and consolidation runs.
   - Version bump: `FileDistributor.ps1` `4.9.4`; support module `1.3.3` (patch — module dependency bug fix).
 
+- **Expand-ZipsAndClean -DeleteSourceZips switch (issue #1187)** (2026-06-01)
+  - Added `-DeleteSourceZips` switch. When present, each successfully extracted zip is deleted in place instead of moved to the parent directory; failed-extraction zips are left untouched.
+  - `Move-ZipFilesToParent` is bypassed entirely when the switch is set.
+  - `Write-ExtractionSummary` now shows `ZipsDeleted`/`DeletedBytes` in the summary when operating in deletion mode; `ZipsMoved`/`MovedTo` appear only in the default (move) mode.
+  - `ZipExtraction` module tracks `ProcessedZipPaths` in the extraction result so the script can target exactly the successfully extracted zips for deletion.
+  - Version bump: `2.7.0` (minor — new switch parameter).
+
 - **Expand-ZipsAndClean Pester helper-loading cleanup (issue #1144)** (2026-05-31)
   - Added shared test setup helpers for loading `ZipWorkflow` and `ZipExtraction` dependencies in `Expand-ZipsAndClean.Tests.ps1`, loaded during Pester's run phase so `BeforeAll` blocks can call them.
   - Replaced repeated per-`Describe` `BeforeAll` module-loading boilerplate with calls into the shared helper file without changing behavioral coverage.

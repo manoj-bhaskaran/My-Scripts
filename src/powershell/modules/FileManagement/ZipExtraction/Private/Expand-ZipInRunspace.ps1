@@ -20,6 +20,7 @@ function Expand-ZipInRunspace {
 
         return [pscustomobject]@{
             Success           = $true
+            ZipPath           = $Zip.FullName
             FilesExtracted    = $r.FilesExtracted
             UncompressedBytes = $r.UncompressedBytes
             CompressedBytes   = $r.CompressedBytes
@@ -30,6 +31,7 @@ function Expand-ZipInRunspace {
         $localLogs.Add("Extraction error for '$($Zip.Name)': $($_.Exception.Message)") | Out-Null
         return [pscustomobject]@{
             Success           = $false
+            ZipPath           = $Zip.FullName
             FilesExtracted    = 0
             UncompressedBytes = [int64]0
             CompressedBytes   = [int64]0

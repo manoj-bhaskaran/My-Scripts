@@ -18,7 +18,8 @@ function New-ExtractionSummary {
         [int]$ProcessedZips,
         [int]$FilesExtracted,
         [int64]$UncompressedBytes,
-        [int64]$CompressedBytes
+        [int64]$CompressedBytes,
+        [string[]]$ProcessedZipPaths = @()
     )
     return [pscustomobject]@{
         ZipCount          = $ZipCount
@@ -26,6 +27,7 @@ function New-ExtractionSummary {
         FilesExtracted    = $FilesExtracted
         UncompressedBytes = $UncompressedBytes
         CompressedBytes   = $CompressedBytes
+        ProcessedZipPaths = $ProcessedZipPaths
     }
 }
 

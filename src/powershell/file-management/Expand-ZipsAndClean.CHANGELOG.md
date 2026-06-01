@@ -1,5 +1,29 @@
 # CHANGELOG — Expand-ZipsAndClean
 
+## 2.7.0 — 2026-06-01 *(minor — new -DeleteSourceZips switch)*
+
+### Added
+
+- `-DeleteSourceZips` switch parameter. When present, each zip whose extraction succeeds
+  is deleted in place rather than moved to the parent directory. Zips whose extraction
+  failed are left untouched. `Move-ZipFilesToParent` is bypassed entirely.
+- `ProcessedZipPaths` field in the `New-ExtractionSummary` return object (tracked by
+  `Invoke-SerialZipExtractions` and `Merge-ParallelZipResults`) so the script knows which
+  archives to delete without a second directory scan.
+- `ZipPath` field added to `Expand-ZipInRunspace` result objects so the parallel merger
+  can attribute successful extractions to their source paths.
+- `DeleteSourceZips` and `DeletedSummary` parameters on `Write-ExtractionSummary`:
+  when `-DeleteSourceZips` is set the summary view shows `ZipsDeleted`/`DeletedBytes`
+  instead of `ZipsMoved`/`MoveSkipped`/`MoveOverwritten`/`MoveRenamed`/`MovedTo`.
+
+### Tests
+
+- Added `Describe '-DeleteSourceZips behaviour'` block covering: empty-source
+  `ProcessedZipPaths`; summary view shows deletion fields when switch is set; summary view
+  shows move fields (not deletion) by default.
+- Added script-structure assertion that `-DeleteSourceZips` switch is declared in the
+  `param()` block.
+
 ## 2.6.19 — 2026-05-31 *(patch — test refactor; no behaviour change)*
 
 ### Tests

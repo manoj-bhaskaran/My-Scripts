@@ -186,6 +186,29 @@ Describe 'Resolve-MoveTarget' {
     }
 }
 
+Describe '-DeleteSourceZips behaviour' {
+    BeforeAll {
+        Import-ExpandZipsAndCleanZipExtractionTestModule
+    }
+
+    It 'ProcessedZipPaths is empty when no zips are found' {
+        $sourceDir = Join-Path $TestDrive 'dsz-empty-src'
+        $destDir   = Join-Path $TestDrive 'dsz-empty-dest'
+        New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $destDir   -Force | Out-Null
+
+        $errorList = [System.Collections.Generic.List[string]]::new()
+        $result = ZipExtraction\Invoke-ZipExtractions `
+            -SourceDir $sourceDir -DestinationDir $destDir `
+            -Mode 'PerArchiveSubfolder' -Policy 'Rename' `
+            -SafeNameMaxLen 0 -QuietMode $true `
+            -ErrorList $errorList -ThrottleLimit 1
+
+        $result.ProcessedZipPaths | Should -BeNullOrEmpty
+    }
+
+}
+
 Describe 'Expand-ZipsAndClean script structure' {
     It 'uses terminating imports for all startup modules before workflow execution' {
         $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
@@ -210,6 +233,12 @@ Describe 'Expand-ZipsAndClean script structure' {
         foreach ($import in $startupImports) {
             $import.Extent.Text | Should -Match '(?i)-ErrorAction\s+Stop'
         }
+    }
+
+    It 'declares -DeleteSourceZips switch parameter' {
+        $scriptPath = Join-Path $PSScriptRoot '..\..\..\src\powershell\file-management\Expand-ZipsAndClean.ps1'
+        $scriptText = Get-Content -LiteralPath $scriptPath -Raw
+        $scriptText | Should -Match '\[switch\]\$DeleteSourceZips'
     }
 
     It 'contains no script-local helper function definitions' {
