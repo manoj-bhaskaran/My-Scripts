@@ -8,6 +8,19 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-06-01
+### Added
+- **Per-run log files for `Start-VideoBatch`**: runs now write timestamped `Write-Message` output to a collision-safe `videoscreenshot_<yyyyMMdd_HHmmss>_<RunGuid>.log` file under `SaveFolder` by default. The resolved log path is printed at run start so non-interactive runs leave an inspectable artifact.
+- **`-LogFile` and `-NoLogFile` parameters** on `Start-VideoBatch`: pass an explicit log path (parent directories are created best-effort) or opt out with `-NoLogFile` / `-LogFile ''` while leaving console stream behavior unchanged.
+- **Module-scoped logging sink** in `Private/Logging.ps1`: `Set-VideoScreenshotLogFile`, `Get-VideoScreenshotLogFile`, and `Clear-VideoScreenshotLogFile` let `Write-Message` capture helper-emitted messages without threading `-LogFile` through every private call site.
+
+### Changed
+- `Write-Message` now falls back to the module-scoped run log when its own `-LogFile` parameter is omitted; explicit `-LogFile` values still take precedence, and file writes remain best-effort with warning-only failures.
+- `Start-VideoBatch` clears the module-scoped log sink in a `finally` block so successive runs do not leak log state.
+
+### Tests
+- New `tests/.../Logging.Tests.ps1`: covers explicit log writes, module-scoped default routing, empty-log opt-out, warning-only write failures, default `Start-VideoBatch` log creation under `SaveFolder`, and `-NoLogFile` opt-out.
+
 ## [3.3.0] - 2026-05-31
 ### Added
 - **`-DeduplicateFrames` switch** on `Start-VideoBatch`: when set, consecutive snapshot frames whose file bytes are identical are collapsed to a single kept frame per video after capture completes. Genuinely distinct frames are always preserved. Default off; enable for image/slideshow→MP4 conversions (e.g. `picconvert_*` folders) that produce long runs of identical frames at the configured FPS.

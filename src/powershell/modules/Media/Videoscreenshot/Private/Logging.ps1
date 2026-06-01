@@ -9,6 +9,8 @@
 
   Optional behaviors:
     - -LogFile <path> : Append the formatted line to a log file (best-effort).
+    - Module default  : When -LogFile is omitted, append to the module-scoped
+      default set by Set-VideoScreenshotLogFile, if one is configured.
     - -Quiet          : Suppress console emission for Info/Warn (Error still shown).
 
   Notes:
@@ -24,17 +26,67 @@
   LogFile output (when provided) still occurs.
 .PARAMETER LogFile
   Path to a file where the log line should be appended. Directory must exist.
+  Explicit values take precedence over the module-scoped default; an empty value disables file output for that call.
 .EXAMPLE
   Write-Message -Level Info -Message "Starting capture" -LogFile "C:\logs\run.log"
 .EXAMPLE
   Write-Message -Level Warn -Message "No videos found" -Quiet
 #>
+$script:VideoscreenshotLogFile = $null
+
+<#
+.SYNOPSIS
+  Set the module-scoped default run log file used by Write-Message.
+.DESCRIPTION
+  Start-VideoBatch uses this helper to route messages from the entrypoint and
+  private helpers into one per-run log without threading -LogFile through every
+  call site. Pass a null/empty value to clear the sink.
+#>
+function Set-VideoScreenshotLogFile {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        $script:VideoscreenshotLogFile = $null
+    }
+    else {
+        $script:VideoscreenshotLogFile = $Path
+    }
+}
+
+<#
+.SYNOPSIS
+  Return the current module-scoped default run log file, if configured.
+#>
+function Get-VideoScreenshotLogFile {
+    [CmdletBinding()]
+    param()
+
+    return $script:VideoscreenshotLogFile
+}
+
+<#
+.SYNOPSIS
+  Clear the module-scoped default run log file.
+#>
+function Clear-VideoScreenshotLogFile {
+    [CmdletBinding()]
+    param()
+
+    $script:VideoscreenshotLogFile = $null
+}
+
 function Write-Message {
     [CmdletBinding()]
     param(
         [ValidateSet('Info', 'Warn', 'Error')][string]$Level = 'Info',
         [Parameter(Mandatory)][string]$Message,
         [switch]$Quiet,
+        [AllowEmptyString()]
         [string]$LogFile
     )
 
@@ -42,15 +94,22 @@ function Write-Message {
     $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     $formatted = "[$ts] [$($Level.ToUpper().PadRight(5))] $Message"
 
+    $effectiveLogFile = if ($PSBoundParameters.ContainsKey('LogFile')) {
+        $LogFile
+    }
+    else {
+        $script:VideoscreenshotLogFile
+    }
+
     # Best-effort file logging (does not throw the whole function if it fails)
-    if (-not [string]::IsNullOrWhiteSpace($LogFile)) {
+    if (-not [string]::IsNullOrWhiteSpace($effectiveLogFile)) {
         try {
             # Uses helper with retry semantics; caller is responsible for directory existence.
-            Add-ContentWithRetry -Path $LogFile -Value $formatted | Out-Null
+            Add-ContentWithRetry -Path $effectiveLogFile -Value $formatted | Out-Null
         }
         catch {
             # Keep the run going; surface a warning so the user knows file logging failed.
-            Write-Warning ("Write-Message: failed to write to logfile '{0}' — {1}" -f $LogFile, $_.Exception.Message)
+            Write-Warning ("Write-Message: failed to write to logfile '{0}' — {1}" -f $effectiveLogFile, $_.Exception.Message)
         }
     }
 

@@ -48,6 +48,8 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
 - `ReprocessCropped` (switch): Force re-crop even if images were processed before.
 - `KeepExistingCrops` (switch): Preserve existing crops when reprocessing.
 - `ProcessedLogPath` (string): Location of the processed/resume log under `SaveFolder` by default.
+- `LogFile` (string): Optional run-log path for timestamped module messages. When omitted, `Start-VideoBatch` creates `videoscreenshot_<yyyyMMdd_HHmmss>_<RunGuid>.log` under `SaveFolder`. Pass an empty string to opt out.
+- `NoLogFile` (switch): Disable the run log file while keeping console output unchanged.
 
 ## Error Handling
 ```powershell
@@ -56,7 +58,7 @@ try {
 }
 catch {
     Write-Error "Video screenshot run failed: $_"
-    # Inspect on-screen VLC/cropper logs for root cause (network paths, missing VLC/Python, etc.)
+    # Inspect the run log printed at startup, plus VLC/cropper diagnostics, for root cause.
 }
 ```
 
@@ -65,6 +67,7 @@ catch {
 - Set `FramesPerSecond` conservatively for long runs to reduce I/O and disk usage.
 - Enable `-IncludeExtensions` to skip unsupported formats early and speed up discovery.
 - Processed logs allow resumable runs—point `-ProcessedLogPath` at fast storage to avoid lock contention.
+- Run logs are enabled by default under `SaveFolder`; use `-LogFile` for a central logs directory or `-NoLogFile` for console-only smoke tests.
 - Use `-VerifyVideos` (`-PreflightProbe`/`-SkipUnplayable`) to skip corrupt or unsupported files before launching the main VLC capture session; tune the bounded probe with `-VideoProbeTimeoutSeconds` (default `10`). The probe no longer false-skips chatty codecs (AV1/VP9) due to the pipe-buffer deadlock fix.
 - Cropper runs can be CPU intensive; use `-VideoLimit`/`-TimeLimitSeconds` to batch work into smaller chunks.
 
@@ -96,6 +99,23 @@ Use VLC’s scene snapshot filter to write frames directly to disk:
 Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
 Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots
 ```
+
+### Run logs
+
+Each `Start-VideoBatch` run writes a persistent log through the same `Write-Message` framework used for console output. By default, the file is created under `SaveFolder` with a collision-safe name:
+
+```text
+<SaveFolder>\videoscreenshot_<yyyyMMdd_HHmmss>_<RunGuid>.log
+```
+
+The resolved path is printed at startup as `Run log file: ...`. Use `-LogFile` to send the run log elsewhere, or disable file logging with either `-NoLogFile` or `-LogFile ''`:
+
+```powershell
+Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -LogFile .\logs\batch.log
+Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -NoLogFile
+```
+
+Run-log writes are best-effort: a file-write failure emits a warning and the capture continues. Helper warnings (for example VLC snapshot stall/cap messages) are captured in the same run log because the module configures a per-run logging sink before capture or crop-only work starts.
 
 ### Cropper integration
 When `-RunCropper` is set, the module invokes the Python cropper after capture. By default the cropper **skips images that were already cropped in previous runs** (tracked via `.processed_images`).
@@ -256,6 +276,8 @@ src/
 - -VideoLimit – limit how many videos to process in this run (0 = all)
 - **Resume / processed logging (P0)**
 - -ProcessedLogPath – path to append successfully processed videos (defaults under -SaveFolder)
+- -LogFile – path for the per-run timestamped message log (defaults to `videoscreenshot_<yyyyMMdd_HHmmss>_<RunGuid>.log` under -SaveFolder)
+- -NoLogFile – disable the per-run message log while keeping console output
 - -ResumeFile – optional list of already-processed video paths to skip
 - **Advanced timing (P0)**
 - -MaxPerVideoSeconds – hard ceiling for wait/monitor phases (snapshots)
@@ -316,6 +338,7 @@ On Windows (example):
 ## Troubleshooting
 - “VLC not found”: ensure `vlc --version` runs in the same session.
 - “Module not found”: verify the path to `Videoscreenshot.psd1` when importing the module manually.
+- **“Where is the log file?”** `Start-VideoBatch` prints `Run log file: <path>` near startup. By default it is under `SaveFolder` as `videoscreenshot_<yyyyMMdd_HHmmss>_<RunGuid>.log`; use `-LogFile <path>` to choose a location or `-NoLogFile` for console-only runs.
 - **Startup banner shows a stale version after editing files**: PowerShell caches the module in the current session. Editing files on disk does **not** update what is loaded. Always reload with `Import-Module .\Videoscreenshot.psd1 -Force` (or restart the session) after making edits; otherwise `Get-Module` still returns the old version and any version-dependent behaviour reflects the stale import.
 - “Cropper failed due to missing packages”: by default, the module tries to install them. If you used -NoAutoInstall, install manually with python -m pip install <packages> or remove the switch.
 - “Resume/processed not working”: the module reads `<SaveFolder>\.processed_videos.txt` and accepts **both**
