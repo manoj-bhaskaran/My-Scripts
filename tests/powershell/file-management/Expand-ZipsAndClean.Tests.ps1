@@ -215,14 +215,15 @@ Describe '-DeleteSourceZips behaviour' {
         $deletedSummary = [pscustomobject]@{ Count = 3; Bytes = 1024 }
         $moveSummary    = [pscustomobject]@{ Count = 0; Bytes = 0; Destination = ''; Skipped = 0; Overwritten = 0; Renamed = 0 }
 
-        $view = ProgressReporter\Write-ExtractionSummary `
+        $view = @(ProgressReporter\Write-ExtractionSummary `
             -SourceDirectory $TestDrive -DestinationDirectory $TestDrive `
             -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
             -ZipCount 3 -ProcessedZips 3 -FilesExtracted 9 `
             -UncompressedBytes 4096 -CompressedBytes 1024 `
             -MoveSummary $moveSummary -Errors $errors -Elapsed ([timespan]::Zero) `
             -DeleteSourceZips -DeletedSummary $deletedSummary `
-            -PassThru -HostName 'ConsoleHost' -ConsoleWidth 200
+            -PassThru -HostName 'ConsoleHost' -ConsoleWidth 200) |
+            Where-Object { $_ -is [pscustomobject] } | Select-Object -First 1
 
         $view.ZipsDeleted | Should -Be 3
         $view.PSObject.Properties.Name | Should -Contain 'DeletedBytes'
@@ -237,13 +238,14 @@ Describe '-DeleteSourceZips behaviour' {
         $errors = [System.Collections.Generic.List[string]]::new()
         $moveSummary = [pscustomobject]@{ Count = 2; Bytes = 512; Destination = $TestDrive; Skipped = 0; Overwritten = 0; Renamed = 0 }
 
-        $view = ProgressReporter\Write-ExtractionSummary `
+        $view = @(ProgressReporter\Write-ExtractionSummary `
             -SourceDirectory $TestDrive -DestinationDirectory $TestDrive `
             -ExtractMode 'PerArchiveSubfolder' -CollisionPolicy 'Rename' `
             -ZipCount 2 -ProcessedZips 2 -FilesExtracted 4 `
             -UncompressedBytes 2048 -CompressedBytes 512 `
             -MoveSummary $moveSummary -Errors $errors -Elapsed ([timespan]::Zero) `
-            -PassThru -HostName 'ConsoleHost' -ConsoleWidth 200
+            -PassThru -HostName 'ConsoleHost' -ConsoleWidth 200) |
+            Where-Object { $_ -is [pscustomobject] } | Select-Object -First 1
 
         $view.ZipsMoved | Should -Be 2
         $view.PSObject.Properties.Name | Should -Contain 'MovedTo'
