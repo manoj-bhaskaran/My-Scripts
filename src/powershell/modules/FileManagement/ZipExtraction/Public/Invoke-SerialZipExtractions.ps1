@@ -9,6 +9,7 @@ function Invoke-SerialZipExtractions {
     )
     if ($ThrottleLimit -gt 1 -and $WhatIfPreference) { Write-Verbose "WhatIf is active — falling back to serial extraction so -WhatIf/-Confirm are honoured." }
     $processedZips = 0; $totalFilesExtracted = 0; $totalUncompressedBytes = [int64]0; $totalCompressedZipBytes = [int64]0; $index = 0
+    $processedZipPaths = [System.Collections.Generic.List[string]]::new()
 
     foreach ($zip in $Zips) {
         $index++
@@ -18,11 +19,12 @@ function Invoke-SerialZipExtractions {
                 $r = Invoke-SingleZipExtraction -Zip $zip -DestDir $DestinationDir -Mode $Mode -Policy $Policy -MaxLen $SafeNameMaxLen
                 $totalFilesExtracted += $r.FilesExtracted
                 $totalUncompressedBytes += $r.UncompressedBytes; $totalCompressedZipBytes += $r.CompressedBytes; $processedZips++
+                $processedZipPaths.Add($zip.FullName) | Out-Null
                 Write-LogDebug $r.Log
             }
         } catch { $msg = $_.Exception.Message; $ErrorList.Add("Extraction failed for '$($zip.FullName)': $msg") | Out-Null; Write-LogDebug $msg }
     }
 
     Show-ProgressPhase -Activity "Extracting archives" -Status "Done" -Current $ZipCount -Total $ZipCount -QuietMode $QuietMode -Completed
-    return New-ExtractionSummary -ZipCount $ZipCount -ProcessedZips $processedZips -FilesExtracted $totalFilesExtracted -UncompressedBytes $totalUncompressedBytes -CompressedBytes $totalCompressedZipBytes
+    return New-ExtractionSummary -ZipCount $ZipCount -ProcessedZips $processedZips -FilesExtracted $totalFilesExtracted -UncompressedBytes $totalUncompressedBytes -CompressedBytes $totalCompressedZipBytes -ProcessedZipPaths $processedZipPaths.ToArray()
 }

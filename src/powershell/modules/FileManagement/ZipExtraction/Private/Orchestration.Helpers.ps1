@@ -9,6 +9,7 @@ function Merge-ParallelZipResults {
     $totalFilesExtracted     = 0
     $totalUncompressedBytes  = [int64]0
     $totalCompressedZipBytes = [int64]0
+    $processedZipPaths       = [System.Collections.Generic.List[string]]::new()
 
     foreach ($r in $Results) {
         foreach ($log in $r.Logs) { Write-LogDebug $log }
@@ -17,9 +18,10 @@ function Merge-ParallelZipResults {
             $totalFilesExtracted     += $r.FilesExtracted
             $totalUncompressedBytes  += $r.UncompressedBytes
             $totalCompressedZipBytes += $r.CompressedBytes
+            if ($r.ZipPath) { $processedZipPaths.Add($r.ZipPath) | Out-Null }
         }
     }
     foreach ($e in $ConcurrentErrors) { $ErrorList.Add($e) | Out-Null }
     Write-LogInfo "Parallel extraction complete: $processedZips / $ZipCount archive(s) processed."
-    return New-ExtractionSummary -ZipCount $ZipCount -ProcessedZips $processedZips -FilesExtracted $totalFilesExtracted -UncompressedBytes $totalUncompressedBytes -CompressedBytes $totalCompressedZipBytes
+    return New-ExtractionSummary -ZipCount $ZipCount -ProcessedZips $processedZips -FilesExtracted $totalFilesExtracted -UncompressedBytes $totalUncompressedBytes -CompressedBytes $totalCompressedZipBytes -ProcessedZipPaths $processedZipPaths.ToArray()
 }

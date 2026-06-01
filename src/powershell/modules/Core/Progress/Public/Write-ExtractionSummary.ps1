@@ -8,25 +8,43 @@ function New-ExtractionSummaryView {
         "n/a"
     }
 
-    [pscustomobject]@{
-        SrcDir          = $SummaryState.SourceDirectory
-        DestDir         = $SummaryState.DestinationDirectory
-        Mode            = $SummaryState.ExtractMode
-        Policy          = $SummaryState.CollisionPolicy
-        ZipsFound       = $SummaryState.ZipCount
-        ZipsDone        = $SummaryState.ProcessedZips
-        Files           = $SummaryState.FilesExtracted
-        Uncompressed    = (Format-Bytes $SummaryState.UncompressedBytes)
-        Compressed      = (Format-Bytes $SummaryState.CompressedBytes)
-        Ratio           = $compressionRatio
-        ZipsMoved       = ($SummaryState.MoveSummary.Count)
-        MoveSkipped     = ($SummaryState.MoveSummary.Skipped)
-        MoveOverwritten = ($SummaryState.MoveSummary.Overwritten)
-        MoveRenamed     = ($SummaryState.MoveSummary.Renamed)
-        MovedBytes      = (Format-Bytes $SummaryState.MoveSummary.Bytes)
-        MovedTo         = ($SummaryState.MoveSummary.Destination)
-        Errors          = $SummaryState.ErrorCount
-        Duration        = ("{0:hh\:mm\:ss\.fff}" -f $SummaryState.Elapsed)
+    if ($SummaryState.DeleteSourceZips) {
+        [pscustomobject]@{
+            SrcDir       = $SummaryState.SourceDirectory
+            DestDir      = $SummaryState.DestinationDirectory
+            Mode         = $SummaryState.ExtractMode
+            ZipsFound    = $SummaryState.ZipCount
+            ZipsDone     = $SummaryState.ProcessedZips
+            Files        = $SummaryState.FilesExtracted
+            Uncompressed = (Format-Bytes $SummaryState.UncompressedBytes)
+            Compressed   = (Format-Bytes $SummaryState.CompressedBytes)
+            Ratio        = $compressionRatio
+            ZipsDeleted  = ($SummaryState.DeletedSummary.Count)
+            DeletedBytes = (Format-Bytes $SummaryState.DeletedSummary.Bytes)
+            Errors       = $SummaryState.ErrorCount
+            Duration     = ("{0:hh\:mm\:ss\.fff}" -f $SummaryState.Elapsed)
+        }
+    } else {
+        [pscustomobject]@{
+            SrcDir          = $SummaryState.SourceDirectory
+            DestDir         = $SummaryState.DestinationDirectory
+            Mode            = $SummaryState.ExtractMode
+            Policy          = $SummaryState.CollisionPolicy
+            ZipsFound       = $SummaryState.ZipCount
+            ZipsDone        = $SummaryState.ProcessedZips
+            Files           = $SummaryState.FilesExtracted
+            Uncompressed    = (Format-Bytes $SummaryState.UncompressedBytes)
+            Compressed      = (Format-Bytes $SummaryState.CompressedBytes)
+            Ratio           = $compressionRatio
+            ZipsMoved       = ($SummaryState.MoveSummary.Count)
+            MoveSkipped     = ($SummaryState.MoveSummary.Skipped)
+            MoveOverwritten = ($SummaryState.MoveSummary.Overwritten)
+            MoveRenamed     = ($SummaryState.MoveSummary.Renamed)
+            MovedBytes      = (Format-Bytes $SummaryState.MoveSummary.Bytes)
+            MovedTo         = ($SummaryState.MoveSummary.Destination)
+            Errors          = $SummaryState.ErrorCount
+            Duration        = ("{0:hh\:mm\:ss\.fff}" -f $SummaryState.Elapsed)
+        }
     }
 }
 
@@ -124,9 +142,15 @@ function Write-ExtractionSummaryErrors {
     Total uncompressed bytes extracted.
 .PARAMETER CompressedBytes
     Total compressed (on-disk) bytes of the zip files processed.
+.PARAMETER DeleteSourceZips
+    Switch. When set, the summary shows deletion statistics instead of move statistics.
+    Pass this when the script was invoked with -DeleteSourceZips.
+.PARAMETER DeletedSummary
+    PSCustomObject with Count and Bytes for the zips deleted in place. Required when
+    DeleteSourceZips is set. Ignored when DeleteSourceZips is absent.
 .PARAMETER MoveSummary
     PSCustomObject returned by Move-ZipFilesToParent containing Count, Bytes,
-    Destination, Skipped, Overwritten, and Renamed.
+    Destination, Skipped, Overwritten, and Renamed. Required when DeleteSourceZips is absent.
 .PARAMETER Errors
     List of non-fatal error messages accumulated during the run.
 .PARAMETER Elapsed
@@ -163,6 +187,8 @@ function Write-ExtractionSummary {
         [Parameter(Mandatory)][pscustomobject]$MoveSummary,
         [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$Errors,
         [Parameter(Mandatory)][timespan]$Elapsed,
+        [switch]$DeleteSourceZips,
+        [pscustomobject]$DeletedSummary,
         [string]$HostName = $Host.Name,
         [int]$ConsoleWidth = 0,
         [switch]$PassThru
