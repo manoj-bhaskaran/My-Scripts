@@ -255,8 +255,8 @@ try {
             if (-not [System.IO.File]::Exists($zipPath)) { continue }
             try {
                 if ($PSCmdlet.ShouldProcess($zipPath, "Delete extracted zip")) {
-                    $zipLen = (Get-Item -LiteralPath $zipPath).Length
-                    Remove-Item -LiteralPath $zipPath -Force
+                    $zipLen = (Get-Item -LiteralPath $zipPath -ErrorAction Stop).Length
+                    Remove-Item -LiteralPath $zipPath -Force -ErrorAction Stop
                     $deletedCount++
                     $deletedBytes += $zipLen
                     Write-LogDebug "Deleted extracted zip: $zipPath"
