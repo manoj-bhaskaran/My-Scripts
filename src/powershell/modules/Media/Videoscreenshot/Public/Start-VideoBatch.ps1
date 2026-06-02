@@ -132,7 +132,9 @@ function Start-VideoBatch {
 
     # Validate/create SaveFolder before resolving the default run log path. This
     # also makes the CropOnly fast-path log-capable before it emits messages.
-    Test-FolderWritable -Folder $SaveFolder | Out-Null
+    if (-not (Test-FolderWritable -Path $SaveFolder)) {
+        throw "SaveFolder is not writable or could not be created: $SaveFolder"
+    }
 
     $resolvedRunLogFile = $null
     $logFileExplicitlyProvided = $PSBoundParameters.ContainsKey('LogFile')
@@ -219,10 +221,7 @@ function Start-VideoBatch {
                 throw "PythonScriptPath not found: $PythonScriptPath"
             }
             if (-not [string]::IsNullOrWhiteSpace($PythonExe)) {
-                try {
-                    $null = Get-Command -Name $PythonExe -ErrorAction Stop
-                }
-                catch {
+                if (-not (Test-CommandAvailable -CommandName $PythonExe)) {
                     throw "Python executable not found or not on PATH: $PythonExe"
                 }
             }
@@ -254,7 +253,7 @@ function Start-VideoBatch {
             throw "VLC missing."
         }
     }
-    elseif (Get-Command vlc -ErrorAction SilentlyContinue) {
+    elseif (Test-CommandAvailable -CommandName 'vlc') {
         (Get-Command vlc).Source
     }
     else {
@@ -311,7 +310,7 @@ function Start-VideoBatch {
     # If requested, verify videos only when a verifier is available
     $canVerify = $false
     if ($VerifyVideos) {
-        if (Get-Command -Name Test-VideoPlayable -ErrorAction SilentlyContinue) {
+        if (Test-CommandAvailable -CommandName 'Test-VideoPlayable') {
             $canVerify = $true
         }
         else {

@@ -36,7 +36,7 @@ function Test-FolderWritable {
         [switch]$SkipCreate
     )
 
-    if (-not (Test-Path $Path)) {
+    if (-not (Test-Path -LiteralPath $Path)) {
         if ($SkipCreate) {
             return $false
         }
@@ -55,7 +55,7 @@ function Test-FolderWritable {
 
     try {
         [IO.File]::WriteAllText($testFile, "test")
-        Remove-Item $testFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $testFile -Force -ErrorAction SilentlyContinue
         return $true
     }
     catch {
