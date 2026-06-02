@@ -36,6 +36,7 @@ BeforeAll {
         }
     }
     function Test-FolderWritable { param([string]$Path) New-Item -ItemType Directory -Path $Path -Force | Out-Null; return $true }
+    function Test-CommandAvailable { param([string]$CommandName) $null -ne (Get-Command $CommandName -ErrorAction SilentlyContinue) }
     function Get-ResumeIndex { param([string]$Path) [System.Collections.Generic.HashSet[string]]::new() }
     function Resolve-VideoPath { param([string]$Path) [System.IO.Path]::GetFullPath($Path) }
     function Initialize-PidRegistry { param($Context, [string]$SaveFolder, [string]$RunGuid) Join-Path $SaveFolder 'pids.txt' }
