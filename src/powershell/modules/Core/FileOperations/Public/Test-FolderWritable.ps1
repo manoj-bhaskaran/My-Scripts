@@ -36,13 +36,13 @@ function Test-FolderWritable {
         [switch]$SkipCreate
     )
 
-    if (-not (Test-Path $Path)) {
+    if (-not (Test-Path -LiteralPath $Path)) {
         if ($SkipCreate) {
             return $false
         }
 
         try {
-            New-Item -Path $Path -ItemType Directory -Force | Out-Null
+            New-Item -LiteralPath $Path -ItemType Directory -Force | Out-Null
         }
         catch {
             Write-Warning "Failed to create directory '$Path': $_"
@@ -55,7 +55,7 @@ function Test-FolderWritable {
 
     try {
         [IO.File]::WriteAllText($testFile, "test")
-        Remove-Item $testFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $testFile -Force -ErrorAction SilentlyContinue
         return $true
     }
     catch {
