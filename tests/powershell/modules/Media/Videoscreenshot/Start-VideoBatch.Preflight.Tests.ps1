@@ -35,7 +35,7 @@ BeforeAll {
             RequestedFps = $RequestedFps
         }
     }
-    function Test-FolderWritable { param([string]$Folder) New-Item -ItemType Directory -Path $Folder -Force | Out-Null }
+    function Test-FolderWritable { param([string]$Path) New-Item -ItemType Directory -Path $Path -Force | Out-Null; return $true }
     function Get-ResumeIndex { param([string]$Path) [System.Collections.Generic.HashSet[string]]::new() }
     function Resolve-VideoPath { param([string]$Path) [System.IO.Path]::GetFullPath($Path) }
     function Initialize-PidRegistry { param($Context, [string]$SaveFolder, [string]$RunGuid) Join-Path $SaveFolder 'pids.txt' }

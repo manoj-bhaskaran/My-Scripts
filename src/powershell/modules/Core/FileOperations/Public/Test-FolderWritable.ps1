@@ -42,7 +42,7 @@ function Test-FolderWritable {
         }
 
         try {
-            New-Item -LiteralPath $Path -ItemType Directory -Force | Out-Null
+            New-Item -Path $Path -ItemType Directory -Force | Out-Null
         }
         catch {
             Write-Warning "Failed to create directory '$Path': $_"

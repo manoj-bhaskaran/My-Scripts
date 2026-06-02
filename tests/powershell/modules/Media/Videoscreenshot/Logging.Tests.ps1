@@ -9,10 +9,16 @@ BeforeAll {
     $script:ModuleManifest = Join-Path $script:ModuleRoot 'Videoscreenshot.psd1'
     # Add-ContentWithRetry moved from Private/IO.Helpers.ps1 to Core/FileOperations
     $script:AddContentPath = Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'powershell' 'modules' 'Core' 'FileOperations' 'Public' 'Add-ContentWithRetry.ps1'
+    $script:FileOperationsModulePath = Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'powershell' 'modules' 'Core' 'FileOperations' 'FileOperations.psm1'
+    $script:ErrorHandlingModulePath  = Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'powershell' 'modules' 'Core' 'ErrorHandling' 'ErrorHandling.psm1'
 
-    foreach ($f in $script:LoggingPath, $script:ModuleManifest, $script:AddContentPath) {
+    foreach ($f in $script:LoggingPath, $script:ModuleManifest, $script:AddContentPath, $script:FileOperationsModulePath, $script:ErrorHandlingModulePath) {
         if (-not (Test-Path -LiteralPath $f)) { throw "Required file not found: $f" }
     }
+
+    # Load Core modules so the unit-level tests have Add-ContentWithRetry available
+    Import-Module $script:ErrorHandlingModulePath  -Force
+    Import-Module $script:FileOperationsModulePath -Force
 
     . $script:AddContentPath
     . $script:LoggingPath
