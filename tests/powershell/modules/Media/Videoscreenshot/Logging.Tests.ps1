@@ -5,15 +5,16 @@ Pester tests for Videoscreenshot run-log routing.
 
 BeforeAll {
     $script:ModuleRoot = Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'powershell' 'modules' 'Media' 'Videoscreenshot'
-    $script:IoPath = Join-Path $script:ModuleRoot 'Private' 'IO.Helpers.ps1'
     $script:LoggingPath = Join-Path $script:ModuleRoot 'Private' 'Logging.ps1'
     $script:ModuleManifest = Join-Path $script:ModuleRoot 'Videoscreenshot.psd1'
+    # Add-ContentWithRetry moved from Private/IO.Helpers.ps1 to Core/FileOperations
+    $script:AddContentPath = Join-Path $PSScriptRoot '..' '..' '..' '..' '..' 'src' 'powershell' 'modules' 'Core' 'FileOperations' 'Public' 'Add-ContentWithRetry.ps1'
 
-    foreach ($f in $script:IoPath, $script:LoggingPath, $script:ModuleManifest) {
+    foreach ($f in $script:LoggingPath, $script:ModuleManifest, $script:AddContentPath) {
         if (-not (Test-Path -LiteralPath $f)) { throw "Required file not found: $f" }
     }
 
-    . $script:IoPath
+    . $script:AddContentPath
     . $script:LoggingPath
 
     function Script:New-TempFolder {
