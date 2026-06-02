@@ -1,5 +1,5 @@
 # Core dependencies
-requests>=2.33.0,<3.0.0
+requests>=2.34.2,<3.0.0
 numpy>=2.3.0,<3.0.0
 pandas>=2.3.3,<3.0.0
 opencv-python>=4.13.0,<5.0.0
