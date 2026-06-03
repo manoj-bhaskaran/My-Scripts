@@ -37,15 +37,15 @@ function Get-FfmpegSceneChangeArgs {
         "select='gt(scene,$thresholdText)'"
     }
 
-    $args = @()
-    if ($BaseArgs) { $args += $BaseArgs }
-    $args += @('-i', $VideoPath)
+    $ffmpegArgs = @()
+    if ($BaseArgs) { $ffmpegArgs += $BaseArgs }
+    $ffmpegArgs += @('-i', $VideoPath)
     if ($StopAtSeconds -gt 0) {
         $durationText = $StopAtSeconds.ToString('0.###', [Globalization.CultureInfo]::InvariantCulture)
-        $args += @('-t', $durationText)
+        $ffmpegArgs += @('-t', $durationText)
     }
-    $args += @('-vf', $selector, '-vsync', 'vfr', $OutputPattern)
-    return $args
+    $ffmpegArgs += @('-vf', $selector, '-vsync', 'vfr', $OutputPattern)
+    return $ffmpegArgs
 }
 
 function Get-SnapshotFrameInventory {
@@ -114,11 +114,11 @@ function Invoke-FfmpegSceneChangeCapture {
     $preInventory = Get-SnapshotFrameInventory -SaveFolder $SaveFolder -ScenePrefix $ScenePrefix
     $preCount = $preInventory.Count
     $outputPattern = Join-Path $SaveFolder ("{0}%05d.png" -f $ScenePrefix)
-    $args = Get-FfmpegSceneChangeArgs -VideoPath $VideoPath -OutputPattern $outputPattern -Threshold $Threshold -StopAtSeconds $StopAtSeconds -IncludeFirstFrame $IncludeFirstFrame -BaseArgs $BaseArgs
+    $ffmpegArgs = Get-FfmpegSceneChangeArgs -VideoPath $VideoPath -OutputPattern $outputPattern -Threshold $Threshold -StopAtSeconds $StopAtSeconds -IncludeFirstFrame $IncludeFirstFrame -BaseArgs $BaseArgs
 
     $psi = [Diagnostics.ProcessStartInfo]::new()
     $psi.FileName = $FfmpegExe
-    foreach ($arg in $args) { $null = $psi.ArgumentList.Add($arg) }
+    foreach ($arg in $ffmpegArgs) { $null = $psi.ArgumentList.Add($arg) }
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
@@ -127,15 +127,15 @@ function Invoke-FfmpegSceneChangeCapture {
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $psi
     $startedAt = Get-Date
-    Write-Debug ("Starting ffmpeg scene-change capture: {0} {1}" -f $FfmpegExe, ([string]::Join(' ', $args)))
+    Write-Debug ("Starting ffmpeg scene-change capture: {0} {1}" -f $FfmpegExe, ([string]::Join(' ', $ffmpegArgs)))
     $null = $process.Start()
 
     $timedOut = $false
     if ($TimeoutSeconds -gt 0) {
         if (-not $process.WaitForExit([int]($TimeoutSeconds * 1000))) {
             $timedOut = $true
-            try { $process.Kill($true) } catch { }
-            try { $process.WaitForExit(1000) | Out-Null } catch { }
+            try { $process.Kill($true) } catch { Write-Debug ("Unable to kill timed-out ffmpeg process: {0}" -f $_.Exception.Message) }
+            try { $process.WaitForExit(1000) | Out-Null } catch { Write-Debug ("Unable to wait for timed-out ffmpeg process exit: {0}" -f $_.Exception.Message) }
         }
     }
     else {
@@ -165,7 +165,7 @@ function Invoke-FfmpegSceneChangeCapture {
         HitMaxSeconds      = $false
         ProcessAliveAtExit = $false
         Backend            = 'ffmpeg'
-        Arguments          = [string[]]$args
+        Arguments          = [string[]]$ffmpegArgs
         StdOut             = $stdout
         StdErr             = $stderr
     }

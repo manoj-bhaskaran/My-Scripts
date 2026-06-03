@@ -92,13 +92,13 @@ BeforeAll {
 
 Describe 'Get-FfmpegSceneChangeArgs' {
     It 'builds an ffmpeg select filter with the threshold and output pattern' {
-        $args = Get-FfmpegSceneChangeArgs -VideoPath '/tmp/input.mp4' -OutputPattern '/tmp/out/video_%05d.png' -Threshold 0.42 -StopAtSeconds 12
+        $ffmpegArgs = Get-FfmpegSceneChangeArgs -VideoPath '/tmp/input.mp4' -OutputPattern '/tmp/out/video_%05d.png' -Threshold 0.42 -StopAtSeconds 12
 
-        $args | Should -Contain '-vf'
-        $args | Should -Contain "select='eq(n,0)+gt(scene,0.42)'"
-        $args | Should -Contain '-t'
-        $args | Should -Contain '12'
-        $args[-1] | Should -Be '/tmp/out/video_%05d.png'
+        $ffmpegArgs | Should -Contain '-vf'
+        $ffmpegArgs | Should -Contain "select='eq(n,0)+gt(scene,0.42)'"
+        $ffmpegArgs | Should -Contain '-t'
+        $ffmpegArgs | Should -Contain '12'
+        $ffmpegArgs[-1] | Should -Be '/tmp/out/video_%05d.png'
     }
 }
 
