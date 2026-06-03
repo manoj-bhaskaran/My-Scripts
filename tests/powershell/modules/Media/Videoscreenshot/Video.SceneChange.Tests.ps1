@@ -50,6 +50,7 @@ BeforeAll {
     function Get-ResumeIndex { param([string]$Path) [System.Collections.Generic.HashSet[string]]::new() }
     function Resolve-VideoPath { param([string]$Path) [System.IO.Path]::GetFullPath($Path) }
     function Initialize-PidRegistry { param($Context, [string]$SaveFolder, [string]$RunGuid) Join-Path $SaveFolder 'pids.txt' }
+    function Unregister-RunPid { param($Context, [int]$ProcessId) $script:UnregisterRunPidCalls++ }
     function Write-ProcessedLog { param([string]$Path, [string]$VideoPath, [string]$Status, [string]$Reason = '') }
     function Get-VideoDuration { param([string]$Path) return 1 }
     function Wait-ForSnapshotFrames {
@@ -133,6 +134,7 @@ Describe 'Start-VideoBatch frame selection' {
         $script:FfmpegCalls = @()
         $script:StartVlcCalls = 0
         $script:StopVlcCalls = 0
+        $script:UnregisterRunPidCalls = 0
         $script:WaitSnapshotCalls = 0
         $script:FfmpegCommand = $null
 
@@ -158,6 +160,7 @@ Describe 'Start-VideoBatch frame selection' {
 
         $script:StartVlcCalls | Should -Be 1
         $script:WaitSnapshotCalls | Should -Be 1
+        $script:UnregisterRunPidCalls | Should -Be 1
         $script:FfmpegCalls | Should -HaveCount 0
     }
 
@@ -179,6 +182,7 @@ Describe 'Start-VideoBatch frame selection' {
         $script:FfmpegCalls | Should -HaveCount 0
         $script:StartVlcCalls | Should -Be 1
         $script:WaitSnapshotCalls | Should -Be 1
+        $script:UnregisterRunPidCalls | Should -Be 1
         ($script:Messages | Where-Object { $_.Level -eq 'Warn' -and $_.Message -match 'ffmpeg was not found' }) | Should -HaveCount 1
     }
 }
