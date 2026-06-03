@@ -125,6 +125,7 @@ Notes:
 - Scene-change mode prefers `ffmpeg` on PATH and uses its `select` scene-detection filter. The default filter includes the first frame and subsequent frames whose scene score is above the threshold.
 - If `ffmpeg` is unavailable, `Start-VideoBatch` warns and falls back to VLC snapshot ratio extraction instead of failing the run.
 - Output names keep the same `<video-name>_NNNNN.png` prefix convention used by VLC snapshots, so counting, resume logging, `-DeduplicateFrames`, and cropper processing continue to compose unchanged.
+- Scene-change mode may overwrite existing files with the same prefix during retry runs because FFmpeg is invoked with `-y`; the module compares before/after frame metadata so overwritten frames are still counted as a successful capture. Use `-ClearSnapshotsBeforeRun` when you want to discard old frames before retrying a video.
 - Defaults can be tuned through `Get-DefaultConfig`: `FrameSelection`, `SceneChange.Threshold`, `SceneChange.Backend`, `SceneChange.IncludeFirstFrame`, and `SceneChange.FfmpegArgs`.
 
 ### Run logs

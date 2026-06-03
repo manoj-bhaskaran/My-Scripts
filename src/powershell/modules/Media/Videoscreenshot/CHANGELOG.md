@@ -16,9 +16,10 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ### Changed
 - Scene-change mode bypasses VLC entirely when `ffmpeg` is available; when FFmpeg is unavailable, the entrypoint warns and falls back to the existing VLC ratio snapshot path without failing the batch.
+- FFmpeg scene-change accounting now treats overwritten matching frame files as captured frames by comparing before/after frame metadata, preventing retry runs from being misclassified as `NoFrames` when `-y` rewrites existing `${ScenePrefix}%05d.png` files.
 
 ### Tests
-- New `tests/.../Video.SceneChange.Tests.ps1` covers FFmpeg argument construction, default ratio-mode preservation, FFmpeg scene-change routing, and graceful VLC fallback when FFmpeg is unavailable.
+- New `tests/.../Video.SceneChange.Tests.ps1` covers FFmpeg argument construction, overwritten-frame accounting, default ratio-mode preservation, FFmpeg scene-change routing, and graceful VLC fallback when FFmpeg is unavailable.
 
 ## [3.4.1] - 2026-06-01
 ### Changed

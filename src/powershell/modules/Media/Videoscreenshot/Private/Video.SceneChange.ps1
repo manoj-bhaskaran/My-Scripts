@@ -48,6 +48,45 @@ function Get-FfmpegSceneChangeArgs {
     return $args
 }
 
+function Get-SnapshotFrameInventory {
+    param(
+        [Parameter(Mandatory)][string]$SaveFolder,
+        [Parameter(Mandatory)][string]$ScenePrefix
+    )
+
+    $inventory = @{}
+    Get-ChildItem -Path $SaveFolder -Filter "${ScenePrefix}*.png" -File -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $inventory[$_.FullName] = [pscustomobject]@{
+                Length                = [int64]$_.Length
+                LastWriteTimeUtcTicks = [int64]$_.LastWriteTimeUtc.Ticks
+            }
+        }
+    return $inventory
+}
+
+function Get-SnapshotChangedFrameCount {
+    param(
+        [Parameter(Mandatory)][hashtable]$Before,
+        [Parameter(Mandatory)][hashtable]$After
+    )
+
+    $changed = 0
+    foreach ($path in $After.Keys) {
+        if (-not $Before.ContainsKey($path)) {
+            $changed++
+            continue
+        }
+
+        $pre = $Before[$path]
+        $post = $After[$path]
+        if ($pre.Length -ne $post.Length -or $pre.LastWriteTimeUtcTicks -ne $post.LastWriteTimeUtcTicks) {
+            $changed++
+        }
+    }
+    return $changed
+}
+
 function Invoke-FfmpegSceneChangeCapture {
     param(
         [Parameter(Mandatory)][string]$FfmpegExe,
@@ -68,7 +107,12 @@ function Invoke-FfmpegSceneChangeCapture {
         throw "SaveFolder not found: $SaveFolder"
     }
 
-    $preCount = (Get-ChildItem -Path $SaveFolder -Filter "${ScenePrefix}*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+    # Capture both count and metadata before launching FFmpeg. Scene-change runs
+    # intentionally use -y, so retrying a prefix can overwrite *_00001.png etc.
+    # without increasing the directory count. Metadata comparison lets callers
+    # treat overwritten frames as successful captures instead of Failed/NoFrames.
+    $preInventory = Get-SnapshotFrameInventory -SaveFolder $SaveFolder -ScenePrefix $ScenePrefix
+    $preCount = $preInventory.Count
     $outputPattern = Join-Path $SaveFolder ("{0}%05d.png" -f $ScenePrefix)
     $args = Get-FfmpegSceneChangeArgs -VideoPath $VideoPath -OutputPattern $outputPattern -Threshold $Threshold -StopAtSeconds $StopAtSeconds -IncludeFirstFrame $IncludeFirstFrame -BaseArgs $BaseArgs
 
@@ -109,9 +153,14 @@ function Invoke-FfmpegSceneChangeCapture {
         throw ("ffmpeg scene-change capture failed (ExitCode={0}). STDERR: {1}" -f $process.ExitCode, $stderr)
     }
 
-    $postCount = (Get-ChildItem -Path $SaveFolder -Filter "${ScenePrefix}*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
+    $postInventory = Get-SnapshotFrameInventory -SaveFolder $SaveFolder -ScenePrefix $ScenePrefix
+    $postCount = $postInventory.Count
+    $countDelta = [int]($postCount - $preCount)
+    $changedCount = Get-SnapshotChangedFrameCount -Before $preInventory -After $postInventory
     [pscustomobject]@{
-        FramesDelta        = [int]($postCount - $preCount)
+        FramesDelta        = [int]([Math]::Max($countDelta, $changedCount))
+        FilesChanged       = [int]$changedCount
+        FileCountDelta     = [int]$countDelta
         ElapsedSeconds     = [double]$elapsedSeconds
         HitMaxSeconds      = $false
         ProcessAliveAtExit = $false

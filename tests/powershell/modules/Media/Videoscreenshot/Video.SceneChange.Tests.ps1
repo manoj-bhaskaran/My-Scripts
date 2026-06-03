@@ -101,6 +101,32 @@ Describe 'Get-FfmpegSceneChangeArgs' {
     }
 }
 
+
+Describe 'Get-SnapshotChangedFrameCount' {
+    It 'counts overwritten matching files whose metadata changed even when the file count is unchanged' {
+        $before = @{
+            '/tmp/slides_00001.png' = [pscustomobject]@{ Length = 10; LastWriteTimeUtcTicks = 100 }
+            '/tmp/slides_00002.png' = [pscustomobject]@{ Length = 20; LastWriteTimeUtcTicks = 200 }
+        }
+        $after = @{
+            '/tmp/slides_00001.png' = [pscustomobject]@{ Length = 10; LastWriteTimeUtcTicks = 101 }
+            '/tmp/slides_00002.png' = [pscustomobject]@{ Length = 20; LastWriteTimeUtcTicks = 200 }
+        }
+
+        Get-SnapshotChangedFrameCount -Before $before -After $after | Should -Be 1
+    }
+
+    It 'counts newly-created matching files as changed frames' {
+        $before = @{}
+        $after = @{
+            '/tmp/slides_00001.png' = [pscustomobject]@{ Length = 10; LastWriteTimeUtcTicks = 100 }
+            '/tmp/slides_00002.png' = [pscustomobject]@{ Length = 20; LastWriteTimeUtcTicks = 200 }
+        }
+
+        Get-SnapshotChangedFrameCount -Before $before -After $after | Should -Be 2
+    }
+}
+
 Describe 'Start-VideoBatch frame selection' {
     BeforeEach {
         $script:Messages = @()
