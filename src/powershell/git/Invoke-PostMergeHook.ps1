@@ -576,4 +576,33 @@ foreach ($rel in $deletedFiles) {
     }
 }
 
+# 5) Rebuild Python environment if requirements files changed.
+$reqFiles = @('requirements.txt', 'requirements.lock')
+$reqChanged = $modifiedFiles | Where-Object { $reqFiles -contains $_ }
+if ($reqChanged) {
+    Write-Message ("Requirements changed ({0}); rebuilding Python environment." -f ($reqChanged -join ', ')) -ToHost
+    $reqLock = Join-Path $script:RepoPath 'requirements.lock'
+    if (Test-Path -LiteralPath $reqLock) {
+        try {
+            $pipResult = & pip install -r $reqLock 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Message "Python environment rebuilt successfully."
+                Write-Host "Python environment rebuilt successfully."
+            }
+            else {
+                Write-Message ("pip install failed (exit {0}): {1}" -f $LASTEXITCODE, ($pipResult -join ' '))
+                Write-Warning "pip install failed. Check logs for details."
+            }
+        }
+        catch {
+            Write-Message ("pip install error: {0}" -f $_)
+            Write-Warning "pip install encountered an error. Check logs for details."
+        }
+    }
+    else {
+        Write-Message "requirements.lock not found; skipping pip install."
+        Write-Warning "requirements.lock not found at expected path: $reqLock"
+    }
+}
+
 Write-Message "post-merge script execution completed."
