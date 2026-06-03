@@ -14,6 +14,7 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ### Changed
 - `Get-ResumeIndex` now accepts `-RetryUnplayable` and leaves only `Skipped`/`NotPlayable` rows retry-eligible when requested; default resume behavior is unchanged, and `Failed`, `TimedOutProcessed`, `Processed`/`NoFrames`, and `Skipped`/`VideoProbeError` remain retry-eligible by default.
+- `-RetryUnplayable` is appended to the `Start-VideoBatch` parameter list so existing positional bindings for `-LogFile` and later parameters are preserved.
 
 ### Docs
 - Documented the `-RetryUnplayable` recovery flow and the manual processed-log purge workaround for stale `NotPlayable` rows.

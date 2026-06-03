@@ -28,8 +28,6 @@ empty string or use -NoLogFile to keep console-only output.
 Disable the per-run log file while keeping console stream behavior unchanged.
 .PARAMETER ResumeFile
 Optional file path/name to resume after.
-.PARAMETER RetryUnplayable
-Re-attempt previously logged Skipped/NotPlayable videos instead of keeping them in the resume skip set. Use after upgrading from a version that could false-skip playable videos during -VerifyVideos.
 .PARAMETER MaxPerVideoSeconds
 Hard cap per video (seconds). Overrides TimeLimitSeconds when > 0.
 .PARAMETER StartupGraceSeconds
@@ -74,6 +72,8 @@ Full path to vlc.exe. Use when VLC is not on PATH (e.g. "D:\Program Files\VideoL
 Pass --no-audio to VLC. Use when the VLC audio plugin crashes on your system (e.g. libmmdevice_plugin.dll access violation).
 .PARAMETER DeduplicateFrames
 After each video capture, remove consecutive duplicate frames whose file bytes are identical. One frame per distinct image is kept. Default off; enable for image/slideshow MP4 conversions that produce long runs of identical frames (e.g. picconvert output). Frame counts and status logging reflect the kept frames after de-dup runs.
+.PARAMETER RetryUnplayable
+Re-attempt previously logged Skipped/NotPlayable videos instead of keeping them in the resume skip set. Use after upgrading from a version that could false-skip playable videos during -VerifyVideos.
 
 .EXAMPLE
 Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper -PythonScriptPath .\src\python\media\crop_colours.py
@@ -90,7 +90,6 @@ function Start-VideoBatch {
         # Resume, processed logging, and run logging
         [string]$ProcessedLogPath,
         [string]$ResumeFile,
-        [switch]$RetryUnplayable,
         [AllowEmptyString()]
         [string]$LogFile,
         [switch]$NoLogFile,
@@ -124,7 +123,8 @@ function Start-VideoBatch {
 
         [string]$VlcExe,
         [switch]$NoAudio,
-        [switch]$DeduplicateFrames
+        [switch]$DeduplicateFrames,
+        [switch]$RetryUnplayable
     )
 
     # Enforce pwsh 7+ at runtime (friendly error if invoked directly)
