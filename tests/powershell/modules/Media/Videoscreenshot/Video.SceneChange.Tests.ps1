@@ -47,7 +47,7 @@ BeforeAll {
     }
     function Test-FolderWritable { param([string]$Path) New-Item -ItemType Directory -Path $Path -Force | Out-Null; return $true }
     function Test-CommandAvailable { param([string]$CommandName) return $false }
-    function Get-ResumeIndex { param([string]$Path) [System.Collections.Generic.HashSet[string]]::new() }
+    function Get-ResumeIndex { param([string]$Path, [switch]$RetryUnplayable) $script:LastRetryUnplayable = [bool]$RetryUnplayable; [System.Collections.Generic.HashSet[string]]::new() }
     function Resolve-VideoPath { param([string]$Path) [System.IO.Path]::GetFullPath($Path) }
     function Initialize-PidRegistry { param($Context, [string]$SaveFolder, [string]$RunGuid) Join-Path $SaveFolder 'pids.txt' }
     function Unregister-RunPid { param($Context, [int]$ProcessId) $script:UnregisterRunPidCalls++ }

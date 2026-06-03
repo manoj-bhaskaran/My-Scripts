@@ -29,6 +29,10 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
    ```powershell
    Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -ProcessedLogPath .\shots\.processed_videos.txt
    ```
+   If an older `-VerifyVideos` run falsely logged playable files as `Skipped`/`NotPlayable`, re-attempt them with:
+   ```powershell
+   Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -RetryUnplayable
+   ```
 6. **Scene-change extraction for slideshows** – capture a frame when the picture changes instead of every fixed frame interval.
    ```powershell
    Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FrameSelection SceneChange -SceneChangeThreshold 0.35
@@ -54,6 +58,7 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
 - `ReprocessCropped` (switch): Force re-crop even if images were processed before.
 - `KeepExistingCrops` (switch): Preserve existing crops when reprocessing.
 - `ProcessedLogPath` (string): Location of the processed/resume log under `SaveFolder` by default.
+- `RetryUnplayable` (switch): Re-attempt `Skipped`/`NotPlayable` rows from the processed log on this run. Default off, so confirmed-unplayable videos remain skipped unless you explicitly request recovery.
 - `LogFile` (string): Optional run-log path for timestamped module messages. When omitted, `Start-VideoBatch` creates `videoscreenshot_<yyyyMMdd_HHmmss>_<RunGuid>.log` under `SaveFolder`. Pass an empty string to opt out.
 - `NoLogFile` (switch): Disable the run log file while keeping console output unchanged.
 
@@ -75,7 +80,7 @@ catch {
 - Enable `-IncludeExtensions` to skip unsupported formats early and speed up discovery.
 - Processed logs allow resumable runs—point `-ProcessedLogPath` at fast storage to avoid lock contention.
 - Run logs are enabled by default under `SaveFolder`; use `-LogFile` for a central logs directory or `-NoLogFile` for console-only smoke tests.
-- Use `-VerifyVideos` (`-PreflightProbe`/`-SkipUnplayable`) to skip corrupt or unsupported files before launching the main VLC capture session; tune the bounded probe with `-VideoProbeTimeoutSeconds` (default `10`). The probe no longer false-skips chatty codecs (AV1/VP9) due to the pipe-buffer deadlock fix.
+- Use `-VerifyVideos` (`-PreflightProbe`/`-SkipUnplayable`) to skip corrupt or unsupported files before launching the main VLC capture session; tune the bounded probe with `-VideoProbeTimeoutSeconds` (default `10`). The probe no longer false-skips chatty codecs (AV1/VP9) due to the pipe-buffer deadlock fix. If an older run already wrote stale `Skipped`/`NotPlayable` rows, rerun with `-RetryUnplayable` after upgrading.
 - Cropper runs can be CPU intensive; use `-VideoLimit`/`-TimeLimitSeconds` to batch work into smaller chunks.
 
 ## Usage
@@ -203,7 +208,7 @@ Start-VideoBatch `
 ```
 * -IncludeExtensions overrides the discovery set (defaults come from module config).
 * `-VerifyVideos` attempts a lightweight, bounded `Test-VideoPlayable` check before the main VLC session. `-PreflightProbe` and `-SkipUnplayable` are aliases for the same switch. The probe no longer redirects stdout/stderr — VLC writes to a temp sidecar logfile — so chatty-but-playable videos (e.g. AV1/VP9 clips with verbose startup output) are no longer falsely reported as `NotPlayable`.
-* If the probe returns false or times out, the video is logged as `Skipped`/`NotPlayable` in the processed log and skipped on later resume runs. Probe errors are logged as `Skipped`/`VideoProbeError` and retried on resume.
+* If the probe returns false or times out, the video is logged as `Skipped`/`NotPlayable` in the processed log and skipped on later resume runs. Probe errors are logged as `Skipped`/`VideoProbeError` and retried on resume. Use `-RetryUnplayable` on a recovery run to re-attempt stale `NotPlayable` rows after upgrading from a version that could false-skip playable videos.
 * `-VideoProbeTimeoutSeconds` controls the force-kill deadline for the probe; omit it to use `VideoProbeTimeoutSeconds` from module config (default `10`).
 
 #### What the cropper flags do
@@ -241,7 +246,8 @@ The module tracks which videos have been handled so future runs can skip work.
 - Entries are normalized to absolute provider paths at import time.
 - On Windows, matching is case-insensitive to minimize false mismatches.
 - Resume parsing is status-aware for TSV rows: successful `Processed` rows are skipped, except `Processed`/`NoFrames`, which is retried for compatibility with older logs.
-- `Skipped`/`NotPlayable` rows remain skipped because they represent deliberate pre-flight exclusions; `Failed`, `TimedOutProcessed`, and `Skipped`/`VideoProbeError` rows are retried automatically on the next run.
+- `Skipped`/`NotPlayable` rows remain skipped by default because they represent deliberate pre-flight exclusions; add `-RetryUnplayable` to leave those rows out of the skip set and re-attempt them on the next run.
+- `Failed`, `TimedOutProcessed`, `Processed`/`NoFrames`, and `Skipped`/`VideoProbeError` rows are retried automatically on the next run.
 - New zero-frame captures are written as `Failed`/`NoFrames` so the log accurately marks them as incomplete and retry-eligible.
 - Mixing TSV and legacy lines in the same file is supported; legacy single-column rows are treated as successful `Processed` rows and skipped as before; new writes use TSV.
 
@@ -373,6 +379,7 @@ On Windows (example):
   TSV (`<FullPath>\t<Status>[\t<Reason>]`) **and** legacy single-column (`<FullPath>`) lines. Paths are
   normalized to absolute; on Windows matching is case-insensitive. You can also point to an existing file
   via `-ProcessedLogPath`. `Start-VideoBatch` honors `-ResumeFile` by skipping items up to that file.
+- **False `NotPlayable` skips after an older `-VerifyVideos` run**: upgrade to the fixed module, then rerun with `-RetryUnplayable` so `Skipped`/`NotPlayable` rows are not included in the resume skip set. Zero-flag workaround: edit `<SaveFolder>\.processed_videos.txt` (or your `-ProcessedLogPath`) and delete only the lines whose status/reason columns are `Skipped` and `NotPlayable`, then rerun normally.
 - **Crash: “There is no Runspace available to run scripts in this thread.”**
   This was caused by emitting PowerShell debug output from background stream handlers.
   Fixed in earlier patch releases; update to the latest version.

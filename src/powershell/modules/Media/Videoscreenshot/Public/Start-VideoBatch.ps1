@@ -72,6 +72,8 @@ Full path to vlc.exe. Use when VLC is not on PATH (e.g. "D:\Program Files\VideoL
 Pass --no-audio to VLC. Use when the VLC audio plugin crashes on your system (e.g. libmmdevice_plugin.dll access violation).
 .PARAMETER DeduplicateFrames
 After each video capture, remove consecutive duplicate frames whose file bytes are identical. One frame per distinct image is kept. Default off; enable for image/slideshow MP4 conversions that produce long runs of identical frames (e.g. picconvert output). Frame counts and status logging reflect the kept frames after de-dup runs.
+.PARAMETER RetryUnplayable
+Re-attempt previously logged Skipped/NotPlayable videos instead of keeping them in the resume skip set. Use after upgrading from a version that could false-skip playable videos during -VerifyVideos.
 
 .EXAMPLE
 Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots -RunCropper -PythonScriptPath .\src\python\media\crop_colours.py
@@ -121,7 +123,8 @@ function Start-VideoBatch {
 
         [string]$VlcExe,
         [switch]$NoAudio,
-        [switch]$DeduplicateFrames
+        [switch]$DeduplicateFrames,
+        [switch]$RetryUnplayable
     )
 
     # Enforce pwsh 7+ at runtime (friendly error if invoked directly)
@@ -195,7 +198,7 @@ function Start-VideoBatch {
         # Warn about ignored capture-related parameters if supplied
         $captureParams = @('SourceFolder', 'UseVlcSnapshots', 'FramesPerSecond', 'TimeLimitSeconds', 'MaxPerVideoSeconds',
             'GdiFullscreen', 'VlcStartupTimeoutSeconds', 'VerifyVideos', 'VideoProbeTimeoutSeconds', 'IncludeExtensions',
-            'FrameSelection', 'SceneChangeThreshold', 'ClearSnapshotsBeforeRun', 'VideoLimit', 'ResumeFile', 'ProcessedLogPath')
+            'FrameSelection', 'SceneChangeThreshold', 'ClearSnapshotsBeforeRun', 'VideoLimit', 'ResumeFile', 'ProcessedLogPath', 'RetryUnplayable')
         $ignored = @()
         foreach ($n in $captureParams) {
             if ($PSBoundParameters.ContainsKey($n)) { $ignored += $n }
@@ -320,7 +323,7 @@ function Start-VideoBatch {
     }
     # Always produce a usable HashSet for O(1) membership checks; log diagnostics.
     try {
-        $processedSet = Get-ResumeIndex -Path $processedLog
+        $processedSet = Get-ResumeIndex -Path $processedLog -RetryUnplayable:$RetryUnplayable
     }
     catch {
         Write-Message -Level Warn -Message ("Resume index read failed ('{0}'): {1}" -f $processedLog, $_.Exception.Message)

@@ -25,7 +25,7 @@ Describe 'Get-ResumeIndex processed-log status handling' {
         }
     }
 
-    It 'skips only true successes and deliberately unplayable videos' {
+    It 'skips only true successes and deliberately unplayable videos by default' {
         $processed = Join-Path $script:TempRoot 'processed.mp4'
         $notPlayable = Join-Path $script:TempRoot 'not-playable.mp4'
         $failed = Join-Path $script:TempRoot 'failed.mp4'
@@ -47,6 +47,34 @@ Describe 'Get-ResumeIndex processed-log status handling' {
 
         $index.Contains((Resolve-VideoPath -Path $processed)) | Should -BeTrue
         $index.Contains((Resolve-VideoPath -Path $notPlayable)) | Should -BeTrue
+        $index.Contains((Resolve-VideoPath -Path $failed)) | Should -BeFalse
+        $index.Contains((Resolve-VideoPath -Path $noFrames)) | Should -BeFalse
+        $index.Contains((Resolve-VideoPath -Path $probeError)) | Should -BeFalse
+        $index.Contains((Resolve-VideoPath -Path $timedOut)) | Should -BeFalse
+    }
+
+
+    It 'retries NotPlayable entries when RetryUnplayable is set while preserving other status behavior' {
+        $processed = Join-Path $script:TempRoot 'processed.mp4'
+        $notPlayable = Join-Path $script:TempRoot 'not-playable.mp4'
+        $failed = Join-Path $script:TempRoot 'failed.mp4'
+        $noFrames = Join-Path $script:TempRoot 'no-frames.mp4'
+        $probeError = Join-Path $script:TempRoot 'probe-error.mp4'
+        $timedOut = Join-Path $script:TempRoot 'timed-out.mp4'
+
+        Set-Content -LiteralPath $script:LogPath -Value @(
+            "$processed`tProcessed`t`t2026-05-31T00:00:00.000Z",
+            "$notPlayable`tSkipped`tNotPlayable`t2026-05-31T00:00:00.000Z",
+            "$failed`tFailed`tVLC crashed`t2026-05-31T00:00:00.000Z",
+            "$noFrames`tProcessed`tNoFrames`t2026-05-31T00:00:00.000Z",
+            "$probeError`tSkipped`tVideoProbeError`t2026-05-31T00:00:00.000Z",
+            "$timedOut`tTimedOutProcessed`tCapReached`t2026-05-31T00:00:00.000Z"
+        )
+
+        $index = Get-ResumeIndex -Path $script:LogPath -RetryUnplayable
+
+        $index.Contains((Resolve-VideoPath -Path $processed)) | Should -BeTrue
+        $index.Contains((Resolve-VideoPath -Path $notPlayable)) | Should -BeFalse
         $index.Contains((Resolve-VideoPath -Path $failed)) | Should -BeFalse
         $index.Contains((Resolve-VideoPath -Path $noFrames)) | Should -BeFalse
         $index.Contains((Resolve-VideoPath -Path $probeError)) | Should -BeFalse
