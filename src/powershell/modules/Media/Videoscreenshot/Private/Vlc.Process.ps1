@@ -418,8 +418,10 @@ function Resolve-VlcExecutable {
         return (Get-Command vlc).Source
     }
 
-    $defaultVlc = Join-Path $env:ProgramFiles 'VideoLAN\VLC\vlc.exe'
-    if (Test-Path -LiteralPath $defaultVlc) { return $defaultVlc }
+    if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+        $defaultVlc = Join-Path $env:ProgramFiles 'VideoLAN\VLC\vlc.exe'
+        if (Test-Path -LiteralPath $defaultVlc) { return $defaultVlc }
+    }
 
     Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH. Use -VlcExe to specify the path."
     throw "VLC missing."
@@ -449,6 +451,9 @@ function Initialize-VlcSidecarLog {
 
     $vlcLogFile = Join-Path $SaveFolder ".vlc_log_$RunGuid.txt"
     try {
+        if (-not (Test-Path -LiteralPath $SaveFolder -PathType Container)) {
+            throw "SaveFolder does not exist or is not a directory: $SaveFolder"
+        }
         if (Test-Path -LiteralPath $vlcLogFile -PathType Leaf) {
             Remove-Item -LiteralPath $vlcLogFile -Force -ErrorAction Stop
         }
