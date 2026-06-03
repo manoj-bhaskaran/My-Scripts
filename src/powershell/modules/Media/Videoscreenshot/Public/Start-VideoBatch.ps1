@@ -28,6 +28,8 @@ empty string or use -NoLogFile to keep console-only output.
 Disable the per-run log file while keeping console stream behavior unchanged.
 .PARAMETER ResumeFile
 Optional file path/name to resume after.
+.PARAMETER RetryUnplayable
+Re-attempt previously logged Skipped/NotPlayable videos instead of keeping them in the resume skip set. Use after upgrading from a version that could false-skip playable videos during -VerifyVideos.
 .PARAMETER MaxPerVideoSeconds
 Hard cap per video (seconds). Overrides TimeLimitSeconds when > 0.
 .PARAMETER StartupGraceSeconds
@@ -88,6 +90,7 @@ function Start-VideoBatch {
         # Resume, processed logging, and run logging
         [string]$ProcessedLogPath,
         [string]$ResumeFile,
+        [switch]$RetryUnplayable,
         [AllowEmptyString()]
         [string]$LogFile,
         [switch]$NoLogFile,
@@ -195,7 +198,7 @@ function Start-VideoBatch {
         # Warn about ignored capture-related parameters if supplied
         $captureParams = @('SourceFolder', 'UseVlcSnapshots', 'FramesPerSecond', 'TimeLimitSeconds', 'MaxPerVideoSeconds',
             'GdiFullscreen', 'VlcStartupTimeoutSeconds', 'VerifyVideos', 'VideoProbeTimeoutSeconds', 'IncludeExtensions',
-            'FrameSelection', 'SceneChangeThreshold', 'ClearSnapshotsBeforeRun', 'VideoLimit', 'ResumeFile', 'ProcessedLogPath')
+            'FrameSelection', 'SceneChangeThreshold', 'ClearSnapshotsBeforeRun', 'VideoLimit', 'ResumeFile', 'ProcessedLogPath', 'RetryUnplayable')
         $ignored = @()
         foreach ($n in $captureParams) {
             if ($PSBoundParameters.ContainsKey($n)) { $ignored += $n }
@@ -320,7 +323,7 @@ function Start-VideoBatch {
     }
     # Always produce a usable HashSet for O(1) membership checks; log diagnostics.
     try {
-        $processedSet = Get-ResumeIndex -Path $processedLog
+        $processedSet = Get-ResumeIndex -Path $processedLog -RetryUnplayable:$RetryUnplayable
     }
     catch {
         Write-Message -Level Warn -Message ("Resume index read failed ('{0}'): {1}" -f $processedLog, $_.Exception.Message)

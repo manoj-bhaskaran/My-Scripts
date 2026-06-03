@@ -20,7 +20,8 @@ function Resolve-VideoPath {
 function Convert-ProcessedLogLineToResumePath {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][string]$Line
+        [Parameter(Mandatory)][string]$Line,
+        [switch]$RetryUnplayable
     )
 
     if ([string]::IsNullOrWhiteSpace($Line)) { return $null }
@@ -33,7 +34,7 @@ function Convert-ProcessedLogLineToResumePath {
     $isTsv = $columns.Count -gt 1
     $status = if ($isTsv) { $columns[1] } else { 'Processed' }
     $reason = if ($columns.Count -ge 3) { $columns[2] } else { '' }
-    $shouldSkip = Test-ProcessedLogEntryShouldSkip -Status $status -Reason $reason -LegacyEntry:(-not $isTsv)
+    $shouldSkip = Test-ProcessedLogEntryShouldSkip -Status $status -Reason $reason -LegacyEntry:(-not $isTsv) -RetryUnplayable:$RetryUnplayable
 
     if (-not $shouldSkip -or [string]::IsNullOrWhiteSpace($rawPath)) { return $null }
 
@@ -50,7 +51,8 @@ function Test-ProcessedLogEntryShouldSkip {
     param(
         [Parameter(Mandatory)][string]$Status,
         [string]$Reason = '',
-        [switch]$LegacyEntry
+        [switch]$LegacyEntry,
+        [switch]$RetryUnplayable
     )
 
     if ($LegacyEntry) { return $true }
@@ -63,7 +65,10 @@ function Test-ProcessedLogEntryShouldSkip {
     }
 
     if ($normalizedStatus.Equals('Skipped', [StringComparison]::OrdinalIgnoreCase)) {
-        return $normalizedReason.Equals('NotPlayable', [StringComparison]::OrdinalIgnoreCase)
+        if ($normalizedReason.Equals('NotPlayable', [StringComparison]::OrdinalIgnoreCase)) {
+            return (-not $RetryUnplayable)
+        }
+        return $false
     }
 
     return $false
@@ -80,19 +85,23 @@ function Test-ProcessedLogEntryShouldSkip {
 
   TSV rows are status-aware: only successful `Processed` rows, excluding
   `Processed`/`NoFrames`, and deliberate `Skipped`/`NotPlayable` rows are added to
-  the resume skip set. Retry-eligible rows such as `Failed`, `TimedOutProcessed`,
-  `Processed`/`NoFrames`, and `Skipped`/`VideoProbeError` are not skipped. Legacy
-  single-column rows are treated as successful `Processed` entries for backward
-  compatibility.
+  the resume skip set by default. Retry-eligible rows such as `Failed`,
+  `TimedOutProcessed`, `Processed`/`NoFrames`, and `Skipped`/`VideoProbeError`
+  are not skipped. Legacy single-column rows are treated as successful
+  `Processed` entries for backward compatibility.
 .PARAMETER Path
   Path to the processed log. The file may be missing (returns an empty set).
+.PARAMETER RetryUnplayable
+  Leave `Skipped`/`NotPlayable` rows out of the skip set so they are re-attempted
+  on the next resume run.
 .OUTPUTS
   [System.Collections.Generic.HashSet[string]]
 #>
 function Get-ResumeIndex {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][string]$Path
+        [Parameter(Mandatory)][string]$Path,
+        [switch]$RetryUnplayable
     )
     # Case-insensitive by default on Windows; keeps behavior stable cross-platform.
     $set = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -102,7 +111,7 @@ function Get-ResumeIndex {
     }
     try {
         Get-Content -LiteralPath $Path -ErrorAction Stop | ForEach-Object {
-            $full = Convert-ProcessedLogLineToResumePath -Line $_
+            $full = Convert-ProcessedLogLineToResumePath -Line $_ -RetryUnplayable:$RetryUnplayable
             if (-not [string]::IsNullOrWhiteSpace($full)) {
                 [void]$set.Add($full)
             }

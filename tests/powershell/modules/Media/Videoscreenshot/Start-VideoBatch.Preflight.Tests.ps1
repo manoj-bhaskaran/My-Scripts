@@ -37,7 +37,7 @@ BeforeAll {
     }
     function Test-FolderWritable { param([string]$Path) New-Item -ItemType Directory -Path $Path -Force | Out-Null; return $true }
     function Test-CommandAvailable { param([string]$CommandName) $null -ne (Get-Command $CommandName -ErrorAction SilentlyContinue) }
-    function Get-ResumeIndex { param([string]$Path) [System.Collections.Generic.HashSet[string]]::new() }
+    function Get-ResumeIndex { param([string]$Path, [switch]$RetryUnplayable) $script:LastRetryUnplayable = [bool]$RetryUnplayable; [System.Collections.Generic.HashSet[string]]::new() }
     function Resolve-VideoPath { param([string]$Path) [System.IO.Path]::GetFullPath($Path) }
     function Initialize-PidRegistry { param($Context, [string]$SaveFolder, [string]$RunGuid) Join-Path $SaveFolder 'pids.txt' }
     function Write-ProcessedLog {
@@ -60,6 +60,7 @@ Describe 'Start-VideoBatch -VerifyVideos pre-flight' {
         $script:ProbeCalls = @()
         $script:ProcessedLogCalls = @()
         $script:StartVlcCalls = 0
+        $script:LastRetryUnplayable = $null
 
         $script:SourceFolder = Join-Path ([System.IO.Path]::GetTempPath()) ("video-source-{0}" -f [System.Guid]::NewGuid().ToString('N'))
         $script:SaveFolder = Join-Path ([System.IO.Path]::GetTempPath()) ("video-save-{0}" -f [System.Guid]::NewGuid().ToString('N'))
@@ -87,5 +88,11 @@ Describe 'Start-VideoBatch -VerifyVideos pre-flight' {
         $script:ProcessedLogCalls | Should -HaveCount 1
         $script:ProcessedLogCalls[0].Status | Should -Be 'Skipped'
         $script:ProcessedLogCalls[0].Reason | Should -Be 'NotPlayable'
+    }
+
+    It 'passes RetryUnplayable through to the resume index builder' {
+        Start-VideoBatch -SourceFolder $script:SourceFolder -SaveFolder $script:SaveFolder -VlcExe $script:FakeVlc -RetryUnplayable -IncludeExtensions '.webm'
+
+        $script:LastRetryUnplayable | Should -BeTrue
     }
 }

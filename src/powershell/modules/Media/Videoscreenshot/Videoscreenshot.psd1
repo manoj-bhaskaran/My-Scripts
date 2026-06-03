@@ -1,6 +1,6 @@
 @{
   RootModule        = 'Videoscreenshot.psm1'
-  ModuleVersion     = '3.5.0'
+  ModuleVersion     = '3.6.0'
   GUID              = '7a5f7b2d-5d7b-4b63-9f25-ef6d6b4f9b2f'
   Author            = 'Manoj Bhaskaran'
   CompanyName       = ''
@@ -15,7 +15,8 @@
   PrivateData       = @{
     PSData = @{
       Tags         = @('video','vlc','gdi','screenshots','crop','python','images','automation')
-      ReleaseNotes = '3.5.0: Add opt-in scene-change frame selection via FFmpeg with configurable threshold/backend defaults and VLC ratio fallback when FFmpeg is unavailable.
+      ReleaseNotes = '3.6.0: Add -RetryUnplayable to re-attempt stale Skipped/NotPlayable resume-log entries after probe false-skips.
+3.5.0: Add opt-in scene-change frame selection via FFmpeg with configurable threshold/backend defaults and VLC ratio fallback when FFmpeg is unavailable.
 3.4.1: Remove Private/IO.Helpers.ps1; resolve Test-FolderWritable and Add-ContentWithRetry from Core/FileOperations and replace inline Get-Command availability checks with Test-CommandAvailable from Core/ErrorHandling.
 3.4.0: Add opt-out per-run logging for Start-VideoBatch via default SaveFolder logs, -LogFile override, and -NoLogFile opt-out. Write-Message now honors a module-scoped sink so helper messages land in the same run log.'
     }

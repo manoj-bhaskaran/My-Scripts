@@ -8,6 +8,19 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-06-03
+### Added
+- **`-RetryUnplayable` switch** on `Start-VideoBatch`: opt in to re-attempt previously logged `Skipped`/`NotPlayable` videos instead of keeping stale pre-flight exclusions in the resume skip set. This recovers processed logs written by older probe versions that could falsely classify playable videos as unplayable.
+
+### Changed
+- `Get-ResumeIndex` now accepts `-RetryUnplayable` and leaves only `Skipped`/`NotPlayable` rows retry-eligible when requested; default resume behavior is unchanged, and `Failed`, `TimedOutProcessed`, `Processed`/`NoFrames`, and `Skipped`/`VideoProbeError` remain retry-eligible by default.
+
+### Docs
+- Documented the `-RetryUnplayable` recovery flow and the manual processed-log purge workaround for stale `NotPlayable` rows.
+
+### Tests
+- Expanded processed-log and `Start-VideoBatch` pre-flight coverage for default `NotPlayable` skipping, opt-in `NotPlayable` retry, and preserved retry behavior for other statuses.
+
 ## [3.5.0] - 2026-06-03
 ### Added
 - **Scene-change frame selection**: `Start-VideoBatch` now accepts `-FrameSelection SceneChange` and `-SceneChangeThreshold` to capture slideshow-style sources by detected content changes rather than fixed VLC `--scene-ratio` intervals.
