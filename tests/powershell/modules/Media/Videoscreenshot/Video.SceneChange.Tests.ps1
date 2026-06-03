@@ -50,6 +50,9 @@ BeforeAll {
     function Get-ResumeIndex { param([string]$Path, [switch]$RetryUnplayable) $script:LastRetryUnplayable = [bool]$RetryUnplayable; [System.Collections.Generic.HashSet[string]]::new() }
     function Resolve-VideoPath { param([string]$Path) [System.IO.Path]::GetFullPath($Path) }
     function Initialize-PidRegistry { param($Context, [string]$SaveFolder, [string]$RunGuid) Join-Path $SaveFolder 'pids.txt' }
+    function Resolve-VlcExecutable { param([string]$VlcExe) $VlcExe }
+    function Initialize-VlcSidecarLog { param($Context, [string]$SaveFolder, [string]$RunGuid) $null }
+    function Remove-TempRunFile { param([string]$Path, [string]$Label) }
     function Unregister-RunPid { param($Context, [int]$ProcessId) $script:UnregisterRunPidCalls++ }
     function Write-ProcessedLog { param([string]$Path, [string]$VideoPath, [string]$Status, [string]$Reason = '') }
     function Get-VideoDuration { param([string]$Path) return 1 }

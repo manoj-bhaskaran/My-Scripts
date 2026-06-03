@@ -11,6 +11,8 @@ BeforeAll {
 
     . $script:VlcProcessPath
 
+    function Write-Message { param([string]$Level, [string]$Message) }
+
     function Script:New-NativeExitCommand {
         param(
             [Parameter(Mandatory)][int]$ExitCode
