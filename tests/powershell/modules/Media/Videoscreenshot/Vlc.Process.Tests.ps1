@@ -15,7 +15,8 @@ BeforeAll {
         param([string]$Level, [string]$Message)
         # Wrap in try-catch: $script: variable assignment can fail inside Should -Throw
         # ScriptBlock contexts; swallow silently so the caller's throw propagates cleanly.
-        try { $script:WriteMessages += [pscustomobject]@{ Level = $Level; Message = $Message } } catch { }
+        try { $script:WriteMessages += [pscustomobject]@{ Level = $Level; Message = $Message } }
+        catch { Write-Debug "Write-Message stub: suppressed scope error during Should -Throw context: $_" }
     }
     function Test-CommandAvailable { param([string]$CommandName) $false }
 
