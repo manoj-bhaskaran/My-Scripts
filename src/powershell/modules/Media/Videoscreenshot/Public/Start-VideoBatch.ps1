@@ -284,35 +284,7 @@ function Start-VideoBatch {
     $requiresVlc = $VerifyVideos -or (-not $useSceneChange) -or [string]::IsNullOrWhiteSpace($resolvedFfmpegExe)
     $resolvedVlcExe = $null
     if ($requiresVlc) {
-        $resolvedVlcExe = if (-not [string]::IsNullOrWhiteSpace($VlcExe)) {
-            if (Test-Path -LiteralPath $VlcExe -PathType Leaf) {
-                $VlcExe
-            }
-            elseif (Test-Path -LiteralPath $VlcExe -PathType Container) {
-                # A directory was given — try appending vlc.exe
-                $candidate = Join-Path $VlcExe 'vlc.exe'
-                if (Test-Path -LiteralPath $candidate -PathType Leaf) { $candidate } else {
-                    Write-Message -Level Error -Message "vlc.exe not found inside directory: $VlcExe"
-                    throw "VLC missing."
-                }
-            }
-            else {
-                Write-Message -Level Error -Message "VlcExe not found: $VlcExe"
-                throw "VLC missing."
-            }
-        }
-        elseif (Test-CommandAvailable -CommandName 'vlc') {
-            (Get-Command vlc).Source
-        }
-        else {
-            # Check the default VLC install location on Windows
-            $defaultVlc = Join-Path $env:ProgramFiles 'VideoLAN\VLC\vlc.exe'
-            if (Test-Path -LiteralPath $defaultVlc) { $defaultVlc }
-            else {
-                Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH. Use -VlcExe to specify the path."
-                throw "VLC missing."
-            }
-        }
+        $resolvedVlcExe = Resolve-VlcExecutable -VlcExe $VlcExe
     }
     # Resolve processed log path and read processed/resume set (P0)
     $processedLog = if ([string]::IsNullOrWhiteSpace($ProcessedLogPath)) {
@@ -374,20 +346,7 @@ function Start-VideoBatch {
 
     # Initialize VLC's own sidecar logfile. This avoids redirecting stdout/stderr
     # pipes for the long-running process, which can deadlock when VLC is chatty.
-    $vlcLogFile = Join-Path $SaveFolder ".vlc_log_$runGuid.txt"
-    try {
-        if (Test-Path -LiteralPath $vlcLogFile -PathType Leaf) {
-            Remove-Item -LiteralPath $vlcLogFile -Force -ErrorAction Stop
-        }
-        New-Item -ItemType File -Path $vlcLogFile -Force -ErrorAction Stop | Out-Null
-        $context | Add-Member -NotePropertyName VlcLogPath -NotePropertyValue $vlcLogFile -Force
-        Write-Debug "VLC sidecar log: $vlcLogFile"
-    }
-    catch {
-        Write-Message -Level Warn -Message ("Unable to initialize VLC sidecar logfile '{0}': {1}. Continuing without VLC file logging." -f $vlcLogFile, $_.Exception.Message)
-        $context | Add-Member -NotePropertyName VlcLogPath -NotePropertyValue $null -Force
-        $vlcLogFile = $null
-    }
+    $vlcLogFile = Initialize-VlcSidecarLog -Context $context -SaveFolder $SaveFolder -RunGuid $runGuid
 
     # Discover videos (configurable extension set via param or config)
     $exts = if ($IncludeExtensions -and $IncludeExtensions.Count -gt 0) { $IncludeExtensions } else { $context.Config.VideoExtensions }
@@ -399,12 +358,8 @@ function Start-VideoBatch {
     $videos = Get-ChildItem -Path (Join-Path $SourceFolder '*') -Recurse -File -Include $patterns
     if (-not $videos) {
         Write-Message -Level Warn -Message "No videos found under $SourceFolder."
-        if ($pidFile -and (Test-Path -LiteralPath $pidFile)) {
-            Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
-        }
-        if ($vlcLogFile -and (Test-Path -LiteralPath $vlcLogFile)) {
-            Remove-Item -LiteralPath $vlcLogFile -Force -ErrorAction SilentlyContinue
-        }
+        Remove-TempRunFile -Path $pidFile -Label 'PID registry'
+        Remove-TempRunFile -Path $vlcLogFile -Label 'VLC sidecar log'
         $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed 0 file(s)" -f ($context.Version))
         return
     }
@@ -692,31 +647,17 @@ function Start-VideoBatch {
     }
 
     # Clean up the PID registry file created for this run
-    if ($pidFile -and (Test-Path -LiteralPath $pidFile)) {
-        try {
-            Remove-Item -LiteralPath $pidFile -Force -ErrorAction Stop
-            Write-Debug "Cleaned up PID registry: $pidFile"
-        }
-        catch {
-            Write-Message -Level Warn -Message ("Failed to remove PID registry file '{0}': {1}" -f $pidFile, $_.Exception.Message)
-        }
-    }
+    Remove-TempRunFile -Path $pidFile -Label 'PID registry'
 
     # Clean VLC's sidecar logfile on successful runs; retain it deterministically
     # when processing failed so startup/decoder diagnostics remain available.
-    if ($vlcLogFile -and (Test-Path -LiteralPath $vlcLogFile)) {
-        if ($retainVlcLog) {
+    if ($retainVlcLog) {
+        if (-not [string]::IsNullOrWhiteSpace($vlcLogFile)) {
             Write-Message -Level Warn -Message ("Retaining VLC sidecar log after failure: {0}" -f $vlcLogFile)
         }
-        else {
-            try {
-                Remove-Item -LiteralPath $vlcLogFile -Force -ErrorAction Stop
-                Write-Debug "Cleaned up VLC sidecar log: $vlcLogFile"
-            }
-            catch {
-                Write-Message -Level Warn -Message ("Failed to remove VLC sidecar log '{0}': {1}" -f $vlcLogFile, $_.Exception.Message)
-            }
-        }
+    }
+    else {
+        Remove-TempRunFile -Path $vlcLogFile -Label 'VLC sidecar log'
     }
 
     $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — processed {1} file(s)" -f ($context.Version), $processedCount)

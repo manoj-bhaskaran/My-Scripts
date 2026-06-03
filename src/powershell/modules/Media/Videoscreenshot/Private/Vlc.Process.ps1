@@ -382,6 +382,119 @@ function Start-Vlc {
 }
 <#
 .SYNOPSIS
+  Resolve the absolute path to vlc.exe from an explicit hint or auto-discovery.
+.DESCRIPTION
+  Resolution order:
+    1. Explicit file path (VlcExe is a .exe leaf)
+    2. Explicit directory path (VlcExe is a directory; appends vlc.exe)
+    3. vlc found on PATH via Test-CommandAvailable / Get-Command
+    4. Default install at $env:ProgramFiles\VideoLAN\VLC\vlc.exe
+  Throws "VLC missing." with a user-readable Write-Message Error when VLC cannot be found.
+.PARAMETER VlcExe
+  Optional explicit path — may be a file, a directory, or empty/null for auto-discovery.
+.OUTPUTS
+  [string] Absolute path to vlc.exe.
+#>
+function Resolve-VlcExecutable {
+    param([string]$VlcExe)
+
+    if (-not [string]::IsNullOrWhiteSpace($VlcExe)) {
+        if (Test-Path -LiteralPath $VlcExe -PathType Leaf) {
+            return $VlcExe
+        }
+        elseif (Test-Path -LiteralPath $VlcExe -PathType Container) {
+            $candidate = Join-Path $VlcExe 'vlc.exe'
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+            Write-Message -Level Error -Message "vlc.exe not found inside directory: $VlcExe"
+            throw "VLC missing."
+        }
+        else {
+            Write-Message -Level Error -Message "VlcExe not found: $VlcExe"
+            throw "VLC missing."
+        }
+    }
+
+    if (Test-CommandAvailable -CommandName 'vlc') {
+        return (Get-Command vlc).Source
+    }
+
+    $defaultVlc = Join-Path $env:ProgramFiles 'VideoLAN\VLC\vlc.exe'
+    if (Test-Path -LiteralPath $defaultVlc) { return $defaultVlc }
+
+    Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH. Use -VlcExe to specify the path."
+    throw "VLC missing."
+}
+
+<#
+.SYNOPSIS
+  Create the per-run VLC sidecar log file and attach its path to the run context.
+.DESCRIPTION
+  Creates an empty .vlc_log_<RunGuid>.txt in SaveFolder, attaches VlcLogPath to Context,
+  and returns the resolved path. Returns $null (with a warning) on failure rather than throwing.
+.PARAMETER Context
+  Run context object; VlcLogPath is attached to this object.
+.PARAMETER SaveFolder
+  Folder where the sidecar log is created.
+.PARAMETER RunGuid
+  Short GUID suffix that makes the filename unique to this run.
+.OUTPUTS
+  [string] path of the created log file, or $null on failure.
+#>
+function Initialize-VlcSidecarLog {
+    param(
+        [Parameter(Mandatory)][psobject]$Context,
+        [Parameter(Mandatory)][string]$SaveFolder,
+        [Parameter(Mandatory)][string]$RunGuid
+    )
+
+    $vlcLogFile = Join-Path $SaveFolder ".vlc_log_$RunGuid.txt"
+    try {
+        if (Test-Path -LiteralPath $vlcLogFile -PathType Leaf) {
+            Remove-Item -LiteralPath $vlcLogFile -Force -ErrorAction Stop
+        }
+        New-Item -ItemType File -Path $vlcLogFile -Force -ErrorAction Stop | Out-Null
+        $Context | Add-Member -NotePropertyName VlcLogPath -NotePropertyValue $vlcLogFile -Force
+        Write-Debug "VLC sidecar log: $vlcLogFile"
+        return $vlcLogFile
+    }
+    catch {
+        Write-Message -Level Warn -Message ("Unable to initialize VLC sidecar logfile '{0}': {1}. Continuing without VLC file logging." -f $vlcLogFile, $_.Exception.Message)
+        $Context | Add-Member -NotePropertyName VlcLogPath -NotePropertyValue $null -Force
+        return $null
+    }
+}
+
+<#
+.SYNOPSIS
+  Idempotently remove a temporary run file, warning on failure.
+.DESCRIPTION
+  No-ops when Path is null, empty, or the file does not exist.
+  Emits a Warn-level Write-Message when Remove-Item fails.
+.PARAMETER Path
+  Full path to the file to remove. Null/empty is silently ignored.
+.PARAMETER Label
+  Human-readable name used in log/warning messages (e.g. "PID registry", "VLC sidecar log").
+#>
+function Remove-TempRunFile {
+    param(
+        [string]$Path,
+        [string]$Label = 'temp file'
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return }
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+
+    try {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+        Write-Debug ("Cleaned up {0}: {1}" -f $Label, $Path)
+    }
+    catch {
+        Write-Message -Level Warn -Message ("Failed to remove {0} '{1}': {2}" -f $Label, $Path, $_.Exception.Message)
+    }
+}
+
+<#
+.SYNOPSIS
   Attempt graceful VLC shutdown, then force-kill if needed.
 .PARAMETER Context
   Run context object with timing knobs (SnapshotTerminationExtraSeconds/WaitProcessTimeoutSeconds).

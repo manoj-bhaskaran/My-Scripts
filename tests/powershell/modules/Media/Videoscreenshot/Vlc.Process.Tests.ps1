@@ -183,3 +183,120 @@ Describe 'Stop-Vlc' {
         $source | Should -Not -Match '\.CloseMainWindow\('
     }
 }
+
+Describe 'Resolve-VlcExecutable' {
+    BeforeAll {
+        $script:TempVlcDir = Join-Path ([System.IO.Path]::GetTempPath()) ("resolve-vlc-test-{0}" -f [System.Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:TempVlcDir -Force | Out-Null
+        $script:FakeVlcExe = Join-Path $script:TempVlcDir 'vlc.exe'
+        [System.IO.File]::WriteAllText($script:FakeVlcExe, '')
+    }
+
+    AfterAll {
+        Remove-Item -LiteralPath $script:TempVlcDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'returns the path when given an explicit file path that exists' {
+        $result = Resolve-VlcExecutable -VlcExe $script:FakeVlcExe
+        $result | Should -Be $script:FakeVlcExe
+    }
+
+    It 'resolves vlc.exe inside a directory when given an explicit directory path' {
+        $result = Resolve-VlcExecutable -VlcExe $script:TempVlcDir
+        $result | Should -Be $script:FakeVlcExe
+    }
+
+    It 'throws "VLC missing." when an explicit directory contains no vlc.exe' {
+        $emptyDir = Join-Path ([System.IO.Path]::GetTempPath()) ("resolve-vlc-empty-{0}" -f [System.Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+        try {
+            { Resolve-VlcExecutable -VlcExe $emptyDir } | Should -Throw -ExpectedMessage '*VLC missing*'
+        }
+        finally {
+            Remove-Item -LiteralPath $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'throws "VLC missing." when an explicit file path does not exist' {
+        { Resolve-VlcExecutable -VlcExe 'C:\NonExistent\vlc.exe' } | Should -Throw -ExpectedMessage '*VLC missing*'
+    }
+
+    It 'falls back to PATH when no VlcExe is supplied and vlc is available' {
+        Mock Test-CommandAvailable { $true }
+        Mock Get-Command { [pscustomobject]@{ Source = 'C:\fake\vlc.exe' } }
+
+        $result = Resolve-VlcExecutable -VlcExe ''
+        $result | Should -Be 'C:\fake\vlc.exe'
+    }
+
+    It 'throws "VLC missing." when no VlcExe supplied, not on PATH, and default install absent' {
+        Mock Test-CommandAvailable { $false }
+        Mock Test-Path { $false }
+
+        { Resolve-VlcExecutable -VlcExe '' } | Should -Throw -ExpectedMessage '*VLC missing*'
+    }
+}
+
+Describe 'Initialize-VlcSidecarLog' {
+    It 'creates the log file, attaches VlcLogPath to Context, and returns the path' {
+        $saveFolder = Join-Path ([System.IO.Path]::GetTempPath()) ("vlc-sidecar-init-{0}" -f [System.Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $saveFolder -Force | Out-Null
+        $ctx = [pscustomobject]@{}
+        $guid = 'testguid1'
+
+        try {
+            $result = Initialize-VlcSidecarLog -Context $ctx -SaveFolder $saveFolder -RunGuid $guid
+            $expected = Join-Path $saveFolder ".vlc_log_$guid.txt"
+
+            $result | Should -Be $expected
+            $ctx.VlcLogPath | Should -Be $expected
+            Test-Path -LiteralPath $expected | Should -BeTrue
+        }
+        finally {
+            Remove-Item -LiteralPath $saveFolder -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'returns $null and attaches $null to Context when the folder is not writable' {
+        $ctx = [pscustomobject]@{}
+
+        $result = Initialize-VlcSidecarLog -Context $ctx -SaveFolder 'Z:\NoSuchFolder\Impossible' -RunGuid 'g2'
+
+        $result | Should -BeNullOrEmpty
+        $ctx.VlcLogPath | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Remove-TempRunFile' {
+    It 'no-ops silently when Path is null or empty' {
+        { Remove-TempRunFile -Path $null -Label 'test' } | Should -Not -Throw
+        { Remove-TempRunFile -Path '' -Label 'test' } | Should -Not -Throw
+    }
+
+    It 'no-ops silently when the file does not exist' {
+        { Remove-TempRunFile -Path 'C:\NoSuchFile_xyz.tmp' -Label 'test' } | Should -Not -Throw
+    }
+
+    It 'removes an existing file' {
+        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("remove-temp-{0}.tmp" -f [System.Guid]::NewGuid().ToString('N'))
+        [System.IO.File]::WriteAllText($tmp, '')
+
+        Remove-TempRunFile -Path $tmp -Label 'test file'
+
+        Test-Path -LiteralPath $tmp | Should -BeFalse
+    }
+
+    It 'emits a warning when Remove-Item fails' {
+        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("remove-temp-fail-{0}.tmp" -f [System.Guid]::NewGuid().ToString('N'))
+        [System.IO.File]::WriteAllText($tmp, '')
+
+        Mock Remove-Item { throw 'Access denied' }
+        Mock Write-Message { }
+
+        Remove-TempRunFile -Path $tmp -Label 'locked file'
+
+        Should -Invoke Write-Message -Times 1 -ParameterFilter { $Level -eq 'Warn' }
+
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
+}

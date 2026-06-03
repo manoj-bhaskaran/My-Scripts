@@ -8,6 +8,16 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.6.1] - 2026-06-03
+### Changed
+- **Extract `Resolve-VlcExecutable`** into `Private/Vlc.Process.ps1`: consolidates the four-case VLC resolution logic (explicit file, explicit directory, PATH, default install) that was inlined in `Start-VideoBatch`. Throws `"VLC missing."` with a user-readable error on all failure paths.
+- **Extract `Initialize-VlcSidecarLog`** into `Private/Vlc.Process.ps1`: creates the per-run `.vlc_log_<RunGuid>.txt` sidecar file, attaches `VlcLogPath` to the run context, and returns `$null` with a warning on failure rather than throwing.
+- **Extract `Remove-TempRunFile`** into `Private/Vlc.Process.ps1`: idempotent helper that removes a temp file by path, no-oping on null/empty or absent paths and warning on `Remove-Item` failure. Replaces two identical `if → Test-Path → try { Remove-Item } catch { Write-Message Warn }` blocks in `Start-VideoBatch`.
+- `Start-VideoBatch` reduced by ~85 lines; behaviour is unchanged.
+
+### Tests
+- Extended `Vlc.Process.Tests.ps1` with Pester coverage for all three new helpers: explicit-file path, directory path, PATH fallback, default install, missing-VLC throw for `Resolve-VlcExecutable`; sidecar log created and attached to context, failure path returns `$null` for `Initialize-VlcSidecarLog`; null/empty/absent path no-ops, `Remove-Item` failure emits warning for `Remove-TempRunFile`.
+
 ## [3.6.0] - 2026-06-03
 ### Added
 - **`-RetryUnplayable` switch** on `Start-VideoBatch`: opt in to re-attempt previously logged `Skipped`/`NotPlayable` videos instead of keeping stale pre-flight exclusions in the resume skip set. This recovers processed logs written by older probe versions that could falsely classify playable videos as unplayable.
