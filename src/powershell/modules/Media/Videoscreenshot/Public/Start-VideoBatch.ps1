@@ -34,6 +34,11 @@ Hard cap per video (seconds). Overrides TimeLimitSeconds when > 0.
 Extra seconds added to snapshot wait to absorb VLC startup.
 .PARAMETER UseVlcSnapshots
 Use VLC scene snapshots; otherwise use GDI capture.
+.PARAMETER FrameSelection
+Frame extraction strategy. Ratio preserves the existing fixed VLC --scene-ratio cadence.
+SceneChange uses FFmpeg scene detection when available and falls back to VLC ratio snapshots with a warning when FFmpeg is missing.
+.PARAMETER SceneChangeThreshold
+FFmpeg scene detection threshold (0.0-1.0) used with -FrameSelection SceneChange.
 .PARAMETER GdiFullscreen
 With GDI capture, request fullscreen/top-most playback.
 .PARAMETER VlcStartupTimeoutSeconds
@@ -92,6 +97,10 @@ function Start-VideoBatch {
         [ValidateRange(0, 60)][int]$StartupGraceSeconds = 2,
 
         [switch]$UseVlcSnapshots,
+        [ValidateSet('Ratio', 'SceneChange')]
+        [string]$FrameSelection = 'Ratio',
+        [ValidateRange(0, 1)]
+        [double]$SceneChangeThreshold = 0.35,
         [switch]$GdiFullscreen,
         [int]$VlcStartupTimeoutSeconds = 10,
         # Optional validation / discovery flexibility
@@ -119,9 +128,21 @@ function Start-VideoBatch {
     Assert-Pwsh7OrThrow
 
     # Policy: helpers throw; only this function emits user-facing messages.
-    $mode = ($CropOnly ? 'Crop-only' : ($UseVlcSnapshots ? 'VLC snapshots' : 'GDI+ desktop'))
     $runGuid = [Guid]::NewGuid().ToString('N').Substring(0, 8)
     $context = New-VideoRunContext -RequestedFps $FramesPerSecond -SaveFolder $SaveFolder -RunGuid $runGuid
+    if (-not $PSBoundParameters.ContainsKey('FrameSelection') -and $context.Config -and $context.Config.FrameSelection) {
+        $FrameSelection = [string]$context.Config.FrameSelection
+    }
+    if (-not $PSBoundParameters.ContainsKey('SceneChangeThreshold') -and $context.Config -and $context.Config.SceneChange -and $null -ne $context.Config.SceneChange.Threshold) {
+        $SceneChangeThreshold = [double]$context.Config.SceneChange.Threshold
+    }
+    $useSceneChange = ($FrameSelection -eq 'SceneChange')
+    $sceneChangeBackend = 'ffmpeg'
+    if ($context.Config -and $context.Config.SceneChange -and -not [string]::IsNullOrWhiteSpace([string]$context.Config.SceneChange.Backend)) {
+        $sceneChangeBackend = ([string]$context.Config.SceneChange.Backend).ToLowerInvariant()
+    }
+    if ($useSceneChange) { $UseVlcSnapshots = $true }
+    $mode = ($CropOnly ? 'Crop-only' : ($useSceneChange ? 'Scene-change snapshots' : ($UseVlcSnapshots ? 'VLC snapshots' : 'GDI+ desktop')))
 
     if ($CropOnly -and -not $PSBoundParameters.ContainsKey('SaveFolder')) {
         throw "CropOnly requires -SaveFolder pointing to the folder containing images to crop."
@@ -174,7 +195,7 @@ function Start-VideoBatch {
         # Warn about ignored capture-related parameters if supplied
         $captureParams = @('SourceFolder', 'UseVlcSnapshots', 'FramesPerSecond', 'TimeLimitSeconds', 'MaxPerVideoSeconds',
             'GdiFullscreen', 'VlcStartupTimeoutSeconds', 'VerifyVideos', 'VideoProbeTimeoutSeconds', 'IncludeExtensions',
-            'ClearSnapshotsBeforeRun', 'VideoLimit', 'ResumeFile', 'ProcessedLogPath')
+            'FrameSelection', 'SceneChangeThreshold', 'ClearSnapshotsBeforeRun', 'VideoLimit', 'ResumeFile', 'ProcessedLogPath')
         $ignored = @()
         foreach ($n in $captureParams) {
             if ($PSBoundParameters.ContainsKey($n)) { $ignored += $n }
@@ -236,33 +257,58 @@ function Start-VideoBatch {
         Write-Message -Level Error -Message "SourceFolder not found: $SourceFolder"
         throw "Invalid SourceFolder."
     }
-    $resolvedVlcExe = if (-not [string]::IsNullOrWhiteSpace($VlcExe)) {
-        if (Test-Path -LiteralPath $VlcExe -PathType Leaf) {
-            $VlcExe
-        }
-        elseif (Test-Path -LiteralPath $VlcExe -PathType Container) {
-            # A directory was given — try appending vlc.exe
-            $candidate = Join-Path $VlcExe 'vlc.exe'
-            if (Test-Path -LiteralPath $candidate -PathType Leaf) { $candidate } else {
-                Write-Message -Level Error -Message "vlc.exe not found inside directory: $VlcExe"
-                throw "VLC missing."
+    $resolvedFfmpegExe = $null
+    if ($useSceneChange) {
+        if ($sceneChangeBackend -eq 'ffmpeg') {
+            if (Get-Command Get-FfmpegCommand -ErrorAction SilentlyContinue) {
+                $resolvedFfmpegExe = Get-FfmpegCommand
+            }
+            else {
+                try { $resolvedFfmpegExe = (Get-Command ffmpeg -ErrorAction Stop).Source } catch { $resolvedFfmpegExe = $null }
+            }
+            if ([string]::IsNullOrWhiteSpace($resolvedFfmpegExe)) {
+                Write-Message -Level Warn -Message "FrameSelection=SceneChange requested but ffmpeg was not found on PATH; falling back to VLC --scene-ratio snapshots."
+            }
+            else {
+                Write-Message -Level Info -Message ("FrameSelection=SceneChange using ffmpeg backend (threshold={0})" -f $SceneChangeThreshold)
             }
         }
         else {
-            Write-Message -Level Error -Message "VlcExe not found: $VlcExe"
-            throw "VLC missing."
+            Write-Message -Level Warn -Message ("FrameSelection=SceneChange backend '{0}' is not available; falling back to VLC --scene-ratio snapshots." -f $sceneChangeBackend)
         }
     }
-    elseif (Test-CommandAvailable -CommandName 'vlc') {
-        (Get-Command vlc).Source
-    }
-    else {
-        # Check the default VLC install location on Windows
-        $defaultVlc = Join-Path $env:ProgramFiles 'VideoLAN\VLC\vlc.exe'
-        if (Test-Path -LiteralPath $defaultVlc) { $defaultVlc }
+
+    $requiresVlc = $VerifyVideos -or (-not $useSceneChange) -or [string]::IsNullOrWhiteSpace($resolvedFfmpegExe)
+    $resolvedVlcExe = $null
+    if ($requiresVlc) {
+        $resolvedVlcExe = if (-not [string]::IsNullOrWhiteSpace($VlcExe)) {
+            if (Test-Path -LiteralPath $VlcExe -PathType Leaf) {
+                $VlcExe
+            }
+            elseif (Test-Path -LiteralPath $VlcExe -PathType Container) {
+                # A directory was given — try appending vlc.exe
+                $candidate = Join-Path $VlcExe 'vlc.exe'
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) { $candidate } else {
+                    Write-Message -Level Error -Message "vlc.exe not found inside directory: $VlcExe"
+                    throw "VLC missing."
+                }
+            }
+            else {
+                Write-Message -Level Error -Message "VlcExe not found: $VlcExe"
+                throw "VLC missing."
+            }
+        }
+        elseif (Test-CommandAvailable -CommandName 'vlc') {
+            (Get-Command vlc).Source
+        }
         else {
-            Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH. Use -VlcExe to specify the path."
-            throw "VLC missing."
+            # Check the default VLC install location on Windows
+            $defaultVlc = Join-Path $env:ProgramFiles 'VideoLAN\VLC\vlc.exe'
+            if (Test-Path -LiteralPath $defaultVlc) { $defaultVlc }
+            else {
+                Write-Message -Level Error -Message "VLC (vlc.exe) not found in PATH. Use -VlcExe to specify the path."
+                throw "VLC missing."
+            }
         }
     }
     # Resolve processed log path and read processed/resume set (P0)
@@ -416,17 +462,7 @@ function Start-VideoBatch {
         $stopAfter = [double]$capSeconds
 
         try {
-            $p = Start-Vlc -Context $context `
-                -VideoPath $video.FullName `
-                -SaveFolder $SaveFolder `
-                -UseVlcSnapshots:$UseVlcSnapshots `
-                -RequestedFps $FramesPerSecond `
-                -StopAtSeconds $stopAfter `
-                -GdiFullscreen:$GdiFullscreen `
-                -StartupTimeoutSeconds $VlcStartupTimeoutSeconds `
-                -VlcExe $resolvedVlcExe `
-                -NoAudio:$NoAudio
-
+            $baseWait = $null
             if ($UseVlcSnapshots) {
                 $baseWait = if ($capSeconds -gt 0) {
                     [int]$capSeconds
@@ -446,19 +482,66 @@ function Start-VideoBatch {
                     }
                 }
                 $waitSeconds = [int]([Math]::Max(1, $baseWait + [int]$StartupGraceSeconds))
-                Write-Debug ("TRACE Start-VideoBatch: about to call Wait-ForSnapshotFrames (MaxSeconds={0}, Prefix={1}, CapSeconds={2})" -f $waitSeconds, $scenePrefix, $capSeconds)
-                $snapStats = Wait-ForSnapshotFrames -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -MaxSeconds $waitSeconds -Process $p `
-                    -IdleTimeoutSeconds ([int]$context.Config.SnapshotIdleTimeoutSeconds) `
-                    -WarmUpSeconds ([int]$context.Config.SnapshotIdleWarmUpSeconds)
-                $snapType = if ($null -ne $snapStats) { $snapStats.GetType().FullName } else { '<null>' }
-                $snapStr = if ($null -ne $snapStats) { $snapStats.ToString() } else { '<null>' }
-                Write-Debug ("TRACE Start-VideoBatch: Wait-ForSnapshotFrames returned type={0} tostring={1}" -f $snapType, $snapStr)
-                if ($null -ne $snapStats -and $snapStats.HitMaxSeconds -and $snapStats.ProcessAliveAtExit) {
-                    $retainVlcLog = $true
-                    Write-Message -Level Warn -Message ("VLC snapshot cap hit while playback was still active for: {0}; marking as timeout/truncation so resume can retry." -f $video.FullName)
+
+                if ($useSceneChange -and -not [string]::IsNullOrWhiteSpace($resolvedFfmpegExe)) {
+                    $includeFirstFrame = $true
+                    $ffmpegBaseArgs = @('-hide_banner', '-loglevel', 'error', '-nostdin', '-y')
+                    if ($context.Config.SceneChange) {
+                        if ($null -ne $context.Config.SceneChange.IncludeFirstFrame) { $includeFirstFrame = [bool]$context.Config.SceneChange.IncludeFirstFrame }
+                        if ($context.Config.SceneChange.FfmpegArgs) { $ffmpegBaseArgs = [string[]]$context.Config.SceneChange.FfmpegArgs }
+                    }
+                    Write-Debug ("TRACE Start-VideoBatch: about to call Invoke-FfmpegSceneChangeCapture (MaxSeconds={0}, Prefix={1}, Threshold={2})" -f $waitSeconds, $scenePrefix, $SceneChangeThreshold)
+                    $snapStats = Invoke-FfmpegSceneChangeCapture `
+                        -FfmpegExe $resolvedFfmpegExe `
+                        -VideoPath $video.FullName `
+                        -SaveFolder $SaveFolder `
+                        -ScenePrefix $scenePrefix `
+                        -Threshold $SceneChangeThreshold `
+                        -StopAtSeconds $stopAfter `
+                        -TimeoutSeconds $waitSeconds `
+                        -IncludeFirstFrame $includeFirstFrame `
+                        -BaseArgs $ffmpegBaseArgs
+                    $snapType = if ($null -ne $snapStats) { $snapStats.GetType().FullName } else { '<null>' }
+                    $snapStr = if ($null -ne $snapStats) { $snapStats.ToString() } else { '<null>' }
+                    Write-Debug ("TRACE Start-VideoBatch: Invoke-FfmpegSceneChangeCapture returned type={0} tostring={1}" -f $snapType, $snapStr)
+                }
+                else {
+                    $p = Start-Vlc -Context $context `
+                        -VideoPath $video.FullName `
+                        -SaveFolder $SaveFolder `
+                        -UseVlcSnapshots:$UseVlcSnapshots `
+                        -RequestedFps $FramesPerSecond `
+                        -StopAtSeconds $stopAfter `
+                        -GdiFullscreen:$GdiFullscreen `
+                        -StartupTimeoutSeconds $VlcStartupTimeoutSeconds `
+                        -VlcExe $resolvedVlcExe `
+                        -NoAudio:$NoAudio
+
+                    Write-Debug ("TRACE Start-VideoBatch: about to call Wait-ForSnapshotFrames (MaxSeconds={0}, Prefix={1}, CapSeconds={2})" -f $waitSeconds, $scenePrefix, $capSeconds)
+                    $snapStats = Wait-ForSnapshotFrames -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -MaxSeconds $waitSeconds -Process $p `
+                        -IdleTimeoutSeconds ([int]$context.Config.SnapshotIdleTimeoutSeconds) `
+                        -WarmUpSeconds ([int]$context.Config.SnapshotIdleWarmUpSeconds)
+                    $snapType = if ($null -ne $snapStats) { $snapStats.GetType().FullName } else { '<null>' }
+                    $snapStr = if ($null -ne $snapStats) { $snapStats.ToString() } else { '<null>' }
+                    Write-Debug ("TRACE Start-VideoBatch: Wait-ForSnapshotFrames returned type={0} tostring={1}" -f $snapType, $snapStr)
+                    if ($null -ne $snapStats -and $snapStats.HitMaxSeconds -and $snapStats.ProcessAliveAtExit) {
+                        $retainVlcLog = $true
+                        Write-Message -Level Warn -Message ("VLC snapshot cap hit while playback was still active for: {0}; marking as timeout/truncation so resume can retry." -f $video.FullName)
+                    }
                 }
             }
             else {
+                $p = Start-Vlc -Context $context `
+                    -VideoPath $video.FullName `
+                    -SaveFolder $SaveFolder `
+                    -UseVlcSnapshots:$UseVlcSnapshots `
+                    -RequestedFps $FramesPerSecond `
+                    -StopAtSeconds $stopAfter `
+                    -GdiFullscreen:$GdiFullscreen `
+                    -StartupTimeoutSeconds $VlcStartupTimeoutSeconds `
+                    -VlcExe $resolvedVlcExe `
+                    -NoAudio:$NoAudio
+
                 $dur = if ($capSeconds -gt 0) { [int]$capSeconds } else { [int]$context.Config.GdiCaptureDefaultSeconds }
                 Write-Debug ("TRACE Start-VideoBatch: about to call Invoke-GdiCapture (DurationSeconds={0}, FPS={1}, Prefix={2})" -f $dur, $FramesPerSecond, $scenePrefix)
                 $gdiStats = Invoke-GdiCapture -DurationSeconds $dur -Fps $FramesPerSecond -SaveFolder $SaveFolder -ScenePrefix $scenePrefix

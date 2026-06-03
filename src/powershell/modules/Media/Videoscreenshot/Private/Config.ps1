@@ -22,6 +22,7 @@
               SnapshotDurationSlackFactor, SnapshotMinimumTimeoutSeconds,
               SnapshotTerminationExtraSeconds, StopVlcWaitMs, WaitProcessTimeoutSeconds
     - Discovery: VideoExtensions
+    - Frame selection: FrameSelection, SceneChange
     - GDI: GdiCaptureDefaultSeconds
     - Python: RequiredPackages (used by Invoke-Cropper preflight)
 .NOTES
@@ -121,6 +122,26 @@ function Get-DefaultConfig {
         # MaxPerVideoSeconds nor TimeLimitSeconds is provided. This ensures
         # finite capture sessions by default. Typical range: 5–30 s.
         GdiCaptureDefaultSeconds        = 10
+
+        # =========================
+        # Frame selection
+        # =========================
+
+        # Default capture strategy for Start-VideoBatch. 'Ratio' preserves the
+        # existing VLC --scene-ratio cadence; 'SceneChange' opts into FFmpeg's
+        # select=gt(scene,threshold) path to capture one frame per detected
+        # picture change. The public cmdlet defaults to Ratio unless overridden.
+        FrameSelection                  = 'Ratio'
+
+        SceneChange                     = @{
+            # FFmpeg scene scores are normalized from 0.0 to 1.0. Lower values
+            # detect smaller changes; higher values emit fewer frames. 0.35 is a
+            # conservative slideshow-friendly default.
+            Threshold         = 0.35
+            Backend           = 'ffmpeg'
+            IncludeFirstFrame = $true
+            FfmpegArgs        = @('-hide_banner', '-loglevel', 'error', '-nostdin', '-y')
+        }
 
         # =========================
         # VLC process logging

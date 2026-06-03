@@ -8,6 +8,18 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-06-03
+### Added
+- **Scene-change frame selection**: `Start-VideoBatch` now accepts `-FrameSelection SceneChange` and `-SceneChangeThreshold` to capture slideshow-style sources by detected content changes rather than fixed VLC `--scene-ratio` intervals.
+- **FFmpeg scene-change backend**: new `Private/Video.SceneChange.ps1` helper builds and runs FFmpeg `select` filter captures while preserving the existing `<video-name>_NNNNN.png` output prefix convention.
+- **Configurable scene-change defaults**: `Get-DefaultConfig` now exposes `FrameSelection` plus `SceneChange.Threshold`, `SceneChange.Backend`, `SceneChange.IncludeFirstFrame`, and `SceneChange.FfmpegArgs`.
+
+### Changed
+- Scene-change mode bypasses VLC entirely when `ffmpeg` is available; when FFmpeg is unavailable, the entrypoint warns and falls back to the existing VLC ratio snapshot path without failing the batch.
+
+### Tests
+- New `tests/.../Video.SceneChange.Tests.ps1` covers FFmpeg argument construction, default ratio-mode preservation, FFmpeg scene-change routing, and graceful VLC fallback when FFmpeg is unavailable.
+
 ## [3.4.1] - 2026-06-01
 ### Changed
 - **Remove `Private/IO.Helpers.ps1`**: `Add-ContentWithRetry` and `Test-FolderWritable` are now resolved from `Core/FileOperations`. The module manifest declares `FileOperations >= 1.0.3` and `ErrorHandling >= 1.1.1` in `RequiredModules`.
