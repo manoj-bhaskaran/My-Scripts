@@ -11,6 +11,15 @@ BeforeAll {
 
     . $script:VlcProcessPath
 
+    function Write-Message {
+        param([string]$Level, [string]$Message)
+        # Wrap in try-catch: $script: variable assignment can fail inside Should -Throw
+        # ScriptBlock contexts; swallow silently so the caller's throw propagates cleanly.
+        try { $script:WriteMessages += [pscustomobject]@{ Level = $Level; Message = $Message } }
+        catch { Write-Debug "Write-Message stub: suppressed scope error during Should -Throw context: $_" }
+    }
+    function Test-CommandAvailable { param([string]$CommandName) $false }
+
     function Script:New-NativeExitCommand {
         param(
             [Parameter(Mandatory)][int]$ExitCode
@@ -181,5 +190,127 @@ Describe 'Stop-Vlc' {
         $source = Get-Content -LiteralPath $script:VlcProcessPath -Raw
 
         $source | Should -Not -Match '\.CloseMainWindow\('
+    }
+}
+
+Describe 'Resolve-VlcExecutable' {
+    BeforeAll {
+        $script:TempVlcDir = Join-Path ([System.IO.Path]::GetTempPath()) ("resolve-vlc-test-{0}" -f [System.Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:TempVlcDir -Force | Out-Null
+        $script:FakeVlcExe = Join-Path $script:TempVlcDir 'vlc.exe'
+        [System.IO.File]::WriteAllText($script:FakeVlcExe, '')
+    }
+
+    AfterAll {
+        Remove-Item -LiteralPath $script:TempVlcDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'returns the path when given an explicit file path that exists' {
+        $result = Resolve-VlcExecutable -VlcExe $script:FakeVlcExe
+        $result | Should -Be $script:FakeVlcExe
+    }
+
+    It 'resolves vlc.exe inside a directory when given an explicit directory path' {
+        $result = Resolve-VlcExecutable -VlcExe $script:TempVlcDir
+        $result | Should -Be $script:FakeVlcExe
+    }
+
+    It 'throws "VLC missing." when an explicit directory contains no vlc.exe' {
+        $emptyDir = Join-Path ([System.IO.Path]::GetTempPath()) ("resolve-vlc-empty-{0}" -f [System.Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+        try {
+            { Resolve-VlcExecutable -VlcExe $emptyDir } | Should -Throw -ExpectedMessage '*VLC missing*'
+        }
+        finally {
+            Remove-Item -LiteralPath $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'throws "VLC missing." when an explicit file path does not exist' {
+        $nonExistent = Join-Path ([System.IO.Path]::GetTempPath()) ("no-vlc-{0}.exe" -f [System.Guid]::NewGuid().ToString('N'))
+        { Resolve-VlcExecutable -VlcExe $nonExistent } | Should -Throw -ExpectedMessage '*VLC missing*'
+    }
+
+    It 'falls back to PATH when no VlcExe is supplied and vlc is available' {
+        Mock Test-CommandAvailable { $true }
+        Mock Get-Command { [pscustomobject]@{ Source = '/usr/bin/vlc' } } -ParameterFilter { $Name -eq 'vlc' }
+
+        $result = Resolve-VlcExecutable -VlcExe ''
+        $result | Should -Be '/usr/bin/vlc'
+    }
+
+    It 'throws "VLC missing." when no VlcExe supplied, not on PATH, and default install absent' {
+        # Test-CommandAvailable stub returns $false by default; default install path won't exist on CI.
+        $script:WriteMessages = @()
+        { Resolve-VlcExecutable -VlcExe '' } | Should -Throw -ExpectedMessage '*VLC missing*'
+    }
+}
+
+Describe 'Initialize-VlcSidecarLog' {
+    It 'creates the log file, attaches VlcLogPath to Context, and returns the path' {
+        $saveFolder = Join-Path ([System.IO.Path]::GetTempPath()) ("vlc-sidecar-init-{0}" -f [System.Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $saveFolder -Force | Out-Null
+        $ctx = [pscustomobject]@{}
+        $guid = 'testguid1'
+
+        try {
+            $result = Initialize-VlcSidecarLog -Context $ctx -SaveFolder $saveFolder -RunGuid $guid
+            $expected = Join-Path $saveFolder ".vlc_log_$guid.txt"
+
+            $result | Should -Be $expected
+            $ctx.VlcLogPath | Should -Be $expected
+            Test-Path -LiteralPath $expected | Should -BeTrue
+        }
+        finally {
+            Remove-Item -LiteralPath $saveFolder -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'returns $null and attaches $null to Context when the folder is not writable' {
+        $ctx = [pscustomobject]@{}
+        # Use a path that does not exist as a directory — Initialize-VlcSidecarLog
+        # now checks for the container explicitly, so this reliably triggers the failure path.
+        $badFolder = Join-Path ([System.IO.Path]::GetTempPath()) ("no-such-{0}" -f [System.Guid]::NewGuid().ToString('N'))
+
+        $result = Initialize-VlcSidecarLog -Context $ctx -SaveFolder $badFolder -RunGuid 'g2'
+
+        $result | Should -BeNullOrEmpty
+        $ctx.VlcLogPath | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Remove-TempRunFile' {
+    It 'no-ops silently when Path is null or empty' {
+        { Remove-TempRunFile -Path $null -Label 'test' } | Should -Not -Throw
+        { Remove-TempRunFile -Path '' -Label 'test' } | Should -Not -Throw
+    }
+
+    It 'no-ops silently when the file does not exist' {
+        { Remove-TempRunFile -Path 'C:\NoSuchFile_xyz.tmp' -Label 'test' } | Should -Not -Throw
+    }
+
+    It 'removes an existing file' {
+        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("remove-temp-{0}.tmp" -f [System.Guid]::NewGuid().ToString('N'))
+        [System.IO.File]::WriteAllText($tmp, '')
+
+        Remove-TempRunFile -Path $tmp -Label 'test file'
+
+        Test-Path -LiteralPath $tmp | Should -BeFalse
+    }
+
+    It 'emits a warning when Remove-Item fails' {
+        $script:WriteMessages = @()
+        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("remove-temp-fail-{0}.tmp" -f [System.Guid]::NewGuid().ToString('N'))
+        [System.IO.File]::WriteAllText($tmp, '')
+
+        try {
+            Mock Remove-Item { throw 'Access denied' }
+            Remove-TempRunFile -Path $tmp -Label 'locked file'
+            ($script:WriteMessages | Where-Object { $_.Level -eq 'Warn' }) | Should -HaveCount 1
+        }
+        finally {
+            # Bypass the Remove-Item mock to clean up the real file.
+            [System.IO.File]::Delete($tmp)
+        }
     }
 }
