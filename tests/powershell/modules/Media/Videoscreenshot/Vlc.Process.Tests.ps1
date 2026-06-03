@@ -11,7 +11,11 @@ BeforeAll {
 
     . $script:VlcProcessPath
 
-    function Write-Message { param([string]$Level, [string]$Message) }
+    function Write-Message {
+        param([string]$Level, [string]$Message)
+        $script:WriteMessages += [pscustomobject]@{ Level = $Level; Message = $Message }
+    }
+    function Test-CommandAvailable { param([string]$CommandName) $false }
 
     function Script:New-NativeExitCommand {
         param(
@@ -225,16 +229,15 @@ Describe 'Resolve-VlcExecutable' {
 
     It 'falls back to PATH when no VlcExe is supplied and vlc is available' {
         Mock Test-CommandAvailable { $true }
-        Mock Get-Command { [pscustomobject]@{ Source = 'C:\fake\vlc.exe' } }
+        Mock Get-Command { [pscustomobject]@{ Source = '/usr/bin/vlc' } } -ParameterFilter { $Name -eq 'vlc' }
 
         $result = Resolve-VlcExecutable -VlcExe ''
-        $result | Should -Be 'C:\fake\vlc.exe'
+        $result | Should -Be '/usr/bin/vlc'
     }
 
     It 'throws "VLC missing." when no VlcExe supplied, not on PATH, and default install absent' {
-        Mock Test-CommandAvailable { $false }
-        Mock Test-Path { $false }
-
+        # Test-CommandAvailable stub returns $false by default; default install path won't exist on CI.
+        $script:WriteMessages = @()
         { Resolve-VlcExecutable -VlcExe '' } | Should -Throw -ExpectedMessage '*VLC missing*'
     }
 }
@@ -260,12 +263,16 @@ Describe 'Initialize-VlcSidecarLog' {
     }
 
     It 'returns $null and attaches $null to Context when the folder is not writable' {
+        $script:WriteMessages = @()
         $ctx = [pscustomobject]@{}
+        # Use a path whose parent directory does not exist — reliably non-writable on all platforms.
+        $badFolder = Join-Path ([System.IO.Path]::GetTempPath()) ("no-such-{0}" -f [System.Guid]::NewGuid().ToString('N')) 'inner'
 
-        $result = Initialize-VlcSidecarLog -Context $ctx -SaveFolder 'Z:\NoSuchFolder\Impossible' -RunGuid 'g2'
+        $result = Initialize-VlcSidecarLog -Context $ctx -SaveFolder $badFolder -RunGuid 'g2'
 
         $result | Should -BeNullOrEmpty
         $ctx.VlcLogPath | Should -BeNullOrEmpty
+        ($script:WriteMessages | Where-Object { $_.Level -eq 'Warn' }) | Should -HaveCount 1
     }
 }
 
@@ -289,16 +296,18 @@ Describe 'Remove-TempRunFile' {
     }
 
     It 'emits a warning when Remove-Item fails' {
+        $script:WriteMessages = @()
         $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("remove-temp-fail-{0}.tmp" -f [System.Guid]::NewGuid().ToString('N'))
         [System.IO.File]::WriteAllText($tmp, '')
 
-        Mock Remove-Item { throw 'Access denied' }
-        Mock Write-Message { }
-
-        Remove-TempRunFile -Path $tmp -Label 'locked file'
-
-        Should -Invoke Write-Message -Times 1 -ParameterFilter { $Level -eq 'Warn' }
-
-        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        try {
+            Mock Remove-Item { throw 'Access denied' }
+            Remove-TempRunFile -Path $tmp -Label 'locked file'
+            ($script:WriteMessages | Where-Object { $_.Level -eq 'Warn' }) | Should -HaveCount 1
+        }
+        finally {
+            # Bypass the Remove-Item mock to clean up the real file.
+            [System.IO.File]::Delete($tmp)
+        }
     }
 }
