@@ -29,12 +29,18 @@ Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -
    ```powershell
    Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -ProcessedLogPath .\shots\.processed_videos.txt
    ```
+6. **Scene-change extraction for slideshows** – capture a frame when the picture changes instead of every fixed frame interval.
+   ```powershell
+   Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FrameSelection SceneChange -SceneChangeThreshold 0.35
+   ```
 
 ## Parameters
 - `SourceFolder` (string, required for capture): Root folder containing input videos.
 - `SaveFolder` (string, required): Destination folder for captured frames or cropper input.
 - `FramesPerSecond` (int, default module config): Target capture rate (1–60).
-- `UseVlcSnapshots` (switch): Enable VLC scene snapshots; omit to use GDI capture.
+- `UseVlcSnapshots` (switch): Enable VLC scene snapshots; omit to use GDI capture. This is implied when `-FrameSelection SceneChange` is selected.
+- `FrameSelection` (`Ratio` or `SceneChange`, default `Ratio`): Choose the frame extraction strategy. `Ratio` preserves the current fixed VLC `--scene-ratio` cadence. `SceneChange` uses FFmpeg scene-change detection when `ffmpeg` is on PATH, then falls back to the VLC ratio path with a warning when FFmpeg is unavailable.
+- `SceneChangeThreshold` (double, default config value `0.35`): FFmpeg scene threshold for `-FrameSelection SceneChange`; lower values emit more frames, higher values emit fewer frames.
 - `GdiFullscreen` (switch): Ask VLC to run fullscreen/top-most during GDI capture.
 - `TimeLimitSeconds` (int, default config): Per-video capture duration; `0` uses module default.
 - `VideoLimit` (int, default `0`): Maximum number of videos to process (0 = all).
@@ -64,6 +70,7 @@ catch {
 
 ## Performance Considerations
 - VLC snapshot mode generally outperforms GDI capture; prefer `-UseVlcSnapshots` when VLC is available.
+- For image/slideshow-to-video inputs, prefer `-FrameSelection SceneChange` to reduce oversampling of static segments. FFmpeg (`ffmpeg` on PATH) is the preferred backend; when it is missing, the module logs a warning and preserves the existing VLC `--scene-ratio` behavior.
 - Set `FramesPerSecond` conservatively for long runs to reduce I/O and disk usage.
 - Enable `-IncludeExtensions` to skip unsupported formats early and speed up discovery.
 - Processed logs allow resumable runs—point `-ProcessedLogPath` at fast storage to avoid lock contention.
@@ -99,6 +106,27 @@ Use VLC’s scene snapshot filter to write frames directly to disk:
 Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
 Start-VideoBatch -SourceFolder .\videos -SaveFolder .\shots -FramesPerSecond 2 -UseVlcSnapshots
 ```
+
+### Scene-change snapshot mode (FFmpeg backend)
+
+Use `-FrameSelection SceneChange` when the source is slideshow-like content and you want one frame per distinct picture rather than one frame every fixed decoded-frame interval:
+
+```powershell
+Import-Module .\src\powershell\module\Videoscreenshot\Videoscreenshot.psd1
+Start-VideoBatch `
+  -SourceFolder .\videos `
+  -SaveFolder .\shots `
+  -FrameSelection SceneChange `
+  -SceneChangeThreshold 0.35
+```
+
+Notes:
+- The default remains `-FrameSelection Ratio`, which uses the existing VLC `--scene-ratio` behavior.
+- Scene-change mode prefers `ffmpeg` on PATH and uses its `select` scene-detection filter. The default filter includes the first frame and subsequent frames whose scene score is above the threshold.
+- If `ffmpeg` is unavailable, `Start-VideoBatch` warns and falls back to VLC snapshot ratio extraction instead of failing the run.
+- Output names keep the same `<video-name>_NNNNN.png` prefix convention used by VLC snapshots, so counting, resume logging, `-DeduplicateFrames`, and cropper processing continue to compose unchanged.
+- Scene-change mode may overwrite existing files with the same prefix during retry runs because FFmpeg is invoked with `-y`; the module compares before/after frame metadata so overwritten frames are still counted as a successful capture. Use `-ClearSnapshotsBeforeRun` when you want to discard old frames before retrying a video.
+- Defaults can be tuned through `Get-DefaultConfig`: `FrameSelection`, `SceneChange.Threshold`, `SceneChange.Backend`, `SceneChange.IncludeFirstFrame`, and `SceneChange.FfmpegArgs`.
 
 ### Run logs
 
