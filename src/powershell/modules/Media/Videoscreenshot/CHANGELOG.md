@@ -8,6 +8,15 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.6.3] - 2026-06-04
+### Changed
+- **Add `Assert-PythonCropperReady`** to `Private/Cropper.Invoke.ps1`: encapsulates Python pre-validation (script path exists; PythonExe on PATH); no-ops with a Debug trace when `PythonScriptPath` is omitted (module-invocation path). Replaces two structurally identical inline validation blocks in `Start-VideoBatch`.
+- **Add `Invoke-CropOnlyMode`** to `Private/Cropper.Invoke.ps1`: encapsulates the CropOnly pipeline — ignored-parameter warning, `Assert-PythonCropperReady`, `Invoke-Cropper` call, and crop-only finish message. Accepts an explicit `IsDebug` bool so the `-Debug` flag is correctly forwarded across the function boundary without relying on the caller's `$PSBoundParameters`.
+- `Start-VideoBatch` CropOnly fast-path reduced to a guard + single `Invoke-CropOnlyMode` call; `RunCropper` pre-validation replaced with `Assert-PythonCropperReady`.
+
+### Tests
+- Extended `Cropper.Invoke.Tests.ps1`: covers `Assert-PythonCropperReady` (missing script path throws, missing exe throws, both absent is a no-op, both valid is a no-op) and `Invoke-CropOnlyMode` (happy path calls `Invoke-Cropper`, cropper failure propagates, ignored-parameter warning emitted when applicable).
+
 ## [3.6.2] - 2026-06-04
 ### Changed
 - **Extract `Initialize-RunLogFile`** into `Private/Logging.ps1`: encapsulates the four-scenario log-file branching (`-NoLogFile`, explicit `-LogFile`, empty string opt-out, default auto-name), best-effort parent-directory creation, and the `Set-VideoScreenshotLogFile`/`Clear-VideoScreenshotLogFile` call. Returns the resolved path or `$null` when logging is disabled.
