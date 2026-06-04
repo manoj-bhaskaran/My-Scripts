@@ -39,6 +39,15 @@ BeforeAll {
     function Test-FolderWritable { param([string]$Path) New-Item -ItemType Directory -Path $Path -Force | Out-Null; return $true }
     function Get-ResumeIndex { param([string]$Path, [switch]$RetryUnplayable) $script:LastRetryUnplayable = [bool]$RetryUnplayable; [System.Collections.Generic.HashSet[string]]::new() }
     function Resolve-VideoPath { param([string]$Path) [System.IO.Path]::GetFullPath($Path) }
+    function Initialize-RunLogFile { param([string]$SaveFolder, [string]$RunGuid, [AllowEmptyString()][string]$LogFile, [bool]$LogFileExplicitlyProvided, [switch]$NoLogFile) $null }
+    function Get-ProcessedVideoSet { param([string]$ProcessedLogPath, [string]$ResumeFile, [switch]$RetryUnplayable) $script:LastRetryUnplayable = [bool]$RetryUnplayable; Write-Output -NoEnumerate ([System.Collections.Generic.HashSet[string]]::new()) }
+    function Measure-CaptureFrameDelta {
+        param($SnapStats, $GdiStats, $DedupStats, [int]$PreCount, [string]$ScenePrefix, [string]$SaveFolder, [switch]$UseVlcSnapshots)
+        $delta = if ($UseVlcSnapshots -and $null -ne $SnapStats) { [int]$SnapStats.FramesDelta }
+                 elseif (-not $UseVlcSnapshots -and $null -ne $GdiStats) { [int]$GdiStats.FramesSaved }
+                 else { 0 }
+        [pscustomobject]@{ FramesDelta = $delta; AchievedFps = $null }
+    }
     function Initialize-PidRegistry { param($Context, [string]$SaveFolder, [string]$RunGuid) Join-Path $SaveFolder 'pids.txt' }
     function Resolve-VlcExecutable { param([string]$VlcExe) $VlcExe }
     function Initialize-VlcSidecarLog { param($Context, [string]$SaveFolder, [string]$RunGuid) $null }

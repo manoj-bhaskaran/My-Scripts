@@ -80,6 +80,62 @@ function Clear-VideoScreenshotLogFile {
     $script:VideoscreenshotLogFile = $null
 }
 
+<#
+.SYNOPSIS
+  Resolve and configure the per-run log file, setting or clearing the module-scoped sink.
+.DESCRIPTION
+  Branches on NoLogFile, an explicitly-provided LogFile, and the default auto-named path;
+  creates the parent directory best-effort; calls Set-VideoScreenshotLogFile or
+  Clear-VideoScreenshotLogFile. Returns the resolved path, or $null when logging is disabled.
+.PARAMETER SaveFolder
+  Folder used to build the default auto-named log path.
+.PARAMETER RunGuid
+  Short run identifier appended to the default log filename.
+.PARAMETER LogFile
+  Caller-supplied log path. May be empty to opt out of file logging.
+.PARAMETER LogFileExplicitlyProvided
+  True when the caller passed -LogFile explicitly (distinguishes empty-string opt-out from omission).
+.PARAMETER NoLogFile
+  When set, disables file logging entirely regardless of LogFile.
+.OUTPUTS
+  [string] resolved log path, or $null when logging is disabled.
+#>
+function Initialize-RunLogFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SaveFolder,
+        [Parameter(Mandatory)][string]$RunGuid,
+        [AllowEmptyString()][string]$LogFile,
+        [bool]$LogFileExplicitlyProvided,
+        [switch]$NoLogFile
+    )
+
+    if ($NoLogFile -or ($LogFileExplicitlyProvided -and [string]::IsNullOrWhiteSpace($LogFile))) {
+        Clear-VideoScreenshotLogFile
+        return $null
+    }
+
+    $resolvedPath = if ($LogFileExplicitlyProvided) {
+        $LogFile
+    }
+    else {
+        Join-Path $SaveFolder ("videoscreenshot_{0}_{1}.log" -f (Get-Date).ToString('yyyyMMdd_HHmmss'), $RunGuid)
+    }
+
+    $runLogParent = Split-Path -Path $resolvedPath -Parent
+    if (-not [string]::IsNullOrWhiteSpace($runLogParent) -and -not (Test-Path -LiteralPath $runLogParent -PathType Container)) {
+        try {
+            New-Item -ItemType Directory -Path $runLogParent -Force -ErrorAction Stop | Out-Null
+        }
+        catch {
+            Write-Warning ("Unable to create run log directory '{0}': {1}. File logging will remain best-effort." -f $runLogParent, $_.Exception.Message)
+        }
+    }
+
+    Set-VideoScreenshotLogFile -Path $resolvedPath
+    return $resolvedPath
+}
+
 function Write-Message {
     [CmdletBinding()]
     param(
