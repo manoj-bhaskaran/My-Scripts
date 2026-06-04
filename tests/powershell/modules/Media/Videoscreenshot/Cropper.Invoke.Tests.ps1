@@ -17,8 +17,13 @@ BeforeAll {
     }
 
     # Stub Test-CommandAvailable used by Assert-PythonCropperReady.
+    # The real implementation is in Core; when it is not loaded, provide a stub that
+    # actually checks PATH so the 'throws when PythonExe not on PATH' test behaves correctly.
     if (-not (Get-Command Test-CommandAvailable -ErrorAction SilentlyContinue)) {
-        function script:Test-CommandAvailable { param([string]$CommandName) return $true }
+        function script:Test-CommandAvailable {
+            param([string]$CommandName)
+            return $null -ne (Get-Command -Name $CommandName -ErrorAction SilentlyContinue)
+        }
     }
 }
 
