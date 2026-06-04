@@ -177,65 +177,28 @@ function Start-VideoBatch {
 
     # --- Crop-only fast path ---------------------------------------------------
     if ($CropOnly) {
-        # Warn about ignored capture-related parameters if supplied
         $captureParams = @('SourceFolder', 'UseVlcSnapshots', 'FramesPerSecond', 'TimeLimitSeconds', 'MaxPerVideoSeconds',
             'GdiFullscreen', 'VlcStartupTimeoutSeconds', 'VerifyVideos', 'VideoProbeTimeoutSeconds', 'IncludeExtensions',
             'FrameSelection', 'SceneChangeThreshold', 'ClearSnapshotsBeforeRun', 'VideoLimit', 'ResumeFile', 'ProcessedLogPath', 'RetryUnplayable')
-        $ignored = @()
-        foreach ($n in $captureParams) {
-            if ($PSBoundParameters.ContainsKey($n)) { $ignored += $n }
-        }
-        if ($ignored.Count -gt 0) {
-            Write-Message -Level Warn -Message ("CropOnly: ignoring capture-related parameter(s): {0}" -f ($ignored -join ', '))
-        }
-
-        # Validate inputs for cropper
-        if (-not [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
-            if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
-                throw "PythonScriptPath not found: $PythonScriptPath"
-            }
-        }
-        else {
-            Write-Debug "CropOnly: PythonScriptPath not supplied; will attempt module invocation via 'python -m media.crop_colours'."
-        }
-        try {
-            $isDebug = $PSBoundParameters.ContainsKey('Debug')
-            $crop = Invoke-Cropper `
-                -PythonScriptPath $PythonScriptPath `
-                -PythonExe $PythonExe `
-                -InputFolder $SaveFolder `
-                -NoAutoInstall:$NoAutoInstall `
-                -ReprocessCropped:$ReprocessCropped `
-                -KeepExistingCrops:$KeepExistingCrops `
-                -Debug:$isDebug
-            Write-Message -Level Info -Message ("Cropper finished OK (exit={0}). STDERR: {1}" -f $crop.ExitCode, ([string]::IsNullOrWhiteSpace($crop.StdErr) ? '<none>' : $crop.StdErr))
-        }
-        catch {
-            Write-Message -Level Warn -Message ("Cropper failed: {0}" -f $_.Exception.Message)
-            throw
-        }
-
-        $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — crop-only mode" -f ($context.Version))
+        $ignored = @($captureParams | Where-Object { $PSBoundParameters.ContainsKey($_) })
+        $isDebug = $PSBoundParameters.ContainsKey('Debug')
+        Invoke-CropOnlyMode `
+            -SaveFolder $SaveFolder `
+            -PythonScriptPath $PythonScriptPath `
+            -PythonExe $PythonExe `
+            -NoAutoInstall:$NoAutoInstall `
+            -ReprocessCropped:$ReprocessCropped `
+            -KeepExistingCrops:$KeepExistingCrops `
+            -IsDebug $isDebug `
+            -ModuleVersion ($context.Version -as [string]) `
+            -IgnoredParams $ignored
         Write-Debug 'TRACE Start-VideoBatch: leaving (CropOnly)'
         return
     }
 
     # Optional cropper pre-validation (fail fast with clear diagnostics)
     if ($RunCropper) {
-        if (-not [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
-            if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
-                throw "PythonScriptPath not found: $PythonScriptPath"
-            }
-            if (-not [string]::IsNullOrWhiteSpace($PythonExe)) {
-                if (-not (Test-CommandAvailable -CommandName $PythonExe)) {
-                    throw "Python executable not found or not on PATH: $PythonExe"
-                }
-            }
-        }
-        else {
-            # No explicit script path: we'll rely on `python -m media.crop_colours` (PYTHONPATH auto-configured)
-            Write-Debug "RunCropper: PythonScriptPath not supplied; will invoke via 'python -m media.crop_colours'."
-        }
+        Assert-PythonCropperReady -PythonScriptPath $PythonScriptPath -PythonExe $PythonExe
     }
 
     if (-not (Test-Path -LiteralPath $SourceFolder)) {

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Pester tests for Invoke-Cropper package/module invocation behavior.
+Pester tests for Cropper.Invoke.ps1 helpers: Assert-PythonCropperReady, Invoke-CropOnlyMode, and Invoke-Cropper.
 #>
 
 BeforeAll {
@@ -10,6 +10,112 @@ BeforeAll {
     }
 
     . $script:InvokePath
+
+    # Minimal stub so Invoke-CropOnlyMode tests can call Write-Message without the full module loaded.
+    if (-not (Get-Command Write-Message -ErrorAction SilentlyContinue)) {
+        function script:Write-Message { param([string]$Level, [string]$Message) }
+    }
+
+    # Stub Test-CommandAvailable used by Assert-PythonCropperReady.
+    if (-not (Get-Command Test-CommandAvailable -ErrorAction SilentlyContinue)) {
+        function script:Test-CommandAvailable { param([string]$CommandName) return $true }
+    }
+}
+
+Describe 'Assert-PythonCropperReady' {
+    BeforeEach {
+        $script:TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("assert-ready-{0}" -f [System.Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:TempDir -Force | Out-Null
+    }
+
+    AfterEach {
+        if ($script:TempDir -and (Test-Path -LiteralPath $script:TempDir -ErrorAction SilentlyContinue)) {
+            Remove-Item -LiteralPath $script:TempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'throws when PythonScriptPath is provided but not found' {
+        { Assert-PythonCropperReady -PythonScriptPath 'C:\nonexistent\crop_colours.py' } |
+            Should -Throw -ExceptionMessage 'PythonScriptPath not found*'
+    }
+
+    It 'throws when PythonExe is provided but not on PATH' {
+        $existingScript = Join-Path $script:TempDir 'crop_colours.py'
+        New-Item -ItemType File -Path $existingScript | Out-Null
+
+        Mock Test-CommandAvailable { return $false } -ModuleName * -Verifiable
+
+        { Assert-PythonCropperReady -PythonScriptPath $existingScript -PythonExe 'no-such-python' } |
+            Should -Throw -ExceptionMessage 'Python executable not found or not on PATH*'
+    }
+
+    It 'does not throw when both PythonScriptPath and PythonExe are absent' {
+        { Assert-PythonCropperReady } | Should -Not -Throw
+    }
+
+    It 'does not throw when PythonScriptPath exists and PythonExe is absent' {
+        $existingScript = Join-Path $script:TempDir 'crop_colours.py'
+        New-Item -ItemType File -Path $existingScript | Out-Null
+        { Assert-PythonCropperReady -PythonScriptPath $existingScript } | Should -Not -Throw
+    }
+}
+
+Describe 'Invoke-CropOnlyMode' {
+    BeforeEach {
+        $script:TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("crop-only-{0}" -f [System.Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:TempDir -Force | Out-Null
+        $script:Messages = [System.Collections.Generic.List[string]]::new()
+
+        # Override Write-Message to capture messages.
+        function script:Write-Message { param([string]$Level, [string]$Message) $script:Messages.Add("[$Level] $Message") }
+    }
+
+    AfterEach {
+        if ($script:TempDir -and (Test-Path -LiteralPath $script:TempDir -ErrorAction SilentlyContinue)) {
+            Remove-Item -LiteralPath $script:TempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'happy path: calls Invoke-Cropper and emits finish message' {
+        $invoked = $false
+        function script:Invoke-Cropper {
+            $script:invoked = $true
+            [pscustomobject]@{ ExitCode = 0; StdErr = '' }
+        }
+        function script:Assert-PythonCropperReady { }
+
+        Invoke-CropOnlyMode -SaveFolder $script:TempDir -ModuleVersion '3.6.3' -IsDebug $false
+
+        $invoked | Should -Be $true
+        ($script:Messages | Where-Object { $_ -match 'finished.*crop-only' }) | Should -Not -BeNullOrEmpty
+    }
+
+    It 'emits ignored-parameter warning when IgnoredParams is non-empty' {
+        function script:Invoke-Cropper { [pscustomobject]@{ ExitCode = 0; StdErr = '' } }
+        function script:Assert-PythonCropperReady { }
+
+        Invoke-CropOnlyMode -SaveFolder $script:TempDir -ModuleVersion '3.6.3' -IsDebug $false -IgnoredParams @('SourceFolder', 'VideoLimit')
+
+        ($script:Messages | Where-Object { $_ -match 'ignoring capture-related' -and $_ -match 'SourceFolder' }) | Should -Not -BeNullOrEmpty
+    }
+
+    It 'does not emit ignored-parameter warning when IgnoredParams is empty' {
+        function script:Invoke-Cropper { [pscustomobject]@{ ExitCode = 0; StdErr = '' } }
+        function script:Assert-PythonCropperReady { }
+
+        Invoke-CropOnlyMode -SaveFolder $script:TempDir -ModuleVersion '3.6.3' -IsDebug $false -IgnoredParams @()
+
+        ($script:Messages | Where-Object { $_ -match 'ignoring capture-related' }) | Should -BeNullOrEmpty
+    }
+
+    It 'propagates cropper failure and re-throws' {
+        function script:Invoke-Cropper { throw 'Cropper failed (exit 1).' }
+        function script:Assert-PythonCropperReady { }
+
+        { Invoke-CropOnlyMode -SaveFolder $script:TempDir -ModuleVersion '3.6.3' -IsDebug $false } |
+            Should -Throw
+        ($script:Messages | Where-Object { $_ -match '\[Warn\].*Cropper failed' }) | Should -Not -BeNullOrEmpty
+    }
 }
 
 Describe 'Invoke-Cropper package invocation' {

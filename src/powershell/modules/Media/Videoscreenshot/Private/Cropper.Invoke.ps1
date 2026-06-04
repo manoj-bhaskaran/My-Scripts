@@ -1,5 +1,105 @@
 <#
 .SYNOPSIS
+  Validate Python cropper prerequisites; throw with a descriptive error on any missing piece.
+
+.DESCRIPTION
+  Called before Invoke-Cropper to surface clear diagnostics early.
+  - If PythonScriptPath is provided but not found on disk, throws.
+  - If PythonExe is provided but not on PATH, throws.
+  - If PythonScriptPath is omitted, records a Debug trace and returns (module-invocation path).
+#>
+function Assert-PythonCropperReady {
+    [CmdletBinding()]
+    param(
+        [string]$PythonScriptPath,
+        [string]$PythonExe
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($PythonScriptPath)) {
+        if (-not (Test-Path -LiteralPath $PythonScriptPath)) {
+            throw "PythonScriptPath not found: $PythonScriptPath"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($PythonExe)) {
+            if (-not (Test-CommandAvailable -CommandName $PythonExe)) {
+                throw "Python executable not found or not on PATH: $PythonExe"
+            }
+        }
+    }
+    else {
+        Write-Debug "Assert-PythonCropperReady: PythonScriptPath not supplied; will invoke via 'python -m media.crop_colours'."
+    }
+}
+
+<#
+.SYNOPSIS
+  Run the Python cropper in crop-only mode (no video capture).
+
+.DESCRIPTION
+  Emits an optional warning about ignored capture parameters, validates Python prerequisites via
+  Assert-PythonCropperReady, invokes the cropper, and emits the crop-only finish message.
+  Throws on cropper failure so the caller can own the catch/warn boundary.
+
+.PARAMETER SaveFolder
+  Folder containing images to crop (passed as InputFolder to Invoke-Cropper).
+.PARAMETER PythonScriptPath
+  Optional path to the packaged cropper script.
+.PARAMETER PythonExe
+  Optional Python executable override.
+.PARAMETER NoAutoInstall
+  Forwarded to Invoke-Cropper.
+.PARAMETER ReprocessCropped
+  Forwarded to Invoke-Cropper.
+.PARAMETER KeepExistingCrops
+  Forwarded to Invoke-Cropper.
+.PARAMETER IsDebug
+  Pre-resolved debug flag from the caller's PSBoundParameters (Debug does not cross function boundaries).
+.PARAMETER ModuleVersion
+  Module version string included in the finish message.
+.PARAMETER IgnoredParams
+  Capture-mode parameter names that were supplied by the user but are irrelevant in crop-only mode.
+#>
+function Invoke-CropOnlyMode {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SaveFolder,
+        [string]$PythonScriptPath,
+        [string]$PythonExe,
+        [switch]$NoAutoInstall,
+        [switch]$ReprocessCropped,
+        [switch]$KeepExistingCrops,
+        [bool]$IsDebug,
+        [string]$ModuleVersion,
+        [string[]]$IgnoredParams = @()
+    )
+
+    if ($IgnoredParams.Count -gt 0) {
+        Write-Message -Level Warn -Message ("CropOnly: ignoring capture-related parameter(s): {0}" -f ($IgnoredParams -join ', '))
+    }
+
+    Assert-PythonCropperReady -PythonScriptPath $PythonScriptPath -PythonExe $PythonExe
+
+    try {
+        $crop = Invoke-Cropper `
+            -PythonScriptPath $PythonScriptPath `
+            -PythonExe $PythonExe `
+            -InputFolder $SaveFolder `
+            -NoAutoInstall:$NoAutoInstall `
+            -ReprocessCropped:$ReprocessCropped `
+            -KeepExistingCrops:$KeepExistingCrops `
+            -Debug:$IsDebug
+        Write-Message -Level Info -Message ("Cropper finished OK (exit={0}). STDERR: {1}" -f $crop.ExitCode, ([string]::IsNullOrWhiteSpace($crop.StdErr) ? '<none>' : $crop.StdErr))
+    }
+    catch {
+        Write-Message -Level Warn -Message ("Cropper failed: {0}" -f $_.Exception.Message)
+        throw
+    }
+
+    $null = Write-Message -Level Info -Message ("videoscreenshot module v{0} finished — crop-only mode" -f $ModuleVersion)
+    Write-Debug 'TRACE Invoke-CropOnlyMode: leaving'
+}
+
+<#
+.SYNOPSIS
   Run the Python cropper (crop_colours.py) over an input folder.
 
 .DESCRIPTION
