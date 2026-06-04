@@ -66,33 +66,42 @@ Describe 'Invoke-CropOnlyMode' {
         New-Item -ItemType Directory -Path $script:TempDir -Force | Out-Null
         $script:Messages = [System.Collections.Generic.List[string]]::new()
 
+        # Save real function scriptblocks so we can restore them after each test.
+        # Defining function script:X inside an It block writes into script scope and
+        # persists across Describe blocks, breaking the real Invoke-Cropper tests below.
+        $script:RealInvokeCropper          = ${Function:Invoke-Cropper}
+        $script:RealAssertPythonCropperReady = ${Function:Assert-PythonCropperReady}
+        $script:RealWriteMessage           = ${Function:Write-Message}
+
         # Override Write-Message to capture messages.
-        function script:Write-Message { param([string]$Level, [string]$Message) $script:Messages.Add("[$Level] $Message") }
+        ${Function:script:Write-Message} = { param([string]$Level, [string]$Message) $script:Messages.Add("[$Level] $Message") }
     }
 
     AfterEach {
+        # Restore real functions so subsequent Describe blocks see the originals.
+        if ($script:RealInvokeCropper)           { ${Function:script:Invoke-Cropper}           = $script:RealInvokeCropper }
+        if ($script:RealAssertPythonCropperReady) { ${Function:script:Assert-PythonCropperReady} = $script:RealAssertPythonCropperReady }
+        if ($script:RealWriteMessage)             { ${Function:script:Write-Message}             = $script:RealWriteMessage }
+
         if ($script:TempDir -and (Test-Path -LiteralPath $script:TempDir -ErrorAction SilentlyContinue)) {
             Remove-Item -LiteralPath $script:TempDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
     It 'happy path: calls Invoke-Cropper and emits finish message' {
-        $invoked = $false
-        function script:Invoke-Cropper {
-            $script:invoked = $true
-            [pscustomobject]@{ ExitCode = 0; StdErr = '' }
-        }
-        function script:Assert-PythonCropperReady { }
+        $script:invoked = $false
+        ${Function:script:Invoke-Cropper}           = { $script:invoked = $true; [pscustomobject]@{ ExitCode = 0; StdErr = '' } }
+        ${Function:script:Assert-PythonCropperReady} = { }
 
         Invoke-CropOnlyMode -SaveFolder $script:TempDir -ModuleVersion '3.6.3' -IsDebug $false
 
-        $invoked | Should -Be $true
+        $script:invoked | Should -Be $true
         ($script:Messages | Where-Object { $_ -match 'finished.*crop-only' }) | Should -Not -BeNullOrEmpty
     }
 
     It 'emits ignored-parameter warning when IgnoredParams is non-empty' {
-        function script:Invoke-Cropper { [pscustomobject]@{ ExitCode = 0; StdErr = '' } }
-        function script:Assert-PythonCropperReady { }
+        ${Function:script:Invoke-Cropper}           = { [pscustomobject]@{ ExitCode = 0; StdErr = '' } }
+        ${Function:script:Assert-PythonCropperReady} = { }
 
         Invoke-CropOnlyMode -SaveFolder $script:TempDir -ModuleVersion '3.6.3' -IsDebug $false -IgnoredParams @('SourceFolder', 'VideoLimit')
 
@@ -100,8 +109,8 @@ Describe 'Invoke-CropOnlyMode' {
     }
 
     It 'does not emit ignored-parameter warning when IgnoredParams is empty' {
-        function script:Invoke-Cropper { [pscustomobject]@{ ExitCode = 0; StdErr = '' } }
-        function script:Assert-PythonCropperReady { }
+        ${Function:script:Invoke-Cropper}           = { [pscustomobject]@{ ExitCode = 0; StdErr = '' } }
+        ${Function:script:Assert-PythonCropperReady} = { }
 
         Invoke-CropOnlyMode -SaveFolder $script:TempDir -ModuleVersion '3.6.3' -IsDebug $false -IgnoredParams @()
 
@@ -109,8 +118,8 @@ Describe 'Invoke-CropOnlyMode' {
     }
 
     It 'propagates cropper failure and re-throws' {
-        function script:Invoke-Cropper { throw 'Cropper failed (exit 1).' }
-        function script:Assert-PythonCropperReady { }
+        ${Function:script:Invoke-Cropper}           = { throw 'Cropper failed (exit 1).' }
+        ${Function:script:Assert-PythonCropperReady} = { }
 
         { Invoke-CropOnlyMode -SaveFolder $script:TempDir -ModuleVersion '3.6.3' -IsDebug $false } |
             Should -Throw
