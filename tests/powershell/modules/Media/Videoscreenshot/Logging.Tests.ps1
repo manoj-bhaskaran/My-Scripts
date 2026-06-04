@@ -77,6 +77,85 @@ Describe 'Write-Message run-log routing' {
     }
 }
 
+Describe 'Initialize-RunLogFile branching' {
+    AfterEach {
+        Clear-VideoScreenshotLogFile
+        if ($script:TempFolder -and (Test-Path -LiteralPath $script:TempFolder -ErrorAction SilentlyContinue)) {
+            Remove-Item -LiteralPath $script:TempFolder -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'returns an auto-named path and sets the log sink when LogFile is omitted' {
+        $script:TempFolder = (Script:New-TempFolder).FullName
+
+        $result = Initialize-RunLogFile -SaveFolder $script:TempFolder -RunGuid 'abc123' `
+            -LogFile '' -LogFileExplicitlyProvided $false -NoLogFile:$false
+
+        $result | Should -Match 'videoscreenshot_\d{8}_\d{6}_abc123\.log$'
+        (Get-VideoScreenshotLogFile) | Should -Be $result
+    }
+
+    It 'returns an explicit path and sets the log sink when LogFile is supplied' {
+        $script:TempFolder = (Script:New-TempFolder).FullName
+        $explicitLog = Join-Path $script:TempFolder 'my-run.log'
+
+        $result = Initialize-RunLogFile -SaveFolder $script:TempFolder -RunGuid 'xyz' `
+            -LogFile $explicitLog -LogFileExplicitlyProvided $true -NoLogFile:$false
+
+        $result | Should -Be $explicitLog
+        (Get-VideoScreenshotLogFile) | Should -Be $explicitLog
+    }
+
+    It 'returns $null and clears the log sink when -NoLogFile is set' {
+        $script:TempFolder = (Script:New-TempFolder).FullName
+        Set-VideoScreenshotLogFile -Path (Join-Path $script:TempFolder 'stale.log')
+
+        $result = Initialize-RunLogFile -SaveFolder $script:TempFolder -RunGuid 'g1' `
+            -LogFile '' -LogFileExplicitlyProvided $false -NoLogFile:$true
+
+        $result | Should -BeNullOrEmpty
+        (Get-VideoScreenshotLogFile) | Should -BeNullOrEmpty
+    }
+
+    It 'returns $null and clears the log sink when an empty LogFile is explicitly provided' {
+        $script:TempFolder = (Script:New-TempFolder).FullName
+        Set-VideoScreenshotLogFile -Path (Join-Path $script:TempFolder 'stale.log')
+
+        $result = Initialize-RunLogFile -SaveFolder $script:TempFolder -RunGuid 'g2' `
+            -LogFile '' -LogFileExplicitlyProvided $true -NoLogFile:$false
+
+        $result | Should -BeNullOrEmpty
+        (Get-VideoScreenshotLogFile) | Should -BeNullOrEmpty
+    }
+
+    It 'creates a missing parent directory for an explicit log path' {
+        $script:TempFolder = (Script:New-TempFolder).FullName
+        $newParent = Join-Path $script:TempFolder 'new-subdir'
+        $explicitLog = Join-Path $newParent 'run.log'
+
+        $result = Initialize-RunLogFile -SaveFolder $script:TempFolder -RunGuid 'g3' `
+            -LogFile $explicitLog -LogFileExplicitlyProvided $true -NoLogFile:$false
+
+        $result | Should -Be $explicitLog
+        Test-Path -LiteralPath $newParent -PathType Container | Should -BeTrue
+    }
+
+    It 'warns but still returns the path when parent directory creation fails' {
+        $script:TempFolder = (Script:New-TempFolder).FullName
+        # Use a path whose parent cannot be created (file in place of directory)
+        $blocker = Join-Path $script:TempFolder 'blocker'
+        [System.IO.File]::WriteAllText($blocker, 'x')
+        $explicitLog = Join-Path $blocker 'sub' 'run.log'
+
+        $warnings = & {
+            Initialize-RunLogFile -SaveFolder $script:TempFolder -RunGuid 'g4' `
+                -LogFile $explicitLog -LogFileExplicitlyProvided $true -NoLogFile:$false
+        } 3>&1
+
+        ($warnings | Out-String) | Should -Match 'Unable to create run log directory'
+    }
+}
+
 Describe 'Start-VideoBatch run-log defaults' {
     BeforeEach {
         $script:TempFolder = (Script:New-TempFolder).FullName

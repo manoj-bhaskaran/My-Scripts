@@ -8,6 +8,18 @@ The project follows [Semantic Versioning](https://semver.org) and the structure 
 
 ## [Unreleased]
 
+## [3.6.2] - 2026-06-04
+### Changed
+- **Extract `Initialize-RunLogFile`** into `Private/Logging.ps1`: encapsulates the four-scenario log-file branching (`-NoLogFile`, explicit `-LogFile`, empty string opt-out, default auto-name), best-effort parent-directory creation, and the `Set-VideoScreenshotLogFile`/`Clear-VideoScreenshotLogFile` call. Returns the resolved path or `$null` when logging is disabled.
+- **Extract `Get-ProcessedVideoSet`** into `Private/Processed.Log.ps1`: wraps `Get-ResumeIndex`, handles exceptions, normalises null or array returns to `HashSet[string]`, and optionally seeds the set with a `ResumeFile` entry. Never returns `$null`.
+- **Extract `Measure-CaptureFrameDelta`** into new `Private/Capture.Metrics.ps1`: derives `FramesDelta` and `AchievedFps` from VLC-snapshot stats, GDI stats, or disk-count fallbacks; reconciles against the post-dedup disk count; applies the overwrite-case guard. Returns `[pscustomobject]@{ FramesDelta=[int]; AchievedFps=$null-or-double }`.
+- `Start-VideoBatch` reduced by ~120 lines; behaviour is unchanged.
+
+### Tests
+- Extended `Logging.Tests.ps1`: covers `Initialize-RunLogFile` branching across all four log-configuration scenarios (explicit path, default auto-name, `-NoLogFile`, empty-string opt-out) and best-effort parent-directory creation failure.
+- Extended `Processed.Log.Tests.ps1`: covers `Get-ProcessedVideoSet` with null return, array return, `ResumeFile` seeding, and `Get-ResumeIndex` exception handling.
+- New `Capture.Metrics.Tests.ps1`: covers VLC-snapshot path (stats present, disk fallback), GDI path (stats present, disk fallback), dedup reconciliation, overwrite-case guard, and `Write-Debug` message for disk-count override.
+
 ## [3.6.1] - 2026-06-03
 ### Changed
 - **Extract `Resolve-VlcExecutable`** into `Private/Vlc.Process.ps1`: consolidates the four-case VLC resolution logic (explicit file, explicit directory, PATH, default install) that was inlined in `Start-VideoBatch`. Throws `"VLC missing."` with a user-readable error on all failure paths.

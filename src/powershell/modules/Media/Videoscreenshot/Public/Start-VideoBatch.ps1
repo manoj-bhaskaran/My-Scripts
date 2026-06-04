@@ -160,31 +160,13 @@ function Start-VideoBatch {
         throw "SaveFolder is not writable or could not be created: $SaveFolder"
     }
 
-    $resolvedRunLogFile = $null
     $logFileExplicitlyProvided = $PSBoundParameters.ContainsKey('LogFile')
-    if (-not $NoLogFile -and -not ($logFileExplicitlyProvided -and [string]::IsNullOrWhiteSpace($LogFile))) {
-        $resolvedRunLogFile = if ($logFileExplicitlyProvided) {
-            $LogFile
-        }
-        else {
-            Join-Path $SaveFolder ("videoscreenshot_{0}_{1}.log" -f (Get-Date).ToString('yyyyMMdd_HHmmss'), $runGuid)
-        }
-
-        $runLogParent = Split-Path -Path $resolvedRunLogFile -Parent
-        if (-not [string]::IsNullOrWhiteSpace($runLogParent) -and -not (Test-Path -LiteralPath $runLogParent -PathType Container)) {
-            try {
-                New-Item -ItemType Directory -Path $runLogParent -Force -ErrorAction Stop | Out-Null
-            }
-            catch {
-                Write-Warning ("Unable to create run log directory '{0}': {1}. File logging will remain best-effort." -f $runLogParent, $_.Exception.Message)
-            }
-        }
-
-        Set-VideoScreenshotLogFile -Path $resolvedRunLogFile
-    }
-    else {
-        Clear-VideoScreenshotLogFile
-    }
+    $resolvedRunLogFile = Initialize-RunLogFile `
+        -SaveFolder $SaveFolder `
+        -RunGuid $runGuid `
+        -LogFile $LogFile `
+        -LogFileExplicitlyProvided $logFileExplicitlyProvided `
+        -NoLogFile:$NoLogFile
 
     try {
     # Context contains Version, Config (defaults incl. VideoExtensions), RunGuid, SaveFolder, RequestedFps
@@ -286,36 +268,14 @@ function Start-VideoBatch {
     if ($requiresVlc) {
         $resolvedVlcExe = Resolve-VlcExecutable -VlcExe $VlcExe
     }
-    # Resolve processed log path and read processed/resume set (P0)
+    # Resolve processed log path and build resume set
     $processedLog = if ([string]::IsNullOrWhiteSpace($ProcessedLogPath)) {
         Join-Path $SaveFolder '.processed_videos.txt'
     }
     else {
         $ProcessedLogPath
     }
-    # Always produce a usable HashSet for O(1) membership checks; log diagnostics.
-    try {
-        $processedSet = Get-ResumeIndex -Path $processedLog -RetryUnplayable:$RetryUnplayable
-    }
-    catch {
-        Write-Message -Level Warn -Message ("Resume index read failed ('{0}'): {1}" -f $processedLog, $_.Exception.Message)
-        $processedSet = $null
-    }
-    if ($null -eq $processedSet) {
-        $processedSet = [System.Collections.Generic.HashSet[string]]::new()
-    }
-    if ($processedSet -isnot [System.Collections.Generic.HashSet[string]]) {
-        $tmpSet = [System.Collections.Generic.HashSet[string]]::new()
-        foreach ($v in @($processedSet)) {
-            if (-not [string]::IsNullOrWhiteSpace($v)) { $null = $tmpSet.Add($v) }
-        }
-        $processedSet = $tmpSet
-    }
-    if (-not [string]::IsNullOrWhiteSpace($ResumeFile)) {
-        try { [void]$processedSet.Add((Resolve-VideoPath -Path $ResumeFile)) } catch {
-            # Failed to add resume file to processed set (possibly path resolution issue)
-        }
-    }
+    $processedSet = Get-ProcessedVideoSet -ProcessedLogPath $processedLog -ResumeFile $ResumeFile -RetryUnplayable:$RetryUnplayable
     Write-Debug ("Resume/processed set: Type={0}; Count={1}; Log={2}" -f $processedSet.GetType().FullName, $processedSet.Count, $processedLog)
     if ($processedSet.Count -gt 0) {
         Write-Message -Level Info -Message ("Resume enabled: {0} item(s) will be skipped based on processed/resume lists." -f $processedSet.Count)
@@ -529,72 +489,53 @@ function Start-VideoBatch {
             }
         }
 
-        # Post-measure (use stats objects so they aren't unused)
-        $framesDelta = 0
-        $achievedFps = $null
-        if ($UseVlcSnapshots) {
-            if ($null -ne $snapStats) {
-                $framesDelta = [int]$snapStats.FramesDelta
-                if ($snapStats.ElapsedSeconds -gt 0 -and $framesDelta -gt 0) {
-                    $achievedFps = [Math]::Round($framesDelta / [double]$snapStats.ElapsedSeconds, 3)
-                }
-            }
-            else {
-                # Fallback: compute delta from disk counts
-                $postCount = (Get-ChildItem -Path $SaveFolder -Filter "${scenePrefix}*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
-                $framesDelta = [int]($postCount - $preCount)
-            }
-        }
-        else {
-            if ($null -ne $gdiStats) {
-                $framesDelta = [int]$gdiStats.FramesSaved
-                $achievedFps = $gdiStats.AchievedFps
-            }
-            else {
-                # Fallback for GDI mode: compute delta from disk counts
-                $postCount = (Get-ChildItem -Path $SaveFolder -Filter "${scenePrefix}*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
-                $framesDelta = [int]($postCount - $preCount)
-            }
-        }
-
         # De-duplicate consecutive identical frames if requested.
-        # Gated on $framesDelta > 0 so a zero-capture run (e.g. VLC produced nothing)
-        # never de-dups pre-existing frames from a previous run on the same prefix.
+        # Preliminary delta for dedup gating: avoids running dedup on a zero-capture
+        # run (e.g. VLC produced nothing), which would de-dup pre-existing frames from
+        # a previous run on the same prefix.
         $dedupStats = $null
-        if ($DeduplicateFrames -and -not $processingFailed -and $framesDelta -gt 0) {
-            $dedupAlgorithm = if ($context.Config.ContainsKey('DeduplicateHashAlgorithm')) {
-                [string]$context.Config.DeduplicateHashAlgorithm
-            } else { 'SHA256' }
-            try {
-                $dedupStats = Invoke-SnapshotDedup -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -HashAlgorithm $dedupAlgorithm
-                Write-Debug ("Snapshot.Dedup: removed {0}/{1} frame(s) for prefix '{2}'" -f $dedupStats.RemovedCount, $dedupStats.OriginalCount, $scenePrefix)
-                if ($dedupStats.RemovedCount -gt 0) {
-                    Write-Message -Level Info -Message ("De-dup: removed {0} duplicate frame(s) for '{1}' ({2} unique frame(s) kept)" -f $dedupStats.RemovedCount, $scenePrefix, $dedupStats.KeptCount)
+        if ($DeduplicateFrames -and -not $processingFailed) {
+            $_prelimDelta = 0
+            if ($UseVlcSnapshots) {
+                if ($null -ne $snapStats) { $_prelimDelta = [int]$snapStats.FramesDelta }
+                else {
+                    $_prelimDelta = [int]((Get-ChildItem -Path $SaveFolder -Filter "${scenePrefix}*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count - $preCount)
                 }
             }
-            catch {
-                Write-Message -Level Warn -Message ("De-dup failed for prefix '{0}': {1}" -f $scenePrefix, $_.Exception.Message)
+            else {
+                if ($null -ne $gdiStats) { $_prelimDelta = [int]$gdiStats.FramesSaved }
+                else {
+                    $_prelimDelta = [int]((Get-ChildItem -Path $SaveFolder -Filter "${scenePrefix}*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count - $preCount)
+                }
+            }
+            if ($_prelimDelta -gt 0) {
+                $dedupAlgorithm = if ($context.Config.ContainsKey('DeduplicateHashAlgorithm')) {
+                    [string]$context.Config.DeduplicateHashAlgorithm
+                } else { 'SHA256' }
+                try {
+                    $dedupStats = Invoke-SnapshotDedup -SaveFolder $SaveFolder -ScenePrefix $scenePrefix -HashAlgorithm $dedupAlgorithm
+                    Write-Debug ("Snapshot.Dedup: removed {0}/{1} frame(s) for prefix '{2}'" -f $dedupStats.RemovedCount, $dedupStats.OriginalCount, $scenePrefix)
+                    if ($dedupStats.RemovedCount -gt 0) {
+                        Write-Message -Level Info -Message ("De-dup: removed {0} duplicate frame(s) for '{1}' ({2} unique frame(s) kept)" -f $dedupStats.RemovedCount, $scenePrefix, $dedupStats.KeptCount)
+                    }
+                }
+                catch {
+                    Write-Message -Level Warn -Message ("De-dup failed for prefix '{0}': {1}" -f $scenePrefix, $_.Exception.Message)
+                }
             }
         }
 
-        # Final disk count — always recompute for accuracy; when de-dup ran, use the
-        # post-dedup count only when it is positive (new unique frames were added).
-        # When the delta is 0 or negative — e.g. VLC overwrote pre-existing files with
-        # the same names rather than appending new ones, so the file count did not rise —
-        # fall back to the stats-derived $framesDelta so valid captures are not falsely
-        # flagged as NoFrames.
-        $actualPostCount = (Get-ChildItem -Path $SaveFolder -Filter "${scenePrefix}*.png" -File -ErrorAction SilentlyContinue | Measure-Object).Count
-        $actualFramesDelta = [int]($actualPostCount - $preCount)
-        if ($null -ne $dedupStats) {
-            if ($actualFramesDelta -gt 0) {
-                $framesDelta = $actualFramesDelta
-            }
-            # else: overwrite case or de-dup removed below preCount — keep stats-derived value
-        }
-        elseif ($actualFramesDelta -gt $framesDelta) {
-            Write-Debug ("Stats reported {0} frames but disk shows {1} frames; using actual count" -f $framesDelta, $actualFramesDelta)
-            $framesDelta = $actualFramesDelta
-        }
+        # Compute final frame delta and achieved FPS from stats, disk fallback, and dedup reconciliation.
+        $metrics = Measure-CaptureFrameDelta `
+            -SnapStats $snapStats `
+            -GdiStats $gdiStats `
+            -DedupStats $dedupStats `
+            -PreCount $preCount `
+            -ScenePrefix $scenePrefix `
+            -SaveFolder $SaveFolder `
+            -UseVlcSnapshots:$UseVlcSnapshots
+        $framesDelta = $metrics.FramesDelta
+        $achievedFps = $metrics.AchievedFps
 
         # Determine status and log the video as processed
         if ($processingFailed) {

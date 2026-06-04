@@ -125,6 +125,54 @@ function Get-ResumeIndex {
 
 <#
 .SYNOPSIS
+  Build the resume/processed video set for a run.
+.DESCRIPTION
+  Calls Get-ResumeIndex, handles exceptions, normalises the result to a
+  HashSet[string] (guarding against null or array returns), and optionally
+  seeds it with a ResumeFile entry. Never returns $null.
+.PARAMETER ProcessedLogPath
+  Path to the processed log (may be missing — returns an empty set).
+.PARAMETER ResumeFile
+  Optional path/name to treat as already-processed so it is skipped.
+.PARAMETER RetryUnplayable
+  When set, Skipped/NotPlayable entries are left retry-eligible.
+.OUTPUTS
+  [System.Collections.Generic.HashSet[string]] — never $null.
+#>
+function Get-ProcessedVideoSet {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ProcessedLogPath,
+        [string]$ResumeFile,
+        [switch]$RetryUnplayable
+    )
+
+    $processedSet = $null
+    try {
+        $processedSet = Get-ResumeIndex -Path $ProcessedLogPath -RetryUnplayable:$RetryUnplayable
+    }
+    catch {
+        Write-Message -Level Warn -Message ("Resume index read failed ('{0}'): {1}" -f $ProcessedLogPath, $_.Exception.Message)
+        $processedSet = $null
+    }
+    if ($null -eq $processedSet) {
+        $processedSet = [System.Collections.Generic.HashSet[string]]::new()
+    }
+    if ($processedSet -isnot [System.Collections.Generic.HashSet[string]]) {
+        $tmpSet = [System.Collections.Generic.HashSet[string]]::new()
+        foreach ($v in @($processedSet)) {
+            if (-not [string]::IsNullOrWhiteSpace($v)) { $null = $tmpSet.Add($v) }
+        }
+        $processedSet = $tmpSet
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ResumeFile)) {
+        try { [void]$processedSet.Add((Resolve-VideoPath -Path $ResumeFile)) } catch { }
+    }
+    return $processedSet
+}
+
+<#
+.SYNOPSIS
   Append a processed/skip record to the processed log.
 .DESCRIPTION
   Writes a TSV line in the form `<FullPath>\t<Status>\t<Reason>\t<Timestamp>`.
