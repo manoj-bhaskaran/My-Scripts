@@ -10,6 +10,9 @@ BeforeAll {
     }
 
     . $script:ProcessedLogPath
+
+    # Stub Write-Message so Get-ProcessedVideoSet's catch path does not throw
+    function Write-Message { param([string]$Level, [string]$Message) }
 }
 
 Describe 'Get-ResumeIndex processed-log status handling' {
