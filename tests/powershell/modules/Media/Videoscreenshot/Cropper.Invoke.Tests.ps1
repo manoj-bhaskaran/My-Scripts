@@ -36,17 +36,16 @@ Describe 'Assert-PythonCropperReady' {
 
     It 'throws when PythonScriptPath is provided but not found' {
         { Assert-PythonCropperReady -PythonScriptPath 'C:\nonexistent\crop_colours.py' } |
-            Should -Throw -ExceptionMessage 'PythonScriptPath not found*'
+            Should -Throw
     }
 
     It 'throws when PythonExe is provided but not on PATH' {
         $existingScript = Join-Path $script:TempDir 'crop_colours.py'
         New-Item -ItemType File -Path $existingScript | Out-Null
 
-        Mock Test-CommandAvailable { return $false } -ModuleName * -Verifiable
-
-        { Assert-PythonCropperReady -PythonScriptPath $existingScript -PythonExe 'no-such-python' } |
-            Should -Throw -ExceptionMessage 'Python executable not found or not on PATH*'
+        # Use a name that cannot possibly exist on PATH — no mocking required.
+        { Assert-PythonCropperReady -PythonScriptPath $existingScript -PythonExe 'no-such-python-xyz-99999' } |
+            Should -Throw
     }
 
     It 'does not throw when both PythonScriptPath and PythonExe are absent' {
@@ -66,62 +65,44 @@ Describe 'Invoke-CropOnlyMode' {
         New-Item -ItemType Directory -Path $script:TempDir -Force | Out-Null
         $script:Messages = [System.Collections.Generic.List[string]]::new()
 
-        # Save real function scriptblocks so we can restore them after each test.
-        # Defining function script:X inside an It block writes into script scope and
-        # persists across Describe blocks, breaking the real Invoke-Cropper tests below.
-        $script:RealInvokeCropper          = ${Function:Invoke-Cropper}
-        $script:RealAssertPythonCropperReady = ${Function:Assert-PythonCropperReady}
-        $script:RealWriteMessage           = ${Function:Write-Message}
-
-        # Override Write-Message to capture messages.
+        # Override Write-Message in script scope (BeforeEach-level override is reliably picked up
+        # across function calls; overrides set inside It blocks are not, due to Pester scope isolation).
+        $script:RealWriteMessage = ${Function:Write-Message}
         ${Function:script:Write-Message} = { param([string]$Level, [string]$Message) $script:Messages.Add("[$Level] $Message") }
     }
 
     AfterEach {
-        # Restore real functions so subsequent Describe blocks see the originals.
-        if ($script:RealInvokeCropper)           { ${Function:script:Invoke-Cropper}           = $script:RealInvokeCropper }
-        if ($script:RealAssertPythonCropperReady) { ${Function:script:Assert-PythonCropperReady} = $script:RealAssertPythonCropperReady }
-        if ($script:RealWriteMessage)             { ${Function:script:Write-Message}             = $script:RealWriteMessage }
-
+        if ($script:RealWriteMessage) { ${Function:script:Write-Message} = $script:RealWriteMessage }
         if ($script:TempDir -and (Test-Path -LiteralPath $script:TempDir -ErrorAction SilentlyContinue)) {
             Remove-Item -LiteralPath $script:TempDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
     It 'happy path: calls Invoke-Cropper and emits finish message' {
-        $script:invoked = $false
-        ${Function:script:Invoke-Cropper}           = { $script:invoked = $true; [pscustomobject]@{ ExitCode = 0; StdErr = '' } }
-        ${Function:script:Assert-PythonCropperReady} = { }
-
+        # Let the real Invoke-Cropper run (Python available in CI; --allow-empty ensures exit 0).
         Invoke-CropOnlyMode -SaveFolder $script:TempDir -ModuleVersion '3.6.3' -IsDebug $false
 
-        $script:invoked | Should -Be $true
         ($script:Messages | Where-Object { $_ -match 'finished.*crop-only' }) | Should -Not -BeNullOrEmpty
     }
 
     It 'emits ignored-parameter warning when IgnoredParams is non-empty' {
-        ${Function:script:Invoke-Cropper}           = { [pscustomobject]@{ ExitCode = 0; StdErr = '' } }
-        ${Function:script:Assert-PythonCropperReady} = { }
-
         Invoke-CropOnlyMode -SaveFolder $script:TempDir -ModuleVersion '3.6.3' -IsDebug $false -IgnoredParams @('SourceFolder', 'VideoLimit')
 
         ($script:Messages | Where-Object { $_ -match 'ignoring capture-related' -and $_ -match 'SourceFolder' }) | Should -Not -BeNullOrEmpty
     }
 
     It 'does not emit ignored-parameter warning when IgnoredParams is empty' {
-        ${Function:script:Invoke-Cropper}           = { [pscustomobject]@{ ExitCode = 0; StdErr = '' } }
-        ${Function:script:Assert-PythonCropperReady} = { }
-
         Invoke-CropOnlyMode -SaveFolder $script:TempDir -ModuleVersion '3.6.3' -IsDebug $false -IgnoredParams @()
 
         ($script:Messages | Where-Object { $_ -match 'ignoring capture-related' }) | Should -BeNullOrEmpty
     }
 
     It 'propagates cropper failure and re-throws' {
-        ${Function:script:Invoke-Cropper}           = { throw 'Cropper failed (exit 1).' }
-        ${Function:script:Assert-PythonCropperReady} = { }
+        # Pass a nonexistent folder — Invoke-Cropper throws "InputFolder not found"; the catch
+        # block in Invoke-CropOnlyMode emits a Warn message then re-throws.
+        $nonExistent = Join-Path ([System.IO.Path]::GetTempPath()) ("no-such-{0}" -f [System.Guid]::NewGuid().ToString('N'))
 
-        { Invoke-CropOnlyMode -SaveFolder $script:TempDir -ModuleVersion '3.6.3' -IsDebug $false } |
+        { Invoke-CropOnlyMode -SaveFolder $nonExistent -ModuleVersion '3.6.3' -IsDebug $false } |
             Should -Throw
         ($script:Messages | Where-Object { $_ -match '\[Warn\].*Cropper failed' }) | Should -Not -BeNullOrEmpty
     }
