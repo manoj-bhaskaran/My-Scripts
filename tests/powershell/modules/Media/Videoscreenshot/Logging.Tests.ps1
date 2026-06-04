@@ -142,10 +142,11 @@ Describe 'Initialize-RunLogFile branching' {
 
     It 'warns but still returns the path when parent directory creation fails' {
         $script:TempFolder = (Script:New-TempFolder).FullName
-        # Use a path whose parent cannot be created (file in place of directory)
-        $blocker = Join-Path $script:TempFolder 'blocker'
-        [System.IO.File]::WriteAllText($blocker, 'x')
-        $explicitLog = Join-Path $blocker 'sub' 'run.log'
+        $explicitLog = Join-Path $script:TempFolder 'missing-parent' 'run.log'
+
+        # Force New-Item to throw regardless of OS behaviour — filesystem-level
+        # blocking is not reliable across platforms (e.g. Linux may silently swallow ENOTDIR).
+        Mock New-Item { throw [System.IO.IOException]::new('simulated directory creation failure') }
 
         $warnings = & {
             Initialize-RunLogFile -SaveFolder $script:TempFolder -RunGuid 'g4' `
