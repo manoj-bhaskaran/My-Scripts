@@ -168,7 +168,7 @@ function Get-ProcessedVideoSet {
     if (-not [string]::IsNullOrWhiteSpace($ResumeFile)) {
         try { [void]$processedSet.Add((Resolve-VideoPath -Path $ResumeFile)) } catch { }
     }
-    return $processedSet
+    Write-Output -NoEnumerate $processedSet
 }
 
 <#

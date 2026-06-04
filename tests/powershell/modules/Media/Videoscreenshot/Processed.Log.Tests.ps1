@@ -115,7 +115,6 @@ Describe 'Get-ProcessedVideoSet' {
     It 'returns an empty HashSet[string] when the log file does not exist' {
         $result = Get-ProcessedVideoSet -ProcessedLogPath (Join-Path $script:TempRoot 'missing.tsv') -ResumeFile ''
 
-        $result | Should -Not -BeNullOrEmpty
         $result.GetType().GetGenericTypeDefinition().FullName | Should -Be 'System.Collections.Generic.HashSet`1'
         $result.Count | Should -Be 0
     }
@@ -151,7 +150,6 @@ Describe 'Get-ProcessedVideoSet' {
 
         $result = Get-ProcessedVideoSet -ProcessedLogPath $script:LogPath -ResumeFile ''
 
-        $result | Should -Not -BeNullOrEmpty
         $result.GetType().GetGenericTypeDefinition().FullName | Should -Be 'System.Collections.Generic.HashSet`1'
         $result.Count | Should -Be 0
     }

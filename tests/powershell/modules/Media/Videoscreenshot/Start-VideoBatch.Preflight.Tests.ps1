@@ -40,7 +40,7 @@ BeforeAll {
     function Get-ResumeIndex { param([string]$Path, [switch]$RetryUnplayable) $script:LastRetryUnplayable = [bool]$RetryUnplayable; [System.Collections.Generic.HashSet[string]]::new() }
     function Resolve-VideoPath { param([string]$Path) [System.IO.Path]::GetFullPath($Path) }
     function Initialize-RunLogFile { param([string]$SaveFolder, [string]$RunGuid, [AllowEmptyString()][string]$LogFile, [bool]$LogFileExplicitlyProvided, [switch]$NoLogFile) $null }
-    function Get-ProcessedVideoSet { param([string]$ProcessedLogPath, [string]$ResumeFile, [switch]$RetryUnplayable) Get-ResumeIndex -Path $ProcessedLogPath -RetryUnplayable:$RetryUnplayable }
+    function Get-ProcessedVideoSet { param([string]$ProcessedLogPath, [string]$ResumeFile, [switch]$RetryUnplayable) $script:LastRetryUnplayable = [bool]$RetryUnplayable; Write-Output -NoEnumerate ([System.Collections.Generic.HashSet[string]]::new()) }
     function Measure-CaptureFrameDelta {
         param($SnapStats, $GdiStats, $DedupStats, [int]$PreCount, [string]$ScenePrefix, [string]$SaveFolder, [switch]$UseVlcSnapshots)
         $delta = if ($UseVlcSnapshots -and $null -ne $SnapStats) { [int]$SnapStats.FramesDelta }
