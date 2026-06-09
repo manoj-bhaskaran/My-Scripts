@@ -100,9 +100,15 @@
 
 .NOTES
     VERSION
-      2.1.5
+      2.2.0
 
     CHANGELOG
+      2.2.0
+        - Promote all per-file and per-directory decisions from Write-Verbose to Write-LogInfo
+          so they appear in the log file without requiring -Verbose.
+        - Log initial file discovery count from Get-ChildItem to help diagnose filtering gaps.
+        - Write full summary block and a conclusion line (success/failure) to the log.
+
       2.1.5
         - Pass -LogDirectory to Initialize-Logger by its public parameter name so the framework
           log is created in the caller-supplied directory.
@@ -379,14 +385,14 @@ function Rename-JpegFiles {
         try {
             $target = Join-Path -Path $f.DirectoryName -ChildPath ($f.BaseName + '.jpg')
             if (Test-Path -LiteralPath $target) {
-                Write-Verbose "Skip rename; target exists: $target"
+                Write-LogInfo "Skip rename (target exists): $target"
                 continue
             }
 
             if ($PSCmdlet.ShouldProcess($f.FullName, "Rename to $target")) {
                 Rename-Item -LiteralPath $f.FullName -NewName ([System.IO.Path]::GetFileName($target)) -ErrorAction Stop
                 $script:RenamedCount++
-                Write-Verbose "Renamed: $($f.FullName) -> $target"
+                Write-LogInfo "Renamed: $($f.FullName) -> $target"
             }
         }
         catch {
@@ -417,14 +423,14 @@ function Test-FileSkippedByCopyRule {
 
     if ($ext -eq '.png') {
         $script:SkippedPngCount++
-        Write-Verbose "Skip PNG: $($File.FullName)"
+        Write-LogInfo "Skip (PNG): $($File.FullName)"
         return $true
     }
 
     if ($ext -eq '.jpg') {
         if ([System.IO.Path]::GetFileNameWithoutExtension($File.Name) -cnotmatch '^img') {
             $script:SkippedJpgNotImgCount++
-            Write-Verbose "Skip JPG not starting with 'img': $($File.Name)"
+            Write-LogInfo "Skip (JPG !^img): $($File.FullName)"
             return $true
         }
     }
@@ -448,7 +454,7 @@ function New-BatchFolderIfMissing {
         if ($PSCmdlet.ShouldProcess($Path, "Create extension batch directory")) {
             New-Item -ItemType Directory -Path $Path -Force | Out-Null
             $script:BatchDirsCreated++
-            Write-Verbose "Created directory: $Path"
+            Write-LogInfo "Created directory: $Path"
         }
     }
 }
@@ -550,7 +556,7 @@ function Copy-FilesToBatches {
                 $script:CopiedCount++
                 $script:ExtBatchState[$extStem].Count++
                 $script:CopiedByExt[$extStem] = ($script:CopiedByExt[$extStem] ?? 0) + 1
-                Write-Verbose "Copied+Deleted: $($f.FullName) -> $targetPath"
+                Write-LogInfo "Copied+Deleted: $($f.FullName) -> $targetPath"
             }
         }
         catch {
@@ -696,6 +702,21 @@ Elapsed (total)       : {2:c}
 
     Write-Host "================================================="
 
+    # Mirror summary to log
+    Write-LogInfo ("SUMMARY: Total={0} Renamed={1} Copied={2} SkippedPng={3} SkippedJpgNotImg={4} DirsCreated={5}(batch={6},root={7}) Errors={8} ElapsedTotal={9:c}" -f `
+        $TotalFiles, $Renamed, $Copied, $script:SkippedPngCount, $script:SkippedJpgNotImgCount, `
+        ($BatchDirsCreated + $RootDirsCreated), $BatchDirsCreated, $RootDirsCreated, `
+        $ErrCount, $ElapsedTotal)
+    if ($script:CopiedByExt.Count -gt 0) {
+        $extSummary = ($script:CopiedByExt.GetEnumerator() | Sort-Object Key | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '
+        Write-LogInfo "SUMMARY: Per-extension copied: $extSummary"
+    }
+    if ($ErrCount -eq 0) {
+        Write-LogInfo "Run completed successfully."
+    } else {
+        Write-LogWarning "Run completed with $ErrCount error(s). See error log for details."
+    }
+
     if ($ErrCount -gt 0) {
         Write-ErrorLog -ErrCount $ErrCount -DestDir $DestDir -LogDirectory $LogDirectory
     }
@@ -706,11 +727,12 @@ Elapsed (total)       : {2:c}
 # region: Main ------------------------------------------------------------------------------------
 
 try {
-    Write-LogInfo "Starting Move-ImageFileToBatch 2.1.4"
+    Write-LogInfo "Starting Move-ImageFileToBatch 2.2.0"
     Initialize-Directories -SourceDir $SourceDir -DestDir $DestDir
 
     # Phase 1: Gather all source files (for rename); ALWAYS include .jpeg and .jpg_large
     $allFiles = Get-ChildItem -LiteralPath $SourceDir -File -Recurse
+    Write-LogInfo "Found $($allFiles.Count) file(s) in SourceDir (recursive): $SourceDir"
     $renameCandidates = $allFiles | Where-Object { $_.Extension -in @('.jpeg', '.jpg_large') }
 
     # Rename pass focuses on .jpeg and .jpg_large (case-insensitive)
@@ -752,10 +774,12 @@ try {
         -ElapsedCopy $elapsedCopy `
         -ElapsedTotal $swTotal.Elapsed
 
+    Write-LogInfo "Move-ImageFileToBatch finished. Copied=$($script:CopiedCount) Errors=$($script:ErrCount)"
 }
 catch {
     $swTotal.Stop()
     Write-ErrTrack "Fatal: $($_.Exception.Message)"
+    Write-LogError "Move-ImageFileToBatch aborted with fatal error. Copied=$($script:CopiedCount) Errors=$($script:ErrCount)"
     Write-RunSummary -TotalFiles 0 `
         -Renamed $script:RenamedCount `
         -Copied $script:CopiedCount `
