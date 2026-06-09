@@ -8,7 +8,7 @@ google-auth>=2.50.0,<3.0.0
 google-auth-oauthlib>=1.4.0,<2.0.0
 google-auth-httplib2>=0.4.0,<1.0.0
 google-api-python-client==2.196.0
-tqdm>=4.67.3,<5.0.0
+tqdm>=4.68.1,<5.0.0
 srtm==1.0.0; python_version < "3.11"
 networkx>=3.4.2,<4.0.0
 openpyxl>=3.1.5,<4.0.0
