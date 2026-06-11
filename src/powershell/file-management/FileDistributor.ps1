@@ -333,15 +333,19 @@ foreach ($module in $requiredModules) {
     $modulePath = $module.Path
     $moduleName = $module.Name
 
-    if (-not (Test-Path -LiteralPath $modulePath)) {
+    # Resolve the path to normalize it and verify it exists
+    $resolvedPath = $null
+    try {
+        $resolvedPath = (Resolve-Path -LiteralPath $modulePath -ErrorAction Stop).Path
+    } catch {
         Write-Error "FATAL: Required module '$moduleName' not found at: $modulePath" -ErrorAction Stop
         exit 1
     }
 
     try {
-        Import-Module -Name $modulePath -Force -ErrorAction Stop
+        Import-Module -Name $resolvedPath -Force -ErrorAction Stop
     } catch {
-        Write-Error "FATAL: Failed to import module '$moduleName' from: $modulePath`nError: $($_.Exception.Message)" -ErrorAction Stop
+        Write-Error "FATAL: Failed to import module '$moduleName' from: $resolvedPath`nError: $($_.Exception.Message)" -ErrorAction Stop
         exit 1
     }
 }
