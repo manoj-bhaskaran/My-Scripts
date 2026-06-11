@@ -320,13 +320,16 @@ if ($Help) {
     exit 0
 }
 
-# Import logging framework with error handling
+# Import logging framework with error handling.
+# NOTE: FileOperations must be imported AFTER FileDistributor. FileDistributor.psd1 lists
+# ErrorHandling and FileOperations in RequiredModules; importing FileDistributor last would
+# pull those into its own module scope and remove them from the global session.
 $requiredModules = @(
     @{ Path = "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1"; Name = 'PowerShellLoggingFramework' },
     @{ Path = "$PSScriptRoot\..\modules\Core\Logging\PurgeLogs.psm1"; Name = 'PurgeLogs' },
     @{ Path = "$PSScriptRoot\..\modules\Core\ErrorHandling\ErrorHandling.psd1"; Name = 'ErrorHandling' },
-    @{ Path = "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1"; Name = 'FileOperations' },
-    @{ Path = "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistributor.psd1"; Name = 'FileDistributor' }
+    @{ Path = "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistributor.psd1"; Name = 'FileDistributor' },
+    @{ Path = "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1"; Name = 'FileOperations'; VerifyCommand = 'Import-RandomNameProvider' }
 )
 
 foreach ($module in $requiredModules) {
@@ -346,17 +349,18 @@ foreach ($module in $requiredModules) {
     try {
         Write-Verbose "Importing $moduleName from: $resolvedPath"
         Import-Module -Name $resolvedPath -Force -ErrorAction Stop
-
-        # Verify the module actually loaded
-        $loadedModule = Get-Module -Name $moduleName -ErrorAction SilentlyContinue
-        if (-not $loadedModule) {
-            Write-Error "FATAL: Module '$moduleName' failed to load (not found in Get-Module). Check module dependencies and contents." -ErrorAction Stop
-            exit 1
-        }
         Write-Verbose "Successfully imported $moduleName"
     } catch {
         Write-Error "FATAL: Failed to import module '$moduleName' from: $resolvedPath`nError: $($_.Exception.Message)" -ErrorAction Stop
         exit 1
+    }
+
+    # For modules where a specific function must be exported, verify it now
+    if ($module.VerifyCommand) {
+        if (-not (Get-Command -Name $module.VerifyCommand -ErrorAction SilentlyContinue)) {
+            Write-Error "FATAL: Module '$moduleName' imported from '$resolvedPath' but did not export '$($module.VerifyCommand)'. Check the module for errors." -ErrorAction Stop
+            exit 1
+        }
     }
 }
 
@@ -427,18 +431,6 @@ function Main {
     Write-Output "FileDistributor starting..."
     Write-LogInfo "Version: $script:Version"
     Write-Output "Version: $script:Version"
-
-    if (-not (Get-Command -Name Import-RandomNameProvider -ErrorAction SilentlyContinue)) {
-        $expectedPath = (Resolve-Path -LiteralPath "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1" -ErrorAction SilentlyContinue).Path
-        if ($null -eq $expectedPath) {
-            $expectedPath = "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1 (path does not exist)"
-        }
-        $loadedModulesList = @(Get-Module | Select-Object -ExpandProperty Name) -join ', '
-        $errorMsg = "FATAL: Import-RandomNameProvider function not found. FileOperations module failed to import.`nExpected path: $expectedPath`nCurrently loaded modules: $loadedModulesList`n`nThis usually means FileOperations has a dependency issue. Check that all parent modules (ErrorHandling, Logging) imported successfully."
-        Write-LogError $errorMsg
-        Write-Error $errorMsg -ErrorAction Stop
-        exit 1
-    }
 
     try {
         Import-RandomNameProvider -ModulePath $RandomNameModulePath -ScriptRoot $script:ScriptRoot -ErrorAction Stop
