@@ -337,13 +337,16 @@ foreach ($module in $requiredModules) {
     $resolvedPath = $null
     try {
         $resolvedPath = (Resolve-Path -LiteralPath $modulePath -ErrorAction Stop).Path
+        Write-Verbose "Resolved $moduleName to: $resolvedPath"
     } catch {
         Write-Error "FATAL: Required module '$moduleName' not found at: $modulePath" -ErrorAction Stop
         exit 1
     }
 
     try {
+        Write-Verbose "Importing $moduleName from: $resolvedPath"
         Import-Module -Name $resolvedPath -Force -ErrorAction Stop
+        Write-Verbose "Successfully imported $moduleName"
     } catch {
         Write-Error "FATAL: Failed to import module '$moduleName' from: $resolvedPath`nError: $($_.Exception.Message)" -ErrorAction Stop
         exit 1
@@ -419,7 +422,11 @@ function Main {
     Write-Output "Version: $script:Version"
 
     if (-not (Get-Command -Name Import-RandomNameProvider -ErrorAction SilentlyContinue)) {
-        $errorMsg = "FATAL: Import-RandomNameProvider function not found. The FileOperations module may have failed to import. Verify that FileOperations.psd1 exists at: $PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1"
+        $expectedPath = (Resolve-Path -LiteralPath "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1" -ErrorAction SilentlyContinue).Path
+        if ($null -eq $expectedPath) {
+            $expectedPath = "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1 (path does not exist)"
+        }
+        $errorMsg = "FATAL: Import-RandomNameProvider function not found. The FileOperations module may have failed to import.`nExpected path: $expectedPath`nLoadedModules: $((Get-Module -ListAvailable).Name -join ', ')"
         Write-LogError $errorMsg
         Write-Error $errorMsg -ErrorAction Stop
         exit 1
