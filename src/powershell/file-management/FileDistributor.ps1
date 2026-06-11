@@ -320,13 +320,31 @@ if ($Help) {
     exit 0
 }
 
-# Import logging framework
-Import-Module "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1" -Force
-Import-Module "$PSScriptRoot\..\modules\Core\Logging\PurgeLogs.psm1" -Force
-Import-Module "$PSScriptRoot\..\modules\Core\ErrorHandling\ErrorHandling.psd1" -Force
-Import-Module "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1" -Force
+# Import logging framework with error handling
+$requiredModules = @(
+    @{ Path = "$PSScriptRoot\..\modules\Core\Logging\PowerShellLoggingFramework.psm1"; Name = 'PowerShellLoggingFramework' },
+    @{ Path = "$PSScriptRoot\..\modules\Core\Logging\PurgeLogs.psm1"; Name = 'PurgeLogs' },
+    @{ Path = "$PSScriptRoot\..\modules\Core\ErrorHandling\ErrorHandling.psd1"; Name = 'ErrorHandling' },
+    @{ Path = "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1"; Name = 'FileOperations' },
+    @{ Path = "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistributor.psd1"; Name = 'FileDistributor' }
+)
 
-Import-Module "$PSScriptRoot\..\modules\FileManagement\FileDistributor\FileDistributor.psd1" -Force
+foreach ($module in $requiredModules) {
+    $modulePath = $module.Path
+    $moduleName = $module.Name
+
+    if (-not (Test-Path -LiteralPath $modulePath)) {
+        Write-Error "FATAL: Required module '$moduleName' not found at: $modulePath" -ErrorAction Stop
+        exit 1
+    }
+
+    try {
+        Import-Module -LiteralPath $modulePath -Force -ErrorAction Stop
+    } catch {
+        Write-Error "FATAL: Failed to import module '$moduleName' from: $modulePath`nError: $($_.Exception.Message)" -ErrorAction Stop
+        exit 1
+    }
+}
 
 # Note: Logger initialization moved to after LogFilePath resolution
 
@@ -395,7 +413,21 @@ function Main {
     Write-Output "FileDistributor starting..."
     Write-LogInfo "Version: $script:Version"
     Write-Output "Version: $script:Version"
-    Import-RandomNameProvider -ModulePath $RandomNameModulePath -ScriptRoot $script:ScriptRoot
+
+    if (-not (Get-Command -Name Import-RandomNameProvider -ErrorAction SilentlyContinue)) {
+        $errorMsg = "FATAL: Import-RandomNameProvider function not found. The FileOperations module may have failed to import. Verify that FileOperations.psd1 exists at: $PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1"
+        Write-LogError $errorMsg
+        Write-Error $errorMsg -ErrorAction Stop
+        exit 1
+    }
+
+    try {
+        Import-RandomNameProvider -ModulePath $RandomNameModulePath -ScriptRoot $script:ScriptRoot -ErrorAction Stop
+    } catch {
+        Write-LogError "Failed to import RandomName provider: $($_.Exception.Message)"
+        Write-Error "Failed to import RandomName provider: $($_.Exception.Message)" -ErrorAction Stop
+        exit 1
+    }
     $script:Warnings = Get-LogWarningCount
     $script:Errors = Get-LogErrorCount
 
