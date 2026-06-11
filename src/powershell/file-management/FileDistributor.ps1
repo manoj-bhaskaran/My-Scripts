@@ -337,16 +337,16 @@ foreach ($module in $requiredModules) {
     $resolvedPath = $null
     try {
         $resolvedPath = (Resolve-Path -LiteralPath $modulePath -ErrorAction Stop).Path
-        Write-Host "DEBUG: Resolved $moduleName to: $resolvedPath" -ForegroundColor Gray
+        Write-Verbose "Resolved $moduleName to: $resolvedPath"
     } catch {
         Write-Error "FATAL: Required module '$moduleName' not found at: $modulePath" -ErrorAction Stop
         exit 1
     }
 
     try {
-        Write-Host "DEBUG: Importing $moduleName from: $resolvedPath" -ForegroundColor Gray
+        Write-Verbose "Importing $moduleName from: $resolvedPath"
         Import-Module -Name $resolvedPath -Force -ErrorAction Stop
-        Write-Host "DEBUG: Successfully imported $moduleName" -ForegroundColor Green
+        Write-Verbose "Successfully imported $moduleName"
     } catch {
         Write-Error "FATAL: Failed to import module '$moduleName' from: $resolvedPath`nError: $($_.Exception.Message)" -ErrorAction Stop
         exit 1
