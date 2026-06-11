@@ -339,7 +339,7 @@ foreach ($module in $requiredModules) {
     }
 
     try {
-        Import-Module -LiteralPath $modulePath -Force -ErrorAction Stop
+        Import-Module -Name $modulePath -Force -ErrorAction Stop
     } catch {
         Write-Error "FATAL: Failed to import module '$moduleName' from: $modulePath`nError: $($_.Exception.Message)" -ErrorAction Stop
         exit 1
