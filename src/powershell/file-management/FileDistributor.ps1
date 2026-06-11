@@ -346,6 +346,13 @@ foreach ($module in $requiredModules) {
     try {
         Write-Verbose "Importing $moduleName from: $resolvedPath"
         Import-Module -Name $resolvedPath -Force -ErrorAction Stop
+
+        # Verify the module actually loaded
+        $loadedModule = Get-Module -Name $moduleName -ErrorAction SilentlyContinue
+        if (-not $loadedModule) {
+            Write-Error "FATAL: Module '$moduleName' failed to load (not found in Get-Module). Check module dependencies and contents." -ErrorAction Stop
+            exit 1
+        }
         Write-Verbose "Successfully imported $moduleName"
     } catch {
         Write-Error "FATAL: Failed to import module '$moduleName' from: $resolvedPath`nError: $($_.Exception.Message)" -ErrorAction Stop
@@ -426,7 +433,8 @@ function Main {
         if ($null -eq $expectedPath) {
             $expectedPath = "$PSScriptRoot\..\modules\Core\FileOperations\FileOperations.psd1 (path does not exist)"
         }
-        $errorMsg = "FATAL: Import-RandomNameProvider function not found. The FileOperations module may have failed to import.`nExpected path: $expectedPath`nLoadedModules: $((Get-Module -ListAvailable).Name -join ', ')"
+        $loadedModulesList = @(Get-Module | Select-Object -ExpandProperty Name) -join ', '
+        $errorMsg = "FATAL: Import-RandomNameProvider function not found. FileOperations module failed to import.`nExpected path: $expectedPath`nCurrently loaded modules: $loadedModulesList`n`nThis usually means FileOperations has a dependency issue. Check that all parent modules (ErrorHandling, Logging) imported successfully."
         Write-LogError $errorMsg
         Write-Error $errorMsg -ErrorAction Stop
         exit 1
