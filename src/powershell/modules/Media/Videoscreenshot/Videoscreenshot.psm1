@@ -20,7 +20,16 @@
 #>
 
 # Import required modules for Test-CommandAvailable and other ErrorHandling functions
-Import-Module -Name ErrorHandling -ErrorAction Stop
+# Try to import ErrorHandling; if not on PSModulePath, load from repo structure
+if (-not (Get-Module -Name ErrorHandling -ErrorAction SilentlyContinue)) {
+    $errorHandlingPath = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'Core\ErrorHandling\ErrorHandling.psm1'
+    if (Test-Path -LiteralPath $errorHandlingPath) {
+        Import-Module -FullyQualifiedName $errorHandlingPath -ErrorAction Stop
+    }
+    else {
+        Import-Module -Name ErrorHandling -ErrorAction Stop
+    }
+}
 
 # Robust module loader: guard for missing dirs and deterministic load order
 $here = Split-Path -Parent $PSCommandPath
