@@ -575,6 +575,10 @@ function Start-VideoBatch {
 
 # Allow the script to be invoked directly (e.g. & .\Start-VideoBatch.ps1 -SourceFolder ...)
 # without requiring the caller to import the module first.
+# Import-Module loads Private/*.ps1 helpers that Start-VideoBatch depends on.
+# @args (not @PSBoundParameters) is used because the script has no top-level param() block,
+# so $PSBoundParameters is always empty at script scope; $args captures all arguments correctly.
 if ($MyInvocation.InvocationName -ne '.') {
-    Start-VideoBatch @PSBoundParameters
+    Import-Module -Force (Join-Path $PSScriptRoot '..' 'Videoscreenshot.psm1')
+    Start-VideoBatch @args
 }
