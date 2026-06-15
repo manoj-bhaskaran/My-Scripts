@@ -7,7 +7,7 @@
   CompatiblePSEditions = @('Core')
   Description       = 'Modularized video frame capture via VLC (snapshots) or GDI+ (desktop), with optional Python cropper integration. Typical formats: .mp4, .mkv, .avi, .mov, .m4v, .wmv. VLC on PATH or specify -VlcExe; Python is needed only when using the cropper.'
   PowerShellVersion = '7.0'
-  RequiredModules   = @('ErrorHandling')
+  RequiredModules   = @(@{ModuleName = 'ErrorHandling'; ModuleVersion = '1.1.1'})
   FunctionsToExport = @('Start-VideoBatch')
   AliasesToExport   = @()
   CmdletsToExport   = @()
