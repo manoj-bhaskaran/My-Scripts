@@ -572,3 +572,9 @@ function Start-VideoBatch {
         Clear-VideoScreenshotLogFile
     }
 }
+
+# Allow the script to be invoked directly (e.g. & .\Start-VideoBatch.ps1 -SourceFolder ...)
+# without requiring the caller to import the module first.
+if ($MyInvocation.InvocationName -ne '.') {
+    Start-VideoBatch @PSBoundParameters
+}
