@@ -19,6 +19,9 @@
     - If Start-VideoBatch fails to load, import aborts with a clear message.
 #>
 
+# Import required modules for Test-CommandAvailable and other ErrorHandling functions
+Import-Module -Name ErrorHandling -ErrorAction Stop
+
 # Robust module loader: guard for missing dirs and deterministic load order
 $here = Split-Path -Parent $PSCommandPath
 $privateDir = Join-Path $here 'Private'
